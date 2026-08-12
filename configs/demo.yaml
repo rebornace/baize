@@ -23,6 +23,15 @@ connector:
   require_approval:
     - create_ticket
     - update_ticket_status
+  auth:
+    bearer_env: BAIZE_CONNECTOR_TOKEN # 无会话身份时的 Headers 兜底
+    # 登录成功后写入会话身份库（tool 名匹配 *login*）
+    capture:
+      tool_name_glob: "*login*"
+      token_json_paths: ["accessToken", "data.accessToken", "data.token"]
+      label_json_paths: ["email", "data.email"]
+      header_template: "Bearer {{token}}"
+      default_scheme: "" # 空则若 spec 仅一个 security scheme 则自动填入
 run:
   max_steps: 8
 demo:

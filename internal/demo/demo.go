@@ -14,8 +14,10 @@ import (
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
@@ -146,7 +148,8 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 
 	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
 
-	if err := registerConnector(st, reg, cfg); err != nil {
+	identities := identity.NewMemoryStore()
+	if err := registerConnector(st, reg, cfg, identities); err != nil {
 		_ = closer.Close()
 		return nil, nil, err
 	}
@@ -158,7 +161,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		Gate:     run.NewGate(),
 		MaxSteps: cfg.Run.MaxSteps,
 	}
-	return api.NewServer(st, reg, engine), closer, nil
+	srv := api.NewServer(st, reg, engine)
+	srv.Identities = identities
+	return srv, closer, nil
 }
 
 type nopCloser struct{}
@@ -172,7 +177,7 @@ func storeCloser(st store.Store) io.Closer {
 	return nopCloser{}
 }
 
-func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) error {
+func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
 	typ := cfg.Connector.Type
 	if typ == "" {
 		typ = "openapi"
@@ -184,10 +189,66 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) er
 	if len(approval) == 0 {
 		approval = []string{"create_ticket"}
 	}
-	_, _, err := openapi.RegisterConnector(
-		st, reg, cfg.Connector.ID, typ, cfg.Connector.Spec, cfg.Connector.BaseURL, approval,
-	)
+	capture := identity.CaptureConfig{
+		ToolNameGlob:   cfg.Connector.Auth.Capture.ToolNameGlob,
+		TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
+		LabelJSONPaths: cfg.Connector.Auth.Capture.LabelJSONPaths,
+		HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
+		DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
+	}
+	if capture.DefaultScheme == "" {
+		if routes, err := openapi.LoadTools(cfg.Connector.Spec); err == nil {
+			capture.DefaultScheme = uniqueSecurityScheme(routes)
+		}
+	}
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:              cfg.Connector.ID,
+		Type:            typ,
+		SpecPath:        cfg.Connector.Spec,
+		BaseURL:         cfg.Connector.BaseURL,
+		RequireApproval: approval,
+		Headers:         resolveBearerHeaders(cfg.Connector.Auth.BearerEnv),
+		Identities:      identities,
+		Resolver:        authresolve.OpenAPISecurityResolver{},
+		Capture:         capture,
+	})
 	return err
+}
+
+// resolveBearerHeaders builds connector default Headers from bearer_env (fallback).
+func resolveBearerHeaders(bearerEnv string) map[string]string {
+	if strings.TrimSpace(bearerEnv) == "" {
+		return nil
+	}
+	v := strings.TrimSpace(os.Getenv(bearerEnv))
+	if v == "" {
+		return nil
+	}
+	if !strings.HasPrefix(strings.ToLower(v), "bearer ") {
+		v = "Bearer " + v
+	}
+	return map[string]string{"Authorization": v}
+}
+
+// uniqueSecurityScheme returns the sole security scheme name across routes, or "".
+func uniqueSecurityScheme(routes []openapi.ToolRoute) string {
+	seen := map[string]struct{}{}
+	for _, r := range routes {
+		for _, s := range r.Security {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			seen[s] = struct{}{}
+		}
+	}
+	if len(seen) != 1 {
+		return ""
+	}
+	for s := range seen {
+		return s
+	}
+	return ""
 }
 
 func newLLM(cfg config.Config) (llm.Provider, error) {

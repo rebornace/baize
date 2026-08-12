@@ -33,6 +33,16 @@ type Config struct {
 		Spec            string   `yaml:"spec"`
 		BaseURL         string   `yaml:"base_url"`
 		RequireApproval []string `yaml:"require_approval"`
+		Auth            struct {
+			BearerEnv string `yaml:"bearer_env"` // env holding JWT or "Bearer …"；作 Headers 兜底
+			Capture   struct {
+				ToolNameGlob   string   `yaml:"tool_name_glob"`
+				TokenJSONPaths []string `yaml:"token_json_paths"`
+				LabelJSONPaths []string `yaml:"label_json_paths"`
+				HeaderTemplate string   `yaml:"header_template"`
+				DefaultScheme  string   `yaml:"default_scheme"` // 空则注册时若仅一个 security scheme 则填入
+			} `yaml:"capture"`
+		} `yaml:"auth"`
 	} `yaml:"connector"`
 	Run struct {
 		MaxSteps int `yaml:"max_steps"`
