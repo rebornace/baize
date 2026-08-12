@@ -3,12 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/connector/openapi"
-	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -48,6 +48,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
+	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
+	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
@@ -101,9 +103,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type    string `json:"type"`
-		Spec    string `json:"spec"`
-		BaseURL string `json:"base_url"`
+		Type            string   `json:"type"`
+		Spec            string   `json:"spec"`
+		BaseURL         string   `json:"base_url"`
+		RequireApproval []string `json:"require_approval"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -112,57 +115,62 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	if body.Type == "" {
 		body.Type = "openapi"
 	}
-	if body.Type != "openapi" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
-		return
-	}
 	if body.Spec == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
 		return
 	}
 
-	routes, err := openapi.LoadTools(body.Spec)
+	c, infos, err := openapi.RegisterConnector(
+		s.Store, s.Registry, id, body.Type, body.Spec, body.BaseURL, body.RequireApproval,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
+		if errors.Is(err, openapi.ErrToolConflict) {
+			writeError(w, http.StatusConflict, "tool_conflict", err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "invalid_spec") {
+			writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
-	// Drop previous tools for this connector before re-registering.
-	if prev, err := s.Store.GetConnector(id); err == nil && prev.Spec != "" {
-		if oldRoutes, err := openapi.LoadTools(prev.Spec); err == nil {
-			for _, route := range oldRoutes {
-				s.Registry.Unregister(route.Name)
-			}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":               c.ID,
+		"type":             c.Type,
+		"spec":             c.Spec,
+		"base_url":         c.BaseURL,
+		"require_approval": c.RequireApproval,
+		"tools":            infos,
+	})
+}
+
+func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.Store.GetConnector(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
+		return
+	}
+	tools := make([]tool.Info, 0)
+	for _, info := range s.Registry.List() {
+		if info.ConnectorID == id {
+			tools = append(tools, info)
 		}
 	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":               c.ID,
+		"type":             c.Type,
+		"spec":             c.Spec,
+		"base_url":         c.BaseURL,
+		"require_approval": c.RequireApproval,
+		"tools":            tools,
+	})
+}
 
-	c := store.Connector{
-		ID:      id,
-		Type:    body.Type,
-		Spec:    body.Spec,
-		BaseURL: body.BaseURL,
-	}
-	s.Store.UpsertConnector(c)
-
-	inv := &openapi.Invoker{BaseURL: body.BaseURL, Tools: routes}
-	for _, route := range routes {
-		route := route
-		name := route.Name
-		requireApproval := name == "create_ticket"
-		s.Registry.RegisterSpecApproved(llm.ToolSpec{
-			Name:        route.Name,
-			Description: route.Description,
-			InputSchema: route.InputSchema,
-		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			res, err := inv.Invoke(ctx, name, args)
-			if err != nil {
-				return nil, true, err
-			}
-			return res.Content, res.IsError, nil
-		}, requireApproval)
-	}
-
-	writeJSON(w, http.StatusOK, c)
+func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"tools": s.Registry.List()})
 }
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {

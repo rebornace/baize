@@ -177,48 +177,17 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) er
 	if typ == "" {
 		typ = "openapi"
 	}
-	if typ != "openapi" {
-		return fmt.Errorf("unsupported connector type: %s", typ)
-	}
 	if cfg.Connector.Spec == "" {
 		return fmt.Errorf("connector.spec is required")
 	}
-
-	routes, err := openapi.LoadTools(cfg.Connector.Spec)
-	if err != nil {
-		return fmt.Errorf("load openapi tools: %w", err)
-	}
-
-	st.UpsertConnector(store.Connector{
-		ID:      cfg.Connector.ID,
-		Type:    typ,
-		Spec:    cfg.Connector.Spec,
-		BaseURL: cfg.Connector.BaseURL,
-	})
-
-	inv := &openapi.Invoker{BaseURL: cfg.Connector.BaseURL, Tools: routes}
 	approval := cfg.Connector.RequireApproval
 	if len(approval) == 0 {
 		approval = []string{"create_ticket"}
 	}
-	approvalSet := approvalSet(approval)
-	for _, route := range routes {
-		route := route
-		name := route.Name
-		requireApproval := approvalSet[name]
-		reg.RegisterSpecApproved(llm.ToolSpec{
-			Name:        route.Name,
-			Description: route.Description,
-			InputSchema: route.InputSchema,
-		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			res, err := inv.Invoke(ctx, name, args)
-			if err != nil {
-				return nil, true, err
-			}
-			return res.Content, res.IsError, nil
-		}, requireApproval)
-	}
-	return nil
+	_, _, err := openapi.RegisterConnector(
+		st, reg, cfg.Connector.ID, typ, cfg.Connector.Spec, cfg.Connector.BaseURL, approval,
+	)
+	return err
 }
 
 func newLLM(cfg config.Config) (llm.Provider, error) {
@@ -292,12 +261,4 @@ func logUIHint(cfg config.Config, runtimeBase string) {
 	if cfg.UI.Enabled {
 		log.Printf("open %s/ui", runtimeBase)
 	}
-}
-
-func approvalSet(names []string) map[string]bool {
-	out := make(map[string]bool, len(names))
-	for _, name := range names {
-		out[name] = true
-	}
-	return out
 }
