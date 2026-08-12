@@ -19,3 +19,6 @@ vendor/
 # 同步到开源仓 baize 时请用 scripts/export-public.ps1，不要直接把含 superpowers 的树推到 public。
 
 .worktrees/
+
+demo-stdout.log
+demo-stderr.log
