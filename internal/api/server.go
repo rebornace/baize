@@ -66,6 +66,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
+	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
 }
 
 type apiError struct {
@@ -229,6 +231,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist the user turn before executing so the conversation window survives
+	// crashes and is visible via GET /v0/conversations/{id}/messages. Execute's
+	// buildMessages dedups the trailing user input against this appended entry.
+	if s.Messages != nil && conv != "" {
+		_, _ = s.Messages.Append(conv, conversation.Message{
+			Role:    conversation.RoleUser,
+			Content: body.Input,
+			RunID:   runRec.ID,
+		})
+	}
+
 	def := agent.Def{ID: ag.ID, System: ag.System}
 	// Persist run.started before returning so the UI never polls an empty event stream
 	// while the worker is still scheduling / contending on SQLite.
@@ -370,4 +383,23 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{}
 	}
 	writeJSON(w, http.StatusOK, evs)
+}
+
+func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
+	if s.Messages == nil {
+		writeJSON(w, http.StatusOK, []conversation.Message{})
+		return
+	}
+	msgs := s.Messages.List(r.PathValue("id"))
+	if msgs == nil {
+		msgs = []conversation.Message{}
+	}
+	writeJSON(w, http.StatusOK, msgs)
+}
+
+func (s *Server) handleClearMessages(w http.ResponseWriter, r *http.Request) {
+	if s.Messages != nil {
+		s.Messages.Clear(r.PathValue("id"))
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -9,10 +9,10 @@ const (
 )
 
 type Message struct {
-	ID             string
-	ConversationID string
-	Role           string
-	Content        string
-	RunID          string
-	CreatedAt      time.Time
+	ID             string    `json:"id"`
+	ConversationID string    `json:"conversation_id"`
+	Role           string    `json:"role"`
+	Content        string    `json:"content"`
+	RunID          string    `json:"run_id"`
+	CreatedAt      time.Time `json:"created_at"`
 }

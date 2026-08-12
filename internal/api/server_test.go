@@ -14,6 +14,7 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
@@ -973,4 +974,224 @@ func jsonBody(t *testing.T, v any) *bytes.Reader {
 		t.Fatal(err)
 	}
 	return bytes.NewReader(b)
+}
+
+func TestListMessagesNilStore(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/messages", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var msgs []conversation.Message
+	if err := json.NewDecoder(rr.Body).Decode(&msgs); err != nil {
+		t.Fatal(err)
+	}
+	if msgs == nil {
+		t.Fatal("expected non-nil JSON array, got null")
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected empty, got %+v", msgs)
+	}
+}
+
+func TestListMessagesEmptyStore(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Messages = conversation.NewMemoryStore()
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/messages", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var msgs []conversation.Message
+	if err := json.NewDecoder(rr.Body).Decode(&msgs); err != nil {
+		t.Fatal(err)
+	}
+	if msgs == nil || len(msgs) != 0 {
+		t.Fatalf("expected empty non-nil array, got %+v", msgs)
+	}
+}
+
+func TestListMessagesSnakeCase(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{
+		Role: conversation.RoleUser, Content: "hi", RunID: "run_1",
+	})
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Messages = msgStore
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/messages", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"conversation_id":"conv1"`) {
+		t.Fatalf("missing snake_case conversation_id: %s", body)
+	}
+	if !strings.Contains(body, `"run_id":"run_1"`) {
+		t.Fatalf("missing snake_case run_id: %s", body)
+	}
+	if !strings.Contains(body, `"created_at"`) {
+		t.Fatalf("missing snake_case created_at: %s", body)
+	}
+	if !strings.Contains(body, `"role":"user"`) {
+		t.Fatalf("missing snake_case role: %s", body)
+	}
+}
+
+func TestClearMessages(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "hi"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "hello"})
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Messages = msgStore
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/messages", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(msgStore.List("conv1")) != 0 {
+		t.Fatal("expected empty after clear")
+	}
+
+	// Clearing again should still succeed (idempotent).
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/messages", nil))
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("second clear status=%d", rr2.Code)
+	}
+}
+
+func TestClearMessagesNilStore(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/messages", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("resp=%+v", resp)
+	}
+}
+
+func TestPostRunAppendsUserMessage(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	msgStore := conversation.NewMemoryStore()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Messages = msgStore
+	h := srv.Handler()
+
+	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
+
+	postRun := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{
+			"agent_id":        "a",
+			"input":           "hello",
+			"conversation_id": "conv_x",
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, postRun)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := created["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("created=%v", created)
+	}
+
+	msgs := msgStore.List("conv_x")
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 user message, got %d: %+v", len(msgs), msgs)
+	}
+	if msgs[0].Role != conversation.RoleUser || msgs[0].Content != "hello" {
+		t.Fatalf("msg=%+v", msgs[0])
+	}
+	if msgs[0].RunID != runID {
+		t.Fatalf("RunID=%q want %q", msgs[0].RunID, runID)
+	}
+	if msgs[0].ConversationID != "conv_x" {
+		t.Fatalf("ConversationID=%q want conv_x", msgs[0].ConversationID)
+	}
+
+	// GET /v0/conversations/conv_x/messages reflects the appended user message.
+	getMsgs := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv_x/messages", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getMsgs)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get messages status=%d", rr.Code)
+	}
+	var listed []conversation.Message
+	if err := json.NewDecoder(rr.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].Content != "hello" {
+		t.Fatalf("listed=%+v", listed)
+	}
+}
+
+func TestPostRunNoMessageStoreSkipsAppend(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	// srv.Messages intentionally left nil.
+	h := srv.Handler()
+
+	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
+
+	postRun := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{"agent_id": "a", "input": "hi", "conversation_id": "conv_y"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, postRun)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// GET messages on a nil store returns an empty array, not null.
+	getMsgs := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv_y/messages", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getMsgs)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	var listed []conversation.Message
+	if err := json.NewDecoder(rr.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if listed == nil || len(listed) != 0 {
+		t.Fatalf("expected empty non-nil array, got %+v", listed)
+	}
 }
