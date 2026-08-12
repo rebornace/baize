@@ -445,6 +445,84 @@ paths:
 	}
 }
 
+func TestPutConnectorEmptyOpsLeavesRegistry(t *testing.T) {
+	dir := t.TempDir()
+	goodSpec := filepath.Join(dir, "good.yaml")
+	if err := os.WriteFile(goodSpec, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	emptySpec := filepath.Join(dir, "empty.yaml")
+	if err := os.WriteFile(emptySpec, []byte(`openapi: 3.0.3
+info: { title: empty, version: 0.1.0 }
+paths: {}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	putOK := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": goodSpec, "base_url": "http://x"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, putOK)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("first put status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	putEmpty := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": emptySpec, "base_url": "http://empty"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, putEmpty)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("empty-ops put status=%d want 400 body=%s", rr.Code, rr.Body.String())
+	}
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatal(err)
+	}
+	if wrap.Error.Code != "invalid_spec" {
+		t.Fatalf("code=%q", wrap.Error.Code)
+	}
+
+	getTools := httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getTools)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get tools status=%d", rr.Code)
+	}
+	var toolsBody struct {
+		Tools []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&toolsBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(toolsBody.Tools) != 1 || toolsBody.Tools[0].Name != "create_ticket" {
+		t.Fatalf("tools after empty-ops put=%+v want create_ticket", toolsBody.Tools)
+	}
+
+	c, err := st.GetConnector("ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Spec != goodSpec || c.BaseURL != "http://x" {
+		t.Fatalf("store overwritten after empty-ops put: %+v", c)
+	}
+}
+
 func TestPutConnectorResponseIncludesTools(t *testing.T) {
 	dir := t.TempDir()
 	specPath := filepath.Join(dir, "openapi.yaml")

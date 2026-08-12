@@ -13,7 +13,8 @@ import (
 // ErrToolConflict is returned when registering would overwrite another connector's tools.
 var ErrToolConflict = errors.New("tool_conflict")
 
-// ErrInvalidSpec is returned when the OpenAPI spec cannot be loaded.
+// ErrInvalidSpec is returned when the OpenAPI spec cannot be loaded
+// or yields no usable operations.
 var ErrInvalidSpec = errors.New("invalid_spec")
 
 // RegisterConnector loads an OpenAPI connector into the store and tool registry.
@@ -32,6 +33,9 @@ func RegisterConnector(
 	routes, err := LoadTools(specPath)
 	if err != nil {
 		return store.Connector{}, nil, fmt.Errorf("%w: %w", ErrInvalidSpec, err)
+	}
+	if len(routes) == 0 {
+		return store.Connector{}, nil, fmt.Errorf("%w: no usable operations", ErrInvalidSpec)
 	}
 	names := make([]string, len(routes))
 	for i, r := range routes {

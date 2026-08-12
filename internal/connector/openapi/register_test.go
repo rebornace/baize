@@ -78,6 +78,46 @@ func TestRegisterConnectorConflictAndReplace(t *testing.T) {
 	}
 }
 
+func TestRegisterConnectorEmptyOpsInvalidSpec(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	specA := filepath.Join("../../../examples/mock-ticket/openapi.yaml")
+
+	_, infos, err := openapi.RegisterConnector(st, reg, "ticket-a", "openapi", specA, "http://a.example", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasTool(infos, "create_ticket") {
+		t.Fatalf("expected create_ticket: %+v", infos)
+	}
+
+	emptySpec := writeEmptyPathsSpec(t)
+	_, _, err = openapi.RegisterConnector(st, reg, "ticket-a", "openapi", emptySpec, "http://empty.example", nil)
+	if err == nil {
+		t.Fatal("expected invalid_spec for empty operations")
+	}
+	if !errors.Is(err, openapi.ErrInvalidSpec) {
+		t.Fatalf("expected ErrInvalidSpec, got %v", err)
+	}
+
+	after := reg.List()
+	if !hasTool(after, "create_ticket") || !hasTool(after, "list_tickets") {
+		t.Fatalf("tools cleared after empty-ops put: %+v", after)
+	}
+	for _, info := range after {
+		if info.ConnectorID != "ticket-a" {
+			t.Fatalf("unexpected tool after empty-ops: %+v", info)
+		}
+	}
+	got, err := st.GetConnector("ticket-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec != specA || got.BaseURL != "http://a.example" {
+		t.Fatalf("store overwritten after empty-ops: %+v", got)
+	}
+}
+
 func hasTool(infos []tool.Info, name string) bool {
 	return findTool(infos, name) != nil
 }
@@ -99,6 +139,19 @@ func writeMinimalSpec(t *testing.T, opID, path string) string {
 		"info:\n  title: alt\n  version: 0.1.0\n" +
 		"paths:\n  " + path + ":\n    get:\n      operationId: " + opID + "\n" +
 		"      responses:\n        \"200\":\n          description: ok\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func writeEmptyPathsSpec(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "empty.yaml")
+	content := "openapi: 3.0.3\n" +
+		"info:\n  title: empty\n  version: 0.1.0\n" +
+		"paths: {}\n"
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
