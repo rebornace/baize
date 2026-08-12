@@ -24,11 +24,12 @@ type Runner interface {
 }
 
 type Server struct {
-	Store      store.Store
-	Registry   *tool.Registry
-	Runner     Runner
-	Identities identity.Store
-	mux        *http.ServeMux
+	Store          store.Store
+	Registry       *tool.Registry
+	Runner         Runner
+	Identities     identity.Store
+	DefaultAgentID string
+	mux            *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
@@ -50,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /v0/ui-config", s.handleUIConfig)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
@@ -85,6 +87,12 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleUIConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"agent_id": s.DefaultAgentID,
+	})
 }
 
 func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {

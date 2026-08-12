@@ -22,6 +22,7 @@ func TestDemoACreateTicketE2E(t *testing.T) {
 	cfg.Connector.ID = "ticket-api"
 	cfg.Connector.Type = "openapi"
 	cfg.Connector.Spec = filepath.Join("..", "..", "examples", "mock-ticket", "openapi.yaml")
+	cfg.Connector.RequireApproval = []string{"create_ticket"}
 	cfg.Run.MaxSteps = 8
 
 	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)

@@ -28,12 +28,13 @@ type Config struct {
 		System string `yaml:"system"`
 	} `yaml:"agent"`
 	Connector struct {
-		ID              string   `yaml:"id"`
-		Type            string   `yaml:"type"`
-		Spec            string   `yaml:"spec"`
-		BaseURL         string   `yaml:"base_url"`
-		RequireApproval []string `yaml:"require_approval"`
-		Auth            struct {
+		ID                      string   `yaml:"id"`
+		Type                    string   `yaml:"type"`
+		Spec                    string   `yaml:"spec"`
+		BaseURL                 string   `yaml:"base_url"`
+		RequireApproval         []string `yaml:"require_approval"`
+		RequireApprovalMutating bool     `yaml:"require_approval_mutating"`
+		Auth                    struct {
 			BearerEnv string `yaml:"bearer_env"` // env holding JWT or "Bearer …"；作 Headers 兜底
 			Capture   struct {
 				ToolNameGlob   string   `yaml:"tool_name_glob"`
@@ -48,7 +49,7 @@ type Config struct {
 		MaxSteps int `yaml:"max_steps"`
 	} `yaml:"run"`
 	Demo struct {
-		TicketListen string `yaml:"ticket_listen"` // :18080
+		TicketListen string `yaml:"ticket_listen"` // :18080；off 关闭 mock-ticket
 	} `yaml:"demo"`
 }
 
@@ -77,9 +78,7 @@ func Load(path string) (Config, error) {
 	if cfg.Connector.Type == "" {
 		cfg.Connector.Type = "openapi"
 	}
-	if len(cfg.Connector.RequireApproval) == 0 {
-		cfg.Connector.RequireApproval = []string{"create_ticket"}
-	}
+	// require_approval 默认不注入；样板 configs/demo.yaml 自行列出 create_ticket 等
 	if cfg.Store.Driver == "sqlite" && cfg.Store.SQLitePath == "" {
 		cfg.Store.SQLitePath = "./data/baize.db"
 	}

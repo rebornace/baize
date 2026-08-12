@@ -8,6 +8,10 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+// bodyArrayKey is the wrapper property when an OpenAPI request body is a JSON array.
+// LLM tool schemas must be type=object; invoke unwraps this key back to a JSON array.
+const bodyArrayKey = "items"
+
 // ToolRoute maps an OpenAPI operation to an invokable tool.
 type ToolRoute struct {
 	Name        string
@@ -16,6 +20,9 @@ type ToolRoute struct {
 	Method      string
 	Path        string
 	InputSchema map[string]any
+	// BodyKind: ""|"object" (default JSON object body), "array" (send args[bodyArrayKey] as JSON array),
+	// "value" (send args["value"] as scalar/json body).
+	BodyKind string
 	// Security lists OpenAPI security scheme names required by the operation
 	// (operation-level security overrides document-level when present).
 	Security []string
@@ -53,13 +60,15 @@ func LoadTools(specPath string) ([]ToolRoute, error) {
 			if desc == "" {
 				desc = op.Summary
 			}
+			schema, bodyKind := mergeInputSchema(item, op)
 			tools = append(tools, ToolRoute{
 				Name:        name,
 				OperationID: op.OperationID,
 				Description: desc,
 				Method:      strings.ToUpper(method),
 				Path:        path,
-				InputSchema: mergeInputSchema(item, op),
+				InputSchema: schema,
+				BodyKind:    bodyKind,
 				Security:    operationSecurity(doc, op),
 			})
 		}
@@ -118,8 +127,40 @@ func normalizeOpName(method, path string) string {
 	return strings.ToLower(method) + "_" + base
 }
 
-func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) map[string]any {
-	schema := requestBodySchema(op)
+func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) (map[string]any, string) {
+	body := requestBodySchema(op)
+	bodyKind := "object"
+	var schema map[string]any
+
+	switch typ, _ := body["type"].(string); typ {
+	case "array":
+		// OpenAI-compatible tool calling requires parameters.type == object.
+		schema = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				bodyArrayKey: body,
+			},
+			"required": []any{bodyArrayKey},
+		}
+		bodyKind = "array"
+	case "object", "":
+		if body["properties"] == nil {
+			body["properties"] = map[string]any{}
+		}
+		body["type"] = "object"
+		schema = body
+		bodyKind = "object"
+	default:
+		schema = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"value": body,
+			},
+			"required": []any{"value"},
+		}
+		bodyKind = "value"
+	}
+
 	props, _ := schema["properties"].(map[string]any)
 	if props == nil {
 		props = map[string]any{}
@@ -164,38 +205,29 @@ func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) map[strin
 		}
 		schema["required"] = req
 	}
-	if schema["type"] == nil {
-		schema["type"] = "object"
-	}
-	return schema
+	schema["type"] = "object"
+	return schema, bodyKind
 }
 
 func requestBodySchema(op *openapi3.Operation) map[string]any {
-	if op.RequestBody == nil || op.RequestBody.Value == nil {
+	emptyObject := func() map[string]any {
 		return map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
 		}
+	}
+	if op.RequestBody == nil || op.RequestBody.Value == nil {
+		return emptyObject()
 	}
 	content := op.RequestBody.Value.Content
 	if content == nil {
-		return map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		}
+		return emptyObject()
 	}
 	mt := content.Get("application/json")
 	if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
-		return map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		}
+		return emptyObject()
 	}
-	out := schemaToMap(mt.Schema.Value)
-	if out["properties"] == nil {
-		out["properties"] = map[string]any{}
-	}
-	return out
+	return schemaToMap(mt.Schema.Value)
 }
 
 func schemaToMap(s *openapi3.Schema) map[string]any {
@@ -221,6 +253,9 @@ func schemaToMap(s *openapi3.Schema) map[string]any {
 			props[name] = schemaToMap(ref.Value)
 		}
 		out["properties"] = props
+	}
+	if s.Items != nil && s.Items.Value != nil {
+		out["items"] = schemaToMap(s.Items.Value)
 	}
 	if s.Description != "" {
 		out["description"] = s.Description

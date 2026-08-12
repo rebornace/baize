@@ -24,24 +24,32 @@ import (
 	"github.com/rebornace/baize/internal/tool"
 )
 
-// Run starts mock-ticket + Runtime in-process and blocks on the API server.
+// Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
 func Run(cfg config.Config) error {
-	ticketListen := cfg.Demo.TicketListen
-	if ticketListen == "" {
+	ticketListen := strings.TrimSpace(cfg.Demo.TicketListen)
+	useMockTicket := true
+	switch strings.ToLower(ticketListen) {
+	case "off", "false", "none", "-":
+		useMockTicket = false
+	case "":
 		ticketListen = ":18080"
 	}
 
-	go func() {
-		log.Printf("mock-ticket listening on %s", ticketListen)
-		if err := http.ListenAndServe(ticketListen, mockticket.NewHandler()); err != nil {
-			log.Printf("mock-ticket server error: %v", err)
+	var ticketBase string
+	if useMockTicket {
+		go func() {
+			log.Printf("mock-ticket listening on %s", ticketListen)
+			if err := http.ListenAndServe(ticketListen, mockticket.NewHandler()); err != nil {
+				log.Printf("mock-ticket server error: %v", err)
+			}
+		}()
+		ticketBase = localHTTPBase(ticketListen)
+		cfg.Connector.BaseURL = ticketBase
+		if err := waitHealthy(ticketBase+"/healthz", 5*time.Second); err != nil {
+			return fmt.Errorf("mock-ticket health check failed: %w", err)
 		}
-	}()
-
-	ticketBase := localHTTPBase(ticketListen)
-	cfg.Connector.BaseURL = ticketBase
-	if err := waitHealthy(ticketBase+"/healthz", 5*time.Second); err != nil {
-		return fmt.Errorf("mock-ticket health check failed: %w", err)
+	} else {
+		ticketBase = cfg.Connector.BaseURL
 	}
 
 	srv, _, err := newAPIServer(cfg)
@@ -163,6 +171,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Identities = identities
+	srv.DefaultAgentID = cfg.Agent.ID
 	return srv, closer, nil
 }
 
@@ -186,9 +195,6 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		return fmt.Errorf("connector.spec is required")
 	}
 	approval := cfg.Connector.RequireApproval
-	if len(approval) == 0 {
-		approval = []string{"create_ticket"}
-	}
 	capture := identity.CaptureConfig{
 		ToolNameGlob:   cfg.Connector.Auth.Capture.ToolNameGlob,
 		TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
@@ -196,23 +202,45 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
 		DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
 	}
+	capture = withCaptureDefaults(capture)
 	if capture.DefaultScheme == "" {
 		if routes, err := openapi.LoadTools(cfg.Connector.Spec); err == nil {
 			capture.DefaultScheme = uniqueSecurityScheme(routes)
 		}
 	}
 	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
-		ID:              cfg.Connector.ID,
-		Type:            typ,
-		SpecPath:        cfg.Connector.Spec,
-		BaseURL:         cfg.Connector.BaseURL,
-		RequireApproval: approval,
-		Headers:         resolveBearerHeaders(cfg.Connector.Auth.BearerEnv),
-		Identities:      identities,
-		Resolver:        authresolve.OpenAPISecurityResolver{},
-		Capture:         capture,
+		ID:                      cfg.Connector.ID,
+		Type:                    typ,
+		SpecPath:                cfg.Connector.Spec,
+		BaseURL:                 cfg.Connector.BaseURL,
+		RequireApproval:         approval,
+		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
+		Headers:                 resolveBearerHeaders(cfg.Connector.Auth.BearerEnv),
+		Identities:              identities,
+		Resolver:                authresolve.OpenAPISecurityResolver{},
+		Capture:                 capture,
 	})
 	return err
+}
+
+// withCaptureDefaults fills open-box login capture when config omits capture.
+// demo.local.yaml often only sets bearer_env; without defaults, login never persists.
+// To disable capture, set tool_name_glob to a non-matching pattern (e.g. "__none__").
+func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
+	if strings.TrimSpace(c.ToolNameGlob) != "" {
+		return c
+	}
+	c.ToolNameGlob = "*login*"
+	if len(c.TokenJSONPaths) == 0 {
+		c.TokenJSONPaths = []string{"accessToken", "data.accessToken", "data.token"}
+	}
+	if len(c.LabelJSONPaths) == 0 {
+		c.LabelJSONPaths = []string{"email", "data.email"}
+	}
+	if strings.TrimSpace(c.HeaderTemplate) == "" {
+		c.HeaderTemplate = "Bearer {{token}}"
+	}
+	return c
 }
 
 // resolveBearerHeaders builds connector default Headers from bearer_env (fallback).
@@ -313,7 +341,7 @@ func printCurlHints(runtimeBase, agentID, ticketBase string) {
 	if ticketBase == "" {
 		ticketBase = "http://127.0.0.1:18080"
 	}
-	log.Printf("demo ready. try:")
+	log.Printf("baize ready. try:")
 	log.Printf(`  curl -s -X POST %s/v0/runs -H "Content-Type: application/json" -d "{\"agent_id\":\"%s\",\"input\":\"创建一个紧急工单：VPN 挂了\"}"`, runtimeBase, agentID)
 	log.Printf(`  curl -s %s/tickets`, ticketBase)
 }

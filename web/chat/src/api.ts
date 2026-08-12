@@ -56,6 +56,11 @@ async function parseJSON<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
+export async function getUIConfig(): Promise<{ agent_id: string }> {
+  const res = await fetch('/v0/ui-config')
+  return parseJSON<{ agent_id: string }>(res)
+}
+
 export async function createRun(
   agentId: string,
   input: string,

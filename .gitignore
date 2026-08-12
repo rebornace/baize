@@ -20,6 +20,11 @@ _public_export/
 # 本地 LLM / 调试覆盖（含真实 provider 配置）
 configs/demo.local.yaml
 
+# 本地对接的真实系统 OpenAPI（每个环境不同，勿提交）
+examples/miaomiao/
+examples/local/**
+!examples/local/README.md
+
 # Go
 vendor/
 

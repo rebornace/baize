@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/identity"
@@ -67,6 +69,10 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 	for _, route := range routes {
 		route := route
 		name := route.Name
+		needApproval := approval[name]
+		if opts.RequireApprovalMutating && isMutatingMethod(route.Method) {
+			needApproval = true
+		}
 		reg.RegisterMeta(tool.Meta{
 			Spec: llm.ToolSpec{
 				Name:        route.Name,
@@ -117,7 +123,7 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 				}
 			}
 			return out.Content, out.IsError, nil
-		}, approval[name])
+		}, needApproval)
 	}
 	c := store.Connector{
 		ID:              opts.ID,
@@ -128,6 +134,15 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 	}
 	st.UpsertConnector(c)
 	return c, filterInfos(reg, opts.ID), nil
+}
+
+func isMutatingMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
+	}
 }
 
 func filterInfos(reg *tool.Registry, connectorID string) []tool.Info {

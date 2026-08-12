@@ -10,6 +10,7 @@ import {
   listTools,
   resumeRun,
   setDefaultIdentity,
+  getUIConfig,
   type Event,
   type IdentityView,
   type Run,
@@ -17,7 +18,8 @@ import {
   type ToolInfo,
 } from './api'
 
-const AGENT_ID = 'ticket-agent'
+const AGENT_ID_FALLBACK = 'ticket-agent'
+let agentId = ''
 const POLL_MS = 700
 const CONV_KEY = 'baize.conversation_id'
 
@@ -371,7 +373,10 @@ async function sendMessage() {
   setStatus('正在创建运行…')
 
   try {
-    const created = await createRun(AGENT_ID, text, sentConversationId)
+    if (!agentId) {
+      throw new Error('未配置 agent_id，请确认 Runtime 已启动')
+    }
+    const created = await createRun(agentId, text, sentConversationId)
     // 新对话可能已切换 conversationId：忽略过期 createRun 结果，避免污染新会话。
     if (conversationId !== sentConversationId) {
       return
@@ -587,5 +592,17 @@ inputEl.addEventListener('keydown', (e) => {
 })
 
 resetChat()
+void loadUIConfig()
 void loadToolsPanel()
 void loadAccountsPanel()
+
+async function loadUIConfig() {
+  try {
+    const cfg = await getUIConfig()
+    agentId = (cfg.agent_id || '').trim() || AGENT_ID_FALLBACK
+    setStatus(`已连接（agent: ${agentId}）`)
+  } catch (err) {
+    agentId = AGENT_ID_FALLBACK
+    setStatus(`ui-config 不可用，回退 agent: ${agentId}（${String(err)}）`)
+  }
+}

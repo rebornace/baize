@@ -54,11 +54,11 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 	var body io.Reader
 	if route.Method == http.MethodPost || route.Method == http.MethodPut || route.Method == http.MethodPatch {
 		bodyArgs := omitKeys(args, pathKeys)
-		raw, err := json.Marshal(bodyArgs)
+		payload, err := marshalRequestBody(route.BodyKind, bodyArgs)
 		if err != nil {
 			return InvokeResult{}, fmt.Errorf("marshal args: %w", err)
 		}
-		body = bytes.NewReader(raw)
+		body = bytes.NewReader(payload)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, route.Method, url, body)
@@ -142,6 +142,25 @@ func omitKeys(args map[string]any, keys map[string]bool) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func marshalRequestBody(bodyKind string, args map[string]any) ([]byte, error) {
+	switch bodyKind {
+	case "array":
+		items, ok := args[bodyArrayKey]
+		if !ok {
+			return nil, fmt.Errorf("missing body array field %q", bodyArrayKey)
+		}
+		return json.Marshal(items)
+	case "value":
+		v, ok := args["value"]
+		if !ok {
+			return nil, fmt.Errorf("missing body field %q", "value")
+		}
+		return json.Marshal(v)
+	default:
+		return json.Marshal(args)
+	}
 }
 
 func (inv *Invoker) find(name string) (ToolRoute, bool) {

@@ -7,13 +7,14 @@ import (
 
 // RegisterOpts configures OpenAPI connector registration.
 type RegisterOpts struct {
-	ID              string
-	Type            string
-	SpecPath        string
-	BaseURL         string
-	RequireApproval []string
-	Headers         map[string]string
-	Identities      identity.Store         // nil → same as Headers-only behavior
-	Resolver        authresolve.Resolver   // nil → use Headers only
-	Capture         identity.CaptureConfig // ToolNameGlob empty disables capture
+	ID                      string
+	Type                    string
+	SpecPath                string
+	BaseURL                 string
+	RequireApproval         []string
+	RequireApprovalMutating bool // if true, all non-GET/HEAD/OPTIONS tools require HITL
+	Headers                 map[string]string
+	Identities              identity.Store         // nil → same as Headers-only behavior
+	Resolver                authresolve.Resolver   // nil → use Headers only
+	Capture                 identity.CaptureConfig // ToolNameGlob empty disables capture
 }
