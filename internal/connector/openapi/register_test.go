@@ -32,6 +32,17 @@ func TestRegisterConnectorConflictAndReplace(t *testing.T) {
 		t.Fatalf("expected tool_conflict, got %v", err)
 	}
 
+	// Conflict must leave connector A intact (no partial unregister).
+	afterConflict := reg.List()
+	if !hasTool(afterConflict, "create_ticket") || !hasTool(afterConflict, "list_tickets") {
+		t.Fatalf("A tools missing after B conflict: %+v", afterConflict)
+	}
+	for _, info := range afterConflict {
+		if info.ConnectorID != "ticket-a" {
+			t.Fatalf("unexpected tool after B conflict: %+v", info)
+		}
+	}
+
 	// Same id re-register with a different spec: old tools gone, new tools present.
 	specB := writeMinimalSpec(t, "alt_op", "/alt")
 	c, infos, err := openapi.RegisterConnector(st, reg, "ticket-a", "openapi", specB, "http://a2.example", []string{"alt_op"})
@@ -47,6 +58,14 @@ func TestRegisterConnectorConflictAndReplace(t *testing.T) {
 	if !hasTool(infos, "alt_op") {
 		t.Fatalf("expected alt_op after replace: %+v", infos)
 	}
+	alt := findTool(infos, "alt_op")
+	if alt == nil || !alt.RequireApproval {
+		t.Fatalf("alt_op RequireApproval not wired in returned infos: %+v", infos)
+	}
+	listed := findTool(reg.List(), "alt_op")
+	if listed == nil || !listed.RequireApproval || listed.ConnectorID != "ticket-a" {
+		t.Fatalf("alt_op RequireApproval not wired in reg.List: %+v", reg.List())
+	}
 	got, err := st.GetConnector("ticket-a")
 	if err != nil {
 		t.Fatal(err)
@@ -54,15 +73,22 @@ func TestRegisterConnectorConflictAndReplace(t *testing.T) {
 	if got.Spec != specB || got.BaseURL != "http://a2.example" {
 		t.Fatalf("store connector=%+v", got)
 	}
+	if len(got.RequireApproval) != 1 || got.RequireApproval[0] != "alt_op" {
+		t.Fatalf("store RequireApproval round-trip=%v", got.RequireApproval)
+	}
 }
 
 func hasTool(infos []tool.Info, name string) bool {
-	for _, info := range infos {
-		if info.Name == name {
-			return true
+	return findTool(infos, name) != nil
+}
+
+func findTool(infos []tool.Info, name string) *tool.Info {
+	for i := range infos {
+		if infos[i].Name == name {
+			return &infos[i]
 		}
 	}
-	return false
+	return nil
 }
 
 func writeMinimalSpec(t *testing.T, opID, path string) string {
