@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -162,6 +163,80 @@ func TestEngineHITLRejectNoInvoke(t *testing.T) {
 		t.Fatalf("status=%s want failed", got.Status)
 	}
 	assertEventTypes(t, st, r.ID, EventHITLWaiting, EventHITLRejected)
+}
+
+func TestExecuteInjectsConversationID(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	var sawConvID string
+	reg.Register("create_ticket", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		sawConvID = identity.ConversationIDFrom(ctx)
+		return map[string]any{"id": "1"}, false, nil
+	})
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: ag.ID, Input: "创建工单", ConversationID: "c1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if sawConvID != "c1" {
+		t.Fatalf("ConversationIDFrom=%q want c1", sawConvID)
+	}
+}
+
+func TestContinueFromHITLInjectsConversationID(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
+	reg := tool.NewRegistry()
+	var sawConvID string
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		sawConvID = identity.ConversationIDFrom(ctx)
+		return map[string]any{"id": "9"}, false, nil
+	}, true)
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: ag.ID, Input: "创建工单", ConversationID: "c1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = st.AppendEvent(r.ID, store.Event{Type: EventRunStarted})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventLLMToolCall,
+		Data: map[string]any{"id": "c1", "name": "create_ticket", "arguments": map[string]any{"title": "x"}},
+	})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventHITLWaiting,
+		Data: map[string]any{"prompt": "Approve tool create_ticket?", "tool_name": "create_ticket"},
+	})
+	_ = st.UpdateRun(r.ID, store.StatusWaitingHuman, "", "")
+	_ = st.SetHITL(r.ID, &store.HITLPayload{
+		Prompt:    "Approve tool create_ticket?",
+		ToolName:  "create_ticket",
+		Arguments: map[string]any{"title": "x"},
+	})
+
+	eng := &Engine{
+		Store: st,
+		LLM:   &scriptLLM{calls: 1},
+		Tools: reg,
+		Gate:  NewGate(),
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("ContinueFromHITL: %v", err)
+	}
+	if sawConvID != "c1" {
+		t.Fatalf("ConversationIDFrom=%q want c1", sawConvID)
+	}
 }
 
 func TestContinueFromHITLColdApprove(t *testing.T) {

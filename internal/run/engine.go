@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -31,6 +32,7 @@ type Engine struct {
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
+	ctx = e.injectAuthCtx(ctx, runID)
 	if err := e.ensureRunStarted(runID); err != nil {
 		return err
 	}
@@ -45,6 +47,7 @@ func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input 
 // Same-process: prefers Gate.Resume so a blocked Execute continues.
 // After restart (no waiter): reads HITLPayload, applies approve/reject, and continues ReAct.
 func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision) error {
+	ctx = e.injectAuthCtx(ctx, runID)
 	if e.Gate != nil {
 		if err := e.Gate.Resume(runID, d); err == nil {
 			return nil
@@ -246,6 +249,18 @@ func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) e
 	_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
 	_ = e.Store.SetHITL(runID, nil)
 	return nil
+}
+
+func (e *Engine) injectAuthCtx(ctx context.Context, runID string) context.Context {
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		return ctx
+	}
+	ctx = identity.WithConversationID(ctx, runRec.ConversationID)
+	if runRec.IdentityID != "" {
+		ctx = identity.WithForceIdentityID(ctx, runRec.IdentityID)
+	}
+	return ctx
 }
 
 func (e *Engine) ensureRunStarted(runID string) error {
