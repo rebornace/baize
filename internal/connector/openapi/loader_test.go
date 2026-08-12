@@ -136,12 +136,42 @@ func TestLoadToolsPathParamOps(t *testing.T) {
 	if get.Method != http.MethodGet || get.Path != "/tickets/{id}" {
 		t.Fatalf("get_ticket=%+v", get)
 	}
+	assertSchemaHasRequiredProp(t, get.InputSchema, "id", "string")
+	if _, ok := get.InputSchema["properties"].(map[string]any)["status"]; ok {
+		t.Fatalf("get_ticket should not have status: %+v", get.InputSchema)
+	}
+
 	patch, ok := names["update_ticket_status"]
 	if !ok {
 		t.Fatal("update_ticket_status missing")
 	}
 	if patch.Method != http.MethodPatch || patch.Path != "/tickets/{id}" {
 		t.Fatalf("update_ticket_status=%+v", patch)
+	}
+	assertSchemaHasRequiredProp(t, patch.InputSchema, "id", "string")
+	assertSchemaHasRequiredProp(t, patch.InputSchema, "status", "string")
+}
+
+func assertSchemaHasRequiredProp(t *testing.T, schema map[string]any, name, typ string) {
+	t.Helper()
+	if schema == nil {
+		t.Fatalf("schema nil, want prop %q", name)
+	}
+	props, _ := schema["properties"].(map[string]any)
+	prop, _ := props[name].(map[string]any)
+	if prop == nil || prop["type"] != typ {
+		t.Fatalf("prop %q=%v, want type %q in %+v", name, prop, typ, schema)
+	}
+	req, _ := schema["required"].([]any)
+	found := false
+	for _, r := range req {
+		if r == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("required missing %q: %+v", name, schema)
 	}
 }
 

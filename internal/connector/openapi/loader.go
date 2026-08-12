@@ -55,7 +55,7 @@ func LoadTools(specPath string) ([]ToolRoute, error) {
 				Description: desc,
 				Method:      strings.ToUpper(method),
 				Path:        path,
-				InputSchema: requestBodySchema(op),
+				InputSchema: mergeInputSchema(item, op),
 			})
 		}
 	}
@@ -80,6 +80,58 @@ func normalizeOpName(method, path string) string {
 	return strings.ToLower(method) + "_" + base
 }
 
+func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) map[string]any {
+	schema := requestBodySchema(op)
+	props, _ := schema["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+		schema["properties"] = props
+	}
+	required, _ := schema["required"].([]any)
+	requiredSet := map[string]bool{}
+	for _, r := range required {
+		if s, ok := r.(string); ok {
+			requiredSet[s] = true
+		}
+	}
+
+	addPathParams := func(params openapi3.Parameters) {
+		for _, ref := range params {
+			if ref == nil || ref.Value == nil {
+				continue
+			}
+			p := ref.Value
+			if p.In != openapi3.ParameterInPath {
+				continue
+			}
+			prop := map[string]any{"type": "string"}
+			if p.Schema != nil && p.Schema.Value != nil {
+				prop = schemaToMap(p.Schema.Value)
+			}
+			props[p.Name] = prop
+			if p.Required {
+				requiredSet[p.Name] = true
+			}
+		}
+	}
+	if item != nil {
+		addPathParams(item.Parameters)
+	}
+	addPathParams(op.Parameters)
+
+	if len(requiredSet) > 0 {
+		req := make([]any, 0, len(requiredSet))
+		for name := range requiredSet {
+			req = append(req, name)
+		}
+		schema["required"] = req
+	}
+	if schema["type"] == nil {
+		schema["type"] = "object"
+	}
+	return schema
+}
+
 func requestBodySchema(op *openapi3.Operation) map[string]any {
 	if op.RequestBody == nil || op.RequestBody.Value == nil {
 		return map[string]any{
@@ -101,7 +153,11 @@ func requestBodySchema(op *openapi3.Operation) map[string]any {
 			"properties": map[string]any{},
 		}
 	}
-	return schemaToMap(mt.Schema.Value)
+	out := schemaToMap(mt.Schema.Value)
+	if out["properties"] == nil {
+		out["properties"] = map[string]any{}
+	}
+	return out
 }
 
 func schemaToMap(s *openapi3.Schema) map[string]any {
