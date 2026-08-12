@@ -9,6 +9,8 @@ paths:
       responses:
         "200":
           description: ok
+        "400":
+          description: bad request
     post:
       operationId: create_ticket
       requestBody:
@@ -24,3 +26,41 @@ paths:
       responses:
         "201":
           description: created
+        "400":
+          description: bad request
+  /tickets/{id}:
+    get:
+      operationId: get_ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+        "404":
+          description: not found
+    patch:
+      operationId: update_ticket_status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string }
+      responses:
+        "200":
+          description: ok
+        "400":
+          description: bad request
+        "404":
+          description: not found

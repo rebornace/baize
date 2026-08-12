@@ -2,6 +2,7 @@ package openapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -116,5 +117,108 @@ func TestInvokerNon2xxIsError(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatalf("expected IsError, got %+v", res)
+	}
+}
+
+func TestLoadToolsPathParamOps(t *testing.T) {
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]openapi.ToolRoute{}
+	for _, tl := range tools {
+		names[tl.Name] = tl
+	}
+	get, ok := names["get_ticket"]
+	if !ok {
+		t.Fatal("get_ticket missing")
+	}
+	if get.Method != http.MethodGet || get.Path != "/tickets/{id}" {
+		t.Fatalf("get_ticket=%+v", get)
+	}
+	patch, ok := names["update_ticket_status"]
+	if !ok {
+		t.Fatal("update_ticket_status missing")
+	}
+	if patch.Method != http.MethodPatch || patch.Path != "/tickets/{id}" {
+		t.Fatalf("update_ticket_status=%+v", patch)
+	}
+}
+
+func TestInvokerGetTicketByID(t *testing.T) {
+	srv := httptest.NewServer(mockticket.NewHandler())
+	t.Cleanup(srv.Close)
+
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+
+	created, err := inv.Invoke(context.Background(), "create_ticket", map[string]any{
+		"title": "path param get",
+	})
+	if err != nil || created.IsError {
+		t.Fatalf("create: err=%v res=%+v", err, created)
+	}
+	id, _ := created.Content["id"].(string)
+	if id == "" {
+		t.Fatalf("missing id: %v", created.Content)
+	}
+
+	got, err := inv.Invoke(context.Background(), "get_ticket", map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.IsError {
+		t.Fatalf("get IsError: %+v", got)
+	}
+	if got.Content["id"] != id {
+		t.Fatalf("content=%v", got.Content)
+	}
+}
+
+func TestInvokerPatchTicketStatus(t *testing.T) {
+	var sawPath string
+	var sawBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if r.Method == http.MethodPatch {
+			_ = json.NewDecoder(r.Body).Decode(&sawBody)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"ticket_1","status":"closed"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "update_ticket_status",
+			Method: http.MethodPatch,
+			Path:   "/tickets/{id}",
+		}},
+	}
+	res, err := inv.Invoke(context.Background(), "update_ticket_status", map[string]any{
+		"id":     "ticket_1",
+		"status": "closed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error: %+v", res)
+	}
+	if sawPath != "/tickets/ticket_1" {
+		t.Fatalf("path=%q, want /tickets/ticket_1", sawPath)
+	}
+	if _, hasID := sawBody["id"]; hasID {
+		t.Fatalf("path param id must not be in body: %v", sawBody)
+	}
+	if sawBody["status"] != "closed" {
+		t.Fatalf("body=%v", sawBody)
 	}
 }

@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 )
+
+var pathParamPattern = regexp.MustCompile(`\{([^}]+)\}`)
 
 // InvokeResult is the normalized result of an HTTP tool call.
 type InvokeResult struct {
@@ -31,10 +34,16 @@ func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{}, fmt.Errorf("unknown tool: %s", toolName)
 	}
 
-	url := strings.TrimRight(inv.BaseURL, "/") + route.Path
+	path, pathKeys, err := expandPath(route.Path, args)
+	if err != nil {
+		return InvokeResult{}, err
+	}
+	url := strings.TrimRight(inv.BaseURL, "/") + path
+
 	var body io.Reader
 	if route.Method == http.MethodPost || route.Method == http.MethodPut || route.Method == http.MethodPatch {
-		raw, err := json.Marshal(args)
+		bodyArgs := omitKeys(args, pathKeys)
+		raw, err := json.Marshal(bodyArgs)
 		if err != nil {
 			return InvokeResult{}, fmt.Errorf("marshal args: %w", err)
 		}
@@ -69,6 +78,39 @@ func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	return InvokeResult{Content: content, IsError: false}, nil
+}
+
+func expandPath(tmpl string, args map[string]any) (string, map[string]bool, error) {
+	keys := map[string]bool{}
+	var missing []string
+	path := pathParamPattern.ReplaceAllStringFunc(tmpl, func(m string) string {
+		name := m[1 : len(m)-1]
+		keys[name] = true
+		v, ok := args[name]
+		if !ok || v == nil {
+			missing = append(missing, name)
+			return m
+		}
+		return fmt.Sprint(v)
+	})
+	if len(missing) > 0 {
+		return "", nil, fmt.Errorf("missing path param: %s", strings.Join(missing, ", "))
+	}
+	return path, keys, nil
+}
+
+func omitKeys(args map[string]any, keys map[string]bool) map[string]any {
+	if len(keys) == 0 {
+		return args
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		if keys[k] {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (inv *Invoker) find(name string) (ToolRoute, bool) {
