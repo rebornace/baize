@@ -1,0 +1,26 @@
+openapi: 3.0.3
+info:
+  title: Mock Ticket API
+  version: 0.1.0
+paths:
+  /tickets:
+    get:
+      operationId: list_tickets
+      responses:
+        "200":
+          description: ok
+    post:
+      operationId: create_ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                priority: { type: string }
+      responses:
+        "201":
+          description: created
