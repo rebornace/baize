@@ -705,7 +705,7 @@ func TestResumeNotWaitingConflict(t *testing.T) {
 	h := srv.Handler()
 
 	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
-	r, err := st.CreateRun("a", "x")
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}

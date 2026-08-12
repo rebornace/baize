@@ -66,11 +66,19 @@ func (s *Memory) GetConnector(id string) (Connector, error) {
 	return c, nil
 }
 
-func (s *Memory) CreateRun(agentID, input string) (*Run, error) {
+func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := "run_" + uuid.NewString()
-	r := &Run{ID: id, AgentID: agentID, Input: input, Status: StatusRunning, CreatedAt: time.Now().UTC()}
+	r := &Run{
+		ID:             id,
+		AgentID:        in.AgentID,
+		Input:          in.Input,
+		Status:         StatusRunning,
+		CreatedAt:      time.Now().UTC(),
+		ConversationID: in.ConversationID,
+		IdentityID:     in.IdentityID,
+	}
 	s.runs[id] = r
 	s.events[id] = nil
 	return r, nil

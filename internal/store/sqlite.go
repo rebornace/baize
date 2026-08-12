@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,7 +17,8 @@ import (
 const sqliteSchema = `
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
-  output TEXT, error TEXT, created_at TEXT, hitl_json TEXT
+  output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
+  conversation_id TEXT, identity_id TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,11 +50,35 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := migrateRunsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs columns: %w", err)
+	}
 	return &SQLite{
 		db:         db,
 		agents:     map[string]Agent{},
 		connectors: map[string]Connector{},
 	}, nil
+}
+
+// migrateRunsColumns adds conversation_id / identity_id to existing DBs.
+// Duplicate-column errors from ALTER are ignored.
+func migrateRunsColumns(db *sql.DB) error {
+	for _, col := range []string{"conversation_id", "identity_id"} {
+		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
+		if err == nil || isDuplicateColumnErr(err) {
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column")
 }
 
 // Close closes the underlying database.
@@ -92,20 +118,23 @@ func (s *SQLite) GetConnector(id string) (Connector, error) {
 	return c, nil
 }
 
-func (s *SQLite) CreateRun(agentID, input string) (*Run, error) {
+func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 	id := "run_" + uuid.NewString()
 	now := time.Now().UTC()
 	r := &Run{
-		ID:        id,
-		AgentID:   agentID,
-		Input:     input,
-		Status:    StatusRunning,
-		CreatedAt: now,
+		ID:             id,
+		AgentID:        in.AgentID,
+		Input:          in.Input,
+		Status:         StatusRunning,
+		CreatedAt:      now,
+		ConversationID: in.ConversationID,
+		IdentityID:     in.IdentityID,
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), r.CreatedAt.Format(time.RFC3339Nano),
+		r.ConversationID, r.IdentityID,
 	)
 	if err != nil {
 		return nil, err
@@ -116,10 +145,11 @@ func (s *SQLite) CreateRun(agentID, input string) (*Run, error) {
 func (s *SQLite) GetRun(id string) (*Run, error) {
 	var r Run
 	var status, createdAt string
+	var conversationID, identityID sql.NullString
 	err := s.db.QueryRow(
-		`SELECT id, agent_id, input, status, output, error, created_at FROM runs WHERE id = ?`,
+		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id FROM runs WHERE id = ?`,
 		id,
-	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt)
+	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("run not found")
 	}
@@ -127,6 +157,12 @@ func (s *SQLite) GetRun(id string) (*Run, error) {
 		return nil, err
 	}
 	r.Status = Status(status)
+	if conversationID.Valid {
+		r.ConversationID = conversationID.String
+	}
+	if identityID.Valid {
+		r.IdentityID = identityID.String
+	}
 	ts, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		ts, err = time.Parse(time.RFC3339, createdAt)

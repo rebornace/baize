@@ -193,7 +193,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runRec, err := s.Store.CreateRun(body.AgentID, body.Input)
+	runRec, err := s.Store.CreateRun(store.CreateRunInput{AgentID: body.AgentID, Input: body.Input})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

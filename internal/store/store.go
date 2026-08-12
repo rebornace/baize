@@ -32,13 +32,23 @@ type Event struct {
 }
 
 type Run struct {
-	ID        string    `json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Input     string    `json:"input"`
-	Status    Status    `json:"status"`
-	Output    string    `json:"output,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	AgentID        string    `json:"agent_id"`
+	Input          string    `json:"input"`
+	Status         Status    `json:"status"`
+	Output         string    `json:"output,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	ConversationID string    `json:"conversation_id,omitempty"`
+	IdentityID     string    `json:"identity_id,omitempty"`
+}
+
+// CreateRunInput is the input for creating a new run.
+type CreateRunInput struct {
+	AgentID        string
+	Input          string
+	ConversationID string
+	IdentityID     string
 }
 
 type HITLPayload struct {
@@ -53,7 +63,7 @@ type Store interface {
 	GetAgent(id string) (Agent, error)
 	UpsertConnector(Connector)
 	GetConnector(id string) (Connector, error)
-	CreateRun(agentID, input string) (*Run, error)
+	CreateRun(in CreateRunInput) (*Run, error)
 	GetRun(id string) (*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
 	AppendEvent(runID string, ev Event) error

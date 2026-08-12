@@ -32,7 +32,7 @@ func TestEngineReActToolThenMessage(t *testing.T) {
 	})
 
 	ag := agent.Def{ID: "ticket-agent", System: "you are a ticket helper"}
-	r, err := st.CreateRun(ag.ID, "创建工单")
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestEngineHITLApproveInvokesOnce(t *testing.T) {
 	}, true)
 
 	ag := agent.Def{ID: "ticket-agent", System: "helper"}
-	r, err := st.CreateRun(ag.ID, "创建工单")
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestEngineHITLRejectNoInvoke(t *testing.T) {
 	}, true)
 
 	ag := agent.Def{ID: "ticket-agent", System: "helper"}
-	r, err := st.CreateRun(ag.ID, "创建工单")
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestContinueFromHITLColdApprove(t *testing.T) {
 	}, true)
 
 	ag := agent.Def{ID: "ticket-agent", System: "helper"}
-	r, err := st.CreateRun(ag.ID, "创建工单")
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单"})
 	if err != nil {
 		t.Fatal(err)
 	}

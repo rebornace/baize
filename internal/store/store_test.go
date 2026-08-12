@@ -8,7 +8,7 @@ import (
 
 func TestCreateAndGetRun(t *testing.T) {
 	s := store.NewMemory()
-	r, err := s.CreateRun("ticket-agent", "创建工单")
+	r, err := s.CreateRun(store.CreateRunInput{AgentID: "ticket-agent", Input: "创建工单"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,13 +26,30 @@ func TestCreateAndGetRun(t *testing.T) {
 	}
 }
 
+func TestCreateRunPersistsConversationAndIdentity(t *testing.T) {
+	s := store.NewMemory()
+	r, err := s.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "hi", ConversationID: "conv_1", IdentityID: "idt_1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ConversationID != "conv_1" || got.IdentityID != "idt_1" {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestStatusWaitingHuman(t *testing.T) {
 	if store.StatusWaitingHuman != "waiting_human" {
 		t.Fatalf("StatusWaitingHuman=%q", store.StatusWaitingHuman)
 	}
 
 	s := store.NewMemory()
-	r, err := s.CreateRun("ticket-agent", "需要审批")
+	r, err := s.CreateRun(store.CreateRunInput{AgentID: "ticket-agent", Input: "需要审批"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +67,7 @@ func TestStatusWaitingHuman(t *testing.T) {
 
 func TestSetAndGetHITL(t *testing.T) {
 	s := store.NewMemory()
-	r, err := s.CreateRun("ticket-agent", "HITL")
+	r, err := s.CreateRun(store.CreateRunInput{AgentID: "ticket-agent", Input: "HITL"})
 	if err != nil {
 		t.Fatal(err)
 	}
