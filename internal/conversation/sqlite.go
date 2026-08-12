@@ -21,11 +21,20 @@ CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id
 `
 
 // SQLiteStore persists conversation messages in SQLite.
+//
+// Callers must configure the shared *sql.DB for serialized access before OpenSQLite:
+// SetMaxOpenConns(1), SetMaxIdleConns(1), and PRAGMA busy_timeout (see store.OpenSQLite).
+// Without these settings, concurrent writers may hit "database is locked".
 type SQLiteStore struct {
 	db *sql.DB
 }
 
+var _ Store = (*SQLiteStore)(nil)
+
 // OpenSQLite creates a SQLiteStore on db, ensuring the messages schema exists.
+//
+// db must already use MaxOpenConns(1) and busy_timeout, or be the same *sql.DB opened
+// by store.OpenSQLite. OpenSQLite does not apply connection-pool or pragma settings.
 func OpenSQLite(db *sql.DB) (*SQLiteStore, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is nil")
