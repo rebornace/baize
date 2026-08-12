@@ -429,6 +429,41 @@ func TestExecuteInjectsConversationHistory(t *testing.T) {
 	}
 }
 
+// TestExecuteRespectsMaxMessagesWindow: only the most recent MaxMessages
+// history entries are injected into the LLM prompt.
+func TestExecuteRespectsMaxMessagesWindow(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "旧问题"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "旧回答"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "近问题"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "近回答"})
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "本轮回答"}
+	}}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 2}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "本轮问题", ConversationID: "conv1"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "本轮问题"); err != nil {
+		t.Fatal(err)
+	}
+	// expect: system, 近问题, 近回答, 本轮问题 — not 旧*
+	if len(saw) != 4 {
+		t.Fatalf("len(saw)=%d want 4; saw=%+v", len(saw), saw)
+	}
+	if saw[1].Content != "近问题" || saw[2].Content != "近回答" || saw[3].Content != "本轮问题" {
+		t.Fatalf("window not applied: %+v", saw)
+	}
+	for _, m := range saw {
+		if m.Content == "旧问题" || m.Content == "旧回答" {
+			t.Fatalf("old messages leaked into prompt: %+v", saw)
+		}
+	}
+}
+
 // TestExecuteDedupCurrentInput: when the API has already appended the current
 // user input to the message store before calling Execute, the engine must not
 // append it a second time.

@@ -262,6 +262,21 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				Type: run.EventLLMError,
 				Data: map[string]any{"error": err.Error()},
 			})
+			// Engine may have returned before recordTerminalMessage (e.g. early
+			// failure while still running). Mirror its failed-note format here.
+			if s.Messages != nil && cur.ConversationID != "" {
+				note := strings.TrimSpace(err.Error())
+				if note == "" {
+					note = "运行失败"
+				} else {
+					note = "运行失败：" + note
+				}
+				_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
+					Role:    conversation.RoleSystemNote,
+					Content: note,
+					RunID:   runID,
+				})
+			}
 		}
 	}(runRec.ID, body.Input, def)
 

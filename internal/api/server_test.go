@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1193,5 +1194,62 @@ func TestPostRunNoMessageStoreSkipsAppend(t *testing.T) {
 	}
 	if listed == nil || len(listed) != 0 {
 		t.Fatalf("expected empty non-nil array, got %+v", listed)
+	}
+}
+
+// failLeaveRunningRunner returns an error without updating run status, so the
+// API Execute兜底 path marks failed and writes system_note.
+type failLeaveRunningRunner struct{}
+
+func (f *failLeaveRunningRunner) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
+	return fmt.Errorf("boom before status update")
+}
+
+func (f *failLeaveRunningRunner) ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error {
+	return nil
+}
+
+func TestPostRunAPIFallbackWritesSystemNote(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	msgStore := conversation.NewMemoryStore()
+	srv := api.NewServer(st, reg, &failLeaveRunningRunner{})
+	srv.Messages = msgStore
+	h := srv.Handler()
+
+	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
+
+	postRun := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{
+			"agent_id":        "a",
+			"input":           "hello",
+			"conversation_id": "conv_fail",
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, postRun)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var note *conversation.Message
+	for time.Now().Before(deadline) {
+		msgs := msgStore.List("conv_fail")
+		for i := range msgs {
+			if msgs[i].Role == conversation.RoleSystemNote {
+				note = &msgs[i]
+				break
+			}
+		}
+		if note != nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if note == nil {
+		t.Fatalf("expected system_note after API fallback; msgs=%+v", msgStore.List("conv_fail"))
+	}
+	if !strings.HasPrefix(note.Content, "运行失败：") || !strings.Contains(note.Content, "boom before status update") {
+		t.Fatalf("note.Content=%q", note.Content)
 	}
 }

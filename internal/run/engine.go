@@ -36,7 +36,7 @@ type Engine struct {
 	// Execute injects a windowed history into the LLM prompt and the engine
 	// records terminal assistant / system_note messages on succeeded / failed.
 	Messages    conversation.Store
-	MaxMessages int // conversation window size; <=0 = unlimited
+	MaxMessages int // conversation window size; config Load defaults <=0 to 40
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {

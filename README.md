@@ -146,7 +146,7 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
 
 With the default SQLite driver, Baize persists conversation messages and captured identities to `data/baize.db` (configurable via `store.sqlite_path`). Restarting the Runtime restores prior turns and signed-in accounts for each `conversation_id`.
 
-- `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Set `0` for unlimited.
+- `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Values `<=0` are normalized to `40` on load.
 - Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API.
 - `data/baize.db` is a runtime artifact; do not commit it to git (the default `.gitignore` already excludes `data/`).
 
