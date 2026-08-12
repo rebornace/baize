@@ -141,6 +141,7 @@ func newAPIServer(cfg config.Config) (*api.Server, error) {
 		Store:    st,
 		LLM:      provider,
 		Tools:    reg,
+		Gate:     run.NewGate(),
 		MaxSteps: cfg.Run.MaxSteps,
 	}
 	return api.NewServer(st, reg, engine), nil
@@ -174,7 +175,8 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) er
 	for _, route := range routes {
 		route := route
 		name := route.Name
-		reg.RegisterSpec(llm.ToolSpec{
+		requireApproval := name == "create_ticket"
+		reg.RegisterSpecApproved(llm.ToolSpec{
 			Name:        route.Name,
 			Description: route.Description,
 			InputSchema: route.InputSchema,
@@ -184,7 +186,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) er
 				return nil, true, err
 			}
 			return res.Content, res.IsError, nil
-		})
+		}, requireApproval)
 	}
 	return nil
 }

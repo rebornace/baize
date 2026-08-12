@@ -205,20 +205,30 @@ func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) e
 		ToolName:  tc.Name,
 		Arguments: tc.Arguments,
 	}
+
+	// Arm the waiter before advertising waiting_human so resume cannot miss it.
+	ch, err := e.Gate.BeginWait(runID)
+	if err != nil {
+		return err
+	}
+	defer e.Gate.EndWait(runID)
+
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventHITLWaiting,
 		Data: map[string]any{
-			"prompt":     payload.Prompt,
-			"tool_name":  payload.ToolName,
-			"arguments":  payload.Arguments,
+			"prompt":    payload.Prompt,
+			"tool_name": payload.ToolName,
+			"arguments": payload.Arguments,
 		},
 	})
 	_ = e.Store.UpdateRun(runID, store.StatusWaitingHuman, "", "")
 	_ = e.Store.SetHITL(runID, payload)
 
-	d, err := e.Gate.Wait(ctx, runID)
-	if err != nil {
-		return err
+	var d Decision
+	select {
+	case d = <-ch:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	if !d.Approve {
 		_ = e.Store.AppendEvent(runID, store.Event{

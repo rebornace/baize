@@ -24,26 +24,39 @@ func NewGate() *Gate {
 	return &Gate{waiters: make(map[string]chan Decision)}
 }
 
-// Wait blocks until Resume delivers a decision for runID, or ctx is done.
-func (g *Gate) Wait(ctx context.Context, runID string) (Decision, error) {
+// BeginWait registers a waiter channel for runID. Caller must EndWait.
+// Register before advertising waiting_human so Resume cannot miss the channel.
+func (g *Gate) BeginWait(runID string) (<-chan Decision, error) {
 	if g == nil {
-		return Decision{}, fmt.Errorf("hitl: nil gate")
+		return nil, fmt.Errorf("hitl: nil gate")
 	}
 	ch := make(chan Decision, 1)
-
 	g.mu.Lock()
+	defer g.mu.Unlock()
 	if _, exists := g.waiters[runID]; exists {
-		g.mu.Unlock()
-		return Decision{}, fmt.Errorf("hitl: already waiting for %s", runID)
+		return nil, fmt.Errorf("hitl: already waiting for %s", runID)
 	}
 	g.waiters[runID] = ch
-	g.mu.Unlock()
+	return ch, nil
+}
 
-	defer func() {
-		g.mu.Lock()
-		delete(g.waiters, runID)
-		g.mu.Unlock()
-	}()
+// EndWait removes the waiter for runID.
+func (g *Gate) EndWait(runID string) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	delete(g.waiters, runID)
+	g.mu.Unlock()
+}
+
+// Wait blocks until Resume delivers a decision for runID, or ctx is done.
+func (g *Gate) Wait(ctx context.Context, runID string) (Decision, error) {
+	ch, err := g.BeginWait(runID)
+	if err != nil {
+		return Decision{}, err
+	}
+	defer g.EndWait(runID)
 
 	select {
 	case d := <-ch:

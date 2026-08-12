@@ -9,13 +9,15 @@ import (
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
 
-// Runner executes a run synchronously (implemented by run.Engine).
+// Runner executes and resumes runs (implemented by run.Engine).
 type Runner interface {
 	Execute(ctx context.Context, runID string, ag agent.Def, input string) error
+	ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error
 }
 
 type Server struct {
@@ -45,6 +47,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
+	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
 }
@@ -122,6 +125,15 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Drop previous tools for this connector before re-registering.
+	if prev, err := s.Store.GetConnector(id); err == nil && prev.Spec != "" {
+		if oldRoutes, err := openapi.LoadTools(prev.Spec); err == nil {
+			for _, route := range oldRoutes {
+				s.Registry.Unregister(route.Name)
+			}
+		}
+	}
+
 	c := store.Connector{
 		ID:      id,
 		Type:    body.Type,
@@ -134,7 +146,8 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	for _, route := range routes {
 		route := route
 		name := route.Name
-		s.Registry.RegisterSpec(llm.ToolSpec{
+		requireApproval := name == "create_ticket"
+		s.Registry.RegisterSpecApproved(llm.ToolSpec{
 			Name:        route.Name,
 			Description: route.Description,
 			InputSchema: route.InputSchema,
@@ -144,7 +157,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 				return nil, true, err
 			}
 			return res.Content, res.IsError, nil
-		})
+		}, requireApproval)
 	}
 
 	writeJSON(w, http.StatusOK, c)
@@ -170,16 +183,60 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := s.Store.CreateRun(body.AgentID, body.Input)
+	runRec, err := s.Store.CreateRun(body.AgentID, body.Input)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 
 	def := agent.Def{ID: ag.ID, System: ag.System}
-	_ = s.Runner.Execute(r.Context(), run.ID, def, body.Input)
+	go func() {
+		_ = s.Runner.Execute(context.Background(), runRec.ID, def, body.Input)
+	}()
 
-	updated, err := s.Store.GetRun(run.ID)
+	updated, err := s.Store.GetRun(runRec.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"run_id": updated.ID,
+		"status": updated.Status,
+	})
+}
+
+func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	runRec, err := s.Store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if runRec.Status != store.StatusWaitingHuman {
+		writeError(w, http.StatusConflict, "not_waiting", "run is not waiting_human")
+		return
+	}
+
+	var body struct {
+		Decision string `json:"decision"`
+		Comment  string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	approve := body.Decision == "approve"
+	if body.Decision != "approve" && body.Decision != "reject" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "decision must be approve or reject")
+		return
+	}
+
+	_ = s.Runner.ContinueFromHITL(r.Context(), id, run.Decision{
+		Approve: approve,
+		Comment: body.Comment,
+	})
+
+	updated, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -192,12 +249,12 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	run, err := s.Store.GetRun(id)
+	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, run)
+	writeJSON(w, http.StatusOK, runRec)
 }
 
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {

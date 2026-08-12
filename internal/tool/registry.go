@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/rebornace/baize/internal/llm"
 )
@@ -17,6 +18,7 @@ type entry struct {
 }
 
 type Registry struct {
+	mu    sync.RWMutex
 	tools map[string]entry
 }
 
@@ -27,10 +29,7 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Register(name string, inv Invoker) {
-	r.tools[name] = entry{
-		spec:    llm.ToolSpec{Name: name},
-		invoker: inv,
-	}
+	r.RegisterSpecApproved(llm.ToolSpec{Name: name}, inv, false)
 }
 
 func (r *Registry) RegisterSpec(spec llm.ToolSpec, inv Invoker) {
@@ -39,10 +38,21 @@ func (r *Registry) RegisterSpec(spec llm.ToolSpec, inv Invoker) {
 
 // RegisterSpecApproved registers a tool and whether Invoke requires HITL approval.
 func (r *Registry) RegisterSpecApproved(spec llm.ToolSpec, inv Invoker, requireApproval bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.tools[spec.Name] = entry{spec: spec, invoker: inv, requireApproval: requireApproval}
 }
 
+// Unregister removes a tool by name. No-op if missing.
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.tools, name)
+}
+
 func (r *Registry) Specs() []llm.ToolSpec {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	names := make([]string, 0, len(r.tools))
 	for name := range r.tools {
 		names = append(names, name)
@@ -57,12 +67,16 @@ func (r *Registry) Specs() []llm.ToolSpec {
 
 // RequiresApproval reports whether the named tool must be approved before Invoke.
 func (r *Registry) RequiresApproval(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	e, ok := r.tools[name]
 	return ok && e.requireApproval
 }
 
 func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any) (map[string]any, bool, error) {
+	r.mu.RLock()
 	e, ok := r.tools[name]
+	r.mu.RUnlock()
 	if !ok {
 		return nil, false, fmt.Errorf("unknown tool: %s", name)
 	}
