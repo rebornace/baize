@@ -6,10 +6,18 @@
 
 要求：Go 1.22+
 
+若默认模块代理（`proxy.golang.org`）无法访问，先设置：
+
+```powershell
+$env:GOPROXY = "https://goproxy.cn,direct"
+$env:GOSUMDB = "sum.golang.google.cn"
+```
+
 ```bash
 go run ./cmd/baize demo
 ```
 
+若提示端口占用，先结束占用 `:8080` / `:18080` 的旧 `baize` 进程后再启动。
 默认会在本机拉起 mock 工单服务（`:18080`）与 Runtime（`:8080`），LLM 使用内置 `mock`（无需 API Key）。
 
 ### 创建工单
