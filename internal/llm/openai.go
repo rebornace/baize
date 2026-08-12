@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // OpenAI is an openai_compatible Provider (chat/completions + tool_calls).
@@ -21,10 +22,13 @@ type OpenAI struct {
 
 func NewOpenAI(baseURL, apiKey, model string) *OpenAI {
 	return &OpenAI{
-		BaseURL:    strings.TrimRight(baseURL, "/"),
-		APIKey:     apiKey,
-		Model:      model,
-		HTTPClient: http.DefaultClient,
+		BaseURL: strings.TrimRight(baseURL, "/"),
+		APIKey:  apiKey,
+		Model:   model,
+		HTTPClient: &http.Client{
+			// Avoid runs stuck in "running" forever when the provider hangs.
+			Timeout: 120 * time.Second,
+		},
 	}
 }
 

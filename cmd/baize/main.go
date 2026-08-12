@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/rebornace/baize/internal/bootstrap"
 	"github.com/rebornace/baize/internal/config"
-	"github.com/rebornace/baize/internal/demo"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := demo.Run(cfg); err != nil {
+		if err := bootstrap.Run(cfg); err != nil {
 			log.Fatal(err)
 		}
 	case "serve":
@@ -35,7 +35,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := demo.Serve(cfg); err != nil {
+		if err := bootstrap.Serve(cfg); err != nil {
 			log.Fatal(err)
 		}
 	default:
@@ -46,9 +46,9 @@ func main() {
 
 // localConfigPath prefers local override for real-system debugging without touching CI defaults.
 func localConfigPath() string {
-	const local = "configs/demo.local.yaml"
+	const local = "configs/default.local.yaml"
 	if _, err := os.Stat(local); err == nil {
 		return local
 	}
-	return "configs/demo.yaml"
+	return "configs/default.yaml"
 }

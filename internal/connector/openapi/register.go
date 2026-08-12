@@ -73,6 +73,11 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 		if opts.RequireApprovalMutating && isMutatingMethod(route.Method) {
 			needApproval = true
 		}
+		// Login/capture tools are auth bootstrap, not business writes — skip blanket HITL.
+		// Explicit require_approval entries still force approval when listed.
+		if !approval[name] && identity.MatchToolName(opts.Capture.ToolNameGlob, name) {
+			needApproval = false
+		}
 		reg.RegisterMeta(tool.Meta{
 			Spec: llm.ToolSpec{
 				Name:        route.Name,

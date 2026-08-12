@@ -3,5 +3,5 @@ package agent
 type Def struct {
 	ID           string
 	System       string
-	ConnectorIDs []string // demo 可用单一 connector
+	ConnectorIDs []string // starter sample may use a single connector
 }

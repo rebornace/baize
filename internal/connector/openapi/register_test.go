@@ -42,7 +42,7 @@ func TestRegisterWithOptsResolveAndCapture(t *testing.T) {
 	reg := tool.NewRegistry()
 	envAuth := "Bearer ENV_TOKEN"
 	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
-		ID:       "auth-demo",
+		ID:       "auth-sample",
 		Type:     "openapi",
 		SpecPath: spec,
 		BaseURL:  srv.URL,
@@ -246,6 +246,31 @@ func TestRegisterConnectorEmptyOpsInvalidSpec(t *testing.T) {
 	}
 	if got.Spec != specA || got.BaseURL != "http://a.example" {
 		t.Fatalf("store overwritten after empty-ops: %+v", got)
+	}
+}
+
+func TestRegisterMutatingSkipsLoginCapture(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	spec := writeLoginGetMeSpec(t)
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:                      "auth-sample",
+		Type:                    "openapi",
+		SpecPath:                spec,
+		BaseURL:                 "http://example.invalid",
+		RequireApprovalMutating: true,
+		Capture: identity.CaptureConfig{
+			ToolNameGlob: "*login*",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.RequiresApproval("login") {
+		t.Fatal("login matched by capture glob must not require HITL under require_approval_mutating")
+	}
+	if reg.RequiresApproval("getMe") {
+		t.Fatal("GET getMe must not require approval")
 	}
 }
 

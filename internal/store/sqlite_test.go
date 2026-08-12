@@ -21,6 +21,56 @@ func TestSQLiteCreatesParentDir(t *testing.T) {
 	}
 }
 
+func TestSQLiteConcurrentCreateAndAppend(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "concurrent.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	const n = 32
+	errCh := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			r, err := s.CreateRun(store.CreateRunInput{AgentID: "a", Input: "hi"})
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if err := s.AppendEvent(r.ID, store.Event{Type: "run.started"}); err != nil {
+				errCh <- err
+				return
+			}
+			evs, err := s.ListEvents(r.ID)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if len(evs) == 0 {
+				errCh <- errEmptyEvents
+				return
+			}
+			errCh <- nil
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("concurrent sqlite op: %v", err)
+		}
+	}
+}
+
+var errEmptyEvents = errString("expected run.started event")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
 func TestSQLitePersistenceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baize.db")
 
