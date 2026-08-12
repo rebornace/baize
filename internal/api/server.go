@@ -19,13 +19,13 @@ type Runner interface {
 }
 
 type Server struct {
-	Store    *store.Store
+	Store    store.Store
 	Registry *tool.Registry
 	Runner   Runner
 	mux      *http.ServeMux
 }
 
-func NewServer(st *store.Store, reg *tool.Registry, runner Runner) *Server {
+func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	s := &Server{
 		Store:    st,
 		Registry: reg,

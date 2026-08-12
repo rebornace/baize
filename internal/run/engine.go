@@ -20,7 +20,7 @@ const (
 )
 
 type Engine struct {
-	Store    *store.Store
+	Store    store.Store
 	LLM      llm.Provider
 	Tools    *tool.Registry
 	MaxSteps int // default 8

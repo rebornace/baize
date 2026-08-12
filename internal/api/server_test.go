@@ -17,7 +17,7 @@ import (
 )
 
 type fakeRunner struct {
-	store *store.Store
+	store store.Store
 }
 
 func (f *fakeRunner) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
@@ -26,7 +26,7 @@ func (f *fakeRunner) Execute(ctx context.Context, runID string, ag agent.Def, in
 }
 
 func TestHealthz(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 
@@ -47,7 +47,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestRunSucceedsWithFakeRunner(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 	h := srv.Handler()
@@ -109,7 +109,7 @@ func TestRunSucceedsWithFakeRunner(t *testing.T) {
 }
 
 func TestUnknownAgent(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 
@@ -160,7 +160,7 @@ paths:
 		t.Fatal(err)
 	}
 
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 

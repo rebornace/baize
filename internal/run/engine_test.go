@@ -23,7 +23,7 @@ func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []ll
 }
 
 func TestEngineReActToolThenMessage(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	reg.Register("create_ticket", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
 		return map[string]any{"id": "1"}, false, nil

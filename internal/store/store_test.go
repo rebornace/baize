@@ -7,7 +7,7 @@ import (
 )
 
 func TestCreateAndGetRun(t *testing.T) {
-	s := store.New()
+	s := store.NewMemory()
 	r, err := s.CreateRun("ticket-agent", "创建工单")
 	if err != nil {
 		t.Fatal(err)
@@ -23,5 +23,80 @@ func TestCreateAndGetRun(t *testing.T) {
 	evs, _ := s.ListEvents(r.ID)
 	if len(evs) != 1 || evs[0].Type != "run.started" {
 		t.Fatalf("events=%+v", evs)
+	}
+}
+
+func TestStatusWaitingHuman(t *testing.T) {
+	if store.StatusWaitingHuman != "waiting_human" {
+		t.Fatalf("StatusWaitingHuman=%q", store.StatusWaitingHuman)
+	}
+
+	s := store.NewMemory()
+	r, err := s.CreateRun("ticket-agent", "需要审批")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateRun(r.ID, store.StatusWaitingHuman, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.StatusWaitingHuman {
+		t.Fatalf("status=%q want waiting_human", got.Status)
+	}
+}
+
+func TestSetAndGetHITL(t *testing.T) {
+	s := store.NewMemory()
+	r, err := s.CreateRun("ticket-agent", "HITL")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	payload := &store.HITLPayload{
+		Prompt:   "确认创建工单？",
+		ToolName: "create_ticket",
+		Arguments: map[string]any{
+			"title":    "VPN 故障",
+			"priority": "high",
+		},
+	}
+	if err := s.SetHITL(r.ID, payload); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetHITL(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("expected HITL payload")
+	}
+	if got.Prompt != payload.Prompt || got.ToolName != payload.ToolName {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Arguments["title"] != "VPN 故障" || got.Arguments["priority"] != "high" {
+		t.Fatalf("arguments=%+v", got.Arguments)
+	}
+
+	if err := s.SetHITL(r.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := s.GetHITL(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared != nil {
+		t.Fatalf("expected nil after clear, got %+v", cleared)
+	}
+}
+
+func TestGetHITLMissingRun(t *testing.T) {
+	s := store.NewMemory()
+	_, err := s.GetHITL("run_missing")
+	if err == nil {
+		t.Fatal("expected error for missing run")
 	}
 }

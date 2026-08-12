@@ -128,7 +128,7 @@ func newAPIServer(cfg config.Config) (*api.Server, error) {
 		return nil, err
 	}
 
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 
 	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
@@ -146,7 +146,7 @@ func newAPIServer(cfg config.Config) (*api.Server, error) {
 	return api.NewServer(st, reg, engine), nil
 }
 
-func registerConnector(st *store.Store, reg *tool.Registry, cfg config.Config) error {
+func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) error {
 	typ := cfg.Connector.Type
 	if typ == "" {
 		typ = "openapi"
