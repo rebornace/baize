@@ -230,7 +230,9 @@ func newLLM(cfg config.Config) (llm.Provider, error) {
 		if env == "" {
 			env = "BAIZE_API_KEY"
 		}
-		return llm.NewOpenAI(cfg.LLM.BaseURL, os.Getenv(env), cfg.LLM.Model), nil
+		p := llm.NewOpenAI(cfg.LLM.BaseURL, os.Getenv(env), cfg.LLM.Model)
+		p.DisableThinking = cfg.LLM.DisableThinking
+		return p, nil
 	default:
 		return nil, fmt.Errorf("unknown llm.provider: %s", cfg.LLM.Provider)
 	}

@@ -12,10 +12,11 @@ import (
 
 // OpenAI is an openai_compatible Provider (chat/completions + tool_calls).
 type OpenAI struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	HTTPClient *http.Client
+	BaseURL         string
+	APIKey          string
+	Model           string
+	DisableThinking bool
+	HTTPClient      *http.Client
 }
 
 func NewOpenAI(baseURL, apiKey, model string) *OpenAI {
@@ -49,6 +50,10 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	}
 	if len(tools) > 0 {
 		reqBody.Tools = toOpenAITools(tools)
+	}
+	// DeepSeek V4 defaults thinking on; disable to avoid billing reasoning tokens.
+	if o.DisableThinking {
+		reqBody.Thinking = &openAIThinking{Type: "disabled"}
 	}
 
 	payload, err := json.Marshal(reqBody)
@@ -93,6 +98,11 @@ type openAIRequest struct {
 	Model    string          `json:"model"`
 	Messages []openAIMessage `json:"messages"`
 	Tools    []openAITool    `json:"tools,omitempty"`
+	Thinking *openAIThinking `json:"thinking,omitempty"`
+}
+
+type openAIThinking struct {
+	Type string `json:"type"`
 }
 
 type openAIMessage struct {

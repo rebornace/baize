@@ -8,6 +8,17 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
+func TestSQLiteCreatesParentDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "data", "baize.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("Open should create parent dirs: %v", err)
+	}
+	if c, ok := s.(io.Closer); ok {
+		_ = c.Close()
+	}
+}
+
 func TestSQLitePersistenceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baize.db")
 

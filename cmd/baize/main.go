@@ -11,6 +11,8 @@ import (
 )
 
 func main() {
+	_ = config.LoadDotEnv(".env")
+
 	if len(os.Args) < 2 {
 		fmt.Println("usage: baize <demo|serve>")
 		os.Exit(2)
@@ -18,7 +20,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "demo":
-		cfg, err := config.Load("configs/demo.yaml")
+		cfg, err := config.Load(demoConfigPath())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -27,7 +29,7 @@ func main() {
 		}
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
-		cfgPath := fs.String("config", "configs/demo.yaml", "path to config yaml")
+		cfgPath := fs.String("config", demoConfigPath(), "path to config yaml")
 		_ = fs.Parse(os.Args[2:])
 		cfg, err := config.Load(*cfgPath)
 		if err != nil {
@@ -40,4 +42,13 @@ func main() {
 		fmt.Println("usage: baize <demo|serve>")
 		os.Exit(2)
 	}
+}
+
+// demoConfigPath prefers local override for real-LLM debugging without touching CI defaults.
+func demoConfigPath() string {
+	const local = "configs/demo.local.yaml"
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+	return "configs/demo.yaml"
 }

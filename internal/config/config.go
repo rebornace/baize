@@ -16,11 +16,12 @@ type Config struct {
 	UI struct {
 		Enabled bool `yaml:"enabled"`
 	} `yaml:"ui"`
-	LLM    struct {
-		Provider  string `yaml:"provider"`
-		BaseURL   string `yaml:"base_url"`
-		Model     string `yaml:"model"`
-		APIKeyEnv string `yaml:"api_key_env"` // 默认 BAIZE_API_KEY
+	LLM struct {
+		Provider         string `yaml:"provider"`
+		BaseURL          string `yaml:"base_url"`
+		Model            string `yaml:"model"`
+		APIKeyEnv        string `yaml:"api_key_env"` // 默认 BAIZE_API_KEY
+		DisableThinking  bool   `yaml:"disable_thinking"` // DeepSeek V4：关闭 thinking 省 token
 	} `yaml:"llm"`
 	Agent struct {
 		ID     string `yaml:"id"`

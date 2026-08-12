@@ -6,9 +6,12 @@ ui:
   enabled: true
 llm:
   provider: mock
+  # 真实 LLM：复制为 configs/demo.local.yaml（gitignore）并设 .env 中 BAIZE_API_KEY
   # provider: openai_compatible
-  # base_url: https://api.openai.com/v1
-  # model: gpt-4o-mini
+  # base_url: https://api.deepseek.com
+  # model: deepseek-v4-flash
+  # disable_thinking: true
+  # api_key_env: BAIZE_API_KEY
 agent:
   id: ticket-agent
   system: "你是企业工单助手，只能通过工具访问工单系统。"

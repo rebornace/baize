@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -31,7 +33,13 @@ type SQLite struct {
 }
 
 // OpenSQLite opens (or creates) a SQLite database at path.
+// Parent directories are created automatically (e.g. ./data/baize.db).
 func OpenSQLite(path string) (*SQLite, error) {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create sqlite dir %q: %w", dir, err)
+		}
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err

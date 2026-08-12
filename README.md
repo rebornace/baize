@@ -80,25 +80,33 @@ npm run build
 
 ## 切换真实 LLM（openai_compatible）
 
-编辑 `configs/demo.yaml`：
+推荐本地调试用 DeepSeek Flash（便宜），且**不要把 Key 写进 YAML**：
+
+1. 复制 `configs/demo.yaml` → `configs/demo.local.yaml`（若存在，`baize demo` 自动优先读它；该文件已 gitignore）
+2. 复制 `.env.example` → `.env`，填入 `BAIZE_API_KEY`
+3. 在 `demo.local.yaml` 中例如：
 
 ```yaml
 llm:
   provider: openai_compatible
-  base_url: https://api.openai.com/v1
-  model: gpt-4o-mini
-  # api_key_env: BAIZE_API_KEY   # 默认读取此环境变量
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+  disable_thinking: true   # 关掉默认 thinking，少烧 token
+  api_key_env: BAIZE_API_KEY
 ```
 
-然后设置密钥并启动：
-
 ```bash
-# Windows PowerShell
+go run ./cmd/baize demo
+```
+
+也可用环境变量临时覆盖（不写 `.env`）：
+
+```powershell
 $env:BAIZE_API_KEY="sk-..."
 go run ./cmd/baize demo
 ```
 
-也可用 `go run ./cmd/baize serve -config configs/demo.yaml` 仅启动 Runtime（需自行提供 connector 指向的后端）。
+也可用 `go run ./cmd/baize serve -config configs/demo.yaml` 仅启动 Runtime（需自行提供 connector 指向的后端）。默认 CI / 无 Key 仍用 `mock`。
 
 ## 文档
 
