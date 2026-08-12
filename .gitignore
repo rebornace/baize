@@ -1,0 +1,24 @@
+# 本地 / 工具残留（勿进任何远程）
+.cursor/
+.idea/
+*.swp
+.DS_Store
+*.exe
+*.test
+bin/
+dist/
+_public_export/
+.env
+.env.*
+!.env.example
+
+# Go
+vendor/
+
+# 说明：docs/superpowers/ 保留在本工作区与 baize_real；
+# 同步到开源仓 baize 时请用 scripts/export-public.ps1，不要直接把含 superpowers 的树推到 public。
+
+.worktrees/
+
+demo-stdout.log
+demo-stderr.log

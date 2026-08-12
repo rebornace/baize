@@ -1,0 +1,93 @@
+package integration_test
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/rebornace/baize/internal/config"
+	"github.com/rebornace/baize/internal/demo"
+	"github.com/rebornace/baize/internal/store"
+)
+
+func TestDemoACreateTicketE2E(t *testing.T) {
+	cfg := config.Config{}
+	cfg.LLM.Provider = "mock"
+	cfg.Agent.ID = "ticket-agent"
+	cfg.Agent.System = "你是企业工单助手，只能通过工具访问工单系统。"
+	cfg.Connector.ID = "ticket-api"
+	cfg.Connector.Type = "openapi"
+	cfg.Connector.Spec = filepath.Join("..", "..", "examples", "mock-ticket", "openapi.yaml")
+	cfg.Run.MaxSteps = 8
+
+	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)
+	defer shutdown()
+
+	runBody := `{"agent_id":"ticket-agent","input":"创建一个紧急工单：VPN 挂了"}`
+	resp, err := http.Post(runtimeURL+"/v0/runs", "application/json", strings.NewReader(runBody))
+	if err != nil {
+		t.Fatalf("POST /v0/runs: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v0/runs status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created struct {
+		RunID  string `json:"run_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatalf("decode run: %v body=%s", err, raw)
+	}
+	if created.Status != string(store.StatusSucceeded) {
+		t.Fatalf("run status=%q want succeeded; body=%s", created.Status, raw)
+	}
+	if created.RunID == "" {
+		t.Fatalf("missing run_id: %s", raw)
+	}
+
+	evResp, err := http.Get(runtimeURL + "/v0/runs/" + created.RunID + "/events")
+	if err != nil {
+		t.Fatalf("GET events: %v", err)
+	}
+	defer evResp.Body.Close()
+	evRaw, _ := io.ReadAll(evResp.Body)
+	if evResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET events status=%d body=%s", evResp.StatusCode, evRaw)
+	}
+	var events []store.Event
+	if err := json.Unmarshal(evRaw, &events); err != nil {
+		t.Fatalf("decode events: %v body=%s", err, evRaw)
+	}
+	hasToolResult := false
+	for _, ev := range events {
+		if ev.Type == "tool.result" {
+			hasToolResult = true
+			break
+		}
+	}
+	if !hasToolResult {
+		t.Fatalf("events missing tool.result: %+v", events)
+	}
+
+	ticketResp, err := http.Get(ticketURL + "/tickets")
+	if err != nil {
+		t.Fatalf("GET tickets: %v", err)
+	}
+	defer ticketResp.Body.Close()
+	ticketRaw, _ := io.ReadAll(ticketResp.Body)
+	if ticketResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET tickets status=%d body=%s", ticketResp.StatusCode, ticketRaw)
+	}
+	var tickets []map[string]any
+	if err := json.Unmarshal(ticketRaw, &tickets); err != nil {
+		t.Fatalf("decode tickets: %v body=%s", err, ticketRaw)
+	}
+	if len(tickets) < 1 {
+		t.Fatalf("tickets len=%d want >=1; body=%s", len(tickets), ticketRaw)
+	}
+}
