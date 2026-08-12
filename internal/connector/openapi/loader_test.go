@@ -5,11 +5,146 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/connector/openapi"
 )
+
+func TestLoadToolsSecurityFromGlobal(t *testing.T) {
+	spec := `openapi: "3.0.3"
+info:
+  title: security fixture
+  version: "1.0.0"
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+security:
+  - bearer: []
+paths:
+  /me:
+    get:
+      operationId: getMe
+      responses:
+        "200": { description: ok }
+`
+	path := writeTempSpec(t, spec)
+	tools, err := openapi.LoadTools(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := findRoute(t, tools, "getMe")
+	if len(route.Security) != 1 || route.Security[0] != "bearer" {
+		t.Fatalf("Security=%v, want [bearer]", route.Security)
+	}
+}
+
+func TestLoadToolsOperationSecurityOverridesGlobal(t *testing.T) {
+	spec := `openapi: "3.0.3"
+info:
+  title: security override fixture
+  version: "1.0.0"
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+security:
+  - bearer: []
+paths:
+  /public:
+    get:
+      operationId: getPublic
+      security: []
+      responses:
+        "200": { description: ok }
+  /admin:
+    get:
+      operationId: getAdmin
+      security:
+        - apiKey: []
+      responses:
+        "200": { description: ok }
+`
+	path := writeTempSpec(t, spec)
+	tools, err := openapi.LoadTools(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := findRoute(t, tools, "getPublic")
+	if len(pub.Security) != 0 {
+		t.Fatalf("getPublic Security=%v, want empty (overrides global)", pub.Security)
+	}
+	admin := findRoute(t, tools, "getAdmin")
+	if len(admin.Security) != 1 || admin.Security[0] != "apiKey" {
+		t.Fatalf("getAdmin Security=%v, want [apiKey]", admin.Security)
+	}
+}
+
+func TestInvokerInvokeWithHeadersOverlays(t *testing.T) {
+	var sawAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "getMe",
+			Method: http.MethodGet,
+			Path:   "/me",
+		}},
+		Headers: map[string]string{"Authorization": "Bearer ENV"},
+	}
+	res, err := inv.InvokeWithHeaders(context.Background(), "getMe", nil, map[string]string{
+		"Authorization": "Bearer CAPTURED",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error: %+v", res)
+	}
+	if sawAuth != "Bearer CAPTURED" {
+		t.Fatalf("Authorization=%q, want Bearer CAPTURED", sawAuth)
+	}
+	// Overlay must not mutate inv.Headers.
+	if inv.Headers["Authorization"] != "Bearer ENV" {
+		t.Fatalf("inv.Headers mutated: %v", inv.Headers)
+	}
+}
+
+func writeTempSpec(t *testing.T, yaml string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func findRoute(t *testing.T, tools []openapi.ToolRoute, name string) openapi.ToolRoute {
+	t.Helper()
+	for _, tl := range tools {
+		if tl.Name == name {
+			return tl
+		}
+	}
+	t.Fatalf("tool %q not found", name)
+	return openapi.ToolRoute{}
+}
 
 func TestLoadToolsFromSpec(t *testing.T) {
 	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")

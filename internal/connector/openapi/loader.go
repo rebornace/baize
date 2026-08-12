@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -15,6 +16,9 @@ type ToolRoute struct {
 	Method      string
 	Path        string
 	InputSchema map[string]any
+	// Security lists OpenAPI security scheme names required by the operation
+	// (operation-level security overrides document-level when present).
+	Security []string
 }
 
 // LoadTools parses an OpenAPI 3 spec file and returns one ToolRoute per operation.
@@ -56,10 +60,44 @@ func LoadTools(specPath string) ([]ToolRoute, error) {
 				Method:      strings.ToUpper(method),
 				Path:        path,
 				InputSchema: mergeInputSchema(item, op),
+				Security:    operationSecurity(doc, op),
 			})
 		}
 	}
 	return tools, nil
+}
+
+// operationSecurity returns scheme names from operation security, falling back
+// to document-level security. A non-nil empty operation security clears global.
+func operationSecurity(doc *openapi3.T, op *openapi3.Operation) []string {
+	var reqs openapi3.SecurityRequirements
+	if op.Security != nil {
+		reqs = *op.Security
+	} else if doc != nil {
+		reqs = doc.Security
+	}
+	return schemeNames(reqs)
+}
+
+func schemeNames(reqs openapi3.SecurityRequirements) []string {
+	if len(reqs) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, req := range reqs {
+		var names []string
+		for name := range req {
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		out = append(out, names...)
+	}
+	return out
 }
 
 func normalizeOpName(method, path string) string {

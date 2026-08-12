@@ -23,12 +23,23 @@ type InvokeResult struct {
 type Invoker struct {
 	BaseURL    string
 	Tools      []ToolRoute
+	Headers    map[string]string
 	HTTPClient *http.Client
 }
 
 // Invoke looks up toolName and performs the corresponding HTTP request.
 // Non-2xx responses return InvokeResult{IsError: true} without error.
 func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string]any) (InvokeResult, error) {
+	return inv.invoke(ctx, toolName, args, nil)
+}
+
+// InvokeWithHeaders is like Invoke but merges overlay headers over inv.Headers
+// for this call only (same key overlays; inv.Headers is not mutated).
+func (inv *Invoker) InvokeWithHeaders(ctx context.Context, toolName string, args map[string]any, overlay map[string]string) (InvokeResult, error) {
+	return inv.invoke(ctx, toolName, args, overlay)
+}
+
+func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string]any, overlay map[string]string) (InvokeResult, error) {
 	route, ok := inv.find(toolName)
 	if !ok {
 		return InvokeResult{}, fmt.Errorf("unknown tool: %s", toolName)
@@ -57,6 +68,12 @@ func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	for k, v := range mergeHeaders(inv.Headers, overlay) {
+		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
+	}
 
 	client := inv.HTTPClient
 	if client == nil {
@@ -78,6 +95,20 @@ func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	return InvokeResult{Content: content, IsError: false}, nil
+}
+
+func mergeHeaders(base, overlay map[string]string) map[string]string {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
 }
 
 func expandPath(tmpl string, args map[string]any) (string, map[string]bool, error) {
