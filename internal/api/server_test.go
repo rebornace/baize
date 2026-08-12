@@ -236,9 +236,10 @@ paths:
 
 	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
 		jsonBody(t, map[string]any{
-			"type":     "openapi",
-			"spec":     specPath,
-			"base_url": "http://127.0.0.1:18080",
+			"type":             "openapi",
+			"spec":             specPath,
+			"base_url":         "http://127.0.0.1:18080",
+			"require_approval": []string{"create_ticket"},
 		}))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, put)
@@ -279,6 +280,32 @@ paths:
 	h.ServeHTTP(rr, getConn)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("get connector status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var connBody struct {
+		ID              string      `json:"id"`
+		Type            string      `json:"type"`
+		Spec            string      `json:"spec"`
+		BaseURL         string      `json:"base_url"`
+		RequireApproval []string    `json:"require_approval"`
+		Tools           []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&connBody); err != nil {
+		t.Fatal(err)
+	}
+	if connBody.ID != "ticket" || connBody.Type != "openapi" || connBody.Spec != specPath {
+		t.Fatalf("connector body=%+v", connBody)
+	}
+	if connBody.BaseURL != "http://127.0.0.1:18080" {
+		t.Fatalf("base_url=%q", connBody.BaseURL)
+	}
+	if len(connBody.RequireApproval) != 1 || connBody.RequireApproval[0] != "create_ticket" {
+		t.Fatalf("require_approval=%v", connBody.RequireApproval)
+	}
+	if len(connBody.Tools) != 1 || connBody.Tools[0].Name != "create_ticket" {
+		t.Fatalf("connector tools=%+v", connBody.Tools)
+	}
+	if connBody.Tools[0].Method == "" || connBody.Tools[0].Path == "" {
+		t.Fatalf("connector tool missing method/path: %+v", connBody.Tools[0])
 	}
 }
 
@@ -327,6 +354,23 @@ paths:
 	if wrap.Error.Code != "tool_conflict" {
 		t.Fatalf("code=%q", wrap.Error.Code)
 	}
+
+	listed := reg.List()
+	if len(listed) == 0 {
+		t.Fatal("ticket-a registry empty after conflict")
+	}
+	for _, info := range listed {
+		if info.ConnectorID != "ticket-a" {
+			t.Fatalf("unexpected tool after conflict: %+v", info)
+		}
+	}
+	if _, err := st.GetConnector("ticket-b"); err == nil {
+		t.Fatal("store should not contain ticket-b after conflict")
+	}
+	a, err := st.GetConnector("ticket-a")
+	if err != nil || a.BaseURL != "http://a" || a.Spec != specPath {
+		t.Fatalf("ticket-a store=%+v err=%v", a, err)
+	}
 }
 
 func TestPutConnectorInvalidSpecLeavesRegistry(t *testing.T) {
@@ -356,8 +400,9 @@ paths:
 		t.Fatalf("first put status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
+	badSpec := filepath.Join(dir, "missing.yaml")
 	putBad := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
-		jsonBody(t, map[string]any{"type": "openapi", "spec": filepath.Join(dir, "missing.yaml"), "base_url": "http://x"}))
+		jsonBody(t, map[string]any{"type": "openapi", "spec": badSpec, "base_url": "http://evil"}))
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, putBad)
 	if rr.Code != http.StatusBadRequest {
@@ -389,6 +434,14 @@ paths:
 	}
 	if len(toolsBody.Tools) != 1 || toolsBody.Tools[0].Name != "create_ticket" {
 		t.Fatalf("tools after invalid put=%+v want first create_ticket", toolsBody.Tools)
+	}
+
+	c, err := st.GetConnector("ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Spec != goodSpec || c.BaseURL != "http://x" {
+		t.Fatalf("store overwritten after bad put: %+v", c)
 	}
 }
 

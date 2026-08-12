@@ -128,7 +128,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "tool_conflict", err.Error())
 			return
 		}
-		if strings.Contains(err.Error(), "invalid_spec") {
+		if errors.Is(err, openapi.ErrInvalidSpec) {
 			writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
 			return
 		}
