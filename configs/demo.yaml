@@ -1,0 +1,18 @@
+listen: ":8080"
+llm:
+  provider: mock
+  # provider: openai_compatible
+  # base_url: https://api.openai.com/v1
+  # model: gpt-4o-mini
+agent:
+  id: ticket-agent
+  system: "你是企业工单助手，只能通过工具访问工单系统。"
+connector:
+  id: ticket-api
+  type: openapi
+  spec: examples/mock-ticket/openapi.yaml
+  base_url: http://127.0.0.1:18080
+run:
+  max_steps: 8
+demo:
+  ticket_listen: ":18080"
