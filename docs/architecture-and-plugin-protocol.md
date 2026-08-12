@@ -52,6 +52,8 @@
 | 能力 | 方法（示意） |
 |------|----------------|
 | 注册/更新 Agent、Connector | `PUT /v0/agents/{id}` · `PUT /v0/connectors/{id}` |
+| 查询 Connector | `GET /v0/connectors/{id}` |
+| 查询已注册 Tools | `GET /v0/tools` |
 | 启动 Run | `POST /v0/runs` → `{ run_id }` |
 | 查询轨迹 | `GET /v0/runs/{id}` · `GET /v0/runs/{id}/events` |
 | 恢复 HITL | `POST /v0/runs/{id}/resume` |

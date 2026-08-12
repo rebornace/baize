@@ -67,6 +67,31 @@ curl -s http://127.0.0.1:18080/tickets
 curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
 ```
 
+## 平台接入（OpenAPI）
+
+主路径：用 OpenAPI Spec 把遗留 HTTP API 注册为 Tools。无 Swagger 的侧车协议见后续里程碑；鉴权深做不在本里程碑。
+
+1. **准备** OpenAPI 文件，以及 Runtime 可到达的后端 `base_url`。
+2. **注册/替换 Connector：**
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"openapi\",\"spec\":\"examples/mock-ticket/openapi.yaml\",\"base_url\":\"http://127.0.0.1:18080\",\"require_approval\":[\"create_ticket\"]}"
+```
+
+3. **核对 Tools：**
+
+```bash
+curl -s http://127.0.0.1:8080/v0/tools
+```
+
+应看到带 `method` / `path` / `operation_id` / `connector_id` 的清单。
+
+4. **跑一次：** `POST /v0/runs`（见上文）或打开 `http://127.0.0.1:8080/ui`。
+
+同 `id` 再 `PUT` 会按新 Spec **整表替换**该 Connector 下的 Tools；坏 Spec 返回 `400`，不污染已有 Registry。
+
 ## Chat UI 构建（可选）
 
 仓库已提交 `internal/ui/dist` 预构建产物，干净 clone 后即可 `go build` / `go test`（`//go:embed`）。若修改 `web/chat`，需 Node 18+ 重新构建：
