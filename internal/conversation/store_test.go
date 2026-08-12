@@ -29,3 +29,26 @@ func TestMemoryStoreAppendListClearWindow(t *testing.T) {
 		t.Fatal("expected empty after clear")
 	}
 }
+
+func TestMemoryStoreListWindowNonPositive(t *testing.T) {
+	s := conversation.NewMemoryStore()
+	_, err := s.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "你好"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "你好！"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := s.List("conv1")
+
+	for _, n := range []int{0, -1} {
+		win := s.ListWindow("conv1", n)
+		if len(win) != len(all) {
+			t.Fatalf("n=%d: got %d messages, want %d", n, len(win), len(all))
+		}
+		if win[0].Role != conversation.RoleUser || win[1].Content != "你好！" {
+			t.Fatalf("n=%d: window=%+v", n, win)
+		}
+	}
+}
