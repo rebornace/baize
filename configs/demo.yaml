@@ -1,4 +1,9 @@
 listen: ":8080"
+store:
+  driver: sqlite
+  sqlite_path: ./data/baize.db
+ui:
+  enabled: true
 llm:
   provider: mock
   # provider: openai_compatible
@@ -12,6 +17,8 @@ connector:
   type: openapi
   spec: examples/mock-ticket/openapi.yaml
   base_url: http://127.0.0.1:18080
+  require_approval:
+    - create_ticket
 run:
   max_steps: 8
 demo:

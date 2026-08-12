@@ -36,6 +36,7 @@ func Run(cfg config.Config) error {
 	}()
 
 	ticketBase := localHTTPBase(ticketListen)
+	cfg.Connector.BaseURL = ticketBase
 	if err := waitHealthy(ticketBase+"/healthz", 5*time.Second); err != nil {
 		return fmt.Errorf("mock-ticket health check failed: %w", err)
 	}
@@ -49,7 +50,9 @@ func Run(cfg config.Config) error {
 	if listen == "" {
 		listen = ":8080"
 	}
-	printCurlHints(localHTTPBase(listen), cfg.Agent.ID)
+	runtimeBase := localHTTPBase(listen)
+	printCurlHints(runtimeBase, cfg.Agent.ID, ticketBase)
+	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
 	return http.ListenAndServe(listen, srv.Handler())
 }
@@ -64,7 +67,9 @@ func Serve(cfg config.Config) error {
 	if listen == "" {
 		listen = ":8080"
 	}
-	printCurlHints(localHTTPBase(listen), cfg.Agent.ID)
+	runtimeBase := localHTTPBase(listen)
+	printCurlHints(runtimeBase, cfg.Agent.ID, cfg.Connector.BaseURL)
+	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
 	return http.ListenAndServe(listen, srv.Handler())
 }
@@ -128,7 +133,10 @@ func newAPIServer(cfg config.Config) (*api.Server, error) {
 		return nil, err
 	}
 
-	st := store.NewMemory()
+	st, err := store.Open(cfg.Store.Driver, cfg.Store.SQLitePath)
+	if err != nil {
+		return nil, fmt.Errorf("open store: %w", err)
+	}
 	reg := tool.NewRegistry()
 
 	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
@@ -172,10 +180,15 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) er
 	})
 
 	inv := &openapi.Invoker{BaseURL: cfg.Connector.BaseURL, Tools: routes}
+	approval := cfg.Connector.RequireApproval
+	if len(approval) == 0 {
+		approval = []string{"create_ticket"}
+	}
+	approvalSet := approvalSet(approval)
 	for _, route := range routes {
 		route := route
 		name := route.Name
-		requireApproval := name == "create_ticket"
+		requireApproval := approvalSet[name]
 		reg.RegisterSpecApproved(llm.ToolSpec{
 			Name:        route.Name,
 			Description: route.Description,
@@ -244,11 +257,28 @@ func localHTTPBase(listen string) string {
 	return "http://" + net.JoinHostPort(host, port)
 }
 
-func printCurlHints(runtimeBase, agentID string) {
+func printCurlHints(runtimeBase, agentID, ticketBase string) {
 	if agentID == "" {
 		agentID = "ticket-agent"
 	}
+	if ticketBase == "" {
+		ticketBase = "http://127.0.0.1:18080"
+	}
 	log.Printf("demo ready. try:")
 	log.Printf(`  curl -s -X POST %s/v0/runs -H "Content-Type: application/json" -d "{\"agent_id\":\"%s\",\"input\":\"创建一个紧急工单：VPN 挂了\"}"`, runtimeBase, agentID)
-	log.Printf(`  curl -s %s/tickets`, "http://127.0.0.1:18080")
+	log.Printf(`  curl -s %s/tickets`, ticketBase)
+}
+
+func logUIHint(cfg config.Config, runtimeBase string) {
+	if cfg.UI.Enabled {
+		log.Printf("open %s/ui", runtimeBase)
+	}
+}
+
+func approvalSet(names []string) map[string]bool {
+	out := make(map[string]bool, len(names))
+	for _, name := range names {
+		out[name] = true
+	}
+	return out
 }

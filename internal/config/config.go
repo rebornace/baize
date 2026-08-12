@@ -9,6 +9,13 @@ import (
 
 type Config struct {
 	Listen string `yaml:"listen"`
+	Store  struct {
+		Driver     string `yaml:"driver"`
+		SQLitePath string `yaml:"sqlite_path"`
+	} `yaml:"store"`
+	UI struct {
+		Enabled bool `yaml:"enabled"`
+	} `yaml:"ui"`
 	LLM    struct {
 		Provider  string `yaml:"provider"`
 		BaseURL   string `yaml:"base_url"`
@@ -20,10 +27,11 @@ type Config struct {
 		System string `yaml:"system"`
 	} `yaml:"agent"`
 	Connector struct {
-		ID      string `yaml:"id"`
-		Type    string `yaml:"type"`
-		Spec    string `yaml:"spec"`
-		BaseURL string `yaml:"base_url"`
+		ID              string   `yaml:"id"`
+		Type            string   `yaml:"type"`
+		Spec            string   `yaml:"spec"`
+		BaseURL         string   `yaml:"base_url"`
+		RequireApproval []string `yaml:"require_approval"`
 	} `yaml:"connector"`
 	Run struct {
 		MaxSteps int `yaml:"max_steps"`
@@ -57,6 +65,12 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Connector.Type == "" {
 		cfg.Connector.Type = "openapi"
+	}
+	if len(cfg.Connector.RequireApproval) == 0 {
+		cfg.Connector.RequireApproval = []string{"create_ticket"}
+	}
+	if cfg.Store.Driver == "sqlite" && cfg.Store.SQLitePath == "" {
+		cfg.Store.SQLitePath = "./data/baize.db"
 	}
 	return cfg, nil
 }
