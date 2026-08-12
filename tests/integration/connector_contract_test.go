@@ -28,15 +28,28 @@ func TestConnectorContractListReplaceAndBadSpec(t *testing.T) {
 	defer shutdown()
 
 	tools := getTools(t, runtimeURL)
-	if len(tools) == 0 {
-		t.Fatal("GET /v0/tools: empty tools after StartForTest")
+	if len(tools) != 4 {
+		t.Fatalf("GET /v0/tools: len=%d want 4 (demo mock-ticket openapi)", len(tools))
 	}
 	for _, tool := range tools {
 		if tool.Method == "" || tool.Path == "" {
 			t.Fatalf("tool %q missing method/path: %+v", tool.Name, tool)
 		}
+		if tool.OperationID == "" {
+			t.Fatalf("tool %q missing operation_id: %+v", tool.Name, tool)
+		}
+		if tool.ConnectorID != "ticket-api" {
+			t.Fatalf("tool %q connector_id=%q want ticket-api", tool.Name, tool.ConnectorID)
+		}
 	}
-	initialCount := len(tools)
+
+	conn := getConnector(t, runtimeURL, "ticket-api")
+	if conn.ID != "ticket-api" || conn.Type != "openapi" {
+		t.Fatalf("GET connector: %+v", conn)
+	}
+	if len(conn.Tools) != 4 {
+		t.Fatalf("GET connector tools=%d want 4", len(conn.Tools))
+	}
 
 	reducedSpec := filepath.Join(t.TempDir(), "reduced.yaml")
 	if err := os.WriteFile(reducedSpec, []byte(`openapi: 3.0.3
@@ -76,32 +89,44 @@ paths:
 	}, http.StatusOK)
 
 	afterReplace := getTools(t, runtimeURL)
-	if len(afterReplace) >= initialCount {
-		t.Fatalf("after replace tools=%d want < initial=%d", len(afterReplace), initialCount)
-	}
 	if len(afterReplace) != 2 {
 		t.Fatalf("after replace tools=%d want 2", len(afterReplace))
 	}
 	names := map[string]bool{}
 	for _, tool := range afterReplace {
 		names[tool.Name] = true
-		if tool.Method == "" || tool.Path == "" {
-			t.Fatalf("tool %q missing method/path after replace: %+v", tool.Name, tool)
+		if tool.Method == "" || tool.Path == "" || tool.OperationID == "" {
+			t.Fatalf("tool %q missing method/path/operation_id after replace: %+v", tool.Name, tool)
+		}
+		if tool.ConnectorID != "ticket-api" {
+			t.Fatalf("tool %q connector_id=%q want ticket-api", tool.Name, tool.ConnectorID)
 		}
 	}
 	if !names["list_tickets"] || !names["create_ticket"] {
 		t.Fatalf("after replace names=%v want list_tickets+create_ticket", names)
 	}
 
+	connAfterReplace := getConnector(t, runtimeURL, "ticket-api")
+	if connAfterReplace.Spec != reducedSpec {
+		t.Fatalf("connector.spec after replace=%q want %q", connAfterReplace.Spec, reducedSpec)
+	}
+	if len(connAfterReplace.Tools) != 2 {
+		t.Fatalf("GET connector after replace tools=%d want 2", len(connAfterReplace.Tools))
+	}
+
+	badSpec := filepath.Join(t.TempDir(), "bad.yaml")
+	if err := os.WriteFile(badSpec, []byte("this: is: not: valid: openapi: [[[\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	putConnector(t, runtimeURL, "ticket-api", map[string]any{
 		"type":     "openapi",
-		"spec":     filepath.Join(t.TempDir(), "missing-openapi.yaml"),
+		"spec":     badSpec,
 		"base_url": ticketURL,
 	}, http.StatusBadRequest)
 
 	afterBad := getTools(t, runtimeURL)
-	if len(afterBad) != len(afterReplace) {
-		t.Fatalf("after bad spec tools=%d want unchanged %d", len(afterBad), len(afterReplace))
+	if len(afterBad) != 2 {
+		t.Fatalf("after bad spec tools=%d want unchanged 2", len(afterBad))
 	}
 	afterNames := map[string]bool{}
 	for _, tool := range afterBad {
@@ -112,13 +137,29 @@ paths:
 			t.Fatalf("after bad spec missing tool %q; got %v", name, afterNames)
 		}
 	}
+
+	connAfterBad := getConnector(t, runtimeURL, "ticket-api")
+	if connAfterBad.Spec != reducedSpec {
+		t.Fatalf("connector store polluted: spec=%q want %q (reduced)", connAfterBad.Spec, reducedSpec)
+	}
+	if len(connAfterBad.Tools) != 2 {
+		t.Fatalf("GET connector after bad spec tools=%d want 2", len(connAfterBad.Tools))
+	}
 }
 
 type contractTool struct {
 	Name        string `json:"name"`
 	Method      string `json:"method"`
 	Path        string `json:"path"`
+	OperationID string `json:"operation_id"`
 	ConnectorID string `json:"connector_id"`
+}
+
+type contractConnector struct {
+	ID    string         `json:"id"`
+	Type  string         `json:"type"`
+	Spec  string         `json:"spec"`
+	Tools []contractTool `json:"tools"`
 }
 
 func getTools(t *testing.T, runtimeURL string) []contractTool {
@@ -139,6 +180,24 @@ func getTools(t *testing.T, runtimeURL string) []contractTool {
 		t.Fatalf("decode tools: %v body=%s", err, raw)
 	}
 	return body.Tools
+}
+
+func getConnector(t *testing.T, runtimeURL, id string) contractConnector {
+	t.Helper()
+	resp, err := http.Get(runtimeURL + "/v0/connectors/" + id)
+	if err != nil {
+		t.Fatalf("GET /v0/connectors/%s: %v", id, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v0/connectors/%s status=%d body=%s", id, resp.StatusCode, raw)
+	}
+	var conn contractConnector
+	if err := json.Unmarshal(raw, &conn); err != nil {
+		t.Fatalf("decode connector: %v body=%s", err, raw)
+	}
+	return conn
 }
 
 func putConnector(t *testing.T, runtimeURL, id string, payload map[string]any, wantStatus int) {
