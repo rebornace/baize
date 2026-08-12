@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"testing"
 	"time"
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
@@ -66,6 +67,59 @@ func Serve(cfg config.Config) error {
 	printCurlHints(localHTTPBase(listen), cfg.Agent.ID)
 	log.Printf("baize runtime listening on %s", listen)
 	return http.ListenAndServe(listen, srv.Handler())
+}
+
+// StartForTest starts mock-ticket and Runtime on ephemeral ports for integration tests.
+// cfg.Connector.BaseURL is overwritten with the actual ticket URL.
+func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string, shutdown func()) {
+	t.Helper()
+
+	ticketLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen mock-ticket: %v", err)
+	}
+	ticketURL = "http://" + ticketLn.Addr().String()
+	ticketSrv := &http.Server{Handler: mockticket.NewHandler()}
+	go func() { _ = ticketSrv.Serve(ticketLn) }()
+
+	if err := waitHealthy(ticketURL+"/healthz", 5*time.Second); err != nil {
+		_ = ticketSrv.Close()
+		t.Fatalf("mock-ticket health check failed: %v", err)
+	}
+
+	cfg.Connector.BaseURL = ticketURL
+	if cfg.Run.MaxSteps <= 0 {
+		cfg.Run.MaxSteps = 8
+	}
+
+	apiSrv, err := newAPIServer(cfg)
+	if err != nil {
+		_ = ticketSrv.Close()
+		t.Fatalf("new api server: %v", err)
+	}
+
+	runtimeLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		_ = ticketSrv.Close()
+		t.Fatalf("listen runtime: %v", err)
+	}
+	runtimeURL = "http://" + runtimeLn.Addr().String()
+	httpSrv := &http.Server{Handler: apiSrv.Handler()}
+	go func() { _ = httpSrv.Serve(runtimeLn) }()
+
+	if err := waitHealthy(runtimeURL+"/healthz", 5*time.Second); err != nil {
+		_ = httpSrv.Close()
+		_ = ticketSrv.Close()
+		t.Fatalf("runtime health check failed: %v", err)
+	}
+
+	shutdown = func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(ctx)
+		_ = ticketSrv.Shutdown(ctx)
+	}
+	return runtimeURL, ticketURL, shutdown
 }
 
 func newAPIServer(cfg config.Config) (*api.Server, error) {
