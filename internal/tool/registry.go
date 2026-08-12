@@ -11,8 +11,9 @@ import (
 type Invoker func(ctx context.Context, args map[string]any) (content map[string]any, isError bool, err error)
 
 type entry struct {
-	spec    llm.ToolSpec
-	invoker Invoker
+	spec            llm.ToolSpec
+	invoker         Invoker
+	requireApproval bool
 }
 
 type Registry struct {
@@ -33,7 +34,12 @@ func (r *Registry) Register(name string, inv Invoker) {
 }
 
 func (r *Registry) RegisterSpec(spec llm.ToolSpec, inv Invoker) {
-	r.tools[spec.Name] = entry{spec: spec, invoker: inv}
+	r.RegisterSpecApproved(spec, inv, false)
+}
+
+// RegisterSpecApproved registers a tool and whether Invoke requires HITL approval.
+func (r *Registry) RegisterSpecApproved(spec llm.ToolSpec, inv Invoker, requireApproval bool) {
+	r.tools[spec.Name] = entry{spec: spec, invoker: inv, requireApproval: requireApproval}
 }
 
 func (r *Registry) Specs() []llm.ToolSpec {
@@ -47,6 +53,12 @@ func (r *Registry) Specs() []llm.ToolSpec {
 		out[i] = r.tools[name].spec
 	}
 	return out
+}
+
+// RequiresApproval reports whether the named tool must be approved before Invoke.
+func (r *Registry) RequiresApproval(name string) bool {
+	e, ok := r.tools[name]
+	return ok && e.requireApproval
 }
 
 func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any) (map[string]any, bool, error) {
