@@ -76,4 +76,121 @@ func TestStoreUpsertSameSchemeSubject(t *testing.T) {
 	if len(s.ListPublic("conv1")) != 1 {
 		t.Fatalf("expected 1 identity, got %d", len(s.ListPublic("conv1")))
 	}
+	got, err := s.Get("conv1", id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CredentialHeaders["Authorization"] != "Bearer TOKEN2" {
+		t.Fatalf("credential not updated: got %q", got.CredentialHeaders["Authorization"])
+	}
+}
+
+func countDefaults(ids []identity.Identity) int {
+	n := 0
+	for _, id := range ids {
+		if id.IsDefault {
+			n++
+		}
+	}
+	return n
+}
+
+func TestStoreIsDefaultMutualExclusionOnUpsert(t *testing.T) {
+	s := identity.NewMemoryStore()
+	now := time.Now().UTC()
+	id1, err := s.Upsert("conv1", identity.Identity{
+		Label:             "user1@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer T1"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "user1@x.com",
+		IsDefault:         true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil || id1 == "" {
+		t.Fatalf("first upsert: id=%q err=%v", id1, err)
+	}
+	id2, err := s.Upsert("conv1", identity.Identity{
+		Label:             "user2@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer T2"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "user2@x.com",
+		IsDefault:         true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil || id2 == "" {
+		t.Fatalf("second upsert: id=%q err=%v", id2, err)
+	}
+	list := s.List("conv1")
+	if countDefaults(list) != 1 {
+		t.Fatalf("expected exactly 1 default, got %d in %+v", countDefaults(list), list)
+	}
+	got2, err := s.Get("conv1", id2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got2.IsDefault {
+		t.Fatal("second identity should be default")
+	}
+	got1, err := s.Get("conv1", id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got1.IsDefault {
+		t.Fatal("first identity should no longer be default")
+	}
+}
+
+func TestStoreIsDefaultMutualExclusionOnSetDefault(t *testing.T) {
+	s := identity.NewMemoryStore()
+	now := time.Now().UTC()
+	id1, err := s.Upsert("conv1", identity.Identity{
+		Label:             "user1@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer T1"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "user1@x.com",
+		IsDefault:         true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil || id1 == "" {
+		t.Fatalf("first upsert: id=%q err=%v", id1, err)
+	}
+	id2, err := s.Upsert("conv1", identity.Identity{
+		Label:             "user2@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer T2"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "user2@x.com",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil || id2 == "" {
+		t.Fatalf("second upsert: id=%q err=%v", id2, err)
+	}
+	if err := s.SetDefault("conv1", id2); err != nil {
+		t.Fatal(err)
+	}
+	list := s.List("conv1")
+	if countDefaults(list) != 1 {
+		t.Fatalf("expected exactly 1 default, got %d in %+v", countDefaults(list), list)
+	}
+	got2, err := s.Get("conv1", id2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got2.IsDefault {
+		t.Fatal("second identity should be default after SetDefault")
+	}
+	got1, err := s.Get("conv1", id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got1.IsDefault {
+		t.Fatal("first identity should no longer be default after SetDefault")
+	}
 }
