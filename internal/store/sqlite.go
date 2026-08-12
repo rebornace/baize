@@ -46,6 +46,19 @@ func OpenSQLite(path string) (*SQLite, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Serialize access: concurrent writers with modernc/sqlite otherwise hit
+	// "database is locked", leaving runs stuck in running with zero events.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("pragma busy_timeout: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("pragma journal_mode: %w", err)
+	}
 	if _, err := db.Exec(sqliteSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
@@ -84,6 +97,13 @@ func isDuplicateColumnErr(err error) bool {
 // Close closes the underlying database.
 func (s *SQLite) Close() error {
 	return s.db.Close()
+}
+
+// DB returns the underlying *sql.DB so sibling stores (conversation / identity)
+// can share the same connection pool and pragmas configured by OpenSQLite.
+// Callers must not Close the returned handle; close the *SQLite instead.
+func (s *SQLite) DB() *sql.DB {
+	return s.db
 }
 
 func (s *SQLite) UpsertAgent(a Agent) {

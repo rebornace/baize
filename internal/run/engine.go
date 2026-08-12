@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
@@ -28,7 +29,12 @@ type Engine struct {
 	LLM      llm.Provider
 	Tools    *tool.Registry
 	Gate     *Gate
-	MaxSteps int // default 8
+	MaxSteps int // default 16
+	// Messages optionally persists conversation history across runs.
+	// nil = legacy behavior (no cross-run message persistence); the actual
+	// injection into Execute/ContinueFromHITL is wired in task 5.
+	Messages    conversation.Store
+	MaxMessages int // conversation window size; <=0 = unlimited
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
@@ -119,7 +125,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
 	maxSteps := e.MaxSteps
 	if maxSteps <= 0 {
-		maxSteps = 8
+		maxSteps = 16
 	}
 	specs := e.Tools.Specs()
 

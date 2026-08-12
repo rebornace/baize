@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
@@ -28,6 +29,7 @@ type Server struct {
 	Registry       *tool.Registry
 	Runner         Runner
 	Identities     identity.Store
+	Messages       conversation.Store // optional; nil = no message persistence
 	DefaultAgentID string
 	mux            *http.ServeMux
 }
@@ -228,9 +230,27 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	def := agent.Def{ID: ag.ID, System: ag.System}
-	go func() {
-		_ = s.Runner.Execute(context.Background(), runRec.ID, def, body.Input)
-	}()
+	// Persist run.started before returning so the UI never polls an empty event stream
+	// while the worker is still scheduling / contending on SQLite.
+	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
+	go func(runID, input string, def agent.Def) {
+		err := s.Runner.Execute(context.Background(), runID, def, input)
+		if err == nil {
+			return
+		}
+		cur, getErr := s.Store.GetRun(runID)
+		if getErr != nil || cur == nil {
+			return
+		}
+		switch cur.Status {
+		case store.StatusRunning, store.StatusQueued:
+			_ = s.Store.UpdateRun(runID, store.StatusFailed, "", err.Error())
+			_ = s.Store.AppendEvent(runID, store.Event{
+				Type: run.EventLLMError,
+				Data: map[string]any{"error": err.Error()},
+			})
+		}
+	}(runRec.ID, body.Input, def)
 
 	updated, err := s.Store.GetRun(runRec.ID)
 	if err != nil {

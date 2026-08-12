@@ -48,9 +48,13 @@ type Config struct {
 	Run struct {
 		MaxSteps int `yaml:"max_steps"`
 	} `yaml:"run"`
-	Demo struct {
-		TicketListen string `yaml:"ticket_listen"` // :18080；off 关闭 mock-ticket
-	} `yaml:"demo"`
+	Conversation struct {
+		MaxMessages       int   `yaml:"max_messages"`
+		PersistIdentities *bool `yaml:"persist_identities"`
+	} `yaml:"conversation"`
+	MockTicket struct {
+		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
+	} `yaml:"mock_ticket"`
 }
 
 // Load reads and unmarshals a YAML config file.
@@ -67,20 +71,26 @@ func Load(path string) (Config, error) {
 		cfg.LLM.APIKeyEnv = "BAIZE_API_KEY"
 	}
 	if cfg.Run.MaxSteps <= 0 {
-		cfg.Run.MaxSteps = 8
+		cfg.Run.MaxSteps = 16
 	}
 	if cfg.Listen == "" {
 		cfg.Listen = ":8080"
 	}
-	if cfg.Demo.TicketListen == "" {
-		cfg.Demo.TicketListen = ":18080"
+	if cfg.MockTicket.Listen == "" {
+		cfg.MockTicket.Listen = ":18080"
 	}
 	if cfg.Connector.Type == "" {
 		cfg.Connector.Type = "openapi"
 	}
-	// require_approval 默认不注入；样板 configs/demo.yaml 自行列出 create_ticket 等
+	// require_approval 默认不注入；样板 configs/default.yaml 自行列出 create_ticket 等
 	if cfg.Store.Driver == "sqlite" && cfg.Store.SQLitePath == "" {
 		cfg.Store.SQLitePath = "./data/baize.db"
+	}
+	// conversation.max_messages 默认 40（<=0 或缺省均回填）。
+	// PersistIdentities 用 *bool 区分「未设置」与「显式 false」：
+	// nil → 默认 true（由 bootstrap 按 driver 解析）；显式 false → 关闭持久化。
+	if cfg.Conversation.MaxMessages <= 0 {
+		cfg.Conversation.MaxMessages = 40
 	}
 	return cfg, nil
 }
