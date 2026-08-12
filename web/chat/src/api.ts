@@ -24,11 +24,22 @@ export interface Event {
 export interface CreateRunResponse {
   run_id: string
   status: RunStatus
+  conversation_id?: string
 }
 
 export interface ResumeResponse {
   run_id: string
   status: RunStatus
+}
+
+export interface IdentityView {
+  id: string
+  label: string
+  scheme?: string
+  source: string
+  claims_summary?: Record<string, unknown>
+  is_default: boolean
+  last_used_at?: string
 }
 
 async function parseJSON<T>(res: Response): Promise<T> {
@@ -45,11 +56,22 @@ async function parseJSON<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-export async function createRun(agentId: string, input: string): Promise<CreateRunResponse> {
+export async function createRun(
+  agentId: string,
+  input: string,
+  conversationId: string,
+  identityId?: string,
+): Promise<CreateRunResponse> {
+  const body: Record<string, string> = {
+    agent_id: agentId,
+    input,
+    conversation_id: conversationId,
+  }
+  if (identityId) body.identity_id = identityId
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agent_id: agentId, input }),
+    body: JSON.stringify(body),
   })
   return parseJSON<CreateRunResponse>(res)
 }
@@ -95,4 +117,35 @@ export async function listTools(): Promise<ToolInfo[]> {
   const res = await fetch('/v0/tools')
   const body = await parseJSON<{ tools: ToolInfo[] }>(res)
   return body.tools ?? []
+}
+
+export async function listIdentities(conversationId: string): Promise<IdentityView[]> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/identities`,
+  )
+  return parseJSON<IdentityView[]>(res)
+}
+
+export async function setDefaultIdentity(conversationId: string, id: string): Promise<void> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/identities/${encodeURIComponent(id)}/default`,
+    { method: 'POST' },
+  )
+  await parseJSON<{ status: string }>(res)
+}
+
+export async function deleteIdentity(conversationId: string, id: string): Promise<void> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/identities/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  await parseJSON<{ status: string }>(res)
+}
+
+export async function clearIdentities(conversationId: string): Promise<void> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/identities`,
+    { method: 'DELETE' },
+  )
+  await parseJSON<{ status: string }>(res)
 }

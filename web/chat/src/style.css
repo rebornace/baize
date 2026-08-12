@@ -47,6 +47,7 @@ body {
   font-size: 1.25rem;
 }
 
+.side-panel,
 .tools-panel {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -55,6 +56,7 @@ body {
   flex-shrink: 0;
 }
 
+.side-toggle,
 .tools-toggle {
   display: flex;
   width: 100%;
@@ -70,17 +72,20 @@ body {
   cursor: pointer;
 }
 
+.side-toggle-label,
 .tools-toggle-label {
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0.02em;
 }
 
+.side-toggle-hint,
 .tools-toggle-hint {
   font-size: 0.75rem;
   color: var(--muted);
 }
 
+.side-body,
 .tools-body {
   border-top: 1px solid var(--border);
   max-height: 9.5rem;
@@ -88,10 +93,13 @@ body {
   padding: 0.35rem 0.5rem 0.5rem;
 }
 
-.tools-panel.collapsed .tools-body {
+.side-panel.collapsed .side-body,
+.tools-panel.collapsed .tools-body,
+.tools-panel.collapsed .side-body {
   display: none;
 }
 
+.side-list,
 .tools-list {
   list-style: none;
   margin: 0;
@@ -101,6 +109,7 @@ body {
   gap: 0.25rem;
 }
 
+.side-item,
 .tools-item {
   font-size: 0.78rem;
   font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
@@ -110,6 +119,7 @@ body {
   border-radius: 4px;
 }
 
+.side-badge,
 .tools-badge {
   display: inline-block;
   margin-left: 0.25rem;
@@ -122,6 +132,9 @@ body {
   border: 1px solid #ffe08a;
 }
 
+.side-loading,
+.side-empty,
+.side-error,
 .tools-loading,
 .tools-empty,
 .tools-error {
@@ -130,8 +143,75 @@ body {
   color: var(--muted);
 }
 
+.side-error,
 .tools-error {
   color: var(--danger);
+}
+
+.accounts-meta {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.accounts-list {
+  gap: 0.4rem;
+}
+
+.accounts-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.25rem;
+  border-radius: 6px;
+}
+
+.accounts-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.accounts-title {
+  font-size: 0.85rem;
+  color: var(--text);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.accounts-detail {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.accounts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.accounts-default {
+  margin-left: 0;
+}
+
+.accounts-clear {
+  margin-top: 0.35rem;
+}
+
+.btn.sm {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  border-radius: 6px;
+}
+
+.btn.danger-text {
+  color: var(--danger);
+  border-color: transparent;
 }
 
 .messages {

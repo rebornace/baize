@@ -1,12 +1,17 @@
 import './style.css'
 import {
+  clearIdentities,
   createRun,
+  deleteIdentity,
   getRun,
   isTerminal,
   listEvents,
+  listIdentities,
   listTools,
   resumeRun,
+  setDefaultIdentity,
   type Event,
+  type IdentityView,
   type Run,
   type RunStatus,
   type ToolInfo,
@@ -14,6 +19,20 @@ import {
 
 const AGENT_ID = 'ticket-agent'
 const POLL_MS = 700
+const CONV_KEY = 'baize.conversation_id'
+
+const SENSITIVE_KEYS = new Set([
+  'accesstoken',
+  'access_token',
+  'refreshtoken',
+  'refresh_token',
+  'idtoken',
+  'id_token',
+  'token',
+  'password',
+  'secret',
+  'authorization',
+])
 
 type ChatItem =
   | { kind: 'user'; text: string }
@@ -29,13 +48,22 @@ app.innerHTML = `
       <h1>Baize 对话</h1>
       <button type="button" id="btn-new" class="btn ghost">新对话</button>
     </header>
-    <aside id="tools-panel" class="tools-panel" aria-label="Tools">
-      <button type="button" id="tools-toggle" class="tools-toggle" aria-expanded="true">
-        <span class="tools-toggle-label">Tools</span>
-        <span class="tools-toggle-hint">点击折叠</span>
+    <aside id="accounts-panel" class="side-panel" aria-label="账号">
+      <button type="button" id="accounts-toggle" class="side-toggle" aria-expanded="true">
+        <span class="side-toggle-label">账号</span>
+        <span class="side-toggle-hint">点击折叠</span>
       </button>
-      <div id="tools-body" class="tools-body">
-        <p class="tools-loading">加载中…</p>
+      <div id="accounts-body" class="side-body">
+        <p class="side-loading">加载中…</p>
+      </div>
+    </aside>
+    <aside id="tools-panel" class="side-panel tools-panel" aria-label="Tools">
+      <button type="button" id="tools-toggle" class="side-toggle" aria-expanded="true">
+        <span class="side-toggle-label">Tools</span>
+        <span class="side-toggle-hint">点击折叠</span>
+      </button>
+      <div id="tools-body" class="side-body">
+        <p class="side-loading">加载中…</p>
       </div>
     </aside>
     <main id="messages" class="messages" aria-live="polite"></main>
@@ -57,12 +85,33 @@ const statusEl = document.querySelector<HTMLElement>('#status')!
 const toolsPanel = document.querySelector<HTMLElement>('#tools-panel')!
 const toolsBody = document.querySelector<HTMLElement>('#tools-body')!
 const toolsToggle = document.querySelector<HTMLButtonElement>('#tools-toggle')!
+const accountsPanel = document.querySelector<HTMLElement>('#accounts-panel')!
+const accountsBody = document.querySelector<HTMLElement>('#accounts-body')!
+const accountsToggle = document.querySelector<HTMLButtonElement>('#accounts-toggle')!
 
 let items: ChatItem[] = []
 let pollTimer: number | null = null
 let busy = false
 let renderedEventCount = 0
 let hitlDecisionPending = false
+let conversationId = loadConversationId()
+
+function newConversationId(): string {
+  return `conv_${crypto.randomUUID()}`
+}
+
+function loadConversationId(): string {
+  const existing = localStorage.getItem(CONV_KEY)?.trim()
+  if (existing) return existing
+  const id = newConversationId()
+  localStorage.setItem(CONV_KEY, id)
+  return id
+}
+
+function setConversationId(id: string) {
+  conversationId = id
+  localStorage.setItem(CONV_KEY, id)
+}
 
 function setStatus(text: string) {
   statusEl.textContent = text
@@ -91,6 +140,28 @@ function resetChat() {
   setStatus('')
   render()
   inputEl.focus()
+}
+
+function redactSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitive)
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (SENSITIVE_KEYS.has(k.toLowerCase())) {
+        out[k] = '[redacted]'
+      } else {
+        out[k] = redactSensitive(v)
+      }
+    }
+    return out
+  }
+  return value
+}
+
+function formatToolResultContent(raw: unknown): string {
+  return JSON.stringify(redactSensitive(raw ?? {}), null, 0)
 }
 
 function render() {
@@ -152,7 +223,7 @@ function appendEvents(events: Event[], runId: string) {
       }
       case 'tool.result': {
         const name = String(ev.data?.name ?? 'tool')
-        const content = JSON.stringify(ev.data?.content ?? {}, null, 0)
+        const content = formatToolResultContent(ev.data?.content)
         const err = ev.data?.is_error ? '（错误）' : ''
         items.push({ kind: 'tool', text: `工具结果 ${name}${err}：${content}` })
         break
@@ -271,6 +342,7 @@ async function refreshRun(runId: string): Promise<Run> {
       items.push({ kind: 'system', text: `运行失败：${run.error}` })
       render()
     }
+    void loadAccountsPanel()
   }
   return run
 }
@@ -298,7 +370,10 @@ async function sendMessage() {
   setStatus('正在创建运行…')
 
   try {
-    const created = await createRun(AGENT_ID, text)
+    const created = await createRun(AGENT_ID, text, conversationId)
+    if (created.conversation_id) {
+      setConversationId(created.conversation_id)
+    }
     setStatus(`已创建运行 ${created.run_id}（${statusLabel(created.status)}）`)
     startPoll(created.run_id)
   } catch (err) {
@@ -317,18 +392,18 @@ function formatToolLine(t: ToolInfo): string {
 
 function renderTools(tools: ToolInfo[]) {
   if (tools.length === 0) {
-    toolsBody.innerHTML = `<p class="tools-empty">暂无已注册 Tools</p>`
+    toolsBody.innerHTML = `<p class="side-empty">暂无已注册 Tools</p>`
     return
   }
   const ul = document.createElement('ul')
-  ul.className = 'tools-list'
+  ul.className = 'side-list'
   for (const t of tools) {
     const li = document.createElement('li')
-    li.className = 'tools-item'
+    li.className = 'side-item'
     li.textContent = formatToolLine(t)
     if (t.require_approval) {
       const badge = document.createElement('span')
-      badge.className = 'tools-badge'
+      badge.className = 'side-badge'
       badge.textContent = '需审批'
       li.appendChild(document.createTextNode(' '))
       li.appendChild(badge)
@@ -339,27 +414,162 @@ function renderTools(tools: ToolInfo[]) {
   toolsBody.appendChild(ul)
 }
 
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'login_capture':
+      return '登录捕获'
+    case 'env':
+      return '环境变量'
+    case 'manual':
+      return '手动'
+    default:
+      return source
+  }
+}
+
+function renderAccounts(identities: IdentityView[]) {
+  accountsBody.innerHTML = ''
+
+  const meta = document.createElement('p')
+  meta.className = 'accounts-meta'
+  meta.textContent = `会话 ${conversationId}`
+  accountsBody.appendChild(meta)
+
+  if (identities.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'side-empty'
+    empty.textContent = '暂无已登录账号'
+    accountsBody.appendChild(empty)
+    return
+  }
+
+  const ul = document.createElement('ul')
+  ul.className = 'side-list accounts-list'
+  for (const idt of identities) {
+    const li = document.createElement('li')
+    li.className = 'accounts-item'
+
+    const main = document.createElement('div')
+    main.className = 'accounts-main'
+    const title = document.createElement('div')
+    title.className = 'accounts-title'
+    title.textContent = idt.label || idt.id
+    const detail = document.createElement('div')
+    detail.className = 'accounts-detail'
+    const scheme = idt.scheme ? idt.scheme : '—'
+    detail.textContent = `${scheme} · ${sourceLabel(idt.source)}`
+    main.appendChild(title)
+    main.appendChild(detail)
+
+    const actions = document.createElement('div')
+    actions.className = 'accounts-actions'
+    if (idt.is_default) {
+      const badge = document.createElement('span')
+      badge.className = 'side-badge accounts-default'
+      badge.textContent = '默认'
+      actions.appendChild(badge)
+    } else {
+      const btnDefault = document.createElement('button')
+      btnDefault.type = 'button'
+      btnDefault.className = 'btn ghost sm'
+      btnDefault.textContent = '设为默认'
+      btnDefault.addEventListener('click', () => {
+        void (async () => {
+          try {
+            await setDefaultIdentity(conversationId, idt.id)
+            await loadAccountsPanel()
+          } catch (err) {
+            setStatus(err instanceof Error ? err.message : String(err))
+          }
+        })()
+      })
+      actions.appendChild(btnDefault)
+    }
+
+    if (idt.source !== 'env') {
+      const btnExit = document.createElement('button')
+      btnExit.type = 'button'
+      btnExit.className = 'btn ghost sm danger-text'
+      btnExit.textContent = '退出'
+      btnExit.addEventListener('click', () => {
+        void (async () => {
+          try {
+            await deleteIdentity(conversationId, idt.id)
+            await loadAccountsPanel()
+          } catch (err) {
+            setStatus(err instanceof Error ? err.message : String(err))
+          }
+        })()
+      })
+      actions.appendChild(btnExit)
+    }
+
+    li.appendChild(main)
+    li.appendChild(actions)
+    ul.appendChild(li)
+  }
+  accountsBody.appendChild(ul)
+
+  const hasCaptured = identities.some((i) => i.source !== 'env')
+  if (hasCaptured) {
+    const clearBtn = document.createElement('button')
+    clearBtn.type = 'button'
+    clearBtn.className = 'btn ghost sm accounts-clear'
+    clearBtn.textContent = '清空捕获账号'
+    clearBtn.addEventListener('click', () => {
+      void (async () => {
+        try {
+          await clearIdentities(conversationId)
+          await loadAccountsPanel()
+        } catch (err) {
+          setStatus(err instanceof Error ? err.message : String(err))
+        }
+      })()
+    })
+    accountsBody.appendChild(clearBtn)
+  }
+}
+
 async function loadToolsPanel() {
   try {
     const tools = await listTools()
     renderTools(tools)
   } catch {
-    toolsBody.innerHTML = `<p class="tools-error">无法加载 Tools</p>`
+    toolsBody.innerHTML = `<p class="side-error">无法加载 Tools</p>`
   }
 }
 
-toolsToggle.addEventListener('click', () => {
-  const collapsed = toolsPanel.classList.toggle('collapsed')
-  toolsToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
-  const hint = toolsToggle.querySelector('.tools-toggle-hint')
-  if (hint) hint.textContent = collapsed ? '点击展开' : '点击折叠'
-})
+async function loadAccountsPanel() {
+  try {
+    const identities = await listIdentities(conversationId)
+    renderAccounts(identities)
+  } catch {
+    accountsBody.innerHTML = `<p class="side-error">无法加载账号</p>`
+  }
+}
+
+function wireCollapse(
+  panel: HTMLElement,
+  toggle: HTMLButtonElement,
+) {
+  toggle.addEventListener('click', () => {
+    const collapsed = panel.classList.toggle('collapsed')
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
+    const hint = toggle.querySelector('.side-toggle-hint')
+    if (hint) hint.textContent = collapsed ? '点击展开' : '点击折叠'
+  })
+}
+
+wireCollapse(toolsPanel, toolsToggle)
+wireCollapse(accountsPanel, accountsToggle)
 
 btnSend.addEventListener('click', () => {
   void sendMessage()
 })
 btnNew.addEventListener('click', () => {
+  setConversationId(newConversationId())
   resetChat()
+  void loadAccountsPanel()
 })
 inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -370,3 +580,4 @@ inputEl.addEventListener('keydown', (e) => {
 
 resetChat()
 void loadToolsPanel()
+void loadAccountsPanel()
