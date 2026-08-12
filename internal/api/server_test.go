@@ -14,6 +14,7 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
@@ -742,6 +743,187 @@ func TestResumeUnknownRun(t *testing.T) {
 	srv.Handler().ServeHTTP(rr, resume)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status=%d want 404", rr.Code)
+	}
+}
+
+func TestPostRunConversationID(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
+
+	postWith := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{
+			"agent_id":        "a",
+			"input":           "hi",
+			"conversation_id": "conv_client",
+			"identity_id":     "idt_force",
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, postWith)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var withConv map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&withConv); err != nil {
+		t.Fatal(err)
+	}
+	if withConv["conversation_id"] != "conv_client" {
+		t.Fatalf("conversation_id=%v", withConv["conversation_id"])
+	}
+	runID, _ := withConv["run_id"].(string)
+	got, err := st.GetRun(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ConversationID != "conv_client" || got.IdentityID != "idt_force" {
+		t.Fatalf("run=%+v", got)
+	}
+
+	postOmit := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{"agent_id": "a", "input": "hi2"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, postOmit)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("omit status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var omitted map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&omitted); err != nil {
+		t.Fatal(err)
+	}
+	conv, _ := omitted["conversation_id"].(string)
+	if conv == "" || !strings.HasPrefix(conv, "conv_") {
+		t.Fatalf("expected generated conversation_id, got %q", conv)
+	}
+	runID2, _ := omitted["run_id"].(string)
+	got2, err := st.GetRun(runID2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.ConversationID != conv {
+		t.Fatalf("stored conversation_id=%q want %q", got2.ConversationID, conv)
+	}
+}
+
+func TestConversationIdentitiesAPI(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	idStore := identity.NewMemoryStore()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Identities = idStore
+	h := srv.Handler()
+
+	getEmpty := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/identities", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, getEmpty)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get empty status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var empty []identity.PublicView
+	if err := json.NewDecoder(rr.Body).Decode(&empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty == nil {
+		t.Fatal("expected JSON array, got null")
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected empty, got %+v", empty)
+	}
+
+	now := time.Now().UTC()
+	iid, err := idStore.Upsert("conv1", identity.Identity{
+		Label:             "admin@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer SECRET_TOKEN_XYZ"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "admin@x.com",
+		IsDefault:         false,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil || iid == "" {
+		t.Fatalf("upsert: id=%q err=%v", iid, err)
+	}
+
+	getList := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/identities", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getList)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get list status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	raw := rr.Body.String()
+	if strings.Contains(raw, "SECRET_TOKEN_XYZ") {
+		t.Fatalf("list leaked token: %s", raw)
+	}
+	var list []identity.PublicView
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != iid || list[0].Label != "admin@x.com" {
+		t.Fatalf("list=%+v", list)
+	}
+	if list[0].IsDefault {
+		t.Fatal("expected not default before set")
+	}
+
+	setDef := httptest.NewRequest(http.MethodPost, "/v0/conversations/conv1/identities/"+iid+"/default", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, setDef)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set default status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	views := idStore.ListPublic("conv1")
+	if len(views) != 1 || !views[0].IsDefault {
+		t.Fatalf("after default: %+v", views)
+	}
+
+	delOne := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/identities/"+iid, nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, delOne)
+	if rr.Code != http.StatusOK && rr.Code != http.StatusNoContent {
+		t.Fatalf("delete one status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idStore.ListPublic("conv1")) != 0 {
+		t.Fatal("expected empty after delete one")
+	}
+
+	_, err = idStore.Upsert("conv1", identity.Identity{
+		Label:             "u2@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer OTHER_SECRET"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "u2@x.com",
+		IsDefault:         true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = idStore.Upsert("conv1", identity.Identity{
+		Label:             "env-default",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer ENV_SECRET"},
+		Source:            identity.SourceEnv,
+		Subject:           "env",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clear := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/identities", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, clear)
+	if rr.Code != http.StatusOK && rr.Code != http.StatusNoContent {
+		t.Fatalf("clear status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	left := idStore.ListPublic("conv1")
+	if len(left) != 1 || left[0].Source != identity.SourceEnv {
+		t.Fatalf("clear should keep env: %+v", left)
 	}
 }
 

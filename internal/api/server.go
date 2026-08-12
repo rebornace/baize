@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -22,18 +24,20 @@ type Runner interface {
 }
 
 type Server struct {
-	Store    store.Store
-	Registry *tool.Registry
-	Runner   Runner
-	mux      *http.ServeMux
+	Store      store.Store
+	Registry   *tool.Registry
+	Runner     Runner
+	Identities identity.Store
+	mux        *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	s := &Server{
-		Store:    st,
-		Registry: reg,
-		Runner:   runner,
-		mux:      http.NewServeMux(),
+		Store:      st,
+		Registry:   reg,
+		Runner:     runner,
+		Identities: identity.NewMemoryStore(),
+		mux:        http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -54,6 +58,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
+	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
 }
 
 type apiError struct {
@@ -175,8 +183,10 @@ func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AgentID string `json:"agent_id"`
-		Input   string `json:"input"`
+		AgentID        string `json:"agent_id"`
+		Input          string `json:"input"`
+		ConversationID string `json:"conversation_id"`
+		IdentityID     string `json:"identity_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -193,7 +203,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runRec, err := s.Store.CreateRun(store.CreateRunInput{AgentID: body.AgentID, Input: body.Input})
+	conv := strings.TrimSpace(body.ConversationID)
+	if conv == "" {
+		conv = "conv_" + uuid.NewString()
+	}
+
+	runRec, err := s.Store.CreateRun(store.CreateRunInput{
+		AgentID:        body.AgentID,
+		Input:          body.Input,
+		ConversationID: conv,
+		IdentityID:     body.IdentityID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -210,9 +230,53 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"run_id": updated.ID,
-		"status": updated.Status,
+		"run_id":          updated.ID,
+		"status":          updated.Status,
+		"conversation_id": conv,
 	})
+}
+
+func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeJSON(w, http.StatusOK, []identity.PublicView{})
+		return
+	}
+	views := s.Identities.ListPublic(r.PathValue("id"))
+	if views == nil {
+		views = []identity.PublicView{}
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
+func (s *Server) handleSetDefaultIdentity(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	if err := s.Identities.SetDefault(r.PathValue("id"), r.PathValue("iid")); err != nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleDeleteIdentity(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	if err := s.Identities.Delete(r.PathValue("id"), r.PathValue("iid")); err != nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
+	if s.Identities != nil {
+		s.Identities.ClearCaptured(r.PathValue("id"))
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
