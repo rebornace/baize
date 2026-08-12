@@ -568,3 +568,191 @@ func TestExecuteNoMessageOnWaitingHuman(t *testing.T) {
 		t.Fatal("Execute did not return after reject")
 	}
 }
+
+// TestContinueFromHITLColdInjectsHistory: on a cold restart (no Gate waiter),
+// ContinueFromHITL must inject the conversation window history (system + prior
+// turns + current user input via buildMessages) before replaying this run's
+// tool-call / tool-result events, so cross-restart HITL does not drop prior
+// context. The current user input must not be duplicated.
+func TestContinueFromHITLColdInjectsHistory(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
+	msgStore := conversation.NewMemoryStore()
+	// Prior conversation turns from earlier runs.
+	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "上一轮问题"})
+	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "上一轮回答"})
+	// The API appended the current run's user input before Execute kicked off.
+	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "创建工单"})
+
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"id": "9"}, false, nil
+	}, true)
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: ag.ID, Input: "创建工单", ConversationID: "c1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate persisted waiting_human after a process restart.
+	_ = st.AppendEvent(r.ID, store.Event{Type: EventRunStarted})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventLLMToolCall,
+		Data: map[string]any{"id": "c1", "name": "create_ticket", "arguments": map[string]any{"title": "x"}},
+	})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventHITLWaiting,
+		Data: map[string]any{"prompt": "Approve tool create_ticket?", "tool_name": "create_ticket"},
+	})
+	_ = st.UpdateRun(r.ID, store.StatusWaitingHuman, "", "")
+	_ = st.SetHITL(r.ID, &store.HITLPayload{
+		Prompt:    "Approve tool create_ticket?",
+		ToolName:  "create_ticket",
+		Arguments: map[string]any{"title": "x"},
+	})
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "已创建"}
+	}}
+	eng := &Engine{
+		Store:       st,
+		LLM:         llmStub,
+		Tools:       reg,
+		Gate:        NewGate(), // empty — no in-process waiter, forces cold path
+		Messages:    msgStore,
+		MaxMessages: 40,
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("ContinueFromHITL: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("invoke count=%d want 1", calls.Load())
+	}
+
+	// Expect: system, 上一轮 user, 上一轮 assistant, 本轮 user, assistant(tool_call), tool(result).
+	if len(saw) != 6 {
+		t.Fatalf("expected 6 messages, got %d: %+v", len(saw), saw)
+	}
+	if saw[0].Role != llm.RoleSystem || saw[0].Content != "helper" {
+		t.Fatalf("saw[0]=%+v", saw[0])
+	}
+	if saw[1].Role != llm.RoleUser || saw[1].Content != "上一轮问题" {
+		t.Fatalf("saw[1]=%+v", saw[1])
+	}
+	if saw[2].Role != llm.RoleAssistant || saw[2].Content != "上一轮回答" {
+		t.Fatalf("saw[2]=%+v", saw[2])
+	}
+	if saw[3].Role != llm.RoleUser || saw[3].Content != "创建工单" {
+		t.Fatalf("saw[3]=%+v", saw[3])
+	}
+	if saw[4].Role != llm.RoleAssistant || len(saw[4].ToolCalls) != 1 || saw[4].ToolCalls[0].Name != "create_ticket" {
+		t.Fatalf("saw[4]=%+v", saw[4])
+	}
+	if saw[5].Role != llm.RoleTool {
+		t.Fatalf("saw[5]=%+v", saw[5])
+	}
+
+	// The current user input must appear exactly once.
+	var userCount int
+	for _, m := range saw {
+		if m.Role == llm.RoleUser && m.Content == "创建工单" {
+			userCount++
+		}
+	}
+	if userCount != 1 {
+		t.Fatalf("expected exactly one 创建工单 user message, got %d", userCount)
+	}
+
+	// The cold resume should also have written the terminal assistant message.
+	msgs := msgStore.List("c1")
+	var terminal *conversation.Message
+	for i := range msgs {
+		if msgs[i].Role == conversation.RoleAssistant && msgs[i].RunID == r.ID {
+			terminal = &msgs[i]
+			break
+		}
+	}
+	if terminal == nil || terminal.Content != "已创建" {
+		t.Fatalf("missing terminal assistant message; msgs=%+v", msgs)
+	}
+
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s want succeeded", got.Status)
+	}
+}
+
+// TestContinueFromHITLColdNoMessageStore: when Messages is nil, the cold resume
+// path falls back to the legacy behavior (system + user input + event replay)
+// without injecting any conversation history.
+func TestContinueFromHITLColdNoMessageStore(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"id": "9"}, false, nil
+	}, true)
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = st.AppendEvent(r.ID, store.Event{Type: EventRunStarted})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventLLMToolCall,
+		Data: map[string]any{"id": "c1", "name": "create_ticket", "arguments": map[string]any{"title": "x"}},
+	})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventHITLWaiting,
+		Data: map[string]any{"prompt": "Approve tool create_ticket?", "tool_name": "create_ticket"},
+	})
+	_ = st.UpdateRun(r.ID, store.StatusWaitingHuman, "", "")
+	_ = st.SetHITL(r.ID, &store.HITLPayload{
+		Prompt:    "Approve tool create_ticket?",
+		ToolName:  "create_ticket",
+		Arguments: map[string]any{"title": "x"},
+	})
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "已创建"}
+	}}
+	eng := &Engine{
+		Store: st,
+		LLM:   llmStub,
+		Tools: reg,
+		Gate:  NewGate(),
+		// Messages intentionally nil.
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("ContinueFromHITL: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("invoke count=%d want 1", calls.Load())
+	}
+	// Expect: system, user input, assistant(tool_call), tool(result).
+	if len(saw) != 4 {
+		t.Fatalf("expected 4 messages, got %d: %+v", len(saw), saw)
+	}
+	if saw[0].Role != llm.RoleSystem || saw[1].Role != llm.RoleUser || saw[1].Content != "创建工单" {
+		t.Fatalf("legacy header mismatch: saw[0]=%+v saw[1]=%+v", saw[0], saw[1])
+	}
+	if saw[2].Role != llm.RoleAssistant || len(saw[2].ToolCalls) != 1 {
+		t.Fatalf("saw[2]=%+v", saw[2])
+	}
+	if saw[3].Role != llm.RoleTool {
+		t.Fatalf("saw[3]=%+v", saw[3])
+	}
+}

@@ -152,8 +152,62 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	if err != nil {
 		return err
 	}
-	messages := messagesFromEvents(ag.System, run.Input, evs)
+	messages := e.buildResumeMessages(ag.System, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
+}
+
+// buildResumeMessages assembles the LLM prompt for a cold HITL resume: the
+// system prompt + windowed conversation history + current user input (via
+// buildMessages, which dedups a trailing user input already persisted by the
+// API), followed by the assistant tool-call / tool-result turns already
+// recorded for this run. This keeps cross-restart HITL from dropping prior
+// conversation context while avoiding duplicate system or user-input messages.
+func (e *Engine) buildResumeMessages(system, conversationID, input string, evs []store.Event) []llm.Message {
+	messages := e.buildMessages(system, conversationID, input)
+	messages = append(messages, eventsAfterInput(evs)...)
+	return messages
+}
+
+// eventsAfterInput converts run events into LLM messages, skipping the leading
+// system and user-input messages (which are provided separately by
+// buildMessages). It returns only the assistant tool-call / tool-result / final
+// assistant message turns recorded for this run.
+func eventsAfterInput(evs []store.Event) []llm.Message {
+	var out []llm.Message
+	var pending []llm.ToolCall
+	flushPending := func() {
+		if len(pending) == 0 {
+			return
+		}
+		out = append(out, llm.Message{Role: llm.RoleAssistant, ToolCalls: pending})
+		pending = nil
+	}
+	for _, ev := range evs {
+		switch ev.Type {
+		case EventLLMToolCall:
+			pending = append(pending, llm.ToolCall{
+				ID:        asString(ev.Data["id"]),
+				Name:      asString(ev.Data["name"]),
+				Arguments: asMap(ev.Data["arguments"]),
+			})
+		case EventToolResult:
+			flushPending()
+			raw, _ := json.Marshal(ev.Data["content"])
+			out = append(out, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: asString(ev.Data["tool_call_id"]),
+				Content:    string(raw),
+			})
+		case EventLLMMessage:
+			flushPending()
+			out = append(out, llm.Message{
+				Role:    llm.RoleAssistant,
+				Content: asString(ev.Data["content"]),
+			})
+		}
+	}
+	flushPending()
+	return out
 }
 
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
@@ -374,47 +428,6 @@ func lastToolCallID(st store.Store, runID string) string {
 		}
 	}
 	return ""
-}
-
-func messagesFromEvents(system, input string, evs []store.Event) []llm.Message {
-	msgs := []llm.Message{
-		{Role: llm.RoleSystem, Content: system},
-		{Role: llm.RoleUser, Content: input},
-	}
-	var pending []llm.ToolCall
-	flushPending := func() {
-		if len(pending) == 0 {
-			return
-		}
-		msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, ToolCalls: pending})
-		pending = nil
-	}
-	for _, ev := range evs {
-		switch ev.Type {
-		case EventLLMToolCall:
-			pending = append(pending, llm.ToolCall{
-				ID:        asString(ev.Data["id"]),
-				Name:      asString(ev.Data["name"]),
-				Arguments: asMap(ev.Data["arguments"]),
-			})
-		case EventToolResult:
-			flushPending()
-			raw, _ := json.Marshal(ev.Data["content"])
-			msgs = append(msgs, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: asString(ev.Data["tool_call_id"]),
-				Content:    string(raw),
-			})
-		case EventLLMMessage:
-			flushPending()
-			msgs = append(msgs, llm.Message{
-				Role:    llm.RoleAssistant,
-				Content: asString(ev.Data["content"]),
-			})
-		}
-	}
-	flushPending()
-	return msgs
 }
 
 func asString(v any) string {
