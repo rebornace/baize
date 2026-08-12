@@ -10,6 +10,7 @@ import (
 // ToolRoute maps an OpenAPI operation to an invokable tool.
 type ToolRoute struct {
 	Name        string
+	OperationID string
 	Description string
 	Method      string
 	Path        string
@@ -50,6 +51,7 @@ func LoadTools(specPath string) ([]ToolRoute, error) {
 			}
 			tools = append(tools, ToolRoute{
 				Name:        name,
+				OperationID: op.OperationID,
 				Description: desc,
 				Method:      strings.ToUpper(method),
 				Path:        path,

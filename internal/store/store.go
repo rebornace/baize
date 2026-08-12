@@ -18,10 +18,11 @@ type Agent struct {
 }
 
 type Connector struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"` // openapi
-	Spec    string `json:"spec"`
-	BaseURL string `json:"base_url"`
+	ID              string   `json:"id"`
+	Type            string   `json:"type"` // openapi
+	Spec            string   `json:"spec"`
+	BaseURL         string   `json:"base_url"`
+	RequireApproval []string `json:"require_approval,omitempty"`
 }
 
 type Event struct {

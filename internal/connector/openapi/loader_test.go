@@ -47,6 +47,31 @@ func TestLoadToolsFromSpec(t *testing.T) {
 	}
 }
 
+func TestLoadToolsOperationID(t *testing.T) {
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var create openapi.ToolRoute
+	found := false
+	for _, tl := range tools {
+		if tl.Name == "create_ticket" {
+			create = tl
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("create_ticket not found")
+	}
+	if create.OperationID != "create_ticket" {
+		t.Fatalf("OperationID=%q, want create_ticket", create.OperationID)
+	}
+	if create.Method != http.MethodPost {
+		t.Fatalf("Method=%q, want POST", create.Method)
+	}
+}
+
 func TestInvokerCreateTicket(t *testing.T) {
 	srv := httptest.NewServer(mockticket.NewHandler())
 	t.Cleanup(srv.Close)
