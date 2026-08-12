@@ -212,7 +212,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		AgentID:        body.AgentID,
 		Input:          body.Input,
 		ConversationID: conv,
-		IdentityID:     body.IdentityID,
+		IdentityID:     strings.TrimSpace(body.IdentityID),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())

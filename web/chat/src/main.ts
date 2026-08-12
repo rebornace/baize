@@ -361,6 +361,7 @@ async function sendMessage() {
   const text = inputEl.value.trim()
   if (!text || busy) return
 
+  const sentConversationId = conversationId
   items.push({ kind: 'user', text })
   render()
   inputEl.value = ''
@@ -370,13 +371,20 @@ async function sendMessage() {
   setStatus('正在创建运行…')
 
   try {
-    const created = await createRun(AGENT_ID, text, conversationId)
+    const created = await createRun(AGENT_ID, text, sentConversationId)
+    // 新对话可能已切换 conversationId：忽略过期 createRun 结果，避免污染新会话。
+    if (conversationId !== sentConversationId) {
+      return
+    }
     if (created.conversation_id) {
       setConversationId(created.conversation_id)
     }
     setStatus(`已创建运行 ${created.run_id}（${statusLabel(created.status)}）`)
     startPoll(created.run_id)
   } catch (err) {
+    if (conversationId !== sentConversationId) {
+      return
+    }
     setBusy(false)
     setStatus(err instanceof Error ? err.message : String(err))
     items.push({ kind: 'system', text: '发送失败，请重试' })

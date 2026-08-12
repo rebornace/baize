@@ -2,6 +2,8 @@ package run
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -189,6 +191,72 @@ func TestExecuteInjectsConversationID(t *testing.T) {
 	if sawConvID != "c1" {
 		t.Fatalf("ConversationIDFrom=%q want c1", sawConvID)
 	}
+}
+
+func TestToolResultEventRedactsAccessToken(t *testing.T) {
+	const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.sig"
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	reg.Register("login", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		return map[string]any{
+			"accessToken": jwt,
+			"email":       "admin@x.com",
+			"data":        map[string]any{"token": jwt, "role": "admin"},
+		}, false, nil
+	})
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "登录"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eng := &Engine{Store: st, LLM: &loginScriptLLM{}, Tools: reg}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	evs, err := st.ListEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, ev := range evs {
+		if ev.Type != EventToolResult {
+			continue
+		}
+		found = true
+		content, _ := ev.Data["content"].(map[string]any)
+		if content["accessToken"] != "[redacted]" {
+			t.Fatalf("accessToken=%v want [redacted]", content["accessToken"])
+		}
+		if content["email"] != "admin@x.com" {
+			t.Fatalf("email=%v", content["email"])
+		}
+		nested, _ := content["data"].(map[string]any)
+		if nested["token"] != "[redacted]" {
+			t.Fatalf("data.token=%v want [redacted]", nested["token"])
+		}
+		raw, _ := json.Marshal(ev.Data)
+		if strings.Contains(string(raw), jwt) {
+			t.Fatalf("tool.result still contains JWT: %s", raw)
+		}
+	}
+	if !found {
+		t.Fatal("missing tool.result event")
+	}
+}
+
+type loginScriptLLM struct{ calls int }
+
+func (s *loginScriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	s.calls++
+	if s.calls == 1 {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "login", Arguments: map[string]any{}},
+		}}, nil
+	}
+	return llm.Message{Role: llm.RoleAssistant, Content: "ok"}, nil
 }
 
 func TestContinueFromHITLInjectsConversationID(t *testing.T) {

@@ -99,7 +99,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		Data: map[string]any{
 			"tool_call_id": toolCallID,
 			"name":         payload.ToolName,
-			"content":      content,
+			"content":      identity.RedactSensitive(content),
 			"is_error":     isError,
 		},
 	})
@@ -165,7 +165,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					Data: map[string]any{
 						"tool_call_id": tc.ID,
 						"name":         tc.Name,
-						"content":      content,
+						"content":      identity.RedactSensitive(content),
 						"is_error":     isError,
 					},
 				})

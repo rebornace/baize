@@ -759,7 +759,7 @@ func TestPostRunConversationID(t *testing.T) {
 			"agent_id":        "a",
 			"input":           "hi",
 			"conversation_id": "conv_client",
-			"identity_id":     "idt_force",
+			"identity_id":     "  idt_force  ",
 		}))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, postWith)
@@ -779,7 +779,7 @@ func TestPostRunConversationID(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.ConversationID != "conv_client" || got.IdentityID != "idt_force" {
-		t.Fatalf("run=%+v", got)
+		t.Fatalf("run=%+v want identity_id trimmed to idt_force", got)
 	}
 
 	postOmit := httptest.NewRequest(http.MethodPost, "/v0/runs",
