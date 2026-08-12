@@ -1,16 +1,19 @@
 import './style.css'
 import {
   clearIdentities,
+  clearMessages,
   createRun,
   deleteIdentity,
   getRun,
   isTerminal,
   listEvents,
   listIdentities,
+  listMessages,
   listTools,
   resumeRun,
   setDefaultIdentity,
   getUIConfig,
+  type ChatMessage,
   type Event,
   type IdentityView,
   type Run,
@@ -59,6 +62,15 @@ app.innerHTML = `
         <p class="side-loading">加载中…</p>
       </div>
     </aside>
+    <aside id="chat-panel" class="side-panel" aria-label="聊天">
+      <button type="button" id="chat-toggle" class="side-toggle" aria-expanded="true">
+        <span class="side-toggle-label">聊天</span>
+        <span class="side-toggle-hint">点击折叠</span>
+      </button>
+      <div id="chat-body" class="side-body">
+        <button type="button" id="btn-clear-chat" class="btn ghost sm danger-text">清空聊天</button>
+      </div>
+    </aside>
     <aside id="tools-panel" class="side-panel tools-panel" aria-label="Tools">
       <button type="button" id="tools-toggle" class="side-toggle" aria-expanded="true">
         <span class="side-toggle-label">Tools</span>
@@ -90,6 +102,9 @@ const toolsToggle = document.querySelector<HTMLButtonElement>('#tools-toggle')!
 const accountsPanel = document.querySelector<HTMLElement>('#accounts-panel')!
 const accountsBody = document.querySelector<HTMLElement>('#accounts-body')!
 const accountsToggle = document.querySelector<HTMLButtonElement>('#accounts-toggle')!
+const chatPanel = document.querySelector<HTMLElement>('#chat-panel')!
+const chatToggle = document.querySelector<HTMLButtonElement>('#chat-toggle')!
+const btnClearChat = document.querySelector<HTMLButtonElement>('#btn-clear-chat')!
 
 let items: ChatItem[] = []
 let pollTimer: number | null = null
@@ -561,6 +576,51 @@ async function loadAccountsPanel() {
   }
 }
 
+function messageToItem(msg: ChatMessage): ChatItem | null {
+  switch (msg.role) {
+    case 'user':
+      return { kind: 'user', text: msg.content }
+    case 'assistant':
+      return { kind: 'assistant', text: msg.content }
+    case 'system_note':
+      return { kind: 'system', text: msg.content }
+    default:
+      return null
+  }
+}
+
+async function loadHistory() {
+  try {
+    const msgs = await listMessages(conversationId)
+    items = msgs
+      .map(messageToItem)
+      .filter((i): i is ChatItem => i !== null)
+    renderedEventCount = 0
+    hitlSlot.innerHTML = ''
+    render()
+  } catch (err) {
+    setStatus(err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function clearChat() {
+  if (busy) return
+  setStatus('正在清空聊天…')
+  try {
+    await clearMessages(conversationId)
+    stopPoll()
+    items = []
+    renderedEventCount = 0
+    hitlDecisionPending = false
+    hitlSlot.innerHTML = ''
+    setBusy(false)
+    setStatus('已清空聊天')
+    render()
+  } catch (err) {
+    setStatus(err instanceof Error ? err.message : String(err))
+  }
+}
+
 function wireCollapse(
   panel: HTMLElement,
   toggle: HTMLButtonElement,
@@ -575,6 +635,11 @@ function wireCollapse(
 
 wireCollapse(toolsPanel, toolsToggle)
 wireCollapse(accountsPanel, accountsToggle)
+wireCollapse(chatPanel, chatToggle)
+
+btnClearChat.addEventListener('click', () => {
+  void clearChat()
+})
 
 btnSend.addEventListener('click', () => {
   void sendMessage()
@@ -595,6 +660,7 @@ resetChat()
 void loadUIConfig()
 void loadToolsPanel()
 void loadAccountsPanel()
+void loadHistory()
 
 async function loadUIConfig() {
   try {

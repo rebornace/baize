@@ -154,3 +154,27 @@ export async function clearIdentities(conversationId: string): Promise<void> {
   )
   await parseJSON<{ status: string }>(res)
 }
+
+export interface ChatMessage {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant' | 'system_note'
+  content: string
+  run_id?: string
+  created_at: string
+}
+
+export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/messages`,
+  )
+  return parseJSON<ChatMessage[]>(res)
+}
+
+export async function clearMessages(conversationId: string): Promise<void> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/messages`,
+    { method: 'DELETE' },
+  )
+  await parseJSON<{ status: string }>(res)
+}
