@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,23 @@ func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []ll
 		}}, nil
 	}
 	return llm.Message{Role: llm.RoleAssistant, Content: "已创建"}, nil
+}
+
+func TestUIIndex(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Baize Chat") {
+		t.Fatalf("body=%q", rr.Body.String())
+	}
 }
 
 func TestHealthz(t *testing.T) {
