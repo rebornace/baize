@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -41,7 +42,7 @@ func Run(cfg config.Config) error {
 		return fmt.Errorf("mock-ticket health check failed: %w", err)
 	}
 
-	srv, err := newAPIServer(cfg)
+	srv, _, err := newAPIServer(cfg)
 	if err != nil {
 		return err
 	}
@@ -59,7 +60,7 @@ func Run(cfg config.Config) error {
 
 // Serve starts Runtime only (no mock-ticket) and blocks on the API server.
 func Serve(cfg config.Config) error {
-	srv, err := newAPIServer(cfg)
+	srv, _, err := newAPIServer(cfg)
 	if err != nil {
 		return err
 	}
@@ -97,7 +98,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 		cfg.Run.MaxSteps = 8
 	}
 
-	apiSrv, err := newAPIServer(cfg)
+	apiSrv, storeClose, err := newAPIServer(cfg)
 	if err != nil {
 		_ = ticketSrv.Close()
 		t.Fatalf("new api server: %v", err)
@@ -105,6 +106,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 
 	runtimeLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		_ = storeClose.Close()
 		_ = ticketSrv.Close()
 		t.Fatalf("listen runtime: %v", err)
 	}
@@ -114,6 +116,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 
 	if err := waitHealthy(runtimeURL+"/healthz", 5*time.Second); err != nil {
 		_ = httpSrv.Close()
+		_ = storeClose.Close()
 		_ = ticketSrv.Close()
 		t.Fatalf("runtime health check failed: %v", err)
 	}
@@ -123,26 +126,29 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
 		_ = ticketSrv.Shutdown(ctx)
+		_ = storeClose.Close()
 	}
 	return runtimeURL, ticketURL, shutdown
 }
 
-func newAPIServer(cfg config.Config) (*api.Server, error) {
+func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	provider, err := newLLM(cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	st, err := store.Open(cfg.Store.Driver, cfg.Store.SQLitePath)
 	if err != nil {
-		return nil, fmt.Errorf("open store: %w", err)
+		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
+	closer := storeCloser(st)
 	reg := tool.NewRegistry()
 
 	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
 
 	if err := registerConnector(st, reg, cfg); err != nil {
-		return nil, err
+		_ = closer.Close()
+		return nil, nil, err
 	}
 
 	engine := &run.Engine{
@@ -152,7 +158,18 @@ func newAPIServer(cfg config.Config) (*api.Server, error) {
 		Gate:     run.NewGate(),
 		MaxSteps: cfg.Run.MaxSteps,
 	}
-	return api.NewServer(st, reg, engine), nil
+	return api.NewServer(st, reg, engine), closer, nil
+}
+
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
+func storeCloser(st store.Store) io.Closer {
+	if c, ok := st.(io.Closer); ok {
+		return c
+	}
+	return nopCloser{}
 }
 
 func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config) error {

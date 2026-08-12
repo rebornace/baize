@@ -6,7 +6,12 @@
 *.exe
 *.test
 bin/
+# 通用 dist；Go embed 需跟踪 internal/ui/dist（须逐级取消忽略）
 dist/
+!internal/
+!internal/ui/
+!internal/ui/dist/
+!internal/ui/dist/**
 _public_export/
 .env
 .env.*

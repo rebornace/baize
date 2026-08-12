@@ -157,7 +157,7 @@ X-Baize-Protocol: v0
 ## 7. 首个验收故事
 
 1. 导入模拟工单 OpenAPI → Agent 查询/创建工单（README 30 分钟）。  
-2. 文档第二页：拟稿 → `waiting_human` → resume → 回调写回业务系统。
+2. **文档第二页（HITL）：** 拟稿 → `waiting_human` → `POST .../resume` → 回调写回业务系统；运营入口见 `/ui`（Chat），规格见 [Demo B 设计](superpowers/specs/2026-08-12-baize-demo-b-design.md)。
 
 ---
 
