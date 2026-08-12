@@ -92,6 +92,10 @@ curl -s http://127.0.0.1:8080/v0/tools
 
 同 `id` 再 `PUT` 会按新 Spec **整表替换**该 Connector 下的 Tools；坏 Spec 返回 `400`，不污染已有 Registry。
 
+## 会话身份
+
+对话内登录成功后，凭证按 `conversation_id` 记在会话身份库；同一会话后续受保护调用会自动带上捕获的 Bearer。Chat UI 侧栏可查看已登录账号（脱敏）、设默认与退出；新对话换新 `conversation_id`。`bearer_env` 仅作无会话捕获时的启动兜底，不是唯一身份来源。
+
 ## Chat UI 构建（可选）
 
 仓库已提交 `internal/ui/dist` 预构建产物，干净 clone 后即可 `go build` / `go test`（`//go:embed`）。若修改 `web/chat`，需 Node 18+ 重新构建：
