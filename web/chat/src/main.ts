@@ -4,10 +4,12 @@ import {
   getRun,
   isTerminal,
   listEvents,
+  listTools,
   resumeRun,
   type Event,
   type Run,
   type RunStatus,
+  type ToolInfo,
 } from './api'
 
 const AGENT_ID = 'ticket-agent'
@@ -27,6 +29,15 @@ app.innerHTML = `
       <h1>Baize 对话</h1>
       <button type="button" id="btn-new" class="btn ghost">新对话</button>
     </header>
+    <aside id="tools-panel" class="tools-panel" aria-label="Tools">
+      <button type="button" id="tools-toggle" class="tools-toggle" aria-expanded="true">
+        <span class="tools-toggle-label">Tools</span>
+        <span class="tools-toggle-hint">点击折叠</span>
+      </button>
+      <div id="tools-body" class="tools-body">
+        <p class="tools-loading">加载中…</p>
+      </div>
+    </aside>
     <main id="messages" class="messages" aria-live="polite"></main>
     <div id="hitl-slot" class="hitl-slot"></div>
     <footer class="composer">
@@ -43,6 +54,9 @@ const inputEl = document.querySelector<HTMLTextAreaElement>('#input')!
 const btnSend = document.querySelector<HTMLButtonElement>('#btn-send')!
 const btnNew = document.querySelector<HTMLButtonElement>('#btn-new')!
 const statusEl = document.querySelector<HTMLElement>('#status')!
+const toolsPanel = document.querySelector<HTMLElement>('#tools-panel')!
+const toolsBody = document.querySelector<HTMLElement>('#tools-body')!
+const toolsToggle = document.querySelector<HTMLButtonElement>('#tools-toggle')!
 
 let items: ChatItem[] = []
 let pollTimer: number | null = null
@@ -295,6 +309,52 @@ async function sendMessage() {
   }
 }
 
+function formatToolLine(t: ToolInfo): string {
+  const method = (t.method ?? '').toUpperCase() || '—'
+  const path = t.path ?? '—'
+  return `${method} ${path} — ${t.name} (${t.connector_id})`
+}
+
+function renderTools(tools: ToolInfo[]) {
+  if (tools.length === 0) {
+    toolsBody.innerHTML = `<p class="tools-empty">暂无已注册 Tools</p>`
+    return
+  }
+  const ul = document.createElement('ul')
+  ul.className = 'tools-list'
+  for (const t of tools) {
+    const li = document.createElement('li')
+    li.className = 'tools-item'
+    li.textContent = formatToolLine(t)
+    if (t.require_approval) {
+      const badge = document.createElement('span')
+      badge.className = 'tools-badge'
+      badge.textContent = '需审批'
+      li.appendChild(document.createTextNode(' '))
+      li.appendChild(badge)
+    }
+    ul.appendChild(li)
+  }
+  toolsBody.innerHTML = ''
+  toolsBody.appendChild(ul)
+}
+
+async function loadToolsPanel() {
+  try {
+    const tools = await listTools()
+    renderTools(tools)
+  } catch {
+    toolsBody.innerHTML = `<p class="tools-error">无法加载 Tools</p>`
+  }
+}
+
+toolsToggle.addEventListener('click', () => {
+  const collapsed = toolsPanel.classList.toggle('collapsed')
+  toolsToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
+  const hint = toolsToggle.querySelector('.tools-toggle-hint')
+  if (hint) hint.textContent = collapsed ? '点击展开' : '点击折叠'
+})
+
 btnSend.addEventListener('click', () => {
   void sendMessage()
 })
@@ -309,3 +369,4 @@ inputEl.addEventListener('keydown', (e) => {
 })
 
 resetChat()
+void loadToolsPanel()

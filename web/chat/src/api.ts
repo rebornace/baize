@@ -80,3 +80,19 @@ export async function resumeRun(
 export function isTerminal(status: RunStatus): boolean {
   return status === 'succeeded' || status === 'failed'
 }
+
+export interface ToolInfo {
+  name: string
+  description?: string
+  connector_id: string
+  operation_id?: string
+  method?: string
+  path?: string
+  require_approval?: boolean
+}
+
+export async function listTools(): Promise<ToolInfo[]> {
+  const res = await fetch('/v0/tools')
+  const body = await parseJSON<{ tools: ToolInfo[] }>(res)
+  return body.tools ?? []
+}

@@ -1,0 +1,40 @@
+(function(){const e=document.createElement("link").relList;if(e&&e.supports&&e.supports("modulepreload"))return;for(const o of document.querySelectorAll('link[rel="modulepreload"]'))n(o);new MutationObserver(o=>{for(const a of o)if(a.type==="childList")for(const c of a.addedNodes)c.tagName==="LINK"&&c.rel==="modulepreload"&&n(c)}).observe(document,{childList:!0,subtree:!0});function s(o){const a={};return o.integrity&&(a.integrity=o.integrity),o.referrerPolicy&&(a.referrerPolicy=o.referrerPolicy),o.crossOrigin==="use-credentials"?a.credentials="include":o.crossOrigin==="anonymous"?a.credentials="omit":a.credentials="same-origin",a}function n(o){if(o.ep)return;o.ep=!0;const a=s(o);fetch(o.href,a)}})();async function g(t){var e;if(!t.ok){let s=t.statusText;try{const n=await t.json();(e=n.error)!=null&&e.message&&(s=n.error.message)}catch{}throw new Error(`HTTP ${t.status}: ${s}`)}return await t.json()}async function U(t,e){const s=await fetch("/v0/runs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:t,input:e})});return g(s)}async function A(t){const e=await fetch(`/v0/runs/${encodeURIComponent(t)}`);return g(e)}async function B(t){const e=await fetch(`/v0/runs/${encodeURIComponent(t)}/events`);return g(e)}async function D(t,e,s=""){const n=await fetch(`/v0/runs/${encodeURIComponent(t)}/resume`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({decision:e,comment:s})});return g(n)}function K(t){return t==="succeeded"||t==="failed"}async function z(){const t=await fetch("/v0/tools");return(await g(t)).tools??[]}const F="ticket-agent",G=700,I=document.querySelector("#app");I.innerHTML=`
+  <div class="shell">
+    <header class="header">
+      <h1>Baize 对话</h1>
+      <button type="button" id="btn-new" class="btn ghost">新对话</button>
+    </header>
+    <aside id="tools-panel" class="tools-panel" aria-label="Tools">
+      <button type="button" id="tools-toggle" class="tools-toggle" aria-expanded="true">
+        <span class="tools-toggle-label">Tools</span>
+        <span class="tools-toggle-hint">点击折叠</span>
+      </button>
+      <div id="tools-body" class="tools-body">
+        <p class="tools-loading">加载中…</p>
+      </div>
+    </aside>
+    <main id="messages" class="messages" aria-live="polite"></main>
+    <div id="hitl-slot" class="hitl-slot"></div>
+    <footer class="composer">
+      <textarea id="input" rows="2" placeholder="输入消息，例如：创建一个工单，标题 VPN 故障"></textarea>
+      <button type="button" id="btn-send" class="btn primary">发送</button>
+    </footer>
+    <p id="status" class="status"></p>
+  </div>
+`;const b=document.querySelector("#messages"),d=document.querySelector("#hitl-slot"),f=document.querySelector("#input"),O=document.querySelector("#btn-send"),V=document.querySelector("#btn-new"),Q=document.querySelector("#status"),W=document.querySelector("#tools-panel"),v=document.querySelector("#tools-body"),x=document.querySelector("#tools-toggle");let r=[],S=null,P=!1,T=0,w=!1;function l(t){Q.textContent=t}function h(t){P=t,O.disabled=t,f.disabled=t}function k(){S!==null&&(window.clearInterval(S),S=null)}function _(){k(),r=[],T=0,w=!1,d.innerHTML="",h(!1),l(""),p(),f.focus()}function p(){b.innerHTML="";for(const t of r){const e=document.createElement("div");e.className=`bubble ${t.kind}`,t.kind==="hitl"?e.textContent=X(t.event):e.textContent=t.text,b.appendChild(e)}b.scrollTop=b.scrollHeight}function X(t){const e=t.data??{},s=String(e.tool_name??e.name??"工具"),n=String(e.prompt??"需要人工审批");return`⏳ 待审批：${s}
+${n}`}function M(t){switch(t){case"queued":return"排队中";case"running":return"运行中";case"waiting_human":return"等待审批";case"succeeded":return"已完成";case"failed":return"失败";default:return String(t)}}function Y(t,e){var n,o,a,c,m,y,E,C,q;const s=t.slice(T);T=t.length;for(const i of s)switch(i.type){case"llm.message":{const u=String(((n=i.data)==null?void 0:n.content)??"");u&&r.push({kind:"assistant",text:u});break}case"llm.tool_call":{const u=String(((o=i.data)==null?void 0:o.name)??"tool"),$=JSON.stringify(((a=i.data)==null?void 0:a.arguments)??{},null,0);r.push({kind:"tool",text:`调用工具 ${u}：${$}`});break}case"tool.result":{const u=String(((c=i.data)==null?void 0:c.name)??"tool"),$=JSON.stringify(((m=i.data)==null?void 0:m.content)??{},null,0),J=(y=i.data)!=null&&y.is_error?"（错误）":"";r.push({kind:"tool",text:`工具结果 ${u}${J}：${$}`});break}case"hitl.waiting":r.push({kind:"hitl",event:i,runId:e});break;case"hitl.resumed":r.push({kind:"system",text:`已批准${(E=i.data)!=null&&E.comment?`：${String(i.data.comment)}`:""}`});break;case"hitl.rejected":r.push({kind:"system",text:`已驳回${(C=i.data)!=null&&C.comment?`：${String(i.data.comment)}`:""}`});break;case"llm.error":r.push({kind:"system",text:`错误：${String(((q=i.data)==null?void 0:q.error)??"未知")}`});break}p()}function Z(t,e){const s=[...e].reverse().find(y=>y.type==="hitl.waiting");if(!s){d.innerHTML="";return}const n=s.data??{},o=String(n.tool_name??"工具"),a=String(n.prompt??"请审批此工具调用"),c=JSON.stringify(n.arguments??{},null,2);d.innerHTML=`
+    <div class="hitl-card">
+      <h2>需要审批</h2>
+      <p class="hitl-prompt">${L(a)}</p>
+      <p class="hitl-meta"><strong>工具：</strong>${L(o)}</p>
+      <pre class="hitl-args">${L(c)}</pre>
+      <label class="hitl-comment">
+        备注（可选）
+        <input type="text" id="hitl-comment" placeholder="审批备注" />
+      </label>
+      <div class="hitl-actions">
+        <button type="button" class="btn primary" id="btn-approve">批准</button>
+        <button type="button" class="btn danger" id="btn-reject">驳回</button>
+      </div>
+    </div>
+  `;const m=document.querySelector("#hitl-comment");document.querySelector("#btn-approve").addEventListener("click",()=>{N(t,"approve",m.value.trim())}),document.querySelector("#btn-reject").addEventListener("click",()=>{N(t,"reject",m.value.trim())})}function L(t){return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}async function N(t,e,s){if(!w){w=!0;try{l(e==="approve"?"正在提交批准…":"正在提交驳回…"),await D(t,e,s),d.innerHTML="",l("已提交决策，继续运行…"),j(t)}catch(n){l(n instanceof Error?n.message:String(n))}finally{w=!1}}}async function H(t){const[e,s]=await Promise.all([A(t),B(t)]);return Y(s,t),l(`状态：${M(e.status)}`),e.status==="waiting_human"?(Z(t,s),h(!1)):d.innerHTML="",K(e.status)&&(k(),h(!1),e.status==="succeeded"&&e.output&&(r.some(o=>o.kind==="assistant"&&o.text===e.output)||(r.push({kind:"assistant",text:e.output}),p())),e.status==="failed"&&e.error&&(r.push({kind:"system",text:`运行失败：${e.error}`}),p())),e}function j(t){k(),H(t),S=window.setInterval(()=>{H(t).catch(e=>{l(e instanceof Error?e.message:String(e))})},G)}async function R(){const t=f.value.trim();if(!(!t||P)){r.push({kind:"user",text:t}),p(),f.value="",h(!0),T=0,d.innerHTML="",l("正在创建运行…");try{const e=await U(F,t);l(`已创建运行 ${e.run_id}（${M(e.status)}）`),j(e.run_id)}catch(e){h(!1),l(e instanceof Error?e.message:String(e)),r.push({kind:"system",text:"发送失败，请重试"}),p()}}}function tt(t){const e=(t.method??"").toUpperCase()||"—",s=t.path??"—";return`${e} ${s} — ${t.name} (${t.connector_id})`}function et(t){if(t.length===0){v.innerHTML='<p class="tools-empty">暂无已注册 Tools</p>';return}const e=document.createElement("ul");e.className="tools-list";for(const s of t){const n=document.createElement("li");if(n.className="tools-item",n.textContent=tt(s),s.require_approval){const o=document.createElement("span");o.className="tools-badge",o.textContent="需审批",n.appendChild(document.createTextNode(" ")),n.appendChild(o)}e.appendChild(n)}v.innerHTML="",v.appendChild(e)}async function nt(){try{const t=await z();et(t)}catch{v.innerHTML='<p class="tools-error">无法加载 Tools</p>'}}x.addEventListener("click",()=>{const t=W.classList.toggle("collapsed");x.setAttribute("aria-expanded",t?"false":"true");const e=x.querySelector(".tools-toggle-hint");e&&(e.textContent=t?"点击展开":"点击折叠")});O.addEventListener("click",()=>{R()});V.addEventListener("click",()=>{_()});f.addEventListener("keydown",t=>{t.key==="Enter"&&!t.shiftKey&&(t.preventDefault(),R())});_();nt();
