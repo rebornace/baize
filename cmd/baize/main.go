@@ -11,14 +11,16 @@ import (
 )
 
 func main() {
+	_ = config.LoadDotEnv(".env")
+
 	if len(os.Args) < 2 {
-		fmt.Println("usage: baize <demo|serve>")
+		fmt.Println("usage: baize <start|serve>")
 		os.Exit(2)
 	}
 
 	switch os.Args[1] {
-	case "demo":
-		cfg, err := config.Load("configs/demo.yaml")
+	case "start":
+		cfg, err := config.Load(localConfigPath())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -27,7 +29,7 @@ func main() {
 		}
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
-		cfgPath := fs.String("config", "configs/demo.yaml", "path to config yaml")
+		cfgPath := fs.String("config", localConfigPath(), "path to config yaml")
 		_ = fs.Parse(os.Args[2:])
 		cfg, err := config.Load(*cfgPath)
 		if err != nil {
@@ -37,7 +39,16 @@ func main() {
 			log.Fatal(err)
 		}
 	default:
-		fmt.Println("usage: baize <demo|serve>")
+		fmt.Println("usage: baize <start|serve>")
 		os.Exit(2)
 	}
+}
+
+// localConfigPath prefers local override for real-system debugging without touching CI defaults.
+func localConfigPath() string {
+	const local = "configs/demo.local.yaml"
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+	return "configs/demo.yaml"
 }

@@ -8,16 +8,21 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
 
 type fakeRunner struct {
-	store *store.Store
+	store store.Store
 }
 
 func (f *fakeRunner) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
@@ -25,8 +30,41 @@ func (f *fakeRunner) Execute(ctx context.Context, runID string, ag agent.Def, in
 	return f.store.UpdateRun(runID, store.StatusSucceeded, "已创建", "")
 }
 
+func (f *fakeRunner) ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error {
+	return nil
+}
+
+type scriptLLM struct{ calls int }
+
+func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	s.calls++
+	if s.calls == 1 {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "create_ticket", Arguments: map[string]any{"title": "x"}},
+		}}, nil
+	}
+	return llm.Message{Role: llm.RoleAssistant, Content: "已创建"}, nil
+}
+
+func TestUIIndex(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Baize Chat") {
+		t.Fatalf("body=%q", rr.Body.String())
+	}
+}
+
 func TestHealthz(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 
@@ -47,7 +85,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestRunSucceedsWithFakeRunner(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 	h := srv.Handler()
@@ -75,22 +113,10 @@ func TestRunSucceedsWithFakeRunner(t *testing.T) {
 	if runID == "" {
 		t.Fatalf("created=%v", created)
 	}
-	if created["status"] != string(store.StatusSucceeded) {
-		t.Fatalf("status=%v want succeeded", created["status"])
-	}
 
-	getRun := httptest.NewRequest(http.MethodGet, "/v0/runs/"+runID, nil)
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, getRun)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("get run status=%d", rr.Code)
-	}
-	var run store.Run
-	if err := json.NewDecoder(rr.Body).Decode(&run); err != nil {
-		t.Fatal(err)
-	}
-	if run.Status != store.StatusSucceeded || run.Output != "已创建" {
-		t.Fatalf("run=%+v", run)
+	runRec := pollRunStatus(t, h, runID, store.StatusSucceeded)
+	if runRec.Output != "已创建" {
+		t.Fatalf("run=%+v", runRec)
 	}
 
 	getEvs := httptest.NewRequest(http.MethodGet, "/v0/runs/"+runID+"/events", nil)
@@ -109,7 +135,7 @@ func TestRunSucceedsWithFakeRunner(t *testing.T) {
 }
 
 func TestUnknownAgent(t *testing.T) {
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 
@@ -160,15 +186,16 @@ paths:
 		t.Fatal(err)
 	}
 
-	st := store.New()
+	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	srv := api.NewServer(st, reg, &fakeRunner{store: st})
 
 	req := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
 		jsonBody(t, map[string]any{
-			"type":     "openapi",
-			"spec":     specPath,
-			"base_url": "http://127.0.0.1:18080",
+			"type":              "openapi",
+			"spec":              specPath,
+			"base_url":          "http://127.0.0.1:18080",
+			"require_approval":  []string{"create_ticket"},
 		}))
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
@@ -180,10 +207,763 @@ paths:
 	if len(specs) != 1 || specs[0].Name != "create_ticket" {
 		t.Fatalf("specs=%+v", specs)
 	}
+	if !reg.RequiresApproval("create_ticket") {
+		t.Fatal("create_ticket should require approval")
+	}
 	c, err := st.GetConnector("ticket")
 	if err != nil || c.BaseURL != "http://127.0.0.1:18080" {
 		t.Fatalf("connector=%+v err=%v", c, err)
 	}
+}
+
+func TestGetToolsAndConnector(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(specPath, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":             "openapi",
+			"spec":             specPath,
+			"base_url":         "http://127.0.0.1:18080",
+			"require_approval": []string{"create_ticket"},
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	getTools := httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getTools)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get tools status=%d", rr.Code)
+	}
+	var toolsBody struct {
+		Tools []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&toolsBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(toolsBody.Tools) == 0 {
+		t.Fatalf("expected tools, got %+v", toolsBody)
+	}
+	found := false
+	for _, info := range toolsBody.Tools {
+		if info.Name == "create_ticket" {
+			found = true
+			if info.Method == "" || info.Path == "" {
+				t.Fatalf("create_ticket missing method/path: %+v", info)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("create_ticket not in tools: %+v", toolsBody.Tools)
+	}
+
+	getConn := httptest.NewRequest(http.MethodGet, "/v0/connectors/ticket", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getConn)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get connector status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var connBody struct {
+		ID              string      `json:"id"`
+		Type            string      `json:"type"`
+		Spec            string      `json:"spec"`
+		BaseURL         string      `json:"base_url"`
+		RequireApproval []string    `json:"require_approval"`
+		Tools           []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&connBody); err != nil {
+		t.Fatal(err)
+	}
+	if connBody.ID != "ticket" || connBody.Type != "openapi" || connBody.Spec != specPath {
+		t.Fatalf("connector body=%+v", connBody)
+	}
+	if connBody.BaseURL != "http://127.0.0.1:18080" {
+		t.Fatalf("base_url=%q", connBody.BaseURL)
+	}
+	if len(connBody.RequireApproval) != 1 || connBody.RequireApproval[0] != "create_ticket" {
+		t.Fatalf("require_approval=%v", connBody.RequireApproval)
+	}
+	if len(connBody.Tools) != 1 || connBody.Tools[0].Name != "create_ticket" {
+		t.Fatalf("connector tools=%+v", connBody.Tools)
+	}
+	if connBody.Tools[0].Method == "" || connBody.Tools[0].Path == "" {
+		t.Fatalf("connector tool missing method/path: %+v", connBody.Tools[0])
+	}
+}
+
+func TestPutConnectorToolConflict(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(specPath, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	putA := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket-a",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": specPath, "base_url": "http://a"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, putA)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put A status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	putB := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket-b",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": specPath, "base_url": "http://b"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, putB)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("put B status=%d want 409 body=%s", rr.Code, rr.Body.String())
+	}
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatal(err)
+	}
+	if wrap.Error.Code != "tool_conflict" {
+		t.Fatalf("code=%q", wrap.Error.Code)
+	}
+
+	listed := reg.List()
+	if len(listed) == 0 {
+		t.Fatal("ticket-a registry empty after conflict")
+	}
+	for _, info := range listed {
+		if info.ConnectorID != "ticket-a" {
+			t.Fatalf("unexpected tool after conflict: %+v", info)
+		}
+	}
+	if _, err := st.GetConnector("ticket-b"); err == nil {
+		t.Fatal("store should not contain ticket-b after conflict")
+	}
+	a, err := st.GetConnector("ticket-a")
+	if err != nil || a.BaseURL != "http://a" || a.Spec != specPath {
+		t.Fatalf("ticket-a store=%+v err=%v", a, err)
+	}
+}
+
+func TestPutConnectorInvalidSpecLeavesRegistry(t *testing.T) {
+	dir := t.TempDir()
+	goodSpec := filepath.Join(dir, "good.yaml")
+	if err := os.WriteFile(goodSpec, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	putOK := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": goodSpec, "base_url": "http://x"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, putOK)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("first put status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	badSpec := filepath.Join(dir, "missing.yaml")
+	putBad := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": badSpec, "base_url": "http://evil"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, putBad)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad put status=%d want 400 body=%s", rr.Code, rr.Body.String())
+	}
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatal(err)
+	}
+	if wrap.Error.Code != "invalid_spec" {
+		t.Fatalf("code=%q", wrap.Error.Code)
+	}
+
+	getTools := httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getTools)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get tools status=%d", rr.Code)
+	}
+	var toolsBody struct {
+		Tools []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&toolsBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(toolsBody.Tools) != 1 || toolsBody.Tools[0].Name != "create_ticket" {
+		t.Fatalf("tools after invalid put=%+v want first create_ticket", toolsBody.Tools)
+	}
+
+	c, err := st.GetConnector("ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Spec != goodSpec || c.BaseURL != "http://x" {
+		t.Fatalf("store overwritten after bad put: %+v", c)
+	}
+}
+
+func TestPutConnectorEmptyOpsLeavesRegistry(t *testing.T) {
+	dir := t.TempDir()
+	goodSpec := filepath.Join(dir, "good.yaml")
+	if err := os.WriteFile(goodSpec, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	emptySpec := filepath.Join(dir, "empty.yaml")
+	if err := os.WriteFile(emptySpec, []byte(`openapi: 3.0.3
+info: { title: empty, version: 0.1.0 }
+paths: {}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	putOK := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": goodSpec, "base_url": "http://x"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, putOK)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("first put status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	putEmpty := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{"type": "openapi", "spec": emptySpec, "base_url": "http://empty"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, putEmpty)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("empty-ops put status=%d want 400 body=%s", rr.Code, rr.Body.String())
+	}
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatal(err)
+	}
+	if wrap.Error.Code != "invalid_spec" {
+		t.Fatalf("code=%q", wrap.Error.Code)
+	}
+
+	getTools := httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getTools)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get tools status=%d", rr.Code)
+	}
+	var toolsBody struct {
+		Tools []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&toolsBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(toolsBody.Tools) != 1 || toolsBody.Tools[0].Name != "create_ticket" {
+		t.Fatalf("tools after empty-ops put=%+v want create_ticket", toolsBody.Tools)
+	}
+
+	c, err := st.GetConnector("ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Spec != goodSpec || c.BaseURL != "http://x" {
+		t.Fatalf("store overwritten after empty-ops put: %+v", c)
+	}
+}
+
+func TestPutConnectorResponseIncludesTools(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(specPath, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+
+	req := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":             "openapi",
+			"spec":             specPath,
+			"base_url":         "http://x",
+			"require_approval": []string{"create_ticket"},
+		}))
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		ID               string      `json:"id"`
+		Type             string      `json:"type"`
+		Spec             string      `json:"spec"`
+		BaseURL          string      `json:"base_url"`
+		RequireApproval  []string    `json:"require_approval"`
+		Tools            []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ID != "ticket" || body.Type != "openapi" || body.Spec != specPath {
+		t.Fatalf("body=%+v", body)
+	}
+	if len(body.Tools) == 0 {
+		t.Fatalf("expected tools array in response: %+v", body)
+	}
+	if len(body.RequireApproval) != 1 || body.RequireApproval[0] != "create_ticket" {
+		t.Fatalf("require_approval=%v", body.RequireApproval)
+	}
+}
+
+func TestPutConnectorReplacesOldTools(t *testing.T) {
+	dir := t.TempDir()
+	specA := filepath.Join(dir, "a.yaml")
+	specB := filepath.Join(dir, "b.yaml")
+	if err := os.WriteFile(specA, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: { "201": { description: created } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(specB, []byte(`openapi: 3.0.3
+info: { title: t, version: 0.1.0 }
+paths:
+  /tickets:
+    get:
+      operationId: list_tickets
+      responses: { "200": { description: ok } }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	put := func(spec string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+			jsonBody(t, map[string]any{"type": "openapi", "spec": spec, "base_url": "http://x"}))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+	}
+	put(specA)
+	put(specB)
+
+	specs := reg.Specs()
+	if len(specs) != 1 || specs[0].Name != "list_tickets" {
+		t.Fatalf("specs=%+v want only list_tickets", specs)
+	}
+}
+
+func TestResumeApproveSucceeds(t *testing.T) {
+	st, reg, eng, h := newHITLServer(t)
+
+	putAgent := httptest.NewRequest(http.MethodPut, "/v0/agents/ticket-agent",
+		jsonBody(t, map[string]any{"system": "helper"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, putAgent)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put agent=%d", rr.Code)
+	}
+	_ = st
+	_ = eng
+
+	postRun := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{"agent_id": "ticket-agent", "input": "创建工单"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, postRun)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("post run=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := created["run_id"].(string)
+
+	pollRunStatus(t, h, runID, store.StatusWaitingHuman)
+	if !reg.RequiresApproval("create_ticket") {
+		t.Fatal("expected require approval")
+	}
+
+	resume := httptest.NewRequest(http.MethodPost, "/v0/runs/"+runID+"/resume",
+		jsonBody(t, map[string]any{"decision": "approve", "comment": "ok"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, resume)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("resume=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	got := pollRunStatus(t, h, runID, store.StatusSucceeded)
+	if got.Output != "已创建" {
+		t.Fatalf("run=%+v", got)
+	}
+}
+
+func TestResumeRejectFails(t *testing.T) {
+	_, _, _, h := newHITLServer(t)
+
+	putAgent := httptest.NewRequest(http.MethodPut, "/v0/agents/ticket-agent",
+		jsonBody(t, map[string]any{"system": "helper"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, putAgent)
+
+	postRun := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{"agent_id": "ticket-agent", "input": "创建工单"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, postRun)
+	var created map[string]any
+	_ = json.NewDecoder(rr.Body).Decode(&created)
+	runID, _ := created["run_id"].(string)
+
+	pollRunStatus(t, h, runID, store.StatusWaitingHuman)
+
+	resume := httptest.NewRequest(http.MethodPost, "/v0/runs/"+runID+"/resume",
+		jsonBody(t, map[string]any{"decision": "reject", "comment": "no"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, resume)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("resume=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	pollRunStatus(t, h, runID, store.StatusFailed)
+}
+
+func TestResumeNotWaitingConflict(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpdateRun(r.ID, store.StatusSucceeded, "done", "")
+
+	resume := httptest.NewRequest(http.MethodPost, "/v0/runs/"+r.ID+"/resume",
+		jsonBody(t, map[string]any{"decision": "approve"}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, resume)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status=%d want 409", rr.Code)
+	}
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatal(err)
+	}
+	if wrap.Error.Code != "not_waiting" {
+		t.Fatalf("code=%q", wrap.Error.Code)
+	}
+}
+
+func TestResumeUnknownRun(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+
+	resume := httptest.NewRequest(http.MethodPost, "/v0/runs/missing/resume",
+		jsonBody(t, map[string]any{"decision": "approve"}))
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, resume)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", rr.Code)
+	}
+}
+
+func TestPostRunConversationID(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	st.UpsertAgent(store.Agent{ID: "a", System: "s"})
+
+	postWith := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{
+			"agent_id":        "a",
+			"input":           "hi",
+			"conversation_id": "conv_client",
+			"identity_id":     "  idt_force  ",
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, postWith)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var withConv map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&withConv); err != nil {
+		t.Fatal(err)
+	}
+	if withConv["conversation_id"] != "conv_client" {
+		t.Fatalf("conversation_id=%v", withConv["conversation_id"])
+	}
+	runID, _ := withConv["run_id"].(string)
+	got, err := st.GetRun(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ConversationID != "conv_client" || got.IdentityID != "idt_force" {
+		t.Fatalf("run=%+v want identity_id trimmed to idt_force", got)
+	}
+
+	postOmit := httptest.NewRequest(http.MethodPost, "/v0/runs",
+		jsonBody(t, map[string]any{"agent_id": "a", "input": "hi2"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, postOmit)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("omit status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var omitted map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&omitted); err != nil {
+		t.Fatal(err)
+	}
+	conv, _ := omitted["conversation_id"].(string)
+	if conv == "" || !strings.HasPrefix(conv, "conv_") {
+		t.Fatalf("expected generated conversation_id, got %q", conv)
+	}
+	runID2, _ := omitted["run_id"].(string)
+	got2, err := st.GetRun(runID2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.ConversationID != conv {
+		t.Fatalf("stored conversation_id=%q want %q", got2.ConversationID, conv)
+	}
+}
+
+func TestConversationIdentitiesAPI(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	idStore := identity.NewMemoryStore()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Identities = idStore
+	h := srv.Handler()
+
+	getEmpty := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/identities", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, getEmpty)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get empty status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var empty []identity.PublicView
+	if err := json.NewDecoder(rr.Body).Decode(&empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty == nil {
+		t.Fatal("expected JSON array, got null")
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected empty, got %+v", empty)
+	}
+
+	now := time.Now().UTC()
+	iid, err := idStore.Upsert("conv1", identity.Identity{
+		Label:             "admin@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer SECRET_TOKEN_XYZ"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "admin@x.com",
+		IsDefault:         false,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil || iid == "" {
+		t.Fatalf("upsert: id=%q err=%v", iid, err)
+	}
+
+	getList := httptest.NewRequest(http.MethodGet, "/v0/conversations/conv1/identities", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getList)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get list status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	raw := rr.Body.String()
+	if strings.Contains(raw, "SECRET_TOKEN_XYZ") {
+		t.Fatalf("list leaked token: %s", raw)
+	}
+	var list []identity.PublicView
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != iid || list[0].Label != "admin@x.com" {
+		t.Fatalf("list=%+v", list)
+	}
+	if list[0].IsDefault {
+		t.Fatal("expected not default before set")
+	}
+
+	setDef := httptest.NewRequest(http.MethodPost, "/v0/conversations/conv1/identities/"+iid+"/default", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, setDef)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set default status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	views := idStore.ListPublic("conv1")
+	if len(views) != 1 || !views[0].IsDefault {
+		t.Fatalf("after default: %+v", views)
+	}
+
+	delOne := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/identities/"+iid, nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, delOne)
+	if rr.Code != http.StatusOK && rr.Code != http.StatusNoContent {
+		t.Fatalf("delete one status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idStore.ListPublic("conv1")) != 0 {
+		t.Fatal("expected empty after delete one")
+	}
+
+	_, err = idStore.Upsert("conv1", identity.Identity{
+		Label:             "u2@x.com",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer OTHER_SECRET"},
+		Source:            identity.SourceLoginCapture,
+		Subject:           "u2@x.com",
+		IsDefault:         true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = idStore.Upsert("conv1", identity.Identity{
+		Label:             "env-default",
+		Scheme:            "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer ENV_SECRET"},
+		Source:            identity.SourceEnv,
+		Subject:           "env",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clear := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1/identities", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, clear)
+	if rr.Code != http.StatusOK && rr.Code != http.StatusNoContent {
+		t.Fatalf("clear status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	left := idStore.ListPublic("conv1")
+	if len(left) != 1 || left[0].Source != identity.SourceEnv {
+		t.Fatalf("clear should keep env: %+v", left)
+	}
+}
+
+func newHITLServer(t *testing.T) (store.Store, *tool.Registry, *run.Engine, http.Handler) {
+	t.Helper()
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"id": "1"}, false, nil
+	}, true)
+	eng := &run.Engine{
+		Store: st,
+		LLM:   &scriptLLM{},
+		Tools: reg,
+		Gate:  run.NewGate(),
+	}
+	srv := api.NewServer(st, reg, eng)
+	return st, reg, eng, srv.Handler()
+}
+
+func pollRunStatus(t *testing.T, h http.Handler, runID string, want store.Status) store.Run {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	var last store.Run
+	for time.Now().Before(deadline) {
+		req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+runID, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code == http.StatusOK {
+			if err := json.NewDecoder(rr.Body).Decode(&last); err != nil {
+				t.Fatal(err)
+			}
+			if last.Status == want {
+				return last
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("status=%q want %s", last.Status, want)
+	return last
 }
 
 func jsonBody(t *testing.T, v any) *bytes.Reader {

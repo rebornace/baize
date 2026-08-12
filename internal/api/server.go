@@ -3,34 +3,42 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/connector/openapi"
-	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/ui"
 )
 
-// Runner executes a run synchronously (implemented by run.Engine).
+// Runner executes and resumes runs (implemented by run.Engine).
 type Runner interface {
 	Execute(ctx context.Context, runID string, ag agent.Def, input string) error
+	ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error
 }
 
 type Server struct {
-	Store    *store.Store
-	Registry *tool.Registry
-	Runner   Runner
-	mux      *http.ServeMux
+	Store          store.Store
+	Registry       *tool.Registry
+	Runner         Runner
+	Identities     identity.Store
+	DefaultAgentID string
+	mux            *http.ServeMux
 }
 
-func NewServer(st *store.Store, reg *tool.Registry, runner Runner) *Server {
+func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	s := &Server{
-		Store:    st,
-		Registry: reg,
-		Runner:   runner,
-		mux:      http.NewServeMux(),
+		Store:      st,
+		Registry:   reg,
+		Runner:     runner,
+		Identities: identity.NewMemoryStore(),
+		mux:        http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -41,12 +49,21 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) routes() {
+	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /v0/ui-config", s.handleUIConfig)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
+	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
+	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
+	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
+	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
 }
 
 type apiError struct {
@@ -70,6 +87,12 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleUIConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"agent_id": s.DefaultAgentID,
+	})
 }
 
 func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
@@ -96,9 +119,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type    string `json:"type"`
-		Spec    string `json:"spec"`
-		BaseURL string `json:"base_url"`
+		Type            string   `json:"type"`
+		Spec            string   `json:"spec"`
+		BaseURL         string   `json:"base_url"`
+		RequireApproval []string `json:"require_approval"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -107,53 +131,70 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	if body.Type == "" {
 		body.Type = "openapi"
 	}
-	if body.Type != "openapi" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
-		return
-	}
 	if body.Spec == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
 		return
 	}
 
-	routes, err := openapi.LoadTools(body.Spec)
+	c, infos, err := openapi.RegisterConnector(
+		s.Store, s.Registry, id, body.Type, body.Spec, body.BaseURL, body.RequireApproval,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
+		if errors.Is(err, openapi.ErrToolConflict) {
+			writeError(w, http.StatusConflict, "tool_conflict", err.Error())
+			return
+		}
+		if errors.Is(err, openapi.ErrInvalidSpec) {
+			writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
-	c := store.Connector{
-		ID:      id,
-		Type:    body.Type,
-		Spec:    body.Spec,
-		BaseURL: body.BaseURL,
-	}
-	s.Store.UpsertConnector(c)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":               c.ID,
+		"type":             c.Type,
+		"spec":             c.Spec,
+		"base_url":         c.BaseURL,
+		"require_approval": c.RequireApproval,
+		"tools":            infos,
+	})
+}
 
-	inv := &openapi.Invoker{BaseURL: body.BaseURL, Tools: routes}
-	for _, route := range routes {
-		route := route
-		name := route.Name
-		s.Registry.RegisterSpec(llm.ToolSpec{
-			Name:        route.Name,
-			Description: route.Description,
-			InputSchema: route.InputSchema,
-		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			res, err := inv.Invoke(ctx, name, args)
-			if err != nil {
-				return nil, true, err
-			}
-			return res.Content, res.IsError, nil
-		})
+func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.Store.GetConnector(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
+		return
 	}
+	tools := make([]tool.Info, 0)
+	for _, info := range s.Registry.List() {
+		if info.ConnectorID == id {
+			tools = append(tools, info)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":               c.ID,
+		"type":             c.Type,
+		"spec":             c.Spec,
+		"base_url":         c.BaseURL,
+		"require_approval": c.RequireApproval,
+		"tools":            tools,
+	})
+}
 
-	writeJSON(w, http.StatusOK, c)
+func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"tools": s.Registry.List()})
 }
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AgentID string `json:"agent_id"`
-		Input   string `json:"input"`
+		AgentID        string `json:"agent_id"`
+		Input          string `json:"input"`
+		ConversationID string `json:"conversation_id"`
+		IdentityID     string `json:"identity_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -170,16 +211,114 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := s.Store.CreateRun(body.AgentID, body.Input)
+	conv := strings.TrimSpace(body.ConversationID)
+	if conv == "" {
+		conv = "conv_" + uuid.NewString()
+	}
+
+	runRec, err := s.Store.CreateRun(store.CreateRunInput{
+		AgentID:        body.AgentID,
+		Input:          body.Input,
+		ConversationID: conv,
+		IdentityID:     strings.TrimSpace(body.IdentityID),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 
 	def := agent.Def{ID: ag.ID, System: ag.System}
-	_ = s.Runner.Execute(r.Context(), run.ID, def, body.Input)
+	go func() {
+		_ = s.Runner.Execute(context.Background(), runRec.ID, def, body.Input)
+	}()
 
-	updated, err := s.Store.GetRun(run.ID)
+	updated, err := s.Store.GetRun(runRec.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"run_id":          updated.ID,
+		"status":          updated.Status,
+		"conversation_id": conv,
+	})
+}
+
+func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeJSON(w, http.StatusOK, []identity.PublicView{})
+		return
+	}
+	views := s.Identities.ListPublic(r.PathValue("id"))
+	if views == nil {
+		views = []identity.PublicView{}
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
+func (s *Server) handleSetDefaultIdentity(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	if err := s.Identities.SetDefault(r.PathValue("id"), r.PathValue("iid")); err != nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleDeleteIdentity(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	if err := s.Identities.Delete(r.PathValue("id"), r.PathValue("iid")); err != nil {
+		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
+	if s.Identities != nil {
+		s.Identities.ClearCaptured(r.PathValue("id"))
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	runRec, err := s.Store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if runRec.Status != store.StatusWaitingHuman {
+		writeError(w, http.StatusConflict, "not_waiting", "run is not waiting_human")
+		return
+	}
+
+	var body struct {
+		Decision string `json:"decision"`
+		Comment  string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	approve := body.Decision == "approve"
+	if body.Decision != "approve" && body.Decision != "reject" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "decision must be approve or reject")
+		return
+	}
+
+	_ = s.Runner.ContinueFromHITL(r.Context(), id, run.Decision{
+		Approve: approve,
+		Comment: body.Comment,
+	})
+
+	updated, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -192,12 +331,12 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	run, err := s.Store.GetRun(id)
+	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, run)
+	writeJSON(w, http.StatusOK, runRec)
 }
 
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -13,34 +14,45 @@ import (
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
 
-// Run starts mock-ticket + Runtime in-process and blocks on the API server.
+// Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
 func Run(cfg config.Config) error {
-	ticketListen := cfg.Demo.TicketListen
-	if ticketListen == "" {
+	ticketListen := strings.TrimSpace(cfg.Demo.TicketListen)
+	useMockTicket := true
+	switch strings.ToLower(ticketListen) {
+	case "off", "false", "none", "-":
+		useMockTicket = false
+	case "":
 		ticketListen = ":18080"
 	}
 
-	go func() {
-		log.Printf("mock-ticket listening on %s", ticketListen)
-		if err := http.ListenAndServe(ticketListen, mockticket.NewHandler()); err != nil {
-			log.Printf("mock-ticket server error: %v", err)
+	var ticketBase string
+	if useMockTicket {
+		go func() {
+			log.Printf("mock-ticket listening on %s", ticketListen)
+			if err := http.ListenAndServe(ticketListen, mockticket.NewHandler()); err != nil {
+				log.Printf("mock-ticket server error: %v", err)
+			}
+		}()
+		ticketBase = localHTTPBase(ticketListen)
+		cfg.Connector.BaseURL = ticketBase
+		if err := waitHealthy(ticketBase+"/healthz", 5*time.Second); err != nil {
+			return fmt.Errorf("mock-ticket health check failed: %w", err)
 		}
-	}()
-
-	ticketBase := localHTTPBase(ticketListen)
-	if err := waitHealthy(ticketBase+"/healthz", 5*time.Second); err != nil {
-		return fmt.Errorf("mock-ticket health check failed: %w", err)
+	} else {
+		ticketBase = cfg.Connector.BaseURL
 	}
 
-	srv, err := newAPIServer(cfg)
+	srv, _, err := newAPIServer(cfg)
 	if err != nil {
 		return err
 	}
@@ -49,14 +61,16 @@ func Run(cfg config.Config) error {
 	if listen == "" {
 		listen = ":8080"
 	}
-	printCurlHints(localHTTPBase(listen), cfg.Agent.ID)
+	runtimeBase := localHTTPBase(listen)
+	printCurlHints(runtimeBase, cfg.Agent.ID, ticketBase)
+	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
 	return http.ListenAndServe(listen, srv.Handler())
 }
 
 // Serve starts Runtime only (no mock-ticket) and blocks on the API server.
 func Serve(cfg config.Config) error {
-	srv, err := newAPIServer(cfg)
+	srv, _, err := newAPIServer(cfg)
 	if err != nil {
 		return err
 	}
@@ -64,7 +78,9 @@ func Serve(cfg config.Config) error {
 	if listen == "" {
 		listen = ":8080"
 	}
-	printCurlHints(localHTTPBase(listen), cfg.Agent.ID)
+	runtimeBase := localHTTPBase(listen)
+	printCurlHints(runtimeBase, cfg.Agent.ID, cfg.Connector.BaseURL)
+	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
 	return http.ListenAndServe(listen, srv.Handler())
 }
@@ -92,7 +108,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 		cfg.Run.MaxSteps = 8
 	}
 
-	apiSrv, err := newAPIServer(cfg)
+	apiSrv, storeClose, err := newAPIServer(cfg)
 	if err != nil {
 		_ = ticketSrv.Close()
 		t.Fatalf("new api server: %v", err)
@@ -100,6 +116,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 
 	runtimeLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		_ = storeClose.Close()
 		_ = ticketSrv.Close()
 		t.Fatalf("listen runtime: %v", err)
 	}
@@ -109,6 +126,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 
 	if err := waitHealthy(runtimeURL+"/healthz", 5*time.Second); err != nil {
 		_ = httpSrv.Close()
+		_ = storeClose.Close()
 		_ = ticketSrv.Close()
 		t.Fatalf("runtime health check failed: %v", err)
 	}
@@ -118,75 +136,147 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
 		_ = ticketSrv.Shutdown(ctx)
+		_ = storeClose.Close()
 	}
 	return runtimeURL, ticketURL, shutdown
 }
 
-func newAPIServer(cfg config.Config) (*api.Server, error) {
+func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	provider, err := newLLM(cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	st := store.New()
+	st, err := store.Open(cfg.Store.Driver, cfg.Store.SQLitePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open store: %w", err)
+	}
+	closer := storeCloser(st)
 	reg := tool.NewRegistry()
 
 	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
 
-	if err := registerConnector(st, reg, cfg); err != nil {
-		return nil, err
+	identities := identity.NewMemoryStore()
+	if err := registerConnector(st, reg, cfg, identities); err != nil {
+		_ = closer.Close()
+		return nil, nil, err
 	}
 
 	engine := &run.Engine{
 		Store:    st,
 		LLM:      provider,
 		Tools:    reg,
+		Gate:     run.NewGate(),
 		MaxSteps: cfg.Run.MaxSteps,
 	}
-	return api.NewServer(st, reg, engine), nil
+	srv := api.NewServer(st, reg, engine)
+	srv.Identities = identities
+	srv.DefaultAgentID = cfg.Agent.ID
+	return srv, closer, nil
 }
 
-func registerConnector(st *store.Store, reg *tool.Registry, cfg config.Config) error {
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
+func storeCloser(st store.Store) io.Closer {
+	if c, ok := st.(io.Closer); ok {
+		return c
+	}
+	return nopCloser{}
+}
+
+func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
 	typ := cfg.Connector.Type
 	if typ == "" {
 		typ = "openapi"
 	}
-	if typ != "openapi" {
-		return fmt.Errorf("unsupported connector type: %s", typ)
-	}
 	if cfg.Connector.Spec == "" {
 		return fmt.Errorf("connector.spec is required")
 	}
-
-	routes, err := openapi.LoadTools(cfg.Connector.Spec)
-	if err != nil {
-		return fmt.Errorf("load openapi tools: %w", err)
+	approval := cfg.Connector.RequireApproval
+	capture := identity.CaptureConfig{
+		ToolNameGlob:   cfg.Connector.Auth.Capture.ToolNameGlob,
+		TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
+		LabelJSONPaths: cfg.Connector.Auth.Capture.LabelJSONPaths,
+		HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
+		DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
 	}
-
-	st.UpsertConnector(store.Connector{
-		ID:      cfg.Connector.ID,
-		Type:    typ,
-		Spec:    cfg.Connector.Spec,
-		BaseURL: cfg.Connector.BaseURL,
+	capture = withCaptureDefaults(capture)
+	if capture.DefaultScheme == "" {
+		if routes, err := openapi.LoadTools(cfg.Connector.Spec); err == nil {
+			capture.DefaultScheme = uniqueSecurityScheme(routes)
+		}
+	}
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:                      cfg.Connector.ID,
+		Type:                    typ,
+		SpecPath:                cfg.Connector.Spec,
+		BaseURL:                 cfg.Connector.BaseURL,
+		RequireApproval:         approval,
+		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
+		Headers:                 resolveBearerHeaders(cfg.Connector.Auth.BearerEnv),
+		Identities:              identities,
+		Resolver:                authresolve.OpenAPISecurityResolver{},
+		Capture:                 capture,
 	})
+	return err
+}
 
-	inv := &openapi.Invoker{BaseURL: cfg.Connector.BaseURL, Tools: routes}
-	for _, route := range routes {
-		route := route
-		name := route.Name
-		reg.RegisterSpec(llm.ToolSpec{
-			Name:        route.Name,
-			Description: route.Description,
-			InputSchema: route.InputSchema,
-		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			res, err := inv.Invoke(ctx, name, args)
-			if err != nil {
-				return nil, true, err
-			}
-			return res.Content, res.IsError, nil
-		})
+// withCaptureDefaults fills open-box login capture when config omits capture.
+// demo.local.yaml often only sets bearer_env; without defaults, login never persists.
+// To disable capture, set tool_name_glob to a non-matching pattern (e.g. "__none__").
+func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
+	if strings.TrimSpace(c.ToolNameGlob) != "" {
+		return c
 	}
-	return nil
+	c.ToolNameGlob = "*login*"
+	if len(c.TokenJSONPaths) == 0 {
+		c.TokenJSONPaths = []string{"accessToken", "data.accessToken", "data.token"}
+	}
+	if len(c.LabelJSONPaths) == 0 {
+		c.LabelJSONPaths = []string{"email", "data.email"}
+	}
+	if strings.TrimSpace(c.HeaderTemplate) == "" {
+		c.HeaderTemplate = "Bearer {{token}}"
+	}
+	return c
+}
+
+// resolveBearerHeaders builds connector default Headers from bearer_env (fallback).
+func resolveBearerHeaders(bearerEnv string) map[string]string {
+	if strings.TrimSpace(bearerEnv) == "" {
+		return nil
+	}
+	v := strings.TrimSpace(os.Getenv(bearerEnv))
+	if v == "" {
+		return nil
+	}
+	if !strings.HasPrefix(strings.ToLower(v), "bearer ") {
+		v = "Bearer " + v
+	}
+	return map[string]string{"Authorization": v}
+}
+
+// uniqueSecurityScheme returns the sole security scheme name across routes, or "".
+func uniqueSecurityScheme(routes []openapi.ToolRoute) string {
+	seen := map[string]struct{}{}
+	for _, r := range routes {
+		for _, s := range r.Security {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			seen[s] = struct{}{}
+		}
+	}
+	if len(seen) != 1 {
+		return ""
+	}
+	for s := range seen {
+		return s
+	}
+	return ""
 }
 
 func newLLM(cfg config.Config) (llm.Provider, error) {
@@ -198,7 +288,9 @@ func newLLM(cfg config.Config) (llm.Provider, error) {
 		if env == "" {
 			env = "BAIZE_API_KEY"
 		}
-		return llm.NewOpenAI(cfg.LLM.BaseURL, os.Getenv(env), cfg.LLM.Model), nil
+		p := llm.NewOpenAI(cfg.LLM.BaseURL, os.Getenv(env), cfg.LLM.Model)
+		p.DisableThinking = cfg.LLM.DisableThinking
+		return p, nil
 	default:
 		return nil, fmt.Errorf("unknown llm.provider: %s", cfg.LLM.Provider)
 	}
@@ -242,11 +334,20 @@ func localHTTPBase(listen string) string {
 	return "http://" + net.JoinHostPort(host, port)
 }
 
-func printCurlHints(runtimeBase, agentID string) {
+func printCurlHints(runtimeBase, agentID, ticketBase string) {
 	if agentID == "" {
 		agentID = "ticket-agent"
 	}
-	log.Printf("demo ready. try:")
+	if ticketBase == "" {
+		ticketBase = "http://127.0.0.1:18080"
+	}
+	log.Printf("baize ready. try:")
 	log.Printf(`  curl -s -X POST %s/v0/runs -H "Content-Type: application/json" -d "{\"agent_id\":\"%s\",\"input\":\"创建一个紧急工单：VPN 挂了\"}"`, runtimeBase, agentID)
-	log.Printf(`  curl -s %s/tickets`, "http://127.0.0.1:18080")
+	log.Printf(`  curl -s %s/tickets`, ticketBase)
+}
+
+func logUIHint(cfg config.Config, runtimeBase string) {
+	if cfg.UI.Enabled {
+		log.Printf("open %s/ui", runtimeBase)
+	}
 }

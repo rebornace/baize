@@ -6,11 +6,24 @@
 *.exe
 *.test
 bin/
+# 通用 dist；Go embed 需跟踪 internal/ui/dist（须逐级取消忽略）
 dist/
+!internal/
+!internal/ui/
+!internal/ui/dist/
+!internal/ui/dist/**
 _public_export/
 .env
 .env.*
 !.env.example
+
+# 本地 LLM / 调试覆盖（含真实 provider 配置）
+configs/demo.local.yaml
+
+# 本地对接的真实系统 OpenAPI（每个环境不同，勿提交）
+examples/miaomiao/
+examples/local/**
+!examples/local/README.md
 
 # Go
 vendor/
@@ -19,6 +32,12 @@ vendor/
 # 同步到开源仓 baize 时请用 scripts/export-public.ps1，不要直接把含 superpowers 的树推到 public。
 
 .worktrees/
+
+# 头脑风暴视觉伴侣会话
+.superpowers/
+
+# 本地运行数据
+data/
 
 demo-stdout.log
 demo-stderr.log

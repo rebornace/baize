@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 )
+
+var pathParamPattern = regexp.MustCompile(`\{([^}]+)\}`)
 
 // InvokeResult is the normalized result of an HTTP tool call.
 type InvokeResult struct {
@@ -20,25 +23,42 @@ type InvokeResult struct {
 type Invoker struct {
 	BaseURL    string
 	Tools      []ToolRoute
+	Headers    map[string]string
 	HTTPClient *http.Client
 }
 
 // Invoke looks up toolName and performs the corresponding HTTP request.
 // Non-2xx responses return InvokeResult{IsError: true} without error.
 func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string]any) (InvokeResult, error) {
+	return inv.invoke(ctx, toolName, args, nil)
+}
+
+// InvokeWithHeaders is like Invoke but merges overlay headers over inv.Headers
+// for this call only (same key overlays; inv.Headers is not mutated).
+func (inv *Invoker) InvokeWithHeaders(ctx context.Context, toolName string, args map[string]any, overlay map[string]string) (InvokeResult, error) {
+	return inv.invoke(ctx, toolName, args, overlay)
+}
+
+func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string]any, overlay map[string]string) (InvokeResult, error) {
 	route, ok := inv.find(toolName)
 	if !ok {
 		return InvokeResult{}, fmt.Errorf("unknown tool: %s", toolName)
 	}
 
-	url := strings.TrimRight(inv.BaseURL, "/") + route.Path
+	path, pathKeys, err := expandPath(route.Path, args)
+	if err != nil {
+		return InvokeResult{}, err
+	}
+	url := strings.TrimRight(inv.BaseURL, "/") + path
+
 	var body io.Reader
 	if route.Method == http.MethodPost || route.Method == http.MethodPut || route.Method == http.MethodPatch {
-		raw, err := json.Marshal(args)
+		bodyArgs := omitKeys(args, pathKeys)
+		payload, err := marshalRequestBody(route.BodyKind, bodyArgs)
 		if err != nil {
 			return InvokeResult{}, fmt.Errorf("marshal args: %w", err)
 		}
-		body = bytes.NewReader(raw)
+		body = bytes.NewReader(payload)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, route.Method, url, body)
@@ -47,6 +67,12 @@ func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range mergeHeaders(inv.Headers, overlay) {
+		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
 	}
 
 	client := inv.HTTPClient
@@ -69,6 +95,72 @@ func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	return InvokeResult{Content: content, IsError: false}, nil
+}
+
+func mergeHeaders(base, overlay map[string]string) map[string]string {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
+}
+
+func expandPath(tmpl string, args map[string]any) (string, map[string]bool, error) {
+	keys := map[string]bool{}
+	var missing []string
+	path := pathParamPattern.ReplaceAllStringFunc(tmpl, func(m string) string {
+		name := m[1 : len(m)-1]
+		keys[name] = true
+		v, ok := args[name]
+		if !ok || v == nil {
+			missing = append(missing, name)
+			return m
+		}
+		return fmt.Sprint(v)
+	})
+	if len(missing) > 0 {
+		return "", nil, fmt.Errorf("missing path param: %s", strings.Join(missing, ", "))
+	}
+	return path, keys, nil
+}
+
+func omitKeys(args map[string]any, keys map[string]bool) map[string]any {
+	if len(keys) == 0 {
+		return args
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		if keys[k] {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func marshalRequestBody(bodyKind string, args map[string]any) ([]byte, error) {
+	switch bodyKind {
+	case "array":
+		items, ok := args[bodyArrayKey]
+		if !ok {
+			return nil, fmt.Errorf("missing body array field %q", bodyArrayKey)
+		}
+		return json.Marshal(items)
+	case "value":
+		v, ok := args["value"]
+		if !ok {
+			return nil, fmt.Errorf("missing body field %q", "value")
+		}
+		return json.Marshal(v)
+	default:
+		return json.Marshal(args)
+	}
 }
 
 func (inv *Invoker) find(name string) (ToolRoute, bool) {

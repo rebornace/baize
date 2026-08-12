@@ -1,9 +1,17 @@
 listen: ":8080"
+store:
+  driver: sqlite
+  sqlite_path: ./data/baize.db
+ui:
+  enabled: true
 llm:
   provider: mock
+  # 真实 LLM：复制为 configs/demo.local.yaml（gitignore）并设 .env 中 BAIZE_API_KEY
   # provider: openai_compatible
-  # base_url: https://api.openai.com/v1
-  # model: gpt-4o-mini
+  # base_url: https://api.deepseek.com
+  # model: deepseek-v4-flash
+  # disable_thinking: true
+  # api_key_env: BAIZE_API_KEY
 agent:
   id: ticket-agent
   system: "你是企业工单助手，只能通过工具访问工单系统。"
@@ -12,6 +20,18 @@ connector:
   type: openapi
   spec: examples/mock-ticket/openapi.yaml
   base_url: http://127.0.0.1:18080
+  require_approval:
+    - create_ticket
+    - update_ticket_status
+  auth:
+    bearer_env: BAIZE_CONNECTOR_TOKEN # 无会话身份时的 Headers 兜底
+    # 登录成功后写入会话身份库（tool 名匹配 *login*）
+    capture:
+      tool_name_glob: "*login*"
+      token_json_paths: ["accessToken", "data.accessToken", "data.token"]
+      label_json_paths: ["email", "data.email"]
+      header_template: "Bearer {{token}}"
+      default_scheme: "" # 空则若 spec 仅一个 security scheme 则自动填入
 run:
   max_steps: 8
 demo:

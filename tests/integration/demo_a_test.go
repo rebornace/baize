@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/demo"
@@ -21,6 +22,7 @@ func TestDemoACreateTicketE2E(t *testing.T) {
 	cfg.Connector.ID = "ticket-api"
 	cfg.Connector.Type = "openapi"
 	cfg.Connector.Spec = filepath.Join("..", "..", "examples", "mock-ticket", "openapi.yaml")
+	cfg.Connector.RequireApproval = []string{"create_ticket"}
 	cfg.Run.MaxSteps = 8
 
 	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)
@@ -43,12 +45,24 @@ func TestDemoACreateTicketE2E(t *testing.T) {
 	if err := json.Unmarshal(raw, &created); err != nil {
 		t.Fatalf("decode run: %v body=%s", err, raw)
 	}
-	if created.Status != string(store.StatusSucceeded) {
-		t.Fatalf("run status=%q want succeeded; body=%s", created.Status, raw)
-	}
 	if created.RunID == "" {
 		t.Fatalf("missing run_id: %s", raw)
 	}
+
+	pollRun(t, runtimeURL, created.RunID, store.StatusWaitingHuman)
+
+	resumeBody := `{"decision":"approve","comment":"ok"}`
+	resumeResp, err := http.Post(runtimeURL+"/v0/runs/"+created.RunID+"/resume", "application/json", strings.NewReader(resumeBody))
+	if err != nil {
+		t.Fatalf("POST resume: %v", err)
+	}
+	defer resumeResp.Body.Close()
+	resumeRaw, _ := io.ReadAll(resumeResp.Body)
+	if resumeResp.StatusCode != http.StatusOK {
+		t.Fatalf("resume status=%d body=%s", resumeResp.StatusCode, resumeRaw)
+	}
+
+	pollRun(t, runtimeURL, created.RunID, store.StatusSucceeded)
 
 	evResp, err := http.Get(runtimeURL + "/v0/runs/" + created.RunID + "/events")
 	if err != nil {
@@ -90,4 +104,28 @@ func TestDemoACreateTicketE2E(t *testing.T) {
 	if len(tickets) < 1 {
 		t.Fatalf("tickets len=%d want >=1; body=%s", len(tickets), ticketRaw)
 	}
+}
+
+func pollRun(t *testing.T, runtimeURL, runID string, want store.Status) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(runtimeURL + "/v0/runs/" + runID)
+		if err != nil {
+			t.Fatalf("GET run: %v", err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		var run store.Run
+		if err := json.Unmarshal(raw, &run); err != nil {
+			t.Fatalf("decode run: %v body=%s", err, raw)
+		}
+		last = string(run.Status)
+		if run.Status == want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("run status=%q want %s", last, want)
 }
