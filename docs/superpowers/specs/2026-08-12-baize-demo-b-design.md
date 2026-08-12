@@ -1,6 +1,6 @@
 # Baize Demo B 设计规格：Chat UI + HITL
 
-> 状态：待用户审查  
+> 状态：已批准  
 > 日期：2026-08-12  
 > 前置：Demo A（OpenAPI + mock LLM + ReAct + REST）已完成  
 > 依据：架构草案、grilling 共享理解、本轮头脑风暴（运营 Chat 入口为开箱必需）
