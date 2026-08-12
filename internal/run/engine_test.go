@@ -3,17 +3,33 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
+
+// captureLLM records every Chat call's input messages and returns a fixed
+// assistant reply via onChat. Used to assert history-window injection.
+type captureLLM struct {
+	onChat func(msgs []llm.Message, tools []llm.ToolSpec) llm.Message
+	err    error
+}
+
+func (c *captureLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	if c.err != nil {
+		return llm.Message{}, c.err
+	}
+	return c.onChat(messages, tools), nil
+}
 
 type scriptLLM struct{ calls int }
 
@@ -387,5 +403,168 @@ func assertEventTypes(t *testing.T, st store.Store, runID string, want ...string
 		if !types[w] {
 			t.Fatalf("missing event %s; events=%+v", w, evs)
 		}
+	}
+}
+
+func TestExecuteInjectsConversationHistory(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "上一轮问题"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "上一轮回答"})
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "本轮回答"}
+	}}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "本轮问题", ConversationID: "conv1"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "本轮问题"); err != nil {
+		t.Fatal(err)
+	}
+	// expect: system, 上一轮 user, 上一轮 assistant, 本轮 user
+	if len(saw) < 4 || saw[1].Content != "上一轮问题" || saw[3].Content != "本轮问题" {
+		t.Fatalf("%+v", saw)
+	}
+}
+
+// TestExecuteDedupCurrentInput: when the API has already appended the current
+// user input to the message store before calling Execute, the engine must not
+// append it a second time.
+func TestExecuteDedupCurrentInput(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "上一轮回答"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "本轮问题"})
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "本轮回答"}
+	}}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "本轮问题", ConversationID: "conv1"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "本轮问题"); err != nil {
+		t.Fatal(err)
+	}
+	// expect: system, 上一轮 assistant, 本轮 user (no duplicate)
+	var userCount int
+	for _, m := range saw {
+		if m.Role == llm.RoleUser && m.Content == "本轮问题" {
+			userCount++
+		}
+	}
+	if userCount != 1 {
+		t.Fatalf("expected exactly one 本轮问题 user message, got %d; saw=%+v", userCount, saw)
+	}
+	if len(saw) != 3 || saw[2].Content != "本轮问题" {
+		t.Fatalf("unexpected messages=%+v", saw)
+	}
+}
+
+// TestExecuteWritesAssistantOnSuccess: a succeeded run must append an assistant
+// message with the run output to the conversation store.
+func TestExecuteWritesAssistantOnSuccess(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, Content: "最终答复"}
+	}}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "问", ConversationID: "conv1"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问"); err != nil {
+		t.Fatal(err)
+	}
+	msgs := msgStore.List("conv1")
+	// Expect exactly one assistant message with the final output.
+	var assistant *conversation.Message
+	for i := range msgs {
+		if msgs[i].Role == conversation.RoleAssistant {
+			assistant = &msgs[i]
+			break
+		}
+	}
+	if assistant == nil || assistant.Content != "最终答复" {
+		t.Fatalf("missing assistant terminal message; msgs=%+v", msgs)
+	}
+	if assistant.RunID != r.ID {
+		t.Fatalf("assistant.RunID=%q want %q", assistant.RunID, r.ID)
+	}
+}
+
+// TestExecuteWritesSystemNoteOnFailure: a failed run (LLM error) must append a
+// system_note message prefixed with "运行失败：".
+func TestExecuteWritesSystemNoteOnFailure(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+
+	llmStub := &captureLLM{err: fmt.Errorf("upstream 502")}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "问", ConversationID: "conv1"})
+	// Execute returns the LLM error; the engine still records the terminal note.
+	_ = eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问")
+
+	msgs := msgStore.List("conv1")
+	var note *conversation.Message
+	for i := range msgs {
+		if msgs[i].Role == conversation.RoleSystemNote {
+			note = &msgs[i]
+			break
+		}
+	}
+	if note == nil {
+		t.Fatalf("missing system_note terminal message; msgs=%+v", msgs)
+	}
+	if !strings.HasPrefix(note.Content, "运行失败：") {
+		t.Fatalf("note.Content=%q want prefix 运行失败：", note.Content)
+	}
+	if !strings.Contains(note.Content, "upstream 502") {
+		t.Fatalf("note.Content=%q want to contain error", note.Content)
+	}
+}
+
+// TestExecuteNoMessageOnWaitingHuman: a run that ends in waiting_human must
+// NOT write an assistant or system_note terminal message.
+func TestExecuteNoMessageOnWaitingHuman(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	reg := tool.NewRegistry()
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"id": "1"}, false, nil
+	}, true)
+
+	// First Chat call issues a tool call requiring approval → enters waiting_human.
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "create_ticket", Arguments: map[string]any{"title": "x"}},
+		}}
+	}}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "创建", ConversationID: "conv1"})
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "创建") }()
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+
+	// While waiting, no terminal message should have been written.
+	msgs := msgStore.List("conv1")
+	for _, m := range msgs {
+		if m.Role == conversation.RoleAssistant || m.Role == conversation.RoleSystemNote {
+			t.Fatalf("waiting_human should not write terminal message; got %+v", m)
+		}
+	}
+
+	// Unblock the goroutine so it can exit; reject → failed (writes system_note).
+	_ = eng.Gate.Resume(r.ID, Decision{Approve: false, Comment: "no"})
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute did not return after reject")
 	}
 }
