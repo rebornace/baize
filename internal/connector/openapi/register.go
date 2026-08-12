@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rebornace/baize/internal/authresolve"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -24,13 +26,25 @@ func RegisterConnector(
 	id, typ, specPath, baseURL string,
 	requireApproval []string,
 ) (store.Connector, []tool.Info, error) {
+	return RegisterWithOpts(st, reg, RegisterOpts{
+		ID:              id,
+		Type:            typ,
+		SpecPath:        specPath,
+		BaseURL:         baseURL,
+		RequireApproval: requireApproval,
+	})
+}
+
+// RegisterWithOpts registers a connector using RegisterOpts.
+func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (store.Connector, []tool.Info, error) {
+	typ := opts.Type
 	if typ == "" {
 		typ = "openapi"
 	}
 	if typ != "openapi" {
 		return store.Connector{}, nil, fmt.Errorf("unsupported connector type")
 	}
-	routes, err := LoadTools(specPath)
+	routes, err := LoadTools(opts.SpecPath)
 	if err != nil {
 		return store.Connector{}, nil, fmt.Errorf("%w: %w", ErrInvalidSpec, err)
 	}
@@ -41,15 +55,15 @@ func RegisterConnector(
 	for i, r := range routes {
 		names[i] = r.Name
 	}
-	if reg.WouldConflict(id, names) {
+	if reg.WouldConflict(opts.ID, names) {
 		return store.Connector{}, nil, ErrToolConflict
 	}
-	reg.UnregisterConnector(id)
+	reg.UnregisterConnector(opts.ID)
 	approval := map[string]bool{}
-	for _, n := range requireApproval {
+	for _, n := range opts.RequireApproval {
 		approval[n] = true
 	}
-	inv := &Invoker{BaseURL: baseURL, Tools: routes}
+	inv := &Invoker{BaseURL: opts.BaseURL, Tools: routes, Headers: opts.Headers}
 	for _, route := range routes {
 		route := route
 		name := route.Name
@@ -59,27 +73,61 @@ func RegisterConnector(
 				Description: route.Description,
 				InputSchema: route.InputSchema,
 			},
-			ConnectorID: id,
+			ConnectorID: opts.ID,
 			OperationID: route.OperationID,
 			Method:      route.Method,
 			Path:        route.Path,
 		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			res, err := inv.Invoke(ctx, name, args)
+			overlay := opts.Headers
+			var usedID string
+			if opts.Identities != nil && opts.Resolver != nil {
+				conv := identity.ConversationIDFrom(ctx)
+				force := identity.ForceIdentityIDFrom(ctx)
+				in := authresolve.ResolveInput{
+					Identities:      opts.Identities.List(conv),
+					SecuritySchemes: route.Security,
+					DefaultHeaders:  opts.Headers,
+					ForceIdentityID: force,
+				}
+				res := opts.Resolver.Resolve(ctx, in)
+				if res.OK {
+					overlay = res.Headers
+					usedID = res.IdentityID
+				}
+			}
+			out, err := inv.InvokeWithHeaders(ctx, name, args, overlay)
 			if err != nil {
 				return nil, true, err
 			}
-			return res.Content, res.IsError, nil
+			if usedID != "" && opts.Identities != nil {
+				_ = opts.Identities.Touch(identity.ConversationIDFrom(ctx), usedID)
+			}
+			conv := identity.ConversationIDFrom(ctx)
+			if conv != "" && !out.IsError && opts.Identities != nil && identity.MatchToolName(opts.Capture.ToolNameGlob, name) {
+				if h, label, sub, claims, ok := identity.ExtractCredential(opts.Capture, out.Content); ok {
+					_, _ = opts.Identities.Upsert(conv, identity.Identity{
+						Label:             label,
+						Scheme:            opts.Capture.DefaultScheme,
+						Subject:           sub,
+						CredentialHeaders: h,
+						Source:            identity.SourceLoginCapture,
+						ClaimsSummary:     claims,
+						IsDefault:         true,
+					})
+				}
+			}
+			return out.Content, out.IsError, nil
 		}, approval[name])
 	}
 	c := store.Connector{
-		ID:              id,
+		ID:              opts.ID,
 		Type:            typ,
-		Spec:            specPath,
-		BaseURL:         baseURL,
-		RequireApproval: requireApproval,
+		Spec:            opts.SpecPath,
+		BaseURL:         opts.BaseURL,
+		RequireApproval: opts.RequireApproval,
 	}
 	st.UpsertConnector(c)
-	return c, filterInfos(reg, id), nil
+	return c, filterInfos(reg, opts.ID), nil
 }
 
 func filterInfos(reg *tool.Registry, connectorID string) []tool.Info {

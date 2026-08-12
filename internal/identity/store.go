@@ -8,6 +8,18 @@ import (
 	"github.com/google/uuid"
 )
 
+// Store holds per-conversation identities.
+type Store interface {
+	Upsert(conversationID string, id Identity) (string, error)
+	List(conversationID string) []Identity
+	Get(conversationID, id string) (Identity, error)
+	ListPublic(conversationID string) []PublicView
+	Delete(conversationID, id string) error
+	SetDefault(conversationID, id string) error
+	ClearCaptured(conversationID string)
+	Touch(conversationID, id string) error
+}
+
 // MemoryStore is an in-process Identity store keyed by conversation ID.
 type MemoryStore struct {
 	mu    sync.RWMutex

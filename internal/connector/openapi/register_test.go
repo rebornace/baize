@@ -1,15 +1,146 @@
 package openapi_test
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
+
+const registerCaptureJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkB4LmNvbSIsImVtYWlsIjoiYWRtaW5AeC5jb20iLCJyb2xlcyI6WyJhZG1pbiJdLCJleHAiOjk5OTk5OTk5OTl9.sig"
+
+func TestRegisterWithOptsResolveAndCapture(t *testing.T) {
+	var lastAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/login":
+			_, _ = w.Write([]byte(`{"accessToken":"` + registerCaptureJWT + `","email":"admin@x.com"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/me":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	spec := writeLoginGetMeSpec(t)
+	mem := identity.NewMemoryStore()
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	envAuth := "Bearer ENV_TOKEN"
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:       "auth-demo",
+		Type:     "openapi",
+		SpecPath: spec,
+		BaseURL:  srv.URL,
+		Headers:  map[string]string{"Authorization": envAuth},
+		Identities: mem,
+		Resolver:   authresolve.OpenAPISecurityResolver{},
+		Capture: identity.CaptureConfig{
+			ToolNameGlob:   "*login*",
+			TokenJSONPaths: []string{"accessToken", "data.token"},
+			LabelJSONPaths: []string{"email"},
+			HeaderTemplate: "Bearer {{token}}",
+			DefaultScheme:  "bearer",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) No conversation ctx → getMe uses RegisterOpts.Headers (env).
+	lastAuth = ""
+	_, isErr, err := reg.Invoke(context.Background(), "getMe", nil)
+	if err != nil || isErr {
+		t.Fatalf("getMe without conv: isErr=%v err=%v", isErr, err)
+	}
+	if lastAuth != envAuth {
+		t.Fatalf("no-conv Authorization=%q, want %q", lastAuth, envAuth)
+	}
+
+	// 2) With conversation: login captures token; subsequent getMe uses it.
+	ctx := identity.WithConversationID(context.Background(), "conv_reg")
+	_, isErr, err = reg.Invoke(ctx, "login", map[string]any{"email": "admin@x.com", "password": "x"})
+	if err != nil || isErr {
+		t.Fatalf("login: isErr=%v err=%v", isErr, err)
+	}
+	lastAuth = ""
+	_, isErr, err = reg.Invoke(ctx, "getMe", nil)
+	if err != nil || isErr {
+		t.Fatalf("getMe after login: isErr=%v err=%v", isErr, err)
+	}
+	wantCaptured := "Bearer " + registerCaptureJWT
+	if lastAuth != wantCaptured {
+		t.Fatalf("after-login Authorization=%q, want %q", lastAuth, wantCaptured)
+	}
+
+	// 3) ListPublic has one entry and no plaintext token.
+	views := mem.ListPublic("conv_reg")
+	if len(views) != 1 {
+		t.Fatalf("ListPublic=%+v", views)
+	}
+	raw, _ := json.Marshal(views)
+	if strings.Contains(string(raw), registerCaptureJWT) || strings.Contains(string(raw), "ENV_TOKEN") {
+		t.Fatalf("public list leaked token: %s", raw)
+	}
+}
+
+func writeLoginGetMeSpec(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "spec.yaml")
+	content := `openapi: 3.0.3
+info:
+  title: login-getme
+  version: 0.1.0
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+paths:
+  /login:
+    post:
+      operationId: login
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: ok
+  /me:
+    get:
+      operationId: getMe
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: ok
+`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
 
 func TestRegisterConnectorConflictAndReplace(t *testing.T) {
 	st := store.NewMemory()
