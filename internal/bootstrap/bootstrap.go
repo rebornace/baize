@@ -1,4 +1,4 @@
-package demo
+package bootstrap
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
@@ -26,7 +27,7 @@ import (
 
 // Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
 func Run(cfg config.Config) error {
-	ticketListen := strings.TrimSpace(cfg.Demo.TicketListen)
+	ticketListen := strings.TrimSpace(cfg.MockTicket.Listen)
 	useMockTicket := true
 	switch strings.ToLower(ticketListen) {
 	case "off", "false", "none", "-":
@@ -105,7 +106,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 
 	cfg.Connector.BaseURL = ticketURL
 	if cfg.Run.MaxSteps <= 0 {
-		cfg.Run.MaxSteps = 8
+		cfg.Run.MaxSteps = 16
 	}
 
 	apiSrv, storeClose, err := newAPIServer(cfg)
@@ -156,23 +157,73 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 
 	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
 
-	identities := identity.NewMemoryStore()
+	messages, identities, err := openConversationAndIdentities(st, cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open conversation/identity stores: %w", err)
+	}
+
 	if err := registerConnector(st, reg, cfg, identities); err != nil {
 		_ = closer.Close()
 		return nil, nil, err
 	}
 
 	engine := &run.Engine{
-		Store:    st,
-		LLM:      provider,
-		Tools:    reg,
-		Gate:     run.NewGate(),
-		MaxSteps: cfg.Run.MaxSteps,
+		Store:       st,
+		LLM:         provider,
+		Tools:       reg,
+		Gate:        run.NewGate(),
+		MaxSteps:    cfg.Run.MaxSteps,
+		Messages:    messages,
+		MaxMessages: cfg.Conversation.MaxMessages,
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Identities = identities
+	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
 	return srv, closer, nil
+}
+
+// openConversationAndIdentities builds the conversation message store and the
+// identity store based on the configured driver.
+//
+//   - memory driver: both stores are in-memory (PersistIdentities is ignored).
+//   - sqlite driver: messages use a SQLite table on the shared *sql.DB;
+//     identities use SQLite when PersistIdentities is nil (default true) or
+//     explicitly true, and fall back to an in-memory store when explicitly
+//     set to false.
+func openConversationAndIdentities(st store.Store, cfg config.Config) (conversation.Store, identity.Store, error) {
+	driver := strings.ToLower(cfg.Store.Driver)
+	if driver == "" {
+		driver = "memory"
+	}
+
+	if driver != "sqlite" {
+		return conversation.NewMemoryStore(), identity.NewMemoryStore(), nil
+	}
+
+	sqlite, ok := st.(*store.SQLite)
+	if !ok {
+		// Defensive: store.Open("sqlite", ...) always returns *SQLite.
+		return conversation.NewMemoryStore(), identity.NewMemoryStore(), nil
+	}
+	db := sqlite.DB()
+
+	msgs, err := conversation.OpenSQLite(db)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	persist := cfg.Conversation.PersistIdentities
+	if persist != nil && !*persist {
+		identities := identity.NewMemoryStore()
+		return msgs, identities, nil
+	}
+	identities, err := identity.OpenSQLite(db)
+	if err != nil {
+		return nil, nil, err
+	}
+	return msgs, identities, nil
 }
 
 type nopCloser struct{}
@@ -224,7 +275,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 }
 
 // withCaptureDefaults fills open-box login capture when config omits capture.
-// demo.local.yaml often only sets bearer_env; without defaults, login never persists.
+// default.local.yaml often only sets bearer_env; without defaults, login never persists.
 // To disable capture, set tool_name_glob to a non-matching pattern (e.g. "__none__").
 func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
 	if strings.TrimSpace(c.ToolNameGlob) != "" {

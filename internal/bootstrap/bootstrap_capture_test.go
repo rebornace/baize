@@ -1,4 +1,4 @@
-package demo
+package bootstrap
 
 import (
 	"testing"

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/config"
-	"github.com/rebornace/baize/internal/demo"
+	"github.com/rebornace/baize/internal/bootstrap"
 )
 
 func TestConnectorContractListReplaceAndBadSpec(t *testing.T) {
@@ -24,12 +24,12 @@ func TestConnectorContractListReplaceAndBadSpec(t *testing.T) {
 	cfg.Connector.RequireApproval = []string{"create_ticket"}
 	cfg.Run.MaxSteps = 8
 
-	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)
+	runtimeURL, ticketURL, shutdown := bootstrap.StartForTest(t, cfg)
 	defer shutdown()
 
 	tools := getTools(t, runtimeURL)
 	if len(tools) != 4 {
-		t.Fatalf("GET /v0/tools: len=%d want 4 (demo mock-ticket openapi)", len(tools))
+		t.Fatalf("GET /v0/tools: len=%d want 4 (mock-ticket openapi)", len(tools))
 	}
 	for _, tool := range tools {
 		if tool.Method == "" || tool.Path == "" {

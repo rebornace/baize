@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
@@ -28,19 +30,56 @@ type Engine struct {
 	LLM      llm.Provider
 	Tools    *tool.Registry
 	Gate     *Gate
-	MaxSteps int // default 8
+	MaxSteps int // default 16
+	// Messages optionally persists conversation history across runs.
+	// nil = legacy behavior (no cross-run message persistence). When non-nil,
+	// Execute injects a windowed history into the LLM prompt and the engine
+	// records terminal assistant / system_note messages on succeeded / failed.
+	Messages    conversation.Store
+	MaxMessages int // conversation window size; config Load defaults <=0 to 40
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
-	ctx = e.injectAuthCtx(ctx, runID)
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil {
+		return err
+	}
+	if runRec == nil {
+		return fmt.Errorf("run not found: %s", runID)
+	}
+	ctx = e.injectAuthCtxFromRun(ctx, runRec)
 	if err := e.ensureRunStarted(runID); err != nil {
 		return err
 	}
-	messages := []llm.Message{
-		{Role: llm.RoleSystem, Content: ag.System},
-		{Role: llm.RoleUser, Content: input},
-	}
+	messages := e.buildMessages(ag.System, runRec.ConversationID, input)
 	return e.runLoop(ctx, runID, messages)
+}
+
+// buildMessages assembles the LLM prompt: system + windowed conversation
+// history + current user input. When the most recent history entry is already a
+// user message with the same content as input (the API appends the user message
+// before calling Execute), the current input is not appended again to avoid a
+// duplicate turn.
+func (e *Engine) buildMessages(system, conversationID, input string) []llm.Message {
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
+	if e.Messages != nil && conversationID != "" {
+		for _, m := range e.Messages.ListWindow(conversationID, e.MaxMessages) {
+			switch m.Role {
+			case conversation.RoleUser:
+				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: m.Content})
+			case conversation.RoleAssistant, conversation.RoleSystemNote:
+				messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: m.Content})
+			}
+		}
+	}
+	if len(messages) > 0 {
+		last := messages[len(messages)-1]
+		if last.Role == llm.RoleUser && last.Content == input {
+			return messages
+		}
+	}
+	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
+	return messages
 }
 
 // ContinueFromHITL applies a human decision to a waiting_human run.
@@ -76,6 +115,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		})
 		_ = e.Store.SetHITL(runID, nil)
 		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", "hitl rejected")
+		e.recordTerminalMessage(runID)
 		return fmt.Errorf("hitl rejected")
 	}
 
@@ -112,14 +152,68 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	if err != nil {
 		return err
 	}
-	messages := messagesFromEvents(ag.System, run.Input, evs)
+	messages := e.buildResumeMessages(ag.System, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
+}
+
+// buildResumeMessages assembles the LLM prompt for a cold HITL resume: the
+// system prompt + windowed conversation history + current user input (via
+// buildMessages, which dedups a trailing user input already persisted by the
+// API), followed by the assistant tool-call / tool-result turns already
+// recorded for this run. This keeps cross-restart HITL from dropping prior
+// conversation context while avoiding duplicate system or user-input messages.
+func (e *Engine) buildResumeMessages(system, conversationID, input string, evs []store.Event) []llm.Message {
+	messages := e.buildMessages(system, conversationID, input)
+	messages = append(messages, eventsAfterInput(evs)...)
+	return messages
+}
+
+// eventsAfterInput converts run events into LLM messages, skipping the leading
+// system and user-input messages (which are provided separately by
+// buildMessages). It returns only the assistant tool-call / tool-result / final
+// assistant message turns recorded for this run.
+func eventsAfterInput(evs []store.Event) []llm.Message {
+	var out []llm.Message
+	var pending []llm.ToolCall
+	flushPending := func() {
+		if len(pending) == 0 {
+			return
+		}
+		out = append(out, llm.Message{Role: llm.RoleAssistant, ToolCalls: pending})
+		pending = nil
+	}
+	for _, ev := range evs {
+		switch ev.Type {
+		case EventLLMToolCall:
+			pending = append(pending, llm.ToolCall{
+				ID:        asString(ev.Data["id"]),
+				Name:      asString(ev.Data["name"]),
+				Arguments: asMap(ev.Data["arguments"]),
+			})
+		case EventToolResult:
+			flushPending()
+			raw, _ := json.Marshal(ev.Data["content"])
+			out = append(out, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: asString(ev.Data["tool_call_id"]),
+				Content:    string(raw),
+			})
+		case EventLLMMessage:
+			flushPending()
+			out = append(out, llm.Message{
+				Role:    llm.RoleAssistant,
+				Content: asString(ev.Data["content"]),
+			})
+		}
+	}
+	flushPending()
+	return out
 }
 
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
 	maxSteps := e.MaxSteps
 	if maxSteps <= 0 {
-		maxSteps = 8
+		maxSteps = 16
 	}
 	specs := e.Tools.Specs()
 
@@ -131,6 +225,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 				Data: map[string]any{"error": err.Error()},
 			})
 			_ = e.Store.UpdateRun(runID, store.StatusFailed, "", err.Error())
+			e.recordTerminalMessage(runID)
 			return err
 		}
 
@@ -187,6 +282,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		if err := e.Store.UpdateRun(runID, store.StatusSucceeded, msg.Content, ""); err != nil {
 			return err
 		}
+		e.recordTerminalMessage(runID)
 		return nil
 	}
 
@@ -196,6 +292,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		Data: map[string]any{"error": errMsg},
 	})
 	_ = e.Store.UpdateRun(runID, store.StatusFailed, "", errMsg)
+	e.recordTerminalMessage(runID)
 	return fmt.Errorf("%s", errMsg)
 }
 
@@ -240,6 +337,7 @@ func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) e
 		})
 		_ = e.Store.SetHITL(runID, nil)
 		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", "hitl rejected")
+		e.recordTerminalMessage(runID)
 		return fmt.Errorf("hitl rejected")
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
@@ -256,11 +354,52 @@ func (e *Engine) injectAuthCtx(ctx context.Context, runID string) context.Contex
 	if err != nil || runRec == nil {
 		return ctx
 	}
+	return e.injectAuthCtxFromRun(ctx, runRec)
+}
+
+func (e *Engine) injectAuthCtxFromRun(ctx context.Context, runRec *store.Run) context.Context {
 	ctx = identity.WithConversationID(ctx, runRec.ConversationID)
 	if runRec.IdentityID != "" {
 		ctx = identity.WithForceIdentityID(ctx, runRec.IdentityID)
 	}
 	return ctx
+}
+
+// recordTerminalMessage persists the final assistant / system_note message for
+// a run to the conversation store. No-op when Messages is nil or the run has no
+// conversation_id. waiting_human is intentionally not recorded (the resume
+// path will write the terminal message when it reaches succeeded/failed).
+func (e *Engine) recordTerminalMessage(runID string) {
+	if e.Messages == nil {
+		return
+	}
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil || runRec == nil || runRec.ConversationID == "" {
+		return
+	}
+	switch runRec.Status {
+	case store.StatusSucceeded:
+		if strings.TrimSpace(runRec.Output) == "" {
+			return
+		}
+		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
+			Role:    conversation.RoleAssistant,
+			Content: runRec.Output,
+			RunID:   runID,
+		})
+	case store.StatusFailed:
+		note := strings.TrimSpace(runRec.Error)
+		if note == "" {
+			note = "运行失败"
+		} else {
+			note = "运行失败：" + note
+		}
+		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
+			Role:    conversation.RoleSystemNote,
+			Content: note,
+			RunID:   runID,
+		})
+	}
 }
 
 func (e *Engine) ensureRunStarted(runID string) error {
@@ -289,47 +428,6 @@ func lastToolCallID(st store.Store, runID string) string {
 		}
 	}
 	return ""
-}
-
-func messagesFromEvents(system, input string, evs []store.Event) []llm.Message {
-	msgs := []llm.Message{
-		{Role: llm.RoleSystem, Content: system},
-		{Role: llm.RoleUser, Content: input},
-	}
-	var pending []llm.ToolCall
-	flushPending := func() {
-		if len(pending) == 0 {
-			return
-		}
-		msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, ToolCalls: pending})
-		pending = nil
-	}
-	for _, ev := range evs {
-		switch ev.Type {
-		case EventLLMToolCall:
-			pending = append(pending, llm.ToolCall{
-				ID:        asString(ev.Data["id"]),
-				Name:      asString(ev.Data["name"]),
-				Arguments: asMap(ev.Data["arguments"]),
-			})
-		case EventToolResult:
-			flushPending()
-			raw, _ := json.Marshal(ev.Data["content"])
-			msgs = append(msgs, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: asString(ev.Data["tool_call_id"]),
-				Content:    string(raw),
-			})
-		case EventLLMMessage:
-			flushPending()
-			msgs = append(msgs, llm.Message{
-				Role:    llm.RoleAssistant,
-				Content: asString(ev.Data["content"]),
-			})
-		}
-	}
-	flushPending()
-	return msgs
 }
 
 func asString(v any) string {

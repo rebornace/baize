@@ -13,12 +13,13 @@ dist/
 !internal/ui/dist/
 !internal/ui/dist/**
 _public_export/
+_public_git/
 .env
 .env.*
 !.env.example
 
 # 本地 LLM / 调试覆盖（含真实 provider 配置）
-configs/demo.local.yaml
+configs/default.local.yaml
 
 # 本地对接的真实系统 OpenAPI（每个环境不同，勿提交）
 examples/miaomiao/
@@ -39,5 +40,5 @@ vendor/
 # 本地运行数据
 data/
 
-demo-stdout.log
-demo-stderr.log
+baize-stdout.log
+baize-stderr.log

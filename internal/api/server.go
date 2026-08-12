@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
@@ -28,6 +29,7 @@ type Server struct {
 	Registry       *tool.Registry
 	Runner         Runner
 	Identities     identity.Store
+	Messages       conversation.Store // optional; nil = no message persistence
 	DefaultAgentID string
 	mux            *http.ServeMux
 }
@@ -64,6 +66,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
+	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
 }
 
 type apiError struct {
@@ -227,10 +231,54 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist the user turn before executing so the conversation window survives
+	// crashes and is visible via GET /v0/conversations/{id}/messages. Execute's
+	// buildMessages dedups the trailing user input against this appended entry.
+	if s.Messages != nil && conv != "" {
+		_, _ = s.Messages.Append(conv, conversation.Message{
+			Role:    conversation.RoleUser,
+			Content: body.Input,
+			RunID:   runRec.ID,
+		})
+	}
+
 	def := agent.Def{ID: ag.ID, System: ag.System}
-	go func() {
-		_ = s.Runner.Execute(context.Background(), runRec.ID, def, body.Input)
-	}()
+	// Persist run.started before returning so the UI never polls an empty event stream
+	// while the worker is still scheduling / contending on SQLite.
+	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
+	go func(runID, input string, def agent.Def) {
+		err := s.Runner.Execute(context.Background(), runID, def, input)
+		if err == nil {
+			return
+		}
+		cur, getErr := s.Store.GetRun(runID)
+		if getErr != nil || cur == nil {
+			return
+		}
+		switch cur.Status {
+		case store.StatusRunning, store.StatusQueued:
+			_ = s.Store.UpdateRun(runID, store.StatusFailed, "", err.Error())
+			_ = s.Store.AppendEvent(runID, store.Event{
+				Type: run.EventLLMError,
+				Data: map[string]any{"error": err.Error()},
+			})
+			// Engine may have returned before recordTerminalMessage (e.g. early
+			// failure while still running). Mirror its failed-note format here.
+			if s.Messages != nil && cur.ConversationID != "" {
+				note := strings.TrimSpace(err.Error())
+				if note == "" {
+					note = "运行失败"
+				} else {
+					note = "运行失败：" + note
+				}
+				_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
+					Role:    conversation.RoleSystemNote,
+					Content: note,
+					RunID:   runID,
+				})
+			}
+		}
+	}(runRec.ID, body.Input, def)
 
 	updated, err := s.Store.GetRun(runRec.ID)
 	if err != nil {
@@ -350,4 +398,23 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{}
 	}
 	writeJSON(w, http.StatusOK, evs)
+}
+
+func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
+	if s.Messages == nil {
+		writeJSON(w, http.StatusOK, []conversation.Message{})
+		return
+	}
+	msgs := s.Messages.List(r.PathValue("id"))
+	if msgs == nil {
+		msgs = []conversation.Message{}
+	}
+	writeJSON(w, http.StatusOK, msgs)
+}
+
+func (s *Server) handleClearMessages(w http.ResponseWriter, r *http.Request) {
+	if s.Messages != nil {
+		s.Messages.Clear(r.PathValue("id"))
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

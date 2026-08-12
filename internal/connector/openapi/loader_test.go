@@ -255,6 +255,31 @@ func TestInvokerNon2xxIsError(t *testing.T) {
 	}
 }
 
+func TestInvokerBusiness401IsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":401,"message":"Unauthorized"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "get_summary",
+			Method: http.MethodGet,
+			Path:   "/dashboard",
+		}},
+	}
+	res, err := inv.Invoke(context.Background(), "get_summary", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected business 401 IsError, got %+v", res)
+	}
+}
+
 func TestLoadToolsPathParamOps(t *testing.T) {
 	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
 	if err != nil {

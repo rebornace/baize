@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/config"
-	"github.com/rebornace/baize/internal/demo"
+	"github.com/rebornace/baize/internal/bootstrap"
 	"github.com/rebornace/baize/internal/store"
 )
 
-func TestDemoACreateTicketE2E(t *testing.T) {
+func TestCreateTicketE2E(t *testing.T) {
 	cfg := config.Config{}
 	cfg.LLM.Provider = "mock"
 	cfg.Agent.ID = "ticket-agent"
@@ -25,7 +25,7 @@ func TestDemoACreateTicketE2E(t *testing.T) {
 	cfg.Connector.RequireApproval = []string{"create_ticket"}
 	cfg.Run.MaxSteps = 8
 
-	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)
+	runtimeURL, ticketURL, shutdown := bootstrap.StartForTest(t, cfg)
 	defer shutdown()
 
 	runBody := `{"agent_id":"ticket-agent","input":"创建一个紧急工单：VPN 挂了"}`

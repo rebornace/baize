@@ -1,0 +1,126 @@
+package conversation
+
+import (
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+const sqliteMessagesSchema = `
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  run_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+`
+
+// SQLiteStore persists conversation messages in SQLite.
+//
+// Callers must configure the shared *sql.DB for serialized access before OpenSQLite:
+// SetMaxOpenConns(1), SetMaxIdleConns(1), and PRAGMA busy_timeout (see store.OpenSQLite).
+// Without these settings, concurrent writers may hit "database is locked".
+type SQLiteStore struct {
+	db *sql.DB
+}
+
+var _ Store = (*SQLiteStore)(nil)
+
+// OpenSQLite creates a SQLiteStore on db, ensuring the messages schema exists.
+//
+// db must already use MaxOpenConns(1) and busy_timeout, or be the same *sql.DB opened
+// by store.OpenSQLite. OpenSQLite does not apply connection-pool or pragma settings.
+func OpenSQLite(db *sql.DB) (*SQLiteStore, error) {
+	if db == nil {
+		return nil, fmt.Errorf("db is nil")
+	}
+	if _, err := db.Exec(sqliteMessagesSchema); err != nil {
+		return nil, fmt.Errorf("migrate messages schema: %w", err)
+	}
+	return &SQLiteStore{db: db}, nil
+}
+
+func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error) {
+	msg.ID = "msg_" + uuid.NewString()
+	msg.ConversationID = conversationID
+	msg.CreatedAt = time.Now().UTC()
+
+	var runID any
+	if msg.RunID != "" {
+		runID = msg.RunID
+	}
+
+	_, err := s.db.Exec(
+		`INSERT INTO messages (id, conversation_id, role, content, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.ConversationID, msg.Role, msg.Content, runID, msg.CreatedAt.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return Message{}, err
+	}
+	return msg, nil
+}
+
+func (s *SQLiteStore) List(conversationID string) []Message {
+	rows, err := s.db.Query(
+		`SELECT id, conversation_id, role, content, run_id, created_at
+		 FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,
+		conversationID,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var out []Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+	return out
+}
+
+func (s *SQLiteStore) ListWindow(conversationID string, n int) []Message {
+	all := s.List(conversationID)
+	if n <= 0 || n >= len(all) {
+		return all
+	}
+	return all[len(all)-n:]
+}
+
+func (s *SQLiteStore) Clear(conversationID string) {
+	_, _ = s.db.Exec(`DELETE FROM messages WHERE conversation_id = ?`, conversationID)
+}
+
+func scanMessage(scanner interface {
+	Scan(dest ...any) error
+}) (Message, error) {
+	var m Message
+	var createdAt string
+	var runID sql.NullString
+	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &runID, &createdAt); err != nil {
+		return Message{}, err
+	}
+	if runID.Valid {
+		m.RunID = runID.String
+	}
+	ts, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		ts, err = time.Parse(time.RFC3339, createdAt)
+		if err != nil {
+			return Message{}, fmt.Errorf("parse created_at: %w", err)
+		}
+	}
+	m.CreatedAt = ts
+	return m, nil
+}

@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/config"
-	"github.com/rebornace/baize/internal/demo"
+	"github.com/rebornace/baize/internal/bootstrap"
 	"github.com/rebornace/baize/internal/store"
 )
 
 func TestHITLApproveCreatesTicket(t *testing.T) {
-	cfg := demoHITLConfig(t, "")
-	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)
+	cfg := hitlConfig(t, "")
+	runtimeURL, ticketURL, shutdown := bootstrap.StartForTest(t, cfg)
 	defer shutdown()
 
 	before := ticketCount(t, ticketURL)
@@ -32,8 +32,8 @@ func TestHITLApproveCreatesTicket(t *testing.T) {
 }
 
 func TestHITLRejectNoTicket(t *testing.T) {
-	cfg := demoHITLConfig(t, "")
-	runtimeURL, ticketURL, shutdown := demo.StartForTest(t, cfg)
+	cfg := hitlConfig(t, "")
+	runtimeURL, ticketURL, shutdown := bootstrap.StartForTest(t, cfg)
 	defer shutdown()
 
 	before := ticketCount(t, ticketURL)
@@ -52,15 +52,15 @@ func TestHITLRejectNoTicket(t *testing.T) {
 // TestHITLSQLiteReopenResume：waiting_human 后关掉 Runtime，同进程重开同一 SQLite，再 resume（cold ContinueFromHITL）。
 func TestHITLSQLiteReopenResume(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "baize.db")
-	cfg := demoHITLConfig(t, dbPath)
+	cfg := hitlConfig(t, dbPath)
 
-	runtimeURL, _, shutdown := demo.StartForTest(t, cfg)
+	runtimeURL, _, shutdown := bootstrap.StartForTest(t, cfg)
 	runID := startRun(t, runtimeURL, "创建一个紧急工单：重启后续跑")
 	pollRun(t, runtimeURL, runID, store.StatusWaitingHuman)
 	shutdown()
 
 	// 新 Runtime + 新 mock-ticket；SQLite 中仍为 waiting_human，走 cold ContinueFromHITL。
-	runtimeURL2, ticketURL2, shutdown2 := demo.StartForTest(t, cfg)
+	runtimeURL2, ticketURL2, shutdown2 := bootstrap.StartForTest(t, cfg)
 	defer shutdown2()
 
 	before := ticketCount(t, ticketURL2)
@@ -73,7 +73,7 @@ func TestHITLSQLiteReopenResume(t *testing.T) {
 	}
 }
 
-func demoHITLConfig(t *testing.T, sqlitePath string) config.Config {
+func hitlConfig(t *testing.T, sqlitePath string) config.Config {
 	t.Helper()
 	cfg := config.Config{}
 	cfg.LLM.Provider = "mock"

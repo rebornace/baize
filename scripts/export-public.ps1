@@ -47,7 +47,7 @@ Get-ChildItem -Path $Root -Force | ForEach-Object {
         $cfgOut = Join-Path $Out "configs"
         New-Item -ItemType Directory -Path $cfgOut -Force | Out-Null
         Get-ChildItem (Join-Path $Root "configs") -Force | ForEach-Object {
-            if ($_.Name -eq "demo.local.yaml") { return }
+            if ($_.Name -eq "default.local.yaml") { return }
             Copy-Item $_.FullName -Destination (Join-Path $cfgOut $_.Name) -Recurse -Force
         }
         return
