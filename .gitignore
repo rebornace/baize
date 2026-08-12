@@ -6,7 +6,7 @@
 *.exe
 *.test
 bin/
-# 通用 dist；Go embed 需跟踪 internal/ui/dist（须逐级取消忽略�?
+# 通用 dist；Go embed 需跟踪 internal/ui/dist（须逐级取消忽略）
 dist/
 !internal/
 !internal/ui/
@@ -18,10 +18,10 @@ _public_git/
 .env.*
 !.env.example
 
-# 本地 LLM / 调试覆盖（含真实 provider 配置�?
+# 本地 LLM / 调试覆盖（含真实 provider 配置）
 configs/demo.local.yaml
 
-# 本地对接的真实系�?OpenAPI（每个环境不同，勿提交）
+# 本地对接的真实系统 OpenAPI（每个环境不同，勿提交）
 examples/miaomiao/
 examples/local/**
 !examples/local/README.md
@@ -29,8 +29,8 @@ examples/local/**
 # Go
 vendor/
 
-# 说明：docs/superpowers/ 保留在本工作区与 baize_real�?
-# 同步到开源仓 baize 时请�?scripts/export-public.ps1，不要直接把�?superpowers 的树推到 public�?
+# 说明：docs/superpowers/ 保留在本工作区与 baize_real；
+# 同步到开源仓 baize 时请用 scripts/export-public.ps1，不要直接把含 superpowers 的树推到 public。
 
 .worktrees/
 
