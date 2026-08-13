@@ -5,9 +5,11 @@
 
 **English** | [中文](README.zh-CN.md)
 
-Lightweight **Agent Runtime** for enterprise legacy HTTP APIs. Import an OpenAPI spec, turn operations into tools, run auditable ReAct loops in-process, gate mutating calls with human-in-the-loop (HITL), and operate from an embedded Chat UI.
+**Drop an AI agent beside any system — plug in, ship, unplug.**
 
-> Not a personal assistant. Baize sits beside your existing systems as a sidecar-style gateway: **OpenAPI → Tools → HTTP invoke**, with optional approval and session-scoped credentials.
+Baize is a tiny Agent Runtime that sits next to your APIs, not inside them. Point it at an OpenAPI spec and your operations become tools; run auditable ReAct loops with optional human approval. Works with dusty legacy HTTP and modern services alike — no rewrite, no platform lock-in, nothing left behind when you tear it down.
+
+> Sidecar, not chatbot: **OpenAPI → Tools → HTTP**, plus HITL gates and session-scoped credentials when writes need a human in the loop.
 
 ---
 
