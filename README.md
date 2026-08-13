@@ -133,9 +133,13 @@ Successful login tools can **capture** tokens into a per-`conversation_id` ident
 
 - Chat UI sidebar: list accounts (redacted), set default, sign out
 - New chat → new `conversation_id`
-- `bearer_env` is a **startup fallback**, not the only identity source
+- When no session identity exists, default HTTP headers come from `connector.auth.mode`:
+  - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
+  - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
+  - `vault_ref` — `env:` / `file:` references resolved at registration
+- Captured session identities always take precedence over the mode defaults above
 - Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable)
-- If local config only sets `bearer_env`, `baize start` applies capture defaults automatically
+- `baize start` applies capture defaults automatically when capture is omitted
 - Restart Runtime after changing auth/capture config
 
 ```bash
@@ -184,7 +188,10 @@ connector:
   # point at your OpenAPI + base_url
   require_approval_mutating: true
   auth:
-    bearer_env: BAIZE_CONNECTOR_TOKEN
+    mode: static
+    static:
+      headers:
+        Authorization: "Bearer ${BAIZE_CONNECTOR_TOKEN}"
     capture:
       tool_name_glob: "*login*"
       token_json_paths: ["accessToken", "data.accessToken", "data.token"]
