@@ -266,7 +266,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		BaseURL:                 cfg.Connector.BaseURL,
 		RequireApproval:         approval,
 		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
-		Headers:                 resolveBearerHeaders(cfg.Connector.Auth.BearerEnv),
+		Headers:                 nil, // 任务 4 接 authresolve.ResolveDefaults
 		Identities:              identities,
 		Resolver:                authresolve.OpenAPISecurityResolver{},
 		Capture:                 capture,
@@ -275,7 +275,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 }
 
 // withCaptureDefaults fills open-box login capture when config omits capture.
-// default.local.yaml often only sets bearer_env; without defaults, login never persists.
+// default.local.yaml often only sets auth.static; without defaults, login never persists.
 // To disable capture, set tool_name_glob to a non-matching pattern (e.g. "__none__").
 func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
 	if strings.TrimSpace(c.ToolNameGlob) != "" {
@@ -292,21 +292,6 @@ func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
 		c.HeaderTemplate = "Bearer {{token}}"
 	}
 	return c
-}
-
-// resolveBearerHeaders builds connector default Headers from bearer_env (fallback).
-func resolveBearerHeaders(bearerEnv string) map[string]string {
-	if strings.TrimSpace(bearerEnv) == "" {
-		return nil
-	}
-	v := strings.TrimSpace(os.Getenv(bearerEnv))
-	if v == "" {
-		return nil
-	}
-	if !strings.HasPrefix(strings.ToLower(v), "bearer ") {
-		v = "Bearer " + v
-	}
-	return map[string]string{"Authorization": v}
 }
 
 // uniqueSecurityScheme returns the sole security scheme name across routes, or "".

@@ -34,9 +34,18 @@ type Config struct {
 		BaseURL                 string   `yaml:"base_url"`
 		RequireApproval         []string `yaml:"require_approval"`
 		RequireApprovalMutating bool     `yaml:"require_approval_mutating"`
-		Auth                    struct {
-			BearerEnv string `yaml:"bearer_env"` // env holding JWT or "Bearer …"；作 Headers 兜底
-			Capture   struct {
+		Auth struct {
+			Mode        string `yaml:"mode"`
+			Static      struct {
+				Headers map[string]string `yaml:"headers"`
+			} `yaml:"static"`
+			Passthrough struct {
+				Headers []string `yaml:"headers"`
+			} `yaml:"passthrough"`
+			VaultRef struct {
+				Headers map[string]string `yaml:"headers"`
+			} `yaml:"vault_ref"`
+			Capture struct {
 				ToolNameGlob   string   `yaml:"tool_name_glob"`
 				TokenJSONPaths []string `yaml:"token_json_paths"`
 				LabelJSONPaths []string `yaml:"label_json_paths"`
