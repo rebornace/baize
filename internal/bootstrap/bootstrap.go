@@ -14,6 +14,7 @@ import (
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector/openapi"
@@ -259,14 +260,32 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 			capture.DefaultScheme = uniqueSecurityScheme(routes)
 		}
 	}
-	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+	authCfg := authcred.Config{
+		Mode:        cfg.Connector.Auth.Mode,
+		Static:      authcred.Static{Headers: cfg.Connector.Auth.Static.Headers},
+		Passthrough: authcred.PassThru{Headers: cfg.Connector.Auth.Passthrough.Headers},
+		VaultRef:    authcred.VaultRef{Headers: cfg.Connector.Auth.VaultRef.Headers},
+	}
+	headers, err := authcred.ResolveDefaults(authCfg)
+	if err != nil {
+		return fmt.Errorf("resolve connector auth: %w", err)
+	}
+	connectorAuth := store.ConnectorAuth{
+		Mode:        cfg.Connector.Auth.Mode,
+		Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
+		Passthrough: store.PassThruAuth{Headers: cfg.Connector.Auth.Passthrough.Headers},
+		VaultRef:    store.VaultRefAuth{Headers: cfg.Connector.Auth.VaultRef.Headers},
+	}
+	_, _, err = openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
 		ID:                      cfg.Connector.ID,
 		Type:                    typ,
 		SpecPath:                cfg.Connector.Spec,
 		BaseURL:                 cfg.Connector.BaseURL,
 		RequireApproval:         approval,
 		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
-		Headers:                 nil, // 任务 4 接 authresolve.ResolveDefaults
+		Headers:                 headers,
+		AuthMode:                authcred.NormalizeMode(cfg.Connector.Auth.Mode),
+		Auth:                    connectorAuth,
 		Identities:              identities,
 		Resolver:                authresolve.OpenAPISecurityResolver{},
 		Capture:                 capture,

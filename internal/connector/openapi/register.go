@@ -90,14 +90,29 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			Path:        route.Path,
 		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
 			overlay := opts.Headers
+			if opts.AuthMode == "passthrough" {
+				if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+					overlay = h
+				} else {
+					overlay = nil
+				}
+			}
 			var usedID string
 			if opts.Identities != nil && opts.Resolver != nil {
 				conv := identity.ConversationIDFrom(ctx)
 				force := identity.ForceIdentityIDFrom(ctx)
+				defaultHeaders := opts.Headers
+				if opts.AuthMode == "passthrough" {
+					if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+						defaultHeaders = h
+					} else {
+						defaultHeaders = nil
+					}
+				}
 				in := authresolve.ResolveInput{
 					Identities:      opts.Identities.List(conv),
 					SecuritySchemes: route.Security,
-					DefaultHeaders:  opts.Headers,
+					DefaultHeaders:  defaultHeaders,
 					ForceIdentityID: force,
 				}
 				res := opts.Resolver.Resolve(ctx, in)
@@ -136,6 +151,7 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 		Spec:            opts.SpecPath,
 		BaseURL:         opts.BaseURL,
 		RequireApproval: opts.RequireApproval,
+		Auth:            opts.Auth,
 	}
 	st.UpsertConnector(c)
 	return c, filterInfos(reg, opts.ID), nil

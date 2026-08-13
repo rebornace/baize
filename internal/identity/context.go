@@ -26,3 +26,18 @@ func ForceIdentityIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeyForceIdentityID).(string)
 	return v
 }
+
+type passthroughKey struct{}
+
+// WithPassthroughHeaders attaches per-run passthrough auth headers to ctx so
+// connector invokers can use them as DefaultHeaders in passthrough mode.
+func WithPassthroughHeaders(ctx context.Context, h map[string]string) context.Context {
+	return context.WithValue(ctx, passthroughKey{}, h)
+}
+
+// PassthroughHeadersFrom returns the passthrough headers previously attached
+// via WithPassthroughHeaders, or nil.
+func PassthroughHeadersFrom(ctx context.Context) map[string]string {
+	v, _ := ctx.Value(passthroughKey{}).(map[string]string)
+	return v
+}
