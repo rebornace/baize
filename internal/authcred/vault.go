@@ -14,7 +14,7 @@ func resolveVaultRef(ref string) (string, error) {
 		}
 		return val, nil
 	case strings.HasPrefix(ref, "file:"):
-		path := strings.TrimPrefix(ref, "file:")
+		path := strings.TrimSpace(strings.TrimPrefix(ref, "file:"))
 		info, err := os.Stat(path)
 		if err != nil {
 			return "", ErrInvalidAuth

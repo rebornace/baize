@@ -59,6 +59,26 @@ func TestResolveVaultEnvAndFile(t *testing.T) {
 	}
 }
 
+func TestResolveVaultFilePathTrimSpace(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tok")
+	if err := os.WriteFile(p, []byte("trimmed-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := authcred.ResolveDefaults(authcred.Config{
+		Mode: authcred.ModeVaultRef,
+		VaultRef: authcred.VaultRef{Headers: map[string]string{
+			"X-SpaceBefore": "file: " + p,
+			"X-SpaceAfter":  "file:" + p + " ",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["X-SpaceBefore"] != "trimmed-token" || got["X-SpaceAfter"] != "trimmed-token" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 func TestResolveVaultUnknownPrefix(t *testing.T) {
 	_, err := authcred.ResolveDefaults(authcred.Config{
 		Mode:     authcred.ModeVaultRef,
