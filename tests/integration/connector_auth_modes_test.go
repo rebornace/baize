@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	authModesEnvToken   = "AUTH_MODES_ENV_TOKEN"
+	authModesEnvToken    = "AUTH_MODES_ENV_TOKEN"
 	authModesCapturedJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjYXB0dXJlZEB4LmNvbSIsImV4cCI6OTk5OTk5OTk5OX0.sig"
 )
 
@@ -118,9 +119,14 @@ func TestConnectorAuthModesVaultRefFile(t *testing.T) {
 // events JSON must not contain the token.
 func TestConnectorAuthModesPassthrough(t *testing.T) {
 	const token = "Bearer PASSTHROUGH_SECRET"
-	var lastAuth string
+	var (
+		lastAuthMu sync.Mutex
+		lastAuth   string
+	)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuthMu.Lock()
 		lastAuth = r.Header.Get("Authorization")
+		lastAuthMu.Unlock()
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	t.Cleanup(upstream.Close)
@@ -170,13 +176,19 @@ func TestConnectorAuthModesPassthrough(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if lastAuth != "" {
+		lastAuthMu.Lock()
+		got := lastAuth
+		lastAuthMu.Unlock()
+		if got != "" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if lastAuth != token {
-		t.Fatalf("downstream Authorization=%q want %q", lastAuth, token)
+	lastAuthMu.Lock()
+	got := lastAuth
+	lastAuthMu.Unlock()
+	if got != token {
+		t.Fatalf("downstream Authorization=%q want %q", got, token)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/v0/runs/"+created.RunID, nil)
