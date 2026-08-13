@@ -362,6 +362,9 @@ func (e *Engine) injectAuthCtxFromRun(ctx context.Context, runRec *store.Run) co
 	if runRec.IdentityID != "" {
 		ctx = identity.WithForceIdentityID(ctx, runRec.IdentityID)
 	}
+	if len(runRec.PassthroughHeaders) > 0 {
+		ctx = identity.WithPassthroughHeaders(ctx, runRec.PassthroughHeaders)
+	}
 	return ctx
 }
 

@@ -24,7 +24,10 @@ connector:
     - create_ticket
     - update_ticket_status
   auth:
-    bearer_env: BAIZE_CONNECTOR_TOKEN # 无会话身份时的 Headers 兜底
+    mode: static
+    static:
+      headers:
+        Authorization: "Bearer ${BAIZE_CONNECTOR_TOKEN}"
     # 登录成功后写入会话身份库（tool 名匹配 *login*）
     capture:
       tool_name_glob: "*login*"

@@ -133,9 +133,13 @@ curl -s http://127.0.0.1:8080/v0/tools
 
 - Chat UI 侧栏：查看账号（脱敏）、设默认、退出
 - 「新对话」→ 新的 `conversation_id`
-- `bearer_env` 只是**启动兜底**，不是唯一身份来源
+- 无会话身份时，默认 HTTP 头由 `connector.auth.mode` 决定：
+  - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
+  - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
+  - `vault_ref` — 注册时解析 `env:` / `file:` 引用
+- 捕获的会话身份始终优先于上述模式默认值
 - 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
-- 本地配置若只写了 `bearer_env`，`baize start` 会自动套用捕获默认值
+- `baize start` 在未配置捕获时会自动套用捕获默认值
 - 修改鉴权 / 捕获配置后需重启 Runtime
 
 ```bash
@@ -184,7 +188,10 @@ connector:
   # 指向你的 OpenAPI 与 base_url
   require_approval_mutating: true
   auth:
-    bearer_env: BAIZE_CONNECTOR_TOKEN
+    mode: static
+    static:
+      headers:
+        Authorization: "Bearer ${BAIZE_CONNECTOR_TOKEN}"
     capture:
       tool_name_glob: "*login*"
       token_json_paths: ["accessToken", "data.accessToken", "data.token"]

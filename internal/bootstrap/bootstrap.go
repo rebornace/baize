@@ -14,6 +14,7 @@ import (
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector/openapi"
@@ -181,6 +182,8 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
+	srv.AuthMode = authcred.NormalizeMode(cfg.Connector.Auth.Mode)
+	srv.AuthWhitelist = cfg.Connector.Auth.Passthrough.Headers
 	return srv, closer, nil
 }
 
@@ -259,14 +262,32 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 			capture.DefaultScheme = uniqueSecurityScheme(routes)
 		}
 	}
-	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+	authCfg := authcred.Config{
+		Mode:        cfg.Connector.Auth.Mode,
+		Static:      authcred.Static{Headers: cfg.Connector.Auth.Static.Headers},
+		Passthrough: authcred.PassThru{Headers: cfg.Connector.Auth.Passthrough.Headers},
+		VaultRef:    authcred.VaultRef{Headers: cfg.Connector.Auth.VaultRef.Headers},
+	}
+	headers, err := authcred.ResolveDefaults(authCfg)
+	if err != nil {
+		return fmt.Errorf("resolve connector auth: %w", err)
+	}
+	connectorAuth := store.ConnectorAuth{
+		Mode:        cfg.Connector.Auth.Mode,
+		Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
+		Passthrough: store.PassThruAuth{Headers: cfg.Connector.Auth.Passthrough.Headers},
+		VaultRef:    store.VaultRefAuth{Headers: cfg.Connector.Auth.VaultRef.Headers},
+	}
+	_, _, err = openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
 		ID:                      cfg.Connector.ID,
 		Type:                    typ,
 		SpecPath:                cfg.Connector.Spec,
 		BaseURL:                 cfg.Connector.BaseURL,
 		RequireApproval:         approval,
 		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
-		Headers:                 resolveBearerHeaders(cfg.Connector.Auth.BearerEnv),
+		Headers:                 headers,
+		AuthMode:                authcred.NormalizeMode(cfg.Connector.Auth.Mode),
+		Auth:                    connectorAuth,
 		Identities:              identities,
 		Resolver:                authresolve.OpenAPISecurityResolver{},
 		Capture:                 capture,
@@ -275,7 +296,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 }
 
 // withCaptureDefaults fills open-box login capture when config omits capture.
-// default.local.yaml often only sets bearer_env; without defaults, login never persists.
+// default.local.yaml often only sets auth.static; without defaults, login never persists.
 // To disable capture, set tool_name_glob to a non-matching pattern (e.g. "__none__").
 func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
 	if strings.TrimSpace(c.ToolNameGlob) != "" {
@@ -292,21 +313,6 @@ func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
 		c.HeaderTemplate = "Bearer {{token}}"
 	}
 	return c
-}
-
-// resolveBearerHeaders builds connector default Headers from bearer_env (fallback).
-func resolveBearerHeaders(bearerEnv string) map[string]string {
-	if strings.TrimSpace(bearerEnv) == "" {
-		return nil
-	}
-	v := strings.TrimSpace(os.Getenv(bearerEnv))
-	if v == "" {
-		return nil
-	}
-	if !strings.HasPrefix(strings.ToLower(v), "bearer ") {
-		v = "Bearer " + v
-	}
-	return map[string]string{"Authorization": v}
 }
 
 // uniqueSecurityScheme returns the sole security scheme name across routes, or "".

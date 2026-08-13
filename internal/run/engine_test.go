@@ -375,6 +375,54 @@ func TestContinueFromHITLColdApprove(t *testing.T) {
 	}
 }
 
+// TestExecuteInjectsPassthroughHeaders: injectAuthCtxFromRun is the production
+// path that copies Run.PassthroughHeaders into ctx. A tool closure reads
+// identity.PassthroughHeadersFrom(ctx) and asserts the run-private headers
+// arrived — validating the engine wiring (not just the register closure).
+func TestExecuteInjectsPassthroughHeaders(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	var sawAuth string
+	reg.Register("probe", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+			sawAuth = h["Authorization"]
+		}
+		return map[string]any{"ok": true}, false, nil
+	})
+
+	probeLLM := &probeScriptLLM{}
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID:            ag.ID,
+		Input:             "探测",
+		PassthroughHeaders: map[string]string{"Authorization": "Bearer RUN_TOKEN"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eng := &Engine{Store: st, LLM: probeLLM, Tools: reg}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if sawAuth != "Bearer RUN_TOKEN" {
+		t.Fatalf("PassthroughHeadersFrom(ctx)=%q want Bearer RUN_TOKEN", sawAuth)
+	}
+}
+
+// probeScriptLLM issues a single probe tool call then a final message.
+type probeScriptLLM struct{ calls int }
+
+func (s *probeScriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	s.calls++
+	if s.calls == 1 {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "p1", Name: "probe", Arguments: map[string]any{}},
+		}}, nil
+	}
+	return llm.Message{Role: llm.RoleAssistant, Content: "done"}, nil
+}
+
 func waitStatus(t *testing.T, st store.Store, id string, want store.Status) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

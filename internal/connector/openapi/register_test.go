@@ -274,6 +274,105 @@ func TestRegisterMutatingSkipsLoginCapture(t *testing.T) {
 	}
 }
 
+func TestRegisterPassthroughUsesContextHeaders(t *testing.T) {
+	var lastAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	spec := writeMinimalSpec(t, "probe", "/probe")
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:         "c",
+		SpecPath:    spec,
+		BaseURL:    srv.URL,
+		Identities: identity.NewMemoryStore(),
+		Resolver:   authresolve.OpenAPISecurityResolver{},
+		AuthMode:   "passthrough",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := identity.WithPassthroughHeaders(context.Background(), map[string]string{
+		"Authorization": "Bearer FROM_RUN",
+	})
+	content, isErr, invErr := reg.Invoke(ctx, "probe", map[string]any{})
+	if invErr != nil || isErr {
+		t.Fatalf("invoke content=%v isErr=%v err=%v", content, isErr, invErr)
+	}
+	if lastAuth != "Bearer FROM_RUN" {
+		t.Fatalf("Authorization=%q want Bearer FROM_RUN", lastAuth)
+	}
+}
+
+func TestRegisterPassthroughNoContextHeadersSendsNone(t *testing.T) {
+	var lastAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	spec := writeMinimalSpec(t, "probe2", "/probe2")
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:         "c2",
+		SpecPath:   spec,
+		BaseURL:    srv.URL,
+		AuthMode:   "passthrough",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, isErr, invErr := reg.Invoke(context.Background(), "probe2", map[string]any{})
+	if invErr != nil || isErr {
+		t.Fatalf("invoke err=%v isErr=%v", invErr, isErr)
+	}
+	if lastAuth != "" {
+		t.Fatalf("passthrough without ctx headers should send no Authorization, got %q", lastAuth)
+	}
+}
+
+func TestRegisterWithOptsPersistsAuthShape(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	spec := writeMinimalSpec(t, "persist_op", "/persist")
+	authShape := store.ConnectorAuth{
+		Mode: "vault_ref",
+		VaultRef: store.VaultRefAuth{
+			Headers: map[string]string{"Authorization": "env:SOME_TOKEN_REF"},
+		},
+	}
+	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID:      "persist-c",
+		SpecPath: spec,
+		BaseURL: "http://example.invalid",
+		Auth:    authShape,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := st.GetConnector("persist-c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Auth.Mode != "vault_ref" {
+		t.Fatalf("Auth.Mode=%q want vault_ref", c.Auth.Mode)
+	}
+	if c.Auth.VaultRef.Headers["Authorization"] != "env:SOME_TOKEN_REF" {
+		t.Fatalf("Auth.VaultRef.Headers=%+v want reference env:SOME_TOKEN_REF", c.Auth.VaultRef.Headers)
+	}
+	// Reference string (not a resolved secret) must round-trip; ensure no
+	// plaintext token placeholder leaked as a resolved value.
+	if strings.Contains(c.Auth.VaultRef.Headers["Authorization"], "SOME_TOKEN_REF") == false {
+		t.Fatalf("reference should contain env:SOME_TOKEN_REF: %+v", c.Auth.VaultRef.Headers)
+	}
+}
+
 func hasTool(infos []tool.Info, name string) bool {
 	return findTool(infos, name) != nil
 }
