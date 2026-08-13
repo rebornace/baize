@@ -117,3 +117,62 @@ func TestGetHITLMissingRun(t *testing.T) {
 		t.Fatal("expected error for missing run")
 	}
 }
+
+func TestCreateRunPersistsPassthroughHeaders(t *testing.T) {
+	s := store.NewMemory()
+	r, err := s.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "hi",
+		PassthroughHeaders: map[string]string{"Authorization": "Bearer SECRET"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PassthroughHeaders["Authorization"] != "Bearer SECRET" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestSetPassthroughHeadersOverwrites(t *testing.T) {
+	s := store.NewMemory()
+	r, err := s.CreateRun(store.CreateRunInput{AgentID: "a", Input: "hi",
+		PassthroughHeaders: map[string]string{"Authorization": "Bearer OLD"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPassthroughHeaders(r.ID, map[string]string{"Authorization": "Bearer NEW"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.PassthroughHeaders["Authorization"] != "Bearer NEW" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestSetPassthroughHeadersMissingRun(t *testing.T) {
+	s := store.NewMemory()
+	if err := s.SetPassthroughHeaders("run_missing", map[string]string{"Authorization": "x"}); err == nil {
+		t.Fatal("expected error for missing run")
+	}
+}
+
+func TestConnectorStoresAuthConfig(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertConnector(store.Connector{
+		ID: "c", Type: "openapi", Spec: "x.yaml", BaseURL: "http://x",
+		Auth: store.ConnectorAuth{Mode: "vault_ref", VaultRef: store.VaultRefAuth{
+			Headers: map[string]string{"Authorization": "env:TOK"},
+		}},
+	})
+	c, err := s.GetConnector("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Auth.Mode != "vault_ref" || c.Auth.VaultRef.Headers["Authorization"] != "env:TOK" {
+		t.Fatalf("%+v", c.Auth)
+	}
+}

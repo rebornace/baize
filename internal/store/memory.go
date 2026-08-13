@@ -71,13 +71,14 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 	defer s.mu.Unlock()
 	id := "run_" + uuid.NewString()
 	r := &Run{
-		ID:             id,
-		AgentID:        in.AgentID,
-		Input:          in.Input,
-		Status:         StatusRunning,
-		CreatedAt:      time.Now().UTC(),
-		ConversationID: in.ConversationID,
-		IdentityID:     in.IdentityID,
+		ID:                 id,
+		AgentID:            in.AgentID,
+		Input:              in.Input,
+		Status:             StatusRunning,
+		CreatedAt:          time.Now().UTC(),
+		ConversationID:     in.ConversationID,
+		IdentityID:         in.IdentityID,
+		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 	}
 	s.runs[id] = r
 	s.events[id] = nil
@@ -92,7 +93,32 @@ func (s *Memory) GetRun(id string) (*Run, error) {
 		return nil, fmt.Errorf("run not found")
 	}
 	cp := *r
+	cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
 	return &cp, nil
+}
+
+func (s *Memory) SetPassthroughHeaders(id string, headers map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.runs[id]
+	if !ok {
+		return fmt.Errorf("run not found")
+	}
+	r.PassthroughHeaders = cloneHeaders(headers)
+	return nil
+}
+
+// cloneHeaders returns a shallow copy of h so callers cannot mutate stored
+// state through the input map. Returns nil for nil input.
+func cloneHeaders(h map[string]string) map[string]string {
+	if h == nil {
+		return nil
+	}
+	cp := make(map[string]string, len(h))
+	for k, v := range h {
+		cp[k] = v
+	}
+	return cp
 }
 
 func (s *Memory) UpdateRun(id string, status Status, output, errMsg string) error {

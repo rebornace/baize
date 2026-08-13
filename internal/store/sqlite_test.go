@@ -154,6 +154,45 @@ func TestSQLitePersistenceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSQLiteCreateRunPersistsPassthroughHeaders(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "baize.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	r, err := s.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "hi",
+		PassthroughHeaders: map[string]string{"Authorization": "Bearer SECRET"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PassthroughHeaders["Authorization"] != "Bearer SECRET" {
+		t.Fatalf("%+v", got.PassthroughHeaders)
+	}
+
+	if err := s.SetPassthroughHeaders(r.ID, map[string]string{"Authorization": "Bearer NEW"}); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.PassthroughHeaders["Authorization"] != "Bearer NEW" {
+		t.Fatalf("%+v", got2.PassthroughHeaders)
+	}
+}
+
 func TestSQLiteCreateRunPersistsConversationAndIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baize.db")
 	s, err := store.Open("sqlite", path)

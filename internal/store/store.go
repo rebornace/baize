@@ -23,6 +23,28 @@ type Connector struct {
 	Spec            string   `json:"spec"`
 	BaseURL         string   `json:"base_url"`
 	RequireApproval []string `json:"require_approval,omitempty"`
+	Auth            ConnectorAuth `json:"auth,omitempty"`
+}
+
+// ConnectorAuth stores the connector auth configuration shape (mode + references),
+// not resolved secrets. Mirrors internal/authcred.Config / internal/config Auth.
+type ConnectorAuth struct {
+	Mode        string       `json:"mode,omitempty"`
+	Static      StaticAuth   `json:"static,omitempty"`
+	Passthrough PassThruAuth `json:"passthrough,omitempty"`
+	VaultRef    VaultRefAuth `json:"vault_ref,omitempty"`
+}
+
+type StaticAuth struct {
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+type PassThruAuth struct {
+	Headers []string `json:"headers,omitempty"`
+}
+
+type VaultRefAuth struct {
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type Event struct {
@@ -41,14 +63,19 @@ type Run struct {
 	CreatedAt      time.Time `json:"created_at"`
 	ConversationID string    `json:"conversation_id,omitempty"`
 	IdentityID     string    `json:"identity_id,omitempty"`
+	// PassthroughHeaders carries per-run passthrough auth headers. They are
+	// never serialized to JSON (json:"-") so they cannot leak via GET /runs/{id}
+	// or events. SQLite persists them in a dedicated passthrough_json column.
+	PassthroughHeaders map[string]string `json:"-"`
 }
 
 // CreateRunInput is the input for creating a new run.
 type CreateRunInput struct {
-	AgentID        string
-	Input          string
-	ConversationID string
-	IdentityID     string
+	AgentID            string
+	Input              string
+	ConversationID     string
+	IdentityID         string
+	PassthroughHeaders map[string]string
 }
 
 type HITLPayload struct {
@@ -70,4 +97,5 @@ type Store interface {
 	ListEvents(runID string) ([]Event, error)
 	SetHITL(runID string, payload *HITLPayload) error
 	GetHITL(runID string) (*HITLPayload, error)
+	SetPassthroughHeaders(runID string, headers map[string]string) error
 }

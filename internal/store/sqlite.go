@@ -74,10 +74,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 	}, nil
 }
 
-// migrateRunsColumns adds conversation_id / identity_id to existing DBs.
-// Duplicate-column errors from ALTER are ignored.
+// migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
+// existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
@@ -142,19 +142,28 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 	id := "run_" + uuid.NewString()
 	now := time.Now().UTC()
 	r := &Run{
-		ID:             id,
-		AgentID:        in.AgentID,
-		Input:          in.Input,
-		Status:         StatusRunning,
-		CreatedAt:      now,
-		ConversationID: in.ConversationID,
-		IdentityID:     in.IdentityID,
+		ID:                 id,
+		AgentID:            in.AgentID,
+		Input:              in.Input,
+		Status:             StatusRunning,
+		CreatedAt:          now,
+		ConversationID:     in.ConversationID,
+		IdentityID:         in.IdentityID,
+		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
+	}
+	var passthroughSQL sql.NullString
+	if len(r.PassthroughHeaders) > 0 {
+		b, err := json.Marshal(r.PassthroughHeaders)
+		if err != nil {
+			return nil, err
+		}
+		passthroughSQL = sql.NullString{String: string(b), Valid: true}
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), r.CreatedAt.Format(time.RFC3339Nano),
-		r.ConversationID, r.IdentityID,
+		r.ConversationID, r.IdentityID, passthroughSQL,
 	)
 	if err != nil {
 		return nil, err
@@ -165,11 +174,11 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 func (s *SQLite) GetRun(id string) (*Run, error) {
 	var r Run
 	var status, createdAt string
-	var conversationID, identityID sql.NullString
+	var conversationID, identityID, passthroughSQL sql.NullString
 	err := s.db.QueryRow(
-		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id FROM runs WHERE id = ?`,
+		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json FROM runs WHERE id = ?`,
 		id,
-	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID)
+	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("run not found")
 	}
@@ -183,6 +192,11 @@ func (s *SQLite) GetRun(id string) (*Run, error) {
 	if identityID.Valid {
 		r.IdentityID = identityID.String
 	}
+	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
+		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
+			return nil, fmt.Errorf("parse passthrough_json: %w", err)
+		}
+	}
 	ts, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		ts, err = time.Parse(time.RFC3339, createdAt)
@@ -192,6 +206,32 @@ func (s *SQLite) GetRun(id string) (*Run, error) {
 	}
 	r.CreatedAt = ts
 	return &r, nil
+}
+
+func (s *SQLite) SetPassthroughHeaders(id string, headers map[string]string) error {
+	var passthroughSQL sql.NullString
+	if len(headers) > 0 {
+		b, err := json.Marshal(headers)
+		if err != nil {
+			return err
+		}
+		passthroughSQL = sql.NullString{String: string(b), Valid: true}
+	}
+	res, err := s.db.Exec(
+		`UPDATE runs SET passthrough_json = ? WHERE id = ?`,
+		passthroughSQL, id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("run not found")
+	}
+	return nil
 }
 
 func (s *SQLite) UpdateRun(id string, status Status, output, errMsg string) error {
