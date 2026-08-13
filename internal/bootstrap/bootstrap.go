@@ -182,6 +182,8 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
+	srv.AuthMode = authcred.NormalizeMode(cfg.Connector.Auth.Mode)
+	srv.AuthWhitelist = cfg.Connector.Auth.Passthrough.Headers
 	return srv, closer, nil
 }
 

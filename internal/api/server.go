@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
@@ -31,7 +32,13 @@ type Server struct {
 	Identities     identity.Store
 	Messages       conversation.Store // optional; nil = no message persistence
 	DefaultAgentID string
-	mux            *http.ServeMux
+	// AuthMode is the active connector's normalized auth mode. Only "passthrough"
+	// changes POST /runs and POST /runs/{id}/resume behavior to pick headers.
+	AuthMode string
+	// AuthWhitelist is the passthrough header whitelist. nil → default
+	// ["Authorization"]; len==0 → no headers. Only used when AuthMode=="passthrough".
+	AuthWhitelist []string
+	mux           *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
@@ -123,10 +130,11 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type            string   `json:"type"`
-		Spec            string   `json:"spec"`
-		BaseURL         string   `json:"base_url"`
-		RequireApproval []string `json:"require_approval"`
+		Type            string     `json:"type"`
+		Spec            string     `json:"spec"`
+		BaseURL         string     `json:"base_url"`
+		RequireApproval []string   `json:"require_approval"`
+		Auth            authBody   `json:"auth"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -140,9 +148,52 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, infos, err := openapi.RegisterConnector(
-		s.Store, s.Registry, id, body.Type, body.Spec, body.BaseURL, body.RequireApproval,
-	)
+	// Resolve auth defaults at registration time. A failure must not partially
+	// register the connector: return 400 invalid_auth and leave the registry /
+	// store untouched.
+	authCfg := authcred.Config{
+		Mode: body.Auth.Mode,
+		Static: authcred.Static{
+			Headers: body.Auth.Static.Headers,
+		},
+		Passthrough: authcred.PassThru{
+			Headers: body.Auth.Passthrough.Headers,
+		},
+		VaultRef: authcred.VaultRef{
+			Headers: body.Auth.VaultRef.Headers,
+		},
+	}
+	resolvedHeaders, err := authcred.ResolveDefaults(authCfg)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_auth", err.Error())
+		return
+	}
+
+	// Persist the auth configuration shape (mode + references), not the
+	// resolved secrets, on the stored Connector.
+	connectorAuth := store.ConnectorAuth{
+		Mode: body.Auth.Mode,
+		Static: store.StaticAuth{
+			Headers: body.Auth.Static.Headers,
+		},
+		Passthrough: store.PassThruAuth{
+			Headers: body.Auth.Passthrough.Headers,
+		},
+		VaultRef: store.VaultRefAuth{
+			Headers: body.Auth.VaultRef.Headers,
+		},
+	}
+
+	c, infos, err := openapi.RegisterWithOpts(s.Store, s.Registry, openapi.RegisterOpts{
+		ID:              id,
+		Type:            body.Type,
+		SpecPath:        body.Spec,
+		BaseURL:         body.BaseURL,
+		RequireApproval: body.RequireApproval,
+		Headers:         resolvedHeaders,
+		AuthMode:        authcred.NormalizeMode(body.Auth.Mode),
+		Auth:            connectorAuth,
+	})
 	if err != nil {
 		if errors.Is(err, openapi.ErrToolConflict) {
 			writeError(w, http.StatusConflict, "tool_conflict", err.Error())
@@ -156,14 +207,37 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Single-process single-active-connector assumption (matches existing
+	// runtime): a successful PUT updates the server's active auth mode and
+	// passthrough whitelist so subsequent POST /runs pick the right headers.
+	s.AuthMode = authcred.NormalizeMode(body.Auth.Mode)
+	s.AuthWhitelist = body.Auth.Passthrough.Headers
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":               c.ID,
 		"type":             c.Type,
 		"spec":             c.Spec,
 		"base_url":         c.BaseURL,
 		"require_approval": c.RequireApproval,
+		"auth":             c.Auth,
 		"tools":            infos,
 	})
+}
+
+// authBody mirrors store.ConnectorAuth / authcred.Config for JSON decoding of
+// PUT /v0/connectors/{id} body.auth. Kept local to avoid pulling store types
+// into the request body struct directly.
+type authBody struct {
+	Mode        string `json:"mode"`
+	Static      struct {
+		Headers map[string]string `json:"headers"`
+	} `json:"static"`
+	Passthrough struct {
+		Headers []string `json:"headers"`
+	} `json:"passthrough"`
+	VaultRef struct {
+		Headers map[string]string `json:"headers"`
+	} `json:"vault_ref"`
 }
 
 func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +259,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"spec":             c.Spec,
 		"base_url":         c.BaseURL,
 		"require_approval": c.RequireApproval,
+		"auth":             c.Auth,
 		"tools":            tools,
 	})
 }
@@ -220,12 +295,20 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		conv = "conv_" + uuid.NewString()
 	}
 
-	runRec, err := s.Store.CreateRun(store.CreateRunInput{
+	createIn := store.CreateRunInput{
 		AgentID:        body.AgentID,
 		Input:          body.Input,
 		ConversationID: conv,
 		IdentityID:     strings.TrimSpace(body.IdentityID),
-	})
+	}
+	// Only passthrough mode pulls headers off the inbound request into the
+	// run's private PassthroughHeaders; other modes ignore the request headers
+	// and rely on the connector's resolved DefaultHeaders.
+	if authcred.NormalizeMode(s.AuthMode) == authcred.ModePassthrough {
+		createIn.PassthroughHeaders = authcred.PickHeaders(r.Header, s.AuthWhitelist)
+	}
+
+	runRec, err := s.Store.CreateRun(createIn)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -359,6 +442,19 @@ func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
 	if body.Decision != "approve" && body.Decision != "reject" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "decision must be approve or reject")
 		return
+	}
+
+	// In passthrough mode, refresh the run's passthrough headers from the
+	// resume request before resuming execution. This must happen BEFORE
+	// ContinueFromHITL so the engine's injectAuthCtxFromRun picks up the
+	// fresh headers. An empty pick leaves the previously stored headers intact.
+	if authcred.NormalizeMode(s.AuthMode) == authcred.ModePassthrough {
+		if picked := authcred.PickHeaders(r.Header, s.AuthWhitelist); len(picked) > 0 {
+			if err := s.Store.SetPassthroughHeaders(id, picked); err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
 	}
 
 	_ = s.Runner.ContinueFromHITL(r.Context(), id, run.Decision{
