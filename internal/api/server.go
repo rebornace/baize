@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
@@ -143,8 +144,16 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	if body.Type == "" {
 		body.Type = "openapi"
 	}
-	if body.Spec == "" {
+	if body.Type != "openapi" && body.Type != "http" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
+		return
+	}
+	if body.Type == "openapi" && body.Spec == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
+		return
+	}
+	if body.Type == "http" && strings.TrimSpace(body.BaseURL) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "base_url is required")
 		return
 	}
 
@@ -184,18 +193,42 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	c, infos, err := openapi.RegisterWithOpts(s.Store, s.Registry, openapi.RegisterOpts{
-		ID:              id,
-		Type:            body.Type,
-		SpecPath:        body.Spec,
-		BaseURL:         body.BaseURL,
-		RequireApproval: body.RequireApproval,
-		Headers:         resolvedHeaders,
-		AuthMode:        authcred.NormalizeMode(body.Auth.Mode),
-		Auth:            connectorAuth,
-	})
+	var (
+		c     store.Connector
+		infos []tool.Info
+	)
+	switch body.Type {
+	case "http":
+		c, infos, err = httpplugin.RegisterWithOpts(s.Store, s.Registry, httpplugin.RegisterOpts{
+			ID:              id,
+			BaseURL:         body.BaseURL,
+			RequireApproval: body.RequireApproval,
+			Headers:         resolvedHeaders,
+			AuthMode:        authcred.NormalizeMode(body.Auth.Mode),
+			Auth:            connectorAuth,
+		})
+	case "openapi":
+		c, infos, err = openapi.RegisterWithOpts(s.Store, s.Registry, openapi.RegisterOpts{
+			ID:              id,
+			Type:            body.Type,
+			SpecPath:        body.Spec,
+			BaseURL:         body.BaseURL,
+			RequireApproval: body.RequireApproval,
+			Headers:         resolvedHeaders,
+			AuthMode:        authcred.NormalizeMode(body.Auth.Mode),
+			Auth:            connectorAuth,
+		})
+	default:
+		// Unreachable: type validated above.
+		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
+		return
+	}
 	if err != nil {
-		if errors.Is(err, openapi.ErrToolConflict) {
+		if errors.Is(err, httpplugin.ErrInvalidPlugin) {
+			writeError(w, http.StatusBadRequest, "invalid_plugin", err.Error())
+			return
+		}
+		if errors.Is(err, httpplugin.ErrToolConflict) || errors.Is(err, openapi.ErrToolConflict) {
 			writeError(w, http.StatusConflict, "tool_conflict", err.Error())
 			return
 		}

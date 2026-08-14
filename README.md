@@ -5,11 +5,11 @@
 
 **English** | [中文](README.zh-CN.md)
 
-**Drop an AI agent beside any system — plug in, ship, unplug.**
+**Add AI next to your existing HTTP APIs — no rewrite, nothing left behind.**
 
-Baize is a tiny Agent Runtime that sits next to your APIs, not inside them. Point it at an OpenAPI spec and your operations become tools; run auditable ReAct loops with optional human approval. Works with dusty legacy HTTP and modern services alike — no rewrite, no platform lock-in, nothing left behind when you tear it down.
+Baize is an Agent Runtime that sits beside your existing HTTP APIs: no changes to your business process, no embedded SDK. With OpenAPI, operations become tools automatically; without it, add a small HTTP plugin. Writes can require human approval. When you are done, stop the process and leave nothing behind.
 
-> Sidecar, not chatbot: **OpenAPI → Tools → HTTP**, plus HITL gates and session-scoped credentials when writes need a human in the loop.
+> Sidecar, not chatbot: the main path is **OpenAPI → Tools → HTTP**, with HITL approval and session-scoped credentials when you need them.
 
 ---
 
@@ -17,26 +17,26 @@ Baize is a tiny Agent Runtime that sits next to your APIs, not inside them. Poin
 
 | Problem | Baize approach |
 |--------|----------------|
-| Legacy HTTP / OpenAPI systems with no agent layer | Register a connector; operations become tools automatically |
-| Unsafe write paths for LLM agents | HITL approval for mutating tools before invoke |
-| Opaque agent behavior | Every step is a `Run` with structured events |
-| Multi-account / admin vs user tokens | Session identity store + pluggable auth resolver (OpenAPI security schemes by default) |
+| Your service is already running — no AI, and you do not want to touch the code | Sidecar Runtime; a Connector turns APIs into Tools |
+| No Swagger / OpenAPI | HTTP plugin sidecar |
+| Uncomfortable letting the LLM hit write APIs directly | `require_approval` |
+| Hard to unplug cleanly / platform lock-in | Single process, config outside the app — stop it and you are gone |
 
 ### Core concepts
 
 | Concept | Role |
 |---------|------|
 | **Runtime** | Process hosting agents, tools, store, and HTTP control plane |
-| **Agent** | System prompt + LLM binding that drives a Run |
+| **Agent** | Prompt + LLM that drives a Run |
 | **Tool** | One invokable capability (usually one OpenAPI operation) |
 | **Connector** | Binding of a spec + `base_url` (+ auth) into the tool registry |
-| **Run** | One execution: input → ReAct loop → output / HITL / failure |
+| **Run** | One execution: input → ReAct loop → output / waiting for approval / failure |
 
 ---
 
-## Quick start
+## Try it in 30 seconds
 
-**Requirements:** Go 1.22+
+**Requirements:** Go 1.22+ (no C compiler; SQLite is pure Go)
 
 ```bash
 git clone https://github.com/rebornace/baize.git
@@ -44,38 +44,33 @@ cd baize
 go run ./cmd/baize start
 ```
 
-**Windows (one-shot launcher):**
-
-```powershell
-.\start.cmd
-```
-
-This sets a usable `GOPROXY` when needed and runs `go run ./cmd/baize start`.
+The repo also starts a **bundled mock HTTP demo service** so you can click the UI or hit curl — it is not the product itself.
 
 Default sample:
 
-- Runtime: `http://127.0.0.1:8080`
-- Mock ticket API: `http://127.0.0.1:18080`
+- Runtime: `http://127.0.0.1:8080` (`/ui`)
+- Demo HTTP: `http://127.0.0.1:18080`
 - LLM: built-in `mock` (no API key)
-- Chat UI: http://127.0.0.1:8080/ui
 
 If ports are busy, stop the previous `baize` process and retry.
 
-### Create a ticket (curl)
+### Call a demo write API (curl)
 
-`POST /v0/runs` is async: it returns `run_id` immediately. `create_ticket` requires approval by default (`waiting_human`).
+`POST /v0/runs` is async: it returns `run_id` immediately. In the demo, the tool name `create_ticket` requires approval by default (`waiting_human`).
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v0/runs \
   -H "Content-Type: application/json" \
-  -d "{\"agent_id\":\"ticket-agent\",\"input\":\"Create an urgent ticket: VPN is down\",\"conversation_id\":\"conv_example_1\"}"
+  -d "{\"agent_id\":\"ticket-agent\",\"input\":\"VPN is down, please file a record\",\"conversation_id\":\"conv_example_1\"}"
 ```
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/runs/<run_id>
 ```
 
-### HITL resume
+### HITL approval
+
+This demo write API is marked for approval.
 
 ```bash
 # Approve
@@ -98,12 +93,14 @@ curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
 
 ---
 
-## Platform integration (OpenAPI)
+## Point it at your APIs
 
-Primary path: register a legacy OpenAPI service as tools.
+### With OpenAPI
 
-1. Prepare an OpenAPI file and a reachable `base_url`.
-2. Register / replace a connector:
+Register your HTTP service's OpenAPI as Tools.
+
+1. Prepare an OpenAPI file and a Runtime-reachable `base_url`.
+2. Register / replace a Connector:
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
@@ -111,7 +108,7 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
   -d "{\"type\":\"openapi\",\"spec\":\"examples/mock-ticket/openapi.yaml\",\"base_url\":\"http://127.0.0.1:18080\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
-3. Inspect tools:
+3. Inspect Tools:
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/tools
@@ -121,52 +118,26 @@ You should see `method`, `path`, `operation_id`, and `connector_id`.
 
 4. Run via `POST /v0/runs` or open `/ui`.
 
-Re-`PUT` with the same connector `id` **replaces** that connector’s tools. Invalid specs return `400` without corrupting the existing registry.
+Re-`PUT` with the same `id` **replaces** that Connector’s Tools entirely. Invalid specs return `400` without corrupting the existing Registry.
 
-> Note: `PUT /v0/connectors` does not yet attach session Identities / Resolver / Capture. The `baize start` path wires those for the configured connector. Hot-reload of auth session wiring is planned.
+> Note: `PUT /v0/connectors` does not yet attach session Identities / Resolver / Capture. The `baize start` path wires those for connectors in config; hot-reload of auth session wiring is planned.
 
----
+### No OpenAPI: HTTP plugin
 
-## Session identities
-
-Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later runs in the same conversation automatically attach the resolved Bearer (default resolver follows OpenAPI `securitySchemes`).
-
-- Chat UI sidebar: list accounts (redacted), set default, sign out
-- New chat → new `conversation_id`
-- When no session identity exists, default HTTP headers come from `connector.auth.mode`:
-  - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
-  - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
-  - `vault_ref` — `env:` / `file:` references resolved at registration
-- Captured session identities always take precedence over the mode defaults above
-- Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable)
-- `baize start` applies capture defaults automatically when capture is omitted
-- Restart Runtime after changing auth/capture config
+When your HTTP service has no usable OpenAPI spec, run a sidecar that implements
+`GET /healthz`, `GET /v0/tools`, and `POST /v0/tools/{name}/invoke`
+(`X-Baize-Protocol: v0`).
 
 ```bash
-curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
+go run ./examples/http-plugin/cmd/http-plugin
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
----
+HITL still uses `require_approval`. Default `baize start` still uses the repo’s demo OpenAPI Connector.
 
-## Conversation memory
-
-With the default SQLite driver, Baize persists conversation messages and captured identities to `data/baize.db` (configurable via `store.sqlite_path`). Restarting the Runtime restores prior turns and signed-in accounts for each `conversation_id`.
-
-- `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Values `<=0` are normalized to `40` on load.
-- Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API.
-- `data/baize.db` is a runtime artifact; do not commit it to git (the default `.gitignore` already excludes `data/`).
-
-```bash
-# List persisted turns
-curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
-
-# Clear turns without signing out
-curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
-```
-
----
-
-## Real LLM & real backends
+### Real LLM
 
 Do **not** put secrets in YAML.
 
@@ -199,13 +170,106 @@ connector:
       default_scheme: "bearer"
 
 mock_ticket:
-  listen: "off"   # disable mock-ticket when using a real backend
+  listen: "off"   # turn off demo HTTP when pointing at your service
 ```
 
 ```bash
 go run ./cmd/baize start
 # or: go run ./cmd/baize serve -config configs/default.local.yaml
 ```
+
+---
+
+## Approvals and identities
+
+Mutating tools can require human approval via `require_approval` before the real invoke (see the demo flow under “Try it in 30 seconds” above).
+
+### Session identities
+
+Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later protected calls in the same conversation automatically attach the resolved Bearer (default selection follows OpenAPI `securitySchemes`).
+
+- Chat UI sidebar: list accounts (redacted), set default, sign out
+- “New chat” → new `conversation_id`
+- When no session identity exists, default HTTP headers come from `connector.auth.mode`:
+  - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
+  - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
+  - `vault_ref` — `env:` / `file:` references resolved at registration
+- Captured session identities always take precedence over the mode defaults above
+- Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable)
+- `baize start` applies capture defaults automatically when capture is omitted
+- Restart Runtime after changing auth/capture config
+
+```bash
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
+```
+
+### Conversation memory
+
+With the default SQLite driver, Baize persists conversation messages and captured identities to `data/baize.db` (configurable via `store.sqlite_path`). Restarting the Runtime restores prior turns and signed-in accounts for each `conversation_id`.
+
+- `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Values `<=0` are normalized to `40` on load.
+- Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API.
+- `data/baize.db` is a runtime artifact; do not commit it to git (the default `.gitignore` already excludes `data/`).
+
+```bash
+# List persisted turns
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# Clear turns without signing out
+curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+```
+
+---
+
+## Run and deploy
+
+Baize is a single static binary. Optional launchers (set a China module proxy when `GOPROXY` is unset):
+
+- POSIX: `./scripts/start.sh`
+- Windows: `.\start.cmd`
+
+### Native binary
+
+```bash
+# Linux server
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o baize ./cmd/baize
+# macOS
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o baize ./cmd/baize
+# Windows
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
+```
+
+Copy the binary to the target host; no runtime dependencies beyond the OS.
+
+### Docker
+
+**Try the sample stack** (Runtime + demo HTTP, mock LLM):
+
+```bash
+docker compose up --build
+```
+
+- Runtime / UI: http://127.0.0.1:8080 (`/ui`)
+- Demo HTTP: http://127.0.0.1:18080
+
+Start **both** services. `configs/docker.yaml` points `base_url` at hostname `mock-ticket`; if you start only the Runtime, tools that call the demo HTTP will fail to connect.
+
+Trial compose defaults `BAIZE_CONNECTOR_TOKEN` to `dev`; use your own token in production. Do not put secrets in YAML.
+
+**Production sidecar** (your HTTP service, no demo HTTP):
+
+```bash
+docker build -t baize:local .
+docker run --rm -p 8080:8080 \
+  -v /path/to/your.yaml:/app/configs/docker.yaml \
+  -v baize-data:/app/data \
+  -e BAIZE_API_KEY \
+  baize:local
+```
+
+In `your.yaml` set `mock_ticket.listen: off` and point `connector.base_url` at your HTTP service. Do not use this repo's compose file as production orchestration.
+
+Override module proxy at build time if needed: `docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
 ---
 
@@ -225,7 +289,7 @@ npm run build
 
 | Command | Description |
 |---------|-------------|
-| `baize start` | Load `default.local.yaml` if present, else `default.yaml`; start Runtime (+ mock ticket unless `mock_ticket.listen: off`) |
+| `baize start` | Prefer `default.local.yaml` if present, else `default.yaml`; start Runtime (also starts the demo HTTP service unless `mock_ticket.listen: off`) |
 | `baize serve -config <path>` | Runtime only, explicit config |
 
 ---

@@ -1,0 +1,16 @@
+services:
+  mock-ticket:
+    build: .
+    command: ["/app/mock-ticket"]
+    ports:
+      - "18080:18080"
+  baize:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      BAIZE_CONNECTOR_TOKEN: ${BAIZE_CONNECTOR_TOKEN:-dev}
+    volumes:
+      - baize-data:/app/data
+volumes:
+  baize-data:

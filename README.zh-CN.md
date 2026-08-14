@@ -5,9 +5,9 @@
 
 [English](README.md) | **中文**
 
-**旁挂任意系统的可插拔 AI Agent —— 接上就能用，卸下不留痕。**
+**不改你的服务，旁挂一层就能用上 AI。卸掉不留痕。**
 
-白泽是一个极轻的 Agent Runtime：不改业务代码，只旁挂在现有 API 旁边。导入 OpenAPI，接口自动变成工具；进程内跑可审计的 ReAct 循环，写操作可走人工审批。无论系统多老、多杂，都能以最小代价接上 AI；不绑环境、不绑平台，用完即走。
+白泽是旁挂在现有 HTTP API 旁边的 Agent Runtime：业务进程不用改、不用嵌 SDK。有 OpenAPI 就自动变成工具；没有就加一个小 HTTP 插件。写操作可人工审批，用完把进程停掉即可。
 
 > 侧车，不是聊天机器人：主路径是 **OpenAPI → Tools → HTTP**，需要时叠加 HITL 审批与会话级凭证。
 
@@ -17,26 +17,26 @@
 
 | 痛点 | 白泽做法 |
 |------|----------|
-| 已有 HTTP / OpenAPI，缺 Agent 层 | 注册 Connector，operation 自动变成 Tool |
-| LLM 直接写接口风险高 | 变更类工具先 HITL，再真正调用 |
-| Agent 行为不透明 | 每次执行都是带事件流的 `Run` |
-| 多账号 / 管理端与用户端 Token | 会话身份库 + 可插拔鉴权解析（默认跟 OpenAPI security） |
+| 服务端已经在跑，没有 AI，也不想动代码 | 旁挂 Runtime，Connector 把接口变成 Tool |
+| 没有 Swagger / OpenAPI | HTTP 插件侧车 |
+| LLM 直接打写接口不放心 | `require_approval` |
+| 接完拆不干净、绑死平台 | 单进程、配置在外，停掉即走 |
 
 ### 五个概念
 
 | 概念 | 含义 |
 |------|------|
 | **Runtime** | 承载 Agent、Tool、存储与控制面 HTTP 的进程 |
-| **Agent** | 系统提示词 + LLM，驱动一次 Run |
+| **Agent** | 提示词 + LLM，驱动一次 Run |
 | **Tool** | 可调用能力（通常对应一个 OpenAPI operation） |
 | **Connector** | Spec + `base_url`（+ 鉴权）到 Tool 注册表的绑定 |
 | **Run** | 一次执行：输入 → ReAct → 输出 / 待审批 / 失败 |
 
 ---
 
-## 快速开始
+## 30 秒跑通
 
-**环境要求：** Go 1.22+
+**环境要求：** Go 1.22+（无需 C 编译器；SQLite 为纯 Go）
 
 ```bash
 git clone https://github.com/rebornace/baize.git
@@ -44,31 +44,24 @@ cd baize
 go run ./cmd/baize start
 ```
 
-**Windows 一键启动：**
-
-```powershell
-.\start.cmd
-```
-
-会按需设置 `GOPROXY`，并执行 `go run ./cmd/baize start`。
+仓库会同时拉起一个 **mock HTTP 演示服务**，方便你点 UI / 打 curl；不是产品本身。
 
 默认样板：
 
-- Runtime：`http://127.0.0.1:8080`
-- Mock 工单 API：`http://127.0.0.1:18080`
+- Runtime：`http://127.0.0.1:8080`（`/ui`）
+- 演示 HTTP：`http://127.0.0.1:18080`
 - LLM：内置 `mock`（无需 Key）
-- Chat UI：http://127.0.0.1:8080/ui
 
 若端口被占用，先结束旧的 `baize` 进程再启动。
 
-### 创建工单（curl）
+### 调用演示写接口（curl）
 
-`POST /v0/runs` 为异步，立即返回 `run_id`。默认 `create_ticket` 需审批，状态为 `waiting_human`。
+`POST /v0/runs` 为异步，立即返回 `run_id`。演示里工具名 `create_ticket` 默认要审批，状态为 `waiting_human`。
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v0/runs \
   -H "Content-Type: application/json" \
-  -d "{\"agent_id\":\"ticket-agent\",\"input\":\"创建一个紧急工单：VPN 挂了\",\"conversation_id\":\"conv_example_1\"}"
+  -d "{\"agent_id\":\"ticket-agent\",\"input\":\"VPN 挂了，请建一条记录\",\"conversation_id\":\"conv_example_1\"}"
 ```
 
 ```bash
@@ -76,6 +69,8 @@ curl -s http://127.0.0.1:8080/v0/runs/<run_id>
 ```
 
 ### HITL 审批
+
+这个演示写接口被标了审批。
 
 ```bash
 # 批准
@@ -98,9 +93,11 @@ curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
 
 ---
 
-## 平台接入（OpenAPI）
+## 接到你的服务
 
-主路径：把遗留 OpenAPI 服务注册成 Tools。
+### 有 OpenAPI
+
+把你的 HTTP 服务的 OpenAPI 注册成 Tools。
 
 1. 准备 OpenAPI 文件与 Runtime 可访问的 `base_url`。
 2. 注册 / 替换 Connector：
@@ -125,48 +122,22 @@ curl -s http://127.0.0.1:8080/v0/tools
 
 > 说明：`PUT /v0/connectors` 目前不会自动挂上会话 Identities / Resolver / Capture。`baize start` 启动路径会为配置中的 Connector 接线；热更新鉴权会话能力后续增强。
 
----
+### 无 OpenAPI：HTTP 插件
 
-## 会话身份
-
-登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续受保护调用会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。
-
-- Chat UI 侧栏：查看账号（脱敏）、设默认、退出
-- 「新对话」→ 新的 `conversation_id`
-- 无会话身份时，默认 HTTP 头由 `connector.auth.mode` 决定：
-  - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
-  - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
-  - `vault_ref` — 注册时解析 `env:` / `file:` 引用
-- 捕获的会话身份始终优先于上述模式默认值
-- 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
-- `baize start` 在未配置捕获时会自动套用捕获默认值
-- 修改鉴权 / 捕获配置后需重启 Runtime
+当你的 HTTP 服务没有可用的 OpenAPI 规格时，可运行实现
+`GET /healthz`、`GET /v0/tools`、`POST /v0/tools/{name}/invoke`
+（`X-Baize-Protocol: v0`）的侧车。
 
 ```bash
-curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
+go run ./examples/http-plugin/cmd/http-plugin
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
----
+HITL 仍使用 `require_approval`。默认 `baize start` 仍是仓库自带的演示 OpenAPI Connector。
 
-## 对话记忆
-
-默认 SQLite 驱动下，白泽会把对话消息与捕获的身份写入 `data/baize.db`（可用 `store.sqlite_path` 配置）。Runtime 重启后，按 `conversation_id` 恢复历史轮次与已登录账号。
-
-- `conversation.max_messages`（默认 `40`）控制回喂给 LLM 的最近轮次窗口；更早的消息仍留存数据库备查，但不会进入提示词。配置为 `<=0` 时会在加载时回填为 `40`。
-- 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。
-- `data/baize.db` 是运行时产物，请勿提交到 git（默认 `.gitignore` 已忽略 `data/`）。
-
-```bash
-# 查看持久化的对话轮次
-curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
-
-# 清空聊天但不退出登录
-curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
-```
-
----
-
-## 真实 LLM 与真实后端
+### 真实 LLM
 
 **不要把密钥写进 YAML。**
 
@@ -199,13 +170,106 @@ connector:
       default_scheme: "bearer"
 
 mock_ticket:
-  listen: "off"   # 对接真实后端时关闭 mock-ticket
+  listen: "off"   # 对接你的服务时关闭演示 HTTP
 ```
 
 ```bash
 go run ./cmd/baize start
 # 或：go run ./cmd/baize serve -config configs/default.local.yaml
 ```
+
+---
+
+## 写操作与身份
+
+变更类工具可通过 `require_approval` 先走人工审批，再真正调用（演示流程见上文「30 秒跑通」）。
+
+### 会话身份
+
+登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续受保护调用会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。
+
+- Chat UI 侧栏：查看账号（脱敏）、设默认、退出
+- 「新对话」→ 新的 `conversation_id`
+- 无会话身份时，默认 HTTP 头由 `connector.auth.mode` 决定：
+  - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
+  - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
+  - `vault_ref` — 注册时解析 `env:` / `file:` 引用
+- 捕获的会话身份始终优先于上述模式默认值
+- 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
+- `baize start` 在未配置捕获时会自动套用捕获默认值
+- 修改鉴权 / 捕获配置后需重启 Runtime
+
+```bash
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
+```
+
+### 对话记忆
+
+默认 SQLite 驱动下，白泽会把对话消息与捕获的身份写入 `data/baize.db`（可用 `store.sqlite_path` 配置）。Runtime 重启后，按 `conversation_id` 恢复历史轮次与已登录账号。
+
+- `conversation.max_messages`（默认 `40`）控制回喂给 LLM 的最近轮次窗口；更早的消息仍留存数据库备查，但不会进入提示词。配置为 `<=0` 时会在加载时回填为 `40`。
+- 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。
+- `data/baize.db` 是运行时产物，请勿提交到 git（默认 `.gitignore` 已忽略 `data/`）。
+
+```bash
+# 查看持久化的对话轮次
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# 清空聊天但不退出登录
+curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+```
+
+---
+
+## 部署
+
+白泽是单个静态二进制。可选启动脚本（未设置 `GOPROXY` 时会写入国内代理）：
+
+- POSIX：`./scripts/start.sh`
+- Windows：`.\start.cmd`
+
+### 本机二进制
+
+```bash
+# Linux 服务器
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o baize ./cmd/baize
+# macOS
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o baize ./cmd/baize
+# Windows
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
+```
+
+将二进制拷到目标主机即可，除操作系统外无其它运行时依赖。
+
+### Docker
+
+**试用样板栈**（Runtime + 演示 HTTP，mock LLM）：
+
+```bash
+docker compose up --build
+```
+
+- Runtime / UI：http://127.0.0.1:8080 （`/ui`）
+- 演示 HTTP：http://127.0.0.1:18080
+
+须同时启动**两个**服务。`configs/docker.yaml` 将 `base_url` 指向主机名 `mock-ticket`；只起 Runtime 时，打到演示 HTTP 的工具会连不上。
+
+试用 compose 默认 `BAIZE_CONNECTOR_TOKEN` 为 `dev`；生产请使用自己的 token。不要把密钥写进 YAML。
+
+**生产侧车**（你的 HTTP 服务，无演示 HTTP）：
+
+```bash
+docker build -t baize:local .
+docker run --rm -p 8080:8080 \
+  -v /path/to/your.yaml:/app/configs/docker.yaml \
+  -v baize-data:/app/data \
+  -e BAIZE_API_KEY \
+  baize:local
+```
+
+在 `your.yaml` 中设置 `mock_ticket.listen: off`，并将 `connector.base_url` 指向你的 HTTP 服务。不要把本仓库的 compose 文件当作生产编排。
+
+如需覆盖构建时的模块代理：`docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
 ---
 
@@ -225,7 +289,7 @@ npm run build
 
 | 命令 | 说明 |
 |------|------|
-| `baize start` | 优先 `default.local.yaml`，否则 `default.yaml`；启动 Runtime（除非 `mock_ticket.listen: off`，否则同时起 mock 工单） |
+| `baize start` | 优先 `default.local.yaml`，否则 `default.yaml`；启动 Runtime（除非 `mock_ticket.listen: off`，否则同时起演示 HTTP 服务） |
 | `baize serve -config <path>` | 仅 Runtime，显式指定配置 |
 
 ---

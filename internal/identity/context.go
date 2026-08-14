@@ -7,6 +7,8 @@ type ctxKey int
 const (
 	ctxKeyConversationID ctxKey = iota
 	ctxKeyForceIdentityID
+	ctxKeyRunID
+	ctxKeyAgentID
 )
 
 func WithConversationID(ctx context.Context, id string) context.Context {
@@ -24,6 +26,24 @@ func WithForceIdentityID(ctx context.Context, id string) context.Context {
 
 func ForceIdentityIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeyForceIdentityID).(string)
+	return v
+}
+
+func WithRunID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, ctxKeyRunID, id)
+}
+
+func RunIDFrom(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyRunID).(string)
+	return v
+}
+
+func WithAgentID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, ctxKeyAgentID, id)
+}
+
+func AgentIDFrom(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyAgentID).(string)
 	return v
 }
 

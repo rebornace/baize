@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
+	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
@@ -245,6 +246,40 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 	if typ == "" {
 		typ = "openapi"
 	}
+	authCfg := authcred.Config{
+		Mode:        cfg.Connector.Auth.Mode,
+		Static:      authcred.Static{Headers: cfg.Connector.Auth.Static.Headers},
+		Passthrough: authcred.PassThru{Headers: cfg.Connector.Auth.Passthrough.Headers},
+		VaultRef:    authcred.VaultRef{Headers: cfg.Connector.Auth.VaultRef.Headers},
+	}
+	headers, err := authcred.ResolveDefaults(authCfg)
+	if err != nil {
+		return fmt.Errorf("resolve connector auth: %w", err)
+	}
+	connectorAuth := store.ConnectorAuth{
+		Mode:        cfg.Connector.Auth.Mode,
+		Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
+		Passthrough: store.PassThruAuth{Headers: cfg.Connector.Auth.Passthrough.Headers},
+		VaultRef:    store.VaultRefAuth{Headers: cfg.Connector.Auth.VaultRef.Headers},
+	}
+
+	if typ == "http" {
+		if strings.TrimSpace(cfg.Connector.BaseURL) == "" {
+			return fmt.Errorf("connector.base_url is required")
+		}
+		_, _, err = httpplugin.RegisterWithOpts(st, reg, httpplugin.RegisterOpts{
+			ID:              cfg.Connector.ID,
+			BaseURL:         cfg.Connector.BaseURL,
+			RequireApproval: cfg.Connector.RequireApproval,
+			Headers:         headers,
+			AuthMode:        authcred.NormalizeMode(cfg.Connector.Auth.Mode),
+			Auth:            connectorAuth,
+			Identities:      identities,
+			Resolver:        authresolve.OpenAPISecurityResolver{},
+		})
+		return err
+	}
+
 	if cfg.Connector.Spec == "" {
 		return fmt.Errorf("connector.spec is required")
 	}
@@ -261,22 +296,6 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		if routes, err := openapi.LoadTools(cfg.Connector.Spec); err == nil {
 			capture.DefaultScheme = uniqueSecurityScheme(routes)
 		}
-	}
-	authCfg := authcred.Config{
-		Mode:        cfg.Connector.Auth.Mode,
-		Static:      authcred.Static{Headers: cfg.Connector.Auth.Static.Headers},
-		Passthrough: authcred.PassThru{Headers: cfg.Connector.Auth.Passthrough.Headers},
-		VaultRef:    authcred.VaultRef{Headers: cfg.Connector.Auth.VaultRef.Headers},
-	}
-	headers, err := authcred.ResolveDefaults(authCfg)
-	if err != nil {
-		return fmt.Errorf("resolve connector auth: %w", err)
-	}
-	connectorAuth := store.ConnectorAuth{
-		Mode:        cfg.Connector.Auth.Mode,
-		Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
-		Passthrough: store.PassThruAuth{Headers: cfg.Connector.Auth.Passthrough.Headers},
-		VaultRef:    store.VaultRefAuth{Headers: cfg.Connector.Auth.VaultRef.Headers},
 	}
 	_, _, err = openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
 		ID:                      cfg.Connector.ID,
