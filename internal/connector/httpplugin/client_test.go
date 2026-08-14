@@ -106,3 +106,57 @@ func TestClientListToolsEmpty(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestClientListToolsNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"tools":[{"name":"echo","description":"d"}]}`))
+	}))
+	defer srv.Close()
+	_, err := httpplugin.NewClient(srv.URL).ListTools(context.Background())
+	if !errors.Is(err, httpplugin.ErrInvalidPlugin) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestClientInvokeProtocolHeadersNotOverwritten(t *testing.T) {
+	var gotProto, gotRun string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProto = r.Header.Get("X-Baize-Protocol")
+		gotRun = r.Header.Get("X-Baize-Run-Id")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":{},"is_error":false}`))
+	}))
+	defer srv.Close()
+	_, err := httpplugin.NewClient(srv.URL).Invoke(context.Background(), "echo", nil, httpplugin.InvokeMeta{
+		RunID: "run_1",
+		Headers: map[string]string{
+			"X-Baize-Protocol": "override",
+			"X-Baize-Run-Id":   "override_run",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotProto != "v0" || gotRun != "run_1" {
+		t.Fatalf("proto=%q run=%q", gotProto, gotRun)
+	}
+}
+
+func TestClientInvokeHTTPErrorWithErrorJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"code":"bad_request","message":"nope","retryable":false}}`))
+	}))
+	defer srv.Close()
+	out, err := httpplugin.NewClient(srv.URL).Invoke(context.Background(), "echo", nil, httpplugin.InvokeMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.IsError {
+		t.Fatalf("want is_error out=%+v", out)
+	}
+	if out.Content["message"] != "nope" {
+		t.Fatalf("content=%+v", out.Content)
+	}
+}

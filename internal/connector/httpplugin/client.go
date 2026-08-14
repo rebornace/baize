@@ -64,6 +64,10 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDesc, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, ErrInvalidPlugin
+	}
+
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, ErrInvalidPlugin
@@ -108,15 +112,15 @@ func (c *Client) Invoke(ctx context.Context, name string, args map[string]any, m
 		return InvokeResult{}, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	c.setProtocolHeader(req)
-	if meta.RunID != "" {
-		req.Header.Set(HeaderRunID, meta.RunID)
-	}
 	for k, v := range meta.Headers {
 		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
 			continue
 		}
 		req.Header.Set(k, v)
+	}
+	c.setProtocolHeader(req)
+	if meta.RunID != "" {
+		req.Header.Set(HeaderRunID, meta.RunID)
 	}
 
 	resp, err := c.httpClient().Do(req)
@@ -131,7 +135,9 @@ func (c *Client) Invoke(ctx context.Context, name string, args map[string]any, m
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return InvokeResult{Content: decodeBody(raw), IsError: true}, nil
+		out, _ := parseInvokeResponse(raw)
+		out.IsError = true
+		return out, nil
 	}
 
 	return parseInvokeResponse(raw)
