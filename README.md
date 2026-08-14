@@ -36,7 +36,7 @@ Baize is a tiny Agent Runtime that sits next to your APIs, not inside them. Poin
 
 ## Quick start
 
-**Requirements:** Go 1.22+
+**Requirements:** Go 1.22+ (no C compiler; SQLite is pure Go)
 
 ```bash
 git clone https://github.com/rebornace/baize.git
@@ -44,13 +44,23 @@ cd baize
 go run ./cmd/baize start
 ```
 
-**Windows (one-shot launcher):**
+Same command on Linux, macOS, and Windows. Optional launchers (set `GOPROXY` when unset):
 
-```powershell
-.\start.cmd
+- POSIX: `./scripts/start.sh`
+- Windows: `.\start.cmd`
+
+### Native binary
+
+```bash
+# Linux server
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o baize ./cmd/baize
+# macOS
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o baize ./cmd/baize
+# Windows
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
 ```
 
-This sets a usable `GOPROXY` when needed and runs `go run ./cmd/baize start`.
+Copy the binary to the host; no runtime besides the OS. See [Server (Docker)](#server-docker) for containers.
 
 Default sample:
 
@@ -223,6 +233,40 @@ mock_ticket:
 go run ./cmd/baize start
 # or: go run ./cmd/baize serve -config configs/default.local.yaml
 ```
+
+---
+
+## Server (Docker)
+
+Baize is a single static binary. On a Linux host, Docker is the supported server path.
+
+**Try the sample stack** (Runtime + mock-ticket, mock LLM):
+
+```bash
+docker compose up --build
+```
+
+- Runtime / UI: http://127.0.0.1:8080  (`/ui`)
+- Mock ticket API: http://127.0.0.1:18080
+
+Start **both** services. `configs/docker.yaml` points `base_url` at hostname `mock-ticket`; running only `baize` with that file will fail connector registration.
+
+Trial compose defaults `BAIZE_CONNECTOR_TOKEN` to `dev`; use your own token in production. Do not put secrets in YAML.
+
+**Production sidecar** (your APIs, no mock-ticket):
+
+```bash
+docker build -t baize:local .
+docker run --rm -p 8080:8080 \
+  -v /path/to/your.yaml:/app/configs/docker.yaml \
+  -v baize-data:/app/data \
+  -e BAIZE_API_KEY \
+  baize:local
+```
+
+In `your.yaml` set `mock_ticket.listen: off` and `connector.base_url` to the real system. Do not use this repo's compose file as production orchestration.
+
+Override module proxy at build time if needed: `docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
 ---
 

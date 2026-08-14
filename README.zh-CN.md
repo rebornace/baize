@@ -36,7 +36,7 @@
 
 ## 快速开始
 
-**环境要求：** Go 1.22+
+**环境要求：** Go 1.22+（无需 C 编译器；SQLite 为纯 Go）
 
 ```bash
 git clone https://github.com/rebornace/baize.git
@@ -44,13 +44,23 @@ cd baize
 go run ./cmd/baize start
 ```
 
-**Windows 一键启动：**
+Linux、macOS、Windows 同一条命令。可选启动脚本（未设置时会配置 `GOPROXY`）：
 
-```powershell
-.\start.cmd
+- POSIX：`./scripts/start.sh`
+- Windows：`.\start.cmd`
+
+### 本机二进制
+
+```bash
+# Linux 服务器
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o baize ./cmd/baize
+# macOS
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o baize ./cmd/baize
+# Windows
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
 ```
 
-会按需设置 `GOPROXY`，并执行 `go run ./cmd/baize start`。
+将二进制拷到目标主机即可，除操作系统外无其它运行时依赖。容器部署见 [服务端（Docker）](#服务端docker)。
 
 默认样板：
 
@@ -223,6 +233,40 @@ mock_ticket:
 go run ./cmd/baize start
 # 或：go run ./cmd/baize serve -config configs/default.local.yaml
 ```
+
+---
+
+## 服务端（Docker）
+
+白泽是单个静态二进制。在 Linux 主机上，Docker 是受支持的服务端路径。
+
+**试用样板栈**（Runtime + mock-ticket，mock LLM）：
+
+```bash
+docker compose up --build
+```
+
+- Runtime / UI：http://127.0.0.1:8080 （`/ui`）
+- Mock 工单 API：http://127.0.0.1:18080
+
+须同时启动**两个**服务。`configs/docker.yaml` 将 `base_url` 指向主机名 `mock-ticket`；仅用该配置单独跑 `baize` 会导致 connector 注册失败。
+
+试用 compose 默认 `BAIZE_CONNECTOR_TOKEN` 为 `dev`；生产请使用自己的 token。不要把密钥写进 YAML。
+
+**生产侧车**（你的 API，无 mock-ticket）：
+
+```bash
+docker build -t baize:local .
+docker run --rm -p 8080:8080 \
+  -v /path/to/your.yaml:/app/configs/docker.yaml \
+  -v baize-data:/app/data \
+  -e BAIZE_API_KEY \
+  baize:local
+```
+
+在 `your.yaml` 中设置 `mock_ticket.listen: off`，并将 `connector.base_url` 指向真实系统。不要把本仓库的 compose 文件当作生产编排。
+
+如需覆盖构建时的模块代理：`docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
 ---
 
