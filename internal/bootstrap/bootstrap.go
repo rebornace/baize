@@ -274,6 +274,8 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 			Headers:         headers,
 			AuthMode:        authcred.NormalizeMode(cfg.Connector.Auth.Mode),
 			Auth:            connectorAuth,
+			Identities:      identities,
+			Resolver:        authresolve.OpenAPISecurityResolver{},
 		})
 		return err
 	}
