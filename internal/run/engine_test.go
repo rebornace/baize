@@ -382,11 +382,13 @@ func TestContinueFromHITLColdApprove(t *testing.T) {
 func TestExecuteInjectsPassthroughHeaders(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
-	var sawAuth string
+	var sawAuth, sawRun, sawAgent string
 	reg.Register("probe", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
 		if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
 			sawAuth = h["Authorization"]
 		}
+		sawRun = identity.RunIDFrom(ctx)
+		sawAgent = identity.AgentIDFrom(ctx)
 		return map[string]any{"ok": true}, false, nil
 	})
 
@@ -394,7 +396,7 @@ func TestExecuteInjectsPassthroughHeaders(t *testing.T) {
 	ag := agent.Def{ID: "ticket-agent", System: "helper"}
 	r, err := st.CreateRun(store.CreateRunInput{
 		AgentID:            ag.ID,
-		Input:             "探测",
+		Input:              "探测",
 		PassthroughHeaders: map[string]string{"Authorization": "Bearer RUN_TOKEN"},
 	})
 	if err != nil {
@@ -407,6 +409,12 @@ func TestExecuteInjectsPassthroughHeaders(t *testing.T) {
 	}
 	if sawAuth != "Bearer RUN_TOKEN" {
 		t.Fatalf("PassthroughHeadersFrom(ctx)=%q want Bearer RUN_TOKEN", sawAuth)
+	}
+	if sawRun != r.ID {
+		t.Fatalf("RunIDFrom(ctx)=%q want %q", sawRun, r.ID)
+	}
+	if sawAgent != ag.ID {
+		t.Fatalf("AgentIDFrom(ctx)=%q want %q", sawAgent, ag.ID)
 	}
 }
 
