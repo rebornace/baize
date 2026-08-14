@@ -127,6 +127,23 @@ curl -s http://127.0.0.1:8080/v0/tools
 
 ---
 
+## 无 OpenAPI：HTTP 插件
+
+当遗留系统没有可用的 OpenAPI 规格时，可运行实现
+`GET /healthz`、`GET /v0/tools`、`POST /v0/tools/{name}/invoke`
+（`X-Baize-Protocol: v0`）的侧车。
+
+```bash
+go run ./examples/http-plugin/cmd/http-plugin
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
+```
+
+HITL 仍使用 `require_approval`。默认 `baize start` 仍是 mock-ticket OpenAPI Connector。
+
+---
+
 ## 会话身份
 
 登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续受保护调用会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。

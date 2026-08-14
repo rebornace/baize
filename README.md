@@ -127,6 +127,23 @@ Re-`PUT` with the same connector `id` **replaces** that connector’s tools. Inv
 
 ---
 
+## No OpenAPI: HTTP plugin
+
+When the legacy system has no usable OpenAPI spec, run a sidecar that implements
+`GET /healthz`, `GET /v0/tools`, and `POST /v0/tools/{name}/invoke`
+(`X-Baize-Protocol: v0`).
+
+```bash
+go run ./examples/http-plugin/cmd/http-plugin
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
+```
+
+HITL still uses `require_approval`. Default `baize start` keeps the mock-ticket OpenAPI connector.
+
+---
+
 ## Session identities
 
 Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later runs in the same conversation automatically attach the resolved Bearer (default resolver follows OpenAPI `securitySchemes`).
