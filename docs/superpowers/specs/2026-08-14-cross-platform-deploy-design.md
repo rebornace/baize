@@ -1,6 +1,6 @@
 # Baize 设计规格：跨平台与 Docker 服务端部署
 
-> 状态：待用户审查  
+> 状态：已批准  
 > 日期：2026-08-14  
 > 前置：Runtime 已为纯 Go（`modernc.org/sqlite`，无 CGO）、`baize start` / `baize serve` 已落地  
 > 依据：产品以服务端旁挂部署为主；需体现 Linux / Windows / macOS 同一份源码可跑
