@@ -259,6 +259,7 @@ export function ChatPage() {
 
     try {
       const created = await createRun(agentId, text, sentConversationId)
+      await refreshConversations()
       if (conversationIdRef.current !== sentConversationId) return
       setStatus(statusLabel(created.status))
       setLiveRunId(created.run_id)
