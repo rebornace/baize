@@ -146,3 +146,18 @@ func TestSQLiteListSummariesTitleTruncateAndClear(t *testing.T) {
 		t.Fatalf("after clear %+v", sum)
 	}
 }
+
+func TestSQLiteListSummariesDefaultTitleWithoutUser(t *testing.T) {
+	db, _ := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "仅助手"}); err != nil {
+		t.Fatal(err)
+	}
+	sum := s.ListSummaries()
+	if len(sum) != 1 || sum[0].ID != "c1" || sum[0].Title != "新对话" {
+		t.Fatalf("want 新对话, got %+v", sum)
+	}
+}

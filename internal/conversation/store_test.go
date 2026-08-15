@@ -85,3 +85,14 @@ func TestListSummariesTitleTruncateAndClear(t *testing.T) {
 		t.Fatalf("after clear %+v", sum)
 	}
 }
+
+func TestListSummariesDefaultTitleWithoutUser(t *testing.T) {
+	s := conversation.NewMemoryStore()
+	if _, err := s.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "仅助手"}); err != nil {
+		t.Fatal(err)
+	}
+	sum := s.ListSummaries()
+	if len(sum) != 1 || sum[0].ID != "c1" || sum[0].Title != "新对话" {
+		t.Fatalf("want 新对话, got %+v", sum)
+	}
+}
