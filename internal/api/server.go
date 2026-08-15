@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
@@ -13,6 +16,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
@@ -32,6 +36,7 @@ type Server struct {
 	Runner         Runner
 	Identities     identity.Store
 	Messages       conversation.Store // optional; nil = no message persistence
+	Hub            *eventbus.Hub      // optional; nil = SSE replay only (no live fan-out)
 	DefaultAgentID string
 	// AuthMode is the active connector's normalized auth mode. Only "passthrough"
 	// changes POST /runs and POST /runs/{id}/resume behavior to pick headers.
@@ -69,6 +74,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
+	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
@@ -528,6 +534,143 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{}
 	}
 	writeJSON(w, http.StatusOK, evs)
+}
+
+func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	runRec, err := s.Store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+
+	after := parseStreamAfter(r)
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+
+	evs, err := s.Store.ListEvents(id)
+	if err != nil {
+		return
+	}
+	lastSent := after
+	for i, ev := range evs {
+		if i <= after {
+			continue
+		}
+		if err := writeSSEEvent(w, rc, i, ev); err != nil {
+			return
+		}
+		lastSent = i
+	}
+
+	terminal := runRec.Status == store.StatusSucceeded || runRec.Status == store.StatusFailed
+	if terminal {
+		_ = writeSSEEnded(w, rc, runRec.Status)
+		return
+	}
+	if s.Hub == nil {
+		// Replay-only: cannot subscribe for live increments.
+		return
+	}
+
+	sub := s.Hub.Subscribe(id)
+	defer sub.Cancel()
+
+	// Drain any buffered events that arrived between ListEvents and Subscribe.
+	drainBuffered:
+	for {
+		select {
+		case ev, ok := <-sub.Events:
+			if !ok {
+				break drainBuffered
+			}
+			if ev.Index <= lastSent {
+				continue
+			}
+			if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+				return
+			}
+			lastSent = ev.Index
+		default:
+			break drainBuffered
+		}
+	}
+
+	ping := time.NewTicker(15 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ping.C:
+			if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
+				return
+			}
+			_ = rc.Flush()
+		case ev, ok := <-sub.Events:
+			if !ok {
+				return
+			}
+			if ev.Index <= lastSent {
+				continue
+			}
+			if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+				return
+			}
+			lastSent = ev.Index
+		case stt, ok := <-sub.Ended:
+			if !ok {
+				return
+			}
+			_ = writeSSEEnded(w, rc, stt)
+			return
+		}
+	}
+}
+
+func parseStreamAfter(r *http.Request) int {
+	after := -1
+	if q := r.URL.Query().Get("after"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil {
+			after = n
+		} else {
+			after = -1
+		}
+	}
+	if id := r.Header.Get("Last-Event-ID"); id != "" {
+		if n, err := strconv.Atoi(id); err == nil {
+			after = n
+		} else {
+			after = -1
+		}
+	}
+	return after
+}
+
+func writeSSEEvent(w http.ResponseWriter, rc *http.ResponseController, index int, ev store.Event) error {
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", index, payload); err != nil {
+		return err
+	}
+	return rc.Flush()
+}
+
+func writeSSEEnded(w http.ResponseWriter, rc *http.ResponseController, status store.Status) error {
+	payload, err := json.Marshal(map[string]string{"status": string(status)})
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: run.ended\ndata: %s\n\n", payload); err != nil {
+		return err
+	}
+	return rc.Flush()
 }
 
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {

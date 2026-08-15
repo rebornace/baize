@@ -20,6 +20,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
@@ -170,6 +171,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		return nil, nil, err
 	}
 
+	hub := eventbus.NewHub()
+	st = eventbus.Notify(st, hub)
+
 	engine := &run.Engine{
 		Store:       st,
 		LLM:         provider,
@@ -180,6 +184,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		MaxMessages: cfg.Conversation.MaxMessages,
 	}
 	srv := api.NewServer(st, reg, engine)
+	srv.Hub = hub
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
