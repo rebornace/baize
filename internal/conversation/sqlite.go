@@ -3,6 +3,7 @@ package conversation
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,6 +97,42 @@ func (s *SQLiteStore) ListWindow(conversationID string, n int) []Message {
 		return all
 	}
 	return all[len(all)-n:]
+}
+
+func (s *SQLiteStore) ListSummaries() []Summary {
+	rows, err := s.db.Query(
+		`SELECT conversation_id, MAX(created_at) FROM messages GROUP BY conversation_id`,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		var maxCreated string
+		if err := rows.Scan(&id, &maxCreated); err != nil {
+			return nil
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+
+	out := make([]Summary, 0, len(ids))
+	for _, id := range ids {
+		msgs := s.List(id)
+		if len(msgs) == 0 {
+			continue
+		}
+		out = append(out, Summarize(id, msgs))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	return out
 }
 
 func (s *SQLiteStore) Clear(conversationID string) {
