@@ -15,6 +15,7 @@ import {
 } from '../api'
 import { Composer } from '../components/Composer'
 import { ToolCard } from '../components/ToolCard'
+import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
 
 const CONV_KEY = 'baize.conversation_id'
@@ -78,17 +79,6 @@ export function ChatPage() {
     }
   }, [])
 
-  const refreshMessages = useCallback(async (id: string) => {
-    try {
-      const msgs = await listMessages(id)
-      if (conversationIdRef.current !== id) return
-      setMessages(msgs)
-    } catch (err) {
-      if (conversationIdRef.current !== id) return
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }, [])
-
   const finishLiveRun = useCallback(
     async (id: string) => {
       stopStream()
@@ -97,10 +87,17 @@ export function ChatPage() {
       setLiveEvents([])
       lastEventIndexRef.current = -1
       setBusy(false)
-      await refreshMessages(id)
+      try {
+        const msgs = await listMessages(id)
+        if (conversationIdRef.current !== id) return
+        setMessages(msgs)
+      } catch (err) {
+        if (conversationIdRef.current !== id) return
+        setError(err instanceof Error ? err.message : String(err))
+      }
       await refreshConversations()
     },
-    [refreshConversations, refreshMessages, stopPoll, stopStream],
+    [refreshConversations, stopPoll, stopStream],
   )
 
   const applyEvents = useCallback((events: Event[]) => {
@@ -167,6 +164,22 @@ export function ChatPage() {
     [finishLiveRun, startPoll, stopPoll, stopStream],
   )
 
+  const restoreLiveRun = useCallback(
+    async (id: string, msgs: ChatMessage[]) => {
+      const candidate = findLiveRunCandidate(msgs)
+      if (!candidate) return
+      const run = await getRun(candidate)
+      if (conversationIdRef.current !== id) return
+      if (!isActiveRunStatus(run.status)) return
+      setBusy(true)
+      setStatus(statusLabel(run.status))
+      setLiveEvents([])
+      lastEventIndexRef.current = -1
+      startStream(candidate, id, -1)
+    },
+    [startStream],
+  )
+
   useEffect(() => {
     void getUIConfig()
       .then((cfg) => {
@@ -179,6 +192,7 @@ export function ChatPage() {
   }, [refreshConversations])
 
   useEffect(() => {
+    let cancelled = false
     stopStream()
     stopPoll()
     setLiveRunId(null)
@@ -187,12 +201,26 @@ export function ChatPage() {
     setBusy(false)
     setError(null)
     setStatus('')
-    void refreshMessages(conversationId)
+
+    const id = conversationId
+    void (async () => {
+      try {
+        const msgs = await listMessages(id)
+        if (cancelled || conversationIdRef.current !== id) return
+        setMessages(msgs)
+        await restoreLiveRun(id, msgs)
+      } catch (err) {
+        if (cancelled || conversationIdRef.current !== id) return
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    })()
+
     return () => {
+      cancelled = true
       stopStream()
       stopPoll()
     }
-  }, [conversationId, refreshMessages, stopPoll, stopStream])
+  }, [conversationId, restoreLiveRun, stopPoll, stopStream])
 
   const onNewChat = () => {
     stopStream()
@@ -241,7 +269,12 @@ export function ChatPage() {
       setLiveRunId(null)
       setError(err instanceof Error ? err.message : String(err))
       setStatus('')
-      await refreshMessages(sentConversationId)
+      try {
+        const msgs = await listMessages(sentConversationId)
+        if (conversationIdRef.current === sentConversationId) setMessages(msgs)
+      } catch {
+        /* keep optimistic row */
+      }
     }
   }
 

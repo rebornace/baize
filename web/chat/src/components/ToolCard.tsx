@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { resumeRun } from '../api'
 import type { ChatBlock } from '../foldEvents'
 
@@ -24,6 +24,13 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
   const [error, setError] = useState<string | null>(null)
 
   const waiting = block.status === 'waiting_human'
+
+  // running → waiting_human: auto-expand arguments (user may still collapse).
+  useEffect(() => {
+    if (block.status === 'waiting_human') {
+      setExpanded(true)
+    }
+  }, [block.status])
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(true)
