@@ -580,24 +580,21 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	sub := s.Hub.Subscribe(id)
 	defer sub.Cancel()
 
-	// Drain any buffered events that arrived between ListEvents and Subscribe.
-	drainBuffered:
-	for {
-		select {
-		case ev, ok := <-sub.Events:
-			if !ok {
-				break drainBuffered
-			}
-			if ev.Index <= lastSent {
-				continue
-			}
-			if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
-				return
-			}
-			lastSent = ev.Index
-		default:
-			break drainBuffered
-		}
+	// Fan-out before Subscribe is dropped; drain buffer then re-read store.
+	var drainErr error
+	lastSent, drainErr = drainSubEvents(w, rc, sub, lastSent)
+	if drainErr != nil {
+		return
+	}
+	if catchUpTerminal, status, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
+		return
+	} else if catchUpTerminal {
+		_ = writeSSEEnded(w, rc, status)
+		return
+	}
+	lastSent, drainErr = drainSubEvents(w, rc, sub, lastSent)
+	if drainErr != nil {
+		return
 	}
 
 	ping := time.NewTicker(15 * time.Second)
@@ -626,10 +623,63 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			// Events and Ended may both be ready; drain events first so the
+			// final AppendEvent is not lost when select picks Ended.
+			lastSent, drainErr = drainSubEvents(w, rc, sub, lastSent)
+			if drainErr != nil {
+				return
+			}
 			_ = writeSSEEnded(w, rc, stt)
 			return
 		}
 	}
+}
+
+// drainSubEvents non-blocking writes any buffered subscription events with index > lastSent.
+func drainSubEvents(w http.ResponseWriter, rc *http.ResponseController, sub *eventbus.Subscription, lastSent int) (int, error) {
+	for {
+		select {
+		case ev, ok := <-sub.Events:
+			if !ok {
+				return lastSent, nil
+			}
+			if ev.Index <= lastSent {
+				continue
+			}
+			if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+				return lastSent, err
+			}
+			lastSent = ev.Index
+		default:
+			return lastSent, nil
+		}
+	}
+}
+
+// catchUpRunStream re-reads the store after Subscribe to recover events/status
+// published in the ListEvents→Subscribe window (no subscriber yet).
+func catchUpRunStream(w http.ResponseWriter, rc *http.ResponseController, st store.Store, id string, lastSent *int) (terminal bool, status store.Status, err error) {
+	runRec, err := st.GetRun(id)
+	if err != nil {
+		return false, "", err
+	}
+	evs, err := st.ListEvents(id)
+	if err != nil {
+		return false, "", err
+	}
+	for i, ev := range evs {
+		if i <= *lastSent {
+			continue
+		}
+		if err := writeSSEEvent(w, rc, i, ev); err != nil {
+			return false, "", err
+		}
+		*lastSent = i
+	}
+	if runRec.Status == store.StatusSucceeded || runRec.Status == store.StatusFailed {
+		return true, runRec.Status, nil
+	}
+	return false, "", nil
 }
 
 func parseStreamAfter(r *http.Request) int {
