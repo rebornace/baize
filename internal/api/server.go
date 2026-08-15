@@ -203,8 +203,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Auth:            connectorAuth,
 	})
 	if err != nil {
-		// Apply wraps ResolveDefaults failures as "resolve connector auth: ...".
-		if strings.HasPrefix(err.Error(), "resolve connector auth:") || errors.Is(err, authcred.ErrInvalidAuth) {
+		if errors.Is(err, authcred.ErrInvalidAuth) {
 			writeError(w, http.StatusBadRequest, "invalid_auth", err.Error())
 			return
 		}
@@ -322,10 +321,13 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if c, err := s.Store.GetConnector(info.ConnectorID); err == nil {
-		c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, *body.RequireLogin)
-		s.Store.UpsertConnector(c)
+	c, err := s.Store.GetConnector(info.ConnectorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
 	}
+	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, *body.RequireLogin)
+	s.Store.UpsertConnector(c)
 
 	info, _ = s.Registry.Get(name)
 	writeJSON(w, http.StatusOK, info)

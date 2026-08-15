@@ -186,6 +186,67 @@ func TestApplyPreservesRequireLoginWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestApplyOmitsRequireLoginDropsDisappearedFromStore(t *testing.T) {
+	probeSpec := writeLoginGetMeProbeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	base := connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "c", Type: "openapi", Spec: probeSpec, BaseURL: "http://example.invalid",
+		Auth: store.ConnectorAuth{Mode: "static"},
+	}
+	in1 := base
+	in1.RequireLogin = ptr([]string{"getMe", "probe"})
+	if _, _, err := connector.Apply(in1); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	c1, err := st.GetConnector("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsAll(c1.RequireLogin, "getMe", "probe") {
+		t.Fatalf("store require_login after first Apply: %v", c1.RequireLogin)
+	}
+
+	// Drop probe from the spec; omit require_login so surviving flags are preserved.
+	in2 := base
+	in2.Spec = writeLoginGetMeSpec(t)
+	in2.RequireLogin = nil
+	if _, _, err := connector.Apply(in2); err != nil {
+		t.Fatalf("second Apply: %v", err)
+	}
+	if !reg.RequiresLogin("getMe") {
+		t.Fatal("getMe should still require login")
+	}
+	c2, err := st.GetConnector("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range c2.RequireLogin {
+		if n == "probe" {
+			t.Fatalf("store require_login must drop disappeared tool, got %v", c2.RequireLogin)
+		}
+	}
+	if !containsAll(c2.RequireLogin, "getMe") {
+		t.Fatalf("store require_login must keep surviving tool, got %v", c2.RequireLogin)
+	}
+}
+
+func containsAll(list []string, names ...string) bool {
+	set := map[string]bool{}
+	for _, n := range list {
+		set[n] = true
+	}
+	for _, n := range names {
+		if !set[n] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestApplyEmptyRequireLoginClears(t *testing.T) {
 	spec := writeLoginGetMeSpec(t)
 	st := store.NewMemory()

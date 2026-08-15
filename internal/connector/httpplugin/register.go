@@ -54,7 +54,13 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 	for _, n := range opts.RequireLogin {
 		login[n] = true
 	}
-	requireLogin := append([]string(nil), opts.RequireLogin...)
+	// Persist only names that still exist after this registration (drop disappeared).
+	requireLogin := make([]string, 0, len(names))
+	for _, n := range names {
+		if login[n] {
+			requireLogin = append(requireLogin, n)
+		}
+	}
 	sort.Strings(requireLogin)
 
 	for _, td := range filtered {

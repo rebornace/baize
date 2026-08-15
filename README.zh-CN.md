@@ -212,7 +212,7 @@ go run ./cmd/baize start
 - 捕获的会话身份始终优先于上述模式默认值
 - 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
 - `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI）
-- 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 的开关在进程内生效，重启或再次 PUT 前以 YAML / PUT 为准
+- 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 仅进程内临时生效；重启或再次 PUT 后以 YAML / PUT 为准
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
