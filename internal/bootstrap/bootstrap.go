@@ -180,6 +180,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		MaxSteps:    cfg.Run.MaxSteps,
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
+		Identities:  identities,
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Hub = hub

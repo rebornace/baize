@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
@@ -37,6 +38,9 @@ type Engine struct {
 	// records terminal assistant / system_note messages on succeeded / failed.
 	Messages    conversation.Store
 	MaxMessages int // conversation window size; config Load defaults <=0 to 40
+	// Identities is optional. When non-nil, tools with RequireLogin are gated
+	// before HITL / Invoke when the run has a conversation_id.
+	Identities identity.Store
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
@@ -241,6 +245,26 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					},
 				})
 
+				if e.blockedByLogin(ctx, tc.Name) {
+					content, isError := tool.LoginRequiredContent(), true
+					_ = e.Store.AppendEvent(runID, store.Event{
+						Type: EventToolResult,
+						Data: map[string]any{
+							"tool_call_id": tc.ID,
+							"name":         tc.Name,
+							"content":      identity.RedactSensitive(content),
+							"is_error":     isError,
+						},
+					})
+					raw, _ := json.Marshal(content)
+					messages = append(messages, llm.Message{
+						Role:       llm.RoleTool,
+						ToolCallID: tc.ID,
+						Content:    string(raw),
+					})
+					continue
+				}
+
 				if e.Tools.RequiresApproval(tc.Name) {
 					if err := e.awaitHITL(ctx, runID, tc); err != nil {
 						return err
@@ -294,6 +318,22 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	_ = e.Store.UpdateRun(runID, store.StatusFailed, "", errMsg)
 	e.recordTerminalMessage(runID)
 	return fmt.Errorf("%s", errMsg)
+}
+
+func (e *Engine) blockedByLogin(ctx context.Context, name string) bool {
+	if e.Identities == nil || !e.Tools.RequiresLogin(name) {
+		return false
+	}
+	conv := identity.ConversationIDFrom(ctx)
+	if conv == "" {
+		return false
+	}
+	res := authresolve.OpenAPISecurityResolver{}.Resolve(ctx, authresolve.ResolveInput{
+		Identities:      e.Identities.List(conv),
+		SecuritySchemes: e.Tools.SecuritySchemes(name),
+		ForceIdentityID: identity.ForceIdentityIDFrom(ctx),
+	})
+	return !res.OK || len(res.Headers) == 0
 }
 
 func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) error {
