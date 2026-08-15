@@ -9,7 +9,7 @@
 
 Baize is an Agent Runtime that sits beside your existing HTTP APIs: no changes to your business process, no embedded SDK. With OpenAPI, operations become tools automatically; without it, add a small HTTP plugin. Writes can require human approval. When you are done, stop the process and leave nothing behind.
 
-> Sidecar, not chatbot: the main path is **OpenAPI → Tools → HTTP**, with HITL approval and session-scoped credentials when you need them.
+> Sidecar, not chatbot: the main path is **OpenAPI → Tools → HTTP**. `/ui` is an operator console (conversation list, tool cards, HITL), not a consumer chat product. Session credentials are optional.
 
 ---
 
@@ -54,6 +54,18 @@ Default sample:
 
 If ports are busy, stop the previous `baize` process and retry.
 
+### Operator UI (`/ui`)
+
+Open `http://127.0.0.1:8080/ui`.
+
+- Left: conversation list + **New chat**; **Settings** at the bottom-left
+- Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
+- `waiting_human`: **Approve / Reject** on that card (no footer banner)
+- Settings: read-only Tools, Identities (账号); MCP / plugins are “coming soon” empty states (no fake forms)
+- Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
+
+With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
+
 ### Call a demo write API (curl)
 
 `POST /v0/runs` is async: it returns `run_id` immediately. In the demo, the tool name `create_ticket` requires approval by default (`waiting_human`).
@@ -89,6 +101,8 @@ Default `configs/default.yaml` uses SQLite. After a Runtime restart, `waiting_hu
 ```bash
 curl -s http://127.0.0.1:18080/tickets
 curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
+# Live trajectory (SSE). Ctrl+C to stop.
+curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
 ```
 
 ---
@@ -188,8 +202,8 @@ Mutating tools can require human approval via `require_approval` before the real
 
 Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later protected calls in the same conversation automatically attach the resolved Bearer (default selection follows OpenAPI `securitySchemes`).
 
-- Chat UI sidebar: list accounts (redacted), set default, sign out
-- “New chat” → new `conversation_id`
+- `/ui` → **Settings → Identities**: list accounts (redacted), set default, sign out
+- Sidebar **New chat** → new `conversation_id` (`localStorage` key `baize.conversation_id`)
 - When no session identity exists, default HTTP headers come from `connector.auth.mode`:
   - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
   - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
@@ -208,10 +222,14 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
 With the default SQLite driver, Baize persists conversation messages and captured identities to `data/baize.db` (configurable via `store.sqlite_path`). Restarting the Runtime restores prior turns and signed-in accounts for each `conversation_id`.
 
 - `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Values `<=0` are normalized to `40` on load.
-- Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API.
+- Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API. An empty conversation also **disappears from the left list**.
+- `GET /v0/conversations` lists summaries; title is the first user message, truncated to 40 runes (no LLM titles).
 - `data/baize.db` is a runtime artifact; do not commit it to git (the default `.gitignore` already excludes `data/`).
 
 ```bash
+# Conversation list (left sidebar)
+curl -s http://127.0.0.1:8080/v0/conversations
+
 # List persisted turns
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
 
@@ -275,7 +293,7 @@ Override module proxy at build time if needed: `docker build --build-arg GOPROXY
 
 ## Chat UI build (optional)
 
-Prebuilt assets live under `internal/ui/dist` (`//go:embed`). To rebuild after editing `web/chat` (Node 18+):
+`/ui` is a React + Vite SPA, prebuilt under `internal/ui/dist` (`//go:embed`). Rebuild after editing `web/chat` (Node 18+):
 
 ```bash
 cd web/chat

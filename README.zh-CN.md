@@ -9,7 +9,7 @@
 
 白泽是旁挂在现有 HTTP API 旁边的 Agent Runtime：业务进程不用改、不用嵌 SDK。有 OpenAPI 就自动变成工具；没有就加一个小 HTTP 插件。写操作可人工审批，用完把进程停掉即可。
 
-> 侧车，不是聊天机器人：主路径是 **OpenAPI → Tools → HTTP**，需要时叠加 HITL 审批与会话级凭证。
+> 侧车，不是聊天机器人：主路径是 **OpenAPI → Tools → HTTP**。`/ui` 是操作员控制台（对话列表、工具卡片、HITL），不是面向终端用户的聊天产品。会话级凭证按需启用。
 
 ---
 
@@ -54,6 +54,18 @@ go run ./cmd/baize start
 
 若端口被占用，先结束旧的 `baize` 进程再启动。
 
+### 操作员界面（`/ui`）
+
+打开 `http://127.0.0.1:8080/ui`。
+
+- 左侧：对话列表 + **新对话**；左下角 **设置**
+- 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
+- `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
+- 设置：只读 Tools、账号；MCP / 插件为「即将接入」空状态（不填假配置）
+- 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；断流后 UI 回退为 700ms 轮询
+
+内置 mock LLM 下，可发送「VPN 挂了，请建一条记录」，并在卡片上批准 `create_ticket`。
+
 ### 调用演示写接口（curl）
 
 `POST /v0/runs` 为异步，立即返回 `run_id`。演示里工具名 `create_ticket` 默认要审批，状态为 `waiting_human`。
@@ -89,6 +101,8 @@ curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
 ```bash
 curl -s http://127.0.0.1:18080/tickets
 curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
+# 实时轨迹（SSE），Ctrl+C 结束
+curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
 ```
 
 ---
@@ -188,8 +202,8 @@ go run ./cmd/baize start
 
 登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续受保护调用会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。
 
-- Chat UI 侧栏：查看账号（脱敏）、设默认、退出
-- 「新对话」→ 新的 `conversation_id`
+- `/ui` → **设置 → 账号**：查看账号（脱敏）、设默认、退出
+- 左栏 **新对话** → 新的 `conversation_id`（`localStorage` 键 `baize.conversation_id`）
 - 无会话身份时，默认 HTTP 头由 `connector.auth.mode` 决定：
   - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
   - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
@@ -208,10 +222,14 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
 默认 SQLite 驱动下，白泽会把对话消息与捕获的身份写入 `data/baize.db`（可用 `store.sqlite_path` 配置）。Runtime 重启后，按 `conversation_id` 恢复历史轮次与已登录账号。
 
 - `conversation.max_messages`（默认 `40`）控制回喂给 LLM 的最近轮次窗口；更早的消息仍留存数据库备查，但不会进入提示词。配置为 `<=0` 时会在加载时回填为 `40`。
-- 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。
+- 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。消息清空后该对话也会从**左栏列表消失**。
+- `GET /v0/conversations` 返回摘要；标题取自首条用户消息，截断到 40 字（不用 LLM 起标题）。
 - `data/baize.db` 是运行时产物，请勿提交到 git（默认 `.gitignore` 已忽略 `data/`）。
 
 ```bash
+# 对话列表（左栏）
+curl -s http://127.0.0.1:8080/v0/conversations
+
 # 查看持久化的对话轮次
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
 
@@ -275,7 +293,7 @@ docker run --rm -p 8080:8080 \
 
 ## Chat UI 构建（可选）
 
-仓库已提交 `internal/ui/dist` 预构建产物（`//go:embed`）。修改 `web/chat` 后需 Node 18+ 重新构建：
+`/ui` 是 React + Vite 单页，仓库已提交 `internal/ui/dist` 预构建产物（`//go:embed`）。修改 `web/chat` 后需 Node 18+ 重新构建：
 
 ```bash
 cd web/chat
