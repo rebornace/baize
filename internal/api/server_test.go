@@ -1253,3 +1253,42 @@ func TestPostRunAPIFallbackWritesSystemNote(t *testing.T) {
 		t.Fatalf("note.Content=%q", note.Content)
 	}
 }
+
+func TestListConversations(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	msgs := conversation.NewMemoryStore()
+	srv.Messages = msgs
+	_, _ = msgs.Append("conv_a", conversation.Message{Role: conversation.RoleUser, Content: "VPN 挂了"})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Conversations []conversation.Summary `json:"conversations"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Conversations) != 1 || body.Conversations[0].ID != "conv_a" || body.Conversations[0].Title != "VPN 挂了" {
+		t.Fatalf("%+v", body)
+	}
+}
+
+func TestListConversationsNilStore(t *testing.T) {
+	st := store.NewMemory()
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"conversations"`) {
+		t.Fatalf("body=%s", rr.Body.String())
+	}
+}

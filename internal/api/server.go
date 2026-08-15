@@ -74,6 +74,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
+	s.mux.HandleFunc("GET /v0/conversations", s.handleListConversations)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
 }
@@ -527,6 +528,16 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 		evs = []store.Event{}
 	}
 	writeJSON(w, http.StatusOK, evs)
+}
+
+func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
+	out := []conversation.Summary{}
+	if s.Messages != nil {
+		if sum := s.Messages.ListSummaries(); sum != nil {
+			out = sum
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
 }
 
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
