@@ -83,6 +83,51 @@ describe('foldEvents', () => {
     ])
   })
 
+  it('maps hitl.resumed to approved without following tool.result', () => {
+    const events: Event[] = [
+      ev('llm.tool_call', { name: 'create_ticket', arguments: {} }),
+      ev('hitl.waiting', { tool_name: 'create_ticket', prompt: 'ok' }),
+      ev('hitl.resumed', { decision: 'approve', comment: 'lgtm' }),
+    ]
+    const blocks = foldEvents('run_approved', events)
+    expect(blocks).toEqual([
+      {
+        kind: 'tool',
+        name: 'create_ticket',
+        status: 'approved',
+        arguments: {},
+        runId: 'run_approved',
+      },
+    ])
+  })
+
+  it('rejects only the named waiting card when two tools wait in parallel', () => {
+    const events: Event[] = [
+      ev('llm.tool_call', { name: 'tool_a', arguments: { x: 1 } }),
+      ev('hitl.waiting', { tool_name: 'tool_a', arguments: { x: 1 } }),
+      ev('llm.tool_call', { name: 'tool_b', arguments: { y: 2 } }),
+      ev('hitl.waiting', { tool_name: 'tool_b', arguments: { y: 2 } }),
+      ev('hitl.rejected', { tool_name: 'tool_a', decision: 'reject', comment: 'no' }),
+    ]
+    const blocks = foldEvents('run_parallel', events)
+    expect(blocks).toEqual([
+      {
+        kind: 'tool',
+        name: 'tool_a',
+        status: 'rejected',
+        arguments: { x: 1 },
+        runId: 'run_parallel',
+      },
+      {
+        kind: 'tool',
+        name: 'tool_b',
+        status: 'waiting_human',
+        arguments: { y: 2 },
+        runId: 'run_parallel',
+      },
+    ])
+  })
+
   it('matches tool.result to the topmost unfinished same-name tool', () => {
     const events: Event[] = [
       ev('llm.tool_call', { name: 'echo', arguments: { n: 1 } }),

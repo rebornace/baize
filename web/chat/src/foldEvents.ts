@@ -118,17 +118,21 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
       }
       case 'hitl.resumed': {
         const name = hitlToolName(data)
+        // Named: only same-name waiting card (no cross-tool fallback).
+        // Unnamed: fall back to topmost waiting card.
         const card =
-          (name !== undefined ? findTopWaiting(blocks, name) : undefined) ??
-          findTopWaiting(blocks)
+          name !== undefined
+            ? findTopWaiting(blocks, name)
+            : findTopWaiting(blocks)
         if (card) card.status = 'approved'
         break
       }
       case 'hitl.rejected': {
         const name = hitlToolName(data)
         const card =
-          (name !== undefined ? findTopWaiting(blocks, name) : undefined) ??
-          findTopWaiting(blocks)
+          name !== undefined
+            ? findTopWaiting(blocks, name)
+            : findTopWaiting(blocks)
         if (card) card.status = 'rejected'
         break
       }
