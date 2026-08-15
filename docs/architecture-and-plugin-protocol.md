@@ -127,8 +127,14 @@ X-Baize-Protocol: v0
 
 ### 4.4 内建 OpenAPI Connector
 
-1. 导入 OpenAPI 3.x → 每 operation → 一个 `Tool`（名优先 `operationId`）。  
-2. 调用时由 Runtime 拼 HTTP 请求。无会话身份时默认头来自 Connector `auth.mode`：`static`（注册时展开 `${ENV}`）、`passthrough`（该 Run 的白名单请求头）、`vault_ref`（注册时解析 `env:` / `file:`）。有会话身份时 Identity 优先。完整凭证不出现在 events 与 GET run。  
+1. 导入 OpenAPI 3.x → 每 operation → 一个 `Tool`（名优先 `operationId`）。
+2. 每次工具 invoke 的凭证优先级：
+   1. 强制 `identity_id`（若有且存在且未过期）
+   2. 会话内未过期、scheme 匹配的 Identity（无 `security` 时与现逻辑相同：活跃身份里按默认 / 最近使用挑选）
+   3. **仅当 Run 没有 `conversation_id`：** Connector 默认 Headers（`static` / `passthrough` / `vault_ref`）
+   4. 空头
+
+   带 `conversation_id` 时**不用** Connector 默认头。「需要登录」是操作员开关（`require_login`），不是从 OpenAPI `security` 推断；默认公开。有会话且工具需要登录、第 1–2 步又无可用凭证时，不发下游 HTTP。完整凭证不出现在 events 与 GET run。
 3. 覆盖不了的遗留逻辑 → 侧车插件或执行回调。
 
 ### 4.5 版本策略

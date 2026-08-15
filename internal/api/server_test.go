@@ -798,16 +798,16 @@ func TestPostRunConversationID(t *testing.T) {
 		t.Fatal(err)
 	}
 	conv, _ := omitted["conversation_id"].(string)
-	if conv == "" || !strings.HasPrefix(conv, "conv_") {
-		t.Fatalf("expected generated conversation_id, got %q", conv)
+	if conv != "" {
+		t.Fatalf("omitted conversation_id must stay empty (machine path), got %q", conv)
 	}
 	runID2, _ := omitted["run_id"].(string)
 	got2, err := st.GetRun(runID2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got2.ConversationID != conv {
-		t.Fatalf("stored conversation_id=%q want %q", got2.ConversationID, conv)
+	if got2.ConversationID != "" {
+		t.Fatalf("stored conversation_id=%q want empty", got2.ConversationID)
 	}
 }
 
@@ -1466,5 +1466,410 @@ func TestRunStreamCatchUpAfterSubscribeWindow(t *testing.T) {
 	}
 	if !strings.Contains(body, "llm.message") || !strings.Contains(body, "run.ended") {
 		t.Fatalf("expected late event and run.ended: %s", body)
+	}
+}
+
+const putCaptureJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkB4LmNvbSIsImVtYWlsIjoiYWRtaW5AeC5jb20iLCJyb2xlcyI6WyJhZG1pbiJdLCJleHAiOjk5OTk5OTk5OTl9.sig"
+
+func writeLoginGetMeAPISpec(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "spec.yaml")
+	content := `openapi: 3.0.3
+info:
+  title: login-getme
+  version: 0.1.0
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+paths:
+  /login:
+    post:
+      operationId: login
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: ok
+  /me:
+    get:
+      operationId: getMe
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: ok
+`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestPutConnectorWiresCaptureWithoutRestart(t *testing.T) {
+	var lastAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/login":
+			_, _ = w.Write([]byte(`{"accessToken":"` + putCaptureJWT + `","email":"admin@x.com"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/me":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	spec := writeLoginGetMeAPISpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Identities = identity.NewMemoryStore()
+	h := srv.Handler()
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/auth",
+		jsonBody(t, map[string]any{
+			"type":     "openapi",
+			"spec":     spec,
+			"base_url": upstream.URL,
+			"auth": map[string]any{
+				"mode": "static",
+				"static": map[string]any{
+					"headers": map[string]string{"Authorization": "Bearer PUT_STATIC"},
+				},
+			},
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	ctx := identity.WithConversationID(context.Background(), "conv_put_cap")
+	_, isErr, err := reg.Invoke(ctx, "login", map[string]any{"email": "admin@x.com", "password": "x"})
+	if err != nil || isErr {
+		t.Fatalf("login: isErr=%v err=%v", isErr, err)
+	}
+	lastAuth = ""
+	_, isErr, err = reg.Invoke(ctx, "getMe", nil)
+	if err != nil || isErr {
+		t.Fatalf("getMe: isErr=%v err=%v", isErr, err)
+	}
+	want := "Bearer " + putCaptureJWT
+	if lastAuth != want {
+		t.Fatalf("Authorization=%q want %q (not PUT_STATIC)", lastAuth, want)
+	}
+	if lastAuth == "Bearer PUT_STATIC" {
+		t.Fatal("must use captured JWT, not PUT static")
+	}
+}
+
+func TestPutConnectorNoneCaptureDisables(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/login" {
+			_, _ = w.Write([]byte(`{"accessToken":"` + putCaptureJWT + `","email":"admin@x.com"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(upstream.Close)
+
+	spec := writeLoginGetMeAPISpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	ids := identity.NewMemoryStore()
+	srv.Identities = ids
+	h := srv.Handler()
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/auth",
+		jsonBody(t, map[string]any{
+			"type":     "openapi",
+			"spec":     spec,
+			"base_url": upstream.URL,
+			"auth": map[string]any{
+				"mode": "static",
+				"capture": map[string]any{
+					"tool_name_glob": "__none__",
+				},
+			},
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	ctx := identity.WithConversationID(context.Background(), "conv_none")
+	_, isErr, err := reg.Invoke(ctx, "login", map[string]any{"email": "a@x.com", "password": "x"})
+	if err != nil || isErr {
+		t.Fatalf("login: isErr=%v err=%v", isErr, err)
+	}
+	if len(ids.List("conv_none")) != 0 {
+		t.Fatalf("identities should stay empty with __none__, got %+v", ids.List("conv_none"))
+	}
+}
+
+func TestPutOmitsRequireLoginPreserves(t *testing.T) {
+	spec := writeTicketSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	put1 := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":          "openapi",
+			"spec":          spec,
+			"base_url":      "http://x",
+			"require_login": []string{"create_ticket"},
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put1)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT1 status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !reg.RequiresLogin("create_ticket") {
+		t.Fatal("create_ticket should require login after first PUT")
+	}
+
+	put2 := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":     "openapi",
+			"spec":     spec,
+			"base_url": "http://x",
+		}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, put2)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT2 status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !reg.RequiresLogin("create_ticket") {
+		t.Fatal("omitting require_login must preserve create_ticket")
+	}
+}
+
+func TestPutEmptyRequireLoginClears(t *testing.T) {
+	spec := writeTicketSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	put1 := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":          "openapi",
+			"spec":          spec,
+			"base_url":      "http://x",
+			"require_login": []string{"create_ticket"},
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put1)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT1 status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	put2 := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":          "openapi",
+			"spec":          spec,
+			"base_url":      "http://x",
+			"require_login": []string{},
+		}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, put2)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT2 status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if reg.RequiresLogin("create_ticket") {
+		t.Fatal(`"require_login":[] must clear create_ticket`)
+	}
+}
+
+func TestPatchToolRequireLogin(t *testing.T) {
+	spec := writeTicketSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":     "openapi",
+			"spec":     spec,
+			"base_url": "http://x",
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	patchOn := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"require_login": true}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchOn)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH on status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	getTools := httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, getTools)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET tools status=%d", rr.Code)
+	}
+	var toolsBody struct {
+		Tools []tool.Info `json:"tools"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&toolsBody); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, info := range toolsBody.Tools {
+		if info.Name == "create_ticket" {
+			found = true
+			if !info.RequireLogin {
+				t.Fatal("GET /v0/tools: create_ticket require_login want true")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("create_ticket missing from GET /v0/tools")
+	}
+
+	patchOff := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"require_login": false}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchOff)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH off status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if reg.RequiresLogin("create_ticket") {
+		t.Fatal("after PATCH false, RequiresLogin should be false")
+	}
+
+	patchMissing := httptest.NewRequest(http.MethodPatch, "/v0/tools/no_such_tool",
+		jsonBody(t, map[string]any{"require_login": true}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchMissing)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown tool status=%d want 404", rr.Code)
+	}
+	var wrap404 struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap404); err != nil {
+		t.Fatal(err)
+	}
+	if wrap404.Error.Code != "not_found" {
+		t.Fatalf("code=%q want not_found", wrap404.Error.Code)
+	}
+
+	patchEmpty := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchEmpty)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("{} status=%d want 400", rr.Code)
+	}
+	var wrap400 struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap400); err != nil {
+		t.Fatal(err)
+	}
+	if wrap400.Error.Code != "invalid_request" {
+		t.Fatalf("code=%q want invalid_request", wrap400.Error.Code)
+	}
+}
+
+func TestPutHTTPPluginUsesIdentitiesNoCapture(t *testing.T) {
+	var lastAuth string
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.URL.Path == "/v0/tools" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"tools":[{"name":"echo","description":"echo"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/invoke"):
+			lastAuth = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(sidecar.Close)
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	ids := identity.NewMemoryStore()
+	srv.Identities = ids
+	if _, err := ids.Upsert("conv_http_put", identity.Identity{
+		Scheme:            "bearer",
+		Subject:           "u",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer FROM_ID"},
+		Source:            identity.SourceLoginCapture,
+		IsDefault:         true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/side",
+		jsonBody(t, map[string]any{
+			"type":     "http",
+			"base_url": sidecar.URL,
+			"auth": map[string]any{
+				"mode": "static",
+				"static": map[string]any{
+					"headers": map[string]string{"Authorization": "Bearer PUT_STATIC"},
+				},
+				"capture": map[string]any{
+					"tool_name_glob": "*login*",
+				},
+			},
+		}))
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	c, err := st.GetConnector("side")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Auth.Capture.ToolNameGlob != "" {
+		t.Fatalf("HTTP PUT must clear Capture, got %+v", c.Auth.Capture)
+	}
+
+	ctx := identity.WithConversationID(context.Background(), "conv_http_put")
+	lastAuth = ""
+	_, isErr, invErr := reg.Invoke(ctx, "echo", nil)
+	if invErr != nil || isErr {
+		t.Fatalf("invoke: isErr=%v err=%v", isErr, invErr)
+	}
+	if lastAuth != "Bearer FROM_ID" {
+		t.Fatalf("Authorization=%q want Bearer FROM_ID", lastAuth)
+	}
+	if lastAuth == "Bearer PUT_STATIC" {
+		t.Fatal("must not use static default in conversation")
 	}
 }

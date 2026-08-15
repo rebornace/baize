@@ -23,6 +23,7 @@ type Connector struct {
 	Spec            string   `json:"spec"`
 	BaseURL         string   `json:"base_url"`
 	RequireApproval []string `json:"require_approval,omitempty"`
+	RequireLogin    []string `json:"require_login,omitempty"`
 	Auth            ConnectorAuth `json:"auth,omitempty"`
 }
 
@@ -33,6 +34,15 @@ type ConnectorAuth struct {
 	Static      StaticAuth   `json:"static,omitempty"`
 	Passthrough PassThruAuth `json:"passthrough,omitempty"`
 	VaultRef    VaultRefAuth `json:"vault_ref,omitempty"`
+	Capture     CaptureAuth  `json:"capture,omitempty"`
+}
+
+type CaptureAuth struct {
+	ToolNameGlob   string   `json:"tool_name_glob,omitempty"`
+	TokenJSONPaths []string `json:"token_json_paths,omitempty"`
+	LabelJSONPaths []string `json:"label_json_paths,omitempty"`
+	HeaderTemplate string   `json:"header_template,omitempty"`
+	DefaultScheme  string   `json:"default_scheme,omitempty"`
 }
 
 type StaticAuth struct {

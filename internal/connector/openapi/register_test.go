@@ -98,6 +98,68 @@ func TestRegisterWithOptsResolveAndCapture(t *testing.T) {
 	}
 }
 
+func TestConversationDoesNotUseStaticDefaultHeaders(t *testing.T) {
+	var lastAuth string
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		lastAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	if _, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID: "c", SpecPath: spec, BaseURL: srv.URL,
+		Headers:    map[string]string{"Authorization": "Bearer ENV_TOKEN"},
+		Identities: identity.NewMemoryStore(),
+		Resolver:   authresolve.OpenAPISecurityResolver{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := identity.WithConversationID(context.Background(), "conv_no_id")
+	_, isErr, err := reg.Invoke(ctx, "getMe", nil)
+	if err != nil || isErr {
+		t.Fatalf("public getMe: isErr=%v err=%v", isErr, err)
+	}
+	if lastAuth == "Bearer ENV_TOKEN" {
+		t.Fatal("conversation must not send static token")
+	}
+}
+
+func TestRequireLoginBlocksHTTP(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	if _, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID: "c", SpecPath: spec, BaseURL: srv.URL,
+		RequireLogin: []string{"getMe"},
+		Identities:   identity.NewMemoryStore(),
+		Resolver:     authresolve.OpenAPISecurityResolver{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := identity.WithConversationID(context.Background(), "conv_gate")
+	content, isErr, err := reg.Invoke(ctx, "getMe", nil)
+	if err != nil || !isErr || content["code"] != "login_required" {
+		t.Fatalf("content=%v isErr=%v err=%v", content, isErr, err)
+	}
+	if hits != 0 {
+		t.Fatalf("downstream hits=%d", hits)
+	}
+	_, isErr, err = reg.Invoke(context.Background(), "getMe", nil)
+	if err != nil || isErr {
+		t.Fatal("machine path must ignore require_login")
+	}
+}
+
 func writeLoginGetMeSpec(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

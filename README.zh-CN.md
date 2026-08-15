@@ -61,7 +61,7 @@ go run ./cmd/baize start
 - 左侧：对话列表 + **新对话**；左下角 **设置**
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置：只读 Tools、账号；MCP / 插件为「即将接入」空状态（不填假配置）
+- 设置：Tools（可切换「需要登录」）、账号；MCP / 插件为「即将接入」空状态（不填假配置）
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；断流后 UI 回退为 700ms 轮询
 
 内置 mock LLM 下，可发送「VPN 挂了，请建一条记录」，并在卡片上批准 `create_ticket`。
@@ -134,8 +134,6 @@ curl -s http://127.0.0.1:8080/v0/tools
 
 同 `id` 再 `PUT` 会**整表替换**该 Connector 下的 Tools；坏 Spec 返回 `400`，不污染已有 Registry。
 
-> 说明：`PUT /v0/connectors` 目前不会自动挂上会话 Identities / Resolver / Capture。`baize start` 启动路径会为配置中的 Connector 接线；热更新鉴权会话能力后续增强。
-
 ### 无 OpenAPI：HTTP 插件
 
 当你的 HTTP 服务没有可用的 OpenAPI 规格时，可运行实现
@@ -200,18 +198,20 @@ go run ./cmd/baize start
 
 ### 会话身份
 
-登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续受保护调用会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。
+登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续调用在已有会话身份时会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。
+
+带 `conversation_id` 的 Run（含 `/ui`）**只用**会话身份，不会静默使用 Connector 配置里的默认 Token。配置 Token 可选，仅供**不带** `conversation_id` 的脚本 / curl 使用。
 
 - `/ui` → **设置 → 账号**：查看账号（脱敏）、设默认、退出
+- `/ui` → **设置 → Tools**：可标「需要登录」（默认公开，不读 OpenAPI `security`）
 - 左栏 **新对话** → 新的 `conversation_id`（`localStorage` 键 `baize.conversation_id`）
-- 无会话身份时，默认 HTTP 头由 `connector.auth.mode` 决定：
+- **不带** `conversation_id` 的 Run，默认 HTTP 头由 `connector.auth.mode` 决定：
   - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
   - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
   - `vault_ref` — 注册时解析 `env:` / `file:` 引用
-- 捕获的会话身份始终优先于上述模式默认值
 - 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
-- `baize start` 在未配置捕获时会自动套用捕获默认值
-- 修改鉴权 / 捕获配置后需重启 Runtime
+- `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI）
+- 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 仅进程内临时生效；重启或再次 PUT 后以 YAML / PUT 为准
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
@@ -272,7 +272,7 @@ docker compose up --build
 
 须同时启动**两个**服务。`configs/docker.yaml` 将 `base_url` 指向主机名 `mock-ticket`；只起 Runtime 时，打到演示 HTTP 的工具会连不上。
 
-试用 compose 默认 `BAIZE_CONNECTOR_TOKEN` 为 `dev`；生产请使用自己的 token。不要把密钥写进 YAML。
+试用 compose 仍默认设置 `BAIZE_CONNECTOR_TOKEN` 为 `dev`，仅供不带会话的脚本可选使用；`/ui` 不会用它。不要把密钥写进 YAML。
 
 **生产侧车**（你的 HTTP 服务，无演示 HTTP）：
 

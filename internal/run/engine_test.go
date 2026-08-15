@@ -183,6 +183,50 @@ func TestEngineHITLRejectNoInvoke(t *testing.T) {
 	assertEventTypes(t, st, r.ID, EventHITLWaiting, EventHITLRejected)
 }
 
+func TestLoginGateBeforeHITL(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterMeta(tool.Meta{
+		Spec: llm.ToolSpec{Name: "create_ticket"}, ConnectorID: "c", RequireLogin: true,
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"id": "1"}, false, nil
+	}, true) // require_approval + require_login
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: ag.ID, Input: "创建工单", ConversationID: "conv_hitl",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{
+		Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: NewGate(),
+		Identities: identity.NewMemoryStore(),
+	}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status == store.StatusWaitingHuman {
+		t.Fatal("must not enter waiting_human")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("invoke=%d", calls.Load())
+	}
+	evs, _ := st.ListEvents(r.ID)
+	for _, ev := range evs {
+		if ev.Type == EventHITLWaiting {
+			t.Fatal("hitl.waiting")
+		}
+		if ev.Type == EventToolResult {
+			if ev.Data["is_error"] != true {
+				t.Fatalf("%+v", ev.Data)
+			}
+		}
+	}
+}
+
 func TestExecuteInjectsConversationID(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()

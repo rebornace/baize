@@ -11,6 +11,7 @@ type RegisterOpts struct {
 	ID              string
 	BaseURL         string
 	RequireApproval []string
+	RequireLogin    []string // tool names that require session login in conversation
 	Headers         map[string]string
 	AuthMode        string
 	Auth            store.ConnectorAuth

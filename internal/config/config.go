@@ -34,6 +34,7 @@ type Config struct {
 		BaseURL                 string   `yaml:"base_url"`
 		RequireApproval         []string `yaml:"require_approval"`
 		RequireApprovalMutating bool     `yaml:"require_approval_mutating"`
+		RequireLogin            []string `yaml:"require_login"`
 		Auth struct {
 			Mode        string `yaml:"mode"`
 			Static      struct {

@@ -3,6 +3,7 @@ package httpplugin
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/rebornace/baize/internal/authresolve"
@@ -49,6 +50,18 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 	for _, n := range opts.RequireApproval {
 		approval[n] = true
 	}
+	login := map[string]bool{}
+	for _, n := range opts.RequireLogin {
+		login[n] = true
+	}
+	// Persist only names that still exist after this registration (drop disappeared).
+	requireLogin := make([]string, 0, len(names))
+	for _, n := range names {
+		if login[n] {
+			requireLogin = append(requireLogin, n)
+		}
+	}
+	sort.Strings(requireLogin)
 
 	for _, td := range filtered {
 		td := td
@@ -58,40 +71,49 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			schema = map[string]any{"type": "object"}
 		}
 		needApproval := approval[name]
+		needLogin := login[name]
 		reg.RegisterMeta(tool.Meta{
 			Spec: llm.ToolSpec{
 				Name:        name,
 				Description: td.Description,
 				InputSchema: schema,
 			},
-			ConnectorID: opts.ID,
-			OperationID: name,
-			Method:      "",
-			Path:        "",
+			ConnectorID:  opts.ID,
+			OperationID:  name,
+			Method:       "",
+			Path:         "",
+			RequireLogin: needLogin,
 		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			overlay := opts.Headers
-			if opts.AuthMode == "passthrough" {
-				if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
-					overlay = h
-				} else {
-					overlay = nil
+			conv := identity.ConversationIDFrom(ctx)
+			var overlay map[string]string
+			if conv == "" {
+				overlay = opts.Headers
+				if opts.AuthMode == "passthrough" {
+					if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+						overlay = h
+					} else {
+						overlay = nil
+					}
 				}
 			}
 			var usedID string
+			resOK := false
 			if opts.Identities != nil && opts.Resolver != nil {
-				conv := identity.ConversationIDFrom(ctx)
 				force := identity.ForceIdentityIDFrom(ctx)
-				defaultHeaders := opts.Headers
-				if opts.AuthMode == "passthrough" {
-					if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
-						defaultHeaders = h
-					} else {
-						defaultHeaders = nil
+				var defaultHeaders map[string]string
+				if conv == "" {
+					defaultHeaders = opts.Headers
+					if opts.AuthMode == "passthrough" {
+						if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+							defaultHeaders = h
+						} else {
+							defaultHeaders = nil
+						}
 					}
 				}
 				in := authresolve.ResolveInput{
 					Identities:      opts.Identities.List(conv),
-					SecuritySchemes: []string{},
+					SecuritySchemes: nil,
 					DefaultHeaders:  defaultHeaders,
 					ForceIdentityID: force,
 				}
@@ -99,7 +121,13 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 				if res.OK {
 					overlay = res.Headers
 					usedID = res.IdentityID
+					resOK = true
+				} else if conv != "" {
+					overlay = nil
 				}
+			}
+			if conv != "" && reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
+				return tool.LoginRequiredContent(), true, nil
 			}
 			out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
 				RunID:   identity.RunIDFrom(ctx),
@@ -110,7 +138,7 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 				return nil, true, invErr
 			}
 			if usedID != "" && opts.Identities != nil {
-				_ = opts.Identities.Touch(identity.ConversationIDFrom(ctx), usedID)
+				_ = opts.Identities.Touch(conv, usedID)
 			}
 			return out.Content, out.IsError, nil
 		}, needApproval)
@@ -122,6 +150,7 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 		Spec:            "",
 		BaseURL:         opts.BaseURL,
 		RequireApproval: opts.RequireApproval,
+		RequireLogin:    requireLogin,
 		Auth:            opts.Auth,
 	}
 	st.UpsertConnector(c)

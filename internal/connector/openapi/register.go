@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/rebornace/baize/internal/authresolve"
@@ -65,7 +66,21 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 	for _, n := range opts.RequireApproval {
 		approval[n] = true
 	}
-	inv := &Invoker{BaseURL: opts.BaseURL, Tools: routes, Headers: opts.Headers}
+	login := map[string]bool{}
+	for _, n := range opts.RequireLogin {
+		login[n] = true
+	}
+	// Persist only names that still exist after this registration (drop disappeared).
+	requireLogin := make([]string, 0, len(names))
+	for _, n := range names {
+		if login[n] {
+			requireLogin = append(requireLogin, n)
+		}
+	}
+	sort.Strings(requireLogin)
+	// Headers are applied only via InvokeWithHeaders overlay so conversation
+	// paths can omit connector defaults without inv.Headers falling through.
+	inv := &Invoker{BaseURL: opts.BaseURL, Tools: routes}
 	for _, route := range routes {
 		route := route
 		name := route.Name
@@ -78,35 +93,45 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 		if !approval[name] && identity.MatchToolName(opts.Capture.ToolNameGlob, name) {
 			needApproval = false
 		}
+		needLogin := login[name]
 		reg.RegisterMeta(tool.Meta{
 			Spec: llm.ToolSpec{
 				Name:        route.Name,
 				Description: route.Description,
 				InputSchema: route.InputSchema,
 			},
-			ConnectorID: opts.ID,
-			OperationID: route.OperationID,
-			Method:      route.Method,
-			Path:        route.Path,
+			ConnectorID:     opts.ID,
+			OperationID:     route.OperationID,
+			Method:          route.Method,
+			Path:            route.Path,
+			RequireLogin:    needLogin,
+			SecuritySchemes: route.Security,
 		}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-			overlay := opts.Headers
-			if opts.AuthMode == "passthrough" {
-				if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
-					overlay = h
-				} else {
-					overlay = nil
+			conv := identity.ConversationIDFrom(ctx)
+			var overlay map[string]string
+			if conv == "" {
+				overlay = opts.Headers
+				if opts.AuthMode == "passthrough" {
+					if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+						overlay = h
+					} else {
+						overlay = nil
+					}
 				}
 			}
 			var usedID string
+			resOK := false
 			if opts.Identities != nil && opts.Resolver != nil {
-				conv := identity.ConversationIDFrom(ctx)
 				force := identity.ForceIdentityIDFrom(ctx)
-				defaultHeaders := opts.Headers
-				if opts.AuthMode == "passthrough" {
-					if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
-						defaultHeaders = h
-					} else {
-						defaultHeaders = nil
+				var defaultHeaders map[string]string
+				if conv == "" {
+					defaultHeaders = opts.Headers
+					if opts.AuthMode == "passthrough" {
+						if h := identity.PassthroughHeadersFrom(ctx); len(h) > 0 {
+							defaultHeaders = h
+						} else {
+							defaultHeaders = nil
+						}
 					}
 				}
 				in := authresolve.ResolveInput{
@@ -119,16 +144,21 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 				if res.OK {
 					overlay = res.Headers
 					usedID = res.IdentityID
+					resOK = true
+				} else if conv != "" {
+					overlay = nil
 				}
+			}
+			if conv != "" && reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
+				return tool.LoginRequiredContent(), true, nil
 			}
 			out, err := inv.InvokeWithHeaders(ctx, name, args, overlay)
 			if err != nil {
 				return nil, true, err
 			}
 			if usedID != "" && opts.Identities != nil {
-				_ = opts.Identities.Touch(identity.ConversationIDFrom(ctx), usedID)
+				_ = opts.Identities.Touch(conv, usedID)
 			}
-			conv := identity.ConversationIDFrom(ctx)
 			if conv != "" && !out.IsError && opts.Identities != nil && identity.MatchToolName(opts.Capture.ToolNameGlob, name) {
 				if h, label, sub, claims, ok := identity.ExtractCredential(opts.Capture, out.Content); ok {
 					_, _ = opts.Identities.Upsert(conv, identity.Identity{
@@ -151,6 +181,7 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 		Spec:            opts.SpecPath,
 		BaseURL:         opts.BaseURL,
 		RequireApproval: opts.RequireApproval,
+		RequireLogin:    requireLogin,
 		Auth:            opts.Auth,
 	}
 	st.UpsertConnector(c)

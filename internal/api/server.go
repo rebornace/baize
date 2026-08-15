@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/conversation"
@@ -71,6 +72,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
 	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
+	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
@@ -142,6 +144,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Spec            string     `json:"spec"`
 		BaseURL         string     `json:"base_url"`
 		RequireApproval []string   `json:"require_approval"`
+		RequireLogin    *[]string  `json:"require_login"`
 		Auth            authBody   `json:"auth"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -164,29 +167,9 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve auth defaults at registration time. A failure must not partially
-	// register the connector: return 400 invalid_auth and leave the registry /
-	// store untouched.
-	authCfg := authcred.Config{
-		Mode: body.Auth.Mode,
-		Static: authcred.Static{
-			Headers: body.Auth.Static.Headers,
-		},
-		Passthrough: authcred.PassThru{
-			Headers: body.Auth.Passthrough.Headers,
-		},
-		VaultRef: authcred.VaultRef{
-			Headers: body.Auth.VaultRef.Headers,
-		},
-	}
-	resolvedHeaders, err := authcred.ResolveDefaults(authCfg)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_auth", err.Error())
-		return
-	}
-
 	// Persist the auth configuration shape (mode + references), not the
-	// resolved secrets, on the stored Connector.
+	// resolved secrets, on the stored Connector. Capture defaults / clearing
+	// for HTTP are handled inside connector.Apply.
 	connectorAuth := store.ConnectorAuth{
 		Mode: body.Auth.Mode,
 		Static: store.StaticAuth{
@@ -198,39 +181,32 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		VaultRef: store.VaultRefAuth{
 			Headers: body.Auth.VaultRef.Headers,
 		},
+		Capture: store.CaptureAuth{
+			ToolNameGlob:   body.Auth.Capture.ToolNameGlob,
+			TokenJSONPaths: body.Auth.Capture.TokenJSONPaths,
+			LabelJSONPaths: body.Auth.Capture.LabelJSONPaths,
+			HeaderTemplate: body.Auth.Capture.HeaderTemplate,
+			DefaultScheme:  body.Auth.Capture.DefaultScheme,
+		},
 	}
 
-	var (
-		c     store.Connector
-		infos []tool.Info
-	)
-	switch body.Type {
-	case "http":
-		c, infos, err = httpplugin.RegisterWithOpts(s.Store, s.Registry, httpplugin.RegisterOpts{
-			ID:              id,
-			BaseURL:         body.BaseURL,
-			RequireApproval: body.RequireApproval,
-			Headers:         resolvedHeaders,
-			AuthMode:        authcred.NormalizeMode(body.Auth.Mode),
-			Auth:            connectorAuth,
-		})
-	case "openapi":
-		c, infos, err = openapi.RegisterWithOpts(s.Store, s.Registry, openapi.RegisterOpts{
-			ID:              id,
-			Type:            body.Type,
-			SpecPath:        body.Spec,
-			BaseURL:         body.BaseURL,
-			RequireApproval: body.RequireApproval,
-			Headers:         resolvedHeaders,
-			AuthMode:        authcred.NormalizeMode(body.Auth.Mode),
-			Auth:            connectorAuth,
-		})
-	default:
-		// Unreachable: type validated above.
-		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
-		return
-	}
+	c, infos, err := connector.Apply(connector.ApplyInput{
+		Store:           s.Store,
+		Registry:        s.Registry,
+		Identities:      s.Identities,
+		ID:              id,
+		Type:            body.Type,
+		Spec:            body.Spec,
+		BaseURL:         body.BaseURL,
+		RequireApproval: body.RequireApproval,
+		RequireLogin:    body.RequireLogin,
+		Auth:            connectorAuth,
+	})
 	if err != nil {
+		if errors.Is(err, authcred.ErrInvalidAuth) {
+			writeError(w, http.StatusBadRequest, "invalid_auth", err.Error())
+			return
+		}
 		if errors.Is(err, httpplugin.ErrInvalidPlugin) {
 			writeError(w, http.StatusBadRequest, "invalid_plugin", err.Error())
 			return
@@ -259,6 +235,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"spec":             c.Spec,
 		"base_url":         c.BaseURL,
 		"require_approval": c.RequireApproval,
+		"require_login":    c.RequireLogin,
 		"auth":             c.Auth,
 		"tools":            infos,
 	})
@@ -278,6 +255,13 @@ type authBody struct {
 	VaultRef struct {
 		Headers map[string]string `json:"headers"`
 	} `json:"vault_ref"`
+	Capture struct {
+		ToolNameGlob   string   `json:"tool_name_glob"`
+		TokenJSONPaths []string `json:"token_json_paths"`
+		LabelJSONPaths []string `json:"label_json_paths"`
+		HeaderTemplate string   `json:"header_template"`
+		DefaultScheme  string   `json:"default_scheme"`
+	} `json:"capture"`
 }
 
 func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +283,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"spec":             c.Spec,
 		"base_url":         c.BaseURL,
 		"require_approval": c.RequireApproval,
+		"require_login":    c.RequireLogin,
 		"auth":             c.Auth,
 		"tools":            tools,
 	})
@@ -306,6 +291,66 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tools": s.Registry.List()})
+}
+
+func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing tool name")
+		return
+	}
+	var body struct {
+		RequireLogin *bool `json:"require_login"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	if body.RequireLogin == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "require_login is required")
+		return
+	}
+
+	info, ok := s.Registry.Get(name)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "tool not found")
+		return
+	}
+	if err := s.Registry.SetRequireLogin(name, *body.RequireLogin); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+
+	c, err := s.Store.GetConnector(info.ConnectorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, *body.RequireLogin)
+	s.Store.UpsertConnector(c)
+
+	info, _ = s.Registry.Get(name)
+	writeJSON(w, http.StatusOK, info)
+}
+
+func syncRequireLoginList(list []string, name string, require bool) []string {
+	out := make([]string, 0, len(list)+1)
+	seen := false
+	for _, n := range list {
+		if n == name {
+			seen = true
+			if require {
+				out = append(out, n)
+			}
+			continue
+		}
+		out = append(out, n)
+	}
+	if require && !seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
@@ -330,10 +375,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Omitting conversation_id keeps the machine path (default connector
+	// headers apply; require_login is not enforced). Chat always sends an id.
 	conv := strings.TrimSpace(body.ConversationID)
-	if conv == "" {
-		conv = "conv_" + uuid.NewString()
-	}
 
 	createIn := store.CreateRunInput{
 		AgentID:        body.AgentID,

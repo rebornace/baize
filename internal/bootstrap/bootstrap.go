@@ -15,10 +15,8 @@ import (
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/authcred"
-	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/config"
-	"github.com/rebornace/baize/internal/connector/httpplugin"
-	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
@@ -182,6 +180,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		MaxSteps:    cfg.Run.MaxSteps,
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
+		Identities:  identities,
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Hub = hub
@@ -247,117 +246,33 @@ func storeCloser(st store.Store) io.Closer {
 }
 
 func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
-	typ := cfg.Connector.Type
-	if typ == "" {
-		typ = "openapi"
-	}
-	authCfg := authcred.Config{
-		Mode:        cfg.Connector.Auth.Mode,
-		Static:      authcred.Static{Headers: cfg.Connector.Auth.Static.Headers},
-		Passthrough: authcred.PassThru{Headers: cfg.Connector.Auth.Passthrough.Headers},
-		VaultRef:    authcred.VaultRef{Headers: cfg.Connector.Auth.VaultRef.Headers},
-	}
-	headers, err := authcred.ResolveDefaults(authCfg)
-	if err != nil {
-		return fmt.Errorf("resolve connector auth: %w", err)
-	}
-	connectorAuth := store.ConnectorAuth{
-		Mode:        cfg.Connector.Auth.Mode,
-		Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
-		Passthrough: store.PassThruAuth{Headers: cfg.Connector.Auth.Passthrough.Headers},
-		VaultRef:    store.VaultRefAuth{Headers: cfg.Connector.Auth.VaultRef.Headers},
-	}
-
-	if typ == "http" {
-		if strings.TrimSpace(cfg.Connector.BaseURL) == "" {
-			return fmt.Errorf("connector.base_url is required")
-		}
-		_, _, err = httpplugin.RegisterWithOpts(st, reg, httpplugin.RegisterOpts{
-			ID:              cfg.Connector.ID,
-			BaseURL:         cfg.Connector.BaseURL,
-			RequireApproval: cfg.Connector.RequireApproval,
-			Headers:         headers,
-			AuthMode:        authcred.NormalizeMode(cfg.Connector.Auth.Mode),
-			Auth:            connectorAuth,
-			Identities:      identities,
-			Resolver:        authresolve.OpenAPISecurityResolver{},
-		})
-		return err
-	}
-
-	if cfg.Connector.Spec == "" {
-		return fmt.Errorf("connector.spec is required")
-	}
-	approval := cfg.Connector.RequireApproval
-	capture := identity.CaptureConfig{
-		ToolNameGlob:   cfg.Connector.Auth.Capture.ToolNameGlob,
-		TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
-		LabelJSONPaths: cfg.Connector.Auth.Capture.LabelJSONPaths,
-		HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
-		DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
-	}
-	capture = withCaptureDefaults(capture)
-	if capture.DefaultScheme == "" {
-		if routes, err := openapi.LoadTools(cfg.Connector.Spec); err == nil {
-			capture.DefaultScheme = uniqueSecurityScheme(routes)
-		}
-	}
-	_, _, err = openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
-		ID:                      cfg.Connector.ID,
-		Type:                    typ,
-		SpecPath:                cfg.Connector.Spec,
-		BaseURL:                 cfg.Connector.BaseURL,
-		RequireApproval:         approval,
-		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
-		Headers:                 headers,
-		AuthMode:                authcred.NormalizeMode(cfg.Connector.Auth.Mode),
-		Auth:                    connectorAuth,
+	login := cfg.Connector.RequireLogin
+	_, _, err := connector.Apply(connector.ApplyInput{
+		Store:                   st,
+		Registry:                reg,
 		Identities:              identities,
-		Resolver:                authresolve.OpenAPISecurityResolver{},
-		Capture:                 capture,
+		ID:                      cfg.Connector.ID,
+		Type:                    cfg.Connector.Type,
+		Spec:                    cfg.Connector.Spec,
+		BaseURL:                 cfg.Connector.BaseURL,
+		RequireApproval:         cfg.Connector.RequireApproval,
+		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
+		RequireLogin:            &login,
+		Auth: store.ConnectorAuth{
+			Mode:        cfg.Connector.Auth.Mode,
+			Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
+			Passthrough: store.PassThruAuth{Headers: cfg.Connector.Auth.Passthrough.Headers},
+			VaultRef:    store.VaultRefAuth{Headers: cfg.Connector.Auth.VaultRef.Headers},
+			Capture: store.CaptureAuth{
+				ToolNameGlob:   cfg.Connector.Auth.Capture.ToolNameGlob,
+				TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
+				LabelJSONPaths: cfg.Connector.Auth.Capture.LabelJSONPaths,
+				HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
+				DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
+			},
+		},
 	})
 	return err
-}
-
-// withCaptureDefaults fills open-box login capture when config omits capture.
-// default.local.yaml often only sets auth.static; without defaults, login never persists.
-// To disable capture, set tool_name_glob to a non-matching pattern (e.g. "__none__").
-func withCaptureDefaults(c identity.CaptureConfig) identity.CaptureConfig {
-	if strings.TrimSpace(c.ToolNameGlob) != "" {
-		return c
-	}
-	c.ToolNameGlob = "*login*"
-	if len(c.TokenJSONPaths) == 0 {
-		c.TokenJSONPaths = []string{"accessToken", "data.accessToken", "data.token"}
-	}
-	if len(c.LabelJSONPaths) == 0 {
-		c.LabelJSONPaths = []string{"email", "data.email"}
-	}
-	if strings.TrimSpace(c.HeaderTemplate) == "" {
-		c.HeaderTemplate = "Bearer {{token}}"
-	}
-	return c
-}
-
-// uniqueSecurityScheme returns the sole security scheme name across routes, or "".
-func uniqueSecurityScheme(routes []openapi.ToolRoute) string {
-	seen := map[string]struct{}{}
-	for _, r := range routes {
-		for _, s := range r.Security {
-			s = strings.TrimSpace(s)
-			if s == "" {
-				continue
-			}
-			seen[s] = struct{}{}
-		}
-	}
-	if len(seen) != 1 {
-		return ""
-	}
-	for s := range seen {
-		return s
-	}
-	return ""
 }
 
 func newLLM(cfg config.Config) (llm.Provider, error) {

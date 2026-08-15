@@ -45,3 +45,37 @@ func TestRegistryInvoke(t *testing.T) {
 		t.Fatalf("%v %v %v", out, isErr, err)
 	}
 }
+
+func TestRequireLoginRoundTrip(t *testing.T) {
+	reg := tool.NewRegistry()
+	reg.RegisterMeta(tool.Meta{
+		Spec:         llm.ToolSpec{Name: "create_ticket"},
+		ConnectorID:  "ticket-api",
+		RequireLogin: true,
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	}, false)
+	if !reg.RequiresLogin("create_ticket") {
+		t.Fatal("expected require_login")
+	}
+	if reg.RequiresApproval("create_ticket") {
+		t.Fatal("approval must stay independent")
+	}
+	info, ok := reg.Get("create_ticket")
+	if !ok || !info.RequireLogin || info.RequireApproval {
+		t.Fatalf("%+v ok=%v", info, ok)
+	}
+	if err := reg.SetRequireLogin("create_ticket", false); err != nil {
+		t.Fatal(err)
+	}
+	if reg.RequiresLogin("create_ticket") {
+		t.Fatal("toggle off")
+	}
+	if err := reg.SetRequireLogin("missing", true); err == nil {
+		t.Fatal("expected unknown tool error")
+	}
+	got := tool.LoginRequiredContent()
+	if got["code"] != "login_required" || got["message"] != "此工具需要先登录" {
+		t.Fatalf("%+v", got)
+	}
+}

@@ -25,9 +25,6 @@ connector:
     - update_ticket_status
   auth:
     mode: static
-    static:
-      headers:
-        Authorization: "Bearer ${BAIZE_CONNECTOR_TOKEN}"
     # 登录成功后写入会话身份库（tool 名匹配 *login*）
     capture:
       tool_name_glob: "*login*"

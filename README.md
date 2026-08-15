@@ -61,7 +61,7 @@ Open `http://127.0.0.1:8080/ui`.
 - Left: conversation list + **New chat**; **Settings** at the bottom-left
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings: read-only Tools, Identities (账号); MCP / plugins are “coming soon” empty states (no fake forms)
+- Settings: Tools (toggle「需要登录」), Identities (账号); MCP / plugins are “coming soon” empty states (no fake forms)
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
 With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
@@ -134,8 +134,6 @@ You should see `method`, `path`, `operation_id`, and `connector_id`.
 
 Re-`PUT` with the same `id` **replaces** that Connector’s Tools entirely. Invalid specs return `400` without corrupting the existing Registry.
 
-> Note: `PUT /v0/connectors` does not yet attach session Identities / Resolver / Capture. The `baize start` path wires those for connectors in config; hot-reload of auth session wiring is planned.
-
 ### No OpenAPI: HTTP plugin
 
 When your HTTP service has no usable OpenAPI spec, run a sidecar that implements
@@ -200,18 +198,20 @@ Mutating tools can require human approval via `require_approval` before the real
 
 ### Session identities
 
-Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later protected calls in the same conversation automatically attach the resolved Bearer (default selection follows OpenAPI `securitySchemes`).
+Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later calls in the same conversation attach the resolved Bearer when a session identity is available (default selection follows OpenAPI `securitySchemes`).
+
+Runs **with** a `conversation_id` (including `/ui`) use **only** session identities — never the connector’s configured default Token. Configured Tokens are optional and only apply to machine / curl Runs that omit `conversation_id`.
 
 - `/ui` → **Settings → Identities**: list accounts (redacted), set default, sign out
+- `/ui` → **Settings → Tools**: mark a tool as「需要登录」(default: public; not inferred from OpenAPI `security`)
 - Sidebar **New chat** → new `conversation_id` (`localStorage` key `baize.conversation_id`)
-- When no session identity exists, default HTTP headers come from `connector.auth.mode`:
+- For Runs **without** `conversation_id`, default HTTP headers come from `connector.auth.mode`:
   - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
   - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
   - `vault_ref` — `env:` / `file:` references resolved at registration
-- Captured session identities always take precedence over the mode defaults above
 - Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable)
-- `baize start` applies capture defaults automatically when capture is omitted
-- Restart Runtime after changing auth/capture config
+- `baize start` and `PUT /v0/connectors` both wire Identities / Resolver / Capture (OpenAPI)
+- Restart Runtime after changing auth/capture YAML; `PATCH /v0/tools/{name}` toggles are process-local until restart / next PUT
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
@@ -272,7 +272,7 @@ docker compose up --build
 
 Start **both** services. `configs/docker.yaml` points `base_url` at hostname `mock-ticket`; if you start only the Runtime, tools that call the demo HTTP will fail to connect.
 
-Trial compose defaults `BAIZE_CONNECTOR_TOKEN` to `dev`; use your own token in production. Do not put secrets in YAML.
+Trial compose still sets `BAIZE_CONNECTOR_TOKEN` to `dev` for optional machine-path scripts; `/ui` does not use it. Do not put secrets in YAML.
 
 **Production sidecar** (your HTTP service, no demo HTTP):
 

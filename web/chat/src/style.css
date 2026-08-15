@@ -449,6 +449,36 @@ body {
   color: var(--accent);
 }
 
+.settings-tool-line {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+
+.settings-login-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-login-toggle input {
+  margin: 0;
+}
+
+.settings-login-toggle input:disabled {
+  cursor: not-allowed;
+}
+
 .accounts-list .accounts-item {
   display: flex;
   align-items: flex-start;
