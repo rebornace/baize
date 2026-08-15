@@ -178,3 +178,67 @@ export async function clearMessages(conversationId: string): Promise<void> {
   )
   await parseJSON<{ status: string }>(res)
 }
+
+export async function listConversations(): Promise<
+  { id: string; title: string; updated_at: string }[]
+> {
+  const res = await fetch('/v0/conversations')
+  const body = await parseJSON<{
+    conversations: { id: string; title: string; updated_at: string }[]
+  }>(res)
+  return body.conversations ?? []
+}
+
+export function openRunStream(
+  runId: string,
+  after: number,
+  onEvent: (e: Event, index: number) => void,
+  onEnded: (status: string) => void,
+  onFatal: () => void,
+): () => void {
+  const url =
+    `${window.location.origin}/v0/runs/${encodeURIComponent(runId)}/stream` +
+    `?after=${after}`
+  const es = new EventSource(url)
+  let closed = false
+
+  const finish = (fn: () => void) => {
+    if (closed) return
+    closed = true
+    es.close()
+    fn()
+  }
+
+  es.onmessage = (msg) => {
+    let parsed: Event
+    try {
+      parsed = JSON.parse(msg.data) as Event
+    } catch {
+      return
+    }
+    const index = Number.parseInt(msg.lastEventId, 10)
+    onEvent(parsed, Number.isFinite(index) ? index : -1)
+  }
+
+  es.addEventListener('run.ended', (ev) => {
+    const msg = ev as MessageEvent<string>
+    let status = ''
+    try {
+      const body = JSON.parse(msg.data) as { status?: string }
+      status = body.status ?? ''
+    } catch {
+      status = ''
+    }
+    finish(() => onEnded(status))
+  })
+
+  es.onerror = () => {
+    finish(() => onFatal())
+  }
+
+  return () => {
+    if (closed) return
+    closed = true
+    es.close()
+  }
+}
