@@ -17,6 +17,8 @@ type Meta struct {
 	OperationID     string
 	Method          string
 	Path            string
+	RequireLogin    bool
+	SecuritySchemes []string
 }
 
 type Info struct {
@@ -28,12 +30,15 @@ type Info struct {
 	Path            string         `json:"path,omitempty"`
 	InputSchema     map[string]any `json:"input_schema,omitempty"`
 	RequireApproval bool           `json:"require_approval"`
+	RequireLogin    bool           `json:"require_login"`
 }
 
 type entry struct {
 	spec            llm.ToolSpec
 	invoker         Invoker
 	requireApproval bool
+	requireLogin    bool
+	securitySchemes []string
 	connectorID     string
 	operationID     string
 	method          string
@@ -74,6 +79,8 @@ func (r *Registry) RegisterMeta(meta Meta, inv Invoker, requireApproval bool) {
 		spec:            meta.Spec,
 		invoker:         inv,
 		requireApproval: requireApproval,
+		requireLogin:    meta.RequireLogin,
+		securitySchemes: meta.SecuritySchemes,
 		connectorID:     meta.ConnectorID,
 		operationID:     meta.OperationID,
 		method:          meta.Method,
@@ -92,19 +99,34 @@ func (r *Registry) List() []Info {
 	sort.Strings(names)
 	out := make([]Info, len(names))
 	for i, name := range names {
-		e := r.tools[name]
-		out[i] = Info{
-			Name:            e.spec.Name,
-			Description:     e.spec.Description,
-			ConnectorID:     e.connectorID,
-			OperationID:     e.operationID,
-			Method:          e.method,
-			Path:            e.path,
-			InputSchema:     e.spec.InputSchema,
-			RequireApproval: e.requireApproval,
-		}
+		out[i] = r.infoFromEntry(r.tools[name])
 	}
 	return out
+}
+
+// Get returns tool Info by name.
+func (r *Registry) Get(name string) (Info, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	e, ok := r.tools[name]
+	if !ok {
+		return Info{}, false
+	}
+	return r.infoFromEntry(e), true
+}
+
+func (r *Registry) infoFromEntry(e entry) Info {
+	return Info{
+		Name:            e.spec.Name,
+		Description:     e.spec.Description,
+		ConnectorID:     e.connectorID,
+		OperationID:     e.operationID,
+		Method:          e.method,
+		Path:            e.path,
+		InputSchema:     e.spec.InputSchema,
+		RequireApproval: e.requireApproval,
+		RequireLogin:    e.requireLogin,
+	}
 }
 
 // WouldConflict reports whether any name is already registered to a different connector.
@@ -162,6 +184,38 @@ func (r *Registry) RequiresApproval(name string) bool {
 	defer r.mu.RUnlock()
 	e, ok := r.tools[name]
 	return ok && e.requireApproval
+}
+
+// RequiresLogin reports whether the named tool requires session login before Invoke.
+func (r *Registry) RequiresLogin(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	e, ok := r.tools[name]
+	return ok && e.requireLogin
+}
+
+// SecuritySchemes returns the OpenAPI security scheme names stored for the tool.
+func (r *Registry) SecuritySchemes(name string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	e, ok := r.tools[name]
+	if !ok {
+		return nil
+	}
+	return e.securitySchemes
+}
+
+// SetRequireLogin toggles require_login for a registered tool.
+func (r *Registry) SetRequireLogin(name string, requireLogin bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.tools[name]
+	if !ok {
+		return fmt.Errorf("unknown tool: %s", name)
+	}
+	e.requireLogin = requireLogin
+	r.tools[name] = e
+	return nil
 }
 
 func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any) (map[string]any, bool, error) {
