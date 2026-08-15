@@ -1,6 +1,6 @@
 # Baize 设计规格：按会话登录、工具「需要登录」与 Connector 热更新接线
 
-> 状态：待用户审查  
+> 状态：已批准  
 > 日期：2026-08-15  
 > 前置：会话身份库、Connector 三种默认凭证模式、HTTP 插件 v0、Chat UI 壳已落地  
 > 依据：架构草案 README 中「PUT `/v0/connectors` 未挂 Identities / Resolver / Capture」的缺口；本里程碑头脑风暴锁定的产品决策
