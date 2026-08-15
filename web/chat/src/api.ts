@@ -116,12 +116,22 @@ export interface ToolInfo {
   method?: string
   path?: string
   require_approval?: boolean
+  require_login?: boolean
 }
 
 export async function listTools(): Promise<ToolInfo[]> {
   const res = await fetch('/v0/tools')
   const body = await parseJSON<{ tools: ToolInfo[] }>(res)
   return body.tools ?? []
+}
+
+export async function patchToolRequireLogin(name: string, requireLogin: boolean): Promise<ToolInfo> {
+  const res = await fetch(`/v0/tools/${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ require_login: requireLogin }),
+  })
+  return parseJSON<ToolInfo>(res)
 }
 
 export async function listIdentities(conversationId: string): Promise<IdentityView[]> {

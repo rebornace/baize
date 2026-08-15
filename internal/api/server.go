@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/connector"
@@ -374,10 +373,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Omitting conversation_id keeps the machine path (default connector
+	// headers apply; require_login is not enforced). Chat always sends an id.
 	conv := strings.TrimSpace(body.ConversationID)
-	if conv == "" {
-		conv = "conv_" + uuid.NewString()
-	}
 
 	createIn := store.CreateRunInput{
 		AgentID:        body.AgentID,

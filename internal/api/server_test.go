@@ -798,16 +798,16 @@ func TestPostRunConversationID(t *testing.T) {
 		t.Fatal(err)
 	}
 	conv, _ := omitted["conversation_id"].(string)
-	if conv == "" || !strings.HasPrefix(conv, "conv_") {
-		t.Fatalf("expected generated conversation_id, got %q", conv)
+	if conv != "" {
+		t.Fatalf("omitted conversation_id must stay empty (machine path), got %q", conv)
 	}
 	runID2, _ := omitted["run_id"].(string)
 	got2, err := st.GetRun(runID2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got2.ConversationID != conv {
-		t.Fatalf("stored conversation_id=%q want %q", got2.ConversationID, conv)
+	if got2.ConversationID != "" {
+		t.Fatalf("stored conversation_id=%q want empty", got2.ConversationID)
 	}
 }
 

@@ -27,7 +27,8 @@ const (
 )
 
 // TestSessionAuthCaptureReuseDeleteForce covers design §10:
-// login capture → reuse Bearer, list identities redaction, DELETE → env fallback, identity_id force.
+// login capture → reuse Bearer, list identities redaction, DELETE → no default-header
+// fallback on conversation path, identity_id force.
 func TestSessionAuthCaptureReuseDeleteForce(t *testing.T) {
 	var lastAuth string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +117,7 @@ func TestSessionAuthCaptureReuseDeleteForce(t *testing.T) {
 		t.Fatalf("public list=%+v", public)
 	}
 
-	// 3) DELETE identity → subsequent call falls back to env header.
+	// 3) DELETE identity → with conversation_id, no fallback to connector defaults.
 	del := httptest.NewRequest(http.MethodDelete, "/v0/conversations/"+conv+"/identities/"+capturedID, nil)
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, del)
@@ -131,8 +132,8 @@ func TestSessionAuthCaptureReuseDeleteForce(t *testing.T) {
 	if err != nil || isErr {
 		t.Fatalf("getMe after delete: isErr=%v err=%v", isErr, err)
 	}
-	if lastAuth != envAuth {
-		t.Fatalf("after-delete Authorization=%q, want env %q", lastAuth, envAuth)
+	if lastAuth != "" {
+		t.Fatalf("after-delete Authorization=%q, want empty (conversation path skips defaults)", lastAuth)
 	}
 
 	// 4) identity_id force: ignore default, use forced identity.
