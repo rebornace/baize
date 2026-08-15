@@ -1,7 +1,9 @@
 package conversation_test
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/conversation"
 )
@@ -50,5 +52,47 @@ func TestMemoryStoreListWindowNonPositive(t *testing.T) {
 		if win[0].Role != conversation.RoleUser || win[1].Content != "你好！" {
 			t.Fatalf("n=%d: window=%+v", n, win)
 		}
+	}
+}
+
+func TestListSummariesTitleTruncateAndClear(t *testing.T) {
+	s := conversation.NewMemoryStore()
+	long := strings.Repeat("啊", 45)
+	if _, err := s.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: long}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := s.Append("c2", conversation.Message{Role: conversation.RoleUser, Content: "短标题"}); err != nil {
+		t.Fatal(err)
+	}
+	sum := s.ListSummaries()
+	if len(sum) != 2 {
+		t.Fatalf("len=%d", len(sum))
+	}
+	if sum[0].ID != "c2" || sum[0].Title != "短标题" {
+		t.Fatalf("newest=%+v", sum[0])
+	}
+	r := []rune(sum[1].Title)
+	if sum[1].ID != "c1" || len(r) != 41 || !strings.HasSuffix(sum[1].Title, "…") {
+		t.Fatalf("truncate=%q len=%d", sum[1].Title, len(r))
+	}
+	s.Clear("c2")
+	sum = s.ListSummaries()
+	if len(sum) != 1 || sum[0].ID != "c1" {
+		t.Fatalf("after clear %+v", sum)
+	}
+}
+
+func TestListSummariesDefaultTitleWithoutUser(t *testing.T) {
+	s := conversation.NewMemoryStore()
+	if _, err := s.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "仅助手"}); err != nil {
+		t.Fatal(err)
+	}
+	sum := s.ListSummaries()
+	if len(sum) != 1 || sum[0].ID != "c1" || sum[0].Title != "新对话" {
+		t.Fatalf("want 新对话, got %+v", sum)
 	}
 }

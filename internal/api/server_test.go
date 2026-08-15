@@ -10,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
@@ -1251,5 +1253,218 @@ func TestPostRunAPIFallbackWritesSystemNote(t *testing.T) {
 	}
 	if !strings.HasPrefix(note.Content, "运行失败：") || !strings.Contains(note.Content, "boom before status update") {
 		t.Fatalf("note.Content=%q", note.Content)
+	}
+}
+
+func TestListConversations(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	msgs := conversation.NewMemoryStore()
+	srv.Messages = msgs
+	_, _ = msgs.Append("conv_a", conversation.Message{Role: conversation.RoleUser, Content: "VPN 挂了"})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Conversations []conversation.Summary `json:"conversations"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Conversations) != 1 || body.Conversations[0].ID != "conv_a" || body.Conversations[0].Title != "VPN 挂了" {
+		t.Fatalf("%+v", body)
+	}
+}
+
+func TestListConversationsNilStore(t *testing.T) {
+	st := store.NewMemory()
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"conversations"`) {
+		t.Fatalf("body=%s", rr.Body.String())
+	}
+}
+
+func TestRunStreamReplayAndAfter(t *testing.T) {
+	mem := store.NewMemory()
+	hub := eventbus.NewHub()
+	st := eventbus.Notify(mem, hub)
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	srv.Hub = hub
+	run, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "i"})
+	_ = st.AppendEvent(run.ID, store.Event{Type: "run.started"})
+	_ = st.AppendEvent(run.ID, store.Event{Type: "llm.message", Data: map[string]any{"content": "hi"}})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+run.ID+"/stream?after=0", nil)
+	rr := httptest.NewRecorder()
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		srv.Handler().ServeHTTP(rr, req)
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	_ = st.UpdateRun(run.ID, store.StatusSucceeded, "x", "")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("stream did not end")
+	}
+	cancel()
+	body := rr.Body.String()
+	if rr.Code != 200 {
+		t.Fatalf("code=%d", rr.Code)
+	}
+	if !strings.Contains(rr.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("ct=%s", rr.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(body, "llm.message") || !strings.Contains(body, "run.ended") {
+		t.Fatalf("body=%s", body)
+	}
+	if strings.Contains(body, "run.started") {
+		t.Fatalf("after=0 should skip index 0: %s", body)
+	}
+}
+
+func TestRunStreamNotFound(t *testing.T) {
+	st := store.NewMemory()
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/nope/stream", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "run_not_found") {
+		t.Fatalf("body=%s", rr.Body.String())
+	}
+}
+
+// TestRunStreamLastEventWithImmediateEnd ensures AppendEvent then UpdateRun
+// back-to-back still delivers the final event before run.ended (select race).
+func TestRunStreamLastEventWithImmediateEnd(t *testing.T) {
+	mem := store.NewMemory()
+	hub := eventbus.NewHub()
+	st := eventbus.Notify(mem, hub)
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	srv.Hub = hub
+	run, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AppendEvent(run.ID, store.Event{Type: "run.started"})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+run.ID+"/stream?after=-1", nil)
+	rr := httptest.NewRecorder()
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		srv.Handler().ServeHTTP(rr, req)
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	_ = st.AppendEvent(run.ID, store.Event{Type: "llm.message", Data: map[string]any{"content": "bye"}})
+	_ = st.UpdateRun(run.ID, store.StatusSucceeded, "ok", "")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("stream did not end")
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "llm.message") {
+		t.Fatalf("missing last event before end: %s", body)
+	}
+	if !strings.Contains(body, "run.ended") {
+		t.Fatalf("missing run.ended: %s", body)
+	}
+	if idxMsg, idxEnd := strings.Index(body, "llm.message"), strings.Index(body, "run.ended"); idxMsg < 0 || idxEnd < 0 || idxMsg > idxEnd {
+		t.Fatalf("llm.message should appear before run.ended: %s", body)
+	}
+}
+
+// windowListStore blocks the first ListEvents after taking a snapshot so the
+// test can AppendEvent+UpdateRun in the ListEvents→Subscribe gap (fan-out dropped).
+type windowListStore struct {
+	store.Store
+	listCalls    atomic.Int32
+	afterFirst   chan struct{}
+	releaseFirst chan struct{}
+}
+
+func (w *windowListStore) ListEvents(runID string) ([]store.Event, error) {
+	evs, err := w.Store.ListEvents(runID)
+	if w.listCalls.Add(1) == 1 {
+		close(w.afterFirst)
+		<-w.releaseFirst
+	}
+	return evs, err
+}
+
+// TestRunStreamCatchUpAfterSubscribeWindow proves that events + terminal status
+// published between first ListEvents and Subscribe still close the stream.
+func TestRunStreamCatchUpAfterSubscribeWindow(t *testing.T) {
+	mem := store.NewMemory()
+	gate := &windowListStore{
+		Store:        mem,
+		afterFirst:   make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+	}
+	hub := eventbus.NewHub()
+	st := eventbus.Notify(gate, hub)
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	srv.Hub = hub
+	run, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+run.ID+"/stream", nil)
+	rr := httptest.NewRecorder()
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		srv.Handler().ServeHTTP(rr, req)
+		close(done)
+	}()
+
+	select {
+	case <-gate.afterFirst:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("ListEvents did not start")
+	}
+	_ = st.AppendEvent(run.ID, store.Event{Type: "llm.message", Data: map[string]any{"content": "late"}})
+	_ = st.UpdateRun(run.ID, store.StatusSucceeded, "ok", "")
+	close(gate.releaseFirst)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("stream did not end after catch-up")
+	}
+	body := rr.Body.String()
+	if rr.Code != 200 {
+		t.Fatalf("code=%d body=%s", rr.Code, body)
+	}
+	if !strings.Contains(body, "llm.message") || !strings.Contains(body, "run.ended") {
+		t.Fatalf("expected late event and run.ended: %s", body)
 	}
 }
