@@ -8,12 +8,74 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
+
+func TestHTTPPluginConversationSkipsStaticAndRespectsLogin(t *testing.T) {
+	var lastAuth string
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.URL.Path == "/v0/tools" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"tools":[{"name":"echo"},{"name":"secret_op"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/invoke"):
+			hits++
+			lastAuth = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	if _, _, err := httpplugin.RegisterWithOpts(st, reg, httpplugin.RegisterOpts{
+		ID: "side", BaseURL: srv.URL,
+		Headers:      map[string]string{"Authorization": "Bearer PLUGIN_ENV"},
+		RequireLogin: []string{"secret_op"},
+		Identities:   ids,
+		Resolver:     authresolve.OpenAPISecurityResolver{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := identity.WithConversationID(context.Background(), "c1")
+	hits, lastAuth = 0, ""
+	_, isErr, err := reg.Invoke(ctx, "echo", nil)
+	if err != nil || isErr {
+		t.Fatal(err)
+	}
+	if lastAuth == "Bearer PLUGIN_ENV" {
+		t.Fatal("conversation must not send plugin static token")
+	}
+	content, isErr, err := reg.Invoke(ctx, "secret_op", nil)
+	if err != nil || !isErr || content["code"] != "login_required" {
+		t.Fatalf("%v %v %v", content, isErr, err)
+	}
+	if _, err := ids.Upsert("c1", identity.Identity{
+		Scheme: "bearer", Subject: "u",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer CAP"},
+		Source:            identity.SourceLoginCapture,
+		IsDefault:         true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hits, lastAuth = 0, ""
+	_, isErr, err = reg.Invoke(ctx, "secret_op", nil)
+	if err != nil || isErr {
+		t.Fatal(err)
+	}
+	if lastAuth != "Bearer CAP" {
+		t.Fatalf("auth=%q", lastAuth)
+	}
+}
 
 func TestRegisterListsToolsAndInvoke(t *testing.T) {
 	var lastAuth, lastRun, lastPath string
