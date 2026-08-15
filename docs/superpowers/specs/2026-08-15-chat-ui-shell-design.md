@@ -1,6 +1,6 @@
 # Baize 设计规格：Chat UI 壳、轨迹卡片与 Run SSE
 
-> 状态：待审查  
+> 状态：已批准  
 > 日期：2026-08-15  
 > 前置：Demo B Chat + HITL、对话记忆、会话身份、`GET /v0/tools`、HTTP 插件 v0、README 旁挂定位已落地  
 > 依据：Demo C 后续候选「操作员向样板 / 轨迹可视化」；架构草案 §3 事件推送 SSE；对标 ChatGPT / Claude / OpenClaw / Hermes 的壳，而不是把 Tools 堆在聊天页上
