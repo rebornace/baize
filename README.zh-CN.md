@@ -209,7 +209,6 @@ go run ./cmd/baize start
   - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
   - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
   - `vault_ref` — 注册时解析 `env:` / `file:` 引用
-- 捕获的会话身份始终优先于上述模式默认值
 - 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
 - `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI）
 - 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 仅进程内临时生效；重启或再次 PUT 后以 YAML / PUT 为准
@@ -273,7 +272,7 @@ docker compose up --build
 
 须同时启动**两个**服务。`configs/docker.yaml` 将 `base_url` 指向主机名 `mock-ticket`；只起 Runtime 时，打到演示 HTTP 的工具会连不上。
 
-试用 compose 默认 `BAIZE_CONNECTOR_TOKEN` 为 `dev`；生产请使用自己的 token。不要把密钥写进 YAML。
+试用 compose 仍默认设置 `BAIZE_CONNECTOR_TOKEN` 为 `dev`，仅供不带会话的脚本可选使用；`/ui` 不会用它。不要把密钥写进 YAML。
 
 **生产侧车**（你的 HTTP 服务，无演示 HTTP）：
 

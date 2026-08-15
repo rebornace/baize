@@ -209,7 +209,6 @@ Runs **with** a `conversation_id` (including `/ui`) use **only** session identit
   - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
   - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
   - `vault_ref` — `env:` / `file:` references resolved at registration
-- Captured session identities always take precedence over the mode defaults above
 - Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable)
 - `baize start` and `PUT /v0/connectors` both wire Identities / Resolver / Capture (OpenAPI)
 - Restart Runtime after changing auth/capture YAML; `PATCH /v0/tools/{name}` toggles are process-local until restart / next PUT
@@ -273,7 +272,7 @@ docker compose up --build
 
 Start **both** services. `configs/docker.yaml` points `base_url` at hostname `mock-ticket`; if you start only the Runtime, tools that call the demo HTTP will fail to connect.
 
-Trial compose defaults `BAIZE_CONNECTOR_TOKEN` to `dev`; use your own token in production. Do not put secrets in YAML.
+Trial compose still sets `BAIZE_CONNECTOR_TOKEN` to `dev` for optional machine-path scripts; `/ui` does not use it. Do not put secrets in YAML.
 
 **Production sidecar** (your HTTP service, no demo HTTP):
 
