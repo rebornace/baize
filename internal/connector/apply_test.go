@@ -301,3 +301,24 @@ func TestApplyHTTPIgnoresCapture(t *testing.T) {
 		t.Fatalf("HTTP plugin must not capture identities, got %+v", ids.List("conv_http"))
 	}
 }
+
+func TestApplyEmptyStaticHeadersOK(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "spec.yaml")
+	content := "openapi: 3.0.3\ninfo:\n  title: bs\n  version: 0.1.0\npaths:\n  /probe:\n    get:\n      operationId: probe\n      responses:\n        \"200\":\n          description: ok\n"
+	if err := os.WriteFile(spec, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	login := []string(nil)
+	_, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: identity.NewMemoryStore(),
+		ID: "bs", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
+		RequireLogin: &login,
+		Auth:         store.ConnectorAuth{Mode: "static"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

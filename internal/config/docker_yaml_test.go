@@ -27,6 +27,9 @@ func TestDockerYAMLSidecarCompose(t *testing.T) {
 	if cfg.LLM.Provider != "mock" || cfg.Agent.ID != "ticket-agent" {
 		t.Fatalf("llm/agent %+v %+v", cfg.LLM, cfg.Agent)
 	}
+	if len(cfg.Connector.Auth.Static.Headers["Authorization"]) > 0 {
+		t.Fatalf("open-box yaml must not require connector token header: %+v", cfg.Connector.Auth.Static.Headers)
+	}
 }
 
 func TestDefaultYAMLUnchangedForLocalStart(t *testing.T) {
@@ -42,5 +45,8 @@ func TestDefaultYAMLUnchangedForLocalStart(t *testing.T) {
 	}
 	if cfg.Connector.Type != "openapi" {
 		t.Fatalf("type=%q", cfg.Connector.Type)
+	}
+	if len(cfg.Connector.Auth.Static.Headers["Authorization"]) > 0 {
+		t.Fatalf("open-box yaml must not require connector token header: %+v", cfg.Connector.Auth.Static.Headers)
 	}
 }
