@@ -65,6 +65,10 @@ type Config struct {
 	MockTicket struct {
 		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
 	} `yaml:"mock_ticket"`
+	ControlPlane struct {
+		OperatorToken string `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
+		AdminToken    string `yaml:"admin_token"`    // 空=未配；同上
+	} `yaml:"control_plane"`
 }
 
 // Load reads and unmarshals a YAML config file.
