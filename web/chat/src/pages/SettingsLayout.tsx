@@ -1,19 +1,16 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
-
-const NAV = [
-  { to: '/settings/tools', label: 'Tools' },
-  { to: '/settings/identities', label: '账号' },
-  { to: '/settings/mcp', label: 'MCP' },
-  { to: '/settings/plugins', label: '插件' },
-] as const
+import { useGate } from '../gateContext'
+import { settingsNavItems } from '../settingsNav'
 
 export function SettingsLayout() {
+  const { role } = useGate()
+  const nav = settingsNavItems(role)
   return (
     <div className="settings-shell">
       <aside className="settings-nav" aria-label="设置导航">
         <p className="settings-nav-title">设置</p>
         <nav className="settings-nav-list">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
