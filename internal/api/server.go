@@ -101,6 +101,11 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 		writeError(w, http.StatusForbidden, "forbidden", "需要管理员口令")
 		return nil, false
 	}
+	// 控制面口令只用于过门禁。门开着且鉴权成功后，从交给 mux 的 request 上
+	// 删掉 Authorization，避免 passthrough 把它 PickHeaders 进 Run 的
+	// passthrough_json（SQLite），进而被机器路径打到下游 API。门关着时
+	// authorize 在上面已提前 return，不会执行到这里，故不影响现有 passthrough。
+	r.Header.Del("Authorization")
 	return r.WithContext(controlplane.WithRole(r.Context(), role)), true
 }
 
