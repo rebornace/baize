@@ -15,8 +15,10 @@ import {
 } from '../api'
 import { Composer } from '../components/Composer'
 import { ToolCard } from '../components/ToolCard'
+import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
+import { useGate } from '../gateContext'
 
 const CONV_KEY = 'baize.conversation_id'
 const POLL_MS = 700
@@ -37,6 +39,7 @@ function loadConversationId(): string {
 }
 
 export function ChatPage() {
+  const { role, gateEnabled } = useGate()
   const [agentId, setAgentId] = useState(AGENT_FALLBACK)
   const [conversationId, setConversationIdState] = useState(loadConversationId)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
@@ -308,9 +311,24 @@ export function ChatPage() {
           </ul>
         </div>
         <div className="chat-sidebar-bottom">
-          <Link to="/settings/tools" className="settings-link">
-            设置
+          <Link
+            to={role === 'admin' ? '/settings/tools' : '/settings/identities'}
+            className="settings-link"
+          >
+            {role === 'admin' ? '设置' : '账号'}
           </Link>
+          {gateEnabled && (
+            <button
+              type="button"
+              className="settings-logout"
+              onClick={() => {
+                clearControlToken()
+                window.location.assign('/ui/')
+              }}
+            >
+              退出
+            </button>
+          )}
         </div>
       </aside>
 

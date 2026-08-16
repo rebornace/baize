@@ -56,12 +56,12 @@ If ports are busy, stop the previous `baize` process and retry.
 
 ### Operator UI (`/ui`)
 
-Open `http://127.0.0.1:8080/ui`.
+Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening `/ui` unlocks first; operators can only access Identities, while changing Tools requires an admin token.
 
-- Left: conversation list + **New chat**; **Settings** at the bottom-left
+- Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings: Tools (toggle「需要登录」), Identities (账号); MCP / plugins are “coming soon” empty states (no fake forms)
+- Settings: Tools “需要登录” toggle is admin-only; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
 With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
@@ -104,6 +104,12 @@ curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
 # Live trajectory (SSE). Ctrl+C to stop.
 curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
 ```
+
+If `control_plane` has a token configured, the `/v0` requests above need:
+
+`Authorization: Bearer <operator or admin token>`
+
+Changing Connector / Tools requires the admin token. This is not the same key as the downstream login in the conversation.
 
 ---
 

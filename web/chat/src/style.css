@@ -101,6 +101,10 @@ body {
 .chat-sidebar-bottom {
   padding: 0.75rem;
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
 .settings-link {
@@ -111,6 +115,65 @@ body {
 
 .settings-link:hover {
   color: var(--text);
+}
+
+.settings-logout {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.settings-logout:hover {
+  color: var(--text);
+}
+
+.unlock-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.unlock-card {
+  width: min(100%, 22rem);
+  padding: 1.5rem 1.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.unlock-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+
+.unlock-input {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.unlock-input:focus {
+  outline: 2px solid rgba(31, 111, 235, 0.25);
+  border-color: var(--accent);
+}
+
+.unlock-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
 }
 
 .chat-main {

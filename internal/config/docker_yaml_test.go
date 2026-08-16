@@ -30,6 +30,9 @@ func TestDockerYAMLSidecarCompose(t *testing.T) {
 	if len(cfg.Connector.Auth.Static.Headers["Authorization"]) > 0 {
 		t.Fatalf("open-box yaml must not require connector token header: %+v", cfg.Connector.Auth.Static.Headers)
 	}
+	if cfg.ControlPlane.OperatorToken != "" || cfg.ControlPlane.AdminToken != "" {
+		t.Fatalf("open-box control_plane must be empty: %+v", cfg.ControlPlane)
+	}
 }
 
 func TestDefaultYAMLUnchangedForLocalStart(t *testing.T) {
@@ -48,5 +51,8 @@ func TestDefaultYAMLUnchangedForLocalStart(t *testing.T) {
 	}
 	if len(cfg.Connector.Auth.Static.Headers["Authorization"]) > 0 {
 		t.Fatalf("open-box yaml must not require connector token header: %+v", cfg.Connector.Auth.Static.Headers)
+	}
+	if cfg.ControlPlane.OperatorToken != "" || cfg.ControlPlane.AdminToken != "" {
+		t.Fatalf("open-box control_plane must be empty: %+v", cfg.ControlPlane)
 	}
 }

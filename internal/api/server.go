@@ -16,6 +16,7 @@ import (
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
@@ -45,6 +46,11 @@ type Server struct {
 	// AuthWhitelist is the passthrough header whitelist. nil → default
 	// ["Authorization"]; len==0 → no headers. Only used when AuthMode=="passthrough".
 	AuthWhitelist []string
+	// OperatorToken / AdminToken configure the control-plane gate. When both
+	// are empty the gate is off and all routes behave as before. When at least
+	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
+	OperatorToken string
+	AdminToken    string
 	mux           *http.ServeMux
 }
 
@@ -61,13 +67,53 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r2, ok := s.authorize(w, r)
+		if !ok {
+			return
+		}
+		s.mux.ServeHTTP(w, r2)
+	})
+}
+
+// authorize enforces the control-plane gate. It returns the (possibly
+// context-enriched) request and true to proceed, or writes an error response
+// and returns false to short-circuit. When the gate is off it is a no-op.
+func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	path := r.URL.Path
+	if path == "/healthz" || strings.HasPrefix(path, "/ui/") || path == "/ui" {
+		return r, true
+	}
+	tok := controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}
+	if !tok.Enabled() {
+		return r, true
+	}
+	min := controlplane.MinRole(r.Method, r.URL.Path)
+	if min == controlplane.RoleNone {
+		return r, true
+	}
+	role, ok := controlplane.Authenticate(r.Header.Get("Authorization"), tok)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "需要控制面口令")
+		return nil, false
+	}
+	if !role.AtLeast(min) {
+		writeError(w, http.StatusForbidden, "forbidden", "需要管理员口令")
+		return nil, false
+	}
+	// 控制面口令只用于过门禁。门开着且鉴权成功后，从交给 mux 的 request 上
+	// 删掉 Authorization，避免 passthrough 把它 PickHeaders 进 Run 的
+	// passthrough_json（SQLite），进而被机器路径打到下游 API。门关着时
+	// authorize 在上面已提前 return，不会执行到这里，故不影响现有 passthrough。
+	r.Header.Del("Authorization")
+	return r.WithContext(controlplane.WithRole(r.Context(), role)), true
 }
 
 func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /v0/ui-config", s.handleUIConfig)
+	s.mux.HandleFunc("GET /v0/me", s.handleMe)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
@@ -110,10 +156,20 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+type uiConfig struct {
+	AgentID     string `json:"agent_id"`
+	GateEnabled bool   `json:"gate_enabled"`
+}
+
 func (s *Server) handleUIConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"agent_id": s.DefaultAgentID,
+	writeJSON(w, http.StatusOK, uiConfig{
+		AgentID:     s.DefaultAgentID,
+		GateEnabled: controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}.Enabled(),
 	})
+}
+
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"role": string(controlplane.RoleFrom(r.Context()))})
 }
 
 func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {

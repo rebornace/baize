@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
+	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
@@ -189,6 +190,19 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.AuthMode = authcred.NormalizeMode(cfg.Connector.Auth.Mode)
 	srv.AuthWhitelist = cfg.Connector.Auth.Passthrough.Headers
+
+	op, err := controlplane.ResolveSecret(cfg.ControlPlane.OperatorToken)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("control_plane.operator_token: %w", err)
+	}
+	adm, err := controlplane.ResolveSecret(cfg.ControlPlane.AdminToken)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("control_plane.admin_token: %w", err)
+	}
+	srv.OperatorToken = op
+	srv.AdminToken = adm
 	return srv, closer, nil
 }
 

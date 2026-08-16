@@ -4,6 +4,9 @@ store:
   sqlite_path: ./data/baize.db
 ui:
   enabled: true
+control_plane:
+  operator_token: ""   # 空=未配；可填 env:BAIZE_OPERATOR_TOKEN 或 file:/path 或明文
+  admin_token: ""      # 空=未配；可填 env:BAIZE_ADMIN_TOKEN 或 file:/path 或明文
 llm:
   provider: mock
   # 真实 LLM：复制为 configs/default.local.yaml（gitignore）并设 .env 中 BAIZE_API_KEY
