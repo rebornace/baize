@@ -26,6 +26,8 @@ func TestMinRoleTable(t *testing.T) {
 		{"GET", "/v0/connectors/c1", RoleAdmin},
 		{"GET", "/v0/tools", RoleAdmin},
 		{"PATCH", "/v0/tools/create_ticket", RoleAdmin},
+		{"POST", "/v0/connectors/c1/tools", RoleAdmin},
+		{"DELETE", "/v0/connectors/c1/tools/extra1", RoleAdmin},
 		{"GET", "/v0/unknown", RoleAdmin},
 		{"POST", "/v0/runs/r1/resume/extra", RoleAdmin},
 	}
