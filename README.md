@@ -61,7 +61,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → Tools (admin-only): per-row **Enable** toggle, **“需要登录”** flag, and an **Add tool** form for OpenAPI connectors; `extra` rows show **Delete**, `spec`/`plugin` rows do not; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
+- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
 With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
@@ -159,7 +159,9 @@ HITL still uses `require_approval`. Default `baize start` still uses the repo’
 
 Each Connector owns a **tool catalog** persisted in the store (SQLite by default). `GET /v0/tools` returns catalog rows — including disabled ones — so the Settings page can list and re-enable them; the in-memory Registry only registers `enabled = true` rows, so a disabled tool is invisible to the model and to invoke.
 
-- **Enable / disable** — `PATCH /v0/tools/{name}` with `{"enabled": false}` (or `true`) unregisters (or re-registers) the tool immediately and persists the flag to the catalog. With SQLite, disabled rows and manually added rows survive a Runtime restart. The same `PATCH` can also flip `require_login` on the row.
+- **Display name / description** — catalog rows may carry a `title` (Settings UI only; never sent in the model tool list) and a `description`. `PATCH /v0/tools/{name}` can update `title` and/or `description`. A human-edited `description` is marked `description_custom`; a later re-`PUT` of the Connector spec does not overwrite it. `title` is always kept across merge.
+- **Enable / disable** — `PATCH /v0/tools/{name}` with `{"enabled": false}` (or `true`) unregisters (or re-registers) the tool immediately and persists the flag to the catalog. With SQLite, disabled rows and manually added rows survive a Runtime restart. The same `PATCH` can also flip `require_login` on the row. Group enable / disable on the Settings page is repeated per-tool `PATCH enabled` calls, not a separate API.
+- **Settings tree / search** — the Tools page groups by Connector and path prefix (collapsible) and supports search; it does not introduce a new catalog HTTP surface.
 - **Add a REST tool (OpenAPI only)** — `POST /v0/connectors/{id}/tools` adds an `extra` row on an `openapi` Connector, reusing that Connector’s `base_url`, auth, session identity, and HITL. Use it when the spec is missing an endpoint. Conflicting names return `409`.
 - **Plugin tools** — sidecar-discovered (`plugin`) rows can be enabled / disabled but **cannot** be added or deleted; the sidecar is the source of truth. Adding an `extra` row on an `http` Connector returns `400`.
 - **Delete** — `DELETE /v0/connectors/{id}/tools/{name}` only removes `source = extra` rows; `spec` / `plugin` rows return `400`.
