@@ -1,6 +1,6 @@
 # Baize 设计规格：Tools 设置页可读目录
 
-> 状态：待审查  
+> 状态：已批准  
 > 日期：2026-08-17  
 > 前置：Connector 工具目录已落地（`2026-08-17-tool-catalog-design.md`）  
 > 依据：本轮头脑风暴（方案 1：Connector → 路径前缀树 + 显示名/说明 overlay；页顶添加抽屉）
