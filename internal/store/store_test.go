@@ -181,19 +181,24 @@ func TestToolCatalogCRUD(t *testing.T) {
 	s := store.NewMemory()
 	s.UpsertConnector(store.Connector{ID: "c1", Type: "openapi", Spec: "s.yaml", BaseURL: "http://x"})
 	row := store.Tool{
-		ConnectorID: "c1",
-		Name:        "create_ticket",
-		Source:      store.ToolSourceSpec,
-		Enabled:     true,
-		Method:      "POST",
-		Path:        "/tickets",
-		Description: "create",
-		InputSchema: map[string]any{"type": "object"},
+		ConnectorID:       "c1",
+		Name:              "create_ticket",
+		Source:            store.ToolSourceSpec,
+		Enabled:           true,
+		Title:             "建工单",
+		DescriptionCustom: true,
+		Method:            "POST",
+		Path:              "/tickets",
+		Description:       "create",
+		InputSchema:       map[string]any{"type": "object"},
 	}
 	s.UpsertTool(row)
 	got, err := s.GetTool("create_ticket")
 	if err != nil || !got.Enabled || got.Source != store.ToolSourceSpec {
 		t.Fatalf("got=%+v err=%v", got, err)
+	}
+	if got.Title != "建工单" || !got.DescriptionCustom {
+		t.Fatalf("title/custom: got=%+v", got)
 	}
 	list := s.ListTools()
 	if len(list) != 1 || list[0].Name != "create_ticket" {

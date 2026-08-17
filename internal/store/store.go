@@ -39,8 +39,10 @@ type Tool struct {
 	ConnectorID     string         `json:"connector_id"`
 	Name            string         `json:"name"`
 	Source          string         `json:"source"`
-	Enabled         bool           `json:"enabled"`
-	Description     string         `json:"description,omitempty"`
+	Enabled           bool           `json:"enabled"`
+	Title             string         `json:"title,omitempty"`
+	Description       string         `json:"description,omitempty"`
+	DescriptionCustom bool           `json:"description_custom"`
 	Method          string         `json:"method,omitempty"`
 	Path            string         `json:"path,omitempty"`
 	InputSchema     map[string]any `json:"input_schema,omitempty"`

@@ -653,3 +653,174 @@ body {
   font-size: 0.82rem;
   resize: vertical;
 }
+
+.settings-tools {
+  max-width: 52rem;
+}
+
+.settings-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.settings-toolbar .settings-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.settings-group-nested {
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.75rem;
+}
+
+.settings-group-toggle {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.settings-group-meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  flex: 1;
+}
+
+.settings-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.settings-group-body {
+  border-top: 1px solid var(--border);
+}
+
+.settings-tree-tools {
+  padding: 0.45rem 0.55rem 0.55rem;
+}
+
+.settings-tools .settings-list-item {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.settings-tool-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.settings-tool-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.settings-tool-title {
+  display: block;
+  font-weight: 600;
+}
+
+.settings-tool-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.settings-tool-desc {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.settings-tool-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.settings-tool-edit-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.settings-tool-schema {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  background: #f6f7f9;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.settings-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 40;
+}
+
+.settings-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 22rem;
+  max-width: 100vw;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  z-index: 41;
+  overflow-y: auto;
+  padding: 1.25rem;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+}
+
+.settings-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-drawer .settings-form {
+  margin-top: 0;
+}

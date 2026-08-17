@@ -132,7 +132,9 @@ export function isTerminal(status: RunStatus): boolean {
 
 export interface ToolInfo {
   name: string
+  title?: string
   description?: string
+  description_custom?: boolean
   connector_id: string
   operation_id?: string
   method?: string
@@ -152,7 +154,7 @@ export async function listTools(): Promise<ToolInfo[]> {
 
 export async function patchTool(
   name: string,
-  body: { enabled?: boolean; require_login?: boolean },
+  body: { enabled?: boolean; require_login?: boolean; title?: string; description?: string },
 ): Promise<ToolInfo> {
   const res = await fetch(`/v0/tools/${encodeURIComponent(name)}`, {
     method: 'PATCH',
@@ -172,6 +174,7 @@ export async function createConnectorTool(
     name: string
     method: string
     path: string
+    title?: string
     description?: string
     input_schema?: Record<string, unknown>
   },

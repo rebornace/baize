@@ -61,7 +61,7 @@ go run ./cmd/baize start
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置 → Tools（仅管理员）：每行 **启用** 开关、**「需要登录」** 标志，以及 OpenAPI Connector 的 **添加工具** 表单；`extra` 行显示 **删除**，`spec`/`plugin` 行不显示；账号页操作员可用；MCP / 插件为「即将接入」空状态（不填假配置）
+- 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；账号页操作员可用；MCP / 插件为「即将接入」空状态（不填假配置）
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；断流后 UI 回退为 700ms 轮询
 
 内置 mock LLM 下，可发送「VPN 挂了，请建一条记录」，并在卡片上批准 `create_ticket`。
@@ -159,7 +159,9 @@ HITL 仍使用 `require_approval`。默认 `baize start` 仍是仓库自带的�
 
 每个 Connector 拥有一份**工具目录**，落盘在 Store（默认 SQLite）。`GET /v0/tools` 返回目录行——**包含已停用行**——以便设置页列出并重新启用；内存 Registry 只注册 `enabled = true` 的行，因此停用的工具对模型和 invoke 都不可见。
 
-- **启用 / 停用** — `PATCH /v0/tools/{name}` 带 `{"enabled": false}`（或 `true`）立即在 Registry 中卸下（或重新注册）该工具，并把标志落盘到目录。SQLite 下停用行与手加行重启后仍在。同一接口也可改行上的 `require_login`。
+- **显示名 / 说明** — 目录行可带 `title`（只出现在设置页，不进模型 tool list）与 `description`。`PATCH /v0/tools/{name}` 可改 `title` / `description`；人改过的 `description` 带 `description_custom`，再 `PUT` spec 不覆盖。合并时 `title` 始终保留。
+- **启用 / 停用** — `PATCH /v0/tools/{name}` 带 `{"enabled": false}`（或 `true`）立即在 Registry 中卸下（或重新注册）该工具，并把标志落盘到目录。SQLite 下停用行与手加行重启后仍在。同一接口也可改行上的 `require_login`。设置页组启停是多次 `PATCH enabled`，不是新接口。
+- **设置页树与搜索** — Tools 页按 Connector 与路径前缀折叠，并支持搜索；不新增目录 HTTP 面。
 - **手加 REST 工具（仅 OpenAPI）** — `POST /v0/connectors/{id}/tools` 在 `openapi` Connector 上加一行 `extra`，复用该 Connector 的 `base_url`、鉴权、会话身份与 HITL。规格漏写的接口可由此补上。重名返回 `409`。
 - **插件工具** — 侧车发现的 `plugin` 行可启停，但**不能**手加或删除，侧车是唯一来源。对 `http` Connector 手加会返回 `400`。
 - **删除** — `DELETE /v0/connectors/{id}/tools/{name}` 仅对 `source = extra` 行生效；`spec` / `plugin` 行返回 `400`。

@@ -360,15 +360,17 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Enabled      *bool `json:"enabled"`
-		RequireLogin *bool `json:"require_login"`
+		Enabled      *bool   `json:"enabled"`
+		RequireLogin *bool   `json:"require_login"`
+		Title        *string `json:"title"`
+		Description  *string `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	if body.Enabled == nil && body.RequireLogin == nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled or require_login is required")
+	if body.Enabled == nil && body.RequireLogin == nil && body.Title == nil && body.Description == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, title, or description is required")
 		return
 	}
 
@@ -392,6 +394,13 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	if body.RequireLogin != nil {
 		row.RequireLogin = *body.RequireLogin
 	}
+	if body.Title != nil {
+		row.Title = *body.Title
+	}
+	if body.Description != nil {
+		row.Description = *body.Description
+		row.DescriptionCustom = true
+	}
 	s.Store.UpsertTool(row)
 
 	c, err := s.Store.GetConnector(row.ConnectorID)
@@ -410,15 +419,25 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		// Row stays enabled; only require_login (or nothing) could have
-		// changed. Toggle the flag in place to preserve RequireApproval.
-		if err := s.Registry.SetRequireLogin(name, row.RequireLogin); err != nil {
-			// Tool is enabled in the store but not in the Registry (e.g., a
-			// recovery path after a failed registration). Fall back to a full
-			// re-register so the row and Registry converge.
-			if err := s.registerOne(c, row); err != nil {
-				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-				return
+		// Row stays enabled. Prefer in-place Registry updates so we don't drop
+		// the baked-in RequireApproval flag. Title-only patches skip Registry.
+		if body.RequireLogin != nil {
+			if err := s.Registry.SetRequireLogin(name, row.RequireLogin); err != nil {
+				// Tool is enabled in the store but not in the Registry (e.g., a
+				// recovery path after a failed registration). Fall back to a full
+				// re-register so the row and Registry converge.
+				if err := s.registerOne(c, row); err != nil {
+					writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+					return
+				}
+			}
+		}
+		if body.Description != nil {
+			if err := s.Registry.SetDescription(name, row.Description); err != nil {
+				if err := s.registerOne(c, row); err != nil {
+					writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+					return
+				}
 			}
 		}
 	}
@@ -455,6 +474,7 @@ func (s *Server) handlePostConnectorTool(w http.ResponseWriter, r *http.Request)
 
 	var body struct {
 		Name            string         `json:"name"`
+		Title           string         `json:"title"`
 		Description     string         `json:"description"`
 		Method          string         `json:"method"`
 		Path            string         `json:"path"`
@@ -493,16 +513,18 @@ func (s *Server) handlePostConnectorTool(w http.ResponseWriter, r *http.Request)
 	}
 
 	row := store.Tool{
-		ConnectorID:     id,
-		Name:            name,
-		Source:          store.ToolSourceExtra,
-		Enabled:         true,
-		Description:     body.Description,
-		Method:          method,
-		Path:            body.Path,
-		InputSchema:     schema,
-		RequireLogin:    body.RequireLogin,
-		RequireApproval: body.RequireApproval,
+		ConnectorID:       id,
+		Name:              name,
+		Source:            store.ToolSourceExtra,
+		Enabled:           true,
+		Title:             strings.TrimSpace(body.Title),
+		Description:       body.Description,
+		DescriptionCustom: true,
+		Method:            method,
+		Path:              body.Path,
+		InputSchema:       schema,
+		RequireLogin:      body.RequireLogin,
+		RequireApproval:   body.RequireApproval,
 	}
 	s.Store.UpsertTool(row)
 

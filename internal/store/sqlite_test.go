@@ -357,3 +357,84 @@ func TestSQLiteToolCatalogRoundTrip(t *testing.T) {
 		t.Fatalf("byC=%+v", byC)
 	}
 }
+
+func TestSQLiteToolTitleAndCustomRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tools-title.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.UpsertConnector(store.Connector{ID: "c1", Type: "openapi", BaseURL: "http://x"})
+	s.UpsertTool(store.Tool{
+		ConnectorID:       "c1",
+		Name:              "create_ticket",
+		Source:            store.ToolSourceSpec,
+		Enabled:           true,
+		Title:             "建工单",
+		Description:       "人改的说明",
+		DescriptionCustom: true,
+		Method:            "POST",
+		Path:              "/tickets",
+	})
+	if c, ok := s.(io.Closer); ok {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s2, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s2.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	got, err := s2.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "建工单" || !got.DescriptionCustom || got.Description != "人改的说明" {
+		t.Fatalf("got=%+v", got)
+	}
+}
+
+func TestSQLiteToolColumnsMigrateFromOldSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old-tools.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE tools (
+		name TEXT PRIMARY KEY, connector_id TEXT, source TEXT, enabled INTEGER,
+		description TEXT, method TEXT, path TEXT, input_schema_json TEXT,
+		require_login INTEGER, require_approval INTEGER, operation_id TEXT
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO tools (name, connector_id, source, enabled, description, method, path, require_login, require_approval, operation_id)
+		VALUES ('create_ticket', 'c1', 'spec', 1, 'from spec', 'POST', '/tickets', 0, 0, 'create_ticket')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	got, err := s.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "" || got.DescriptionCustom || got.Description != "from spec" {
+		t.Fatalf("migrated=%+v", got)
+	}
+}
