@@ -2,8 +2,11 @@ package connector
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 
+	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/connector/openapi"
@@ -243,4 +246,94 @@ func listsFromTools(tools []store.Tool) (login, approval []string) {
 	sort.Strings(login)
 	sort.Strings(approval)
 	return
+}
+
+// RegisterOneFromConnector registers a single enabled catalog row into the
+// Registry, reconstructing the registerOneContext from the persisted
+// Connector + Tool. It is the exported entry point for task 4 PATCH/POST
+// handlers in internal/api; those packages cannot call the unexported
+// registerOne directly.
+//
+// The function is intentionally a thin wrapper: it rebuilds the same context
+// Apply builds (resolve auth, load spec / build sidecar client, extend the
+// openapi Invoker with extra routes) and then delegates to registerOne. The
+// invoker closure is shared, not duplicated.
+//
+// For plugin (type=http) connectors, extra rows are rejected with an error to
+// match Apply's defense-in-depth guard; callers must not register extras on
+// plugin connectors.
+func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.Store, c store.Connector, t store.Tool) error {
+	typ := strings.TrimSpace(c.Type)
+	if typ == "" {
+		typ = "openapi"
+	}
+	if typ == "http" && t.Source == store.ToolSourceExtra {
+		return fmt.Errorf("plugin connector %q does not support extra tools", c.ID)
+	}
+
+	authCfg := authcred.Config{
+		Mode:        c.Auth.Mode,
+		Static:      authcred.Static{Headers: c.Auth.Static.Headers},
+		Passthrough: authcred.PassThru{Headers: c.Auth.Passthrough.Headers},
+		VaultRef:    authcred.VaultRef{Headers: c.Auth.VaultRef.Headers},
+	}
+	headers, err := authcred.ResolveDefaults(authCfg)
+	if err != nil {
+		return fmt.Errorf("resolve connector auth: %w", err)
+	}
+	authMode := authcred.NormalizeMode(c.Auth.Mode)
+
+	var inv *openapi.Invoker
+	var client *httpplugin.Client
+	var capture identity.CaptureConfig
+	switch typ {
+	case "http":
+		client = httpplugin.NewClient(c.BaseURL)
+	case "openapi":
+		routes, err := openapi.LoadTools(c.Spec)
+		if err != nil {
+			return fmt.Errorf("%w: %w", openapi.ErrInvalidSpec, err)
+		}
+		capture = CaptureDefaults(identity.CaptureConfig{
+			ToolNameGlob:   c.Auth.Capture.ToolNameGlob,
+			TokenJSONPaths: c.Auth.Capture.TokenJSONPaths,
+			LabelJSONPaths: c.Auth.Capture.LabelJSONPaths,
+			HeaderTemplate: c.Auth.Capture.HeaderTemplate,
+			DefaultScheme:  c.Auth.Capture.DefaultScheme,
+		})
+		if capture.DefaultScheme == "" {
+			capture.DefaultScheme = UniqueSecurityScheme(routes)
+		}
+		inv = &openapi.Invoker{BaseURL: c.BaseURL, Tools: routes}
+		// Extend with extra rows from the store so the shared invoker can
+		// dispatch extras alongside spec routes (mirrors Apply).
+		for _, et := range st.ListToolsByConnector(c.ID) {
+			if et.Source != store.ToolSourceExtra {
+				continue
+			}
+			inv.Tools = append(inv.Tools, openapi.ToolRoute{
+				Name:        et.Name,
+				Method:      et.Method,
+				Path:        et.Path,
+				InputSchema: et.InputSchema,
+				Description: et.Description,
+			})
+		}
+	default:
+		return fmt.Errorf("unsupported connector type: %s", typ)
+	}
+
+	rctx := registerOneContext{
+		reg:        reg,
+		id:         c.ID,
+		headers:    headers,
+		authMode:   authMode,
+		identities: ids,
+		resolver:   authresolve.OpenAPISecurityResolver{},
+		inv:        inv,
+		capture:    capture,
+		client:     client,
+	}
+	registerOne(rctx, t)
+	return nil
 }

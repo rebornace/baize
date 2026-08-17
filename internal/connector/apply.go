@@ -220,6 +220,16 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		if !t.Enabled {
 			continue
 		}
+		// Defense-in-depth: a plugin (type=http) connector must not register
+		// extra rows. MergeCatalog preserves extras verbatim regardless of
+		// connector type, so without this guard an extra row on a plugin
+		// connector would route to openapiInvokerClosure (which dereferences
+		// the nil ctx.inv) and panic at invoke time. The invariant is also
+		// enforced at the POST entry (task 4), but Apply must not rely on
+		// upstream callers to keep the catalog clean.
+		if typ == "http" && t.Source == store.ToolSourceExtra {
+			continue
+		}
 		registerOne(rctx, t)
 	}
 

@@ -542,3 +542,176 @@ func TestApplyBadSpecPreservesRowsAndRegistry(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyPluginConnectorExtraRowNotRegistered: a plugin (type=http)
+// connector's store must not have extra rows registered into the Registry.
+// MergeCatalog preserves extras verbatim regardless of connector type, so
+// without Apply's defense-in-depth guard an extra row on a plugin connector
+// would route to openapiInvokerClosure (nil ctx.inv) and panic at invoke time.
+// This test simulates a broken invariant (extra row mixed into a plugin
+// connector's catalog) and asserts Apply skips it and Get does not panic.
+func TestApplyPluginConnectorExtraRowNotRegistered(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.URL.Path == "/v0/tools" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"tools":[{"name":"echo","description":"echo"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/invoke"):
+			_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	base := connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "side", Type: "http", BaseURL: srv.URL,
+		Auth: store.ConnectorAuth{Mode: "static"},
+	}
+	login := []string{}
+	in1 := base
+	in1.RequireLogin = &login
+	if _, _, err := connector.Apply(in1); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	if _, ok := reg.Get("echo"); !ok {
+		t.Fatal("echo should be registered after first Apply")
+	}
+
+	// Simulate a broken invariant: inject an extra row into the plugin
+	// connector's catalog. MergeCatalog will preserve it verbatim.
+	st.UpsertTool(store.Tool{
+		ConnectorID: "side",
+		Name:        "phantomExtra",
+		Source:      store.ToolSourceExtra,
+		Enabled:     true,
+		Method:      "GET",
+		Path:        "/phantom",
+		Description: "phantom extra on a plugin connector",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+	})
+
+	in2 := base
+	in2.RequireLogin = nil
+	if _, _, err := connector.Apply(in2); err != nil {
+		t.Fatalf("second Apply: %v", err)
+	}
+
+	// The extra row must not be registered (would nil-deref at invoke).
+	if _, ok := reg.Get("phantomExtra"); ok {
+		t.Fatalf("phantomExtra must not be registered on a plugin connector: %+v", reg.List())
+	}
+	// Get must not panic (defensive: confirm the name is absent).
+	got, ok := reg.Get("phantomExtra")
+	if ok {
+		t.Fatalf("phantomExtra unexpectedly present: %+v", got)
+	}
+	// The plugin's own tool must still be registered.
+	if _, ok := reg.Get("echo"); !ok {
+		t.Fatal("echo must remain registered on the plugin connector")
+	}
+	// The extra row stays in the store (Apply does not delete it).
+	if row, err := st.GetTool("phantomExtra"); err != nil || row.Source != store.ToolSourceExtra {
+		t.Fatalf("phantomExtra should remain in store: %+v err=%v", row, err)
+	}
+}
+
+// TestRegisterOneFromConnectorRegistersRow: the exported
+// RegisterOneFromConnector wrapper must rebuild the registerOneContext from a
+// persisted Connector + Tool row and register that single row. This proves the
+// entry point exists for task 4 PATCH/POST handlers in internal/api.
+func TestRegisterOneFromConnectorRegistersRow(t *testing.T) {
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	if _, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "c", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
+		RequireLogin: ptr([]string{}),
+		Auth:         store.ConnectorAuth{Mode: "static"},
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	c, err := st.GetConnector("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolRow, err := st.GetTool("getMe")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Unregister getMe to prove the wrapper re-registers it.
+	reg.Unregister("getMe")
+	if _, ok := reg.Get("getMe"); ok {
+		t.Fatal("getMe should be unregistered before wrapper call")
+	}
+
+	if err := connector.RegisterOneFromConnector(st, reg, ids, c, toolRow); err != nil {
+		t.Fatalf("RegisterOneFromConnector: %v", err)
+	}
+	info, ok := reg.Get("getMe")
+	if !ok {
+		t.Fatalf("getMe must be registered after RegisterOneFromConnector: %+v", reg.List())
+	}
+	if info.ConnectorID != "c" {
+		t.Fatalf("ConnectorID=%q want c", info.ConnectorID)
+	}
+}
+
+// TestRegisterOneFromConnectorRejectsPluginExtra: the exported wrapper must
+// reject extra rows on plugin connectors with an error (matches Apply's
+// defense-in-depth guard).
+func TestRegisterOneFromConnectorRejectsPluginExtra(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.URL.Path == "/v0/tools" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"tools":[{"name":"echo","description":"echo"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	if _, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "side", Type: "http", BaseURL: srv.URL,
+		RequireLogin: ptr([]string{}),
+		Auth:         store.ConnectorAuth{Mode: "static"},
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	c, err := st.GetConnector("side")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := store.Tool{
+		ConnectorID: "side",
+		Name:        "phantom",
+		Source:      store.ToolSourceExtra,
+		Enabled:     true,
+		Method:      "GET",
+		Path:        "/phantom",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra); err == nil {
+		t.Fatal("expected error registering extra on plugin connector, got nil")
+	}
+	if _, ok := reg.Get("phantom"); ok {
+		t.Fatal("phantom must not be registered on a plugin connector")
+	}
+}
