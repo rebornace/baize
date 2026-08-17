@@ -36,7 +36,7 @@ function toolRowKey(t: ToolInfo): string {
   return `${t.connector_id}:${t.name}`
 }
 
-function prefixExpandKey(connectorId: string, prefix: string): string {
+export function prefixExpandKey(connectorId: string, prefix: string): string {
   return `${connectorId}::${prefix}`
 }
 
@@ -72,18 +72,6 @@ function openApiConnectorIds(tools: ToolInfo[]): string[] {
   return ordered
 }
 
-function catalogConnectorIds(tools: ToolInfo[]): string[] {
-  const seen = new Set<string>()
-  const ordered: string[] = []
-  for (const t of tools) {
-    const id = t.connector_id || ''
-    if (seen.has(id)) continue
-    seen.add(id)
-    ordered.push(id)
-  }
-  return ordered
-}
-
 function toggleKey(prev: Set<string>, key: string): Set<string> {
   const next = new Set(prev)
   if (next.has(key)) next.delete(key)
@@ -104,8 +92,19 @@ function formatGroupPatchSummary(
   return parts.join('；')
 }
 
-function defaultExpandedConnectors(ids: string[]): Set<string> {
-  return ids.length === 1 ? new Set([ids[0]]) : new Set()
+export function defaultExpandedSets(tools: ToolInfo[]): {
+  connectors: Set<string>
+  prefixes: Set<string>
+} {
+  const tree = groupToolsTree(tools)
+  if (tree.length !== 1) {
+    return { connectors: new Set(), prefixes: new Set() }
+  }
+  const group = tree[0]
+  return {
+    connectors: new Set([group.connectorId]),
+    prefixes: new Set(group.prefixes.map((p) => prefixExpandKey(group.connectorId, p.prefix))),
+  }
 }
 
 export function ToolsSettings() {
@@ -150,7 +149,6 @@ export function ToolsSettings() {
     }
   }, [])
 
-  const connectorIds = useMemo(() => (tools == null ? [] : catalogConnectorIds(tools)), [tools])
   const openConnectorIds = useMemo(() => (tools == null ? [] : openApiConnectorIds(tools)), [tools])
   const searchActive = query.trim() !== ''
 
@@ -161,16 +159,18 @@ export function ToolsSettings() {
     if (!didInitExpand.current) {
       didInitExpand.current = true
       if (!searchActive) {
-        setExpandedConnectors(defaultExpandedConnectors(connectorIds))
-        setExpandedPrefixes(new Set())
+        const defaults = defaultExpandedSets(tools)
+        setExpandedConnectors(defaults.connectors)
+        setExpandedPrefixes(defaults.prefixes)
       }
       return
     }
     if (wasSearch && !searchActive) {
-      setExpandedConnectors(defaultExpandedConnectors(connectorIds))
-      setExpandedPrefixes(new Set())
+      const defaults = defaultExpandedSets(tools)
+      setExpandedConnectors(defaults.connectors)
+      setExpandedPrefixes(defaults.prefixes)
     }
-  }, [tools, connectorIds, searchActive])
+  }, [tools, searchActive])
 
   useEffect(() => {
     if (openConnectorIds.length > 0 && !openConnectorIds.includes(formConnectorId)) {
