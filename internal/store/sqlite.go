@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,28 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT, type TEXT, timestamp TEXT, data_json TEXT
 );
+CREATE TABLE IF NOT EXISTS connectors (
+  id TEXT PRIMARY KEY,
+  type TEXT,
+  spec TEXT,
+  base_url TEXT,
+  require_approval_json TEXT,
+  require_login_json TEXT,
+  auth_json TEXT
+);
+CREATE TABLE IF NOT EXISTS tools (
+  name TEXT PRIMARY KEY,
+  connector_id TEXT,
+  source TEXT,
+  enabled INTEGER,
+  description TEXT,
+  method TEXT,
+  path TEXT,
+  input_schema_json TEXT,
+  require_login INTEGER,
+  require_approval INTEGER,
+  operation_id TEXT
+);
 `
 
 // SQLite is a file-backed Store implementation.
@@ -32,6 +55,7 @@ type SQLite struct {
 	mu         sync.RWMutex
 	agents     map[string]Agent
 	connectors map[string]Connector
+	tools      map[string]Tool
 }
 
 // OpenSQLite opens (or creates) a SQLite database at path.
@@ -67,11 +91,88 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs columns: %w", err)
 	}
-	return &SQLite{
+	s := &SQLite{
 		db:         db,
 		agents:     map[string]Agent{},
 		connectors: map[string]Connector{},
-	}, nil
+		tools:      map[string]Tool{},
+	}
+	if err := s.loadConnectorsAndTools(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("load connectors and tools: %w", err)
+	}
+	return s, nil
+}
+
+// loadConnectorsAndTools reads existing connector and tool rows from the DB
+// into the in-memory maps so reads can stay lock-free and consistent with the
+// existing runs/events pattern.
+func (s *SQLite) loadConnectorsAndTools() error {
+	rows, err := s.db.Query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json FROM connectors`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var c Connector
+		var requireApproval, requireLogin, auth sql.NullString
+		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth); err != nil {
+			rows.Close()
+			return err
+		}
+		if requireApproval.Valid && requireApproval.String != "" && requireApproval.String != "null" {
+			if err := json.Unmarshal([]byte(requireApproval.String), &c.RequireApproval); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse require_approval_json: %w", err)
+			}
+		}
+		if requireLogin.Valid && requireLogin.String != "" && requireLogin.String != "null" {
+			if err := json.Unmarshal([]byte(requireLogin.String), &c.RequireLogin); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse require_login_json: %w", err)
+			}
+		}
+		if auth.Valid && auth.String != "" && auth.String != "null" {
+			if err := json.Unmarshal([]byte(auth.String), &c.Auth); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse auth_json: %w", err)
+			}
+		}
+		s.connectors[c.ID] = c
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	trows, err := s.db.Query(`SELECT name, connector_id, source, enabled, description, method, path, input_schema_json, require_login, require_approval, operation_id FROM tools`)
+	if err != nil {
+		return err
+	}
+	for trows.Next() {
+		var t Tool
+		var enabled, requireLogin, requireApproval int
+		var description, method, path, inputSchema, operationID sql.NullString
+		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &description, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID); err != nil {
+			trows.Close()
+			return err
+		}
+		t.Enabled = enabled != 0
+		t.RequireLogin = requireLogin != 0
+		t.RequireApproval = requireApproval != 0
+		t.Description = description.String
+		t.Method = method.String
+		t.Path = path.String
+		t.OperationID = operationID.String
+		if inputSchema.Valid && inputSchema.String != "" && inputSchema.String != "null" {
+			if err := json.Unmarshal([]byte(inputSchema.String), &t.InputSchema); err != nil {
+				trows.Close()
+				return fmt.Errorf("parse input_schema_json: %w", err)
+			}
+		}
+		s.tools[t.Name] = t
+	}
+	trows.Close()
+	return trows.Err()
 }
 
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
@@ -126,6 +227,31 @@ func (s *SQLite) UpsertConnector(c Connector) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.connectors[c.ID] = c
+	var requireApproval, requireLogin, auth sql.NullString
+	if len(c.RequireApproval) > 0 {
+		if b, err := json.Marshal(c.RequireApproval); err == nil {
+			requireApproval = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	if len(c.RequireLogin) > 0 {
+		if b, err := json.Marshal(c.RequireLogin); err == nil {
+			requireLogin = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	if c.Auth.Mode != "" {
+		if b, err := json.Marshal(c.Auth); err == nil {
+			auth = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	_, _ = s.db.Exec(
+		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET type=excluded.type, spec=excluded.spec, base_url=excluded.base_url,
+		   require_approval_json=excluded.require_approval_json,
+		   require_login_json=excluded.require_login_json,
+		   auth_json=excluded.auth_json`,
+		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth,
+	)
 }
 
 func (s *SQLite) GetConnector(id string) (Connector, error) {
@@ -136,6 +262,153 @@ func (s *SQLite) GetConnector(id string) (Connector, error) {
 		return Connector{}, fmt.Errorf("connector not found")
 	}
 	return c, nil
+}
+
+func (s *SQLite) ListConnectors() []Connector {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.connectors))
+	for id := range s.connectors {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Connector, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, s.connectors[id])
+	}
+	return out
+}
+
+func (s *SQLite) UpsertTool(t Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tools[t.Name] = t
+	var inputSchema sql.NullString
+	if t.InputSchema != nil {
+		if b, err := json.Marshal(t.InputSchema); err == nil {
+			inputSchema = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	enabled := 0
+	if t.Enabled {
+		enabled = 1
+	}
+	requireLogin := 0
+	if t.RequireLogin {
+		requireLogin = 1
+	}
+	requireApproval := 0
+	if t.RequireApproval {
+		requireApproval = 1
+	}
+	_, _ = s.db.Exec(
+		`INSERT INTO tools (name, connector_id, source, enabled, description, method, path, input_schema_json, require_login, require_approval, operation_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
+		   enabled=excluded.enabled, description=excluded.description, method=excluded.method,
+		   path=excluded.path, input_schema_json=excluded.input_schema_json,
+		   require_login=excluded.require_login, require_approval=excluded.require_approval,
+		   operation_id=excluded.operation_id`,
+		t.Name, t.ConnectorID, t.Source, enabled, t.Description, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
+	)
+}
+
+func (s *SQLite) GetTool(name string) (Tool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tools[name]
+	if !ok {
+		return Tool{}, fmt.Errorf("tool not found")
+	}
+	return t, nil
+}
+
+func (s *SQLite) ListTools() []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.tools))
+	for n := range s.tools {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, s.tools[n])
+	}
+	return out
+}
+
+func (s *SQLite) ListToolsByConnector(id string) []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.tools))
+	for n, t := range s.tools {
+		if t.ConnectorID == id {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	out := make([]Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, s.tools[n])
+	}
+	return out
+}
+
+func (s *SQLite) DeleteTool(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tools[name]; !ok {
+		return fmt.Errorf("tool not found")
+	}
+	delete(s.tools, name)
+	_, _ = s.db.Exec(`DELETE FROM tools WHERE name = ?`, name)
+	return nil
+}
+
+func (s *SQLite) ReplaceConnectorTools(connectorID string, tools []Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, t := range s.tools {
+		if t.ConnectorID == connectorID {
+			delete(s.tools, name)
+		}
+	}
+	_, _ = s.db.Exec(`DELETE FROM tools WHERE connector_id = ?`, connectorID)
+	for _, t := range tools {
+		if t.ConnectorID == "" {
+			t.ConnectorID = connectorID
+		}
+		s.tools[t.Name] = t
+		var inputSchema sql.NullString
+		if t.InputSchema != nil {
+			if b, err := json.Marshal(t.InputSchema); err == nil {
+				inputSchema = sql.NullString{String: string(b), Valid: true}
+			}
+		}
+		enabled := 0
+		if t.Enabled {
+			enabled = 1
+		}
+		requireLogin := 0
+		if t.RequireLogin {
+			requireLogin = 1
+		}
+		requireApproval := 0
+		if t.RequireApproval {
+			requireApproval = 1
+		}
+		_, _ = s.db.Exec(
+			`INSERT INTO tools (name, connector_id, source, enabled, description, method, path, input_schema_json, require_login, require_approval, operation_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
+			   enabled=excluded.enabled, description=excluded.description, method=excluded.method,
+			   path=excluded.path, input_schema_json=excluded.input_schema_json,
+			   require_login=excluded.require_login, require_approval=excluded.require_approval,
+			   operation_id=excluded.operation_id`,
+			t.Name, t.ConnectorID, t.Source, enabled, t.Description, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
+		)
+	}
 }
 
 func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
