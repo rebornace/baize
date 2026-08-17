@@ -139,6 +139,9 @@ export interface ToolInfo {
   path?: string
   require_approval?: boolean
   require_login?: boolean
+  enabled?: boolean
+  source?: string
+  input_schema?: Record<string, unknown>
 }
 
 export async function listTools(): Promise<ToolInfo[]> {
@@ -147,13 +150,55 @@ export async function listTools(): Promise<ToolInfo[]> {
   return body.tools ?? []
 }
 
-export async function patchToolRequireLogin(name: string, requireLogin: boolean): Promise<ToolInfo> {
+export async function patchTool(
+  name: string,
+  body: { enabled?: boolean; require_login?: boolean },
+): Promise<ToolInfo> {
   const res = await fetch(`/v0/tools/${encodeURIComponent(name)}`, {
     method: 'PATCH',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ require_login: requireLogin }),
+    body: JSON.stringify(body),
   })
   return parseJSON<ToolInfo>(res)
+}
+
+export async function patchToolRequireLogin(name: string, requireLogin: boolean): Promise<ToolInfo> {
+  return patchTool(name, { require_login: requireLogin })
+}
+
+export async function createConnectorTool(
+  connectorId: string,
+  body: {
+    name: string
+    method: string
+    path: string
+    description?: string
+    input_schema?: Record<string, unknown>
+  },
+): Promise<ToolInfo> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(connectorId)}/tools`, {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<ToolInfo>(res)
+}
+
+export async function deleteConnectorTool(connectorId: string, name: string): Promise<void> {
+  const res = await fetch(
+    `/v0/connectors/${encodeURIComponent(connectorId)}/tools/${encodeURIComponent(name)}`,
+    { method: 'DELETE', headers: authInit() },
+  )
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const errBody = (await res.json()) as { error?: { message?: string } }
+      if (errBody.error?.message) detail = errBody.error.message
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`HTTP ${res.status}: ${detail}`)
+  }
 }
 
 export async function listIdentities(conversationId: string): Promise<IdentityView[]> {
