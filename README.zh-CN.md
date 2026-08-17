@@ -61,7 +61,7 @@ go run ./cmd/baize start
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置：Tools「需要登录」仅管理员可改；账号页操作员可用；MCP / 插件为「即将接入」空状态（不填假配置）
+- 设置 → Tools（仅管理员）：每行 **启用** 开关、**「需要登录」** 标志，以及 OpenAPI Connector 的 **添加工具** 表单；`extra` 行显示 **删除**，`spec`/`plugin` 行不显示；账号页操作员可用；MCP / 插件为「即将接入」空状态（不填假配置）
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；断流后 UI 回退为 700ms 轮询
 
 内置 mock LLM 下，可发送「VPN 挂了，请建一条记录」，并在卡片上批准 `create_ticket`。
@@ -138,7 +138,7 @@ curl -s http://127.0.0.1:8080/v0/tools
 
 4. 通过 `POST /v0/runs` 或打开 `/ui` 跑一次。
 
-同 `id` 再 `PUT` 会**整表替换**该 Connector 下的 Tools；坏 Spec 返回 `400`，不污染已有 Registry。
+同 `id` 再 `PUT` 会与该 Connector 已有目录**合并**：原 `spec`/`plugin` 行保留 `enabled` 与 `require_login`，消失的 operation 删除，新 operation 默认启用，`extra` 行除非显式 DELETE 否则保留。省略目录相关字段（`require_login` / `require_approval` / `tools`）则保持磁盘目录不变。坏 Spec 返回 `400`，不污染已有 Registry 或目录。
 
 ### 无 OpenAPI：HTTP 插件
 
@@ -154,6 +154,21 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
 ```
 
 HITL 仍使用 `require_approval`。默认 `baize start` 仍是仓库自带的演示 OpenAPI Connector。
+
+### 工具目录（启用 / 停用 / 手加 REST）
+
+每个 Connector 拥有一份**工具目录**，落盘在 Store（默认 SQLite）。`GET /v0/tools` 返回目录行——**包含已停用行**——以便设置页列出并重新启用；内存 Registry 只注册 `enabled = true` 的行，因此停用的工具对模型和 invoke 都不可见。
+
+- **启用 / 停用** — `PATCH /v0/tools/{name}` 带 `{"enabled": false}`（或 `true`）立即在 Registry 中卸下（或重新注册）该工具，并把标志落盘到目录。SQLite 下停用行与手加行重启后仍在。同一接口也可改行上的 `require_login`。
+- **手加 REST 工具（仅 OpenAPI）** — `POST /v0/connectors/{id}/tools` 在 `openapi` Connector 上加一行 `extra`，复用该 Connector 的 `base_url`、鉴权、会话身份与 HITL。规格漏写的接口可由此补上。重名返回 `409`。
+- **插件工具** — 侧车发现的 `plugin` 行可启停，但**不能**手加或删除，侧车是唯一来源。对 `http` Connector 手加会返回 `400`。
+- **删除** — `DELETE /v0/connectors/{id}/tools/{name}` 仅对 `source = extra` 行生效；`spec` / `plugin` 行返回 `400`。
+- **再 PUT / 重启** — 同 `id` 再 `PUT` 与已有目录合并（见上文）；Runtime 重启时从磁盘目录恢复，只重新注册启用行。YAML / PUT 可省略目录字段以保持磁盘目录不变。
+
+这个目录开关**不是**：
+
+- **会话登录** — 工具行上的 `require_login` 控制带 `conversation_id` 的 Run 在没有捕获身份时能否调用该工具；它不存凭证。
+- **控制面口令** — `control_plane.operator_token` / `admin_token` 挡的是谁能调 `/v0`。目录写操作（`PATCH /v0/tools/{name}`、`POST/DELETE /v0/connectors/{id}/tools`）需要管理员口令；操作员返回 `403`。
 
 ### 真实 LLM
 
@@ -217,7 +232,7 @@ go run ./cmd/baize start
   - `vault_ref` — 注册时解析 `env:` / `file:` 引用
 - 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
 - `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI）
-- 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 仅进程内临时生效；重启或再次 PUT 后以 YAML / PUT 为准
+- 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 会把 `enabled` / `require_login` 落到目录（SQLite 重启后仍在），并立即在内存 Registry 中注册或卸下该工具。这个开关与对话里登录下游系统（会话身份）、与控制面口令不是同一回事。
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities

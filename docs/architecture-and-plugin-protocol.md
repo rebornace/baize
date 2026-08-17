@@ -53,7 +53,10 @@
 |------|----------------|
 | 注册/更新 Agent、Connector | `PUT /v0/agents/{id}` · `PUT /v0/connectors/{id}` |
 | 查询 Connector | `GET /v0/connectors/{id}` |
-| 查询已注册 Tools | `GET /v0/tools` |
+| 查询工具目录（含停用行） | `GET /v0/tools` |
+| 启停 / 改 `require_login` | `PATCH /v0/tools/{name}` |
+| 手加 REST 工具（仅 OpenAPI Connector） | `POST /v0/connectors/{id}/tools` |
+| 删除手加行（仅 `source=extra`） | `DELETE /v0/connectors/{id}/tools/{name}` |
 | 启动 Run | `POST /v0/runs` → `{ run_id }` |
 | 查询轨迹 | `GET /v0/runs/{id}` · `GET /v0/runs/{id}/events` |
 | 恢复 HITL | `POST /v0/runs/{id}/resume` |
@@ -62,6 +65,14 @@
 `Run` 状态机（最小）：`queued` → `running` → (`waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`。
 
 可选控制面口令（`control_plane.operator_token` / `admin_token`）：挡住 Runtime 的 `/v0`。操作员可跑 Run / HITL / 会话身份；管理员可改 Agent、Connector、Tools。不是下游业务 IAM，也不是多租户 SSO。
+
+#### 工具目录与 Registry 的关系
+
+- **`store.Tool` 是 Connector 目录行**（`connector_id` / `name` / `source` / `enabled` / `description` / `method` / `path` / `input_schema` / `require_login` / `require_approval` / `operation_id`）。Memory 与 SQLite 同一接口；SQLite 下 `connectors` / `tools` 两表落盘，重启按 §5 合并恢复。
+- **`source` 三种**：`spec`（OpenAPI operation）、`plugin`（侧车 `GET /v0/tools` 发现）、`extra`（管理员手加 REST）。`spec` / `plugin` 可启停不可删；`extra` 可启停也可删。
+- **Registry 仅注册 `enabled = true` 的行**。引擎、HITL、登录门闸继续读 Registry，不直接扫目录；`GET /v0/tools` 改为读目录，因此能看见停用行。
+- **Agent 不绑定 Connector 子集**：每次 Run 把 Registry 中全部启用工具交给模型（跨 Connector 工具名全局唯一，冲突拒绝）。
+- **合并规则（PUT 与开机相同）**：发现列表里新出现的 `spec`/`plugin` 名插入并默认启用；仍在的同名保留 `enabled` 与行上门闸，若本次 PUT/YAML 显式带了 `require_login` / `require_approval` 数组则按名单重写；消失的 `spec`/`plugin` 行删除；`extra` 行除非 DELETE 否则保留；省略目录字段则保留行上已有值。Apply 失败时该次拟写入回滚，Registry 保持失败前状态。
 
 ---
 
