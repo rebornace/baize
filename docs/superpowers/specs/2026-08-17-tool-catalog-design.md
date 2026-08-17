@@ -1,6 +1,6 @@
 # Baize 设计规格：Connector 工具目录
 
-> 状态：待用户审查  
+> 状态：已批准  
 > 日期：2026-08-17  
 > 前置：Chat UI 壳、按会话登录与「需要登录」、控制面操作员/管理员口令已落地  
 > 依据：本轮头脑风暴（目录挂 Connector；方案 2 为 Store 中的 Tool 行；OpenAPI 可手加 REST；插件仅启停；GUI 在设置 → Tools）
