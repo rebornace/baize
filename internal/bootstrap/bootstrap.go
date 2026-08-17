@@ -261,7 +261,14 @@ func storeCloser(st store.Store) io.Closer {
 }
 
 func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
-	login := cfg.Connector.RequireLogin
+	// YAML 省略 require_login 时传 nil，让 MergeCatalog 保留行上已持久化的
+	// per-tool require_login；仅当 YAML 显式给出名单（含空数组）时才传指针，
+	// 否则重启会把设置页勾选的 require_login 冲掉。
+	var requireLogin *[]string
+	if cfg.Connector.RequireLogin != nil {
+		login := cfg.Connector.RequireLogin
+		requireLogin = &login
+	}
 	_, _, err := connector.Apply(connector.ApplyInput{
 		Store:                   st,
 		Registry:                reg,
@@ -272,7 +279,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		BaseURL:                 cfg.Connector.BaseURL,
 		RequireApproval:         cfg.Connector.RequireApproval,
 		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
-		RequireLogin:            &login,
+		RequireLogin:            requireLogin,
 		Auth: store.ConnectorAuth{
 			Mode:        cfg.Connector.Auth.Mode,
 			Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},

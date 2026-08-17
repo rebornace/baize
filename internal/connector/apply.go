@@ -140,6 +140,28 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		RequireApproval: in.RequireApproval,
 	})
 
+	// Phase 2b: bake mutating HITL into spec rows when RequireApprovalMutating
+	// is set. registerOne applies the same rule at registration time, but the
+	// persisted row must also carry the flag so listsFromTools, the catalog
+	// badge, and RegisterOneFromConnector (PATCH re-register, which does not
+	// know RequireApprovalMutating) all observe the same state. Login/capture
+	// tools (matching the capture glob with no explicit require_approval) are
+	// exempt, mirroring registerOne's blanket-HITL skip.
+	if in.RequireApprovalMutating {
+		for i, t := range merged {
+			if t.Source != store.ToolSourceSpec {
+				continue
+			}
+			if !isMutatingMethod(t.Method) {
+				continue
+			}
+			if !t.RequireApproval && identity.MatchToolName(capture.ToolNameGlob, t.Name) {
+				continue
+			}
+			merged[i].RequireApproval = true
+		}
+	}
+
 	// Phase 3: conflict check. Other connectors' tool names (including their
 	// disabled rows) reserve the namespace; a merged row colliding with any of
 	// them is a hard failure. Registry.WouldConflict alone is not enough because

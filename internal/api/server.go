@@ -378,6 +378,14 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track whether enabled actually changes. Only an enabled transition
+	// (false→true) needs a full re-register to restore the invoker closure and
+	// mutating HITL. Toggling only require_login on an already-enabled row is
+	// served by Registry.SetRequireLogin so we don't drop the baked-in
+	// RequireApproval flag (RegisterOneFromConnector does not know
+	// RequireApprovalMutating and would otherwise lose mutating HITL).
+	enabledChanged := body.Enabled != nil && *body.Enabled != row.Enabled
+
 	if body.Enabled != nil {
 		row.Enabled = *body.Enabled
 	}
@@ -392,13 +400,27 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if row.Enabled {
+	if !row.Enabled {
+		s.Registry.Unregister(name)
+	} else if enabledChanged {
+		// false→true: re-register to rebuild the invoker closure and restore
+		// mutating HITL from the baked-in row.RequireApproval flag.
 		if err := s.registerOne(c, row); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 	} else {
-		s.Registry.Unregister(name)
+		// Row stays enabled; only require_login (or nothing) could have
+		// changed. Toggle the flag in place to preserve RequireApproval.
+		if err := s.Registry.SetRequireLogin(name, row.RequireLogin); err != nil {
+			// Tool is enabled in the store but not in the Registry (e.g., a
+			// recovery path after a failed registration). Fall back to a full
+			// re-register so the row and Registry converge.
+			if err := s.registerOne(c, row); err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
 	}
 
 	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, row.RequireLogin)
