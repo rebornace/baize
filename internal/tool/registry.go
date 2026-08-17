@@ -218,6 +218,19 @@ func (r *Registry) SetRequireLogin(name string, requireLogin bool) error {
 	return nil
 }
 
+// SetDescription updates the description for a registered tool in place.
+func (r *Registry) SetDescription(name, description string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.tools[name]
+	if !ok {
+		return fmt.Errorf("unknown tool: %s", name)
+	}
+	e.spec.Description = description
+	r.tools[name] = e
+	return nil
+}
+
 func (r *Registry) Invoke(ctx context.Context, name string, args map[string]any) (map[string]any, bool, error) {
 	r.mu.RLock()
 	e, ok := r.tools[name]

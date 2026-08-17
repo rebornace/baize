@@ -498,4 +498,96 @@ func TestCatalogGetConnectorIncludesDisabled(t *testing.T) {
 	}
 }
 
+func TestCatalogPatchTitleAndDescription(t *testing.T) {
+	dir := t.TempDir()
+	spec1 := filepath.Join(dir, "a.yaml")
+	spec2 := filepath.Join(dir, "b.yaml")
+	body1 := `openapi: 3.0.3
+info: {title: c, version: "0.1.0"}
+paths:
+  /tickets:
+    post:
+      operationId: create_ticket
+      responses: {"201": {description: created}}
+  /tickets/{id}:
+    get:
+      operationId: get_ticket
+      description: spec-one
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: ok}}
+`
+	body2 := strings.Replace(body1, "spec-one", "spec-two", 1)
+	if err := os.WriteFile(spec1, []byte(body1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec2, []byte(body2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, reg, _, h := catalogServer(t)
+	putCatalogConnector(t, h, "c1", spec1, "http://127.0.0.1:9")
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, "/v0/tools/get_ticket",
+		jsonBodyAPI(t, map[string]any{"title": "查工单", "description": "人改说明"})))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH title+desc status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	tools := getToolsList(t, h)
+	gt, _ := findTool(tools, "get_ticket")
+	if gt.Title != "查工单" || gt.Description != "人改说明" || !gt.DescriptionCustom {
+		t.Fatalf("after patch=%+v", gt)
+	}
+	info, ok := reg.Get("get_ticket")
+	if !ok || info.Description != "人改说明" {
+		t.Fatalf("registry desc=%+v ok=%v", info, ok)
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, "/v0/tools/get_ticket",
+		jsonBodyAPI(t, map[string]any{"title": "只改标题"})))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH title-only status=%d", rr.Code)
+	}
+	info, _ = reg.Get("get_ticket")
+	if info.Description != "人改说明" {
+		t.Fatalf("title-only must not change registry desc: %+v", info)
+	}
+
+	putCatalogConnector(t, h, "c1", spec2, "http://127.0.0.1:9")
+	tools = getToolsList(t, h)
+	gt, _ = findTool(tools, "get_ticket")
+	if gt.Title != "只改标题" || gt.Description != "人改说明" || !gt.DescriptionCustom {
+		t.Fatalf("after re-PUT=%+v", gt)
+	}
+	info, _ = reg.Get("get_ticket")
+	if info.Description != "人改说明" {
+		t.Fatalf("registry after re-PUT=%+v", info)
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, "/v0/tools/get_ticket", jsonBodyAPI(t, map[string]any{})))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("empty PATCH want 400 got %d", rr.Code)
+	}
+}
+
+func TestCatalogPostExtraSetsTitleAndCustom(t *testing.T) {
+	spec := writeCatalogSpec(t)
+	_, _, _, h := catalogServer(t)
+	putCatalogConnector(t, h, "c1", spec, "http://127.0.0.1:9")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v0/connectors/c1/tools",
+		jsonBodyAPI(t, map[string]any{
+			"name": "echo_extra", "method": "GET", "path": "/echo",
+			"title": "回声", "description": "手加",
+		})))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST extra status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	tools := getToolsList(t, h)
+	ex, ok := findTool(tools, "echo_extra")
+	if !ok || ex.Title != "回声" || !ex.DescriptionCustom || ex.Source != store.ToolSourceExtra {
+		t.Fatalf("extra=%+v ok=%v", ex, ok)
+	}
+}
 

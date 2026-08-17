@@ -79,3 +79,24 @@ func TestRequireLoginRoundTrip(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestRegistrySetDescription(t *testing.T) {
+	r := tool.NewRegistry()
+	nop := func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		return map[string]any{}, false, nil
+	}
+	r.RegisterMeta(tool.Meta{
+		Spec: llm.ToolSpec{Name: "create_ticket", Description: "old"},
+		ConnectorID: "ticket", Method: "POST", Path: "/tickets",
+	}, nop, true)
+	if err := r.SetDescription("create_ticket", "new"); err != nil {
+		t.Fatal(err)
+	}
+	info, ok := r.Get("create_ticket")
+	if !ok || info.Description != "new" || !info.RequireApproval {
+		t.Fatalf("info=%+v ok=%v", info, ok)
+	}
+	if err := r.SetDescription("missing", "x"); err == nil {
+		t.Fatal("expected unknown tool")
+	}
+}

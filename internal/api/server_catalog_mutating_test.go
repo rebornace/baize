@@ -68,6 +68,19 @@ func TestCatalogPatchPreservesMutatingHITL(t *testing.T) {
 		t.Fatal("PATCH require_login must set Registry.RequiresLogin")
 	}
 
+	// PATCH description only → SetDescription; must keep mutating HITL.
+	patchDesc := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBodyAPI(t, map[string]any{"description": "人改"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchDesc)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH description status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	info, ok := reg.Get("create_ticket")
+	if !ok || !info.RequireApproval || info.Description != "人改" {
+		t.Fatalf("PATCH description must keep HITL and update desc: %+v ok=%v", info, ok)
+	}
+
 	// PATCH enabled=false → Unregister.
 	patchOff := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
 		jsonBodyAPI(t, map[string]any{"enabled": false}))
