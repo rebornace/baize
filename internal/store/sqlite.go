@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS tools (
   connector_id TEXT,
   source TEXT,
   enabled INTEGER,
+  title TEXT,
   description TEXT,
+  description_custom INTEGER,
   method TEXT,
   path TEXT,
   input_schema_json TEXT,
@@ -90,6 +92,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 	if err := migrateRunsColumns(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs columns: %w", err)
+	}
+	if err := migrateToolsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tools columns: %w", err)
 	}
 	s := &SQLite{
 		db:         db,
@@ -144,22 +150,25 @@ func (s *SQLite) loadConnectorsAndTools() error {
 		return err
 	}
 
-	trows, err := s.db.Query(`SELECT name, connector_id, source, enabled, description, method, path, input_schema_json, require_login, require_approval, operation_id FROM tools`)
+	trows, err := s.db.Query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id FROM tools`)
 	if err != nil {
 		return err
 	}
 	for trows.Next() {
 		var t Tool
 		var enabled, requireLogin, requireApproval int
-		var description, method, path, inputSchema, operationID sql.NullString
-		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &description, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID); err != nil {
+		var descriptionCustom sql.NullInt64
+		var title, description, method, path, inputSchema, operationID sql.NullString
+		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &title, &description, &descriptionCustom, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID); err != nil {
 			trows.Close()
 			return err
 		}
 		t.Enabled = enabled != 0
 		t.RequireLogin = requireLogin != 0
 		t.RequireApproval = requireApproval != 0
+		t.Title = title.String
 		t.Description = description.String
+		t.DescriptionCustom = descriptionCustom.Valid && descriptionCustom.Int64 != 0
 		t.Method = method.String
 		t.Path = path.String
 		t.OperationID = operationID.String
@@ -180,6 +189,21 @@ func (s *SQLite) loadConnectorsAndTools() error {
 func migrateRunsColumns(db *sql.DB) error {
 	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
+		if err == nil || isDuplicateColumnErr(err) {
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+func migrateToolsColumns(db *sql.DB) error {
+	alters := []string{
+		`ALTER TABLE tools ADD COLUMN title TEXT`,
+		`ALTER TABLE tools ADD COLUMN description_custom INTEGER`,
+	}
+	for _, q := range alters {
+		_, err := db.Exec(q)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
 		}
@@ -301,15 +325,20 @@ func (s *SQLite) UpsertTool(t Tool) {
 	if t.RequireApproval {
 		requireApproval = 1
 	}
+	descriptionCustom := 0
+	if t.DescriptionCustom {
+		descriptionCustom = 1
+	}
 	_, _ = s.db.Exec(
-		`INSERT INTO tools (name, connector_id, source, enabled, description, method, path, input_schema_json, require_login, require_approval, operation_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
-		   enabled=excluded.enabled, description=excluded.description, method=excluded.method,
+		   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
+		   description_custom=excluded.description_custom, method=excluded.method,
 		   path=excluded.path, input_schema_json=excluded.input_schema_json,
 		   require_login=excluded.require_login, require_approval=excluded.require_approval,
 		   operation_id=excluded.operation_id`,
-		t.Name, t.ConnectorID, t.Source, enabled, t.Description, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
+		t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
 	)
 }
 
@@ -398,15 +427,20 @@ func (s *SQLite) ReplaceConnectorTools(connectorID string, tools []Tool) {
 		if t.RequireApproval {
 			requireApproval = 1
 		}
+		descriptionCustom := 0
+		if t.DescriptionCustom {
+			descriptionCustom = 1
+		}
 		_, _ = s.db.Exec(
-			`INSERT INTO tools (name, connector_id, source, enabled, description, method, path, input_schema_json, require_login, require_approval, operation_id)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
-			   enabled=excluded.enabled, description=excluded.description, method=excluded.method,
+			   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
+			   description_custom=excluded.description_custom, method=excluded.method,
 			   path=excluded.path, input_schema_json=excluded.input_schema_json,
 			   require_login=excluded.require_login, require_approval=excluded.require_approval,
 			   operation_id=excluded.operation_id`,
-			t.Name, t.ConnectorID, t.Source, enabled, t.Description, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
+			t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
 		)
 	}
 }
