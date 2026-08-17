@@ -57,7 +57,9 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 			row = ex
 			row.Method = d.Method
 			row.Path = d.Path
-			row.Description = d.Description
+			if !ex.DescriptionCustom {
+				row.Description = d.Description
+			}
 			row.Source = d.Source
 			row.OperationID = d.OperationID
 			if !loginNil {
