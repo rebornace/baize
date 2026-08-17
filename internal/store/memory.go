@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ type Memory struct {
 	mu         sync.RWMutex
 	agents     map[string]Agent
 	connectors map[string]Connector
+	tools      map[string]Tool
 	runs       map[string]*Run
 	events     map[string][]Event
 	hitl       map[string]*HITLPayload
@@ -23,6 +25,7 @@ func NewMemory() *Memory {
 	return &Memory{
 		agents:     map[string]Agent{},
 		connectors: map[string]Connector{},
+		tools:      map[string]Tool{},
 		runs:       map[string]*Run{},
 		events:     map[string][]Event{},
 		hitl:       map[string]*HITLPayload{},
@@ -64,6 +67,95 @@ func (s *Memory) GetConnector(id string) (Connector, error) {
 		return Connector{}, fmt.Errorf("connector not found")
 	}
 	return c, nil
+}
+
+func (s *Memory) ListConnectors() []Connector {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.connectors))
+	for id := range s.connectors {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Connector, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, s.connectors[id])
+	}
+	return out
+}
+
+func (s *Memory) UpsertTool(t Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tools[t.Name] = t
+}
+
+func (s *Memory) GetTool(name string) (Tool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tools[name]
+	if !ok {
+		return Tool{}, fmt.Errorf("tool not found")
+	}
+	return t, nil
+}
+
+func (s *Memory) ListTools() []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.tools))
+	for n := range s.tools {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, s.tools[n])
+	}
+	return out
+}
+
+func (s *Memory) ListToolsByConnector(id string) []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.tools))
+	for n, t := range s.tools {
+		if t.ConnectorID == id {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	out := make([]Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, s.tools[n])
+	}
+	return out
+}
+
+func (s *Memory) DeleteTool(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tools[name]; !ok {
+		return fmt.Errorf("tool not found")
+	}
+	delete(s.tools, name)
+	return nil
+}
+
+func (s *Memory) ReplaceConnectorTools(connectorID string, tools []Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, t := range s.tools {
+		if t.ConnectorID == connectorID {
+			delete(s.tools, name)
+		}
+	}
+	for _, t := range tools {
+		if t.ConnectorID == "" {
+			t.ConnectorID = connectorID
+		}
+		s.tools[t.Name] = t
+	}
 }
 
 func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {

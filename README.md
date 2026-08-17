@@ -61,7 +61,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings: Tools “需要登录” toggle is admin-only; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
+- Settings → Tools (admin-only): per-row **Enable** toggle, **“需要登录”** flag, and an **Add tool** form for OpenAPI connectors; `extra` rows show **Delete**, `spec`/`plugin` rows do not; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
 With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
@@ -138,7 +138,7 @@ You should see `method`, `path`, `operation_id`, and `connector_id`.
 
 4. Run via `POST /v0/runs` or open `/ui`.
 
-Re-`PUT` with the same `id` **replaces** that Connector’s Tools entirely. Invalid specs return `400` without corrupting the existing Registry.
+Re-`PUT` with the same `id` **merges** that Connector’s Tools: existing `spec`/`plugin` rows keep their `enabled` and `require_login` state, disappeared operations are removed, new operations default to enabled, and `extra` rows survive unless explicitly deleted. Omit the catalog fields (`require_login` / `require_approval` / `tools`) to keep the on-disk catalog untouched. Invalid specs return `400` without corrupting the existing Registry or catalog.
 
 ### No OpenAPI: HTTP plugin
 
@@ -154,6 +154,21 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
 ```
 
 HITL still uses `require_approval`. Default `baize start` still uses the repo’s demo OpenAPI Connector.
+
+### Tool catalog (enable / disable / add REST)
+
+Each Connector owns a **tool catalog** persisted in the store (SQLite by default). `GET /v0/tools` returns catalog rows — including disabled ones — so the Settings page can list and re-enable them; the in-memory Registry only registers `enabled = true` rows, so a disabled tool is invisible to the model and to invoke.
+
+- **Enable / disable** — `PATCH /v0/tools/{name}` with `{"enabled": false}` (or `true`) unregisters (or re-registers) the tool immediately and persists the flag to the catalog. With SQLite, disabled rows and manually added rows survive a Runtime restart. The same `PATCH` can also flip `require_login` on the row.
+- **Add a REST tool (OpenAPI only)** — `POST /v0/connectors/{id}/tools` adds an `extra` row on an `openapi` Connector, reusing that Connector’s `base_url`, auth, session identity, and HITL. Use it when the spec is missing an endpoint. Conflicting names return `409`.
+- **Plugin tools** — sidecar-discovered (`plugin`) rows can be enabled / disabled but **cannot** be added or deleted; the sidecar is the source of truth. Adding an `extra` row on an `http` Connector returns `400`.
+- **Delete** — `DELETE /v0/connectors/{id}/tools/{name}` only removes `source = extra` rows; `spec` / `plugin` rows return `400`.
+- **Re-PUT / restart** — re-`PUT`-ing a Connector merges with the existing catalog (see above); a Runtime restart reloads the on-disk catalog and only re-registers enabled rows. YAML / PUT may omit catalog fields to keep the on-disk catalog untouched.
+
+This catalog switch is **not** the same as:
+
+- **Session login** — `require_login` on a tool row gates whether a Run with a `conversation_id` may call it without a captured identity; it does not store credentials.
+- **Control-plane token** — `control_plane.operator_token` / `admin_token` gates who may call `/v0`. Catalog writes (`PATCH /v0/tools/{name}`, `POST/DELETE /v0/connectors/{id}/tools`) require the admin token; operators get `403`.
 
 ### Real LLM
 
@@ -217,7 +232,7 @@ Runs **with** a `conversation_id` (including `/ui`) use **only** session identit
   - `vault_ref` — `env:` / `file:` references resolved at registration
 - Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable)
 - `baize start` and `PUT /v0/connectors` both wire Identities / Resolver / Capture (OpenAPI)
-- Restart Runtime after changing auth/capture YAML; `PATCH /v0/tools/{name}` toggles are process-local until restart / next PUT
+- Restart Runtime after changing auth/capture YAML; `PATCH /v0/tools/{name}` persists `enabled` / `require_login` to the catalog (SQLite keeps them across restart) and immediately registers/unregisters the tool with the in-memory Registry. This is a different switch from the conversation login (session identity) and from the control-plane token.
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities

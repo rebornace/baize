@@ -169,6 +169,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		_ = closer.Close()
 		return nil, nil, err
 	}
+	loadStoredConnectors(st, reg, cfg, identities)
 
 	hub := eventbus.NewHub()
 	st = eventbus.Notify(st, hub)
@@ -260,7 +261,14 @@ func storeCloser(st store.Store) io.Closer {
 }
 
 func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
-	login := cfg.Connector.RequireLogin
+	// YAML 省略 require_login 时传 nil，让 MergeCatalog 保留行上已持久化的
+	// per-tool require_login；仅当 YAML 显式给出名单（含空数组）时才传指针，
+	// 否则重启会把设置页勾选的 require_login 冲掉。
+	var requireLogin *[]string
+	if cfg.Connector.RequireLogin != nil {
+		login := cfg.Connector.RequireLogin
+		requireLogin = &login
+	}
 	_, _, err := connector.Apply(connector.ApplyInput{
 		Store:                   st,
 		Registry:                reg,
@@ -271,7 +279,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		BaseURL:                 cfg.Connector.BaseURL,
 		RequireApproval:         cfg.Connector.RequireApproval,
 		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
-		RequireLogin:            &login,
+		RequireLogin:            requireLogin,
 		Auth: store.ConnectorAuth{
 			Mode:        cfg.Connector.Auth.Mode,
 			Static:      store.StaticAuth{Headers: cfg.Connector.Auth.Static.Headers},
@@ -287,6 +295,34 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		},
 	})
 	return err
+}
+
+// loadStoredConnectors re-applies every connector persisted in the Store other
+// than the YAML-configured one. Apply re-merges the persisted catalog (so
+// disabled rows and extra rows survive a restart) and re-registers only the
+// enabled rows. Errors are logged but do not abort startup so a single bad
+// connector cannot brick the runtime; the YAML connector is skipped because it
+// was just registered by registerConnector.
+func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) {
+	for _, c := range st.ListConnectors() {
+		if c.ID == cfg.Connector.ID {
+			continue
+		}
+		_, _, err := connector.Apply(connector.ApplyInput{
+			Store:      st,
+			Registry:   reg,
+			Identities: identities,
+			ID:         c.ID,
+			Type:       c.Type,
+			Spec:       c.Spec,
+			BaseURL:    c.BaseURL,
+			Auth:       c.Auth,
+			RequireLogin: nil, // preserve persisted per-tool require_login
+		})
+		if err != nil {
+			log.Printf("loadStoredConnectors: %s: %v", c.ID, err)
+		}
+	}
 }
 
 func newLLM(cfg config.Config) (llm.Provider, error) {

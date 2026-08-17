@@ -176,3 +176,65 @@ func TestConnectorStoresAuthConfig(t *testing.T) {
 		t.Fatalf("%+v", c.Auth)
 	}
 }
+
+func TestToolCatalogCRUD(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertConnector(store.Connector{ID: "c1", Type: "openapi", Spec: "s.yaml", BaseURL: "http://x"})
+	row := store.Tool{
+		ConnectorID: "c1",
+		Name:        "create_ticket",
+		Source:      store.ToolSourceSpec,
+		Enabled:     true,
+		Method:      "POST",
+		Path:        "/tickets",
+		Description: "create",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	s.UpsertTool(row)
+	got, err := s.GetTool("create_ticket")
+	if err != nil || !got.Enabled || got.Source != store.ToolSourceSpec {
+		t.Fatalf("got=%+v err=%v", got, err)
+	}
+	list := s.ListTools()
+	if len(list) != 1 || list[0].Name != "create_ticket" {
+		t.Fatalf("list=%+v", list)
+	}
+	byC := s.ListToolsByConnector("c1")
+	if len(byC) != 1 {
+		t.Fatalf("byC=%+v", byC)
+	}
+	row.Enabled = false
+	s.UpsertTool(row)
+	got, _ = s.GetTool("create_ticket")
+	if got.Enabled {
+		t.Fatal("expected disabled")
+	}
+	if err := s.DeleteTool("create_ticket"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetTool("create_ticket"); err == nil {
+		t.Fatal("expected not found")
+	}
+	cs := s.ListConnectors()
+	if len(cs) != 1 || cs[0].ID != "c1" {
+		t.Fatalf("connectors=%+v", cs)
+	}
+}
+
+func TestReplaceConnectorToolsKeepsOthers(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertTool(store.Tool{ConnectorID: "a", Name: "keep", Source: store.ToolSourceSpec, Enabled: true})
+	s.UpsertTool(store.Tool{ConnectorID: "b", Name: "gone", Source: store.ToolSourceSpec, Enabled: true})
+	s.ReplaceConnectorTools("b", []store.Tool{
+		{ConnectorID: "b", Name: "new", Source: store.ToolSourceExtra, Enabled: true, Method: "GET", Path: "/n"},
+	})
+	if _, err := s.GetTool("gone"); err == nil {
+		t.Fatal("gone should be replaced away")
+	}
+	if _, err := s.GetTool("keep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetTool("new"); err != nil {
+		t.Fatal(err)
+	}
+}

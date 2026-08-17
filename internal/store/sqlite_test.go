@@ -293,3 +293,67 @@ func TestOpenUnknownDriver(t *testing.T) {
 		t.Fatal("expected error for unknown driver")
 	}
 }
+
+func TestSQLiteToolCatalogRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tools.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.UpsertConnector(store.Connector{ID: "c1", Type: "openapi", Spec: "s.yaml", BaseURL: "http://x"})
+	s.UpsertTool(store.Tool{
+		ConnectorID: "c1",
+		Name:        "create_ticket",
+		Source:      store.ToolSourceSpec,
+		Enabled:     true,
+		Method:      "POST",
+		Path:        "/tickets",
+		Description: "create",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string"}}},
+	})
+	if c, ok := s.(io.Closer); ok {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s2, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s2.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	got, err := s2.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled || got.Source != store.ToolSourceSpec || got.Method != "POST" || got.Path != "/tickets" {
+		t.Fatalf("got=%+v", got)
+	}
+	if got.Description != "create" {
+		t.Fatalf("description=%q", got.Description)
+	}
+	if got.InputSchema == nil || got.InputSchema["type"] != "object" {
+		t.Fatalf("input_schema=%+v", got.InputSchema)
+	}
+	props, ok := got.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("properties not a map: %+v", got.InputSchema["properties"])
+	}
+	if _, ok := props["title"].(map[string]any); !ok {
+		t.Fatalf("title prop missing: %+v", props["title"])
+	}
+
+	cs := s2.ListConnectors()
+	if len(cs) != 1 || cs[0].ID != "c1" {
+		t.Fatalf("connectors=%+v", cs)
+	}
+	byC := s2.ListToolsByConnector("c1")
+	if len(byC) != 1 || byC[0].Name != "create_ticket" {
+		t.Fatalf("byC=%+v", byC)
+	}
+}

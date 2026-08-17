@@ -27,6 +27,28 @@ type Connector struct {
 	Auth            ConnectorAuth `json:"auth,omitempty"`
 }
 
+// Tool source constants describing how a tool row entered the catalog.
+const (
+	ToolSourceSpec   = "spec"
+	ToolSourceExtra  = "extra"
+	ToolSourcePlugin = "plugin"
+)
+
+// Tool is a single row in the connector tool catalog.
+type Tool struct {
+	ConnectorID     string         `json:"connector_id"`
+	Name            string         `json:"name"`
+	Source          string         `json:"source"`
+	Enabled         bool           `json:"enabled"`
+	Description     string         `json:"description,omitempty"`
+	Method          string         `json:"method,omitempty"`
+	Path            string         `json:"path,omitempty"`
+	InputSchema     map[string]any `json:"input_schema,omitempty"`
+	RequireLogin    bool           `json:"require_login"`
+	RequireApproval bool           `json:"require_approval"`
+	OperationID     string         `json:"operation_id,omitempty"`
+}
+
 // ConnectorAuth stores the connector auth configuration shape (mode + references),
 // not resolved secrets. Mirrors internal/authcred.Config / internal/config Auth.
 type ConnectorAuth struct {
@@ -108,4 +130,12 @@ type Store interface {
 	SetHITL(runID string, payload *HITLPayload) error
 	GetHITL(runID string) (*HITLPayload, error)
 	SetPassthroughHeaders(runID string, headers map[string]string) error
+
+	ListConnectors() []Connector
+	ListTools() []Tool
+	ListToolsByConnector(id string) []Tool
+	GetTool(name string) (Tool, error)
+	UpsertTool(Tool)
+	DeleteTool(name string) error
+	ReplaceConnectorTools(connectorID string, tools []Tool)
 }

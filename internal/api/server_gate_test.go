@@ -207,6 +207,43 @@ func TestGateSSEUnauthorizedNotEventStream(t *testing.T) {
 	}
 }
 
+// TestGateOperatorForbiddenOnCatalogWrites: with the gate on, an operator
+// token must be rejected (403) on POST and DELETE catalog endpoints, while an
+// admin token is allowed through the gate (handler-level 4xx is fine).
+func TestGateOperatorForbiddenOnCatalogWrites(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	h := srv.Handler()
+
+	post := httptest.NewRequest(http.MethodPost, "/v0/connectors/c1/tools",
+		strings.NewReader(`{"name":"x","method":"GET","path":"/x"}`))
+	post.Header.Set("Content-Type", "application/json")
+	post.Header.Set("Authorization", "Bearer op")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, post)
+	if rr.Code != 403 || !strings.Contains(rr.Body.String(), "forbidden") {
+		t.Fatalf("operator POST tools: %d %s", rr.Code, rr.Body.String())
+	}
+
+	del := httptest.NewRequest(http.MethodDelete, "/v0/connectors/c1/tools/x", nil)
+	del.Header.Set("Authorization", "Bearer op")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, del)
+	if rr.Code != 403 || !strings.Contains(rr.Body.String(), "forbidden") {
+		t.Fatalf("operator DELETE tools: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Admin passes the gate; handler then returns 404 for the unknown connector.
+	postAdmin := httptest.NewRequest(http.MethodPost, "/v0/connectors/c1/tools",
+		strings.NewReader(`{"name":"x","method":"GET","path":"/x"}`))
+	postAdmin.Header.Set("Content-Type", "application/json")
+	postAdmin.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, postAdmin)
+	if rr.Code == 401 || rr.Code == 403 {
+		t.Fatalf("admin must pass the gate: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestGateSSEOperatorOK(t *testing.T) {
 	st := store.NewMemory()
 	run, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "i"})

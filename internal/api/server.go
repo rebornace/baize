@@ -119,6 +119,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
 	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
 	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
+	s.mux.HandleFunc("POST /v0/connectors/{id}/tools", s.handlePostConnectorTool)
+	s.mux.HandleFunc("DELETE /v0/connectors/{id}/tools/{name}", s.handleDeleteConnectorTool)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
@@ -327,11 +329,9 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
 		return
 	}
-	tools := make([]tool.Info, 0)
-	for _, info := range s.Registry.List() {
-		if info.ConnectorID == id {
-			tools = append(tools, info)
-		}
+	tools := s.Store.ListToolsByConnector(id)
+	if tools == nil {
+		tools = []store.Tool{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":               c.ID,
@@ -346,7 +346,11 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"tools": s.Registry.List()})
+	tools := s.Store.ListTools()
+	if tools == nil {
+		tools = []store.Tool{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tools": tools})
 }
 
 func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
@@ -356,37 +360,211 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
+		Enabled      *bool `json:"enabled"`
 		RequireLogin *bool `json:"require_login"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	if body.RequireLogin == nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "require_login is required")
+	if body.Enabled == nil && body.RequireLogin == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled or require_login is required")
 		return
 	}
 
-	info, ok := s.Registry.Get(name)
-	if !ok {
+	row, err := s.Store.GetTool(name)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "tool not found")
 		return
 	}
-	if err := s.Registry.SetRequireLogin(name, *body.RequireLogin); err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
-		return
-	}
 
-	c, err := s.Store.GetConnector(info.ConnectorID)
+	// Track whether enabled actually changes. Only an enabled transition
+	// (false→true) needs a full re-register to restore the invoker closure and
+	// mutating HITL. Toggling only require_login on an already-enabled row is
+	// served by Registry.SetRequireLogin so we don't drop the baked-in
+	// RequireApproval flag (RegisterOneFromConnector does not know
+	// RequireApprovalMutating and would otherwise lose mutating HITL).
+	enabledChanged := body.Enabled != nil && *body.Enabled != row.Enabled
+
+	if body.Enabled != nil {
+		row.Enabled = *body.Enabled
+	}
+	if body.RequireLogin != nil {
+		row.RequireLogin = *body.RequireLogin
+	}
+	s.Store.UpsertTool(row)
+
+	c, err := s.Store.GetConnector(row.ConnectorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, *body.RequireLogin)
+
+	if !row.Enabled {
+		s.Registry.Unregister(name)
+	} else if enabledChanged {
+		// false→true: re-register to rebuild the invoker closure and restore
+		// mutating HITL from the baked-in row.RequireApproval flag.
+		if err := s.registerOne(c, row); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	} else {
+		// Row stays enabled; only require_login (or nothing) could have
+		// changed. Toggle the flag in place to preserve RequireApproval.
+		if err := s.Registry.SetRequireLogin(name, row.RequireLogin); err != nil {
+			// Tool is enabled in the store but not in the Registry (e.g., a
+			// recovery path after a failed registration). Fall back to a full
+			// re-register so the row and Registry converge.
+			if err := s.registerOne(c, row); err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
+	}
+
+	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, row.RequireLogin)
 	s.Store.UpsertConnector(c)
 
-	info, _ = s.Registry.Get(name)
-	writeJSON(w, http.StatusOK, info)
+	writeJSON(w, http.StatusOK, row)
+}
+
+// registerOne re-registers a single enabled catalog row into the Registry by
+// delegating to connector.RegisterOneFromConnector, which rebuilds the same
+// invoker closure Apply uses. It does not write the Store; the caller is
+// responsible for UpsertTool before calling.
+func (s *Server) registerOne(c store.Connector, t store.Tool) error {
+	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, c, t)
+}
+
+func (s *Server) handlePostConnectorTool(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.Store.GetConnector(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "connector not found")
+		return
+	}
+	typ := strings.TrimSpace(c.Type)
+	if typ == "" {
+		typ = "openapi"
+	}
+	if typ != "openapi" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "extra tools are only supported on openapi connectors")
+		return
+	}
+
+	var body struct {
+		Name            string         `json:"name"`
+		Description     string         `json:"description"`
+		Method          string         `json:"method"`
+		Path            string         `json:"path"`
+		InputSchema     map[string]any `json:"input_schema"`
+		RequireLogin    bool           `json:"require_login"`
+		RequireApproval bool           `json:"require_approval"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "name is required")
+		return
+	}
+	method := strings.ToUpper(strings.TrimSpace(body.Method))
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "method must be one of GET, POST, PUT, PATCH, DELETE")
+		return
+	}
+	if !strings.HasPrefix(body.Path, "/") {
+		writeError(w, http.StatusBadRequest, "invalid_request", "path must start with /")
+		return
+	}
+	schema := body.InputSchema
+	if schema == nil {
+		schema = map[string]any{"type": "object"}
+	}
+
+	if _, err := s.Store.GetTool(name); err == nil {
+		writeError(w, http.StatusConflict, "conflict", "tool name already exists")
+		return
+	}
+
+	row := store.Tool{
+		ConnectorID:     id,
+		Name:            name,
+		Source:          store.ToolSourceExtra,
+		Enabled:         true,
+		Description:     body.Description,
+		Method:          method,
+		Path:            body.Path,
+		InputSchema:     schema,
+		RequireLogin:    body.RequireLogin,
+		RequireApproval: body.RequireApproval,
+	}
+	s.Store.UpsertTool(row)
+
+	if err := s.registerOne(c, row); err != nil {
+		// Roll back the row so the catalog and Registry stay consistent.
+		_ = s.Store.DeleteTool(name)
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+
+	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, body.RequireLogin)
+	if body.RequireApproval {
+		c.RequireApproval = syncRequireApprovalList(c.RequireApproval, name)
+	}
+	s.Store.UpsertConnector(c)
+
+	writeJSON(w, http.StatusOK, row)
+}
+
+func (s *Server) handleDeleteConnectorTool(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	row, err := s.Store.GetTool(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "tool not found")
+		return
+	}
+	if row.Source != store.ToolSourceExtra {
+		writeError(w, http.StatusBadRequest, "invalid_request", "only extra tools can be deleted")
+		return
+	}
+	if err := s.Store.DeleteTool(name); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	s.Registry.Unregister(name)
+
+	c, err := s.Store.GetConnector(row.ConnectorID)
+	if err == nil {
+		c.RequireLogin = removeFromList(c.RequireLogin, name)
+		c.RequireApproval = removeFromList(c.RequireApproval, name)
+		s.Store.UpsertConnector(c)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func removeFromList(list []string, name string) []string {
+	out := make([]string, 0, len(list))
+	for _, n := range list {
+		if n != name {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func syncRequireApprovalList(list []string, name string) []string {
+	out := syncRequireLoginList(list, name, true)
+	return out
 }
 
 func syncRequireLoginList(list []string, name string, require bool) []string {
