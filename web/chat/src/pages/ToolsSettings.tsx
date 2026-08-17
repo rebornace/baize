@@ -6,7 +6,7 @@ import {
   patchTool,
   type ToolInfo,
 } from '../api'
-import { canDeleteCatalogTool, groupToolsTree, toolMatchesQuery } from '../toolCatalog'
+import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -90,6 +90,24 @@ function formatGroupPatchSummary(
     parts.push(`其余 ${failures.length - 5} 条省略`)
   }
   return parts.join('；')
+}
+
+export function expandKeysForTool(t: ToolInfo): { connectorId: string; prefixKey: string } {
+  const connectorId = t.connector_id || ''
+  return {
+    connectorId,
+    prefixKey: prefixExpandKey(connectorId, pathPrefixGroup(t.path)),
+  }
+}
+
+export function insertToolSorted(list: ToolInfo[], created: ToolInfo): ToolInfo[] {
+  return [...list, created].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function addExpandKey(prev: Set<string>, key: string): Set<string> {
+  const next = new Set(prev)
+  next.add(key)
+  return next
 }
 
 export function defaultExpandedSets(tools: ToolInfo[]): {
@@ -315,7 +333,10 @@ export function ToolsSettings() {
         description: form.description.trim() || undefined,
         input_schema: schema,
       })
-      setTools((prev) => (prev == null ? prev : [...prev, created]))
+      const keys = expandKeysForTool(created)
+      setTools((prev) => (prev == null ? prev : insertToolSorted(prev, created)))
+      setExpandedConnectors((prev) => addExpandKey(prev, keys.connectorId))
+      setExpandedPrefixes((prev) => addExpandKey(prev, keys.prefixKey))
       setForm(EMPTY_FORM)
       setDrawerError(null)
       setDrawerOpen(false)
