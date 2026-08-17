@@ -2,6 +2,7 @@ package connector_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/connector"
+	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -381,5 +383,162 @@ func TestApplyEmptyStaticHeadersOK(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestApplyCatalogDisabledAndExtra: applying a spec, then disabling one row
+// and adding an extra row via the Store, then re-applying with RequireLogin=nil
+// must keep the disabled row out of the Registry, keep both rows in the Store,
+// and register the extra row into the Registry.
+func TestApplyCatalogDisabledAndExtra(t *testing.T) {
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	base := connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "c", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
+		Auth: store.ConnectorAuth{Mode: "static"},
+	}
+	in1 := base
+	in1.RequireLogin = ptr([]string{})
+	if _, _, err := connector.Apply(in1); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	if _, ok := reg.Get("login"); !ok {
+		t.Fatal("login should be registered after first Apply")
+	}
+	if _, ok := reg.Get("getMe"); !ok {
+		t.Fatal("getMe should be registered after first Apply")
+	}
+
+	// Disable getMe in the catalog and add an extra row.
+	getMe, err := st.GetTool("getMe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	getMe.Enabled = false
+	st.UpsertTool(getMe)
+	st.UpsertTool(store.Tool{
+		ConnectorID: "c",
+		Name:        "extraEcho",
+		Source:      store.ToolSourceExtra,
+		Enabled:     true,
+		Method:      "GET",
+		Path:        "/extra/echo",
+		Description: "extra echo",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+	})
+
+	in2 := base
+	in2.RequireLogin = nil
+	if _, _, err := connector.Apply(in2); err != nil {
+		t.Fatalf("second Apply: %v", err)
+	}
+
+	// Disabled name must not be in the Registry.
+	if _, ok := reg.Get("getMe"); ok {
+		t.Fatal("disabled getMe must not be registered")
+	}
+	// Disabled row must still be in the Store.
+	got, err := st.GetTool("getMe")
+	if err != nil {
+		t.Fatalf("getMe store row missing: %v", err)
+	}
+	if got.Enabled {
+		t.Fatalf("getMe must remain disabled in store: %+v", got)
+	}
+	// Extra row must be in the Store.
+	if got, err := st.GetTool("extraEcho"); err != nil || got.Source != store.ToolSourceExtra {
+		t.Fatalf("extraEcho missing in store: %+v err=%v", got, err)
+	}
+	// Extra row must be in the Registry.
+	if _, ok := reg.Get("extraEcho"); !ok {
+		t.Fatalf("extraEcho must be registered, registry=%+v", reg.List())
+	}
+	// login still registered.
+	if _, ok := reg.Get("login"); !ok {
+		t.Fatal("login must remain registered")
+	}
+}
+
+// TestApplyBadSpecPreservesRowsAndRegistry: with pre-existing catalog rows and
+// a registered connector, applying a bad spec must fail and leave both the
+// Store catalog rows and the Registry exactly as they were before the failed
+// Apply.
+func TestApplyBadSpecPreservesRowsAndRegistry(t *testing.T) {
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	base := connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "c", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
+		Auth: store.ConnectorAuth{Mode: "static"},
+	}
+	in1 := base
+	in1.RequireLogin = ptr([]string{"getMe"})
+	if _, _, err := connector.Apply(in1); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+
+	// Snapshot state before the bad Apply.
+	beforeRows := st.ListToolsByConnector("c")
+	beforeInfos := reg.List()
+
+	// Bad spec: empty paths → ErrInvalidSpec.
+	dir := t.TempDir()
+	badSpec := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(badSpec, []byte("openapi: 3.0.3\ninfo:\n  title: bad\n  version: 0.1.0\npaths: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in2 := base
+	in2.Spec = badSpec
+	_, _, err := connector.Apply(in2)
+	if err == nil {
+		t.Fatal("expected error from bad spec")
+	}
+	if !errors.Is(err, openapi.ErrInvalidSpec) {
+		t.Fatalf("expected ErrInvalidSpec, got %v", err)
+	}
+
+	// Store catalog rows unchanged.
+	afterRows := st.ListToolsByConnector("c")
+	if len(afterRows) != len(beforeRows) {
+		t.Fatalf("store rows changed: before=%+v after=%+v", beforeRows, afterRows)
+	}
+	beforeByName := map[string]store.Tool{}
+	for _, r := range beforeRows {
+		beforeByName[r.Name] = r
+	}
+	for _, r := range afterRows {
+		b, ok := beforeByName[r.Name]
+		if !ok {
+			t.Fatalf("extra row after bad Apply: %+v", r)
+		}
+		if r.Enabled != b.Enabled || r.RequireLogin != b.RequireLogin {
+			t.Fatalf("row changed: before=%+v after=%+v", b, r)
+		}
+	}
+
+	// Registry unchanged.
+	afterInfos := reg.List()
+	if len(afterInfos) != len(beforeInfos) {
+		t.Fatalf("registry size changed: before=%+v after=%+v", beforeInfos, afterInfos)
+	}
+	beforeReg := map[string]tool.Info{}
+	for _, i := range beforeInfos {
+		beforeReg[i.Name] = i
+	}
+	for _, i := range afterInfos {
+		b, ok := beforeReg[i.Name]
+		if !ok {
+			t.Fatalf("extra registry entry after bad Apply: %+v", i)
+		}
+		if b.RequireLogin != i.RequireLogin || b.ConnectorID != i.ConnectorID {
+			t.Fatalf("registry entry changed: before=%+v after=%+v", b, i)
+		}
 	}
 }
