@@ -146,6 +146,37 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestLoadRepoTicketTriage(t *testing.T) {
+	builtin := filepath.Join("..", "..", "skills")
+	user := t.TempDir()
+	cat, err := skill.LoadCatalog(builtin, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("ticket-triage")
+	if !ok {
+		t.Fatal("ticket-triage not found in repo skills")
+	}
+	if p.Description != "工单分诊与建单流程（mock-ticket）" {
+		t.Fatalf("description=%q", p.Description)
+	}
+	wantTools := []string{"list_tickets", "get_ticket", "create_ticket", "update_ticket_status"}
+	if len(p.Tools) != len(wantTools) {
+		t.Fatalf("tools=%v want %v", p.Tools, wantTools)
+	}
+	for i, w := range wantTools {
+		if p.Tools[i] != w {
+			t.Fatalf("tools[%d]=%q want %q", i, p.Tools[i], w)
+		}
+	}
+	if p.Source != skill.SourceBuiltin {
+		t.Fatalf("source=%q want builtin", p.Source)
+	}
+	if !strings.Contains(p.Body, "list_tickets") {
+		t.Fatalf("body should mention list_tickets: %q", p.Body)
+	}
+}
+
 func mustWriteSkill(t *testing.T, dir, name, desc string, tools []string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
