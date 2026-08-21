@@ -658,6 +658,30 @@ body {
   max-width: 52rem;
 }
 
+.settings-skills {
+  max-width: 48rem;
+}
+
+.settings-skill-row {
+  align-items: flex-start;
+}
+
+.settings-skill-check {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: inherit;
+  cursor: pointer;
+}
+
+.settings-skill-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .settings-toolbar {
   display: flex;
   align-items: center;
