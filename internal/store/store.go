@@ -18,6 +18,13 @@ type Agent struct {
 	Skills []string `json:"skills,omitempty"`
 }
 
+func cloneAgent(a Agent) Agent {
+	if a.Skills != nil {
+		a.Skills = append([]string(nil), a.Skills...)
+	}
+	return a
+}
+
 type Connector struct {
 	ID              string   `json:"id"`
 	Type            string   `json:"type"` // openapi

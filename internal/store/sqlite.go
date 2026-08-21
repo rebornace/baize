@@ -250,7 +250,7 @@ func (s *SQLite) ListAgents() []Agent {
 	sort.Strings(ids)
 	out := make([]Agent, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, s.agents[id])
+		out = append(out, cloneAgent(s.agents[id]))
 	}
 	return out
 }
@@ -262,7 +262,7 @@ func (s *SQLite) GetAgent(id string) (Agent, error) {
 	if !ok {
 		return Agent{}, fmt.Errorf("agent not found")
 	}
-	return a, nil
+	return cloneAgent(a), nil
 }
 
 func (s *SQLite) UpsertConnector(c Connector) {
