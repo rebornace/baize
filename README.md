@@ -62,6 +62,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
 - Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
+- Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
 With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
@@ -171,6 +172,23 @@ This catalog switch is **not** the same as:
 
 - **Session login** — `require_login` on a tool row gates whether a Run with a `conversation_id` may call it without a captured identity; it does not store credentials.
 - **Control-plane token** — `control_plane.operator_token` / `admin_token` gates who may call `/v0`. Catalog writes (`PATCH /v0/tools/{name}`, `POST/DELETE /v0/connectors/{id}/tools`) require the admin token; operators get `403`.
+
+### Agent Skills (optional)
+
+Skills are an optional **configuration** layer (not a sixth Runtime abstract): a `SKILL.md` with Markdown process guidance plus a list of tool names. They narrow (or stack) which enabled tools the model sees and inject flow text into the Run system prompt.
+
+| Topic | Behavior |
+|-------|----------|
+| Disk layout | Builtin `./skills` (`skills.builtin_dir`) and user `./data/skills` (`skills.user_dir`); each subfolder is a pack id with `SKILL.md` |
+| Install / remove | Admin upload `.md` or `.zip` via `POST /v0/skills` or Settings → Skills; `DELETE /v0/skills/{id}` removes **user** packs only (builtin → `400`). Same id: user overrides builtin |
+| Default activation | `agent.skills` (YAML / `PUT /v0/agents/{id}`) lists packs active at Run start |
+| Progressive activation | When any pack is installed, the model gets built-in `activate_skill` to expand the active set **for that Run** |
+| Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
+| Intersection | Visible tools = ∪(active Skill `tools`) ∩ catalog `enabled`; Skills cannot turn on a disabled catalog row |
+
+The sample stack ships `skills/ticket-triage` and default YAML sets `agent.skills: [ticket-triage]` so mock-ticket create still works out of the box.
+
+This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 
 ### Real LLM
 

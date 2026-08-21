@@ -164,9 +164,16 @@ X-Baize-Protocol: v0
 | 默认 | 单 Agent ReAct：模型选 Tool → 执行 → 写轨迹 → 直至结束 |
 | 可选 | YAML / 等价 JSON 状态机：`step` / `tool` / `branch` / `wait_human` |
 | 多 Agent | 多个 Agent 配置 + Run 间消息（非默认） |
-| Skill 包 | `SKILL.md`（提示/流程）+ `tool-pack`（可执行清单）；无在线自闭环 |
+| Skill 包 | **配置形态**（不升格为与 Runtime / Agent / Tool / Connector / Run 并列的第六抽象）：`SKILL.md` 流程正文 + `tools` 清单；无在线自闭环、无市场 |
 | Memory | Run 工作记忆内置；企业 Memory 插件默认关 |
 | Channel 参考 | HTTP Webhook Inbox + 企业微信（样板，非内核概念） |
+
+### Skill：发现与激活（语义）
+
+- **发现（目录段）**：安装集 = 扫描 `skills.builtin_dir` ∪ `skills.user_dir`（同 id：user 覆盖 builtin）。Run 组装 system 时，若安装集非空，追加固定「Available skills」目录段（已安装 id + description），供模型发现可激活包。
+- **默认激活**：`agent.skills` 为初始激活集；对应正文以 `## Skill: {id}` 注入 system。空数组 = 无默认正文，且可见工具 = 全部目录已启用（与未挂 Skill 时一致）。
+- **激活（Run overlay）**：内置工具 `activate_skill` 仅扩大**本 Run** 的激活集与可见工具并集；新 Run 从 Agent 默认 `skills` 重开。可见工具始终与工具目录 `enabled` **求交**，不能启用已停用行。
+- **配置边界**：Skill 不改变 Connector / 工具目录启停、HITL、会话身份语义；上传删除走控制面 API，正文不在线编辑。
 
 ---
 

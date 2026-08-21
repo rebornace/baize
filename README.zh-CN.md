@@ -62,6 +62,7 @@ go run ./cmd/baize start
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
 - 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；账号页操作员可用；MCP / 插件为「即将接入」空状态（不填假配置）
+- 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；断流后 UI 回退为 700ms 轮询
 
 内置 mock LLM 下，可发送「VPN 挂了，请建一条记录」，并在卡片上批准 `create_ticket`。
@@ -171,6 +172,23 @@ HITL 仍使用 `require_approval`。默认 `baize start` 仍是仓库自带的�
 
 - **会话登录** — 工具行上的 `require_login` 控制带 `conversation_id` 的 Run 在没有捕获身份时能否调用该工具；它不存凭证。
 - **控制面口令** — `control_plane.operator_token` / `admin_token` 挡的是谁能调 `/v0`。目录写操作（`PATCH /v0/tools/{name}`、`POST/DELETE /v0/connectors/{id}/tools`）需要管理员口令；操作员返回 `403`。
+
+### Agent Skills（可选）
+
+Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL.md`（流程 Markdown）+ 工具名列表。用来收窄（或叠加）模型可见的已启用工具，并把流程正文注入 Run 的 system。
+
+| 主题 | 行为 |
+|------|------|
+| 落盘 | 内置 `./skills`（`skills.builtin_dir`）与用户 `./data/skills`（`skills.user_dir`）；一级子目录为包 id，内含 `SKILL.md` |
+| 上传 / 删除 | 管理员经 `POST /v0/skills` 或「设置 → Skills」上传 `.md` / `.zip`；`DELETE /v0/skills/{id}` 仅删 **user** 包（内置 → `400`）。同 id：用户覆盖内置 |
+| 默认激活 | `agent.skills`（YAML / `PUT /v0/agents/{id}`）列出 Run 开始时已激活的包 |
+| 渐进激活 | 安装集非空时，模型可见内置工具 `activate_skill`，可在**本 Run** 内扩大激活集 |
+| `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
+| 求交 | 可见工具 = ∪(已激活 Skill 的 `tools`) ∩ 目录 `enabled`；Skill **不能**启用已停用的目录行 |
+
+开箱附带 `skills/ticket-triage`，默认 YAML 含 `agent.skills: [ticket-triage]`，mock-ticket 建单路径仍可用。
+
+这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
 ### 真实 LLM
 
