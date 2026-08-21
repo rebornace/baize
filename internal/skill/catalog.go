@@ -115,6 +115,9 @@ func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
 		return Package{}, err
 	}
 	id := pkg.Name
+	if err := validateSkillID(id); err != nil {
+		return Package{}, err
+	}
 	dir := filepath.Join(c.userDir, id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return Package{}, err
@@ -213,6 +216,13 @@ func findSkillMD(root string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("SKILL.md not found")
+}
+
+func validateSkillID(id string) error {
+	if !filepath.IsLocal(id) {
+		return fmt.Errorf("invalid skill id: %q", id)
+	}
+	return nil
 }
 
 func (c *Catalog) DeleteUser(id string) error {
