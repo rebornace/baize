@@ -3,6 +3,7 @@ package skill_test
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,11 +96,11 @@ func TestDeleteUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := cat.DeleteUser("missing"); err == nil {
-		t.Fatal("expected error for unknown id")
+	if err := cat.DeleteUser("missing"); !errors.Is(err, skill.ErrNotFound) {
+		t.Fatalf("missing: want ErrNotFound, got %v", err)
 	}
-	if err := cat.DeleteUser("builtin-only"); err == nil {
-		t.Fatal("expected error for builtin")
+	if err := cat.DeleteUser("builtin-only"); !errors.Is(err, skill.ErrBuiltin) {
+		t.Fatalf("builtin: want ErrBuiltin, got %v", err)
 	}
 	if err := cat.DeleteUser("user-skill"); err != nil {
 		t.Fatal(err)

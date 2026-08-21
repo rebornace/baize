@@ -3,6 +3,7 @@ package skill
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,11 @@ import (
 const (
 	SourceBuiltin = "builtin"
 	SourceUser    = "user"
+)
+
+var (
+	ErrNotFound = errors.New("skill not found")
+	ErrBuiltin  = errors.New("cannot delete builtin skill")
 )
 
 type Catalog struct {
@@ -228,10 +234,10 @@ func validateSkillID(id string) error {
 func (c *Catalog) DeleteUser(id string) error {
 	p, ok := c.Get(id)
 	if !ok {
-		return fmt.Errorf("skill %q not found", id)
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
 	}
 	if p.Source != SourceUser {
-		return fmt.Errorf("cannot delete builtin skill %q", id)
+		return fmt.Errorf("%w: %q", ErrBuiltin, id)
 	}
 	if err := os.RemoveAll(filepath.Join(c.userDir, id)); err != nil {
 		return err

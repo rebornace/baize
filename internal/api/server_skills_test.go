@@ -223,24 +223,40 @@ func TestSkillsDeleteUserStripsAgentSkills(t *testing.T) {
 	}
 }
 
-func TestSkillsOperatorPostForbidden(t *testing.T) {
+func TestSkillsOperatorWritesForbidden(t *testing.T) {
 	srv, _, _, cat := skillsServer(t)
 	srv.OperatorToken = "op"
 	srv.AdminToken = "adm"
 	srv.SkillCatalog = cat
 	h := srv.Handler()
+	auth := func(r *http.Request) { r.Header.Set("Authorization", "Bearer op") }
 
 	body, ctype := multipartFile(t, "file", "demo.md", skillMDBytes("demo", "x", nil))
 	req := httptest.NewRequest(http.MethodPost, "/v0/skills", body)
 	req.Header.Set("Content-Type", ctype)
-	req.Header.Set("Authorization", "Bearer op")
+	auth(req)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusForbidden {
+	if rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "forbidden") {
 		t.Fatalf("operator POST skills want 403, got %d %s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "forbidden") {
-		t.Fatalf("body=%s", rr.Body.String())
+
+	req = httptest.NewRequest(http.MethodDelete, "/v0/skills/builtin-skill", nil)
+	auth(req)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "forbidden") {
+		t.Fatalf("operator DELETE skills want 403, got %d %s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/v0/agents/a1",
+		strings.NewReader(`{"system":"x","skills":["s1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	auth(req)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "forbidden") {
+		t.Fatalf("operator PUT agents want 403, got %d %s", rr.Code, rr.Body.String())
 	}
 }
 

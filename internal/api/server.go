@@ -326,16 +326,14 @@ func (s *Server) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.SkillCatalog.DeleteUser(id); err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "not found") {
-			writeError(w, http.StatusNotFound, "not_found", msg)
-			return
+		switch {
+		case errors.Is(err, skill.ErrNotFound):
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+		case errors.Is(err, skill.ErrBuiltin):
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		}
-		if strings.Contains(msg, "builtin") {
-			writeError(w, http.StatusBadRequest, "invalid_request", msg)
-			return
-		}
-		writeError(w, http.StatusBadRequest, "invalid_request", msg)
 		return
 	}
 	for _, a := range s.Store.ListAgents() {
