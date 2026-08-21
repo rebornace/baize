@@ -216,3 +216,68 @@ func TestActivateSkillUnknownIDIsToolError(t *testing.T) {
 		t.Fatal("expected activate_skill tool result is_error")
 	}
 }
+
+func TestEmptyDefaultSkillsShowsAllEnabledAndActivate(t *testing.T) {
+	for _, skills := range [][]string{nil, {}} {
+		skills := skills
+		name := "nil"
+		if skills != nil {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			st := store.NewMemory()
+			reg := tool.NewRegistry()
+			reg.Register("list_tickets", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+				return map[string]any{"ok": true}, false, nil
+			})
+			reg.Register("create_ticket", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+				return map[string]any{"id": "1"}, false, nil
+			})
+			cat := loadTestCatalog(t, map[string]struct {
+				desc  string
+				tools []string
+				body  string
+			}{
+				"demo2": {desc: "create", tools: []string{"create_ticket"}, body: "create body"},
+			})
+
+			var stepSpecs []map[string]bool
+			llmMock := &captureLLM{onChat: func(msgs []llm.Message, tools []llm.ToolSpec) llm.Message {
+				stepSpecs = append(stepSpecs, specNames(tools))
+				if len(stepSpecs) == 1 {
+					if !stepSpecs[0]["list_tickets"] || !stepSpecs[0]["create_ticket"] || !stepSpecs[0][skill.ActivateToolName] {
+						t.Errorf("step1 want all enabled + activate_skill, got %v", stepSpecs[0])
+					}
+					return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+						{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo2"}},
+					}}
+				}
+				if !strings.Contains(msgs[0].Content, "create body") {
+					t.Errorf("system after activate missing demo2 body: %s", msgs[0].Content)
+				}
+				// Empty default: tools stay full enabled set after activate.
+				if !stepSpecs[1]["list_tickets"] || !stepSpecs[1]["create_ticket"] || !stepSpecs[1][skill.ActivateToolName] {
+					t.Errorf("step2 want all enabled + activate_skill, got %v", stepSpecs[1])
+				}
+				return llm.Message{Role: llm.RoleAssistant, Content: "ok"}
+			}}
+
+			ag := agent.Def{ID: "a", System: "helper", Skills: skills}
+			r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			eng := &Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat}
+			if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if len(stepSpecs) < 2 {
+				t.Fatalf("want >=2 chat steps, got %d", len(stepSpecs))
+			}
+			got, _ := st.GetRun(r.ID)
+			if got.Status != store.StatusSucceeded {
+				t.Fatalf("status=%s", got.Status)
+			}
+		})
+	}
+}

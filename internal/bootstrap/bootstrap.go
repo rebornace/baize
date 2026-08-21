@@ -194,6 +194,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
 		Identities:  identities,
+		Skills:      skillCat,
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Hub = hub
