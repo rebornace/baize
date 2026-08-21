@@ -28,6 +28,11 @@ func TestMinRoleTable(t *testing.T) {
 		{"PATCH", "/v0/tools/create_ticket", RoleAdmin},
 		{"POST", "/v0/connectors/c1/tools", RoleAdmin},
 		{"DELETE", "/v0/connectors/c1/tools/extra1", RoleAdmin},
+		{"GET", "/v0/skills", RoleAdmin},
+		{"GET", "/v0/skills/x", RoleAdmin},
+		{"POST", "/v0/skills", RoleAdmin},
+		{"DELETE", "/v0/skills/x", RoleAdmin},
+		{"GET", "/v0/agents/ticket-agent", RoleAdmin},
 		{"GET", "/v0/unknown", RoleAdmin},
 		{"POST", "/v0/runs/r1/resume/extra", RoleAdmin},
 	}
