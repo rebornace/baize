@@ -1,33 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  selectedSkillsInOrder,
-  toggleSkillSelection,
-} from './SkillsSettings'
-import type { SkillSummary } from '../api'
-
-const sample: SkillSummary[] = [
-  {
-    id: 'a',
-    name: 'A',
-    description: '',
-    tools: [],
-    source: 'builtin',
-  },
-  {
-    id: 'b',
-    name: 'B',
-    description: '',
-    tools: ['t1'],
-    source: 'user',
-  },
-  {
-    id: 'c',
-    name: 'C',
-    description: '',
-    tools: [],
-    source: 'user',
-  },
-]
+import { mergeSkillSelection, toggleSkillSelection } from './SkillsSettings'
 
 describe('toggleSkillSelection', () => {
   it('adds and removes ids', () => {
@@ -41,9 +13,24 @@ describe('toggleSkillSelection', () => {
   })
 })
 
-describe('selectedSkillsInOrder', () => {
-  it('preserves list order of checked skills', () => {
-    const selected = new Set(['c', 'a'])
-    expect(selectedSkillsInOrder(sample, selected)).toEqual(['a', 'c'])
+describe('mergeSkillSelection', () => {
+  const catalog = ['a', 'b', 'c', 'd']
+
+  it('keeps previous order for still-checked ids', () => {
+    const previous = ['c', 'a', 'b']
+    const selected = new Set(['a', 'b', 'c'])
+    expect(mergeSkillSelection(previous, selected, catalog)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('drops unchecked and appends new picks in catalog order', () => {
+    const previous = ['c', 'a', 'b']
+    const selected = new Set(['a', 'd', 'c'])
+    expect(mergeSkillSelection(previous, selected, catalog)).toEqual(['c', 'a', 'd'])
+  })
+
+  it('skips duplicate previous ids', () => {
+    const previous = ['b', 'a', 'b']
+    const selected = new Set(['a', 'b'])
+    expect(mergeSkillSelection(previous, selected, catalog)).toEqual(['b', 'a'])
   })
 })

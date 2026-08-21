@@ -20,8 +20,25 @@ export function toggleSkillSelection(prev: Set<string>, id: string, checked: boo
   return next
 }
 
-export function selectedSkillsInOrder(skills: SkillSummary[], selected: Set<string>): string[] {
-  return skills.filter((s) => selected.has(s.id)).map((s) => s.id)
+/** Preserve previous Agent.skills order for still-checked ids, then append new picks in catalog order. */
+export function mergeSkillSelection(
+  previous: string[],
+  selected: Set<string>,
+  catalogOrder: string[],
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of previous) {
+    if (!selected.has(id) || seen.has(id)) continue
+    out.push(id)
+    seen.add(id)
+  }
+  for (const id of catalogOrder) {
+    if (!selected.has(id) || seen.has(id)) continue
+    out.push(id)
+    seen.add(id)
+  }
+  return out
 }
 
 function sourceLabel(source: SkillSummary['source']): string {
@@ -131,7 +148,8 @@ export function SkillsSettings() {
     setStatus(null)
     try {
       const agent = await getAgent(agentId)
-      const skillsIds = selectedSkillsInOrder(skills, selected)
+      const catalogOrder = skills.map((s) => s.id)
+      const skillsIds = mergeSkillSelection(agent.skills ?? [], selected, catalogOrder)
       await putAgent(agentId, { system: agent.system ?? system, skills: skillsIds })
       setSystem(agent.system ?? system)
       setError(null)
