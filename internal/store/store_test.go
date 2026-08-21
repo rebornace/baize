@@ -226,6 +226,22 @@ func TestToolCatalogCRUD(t *testing.T) {
 	}
 }
 
+func TestAgentSkillsRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertAgent(store.Agent{ID: "ticket-agent", System: "sys", Skills: []string{"ticket-triage"}})
+	got, err := s.GetAgent("ticket-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0] != "ticket-triage" {
+		t.Fatalf("%+v", got)
+	}
+	all := s.ListAgents()
+	if len(all) != 1 {
+		t.Fatalf("list=%v", all)
+	}
+}
+
 func TestReplaceConnectorToolsKeepsOthers(t *testing.T) {
 	s := store.NewMemory()
 	s.UpsertTool(store.Tool{ConnectorID: "a", Name: "keep", Source: store.ToolSourceSpec, Enabled: true})

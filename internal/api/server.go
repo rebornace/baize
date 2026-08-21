@@ -21,6 +21,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/ui"
@@ -36,6 +37,7 @@ type Server struct {
 	Store          store.Store
 	Registry       *tool.Registry
 	Runner         Runner
+	SkillCatalog   *skill.Catalog
 	Identities     identity.Store
 	Messages       conversation.Store // optional; nil = no message persistence
 	Hub            *eventbus.Hub      // optional; nil = SSE replay only (no live fan-out)

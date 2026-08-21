@@ -40,7 +40,25 @@ func New() *Memory {
 func (s *Memory) UpsertAgent(a Agent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if a.Skills != nil {
+		a.Skills = append([]string(nil), a.Skills...)
+	}
 	s.agents[a.ID] = a
+}
+
+func (s *Memory) ListAgents() []Agent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.agents))
+	for id := range s.agents {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Agent, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, s.agents[id])
+	}
+	return out
 }
 
 func (s *Memory) GetAgent(id string) (Agent, error) {
