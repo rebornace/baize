@@ -667,7 +667,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	def := agent.Def{ID: ag.ID, System: ag.System}
+	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	// Persist run.started before returning so the UI never polls an empty event stream
 	// while the worker is still scheduling / contending on SQLite.
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
