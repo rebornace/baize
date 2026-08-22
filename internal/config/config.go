@@ -101,7 +101,7 @@ func Load(path string) (Config, error) {
 	if cfg.Connector.Type == "" {
 		cfg.Connector.Type = "openapi"
 	}
-	// require_approval 默认不注入；样板 configs/default.yaml 自行列出 create_ticket 等
+	// require_approval 默认不注入；样板 configs/demo.yaml 自行列出 create_ticket 等
 	if cfg.Store.Driver == "sqlite" && cfg.Store.SQLitePath == "" {
 		cfg.Store.SQLitePath = "./data/baize.db"
 	}
@@ -110,9 +110,6 @@ func Load(path string) (Config, error) {
 	// nil → 默认 true（由 bootstrap 按 driver 解析）；显式 false → 关闭持久化。
 	if cfg.Conversation.MaxMessages <= 0 {
 		cfg.Conversation.MaxMessages = 40
-	}
-	if cfg.Skills.BuiltinDir == "" {
-		cfg.Skills.BuiltinDir = "./skills"
 	}
 	if cfg.Skills.UserDir == "" {
 		cfg.Skills.UserDir = "./data/skills"

@@ -181,6 +181,13 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		return nil, nil, err
 	}
 	loadStoredConnectors(st, reg, cfg, identities)
+	if n := len(st.ListConnectors()); n > 0 {
+		ids := make([]string, 0, n)
+		for _, c := range st.ListConnectors() {
+			ids = append(ids, c.ID)
+		}
+		log.Printf("persisted connectors restored from store: %v", ids)
+	}
 
 	hub := eventbus.NewHub()
 	st = eventbus.Notify(st, hub)
@@ -274,6 +281,9 @@ func storeCloser(st store.Store) io.Closer {
 }
 
 func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
+	if strings.TrimSpace(cfg.Connector.ID) == "" {
+		return nil
+	}
 	// YAML 省略 require_login 时传 nil，让 MergeCatalog 保留行上已持久化的
 	// per-tool require_login；仅当 YAML 显式给出名单（含空数组）时才传指针，
 	// 否则重启会把设置页勾选的 require_login 冲掉。

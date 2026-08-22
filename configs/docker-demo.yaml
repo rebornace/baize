@@ -1,3 +1,4 @@
+# 容器试用栈：配合 docker-compose.demo.yml（Runtime + mock-ticket）。
 listen: ":8080"
 store:
   driver: sqlite
@@ -5,19 +6,18 @@ store:
 ui:
   enabled: true
 control_plane:
-  operator_token: ""   # 空=未配；可填 env:BAIZE_OPERATOR_TOKEN 或 file:/path 或明文
-  admin_token: ""      # 空=未配；可填 env:BAIZE_ADMIN_TOKEN 或 file:/path 或明文
+  operator_token: ""
+  admin_token: ""
 llm:
   provider: mock
-  # 真实 LLM：复制为 configs/default.local.yaml（gitignore）并设 .env 中 BAIZE_API_KEY
-  # provider: openai_compatible
-  # base_url: https://api.deepseek.com
-  # model: deepseek-v4-flash
-  # disable_thinking: true
-  # api_key_env: BAIZE_API_KEY
+skills:
+  builtin_dir: ./examples/skills
+  user_dir: /app/data/skills
 agent:
   id: ticket-agent
   system: "你是企业工单助手，只能通过工具访问工单系统。"
+  skills:
+    - ticket-triage
 connector:
   id: ticket-api
   type: openapi
@@ -28,17 +28,16 @@ connector:
     - update_ticket_status
   auth:
     mode: static
-    # 登录成功后写入会话身份库（tool 名匹配 *login*）
     capture:
       tool_name_glob: "*login*"
       token_json_paths: ["accessToken", "data.accessToken", "data.token"]
       label_json_paths: ["email", "data.email"]
       header_template: "Bearer {{token}}"
-      default_scheme: "" # 空则若 spec 仅一个 security scheme 则自动填入
+      default_scheme: ""
 run:
   max_steps: 16
 conversation:
   max_messages: 40
-  persist_identities: true # memory 驱动时忽略，强制使用内存身份库
+  persist_identities: true
 mock_ticket:
-  listen: "off"
+  listen: off

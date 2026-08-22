@@ -34,23 +34,36 @@
 
 ---
 
-## 30 秒跑通
+## 30 秒跑通（试用）
 
 **环境要求：** Go 1.22+（无需 C 编译器；SQLite 为纯 Go）
+
+Windows（仓库根目录，无需把 `baize` 装进 PATH）：
+
+```powershell
+.\demo.cmd          # 试用：mock LLM + 演示 HTTP，无需 Key
+.\start.cmd         # 生产：须先配置 BAIZE_API_KEY（见下）
+.\baize.cmd demo    # 与 demo.cmd 等价
+.\baize.cmd start   # 与 start.cmd 等价
+```
+
+POSIX：
 
 ```bash
 git clone https://github.com/rebornace/baize.git
 cd baize
-go run ./cmd/baize start
+./scripts/demo.sh   # 或 go run ./cmd/baize demo
 ```
 
-仓库会同时拉起一个 **mock HTTP 演示服务**，方便你点 UI / 打 curl；不是产品本身。
+试用（`demo`）：
 
-默认样板：
+`baize demo` / `demo.cmd` 使用 `configs/demo.yaml`：mock LLM + 内嵌演示 HTTP，**无需 API Key**。不是生产默认路径。
+
+> 说明：在未 `go install` 或加入 PATH 前，不能直接敲 `baize start`；请用 `go run ./cmd/baize start`、`.\start.cmd` 或 `.\baize.cmd start`。
 
 - Runtime：`http://127.0.0.1:8080`（`/ui`）
 - 演示 HTTP：`http://127.0.0.1:18080`
-- LLM：内置 `mock`（无需 Key）
+- LLM：内置 `mock`
 
 若端口被占用，先结束旧的 `baize` 进程再启动。
 
@@ -97,7 +110,7 @@ curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
   -d "{\"decision\":\"reject\",\"comment\":\"nope\"}"
 ```
 
-默认 `configs/default.yaml` 使用 SQLite；Runtime 重启后，仍可对 `waiting_human` 的 Run 继续 `resume`。
+默认 `configs/demo.yaml` 使用 SQLite；Runtime 重启后，仍可对 `waiting_human` 的 Run 继续 `resume`。
 
 ```bash
 curl -s http://127.0.0.1:18080/tickets
@@ -186,30 +199,48 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 | `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
 | 求交 | 可见工具 = ∪(已激活 Skill 的 `tools`) ∩ 目录 `enabled`；Skill **不能**启用已停用的目录行 |
 
-开箱附带 `skills/ticket-triage`，默认 YAML 含 `agent.skills: [ticket-triage]`，mock-ticket 建单路径仍可用。
+开箱试用包在 `examples/skills/ticket-triage`；仅 `demo` / `docker-demo` 扫描该目录。生产 `minimal.yaml` 的 `skills.builtin_dir` 为空，设置页 Skills 初始为空，需自行上传。
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
-### 真实 LLM
+### 生产一键启动（Go 原生）
+
+`baize start` 使用 `configs/minimal.yaml`：**无演示 Connector、无 mock-ticket、真实 LLM**。须先设置 API Key：
+
+```bash
+cp .env.example .env   # 填写 BAIZE_API_KEY
+export BAIZE_API_KEY=sk-...   # 或 source .env
+go run ./cmd/baize start
+# Windows: .\start.cmd  或  .\baize.cmd start  （会读取 .env）
+```
+
+可选：复制 `configs/minimal.yaml` → `configs/minimal.local.yaml`（gitignore）覆盖 `llm.base_url` / `model` 等。
+
+若曾跑过 `demo` 且 Tools 里仍有 `ticket-api` / 工单工具，多半是旧库 `./data/baize.db` 里残留的 Connector。`demo` 现已改用 `./data/baize-demo.db`；生产可删一次旧库后重启：
+
+```powershell
+Remove-Item -Recurse -Force .\data\baize.db -ErrorAction SilentlyContinue
+.\start.cmd
+```
+
+启动日志应出现 `baize start: config=configs/minimal.yaml agent=default-agent llm=openai_compatible`，且**不应**有 `persisted connectors restored`（全新库时）。
+
+启动后工具目录为空，需注册 Connector（`PUT /v0/connectors/{id}`）或通过设置页（规划中 MCP）接入。SQLite 仍用于 Run / 对话落盘。
+
+### 真实 LLM 与对接业务 API
 
 **不要把密钥写进 YAML。**
 
-> 若你之前使用 `configs/demo.local.yaml`，请改名为 `configs/default.local.yaml`，并把 `demo.ticket_listen` 改为 `mock_ticket.listen`。
-
-1. 复制 `configs/default.yaml` → `configs/default.local.yaml`（已 gitignore；`baize start` 优先读取）
-2. 复制 `.env.example` → `.env`，填写 `BAIZE_API_KEY`（以及可选的 `BAIZE_CONNECTOR_TOKEN`）
-3. `default.local.yaml` 示例片段：
+1. 生产默认已在 `configs/minimal.yaml` 使用 `openai_compatible`；`baize start` 在缺少 `BAIZE_API_KEY` 时会直接失败并提示。
+2. 复制 `.env.example` → `.env`，填写 `BAIZE_API_KEY`（以及可选的控制面 / Connector Token）
+3. 在 `configs/minimal.local.yaml` 中增加 `connector` 段，或启动后用 API 注册：
 
 ```yaml
-llm:
-  provider: openai_compatible
-  base_url: https://api.deepseek.com
-  model: deepseek-v4-flash
-  disable_thinking: true
-  api_key_env: BAIZE_API_KEY
-
 connector:
-  # 指向你的 OpenAPI 与 base_url
+  id: my-api
+  type: openapi
+  spec: path/to/your/openapi.yaml
+  base_url: https://your-api.example.com
   require_approval_mutating: true
   auth:
     mode: static
@@ -221,15 +252,14 @@ connector:
       token_json_paths: ["accessToken", "data.accessToken", "data.token"]
       header_template: "Bearer {{token}}"
       default_scheme: "bearer"
-
-mock_ticket:
-  listen: "off"   # 对接你的服务时关闭演示 HTTP
 ```
 
 ```bash
 go run ./cmd/baize start
-# 或：go run ./cmd/baize serve -config configs/default.local.yaml
+# 或：go run ./cmd/baize serve -config configs/minimal.local.yaml
 ```
+
+试用栈仍用 `go run ./cmd/baize demo`（mock LLM，无需 Key）。
 
 ---
 
@@ -282,10 +312,11 @@ curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messa
 
 ## 部署
 
-白泽是单个静态二进制。可选启动脚本（未设置 `GOPROXY` 时会写入国内代理）：
+白泽是单个静态二进制。可选启动脚本（Windows 无需全局 `baize` 命令）：
 
-- POSIX：`./scripts/start.sh`
-- Windows：`.\start.cmd`
+- 生产：`.\start.cmd` 或 `.\baize.cmd start`（读取 `.env` 中的 `BAIZE_API_KEY`）
+- 试用：`.\demo.cmd` 或 `.\baize.cmd demo`
+- POSIX 生产：`./scripts/start.sh`；试用：`./scripts/demo.sh`
 
 ### 本机二进制
 
@@ -302,31 +333,38 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
 
 ### Docker
 
-**试用样板栈**（Runtime + 演示 HTTP，mock LLM）：
+**生产（仅 Runtime，无演示 HTTP）**：
 
 ```bash
+export BAIZE_API_KEY=sk-...
 docker compose up --build
 ```
 
 - Runtime / UI：http://127.0.0.1:8080 （`/ui`）
+- 使用 `configs/docker-minimal.yaml`；须设置 `BAIZE_API_KEY`
+
+**试用样板栈**（Runtime + 演示 HTTP，mock LLM）：
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+- Runtime / UI：http://127.0.0.1:8080
 - 演示 HTTP：http://127.0.0.1:18080
+- 使用 `configs/docker-demo.yaml`；`mock-ticket` 为独立容器
 
-须同时启动**两个**服务。`configs/docker.yaml` 将 `base_url` 指向主机名 `mock-ticket`；只起 Runtime 时，打到演示 HTTP 的工具会连不上。
+试用 compose 可设置 `BAIZE_CONNECTOR_TOKEN` 为 `dev`，仅供不带会话的脚本；`/ui` 不会用它。不要把密钥写进 YAML。
 
-试用 compose 仍默认设置 `BAIZE_CONNECTOR_TOKEN` 为 `dev`，仅供不带会话的脚本可选使用；`/ui` 不会用它。不要把密钥写进 YAML。
-
-**生产侧车**（你的 HTTP 服务，无演示 HTTP）：
+**自定义 YAML 挂载**：
 
 ```bash
 docker build -t baize:local .
 docker run --rm -p 8080:8080 \
-  -v /path/to/your.yaml:/app/configs/docker.yaml \
+  -v /path/to/your.yaml:/app/configs/docker-minimal.yaml \
   -v baize-data:/app/data \
   -e BAIZE_API_KEY \
   baize:local
 ```
-
-在 `your.yaml` 中设置 `mock_ticket.listen: off`，并将 `connector.base_url` 指向你的 HTTP 服务。不要把本仓库的 compose 文件当作生产编排。
 
 如需覆盖构建时的模块代理：`docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
@@ -348,8 +386,9 @@ npm run build
 
 | 命令 | 说明 |
 |------|------|
-| `baize start` | 优先 `default.local.yaml`，否则 `default.yaml`；启动 Runtime（除非 `mock_ticket.listen: off`，否则同时起演示 HTTP 服务） |
-| `baize serve -config <path>` | 仅 Runtime，显式指定配置 |
+| `baize start` | 生产默认：`minimal.yaml`；仅 Runtime；**须** `BAIZE_API_KEY`；无演示 Connector |
+| `baize demo` | 试用：`demo.yaml`；Runtime + 内嵌演示 HTTP；mock LLM，无需 Key |
+| `baize serve -config <path>` | 仅 Runtime，显式指定配置（不校验 API Key） |
 
 ---
 

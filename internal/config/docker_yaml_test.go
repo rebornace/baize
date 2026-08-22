@@ -1,58 +1,105 @@
 package config_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/rebornace/baize/internal/config"
 )
 
-func TestDockerYAMLSidecarCompose(t *testing.T) {
-	cfg, err := config.Load(filepath.Join("..", "..", "configs", "docker.yaml"))
+func TestValidateStartRequiresAPIKey(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", "..", "configs", "minimal.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.ValidateStart(cfg); err == nil {
+		t.Fatal("expected error when API key unset")
+	}
+	os.Setenv("BAIZE_API_KEY", "sk-test")
+	defer os.Unsetenv("BAIZE_API_KEY")
+	if err := config.ValidateStart(cfg); err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+}
+
+func TestValidateStartRejectsMock(t *testing.T) {
+	cfg := config.Config{}
+	cfg.LLM.Provider = "mock"
+	if err := config.ValidateStart(cfg); err == nil {
+		t.Fatal("expected error for mock provider on start")
+	}
+}
+
+func TestMinimalYAMLProductionDefaults(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", "..", "configs", "minimal.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.MockTicket.Listen != "off" {
 		t.Fatalf("mock_ticket.listen=%q want off", cfg.MockTicket.Listen)
 	}
-	if cfg.Connector.BaseURL != "http://mock-ticket:18080" {
-		t.Fatalf("base_url=%q", cfg.Connector.BaseURL)
+	if cfg.LLM.Provider != "openai_compatible" {
+		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
 	}
-	if cfg.Store.SQLitePath != "/app/data/baize.db" {
-		t.Fatalf("sqlite=%q", cfg.Store.SQLitePath)
+	if cfg.Connector.ID != "" {
+		t.Fatalf("connector.id=%q want empty", cfg.Connector.ID)
 	}
-	if cfg.Connector.Spec != "examples/mock-ticket/openapi.yaml" {
-		t.Fatalf("spec=%q", cfg.Connector.Spec)
+	if cfg.Agent.ID != "default-agent" {
+		t.Fatalf("agent.id=%q", cfg.Agent.ID)
 	}
-	if cfg.LLM.Provider != "mock" || cfg.Agent.ID != "ticket-agent" {
-		t.Fatalf("llm/agent %+v %+v", cfg.LLM, cfg.Agent)
+	if len(cfg.Agent.Skills) != 0 {
+		t.Fatalf("agent.skills=%v want empty", cfg.Agent.Skills)
 	}
-	if len(cfg.Connector.Auth.Static.Headers["Authorization"]) > 0 {
-		t.Fatalf("open-box yaml must not require connector token header: %+v", cfg.Connector.Auth.Static.Headers)
-	}
-	if cfg.ControlPlane.OperatorToken != "" || cfg.ControlPlane.AdminToken != "" {
-		t.Fatalf("open-box control_plane must be empty: %+v", cfg.ControlPlane)
+	if cfg.Skills.BuiltinDir != "" {
+		t.Fatalf("skills.builtin_dir=%q want empty", cfg.Skills.BuiltinDir)
 	}
 }
 
-func TestDefaultYAMLUnchangedForLocalStart(t *testing.T) {
-	cfg, err := config.Load(filepath.Join("..", "..", "configs", "default.yaml"))
+func TestDemoYAMLTrialStack(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", "..", "configs", "demo.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.MockTicket.Listen != ":18080" {
-		t.Fatalf("default mock listen=%q", cfg.MockTicket.Listen)
+		t.Fatalf("mock listen=%q", cfg.MockTicket.Listen)
 	}
-	if cfg.Connector.BaseURL != "http://127.0.0.1:18080" {
-		t.Fatalf("default base_url=%q", cfg.Connector.BaseURL)
+	if cfg.LLM.Provider != "mock" {
+		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
 	}
-	if cfg.Connector.Type != "openapi" {
-		t.Fatalf("type=%q", cfg.Connector.Type)
+	if cfg.Connector.ID != "ticket-api" {
+		t.Fatalf("connector.id=%q", cfg.Connector.ID)
 	}
-	if len(cfg.Connector.Auth.Static.Headers["Authorization"]) > 0 {
-		t.Fatalf("open-box yaml must not require connector token header: %+v", cfg.Connector.Auth.Static.Headers)
+}
+
+func TestDockerMinimalYAML(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", "..", "configs", "docker-minimal.yaml"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.ControlPlane.OperatorToken != "" || cfg.ControlPlane.AdminToken != "" {
-		t.Fatalf("open-box control_plane must be empty: %+v", cfg.ControlPlane)
+	if cfg.MockTicket.Listen != "off" {
+		t.Fatalf("mock_ticket.listen=%q want off", cfg.MockTicket.Listen)
+	}
+	if cfg.Connector.ID != "" {
+		t.Fatalf("connector.id=%q want empty", cfg.Connector.ID)
+	}
+	if cfg.LLM.Provider != "openai_compatible" {
+		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
+	}
+}
+
+func TestDockerDemoYAML(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", "..", "configs", "docker-demo.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MockTicket.Listen != "off" {
+		t.Fatalf("mock_ticket.listen=%q", cfg.MockTicket.Listen)
+	}
+	if cfg.Connector.BaseURL != "http://mock-ticket:18080" {
+		t.Fatalf("base_url=%q", cfg.Connector.BaseURL)
+	}
+	if cfg.LLM.Provider != "mock" {
+		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
 	}
 }

@@ -38,19 +38,31 @@ Baize is an Agent Runtime that sits beside your existing HTTP APIs: no changes t
 
 **Requirements:** Go 1.22+ (no C compiler; SQLite is pure Go)
 
-```bash
-git clone https://github.com/rebornace/baize.git
-cd baize
-go run ./cmd/baize start
+Windows (from repo root — no global `baize` on PATH):
+
+```powershell
+.\demo.cmd          # trial: mock LLM + demo HTTP, no key
+.\start.cmd         # production: needs BAIZE_API_KEY (see below)
+.\baize.cmd demo    # same as demo.cmd
+.\baize.cmd start   # same as start.cmd
 ```
 
-The repo also starts a **bundled mock HTTP demo service** so you can click the UI or hit curl — it is not the product itself.
+POSIX:
+
+```bash
+./scripts/demo.sh
+go run ./cmd/baize demo
+```
+
+`baize demo` / `demo.cmd` uses `configs/demo.yaml`: mock LLM + bundled demo HTTP — **no API key**. Not the production default.
+
+> Until you `go install` or add a binary to PATH, do not run bare `baize start`; use `go run ./cmd/baize start`, `.\start.cmd`, or `.\baize.cmd start`.
 
 Default sample:
 
 - Runtime: `http://127.0.0.1:8080` (`/ui`)
 - Demo HTTP: `http://127.0.0.1:18080`
-- LLM: built-in `mock` (no API key)
+- LLM: built-in `mock`
 
 If ports are busy, stop the previous `baize` process and retry.
 
@@ -97,7 +109,7 @@ curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
   -d "{\"decision\":\"reject\",\"comment\":\"nope\"}"
 ```
 
-Default `configs/default.yaml` uses SQLite. After a Runtime restart, `waiting_human` runs can still be resumed.
+Default `configs/demo.yaml` uses SQLite. After a Runtime restart, `waiting_human` runs can still be resumed.
 
 ```bash
 curl -s http://127.0.0.1:18080/tickets
@@ -154,7 +166,7 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
   -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
-HITL still uses `require_approval`. Default `baize start` still uses the repo’s demo OpenAPI Connector.
+HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
 
 ### Tool catalog (enable / disable / add REST)
 
@@ -186,30 +198,38 @@ Skills are an optional **configuration** layer (not a sixth Runtime abstract): a
 | Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
 | Intersection | Visible tools = ∪(active Skill `tools`) ∩ catalog `enabled`; Skills cannot turn on a disabled catalog row |
 
-The sample stack ships `skills/ticket-triage` and default YAML sets `agent.skills: [ticket-triage]` so mock-ticket create still works out of the box.
+The trial pack lives at `examples/skills/ticket-triage`; only `demo` / `docker-demo` scan that directory. Production `minimal.yaml` leaves `skills.builtin_dir` empty — Skills settings start empty until you upload packs.
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 
-### Real LLM
+### Production one-shot (native Go)
+
+`baize start` uses `configs/minimal.yaml`: **no demo Connector, no mock-ticket, real LLM**. Set an API key first:
+
+```bash
+cp .env.example .env   # set BAIZE_API_KEY
+export BAIZE_API_KEY=sk-...   # or source .env
+go run ./cmd/baize start
+```
+
+Optional: copy `configs/minimal.yaml` → `configs/minimal.local.yaml` (gitignored) to override `llm.base_url` / `model`.
+
+The tool catalog is empty until you register a Connector (`PUT /v0/connectors/{id}`) or connect MCP (planned). SQLite still stores runs and conversations.
+
+### Real LLM and your APIs
 
 Do **not** put secrets in YAML.
 
-> If you previously used `configs/demo.local.yaml`, rename it to `configs/default.local.yaml` and change the `demo.ticket_listen` key to `mock_ticket.listen`.
-
-1. Copy `configs/default.yaml` → `configs/default.local.yaml` (gitignored; preferred by `baize start`)
-2. Copy `.env.example` → `.env` and set `BAIZE_API_KEY` (and optionally `BAIZE_CONNECTOR_TOKEN`)
-3. Example `default.local.yaml` fragment:
+1. Production default `configs/minimal.yaml` already uses `openai_compatible`; `baize start` fails fast if `BAIZE_API_KEY` is missing.
+2. Copy `.env.example` → `.env` and set `BAIZE_API_KEY` (and optional control-plane / connector tokens).
+3. Add a `connector` block in `configs/minimal.local.yaml`, or register after startup:
 
 ```yaml
-llm:
-  provider: openai_compatible
-  base_url: https://api.deepseek.com
-  model: deepseek-v4-flash
-  disable_thinking: true
-  api_key_env: BAIZE_API_KEY
-
 connector:
-  # point at your OpenAPI + base_url
+  id: my-api
+  type: openapi
+  spec: path/to/your/openapi.yaml
+  base_url: https://your-api.example.com
   require_approval_mutating: true
   auth:
     mode: static
@@ -219,17 +239,16 @@ connector:
     capture:
       tool_name_glob: "*login*"
       token_json_paths: ["accessToken", "data.accessToken", "data.token"]
-      header_template: "Bearer {{token}}"
+      header_template: "Bearer {{token}"
       default_scheme: "bearer"
-
-mock_ticket:
-  listen: "off"   # turn off demo HTTP when pointing at your service
 ```
 
 ```bash
 go run ./cmd/baize start
-# or: go run ./cmd/baize serve -config configs/default.local.yaml
+# or: go run ./cmd/baize serve -config configs/minimal.local.yaml
 ```
+
+For the trial stack, use `go run ./cmd/baize demo` (mock LLM, no key).
 
 ---
 
@@ -284,8 +303,9 @@ curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messa
 
 Baize is a single static binary. Optional launchers (set a China module proxy when `GOPROXY` is unset):
 
-- POSIX: `./scripts/start.sh`
-- Windows: `.\start.cmd`
+- Production Windows: `.\start.cmd` or `.\baize.cmd start` (loads `BAIZE_API_KEY` from `.env`)
+- Trial Windows: `.\demo.cmd` or `.\baize.cmd demo`
+- POSIX production: `./scripts/start.sh`; trial: `./scripts/demo.sh`
 
 ### Native binary
 
@@ -302,31 +322,38 @@ Copy the binary to the target host; no runtime dependencies beyond the OS.
 
 ### Docker
 
-**Try the sample stack** (Runtime + demo HTTP, mock LLM):
+**Production** (Runtime only, no demo HTTP):
 
 ```bash
+export BAIZE_API_KEY=sk-...
 docker compose up --build
 ```
 
 - Runtime / UI: http://127.0.0.1:8080 (`/ui`)
+- Uses `configs/docker-minimal.yaml`; requires `BAIZE_API_KEY`
+
+**Try the sample stack** (Runtime + demo HTTP, mock LLM):
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+- Runtime / UI: http://127.0.0.1:8080
 - Demo HTTP: http://127.0.0.1:18080
+- Uses `configs/docker-demo.yaml`; `mock-ticket` runs as a separate container
 
-Start **both** services. `configs/docker.yaml` points `base_url` at hostname `mock-ticket`; if you start only the Runtime, tools that call the demo HTTP will fail to connect.
+Trial compose may set `BAIZE_CONNECTOR_TOKEN` to `dev` for machine-path scripts; `/ui` does not use it. Do not put secrets in YAML.
 
-Trial compose still sets `BAIZE_CONNECTOR_TOKEN` to `dev` for optional machine-path scripts; `/ui` does not use it. Do not put secrets in YAML.
-
-**Production sidecar** (your HTTP service, no demo HTTP):
+**Custom YAML mount**:
 
 ```bash
 docker build -t baize:local .
 docker run --rm -p 8080:8080 \
-  -v /path/to/your.yaml:/app/configs/docker.yaml \
+  -v /path/to/your.yaml:/app/configs/docker-minimal.yaml \
   -v baize-data:/app/data \
   -e BAIZE_API_KEY \
   baize:local
 ```
-
-In `your.yaml` set `mock_ticket.listen: off` and point `connector.base_url` at your HTTP service. Do not use this repo's compose file as production orchestration.
 
 Override module proxy at build time if needed: `docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
@@ -348,8 +375,9 @@ npm run build
 
 | Command | Description |
 |---------|-------------|
-| `baize start` | Prefer `default.local.yaml` if present, else `default.yaml`; start Runtime (also starts the demo HTTP service unless `mock_ticket.listen: off`) |
-| `baize serve -config <path>` | Runtime only, explicit config |
+| `baize start` | Production default: `minimal.yaml`; Runtime only; **requires** `BAIZE_API_KEY`; no demo Connector |
+| `baize demo` | Trial: `demo.yaml`; Runtime + bundled demo HTTP; mock LLM, no key |
+| `baize serve -config <path>` | Runtime only with explicit config (no API key check) |
 
 ---
 

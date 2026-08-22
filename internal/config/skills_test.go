@@ -12,8 +12,8 @@ func TestLoadSkillsDirDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Skills.BuiltinDir != "./skills" {
-		t.Fatalf("BuiltinDir=%q want ./skills", cfg.Skills.BuiltinDir)
+	if cfg.Skills.BuiltinDir != "" {
+		t.Fatalf("BuiltinDir=%q want empty default", cfg.Skills.BuiltinDir)
 	}
 	if cfg.Skills.UserDir != "./data/skills" {
 		t.Fatalf("UserDir=%q want ./data/skills", cfg.Skills.UserDir)

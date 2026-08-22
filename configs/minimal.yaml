@@ -1,0 +1,32 @@
+# 生产默认：baize start。无演示 Connector；须 export BAIZE_API_KEY。
+# 覆盖：复制为 configs/minimal.local.yaml（gitignore）后改 llm.base_url / model 等。
+listen: ":8080"
+store:
+  driver: sqlite
+  sqlite_path: ./data/baize.db
+ui:
+  enabled: true
+control_plane:
+  operator_token: ""   # 生产建议 env:BAIZE_OPERATOR_TOKEN / env:BAIZE_ADMIN_TOKEN
+  admin_token: ""
+llm:
+  provider: openai_compatible
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+  disable_thinking: true
+  api_key_env: BAIZE_API_KEY
+skills:
+  # 生产默认不扫描演示 Skill；仅 user_dir 与用户上传包
+  builtin_dir: ""
+  user_dir: ./data/skills
+agent:
+  id: default-agent
+  system: "你是企业助手。仅通过已注册工具访问后端系统；无工具时说明如何配置 Connector。"
+  skills: []
+run:
+  max_steps: 16
+conversation:
+  max_messages: 40
+  persist_identities: true
+mock_ticket:
+  listen: off
