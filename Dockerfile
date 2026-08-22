@@ -15,7 +15,8 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/baize /app/baize
 COPY --from=build /out/mock-ticket /app/mock-ticket
-COPY configs/docker.yaml /app/configs/docker.yaml
-COPY examples/mock-ticket/openapi.yaml /app/examples/mock-ticket/openapi.yaml
+COPY configs/docker-minimal.yaml /app/configs/docker-minimal.yaml
+COPY configs/docker-demo.yaml /app/configs/docker-demo.yaml
+COPY examples/skills /app/examples/skills
 EXPOSE 8080
-CMD ["/app/baize", "serve", "-config", "/app/configs/docker.yaml"]
+CMD ["/app/baize", "serve", "-config", "/app/configs/docker-minimal.yaml"]

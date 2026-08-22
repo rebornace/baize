@@ -21,7 +21,7 @@ func TestCreateTicketE2E(t *testing.T) {
 	cfg.Agent.System = "你是企业工单助手，只能通过工具访问工单系统。"
 	// Out-of-box default: hang ticket-triage so visible tools are Skill∩enabled
 	// (still includes create_ticket). Empty skills would expose all enabled tools.
-	cfg.Skills.BuiltinDir = filepath.Join("..", "..", "skills")
+	cfg.Skills.BuiltinDir = filepath.Join("..", "..", "examples", "skills")
 	cfg.Skills.UserDir = t.TempDir()
 	cfg.Agent.Skills = []string{"ticket-triage"}
 	cfg.Connector.ID = "ticket-api"
