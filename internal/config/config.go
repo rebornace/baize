@@ -23,9 +23,14 @@ type Config struct {
 		APIKeyEnv        string `yaml:"api_key_env"` // 默认 BAIZE_API_KEY
 		DisableThinking  bool   `yaml:"disable_thinking"` // DeepSeek V4：关闭 thinking 省 token
 	} `yaml:"llm"`
+	Skills struct {
+		BuiltinDir string `yaml:"builtin_dir"`
+		UserDir    string `yaml:"user_dir"`
+	} `yaml:"skills"`
 	Agent struct {
-		ID     string `yaml:"id"`
-		System string `yaml:"system"`
+		ID     string   `yaml:"id"`
+		System string   `yaml:"system"`
+		Skills []string `yaml:"skills"`
 	} `yaml:"agent"`
 	Connector struct {
 		ID                      string   `yaml:"id"`
@@ -105,6 +110,12 @@ func Load(path string) (Config, error) {
 	// nil → 默认 true（由 bootstrap 按 driver 解析）；显式 false → 关闭持久化。
 	if cfg.Conversation.MaxMessages <= 0 {
 		cfg.Conversation.MaxMessages = 40
+	}
+	if cfg.Skills.BuiltinDir == "" {
+		cfg.Skills.BuiltinDir = "./skills"
+	}
+	if cfg.Skills.UserDir == "" {
+		cfg.Skills.UserDir = "./data/skills"
 	}
 	return cfg, nil
 }

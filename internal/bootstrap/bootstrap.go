@@ -23,6 +23,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -157,7 +158,17 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	closer := storeCloser(st)
 	reg := tool.NewRegistry()
 
-	st.UpsertAgent(store.Agent{ID: cfg.Agent.ID, System: cfg.Agent.System})
+	skillCat, err := skill.LoadCatalog(cfg.Skills.BuiltinDir, cfg.Skills.UserDir)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("load skill catalog: %w", err)
+	}
+
+	st.UpsertAgent(store.Agent{
+		ID:     cfg.Agent.ID,
+		System: cfg.Agent.System,
+		Skills: append([]string(nil), cfg.Agent.Skills...),
+	})
 
 	messages, identities, err := openConversationAndIdentities(st, cfg)
 	if err != nil {
@@ -183,9 +194,11 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
 		Identities:  identities,
+		Skills:      skillCat,
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Hub = hub
+	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID

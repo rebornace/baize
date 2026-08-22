@@ -7,6 +7,7 @@ import { ComingSoon } from './pages/ComingSoon'
 import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
 import { SettingsLayout } from './pages/SettingsLayout'
+import { SkillsSettings } from './pages/SkillsSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
 import './style.css'
 
@@ -34,6 +35,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <ToolsSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="skills"
+              element={
+                <AdminOnly>
+                  <SkillsSettings />
                 </AdminOnly>
               }
             />

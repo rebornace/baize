@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/ui"
@@ -36,6 +39,7 @@ type Server struct {
 	Store          store.Store
 	Registry       *tool.Registry
 	Runner         Runner
+	SkillCatalog   *skill.Catalog
 	Identities     identity.Store
 	Messages       conversation.Store // optional; nil = no message persistence
 	Hub            *eventbus.Hub      // optional; nil = SSE replay only (no live fan-out)
@@ -115,12 +119,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/ui-config", s.handleUIConfig)
 	s.mux.HandleFunc("GET /v0/me", s.handleMe)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
+	s.mux.HandleFunc("GET /v0/agents/{id}", s.handleGetAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
 	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
 	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/tools", s.handlePostConnectorTool)
 	s.mux.HandleFunc("DELETE /v0/connectors/{id}/tools/{name}", s.handleDeleteConnectorTool)
+	s.mux.HandleFunc("GET /v0/skills", s.handleListSkills)
+	s.mux.HandleFunc("GET /v0/skills/{id}", s.handleGetSkill)
+	s.mux.HandleFunc("POST /v0/skills", s.handlePostSkill)
+	s.mux.HandleFunc("DELETE /v0/skills/{id}", s.handleDeleteSkill)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
@@ -181,14 +190,168 @@ func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		System string `json:"system"`
+		System string   `json:"system"`
+		Skills []string `json:"skills"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	s.Store.UpsertAgent(store.Agent{ID: id, System: body.System})
-	writeJSON(w, http.StatusOK, store.Agent{ID: id, System: body.System})
+	ag := store.Agent{ID: id, System: body.System, Skills: body.Skills}
+	s.Store.UpsertAgent(ag)
+	writeJSON(w, http.StatusOK, ag)
+}
+
+func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing agent id")
+		return
+	}
+	ag, err := s.Store.GetAgent(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent_not_found", "unknown agent")
+		return
+	}
+	writeJSON(w, http.StatusOK, ag)
+}
+
+type skillSummary struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tools       []string `json:"tools"`
+	Source      string   `json:"source"`
+}
+
+func skillSummaryFrom(p skill.Package) skillSummary {
+	tools := p.Tools
+	if tools == nil {
+		tools = []string{}
+	}
+	return skillSummary{
+		ID:          p.ID,
+		Name:        p.Name,
+		Description: p.Description,
+		Tools:       tools,
+		Source:      p.Source,
+	}
+}
+
+func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
+	if s.SkillCatalog == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "skill catalog not configured")
+		return
+	}
+	pkgs := s.SkillCatalog.List()
+	out := make([]skillSummary, 0, len(pkgs))
+	for _, p := range pkgs {
+		out = append(out, skillSummaryFrom(p))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"skills": out})
+}
+
+func (s *Server) handleGetSkill(w http.ResponseWriter, r *http.Request) {
+	if s.SkillCatalog == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "skill catalog not configured")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing skill id")
+		return
+	}
+	p, ok := s.SkillCatalog.Get(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "skill not found")
+		return
+	}
+	sum := skillSummaryFrom(p)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":          sum.ID,
+		"name":        sum.Name,
+		"description": sum.Description,
+		"tools":       sum.Tools,
+		"source":      sum.Source,
+		"body":        p.Body,
+	})
+}
+
+func (s *Server) handlePostSkill(w http.ResponseWriter, r *http.Request) {
+	if s.SkillCatalog == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "skill catalog not configured")
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid multipart form")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "file is required")
+		return
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(hdr.Filename))
+	var pkg skill.Package
+	switch ext {
+	case ".md":
+		pkg, err = s.SkillCatalog.InstallMD(hdr.Filename, raw)
+	case ".zip":
+		pkg, err = s.SkillCatalog.InstallZip(raw)
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "file must be .md or .zip")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, skillSummaryFrom(pkg))
+}
+
+func (s *Server) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
+	if s.SkillCatalog == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "skill catalog not configured")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing skill id")
+		return
+	}
+	if err := s.SkillCatalog.DeleteUser(id); err != nil {
+		switch {
+		case errors.Is(err, skill.ErrNotFound):
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+		case errors.Is(err, skill.ErrBuiltin):
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		}
+		return
+	}
+	for _, a := range s.Store.ListAgents() {
+		next := make([]string, 0, len(a.Skills))
+		changed := false
+		for _, sid := range a.Skills {
+			if sid == id {
+				changed = true
+				continue
+			}
+			next = append(next, sid)
+		}
+		if changed {
+			a.Skills = next
+			s.Store.UpsertAgent(a)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
@@ -665,7 +828,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	def := agent.Def{ID: ag.ID, System: ag.System}
+	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	// Persist run.started before returning so the UI never polls an empty event stream
 	// while the worker is still scheduling / contending on SQLite.
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})

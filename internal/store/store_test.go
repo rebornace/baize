@@ -226,6 +226,47 @@ func TestToolCatalogCRUD(t *testing.T) {
 	}
 }
 
+func TestAgentSkillsRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertAgent(store.Agent{ID: "ticket-agent", System: "sys", Skills: []string{"ticket-triage"}})
+	got, err := s.GetAgent("ticket-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0] != "ticket-triage" {
+		t.Fatalf("%+v", got)
+	}
+	all := s.ListAgents()
+	if len(all) != 1 {
+		t.Fatalf("list=%v", all)
+	}
+}
+
+func TestAgentSkillsReadCopyIsolated(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertAgent(store.Agent{ID: "a", System: "sys", Skills: []string{"one", "two"}})
+
+	got, err := s.GetAgent("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Skills[0] = "mutated"
+	got2, err := s.GetAgent("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.Skills[0] != "one" {
+		t.Fatalf("GetAgent after mutate: %+v", got2.Skills)
+	}
+
+	list := s.ListAgents()
+	list[0].Skills[1] = "mutated"
+	got3, _ := s.GetAgent("a")
+	if got3.Skills[1] != "two" {
+		t.Fatalf("ListAgents mutate leaked: %+v", got3.Skills)
+	}
+}
+
 func TestReplaceConnectorToolsKeepsOthers(t *testing.T) {
 	s := store.NewMemory()
 	s.UpsertTool(store.Tool{ConnectorID: "a", Name: "keep", Source: store.ToolSourceSpec, Enabled: true})

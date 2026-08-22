@@ -15,9 +15,14 @@ llm:
   # model: deepseek-v4-flash
   # disable_thinking: true
   # api_key_env: BAIZE_API_KEY
+skills:
+  builtin_dir: ./skills
+  user_dir: ./data/skills
 agent:
   id: ticket-agent
   system: "你是企业工单助手，只能通过工具访问工单系统。"
+  skills:
+    - ticket-triage
 connector:
   id: ticket-api
   type: openapi

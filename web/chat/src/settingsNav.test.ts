@@ -10,6 +10,7 @@ describe('settingsNavItems', () => {
   it('admin sees all', () => {
     expect(settingsNavItems('admin').map((x) => x.to)).toEqual([
       '/settings/tools',
+      '/settings/skills',
       '/settings/identities',
       '/settings/mcp',
       '/settings/plugins',

@@ -12,6 +12,7 @@ export function settingsNavItems(role: SettingsRole): SettingsNavItem[] {
     case 'admin':
       return [
         { to: '/settings/tools', label: 'Tools' },
+        { to: '/settings/skills', label: 'Skills' },
         { to: '/settings/identities', label: '账号' },
         { to: '/settings/mcp', label: 'MCP' },
         { to: '/settings/plugins', label: '插件' },

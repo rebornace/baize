@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -41,6 +43,12 @@ type Engine struct {
 	// Identities is optional. When non-nil, tools with RequireLogin are gated
 	// before HITL / Invoke when the run has a conversation_id.
 	Identities identity.Store
+	// Skills is optional. When non-nil and non-empty, runLoop filters tool
+	// specs by activated skills and exposes activate_skill.
+	Skills *skill.Catalog
+
+	runMu sync.Mutex
+	runs  map[string]*runSkillState
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
@@ -55,7 +63,9 @@ func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input 
 	if err := e.ensureRunStarted(runID); err != nil {
 		return err
 	}
-	messages := e.buildMessages(ag.System, runRec.ConversationID, input)
+	e.beginRunSkills(runID, ag.Skills, ag.System)
+	sys := e.composeSystem(ag.System, runID)
+	messages := e.buildMessages(sys, runRec.ConversationID, input)
 	return e.runLoop(ctx, runID, messages)
 }
 
@@ -152,11 +162,15 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	if err != nil {
 		return err
 	}
+	if e.getRunSkillState(runID) == nil {
+		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System)
+	}
 	evs, err := e.Store.ListEvents(runID)
 	if err != nil {
 		return err
 	}
-	messages := e.buildResumeMessages(ag.System, run.ConversationID, run.Input, evs)
+	sys := e.composeSystem(ag.System, runID)
+	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
 }
 
@@ -219,9 +233,9 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	if maxSteps <= 0 {
 		maxSteps = 16
 	}
-	specs := e.Tools.Specs()
 
 	for step := 0; step < maxSteps; step++ {
+		specs := e.specsForRun(runID)
 		msg, err := e.LLM.Chat(ctx, messages, specs)
 		if err != nil {
 			_ = e.Store.AppendEvent(runID, store.Event{
@@ -244,6 +258,29 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 						"arguments": tc.Arguments,
 					},
 				})
+
+				if tc.Name == skill.ActivateToolName {
+					content, isError := e.handleActivateSkill(runID, tc.Arguments)
+					if !isError && len(messages) > 0 && messages[0].Role == llm.RoleSystem {
+						messages[0].Content = e.composeSystem("", runID)
+					}
+					_ = e.Store.AppendEvent(runID, store.Event{
+						Type: EventToolResult,
+						Data: map[string]any{
+							"tool_call_id": tc.ID,
+							"name":         tc.Name,
+							"content":      identity.RedactSensitive(content),
+							"is_error":     isError,
+						},
+					})
+					raw, _ := json.Marshal(content)
+					messages = append(messages, llm.Message{
+						Role:       llm.RoleTool,
+						ToolCallID: tc.ID,
+						Content:    string(raw),
+					})
+					continue
+				}
 
 				if e.blockedByLogin(ctx, tc.Name) {
 					content, isError := tool.LoginRequiredContent(), true

@@ -13,8 +13,16 @@ const (
 )
 
 type Agent struct {
-	ID     string `json:"id"`
-	System string `json:"system"`
+	ID     string   `json:"id"`
+	System string   `json:"system"`
+	Skills []string `json:"skills,omitempty"`
+}
+
+func cloneAgent(a Agent) Agent {
+	if a.Skills != nil {
+		a.Skills = append([]string(nil), a.Skills...)
+	}
+	return a
 }
 
 type Connector struct {
@@ -122,6 +130,7 @@ type HITLPayload struct {
 type Store interface {
 	UpsertAgent(Agent)
 	GetAgent(id string) (Agent, error)
+	ListAgents() []Agent
 	UpsertConnector(Connector)
 	GetConnector(id string) (Connector, error)
 	CreateRun(in CreateRunInput) (*Run, error)
