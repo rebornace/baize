@@ -49,6 +49,7 @@ export function ChatPage() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [runWebhookUrl, setRunWebhookUrl] = useState('')
 
   const cancelStreamRef = useRef<(() => void) | null>(null)
   const pollTimerRef = useRef<number | null>(null)
@@ -261,7 +262,10 @@ export function ChatPage() {
     lastEventIndexRef.current = -1
 
     try {
-      const created = await createRun(agentId, text, sentConversationId)
+      const webhookUrl = runWebhookUrl.trim()
+      const created = await createRun(agentId, text, sentConversationId, {
+        webhookUrl: webhookUrl || undefined,
+      })
       await refreshConversations()
       if (conversationIdRef.current !== sentConversationId) return
       setStatus(statusLabel(created.status))
@@ -379,6 +383,21 @@ export function ChatPage() {
         {(status || error) && (
           <p className={`status${error ? ' status-error' : ''}`}>{error ?? status}</p>
         )}
+
+        <details className="chat-advanced">
+          <summary className="chat-advanced-summary">高级</summary>
+          <label className="chat-advanced-field">
+            <span className="chat-advanced-label">本次 Run Webhook URL（留空使用全局配置）</span>
+            <input
+              className="chat-advanced-input"
+              type="url"
+              value={runWebhookUrl}
+              onChange={(e) => setRunWebhookUrl(e.target.value)}
+              disabled={busy}
+              placeholder="https://example.com/hooks/this-run"
+            />
+          </label>
+        </details>
 
         <Composer disabled={busy} onSend={(t) => void onSend(t)} />
       </main>
