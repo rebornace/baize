@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -40,6 +41,7 @@ type Runner interface {
 type Server struct {
 	Store          store.Store
 	Registry       *tool.Registry
+	Artifacts      artifact.Store // optional; nil = artifact routes unavailable
 	Runner         Runner
 	SkillCatalog   *skill.Catalog
 	Identities     identity.Store

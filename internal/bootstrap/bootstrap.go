@@ -9,12 +9,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
+	"github.com/rebornace/baize/internal/analysis"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
@@ -220,6 +223,17 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
+
+	if sqlite, ok := st.(*store.SQLite); ok && strings.TrimSpace(cfg.Store.SQLitePath) != "" {
+		artDir := filepath.Join(filepath.Dir(cfg.Store.SQLitePath), "artifacts")
+		artStore, err := artifact.NewFileStore(artDir, sqlite)
+		if err != nil {
+			_ = closer.Close()
+			return nil, nil, fmt.Errorf("open artifact store: %w", err)
+		}
+		reg.RegisterSpec(analysis.ToolSpec(), analysis.Invoker(artStore))
+		srv.Artifacts = artStore
+	}
 	srv.AuthMode = authcred.NormalizeMode(cfg.Connector.Auth.Mode)
 	srv.AuthWhitelist = cfg.Connector.Auth.Passthrough.Headers
 
