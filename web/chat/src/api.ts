@@ -252,6 +252,7 @@ export interface ConnectorInfo {
   type: string
   spec?: string
   base_url?: string
+  execution_callback_url?: string
   auth?: ConnectorAuth
   mcp?: MCPConfig
   require_approval?: string[]
@@ -263,6 +264,7 @@ export interface PutConnectorBody {
   type: string
   spec?: string
   base_url?: string
+  execution_callback_url?: string
   auth?: ConnectorAuth
   mcp?: MCPConfig
   require_approval?: string[]

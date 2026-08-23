@@ -26,14 +26,15 @@ func cloneAgent(a Agent) Agent {
 }
 
 type Connector struct {
-	ID              string        `json:"id"`
-	Type            string        `json:"type"` // openapi, mcp
-	Spec            string        `json:"spec"`
-	BaseURL         string        `json:"base_url"`
-	RequireApproval []string      `json:"require_approval,omitempty"`
-	RequireLogin    []string      `json:"require_login,omitempty"`
-	Auth            ConnectorAuth `json:"auth,omitempty"`
-	MCP             MCPConfig     `json:"mcp,omitempty"`
+	ID                     string        `json:"id"`
+	Type                   string        `json:"type"` // openapi, http, mcp
+	Spec                   string        `json:"spec"`
+	BaseURL                string        `json:"base_url"`
+	ExecutionCallbackURL   string        `json:"execution_callback_url,omitempty"`
+	RequireApproval        []string      `json:"require_approval,omitempty"`
+	RequireLogin           []string      `json:"require_login,omitempty"`
+	Auth                   ConnectorAuth `json:"auth,omitempty"`
+	MCP                    MCPConfig     `json:"mcp,omitempty"`
 }
 
 type MCPConfig struct {

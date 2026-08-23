@@ -37,6 +37,7 @@ type Config struct {
 		Type                    string   `yaml:"type"`
 		Spec                    string   `yaml:"spec"`
 		BaseURL                 string   `yaml:"base_url"`
+		ExecutionCallbackURL    string   `yaml:"execution_callback_url"`
 		RequireApproval         []string `yaml:"require_approval"`
 		RequireApprovalMutating bool     `yaml:"require_approval_mutating"`
 		RequireLogin            []string `yaml:"require_login"`

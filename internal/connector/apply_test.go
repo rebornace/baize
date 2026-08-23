@@ -2,6 +2,7 @@ package connector_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -713,5 +714,82 @@ func TestRegisterOneFromConnectorRejectsPluginExtra(t *testing.T) {
 	}
 	if _, ok := reg.Get("phantom"); ok {
 		t.Fatal("phantom must not be registered on a plugin connector")
+	}
+}
+
+func writeEchoSpec(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "spec.yaml")
+	content := `openapi: 3.0.3
+info:
+  title: echo
+  version: 0.1.0
+paths:
+  /echo:
+    post:
+      operationId: echo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                msg: { type: string }
+      responses:
+        "200":
+          description: ok
+`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestApplyOpenAPIEnterpriseCallback(t *testing.T) {
+	var got struct {
+		Tool            string         `json:"tool"`
+		Arguments       map[string]any `json:"arguments"`
+		RunID           string         `json:"run_id"`
+		IdempotencyKey  string         `json:"idempotency_key"`
+	}
+	callback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
+	}))
+	t.Cleanup(callback.Close)
+
+	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("direct HTTP should not be called when callback URL is set")
+		http.Error(w, "unexpected", http.StatusInternalServerError)
+	}))
+	t.Cleanup(direct.Close)
+
+	spec := writeEchoSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	if _, _, err := connector.Apply(connector.ApplyInput{
+		Store:                  st,
+		Registry:               reg,
+		ID:                     "c",
+		Type:                   "openapi",
+		Spec:                   spec,
+		BaseURL:                direct.URL,
+		ExecutionCallbackURL:   callback.URL + "/execute",
+		Auth:                   store.ConnectorAuth{Mode: "static"},
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	ctx := identity.WithRunID(context.Background(), "run_cb")
+	ctx = identity.WithToolCallID(ctx, "call_xyz")
+	_, isErr, err := reg.Invoke(ctx, "echo", map[string]any{"msg": "hi"})
+	if err != nil || isErr {
+		t.Fatalf("invoke: isErr=%v err=%v", isErr, err)
+	}
+	if got.Tool != "echo" || got.RunID != "run_cb" || got.IdempotencyKey != "call_xyz" {
+		t.Fatalf("callback body=%+v", got)
 	}
 }
