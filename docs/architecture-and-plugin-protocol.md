@@ -62,7 +62,7 @@
 | 启动 Run | `POST /v0/runs` → `{ run_id }` |
 | 查询轨迹 | `GET /v0/runs/{id}` · `GET /v0/runs/{id}/events` |
 | 恢复 HITL | `POST /v0/runs/{id}/resume` |
-| 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook（未实现） |
+| 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook 出站（已实现；UI：**设置 → Webhook**） |
 
 `Run` 状态机（最小）：`queued` → `running` → (`waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`。
 
