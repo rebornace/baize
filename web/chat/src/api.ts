@@ -267,6 +267,7 @@ export interface PutConnectorBody {
   type: string
   spec?: string
   spec_content?: string
+  spec_url?: string
   import_format?: ImportFormat
   base_url?: string
   execution_callback_url?: string

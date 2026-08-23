@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rebornace/baize/internal/connector/specimport"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -149,6 +150,55 @@ func TestOpenAPIPutEditBaseURLWithoutSpecContent(t *testing.T) {
 	}
 	if len(toolsBody.Tools) == 0 {
 		t.Fatal("expected tools after base_url-only edit")
+	}
+}
+
+func TestOpenAPIPutSpecURLDiscoversTools(t *testing.T) {
+	specimport.SetAllowPrivateFetchHosts(true)
+	defer specimport.SetAllowPrivateFetchHosts(false)
+	_, h, _ := openAPIServer(t)
+	specContent := readOpenAPIFixture(t, "openapi3-min.json")
+	docSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(specContent))
+	}))
+	defer docSrv.Close()
+
+	putBody := map[string]any{
+		"type":          "openapi",
+		"base_url":      "https://api.example.com",
+		"spec_url":      docSrv.URL + "/openapi.json",
+		"import_format": "auto",
+	}
+	req := httptest.NewRequest(http.MethodPut, "/v0/connectors/url-demo", jsonBodyAPI(t, putBody))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var putResp map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&putResp); err != nil {
+		t.Fatal(err)
+	}
+	if putResp["import_format_detected"] != "openapi3" {
+		t.Fatalf("import_format_detected=%v want openapi3", putResp["import_format_detected"])
+	}
+
+	toolsReq := httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
+	toolsRR := httptest.NewRecorder()
+	h.ServeHTTP(toolsRR, toolsReq)
+	if toolsRR.Code != http.StatusOK {
+		t.Fatalf("GET /v0/tools status=%d body=%s", toolsRR.Code, toolsRR.Body.String())
+	}
+	var toolsBody struct {
+		Tools []store.Tool `json:"tools"`
+	}
+	if err := json.NewDecoder(toolsRR.Body).Decode(&toolsBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(toolsBody.Tools) == 0 {
+		t.Fatal("expected tools from spec_url import")
 	}
 }
 

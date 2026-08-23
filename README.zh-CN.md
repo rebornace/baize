@@ -136,7 +136,7 @@ curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
 通过上传接口文档，把 HTTP 服务注册成 Tools。
 
 1. 打开 `/ui` → **设置 → OpenAPI**（管理员）。
-2. **添加 Connector**：填写 `id`、`base_url`，上传接口文档（`.json`、`.yaml`、`.yml`）。
+2. **添加 Connector**：填写 `id`、`base_url`，上传接口文档（`.json`、`.yaml`、`.yml`），或填写线上文档 URL（支持直链与 Swagger UI 页面，服务端抓取）。
 3. 保存 — 服务端识别格式、转换为 OpenAPI 3，并发现全部 operation。
 4. 在 **设置 → Tools** 管理工具；通过 `/ui` 或 `POST /v0/runs` 运行。
 
