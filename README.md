@@ -75,7 +75,9 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
 - Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
-- Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
+- Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
+- Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
+- Live runs use SSE (`GET /v0/runs/{id}/stream`); outbound webhooks POST each event and a terminal `run.ended` payload; if the stream drops, the UI falls back to 700ms polling
 
 With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
 

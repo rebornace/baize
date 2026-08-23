@@ -14,6 +14,7 @@ describe('settingsNavItems', () => {
       '/settings/identities',
       '/settings/mcp',
       '/settings/plugins',
+      '/settings/webhooks',
     ])
   })
 })

@@ -5,6 +5,7 @@ import { useGate } from './gateContext'
 import { ChatPage } from './pages/ChatPage'
 import { McpSettings } from './pages/McpSettings'
 import { PluginSettings } from './pages/PluginSettings'
+import { WebhookSettings } from './pages/WebhookSettings'
 import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
 import { SettingsLayout } from './pages/SettingsLayout'
@@ -61,6 +62,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <PluginSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="webhooks"
+              element={
+                <AdminOnly>
+                  <WebhookSettings />
                 </AdminOnly>
               }
             />

@@ -300,6 +300,47 @@ body {
   font-size: 0.85rem;
 }
 
+.chat-advanced {
+  margin-top: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 0.35rem 0.65rem 0.65rem;
+}
+
+.chat-advanced-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  user-select: none;
+}
+
+.chat-advanced-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.chat-advanced-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.chat-advanced-input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--bg);
+}
+
+.chat-advanced-input:focus {
+  outline: 2px solid rgba(31, 111, 235, 0.25);
+  border-color: var(--accent);
+}
+
 .composer {
   display: flex;
   gap: 0.5rem;

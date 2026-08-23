@@ -25,6 +25,10 @@ agent:
   skills: []
 run:
   max_steps: 16
+events:
+  webhook:
+    url: ""
+    headers: {}
 conversation:
   max_messages: 40
   persist_identities: true

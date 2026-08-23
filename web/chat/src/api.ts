@@ -79,24 +79,61 @@ export async function getMe(): Promise<{ role: string }> {
   return parseJSON(res)
 }
 
+export interface CreateRunOptions {
+  identityId?: string
+  webhookUrl?: string
+  webhookHeaders?: Record<string, string>
+}
+
 export async function createRun(
   agentId: string,
   input: string,
   conversationId: string,
-  identityId?: string,
+  options?: CreateRunOptions,
 ): Promise<CreateRunResponse> {
-  const body: Record<string, string> = {
+  const body: Record<string, unknown> = {
     agent_id: agentId,
     input,
     conversation_id: conversationId,
   }
-  if (identityId) body.identity_id = identityId
+  if (options?.identityId) body.identity_id = options.identityId
+  if (options?.webhookUrl) body.webhook_url = options.webhookUrl
+  if (options?.webhookHeaders && Object.keys(options.webhookHeaders).length > 0) {
+    body.webhook_headers = options.webhookHeaders
+  }
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: authInit({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
   return parseJSON<CreateRunResponse>(res)
+}
+
+export interface EventsWebhookConfig {
+  url: string
+  headers: Record<string, string>
+}
+
+export async function getEventsWebhook(): Promise<EventsWebhookConfig> {
+  const res = await fetch('/v0/settings/events-webhook', { headers: authInit() })
+  return parseJSON<EventsWebhookConfig>(res)
+}
+
+export async function putEventsWebhook(body: EventsWebhookConfig): Promise<EventsWebhookConfig> {
+  const res = await fetch('/v0/settings/events-webhook', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<EventsWebhookConfig>(res)
+}
+
+export async function testEventsWebhook(): Promise<{ status: string }> {
+  const res = await fetch('/v0/settings/events-webhook/test', {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON<{ status: string }>(res)
 }
 
 export async function getRun(runId: string): Promise<Run> {

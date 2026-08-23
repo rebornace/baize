@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -26,6 +27,7 @@ import (
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/webhook"
 )
 
 // Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
@@ -192,6 +194,14 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	hub := eventbus.NewHub()
 	st = eventbus.Notify(st, hub)
 
+	webhookCfg, err := loadEventsWebhook(st, cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("load events webhook: %w", err)
+	}
+	dispatcher := webhook.NewDispatcher(st, webhookCfg)
+	dispatcher.Attach(hub)
+
 	engine := &run.Engine{
 		Store:       st,
 		LLM:         provider,
@@ -205,6 +215,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	}
 	srv := api.NewServer(st, reg, engine)
 	srv.Hub = hub
+	srv.Webhook = dispatcher
 	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages
@@ -225,6 +236,37 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.OperatorToken = op
 	srv.AdminToken = adm
 	return srv, closer, nil
+}
+
+// loadEventsWebhook returns the persisted events webhook config, seeding from
+// YAML defaults when the settings KV is empty.
+func loadEventsWebhook(st store.Store, cfg config.Config) (webhook.Config, error) {
+	raw, ok, err := st.GetSetting(store.SettingKeyEventsWebhook)
+	if err != nil {
+		return webhook.Config{}, err
+	}
+	if ok && len(raw) > 0 {
+		var out webhook.Config
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return webhook.Config{}, err
+		}
+		return out, nil
+	}
+	def := webhook.Config{
+		URL:     cfg.Events.Webhook.URL,
+		Headers: cfg.Events.Webhook.Headers,
+	}
+	if def.Headers == nil {
+		def.Headers = map[string]string{}
+	}
+	b, err := json.Marshal(def)
+	if err != nil {
+		return webhook.Config{}, err
+	}
+	if err := st.UpsertSetting(store.SettingKeyEventsWebhook, b); err != nil {
+		return webhook.Config{}, err
+	}
+	return def, nil
 }
 
 // openConversationAndIdentities builds the conversation message store and the

@@ -28,6 +28,7 @@ import (
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/ui"
+	"github.com/rebornace/baize/internal/webhook"
 )
 
 // Runner executes and resumes runs (implemented by run.Engine).
@@ -56,6 +57,7 @@ type Server struct {
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
 	OperatorToken string
 	AdminToken    string
+	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	mux           *http.ServeMux
 }
 
@@ -143,6 +145,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/conversations", s.handleListConversations)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
+	s.mux.HandleFunc("GET /v0/settings/events-webhook", s.handleGetEventsWebhook)
+	s.mux.HandleFunc("PUT /v0/settings/events-webhook", s.handlePutEventsWebhook)
+	s.mux.HandleFunc("POST /v0/settings/events-webhook/test", s.handlePostEventsWebhookTest)
 }
 
 type apiError struct {
@@ -528,6 +533,69 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) loadEventsWebhook() webhook.Config {
+	raw, ok, err := s.Store.GetSetting(store.SettingKeyEventsWebhook)
+	if err != nil || !ok || len(raw) == 0 {
+		return webhook.Config{}
+	}
+	var cfg webhook.Config
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return webhook.Config{}
+	}
+	return cfg
+}
+
+func (s *Server) handleGetEventsWebhook(w http.ResponseWriter, r *http.Request) {
+	cfg := s.loadEventsWebhook()
+	if cfg.Headers == nil {
+		cfg.Headers = map[string]string{}
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *Server) handlePutEventsWebhook(w http.ResponseWriter, r *http.Request) {
+	var body webhook.Config
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	if body.Headers == nil {
+		body.Headers = map[string]string{}
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := s.Store.UpsertSetting(store.SettingKeyEventsWebhook, raw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if s.Webhook != nil {
+		s.Webhook.UpdateConfig(body)
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) handlePostEventsWebhookTest(w http.ResponseWriter, r *http.Request) {
+	if s.Webhook == nil {
+		writeError(w, http.StatusServiceUnavailable, "webhook_unavailable", "webhook dispatcher is not configured")
+		return
+	}
+	if err := s.Webhook.SendTest(r.Context()); err != nil {
+		switch {
+		case errors.Is(err, webhook.ErrNoURL):
+			writeError(w, http.StatusBadRequest, "webhook_not_configured", "webhook url is not configured")
+		case errors.Is(err, authcred.ErrInvalidAuth):
+			writeError(w, http.StatusBadRequest, "invalid_auth", err.Error())
+		default:
+			writeError(w, http.StatusBadGateway, "webhook_delivery_failed", err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {
 	tools := s.Store.ListTools()
 	if tools == nil {
@@ -794,10 +862,12 @@ func syncRequireLoginList(list []string, name string, require bool) []string {
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AgentID        string `json:"agent_id"`
-		Input          string `json:"input"`
-		ConversationID string `json:"conversation_id"`
-		IdentityID     string `json:"identity_id"`
+		AgentID        string            `json:"agent_id"`
+		Input          string            `json:"input"`
+		ConversationID string            `json:"conversation_id"`
+		IdentityID     string            `json:"identity_id"`
+		WebhookURL     string            `json:"webhook_url"`
+		WebhookHeaders map[string]string `json:"webhook_headers"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -829,6 +899,12 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// and rely on the connector's resolved DefaultHeaders.
 	if authcred.NormalizeMode(s.AuthMode) == authcred.ModePassthrough {
 		createIn.PassthroughHeaders = authcred.PickHeaders(r.Header, s.AuthWhitelist)
+	}
+	if u := strings.TrimSpace(body.WebhookURL); u != "" || len(body.WebhookHeaders) > 0 {
+		createIn.WebhookConfig = &store.WebhookConfig{
+			URL:     u,
+			Headers: body.WebhookHeaders,
+		}
 	}
 
 	runRec, err := s.Store.CreateRun(createIn)
