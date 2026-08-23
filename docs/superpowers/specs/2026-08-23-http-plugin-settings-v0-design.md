@@ -1,6 +1,6 @@
 # HTTP 插件设置页 v0 设计规格
 
-> 状态：待审查  
+> 状态：已批准  
 > 日期：2026-08-23  
 > 前置：HTTP 插件协议 v0 已落地；MCP 设置页 `McpSettings` 已落地  
 > 依据：`docs/architecture-and-plugin-protocol.md` §4.2；Chat UI 壳 `/settings/plugins` 仍为 `ComingSoon`
