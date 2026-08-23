@@ -290,13 +290,13 @@ Skills are an optional **configuration** layer (not a sixth Runtime abstract): a
 | Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
 | Intersection | Visible tools = ∪(active Skill `tools`) ∩ catalog `enabled`; Skills cannot turn on a disabled catalog row |
 
-The trial pack lives at `examples/skills/ticket-triage`; only `demo` / `docker-demo` scan that directory. Production `minimal.yaml` leaves `skills.builtin_dir` empty — Skills settings start empty until you upload packs.
+The trial pack `ticket-triage` lives under `examples/skills` (only `demo` / `docker-demo` scan it). Production `minimal.yaml` uses `skills.builtin_dir: ./skills` with built-in **`data-analytics`** (default active) — visible under Settings → Skills.
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 
 ### Data analytics & reports
 
-For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Enable the optional **`data-analytics`** Skill pack (`examples/skills/data-analytics`) via Settings → Skills or `activate_skill`.
+For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Built-in Skill **`data-analytics`** (`skills/data-analytics`, default in `minimal.yaml`): toggle in Settings → Skills or via `activate_skill`. Works with only `create_analysis_page` before any Connector; `list_tickets` / `get_ticket` appear once those tools are registered.
 
 **Recommended:** `create_analysis_page` → a self-contained analysis page with **filters**, chart **drilldown**, and in-browser **PDF export**. The tool returns `{ artifact_id, artifact_url, kind: "analysis_page" }`; `/ui` embeds the page in an iframe.
 

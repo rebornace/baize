@@ -48,11 +48,11 @@ func TestMinimalYAMLProductionDefaults(t *testing.T) {
 	if cfg.Agent.ID != "default-agent" {
 		t.Fatalf("agent.id=%q", cfg.Agent.ID)
 	}
-	if len(cfg.Agent.Skills) != 0 {
-		t.Fatalf("agent.skills=%v want empty", cfg.Agent.Skills)
+	if len(cfg.Agent.Skills) != 1 || cfg.Agent.Skills[0] != "data-analytics" {
+		t.Fatalf("agent.skills=%v want [data-analytics]", cfg.Agent.Skills)
 	}
-	if cfg.Skills.BuiltinDir != "" {
-		t.Fatalf("skills.builtin_dir=%q want empty", cfg.Skills.BuiltinDir)
+	if cfg.Skills.BuiltinDir != "./skills" {
+		t.Fatalf("skills.builtin_dir=%q want ./skills", cfg.Skills.BuiltinDir)
 	}
 }
 
@@ -85,6 +85,12 @@ func TestDockerMinimalYAML(t *testing.T) {
 	}
 	if cfg.LLM.Provider != "openai_compatible" {
 		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
+	}
+	if cfg.Skills.BuiltinDir != "/app/skills" {
+		t.Fatalf("skills.builtin_dir=%q want /app/skills", cfg.Skills.BuiltinDir)
+	}
+	if len(cfg.Agent.Skills) != 1 || cfg.Agent.Skills[0] != "data-analytics" {
+		t.Fatalf("agent.skills=%v want [data-analytics]", cfg.Agent.Skills)
 	}
 }
 

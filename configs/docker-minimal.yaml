@@ -15,12 +15,13 @@ llm:
   disable_thinking: true
   api_key_env: BAIZE_API_KEY
 skills:
-  builtin_dir: ""
+  builtin_dir: /app/skills
   user_dir: /app/data/skills
 agent:
   id: default-agent
   system: "你是企业助手。仅通过已注册工具访问后端系统；无工具时说明如何配置 Connector。"
-  skills: []
+  skills:
+    - data-analytics
 run:
   max_steps: 16
 conversation:
