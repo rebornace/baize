@@ -62,20 +62,9 @@ func FetchSpecFromURL(rawURL string) ([]byte, error) {
 		return nil, err
 	}
 	if looksLikeHTML(content) {
-		specURL, extractErr := extractSwaggerUISpecURL(string(content), u)
-		if extractErr != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidSpec, extractErr)
-		}
-		u2, err := validatePublicHTTPURL(specURL)
+		content, err = resolveHTMLSwaggerPage(string(content), u)
 		if err != nil {
 			return nil, err
-		}
-		content, err = fetchURL(u2)
-		if err != nil {
-			return nil, err
-		}
-		if looksLikeHTML(content) {
-			return nil, fmt.Errorf("%w: resolved spec URL still returns HTML", ErrInvalidSpec)
 		}
 	}
 	if len(content) == 0 {
