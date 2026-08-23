@@ -17,6 +17,8 @@ type Store interface {
 	Clear(conversationID string)
 	TruncateFrom(conversationID, messageID string) (deleted int, err error)
 	Fork(srcConversationID, throughMessageID string) (newConversationID string, copied int, err error)
+	// SetRunID rebinds a persisted user turn to a new run (regenerate without duplicating the user row).
+	SetRunID(messageID, runID string) error
 }
 
 // MemoryStore is an in-memory Store implementation.
@@ -132,4 +134,19 @@ func (s *MemoryStore) Fork(srcConversationID, throughMessageID string) (string, 
 	}
 	s.msgs[newID] = copied
 	return newID, len(copied), nil
+}
+
+func (s *MemoryStore) SetRunID(messageID, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for convID, msgs := range s.msgs {
+		for i, m := range msgs {
+			if m.ID == messageID {
+				msgs[i].RunID = runID
+				s.msgs[convID] = msgs
+				return nil
+			}
+		}
+	}
+	return ErrMessageNotFound
 }

@@ -39,6 +39,7 @@ connector:
       default_scheme: ""
 run:
   max_steps: 16
+  tool_timeout_sec: 60
 conversation:
   max_messages: 40
   persist_identities: true

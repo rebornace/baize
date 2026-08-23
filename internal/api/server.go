@@ -41,6 +41,11 @@ type Runner interface {
 	ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error
 }
 
+// RunCanceller is implemented by run.Engine for cooperative cancel.
+type RunCanceller interface {
+	Cancel(runID string) error
+}
+
 type Server struct {
 	Store          store.Store
 	Registry       *tool.Registry
@@ -141,11 +146,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v0/skills/{id}", s.handleDeleteSkill)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
+	s.mux.HandleFunc("POST /v0/runs/{id}/cancel", s.handlePostCancel)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
 	s.mux.HandleFunc("GET /v0/artifacts/{id}", s.handleGetArtifact)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/identities", s.handlePostIdentity)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
@@ -991,6 +998,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Input          string            `json:"input"`
 		ConversationID string            `json:"conversation_id"`
 		IdentityID     string            `json:"identity_id"`
+		SessionToken   string            `json:"session_token"`
 		WebhookURL     string            `json:"webhook_url"`
 		WebhookHeaders map[string]string `json:"webhook_headers"`
 	}
@@ -1012,12 +1020,25 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// Omitting conversation_id keeps the machine path (default connector
 	// headers apply; require_login is not enforced). Chat always sends an id.
 	conv := strings.TrimSpace(body.ConversationID)
+	runInput := body.Input
+	identityID := strings.TrimSpace(body.IdentityID)
+	if conv != "" && s.Identities != nil {
+		cleaned, sessionID, err := identity.PrepareSessionAuth(s.Identities, conv, runInput, body.SessionToken)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		runInput = cleaned
+		if identityID == "" && sessionID != "" {
+			identityID = sessionID
+		}
+	}
 
 	createIn := store.CreateRunInput{
 		AgentID:        body.AgentID,
-		Input:          body.Input,
+		Input:          runInput,
 		ConversationID: conv,
-		IdentityID:     strings.TrimSpace(body.IdentityID),
+		IdentityID:     identityID,
 	}
 	// Only passthrough mode pulls headers off the inbound request into the
 	// run's private PassthroughHeaders; other modes ignore the request headers
@@ -1044,7 +1065,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	if s.Messages != nil && conv != "" {
 		_, _ = s.Messages.Append(conv, conversation.Message{
 			Role:    conversation.RoleUser,
-			Content: body.Input,
+			Content: runInput,
 			RunID:   runRec.ID,
 		})
 	}
@@ -1085,7 +1106,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
-	}(runRec.ID, body.Input, def)
+	}(runRec.ID, runInput, def)
 
 	updated, err := s.Store.GetRun(runRec.ID)
 	if err != nil {
@@ -1109,6 +1130,53 @@ func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
 		views = []identity.PublicView{}
 	}
 	writeJSON(w, http.StatusOK, views)
+}
+
+func (s *Server) handlePostIdentity(w http.ResponseWriter, r *http.Request) {
+	if s.Identities == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "identity store not configured")
+		return
+	}
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if convID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	var body struct {
+		Token         string `json:"token"`
+		Authorization string `json:"authorization"`
+		Label         string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	raw := strings.TrimSpace(body.Token)
+	if raw == "" {
+		raw = strings.TrimSpace(body.Authorization)
+	}
+	if raw == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "token or authorization is required")
+		return
+	}
+	id, err := identity.UpsertManualToken(s.Identities, convID, raw, body.Label)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	got, err := s.Identities.Get(convID, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, identity.PublicView{
+		ID:            got.ID,
+		Label:         got.Label,
+		Scheme:        got.Scheme,
+		Source:        got.Source,
+		ClaimsSummary: got.ClaimsSummary,
+		IsDefault:     got.IsDefault,
+	})
 }
 
 func (s *Server) handleSetDefaultIdentity(w http.ResponseWriter, r *http.Request) {
@@ -1140,6 +1208,43 @@ func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
 		s.Identities.ClearCaptured(r.PathValue("id"))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlePostCancel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing run id")
+		return
+	}
+	runRec, err := s.Store.GetRun(id)
+	if err != nil || runRec == nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	switch runRec.Status {
+	case store.StatusQueued, store.StatusRunning, store.StatusWaitingHuman:
+	default:
+		writeError(w, http.StatusConflict, "not_active", "run is not active")
+		return
+	}
+	canceller, ok := s.Runner.(RunCanceller)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "cancel_unavailable", "runner does not support cancel")
+		return
+	}
+	if err := canceller.Cancel(id); err != nil {
+		writeError(w, http.StatusConflict, "cancel_failed", err.Error())
+		return
+	}
+	updated, err := s.Store.GetRun(id)
+	if err != nil || updated == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"run_id": id, "status": string(store.StatusCancelled)})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"run_id": updated.ID,
+		"status": string(updated.Status),
+	})
 }
 
 func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
@@ -1513,6 +1618,7 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 
 	if body.Regenerate {
 		input := lastUserMessageContent(msgs)
+		lastUser := lastUserMessage(msgs)
 		if input == "" {
 			writeError(w, http.StatusConflict, "regenerate_unavailable", "no user message to regenerate from")
 			return
@@ -1525,7 +1631,11 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "invalid_request", "agent_id is required")
 			return
 		}
-		runRec, err := s.createAndExecuteRun(r, agentID, input, convID, "")
+		reuseUser := lastUser != nil && lastUser.Content == input
+		runRec, err := s.createAndExecuteRun(r, agentID, input, convID, "", executeRunOpts{
+			skipUserAppend: reuseUser,
+			rebindUserID:   lastUserID(lastUser),
+		})
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
@@ -1534,6 +1644,7 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 			"run_id": runRec.ID,
 			"status": string(runRec.Status),
 		}
+		out["messages"] = s.Messages.List(convID)
 	}
 
 	writeJSON(w, http.StatusOK, out)
@@ -1602,8 +1713,30 @@ func lastUserMessageContent(msgs []conversation.Message) string {
 	return ""
 }
 
+func lastUserMessage(msgs []conversation.Message) *conversation.Message {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == conversation.RoleUser {
+			m := msgs[i]
+			return &m
+		}
+	}
+	return nil
+}
+
+func lastUserID(m *conversation.Message) string {
+	if m == nil {
+		return ""
+	}
+	return m.ID
+}
+
+type executeRunOpts struct {
+	skipUserAppend bool
+	rebindUserID   string
+}
+
 // createAndExecuteRun creates a run, appends the user message, and starts Execute in background.
-func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, identityID string) (*store.Run, error) {
+func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, identityID string, opts executeRunOpts) (*store.Run, error) {
 	ag, err := s.Store.GetAgent(agentID)
 	if err != nil {
 		return nil, fmt.Errorf("unknown agent")
@@ -1621,7 +1754,14 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 	if err != nil {
 		return nil, err
 	}
-	if s.Messages != nil && convID != "" {
+	if opts.skipUserAppend && opts.rebindUserID != "" {
+		if s.Messages == nil {
+			return nil, fmt.Errorf("message store not configured")
+		}
+		if err := s.Messages.SetRunID(opts.rebindUserID, runRec.ID); err != nil {
+			return nil, err
+		}
+	} else if s.Messages != nil && convID != "" {
 		_, _ = s.Messages.Append(convID, conversation.Message{
 			Role:    conversation.RoleUser,
 			Content: input,

@@ -3,9 +3,11 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/authresolve"
@@ -26,6 +28,9 @@ const (
 	EventHITLWaiting  = "hitl.waiting"
 	EventHITLResumed  = "hitl.resumed"
 	EventHITLRejected = "hitl.rejected"
+	EventRunCancelled = "run.cancelled"
+
+	DefaultToolTimeout = 60 * time.Second
 )
 
 type Engine struct {
@@ -34,6 +39,8 @@ type Engine struct {
 	Tools    *tool.Registry
 	Gate     *Gate
 	MaxSteps int // default 16
+	// ToolTimeout bounds a single Tools.Invoke (default 60s).
+	ToolTimeout time.Duration
 	// Messages optionally persists conversation history across runs.
 	// nil = legacy behavior (no cross-run message persistence). When non-nil,
 	// Execute injects a windowed history into the LLM prompt and the engine
@@ -49,6 +56,9 @@ type Engine struct {
 
 	runMu sync.Mutex
 	runs  map[string]*runSkillState
+
+	cancelMu sync.Mutex
+	cancels  map[string]context.CancelFunc
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
@@ -59,14 +69,91 @@ func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input 
 	if runRec == nil {
 		return fmt.Errorf("run not found: %s", runID)
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	e.registerCancel(runID, cancel)
+	defer e.clearCancel(runID)
+
 	ctx = e.injectAuthCtxFromRun(ctx, runRec)
 	if err := e.ensureRunStarted(runID); err != nil {
 		return err
 	}
 	e.beginRunSkills(runID, ag.Skills, ag.System)
 	sys := e.composeSystem(ag.System, runID)
+	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)
 	messages := e.buildMessages(sys, runRec.ConversationID, input)
-	return e.runLoop(ctx, runID, messages)
+	err = e.runLoop(ctx, runID, messages)
+	if errors.Is(err, context.Canceled) {
+		e.markCancelled(runID)
+		return err
+	}
+	return err
+}
+
+// Cancel requests cooperative cancellation of an active run.
+func (e *Engine) Cancel(runID string) error {
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		return fmt.Errorf("run not found")
+	}
+	switch runRec.Status {
+	case store.StatusQueued, store.StatusRunning, store.StatusWaitingHuman:
+	default:
+		return fmt.Errorf("run is not active")
+	}
+
+	e.cancelMu.Lock()
+	cancel := e.cancels[runID]
+	e.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	// Mark cancelled immediately so UI / HasActiveRun unblock even if the
+	// worker is blocked outside a cancellable call.
+	e.markCancelled(runID)
+	return nil
+}
+
+func (e *Engine) registerCancel(runID string, cancel context.CancelFunc) {
+	e.cancelMu.Lock()
+	defer e.cancelMu.Unlock()
+	if e.cancels == nil {
+		e.cancels = make(map[string]context.CancelFunc)
+	}
+	if prev, ok := e.cancels[runID]; ok {
+		prev()
+	}
+	e.cancels[runID] = cancel
+}
+
+func (e *Engine) clearCancel(runID string) {
+	e.cancelMu.Lock()
+	defer e.cancelMu.Unlock()
+	delete(e.cancels, runID)
+}
+
+func (e *Engine) markCancelled(runID string) {
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		return
+	}
+	switch runRec.Status {
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled:
+		return
+	}
+	_ = e.Store.AppendEvent(runID, store.Event{
+		Type: EventRunCancelled,
+		Data: map[string]any{"reason": "cancelled"},
+	})
+	_ = e.Store.SetHITL(runID, nil)
+	_ = e.Store.UpdateRun(runID, store.StatusCancelled, "", "cancelled")
+	e.recordTerminalMessage(runID)
+}
+
+func (e *Engine) toolTimeout() time.Duration {
+	if e.ToolTimeout > 0 {
+		return e.ToolTimeout
+	}
+	return DefaultToolTimeout
 }
 
 // buildMessages assembles the LLM prompt: system + windowed conversation
@@ -141,11 +228,17 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	_ = e.Store.SetHITL(runID, nil)
 
 	toolCallID := lastToolCallID(e.Store, runID)
-	content, isError, invErr := e.Tools.Invoke(ctx, payload.ToolName, payload.Arguments)
+	toolCtx, toolCancel := context.WithTimeout(ctx, e.toolTimeout())
+	content, isError, invErr := e.Tools.Invoke(toolCtx, payload.ToolName, payload.Arguments)
+	toolCancel()
 	if invErr != nil {
 		isError = true
 		if content == nil {
-			content = map[string]any{"error": invErr.Error()}
+			msg := invErr.Error()
+			if errors.Is(invErr, context.DeadlineExceeded) {
+				msg = fmt.Sprintf("tool timed out after %s", e.toolTimeout())
+			}
+			content = map[string]any{"error": msg}
 		}
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
@@ -170,6 +263,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		return err
 	}
 	sys := e.composeSystem(ag.System, runID)
+	sys = e.appendSessionAuthHint(sys, run.ConversationID)
 	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
 }
@@ -228,6 +322,11 @@ func eventsAfterInput(evs []store.Event) []llm.Message {
 	return out
 }
 
+func (e *Engine) isCancelled(runID string) bool {
+	runRec, err := e.Store.GetRun(runID)
+	return err == nil && runRec != nil && runRec.Status == store.StatusCancelled
+}
+
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
 	maxSteps := e.MaxSteps
 	if maxSteps <= 0 {
@@ -235,9 +334,18 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	}
 
 	for step := 0; step < maxSteps; step++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if e.isCancelled(runID) {
+			return context.Canceled
+		}
 		specs := e.specsForRun(runID)
 		msg, err := e.LLM.Chat(ctx, messages, specs)
 		if err != nil {
+			if ctx.Err() != nil || e.isCancelled(runID) {
+				return context.Canceled
+			}
 			_ = e.Store.AppendEvent(runID, store.Event{
 				Type: EventLLMError,
 				Data: map[string]any{"error": err.Error()},
@@ -250,6 +358,12 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		if len(msg.ToolCalls) > 0 {
 			messages = append(messages, msg)
 			for _, tc := range msg.ToolCalls {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if e.isCancelled(runID) {
+					return context.Canceled
+				}
 				_ = e.Store.AppendEvent(runID, store.Event{
 					Type: EventLLMToolCall,
 					Data: map[string]any{
@@ -306,15 +420,27 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					if err := e.awaitHITL(ctx, runID, tc); err != nil {
 						return err
 					}
+					if e.isCancelled(runID) {
+						return context.Canceled
+					}
 				}
 
 				invokeCtx := identity.WithToolCallID(ctx, tc.ID)
-				content, isError, invErr := e.Tools.Invoke(invokeCtx, tc.Name, tc.Arguments)
+				toolCtx, toolCancel := context.WithTimeout(invokeCtx, e.toolTimeout())
+				content, isError, invErr := e.Tools.Invoke(toolCtx, tc.Name, tc.Arguments)
+				toolCancel()
 				if invErr != nil {
 					isError = true
 					if content == nil {
-						content = map[string]any{"error": invErr.Error()}
+						msg := invErr.Error()
+						if errors.Is(invErr, context.DeadlineExceeded) {
+							msg = fmt.Sprintf("tool timed out after %s", e.toolTimeout())
+						}
+						content = map[string]any{"error": msg}
 					}
+				}
+				if ctx.Err() != nil || e.isCancelled(runID) {
+					return context.Canceled
 				}
 
 				_ = e.Store.AppendEvent(runID, store.Event{
@@ -337,6 +463,9 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			continue
 		}
 
+		if e.isCancelled(runID) {
+			return context.Canceled
+		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMMessage,
 			Data: map[string]any{"content": msg.Content},
@@ -348,6 +477,9 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		return nil
 	}
 
+	if e.isCancelled(runID) {
+		return context.Canceled
+	}
 	errMsg := fmt.Sprintf("max steps exceeded (%d)", maxSteps)
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventLLMError,
@@ -406,7 +538,8 @@ func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) e
 	select {
 	case d = <-ch:
 	case <-ctx.Done():
-		return ctx.Err()
+		_ = e.Store.SetHITL(runID, nil)
+		return context.Canceled
 	}
 	if !d.Approve {
 		_ = e.Store.AppendEvent(runID, store.Event{
@@ -460,6 +593,10 @@ func (e *Engine) recordTerminalMessage(runID string) {
 	if err != nil || runRec == nil || runRec.ConversationID == "" {
 		return
 	}
+	if !e.userTurnStillLinked(runRec) {
+		// User turn was rolled back; do not resurrect assistant rows for superseded runs.
+		return
+	}
 	switch runRec.Status {
 	case store.StatusSucceeded:
 		if strings.TrimSpace(runRec.Output) == "" {
@@ -482,7 +619,30 @@ func (e *Engine) recordTerminalMessage(runID string) {
 			Content: note,
 			RunID:   runID,
 		})
+	case store.StatusCancelled:
+		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
+			Role:    conversation.RoleSystemNote,
+			Content: "已取消",
+			RunID:   runID,
+		})
 	}
+}
+
+func (e *Engine) userTurnStillLinked(runRec *store.Run) bool {
+	msgs := e.Messages.List(runRec.ConversationID)
+	for _, m := range msgs {
+		if m.RunID == runRec.ID && m.Role == conversation.RoleUser {
+			return true
+		}
+	}
+	// Runs created before user rows carried run_id: accept when the latest user
+	// message still matches this run's input.
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == conversation.RoleUser {
+			return msgs[i].Content == runRec.Input
+		}
+	}
+	return false
 }
 
 func (e *Engine) ensureRunStarted(runID string) error {

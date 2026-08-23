@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   clearIdentities,
+  createIdentity,
   deleteIdentity,
   listIdentities,
   setDefaultIdentity,
@@ -46,6 +47,7 @@ export function IdentitiesSettings() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const [pasteToken, setPasteToken] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -81,6 +83,32 @@ export function IdentitiesSettings() {
     <div className="settings-section">
       <h1 className="settings-heading">账号</h1>
       <p className="settings-meta">会话 {conversationId}</p>
+      <label className="settings-field">
+        <span className="settings-field-label">粘贴用户 Token（跳过登录接口）</span>
+        <input
+          className="settings-input"
+          type="password"
+          value={pasteToken}
+          onChange={(e) => setPasteToken(e.target.value)}
+          disabled={busy}
+          placeholder="Bearer eyJ… 或 accessToken"
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          className="btn primary sm"
+          disabled={busy || !pasteToken.trim()}
+          onClick={() =>
+            void runAction(async () => {
+              await createIdentity(conversationId, pasteToken.trim())
+              setPasteToken('')
+              setStatus('已保存临时 Token')
+            })
+          }
+        >
+          保存 Token
+        </button>
+      </label>
       {status && <p className="settings-error">{status}</p>}
       {error && <p className="settings-error">无法加载账号：{error}</p>}
       {!error && identities === null && <p className="settings-muted">加载中…</p>}

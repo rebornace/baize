@@ -219,6 +219,18 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 	return newID, len(toCopy), nil
 }
 
+func (s *SQLiteStore) SetRunID(messageID, runID string) error {
+	res, err := s.db.Exec(`UPDATE messages SET run_id = ? WHERE id = ?`, runID, messageID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrMessageNotFound
+	}
+	return nil
+}
+
 func scanMessage(scanner interface {
 	Scan(dest ...any) error
 }) (Message, error) {

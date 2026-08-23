@@ -611,6 +611,7 @@ func TestExecuteWritesAssistantOnSuccess(t *testing.T) {
 	}}
 	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "问", ConversationID: "conv1"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "问", RunID: r.ID})
 	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问"); err != nil {
 		t.Fatal(err)
 	}
@@ -641,6 +642,7 @@ func TestExecuteWritesSystemNoteOnFailure(t *testing.T) {
 	llmStub := &captureLLM{err: fmt.Errorf("upstream 502")}
 	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "问", ConversationID: "conv1"})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "问", RunID: r.ID})
 	// Execute returns the LLM error; the engine still records the terminal note.
 	_ = eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问")
 
@@ -889,5 +891,55 @@ func TestContinueFromHITLColdNoMessageStore(t *testing.T) {
 	}
 	if saw[3].Role != llm.RoleTool {
 		t.Fatalf("saw[3]=%+v", saw[3])
+	}
+}
+
+func TestBuildMessagesAfterTruncateAndResend(t *testing.T) {
+	msgStore := conversation.NewMemoryStore()
+	u1, _ := msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "u1"})
+	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "a1"})
+	u2, _ := msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "u2"})
+	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleAssistant, Content: "a2"})
+
+	if _, err := msgStore.TruncateFrom("c1", u2.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "u2-edited", RunID: "run_new"})
+
+	eng := &Engine{Messages: msgStore, MaxMessages: 40}
+	got := eng.buildMessages("sys", "c1", "u2-edited")
+	if len(got) != 4 {
+		t.Fatalf("len=%d want 4; got=%+v", len(got), got)
+	}
+	if got[1].Content != "u1" || got[2].Content != "a1" || got[3].Content != "u2-edited" {
+		t.Fatalf("unexpected window: %+v", got)
+	}
+	for _, m := range got {
+		if m.Content == "u2" || m.Content == "a2" {
+			t.Fatalf("rolled-back content leaked: %+v", got)
+		}
+	}
+	_ = u1
+}
+
+func TestRecordTerminalMessageSkipsSupersededRun(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	u1, _ := msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "u1"})
+	run, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "u1", ConversationID: "c1"})
+	if err := msgStore.SetRunID(u1.ID, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := msgStore.TruncateFrom("c1", u1.ID); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpdateRun(run.ID, store.StatusSucceeded, "ghost assistant", "")
+
+	eng := &Engine{Store: st, Messages: msgStore}
+	eng.recordTerminalMessage(run.ID)
+
+	if len(msgStore.List("c1")) != 0 {
+		t.Fatalf("expected no assistant append after rollback; got %+v", msgStore.List("c1"))
 	}
 }

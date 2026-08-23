@@ -194,6 +194,13 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		log.Printf("persisted connectors restored from store: %v", ids)
 	}
 
+	// Artifact store needs the underlying *store.SQLite; eventbus.Notify wraps st
+	// and would break a direct type assertion below.
+	var sqliteStore *store.SQLite
+	if sqlite, ok := st.(*store.SQLite); ok {
+		sqliteStore = sqlite
+	}
+
 	hub := eventbus.NewHub()
 	st = eventbus.Notify(st, hub)
 
@@ -211,6 +218,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		Tools:       reg,
 		Gate:        run.NewGate(),
 		MaxSteps:    cfg.Run.MaxSteps,
+		ToolTimeout: time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
 		Identities:  identities,
@@ -224,9 +232,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
 
-	if sqlite, ok := st.(*store.SQLite); ok && strings.TrimSpace(cfg.Store.SQLitePath) != "" {
+	if sqliteStore != nil && strings.TrimSpace(cfg.Store.SQLitePath) != "" {
 		artDir := filepath.Join(filepath.Dir(cfg.Store.SQLitePath), "artifacts")
-		artStore, err := artifact.NewFileStore(artDir, sqlite)
+		artStore, err := artifact.NewFileStore(artDir, sqliteStore)
 		if err != nil {
 			_ = closer.Close()
 			return nil, nil, fmt.Errorf("open artifact store: %w", err)

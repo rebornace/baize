@@ -59,7 +59,7 @@ func specNames(specs []llm.ToolSpec) map[string]bool {
 	return out
 }
 
-func TestExecuteFiltersToolsByDefaultSkills(t *testing.T) {
+func TestExecuteIncludesAllEnabledToolsWithDefaultSkills(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	reg.Register("list_tickets", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
@@ -93,8 +93,8 @@ func TestExecuteFiltersToolsByDefaultSkills(t *testing.T) {
 	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if sawSpecs["create_ticket"] {
-		t.Fatalf("create_ticket must be filtered; specs=%v", sawSpecs)
+	if !sawSpecs["create_ticket"] {
+		t.Fatalf("connector tools must be visible alongside skill tools; specs=%v", sawSpecs)
 	}
 	if !sawSpecs["list_tickets"] {
 		t.Fatalf("missing list_tickets; specs=%v", sawSpecs)
@@ -152,14 +152,11 @@ func TestActivateSkillExpandsTools(t *testing.T) {
 	if len(stepSpecs) < 2 {
 		t.Fatalf("want >=2 chat steps, got %d", len(stepSpecs))
 	}
-	if stepSpecs[0]["create_ticket"] {
-		t.Fatalf("step1 must not include create_ticket: %v", stepSpecs[0])
+	if !stepSpecs[0]["create_ticket"] || !stepSpecs[0]["list_tickets"] {
+		t.Fatalf("step1 must include all enabled tools: %v", stepSpecs[0])
 	}
-	if !stepSpecs[1]["create_ticket"] {
-		t.Fatalf("step2 must include create_ticket after activate: %v", stepSpecs[1])
-	}
-	if !stepSpecs[1]["list_tickets"] {
-		t.Fatalf("step2 must keep list_tickets: %v", stepSpecs[1])
+	if !stepSpecs[1]["create_ticket"] || !stepSpecs[1]["list_tickets"] {
+		t.Fatalf("step2 must include all enabled tools: %v", stepSpecs[1])
 	}
 }
 
