@@ -147,7 +147,7 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 }
 
 func TestLoadRepoTicketTriage(t *testing.T) {
-	builtin := filepath.Join("..", "..", "examples", "skills")
+	builtin := filepath.Join("..", "..", "skills")
 	user := t.TempDir()
 	cat, err := skill.LoadCatalog(builtin, user)
 	if err != nil {

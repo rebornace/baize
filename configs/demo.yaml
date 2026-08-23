@@ -11,12 +11,13 @@ control_plane:
 llm:
   provider: mock
 skills:
-  builtin_dir: ./examples/skills
+  builtin_dir: ./skills
   user_dir: ./data/skills
 agent:
   id: ticket-agent
   system: "你是企业工单助手，只能通过工具访问工单系统。"
   skills:
+    - data-analytics
     - ticket-triage
 connector:
   id: ticket-api
