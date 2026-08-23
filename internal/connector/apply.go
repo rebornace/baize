@@ -159,7 +159,6 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 				_ = session.Close()
 				return store.Connector{}, nil, err
 			}
-			mcpPool.CommitStdio(in.ID, session)
 			discovered = tools
 			mcpSession = session
 		case "http":
@@ -227,8 +226,15 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 	}
 	for _, t := range merged {
 		if otherNames[t.Name] {
+			if mcpSession != nil {
+				_ = mcpSession.Close()
+			}
 			return store.Connector{}, nil, openapi.ErrToolConflict
 		}
+	}
+
+	if mcpSession != nil {
+		mcpPool.CommitStdio(in.ID, mcpSession)
 	}
 
 	// Phase 4: persist. ReplaceConnectorTools swaps the connector's rows

@@ -11,6 +11,7 @@ import (
 
 	"github.com/rebornace/baize/internal/connector"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
+	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -148,6 +149,75 @@ func TestApplyMCPBadCommandPreservesRegistry(t *testing.T) {
 	}
 	if out["message"] != "still-works" {
 		t.Fatalf("echo content after failed Apply=%+v", out)
+	}
+}
+
+func writeMinimalOpenAPISpec(t *testing.T, operationID string) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "spec.yaml")
+	content := "openapi: 3.0.3\n" +
+		"info:\n  title: t\n  version: 0.1.0\n" +
+		"paths:\n  /x:\n    get:\n      operationId: " + operationID + "\n" +
+		"      responses:\n        \"200\":\n          description: ok\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestApplyMCPToolConflictPreservesSession(t *testing.T) {
+	mock := buildMCPMockBinary(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	login := []string{}
+
+	mcpIn := connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "mcp1", Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "stdio",
+			Command:   mock,
+		},
+		RequireLogin: &login,
+	}
+	if _, _, err := connector.Apply(mcpIn); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+
+	otherSpec := writeMinimalOpenAPISpec(t, "probe")
+	_, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "other", Type: "openapi",
+		Spec: otherSpec, BaseURL: "http://example.invalid",
+		RequireLogin: &login,
+	})
+	if err != nil {
+		t.Fatalf("register other connector: %v", err)
+	}
+	// Reserve echo in the store for another connector without registering it.
+	st.UpsertTool(store.Tool{
+		ConnectorID: "other",
+		Name:        "echo",
+		Source:      store.ToolSourceSpec,
+		Enabled:     false,
+		Method:      "GET",
+		Path:        "/x",
+		InputSchema: map[string]any{"type": "object"},
+	})
+
+	_, _, err = connector.Apply(mcpIn)
+	if !errors.Is(err, openapi.ErrToolConflict) {
+		t.Fatalf("expected tool_conflict on re-Apply, got %v", err)
+	}
+
+	out, isErr, invErr := reg.Invoke(context.Background(), "echo", map[string]any{"message": "still-alive"})
+	if invErr != nil || isErr {
+		t.Fatalf("invoke after conflict: isErr=%v err=%v", isErr, invErr)
+	}
+	if out["message"] != "still-alive" {
+		t.Fatalf("echo content=%+v", out)
 	}
 }
 

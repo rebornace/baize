@@ -155,7 +155,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
-	closer := storeCloser(st)
+	closer := &storeAndMCPCloser{inner: storeCloser(st)}
 	reg := tool.NewRegistry()
 
 	skillCat, err := skill.LoadCatalog(cfg.Skills.BuiltinDir, cfg.Skills.UserDir)
@@ -280,6 +280,18 @@ func storeCloser(st store.Store) io.Closer {
 	return nopCloser{}
 }
 
+type storeAndMCPCloser struct {
+	inner io.Closer
+}
+
+func (c *storeAndMCPCloser) Close() error {
+	connector.CloseAllMCPSessions()
+	if c.inner != nil {
+		return c.inner.Close()
+	}
+	return nil
+}
+
 func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
 	if strings.TrimSpace(cfg.Connector.ID) == "" {
 		return nil
@@ -332,15 +344,17 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			continue
 		}
 		_, _, err := connector.Apply(connector.ApplyInput{
-			Store:      st,
-			Registry:   reg,
-			Identities: identities,
-			ID:         c.ID,
-			Type:       c.Type,
-			Spec:       c.Spec,
-			BaseURL:    c.BaseURL,
-			Auth:       c.Auth,
-			RequireLogin: nil, // preserve persisted per-tool require_login
+			Store:           st,
+			Registry:        reg,
+			Identities:      identities,
+			ID:              c.ID,
+			Type:            c.Type,
+			Spec:            c.Spec,
+			BaseURL:         c.BaseURL,
+			Auth:            c.Auth,
+			MCP:             c.MCP,
+			RequireApproval: c.RequireApproval,
+			RequireLogin:    nil, // preserve persisted per-tool require_login
 		})
 		if err != nil {
 			log.Printf("loadStoredConnectors: %s: %v", c.ID, err)
