@@ -35,11 +35,13 @@
 │  Connector  │ 轨迹/Checkpoint · 结构化日志 · 可选 OTel        │
 └───────┬─────────────┬─────────────┬─────────────┬───────────┘
         │             │             │             │
-   OpenAPI 通配    HTTP 插件v0    MCP 桥(可选)   企业回调
+   OpenAPI 通配    HTTP 插件v0    MCP 桥(v0)     企业回调
         │             │             │             │
         ▼             ▼             ▼             ▼
    遗留 REST API   侧车 Connector   MCP Server   webhook/gRPC-HTTP
 ```
+
+**MCP 桥（v0 已实现）**：`PUT /v0/connectors/{id}` 注册 `type: mcp` Connector（stdio 子进程或 Streamable HTTP）；`tools/list` 发现工具写入目录 `source=mcp`，Run 内 `tools/call` 执行；与 OpenAPI / HTTP 插件并列，不替代插件协议 v0。
 
 **默认存储：** SQLite（Run / HITL / checkpoint）；可换 PG。短 Run 可开无状态模式。  
 **租户：** Schema 含软 `tenant_id`；开源默认单租户用法。  
@@ -69,7 +71,7 @@
 #### 工具目录与 Registry 的关系
 
 - **`store.Tool` 是 Connector 目录行**（`connector_id` / `name` / `source` / `enabled` / `title` / `description` / `description_custom` / `method` / `path` / `input_schema` / `require_login` / `require_approval` / `operation_id`）。`title` 仅供设置页展示，不进模型 tool list。Memory 与 SQLite 同一接口；SQLite 下 `connectors` / `tools` 两表落盘，重启按 §5 合并恢复。
-- **`source` 三种**：`spec`（OpenAPI operation）、`plugin`（侧车 `GET /v0/tools` 发现）、`extra`（管理员手加 REST）。`spec` / `plugin` 可启停不可删；`extra` 可启停也可删。
+- **`source` 四种**：`spec`（OpenAPI operation）、`plugin`（侧车 `GET /v0/tools` 发现）、`mcp`（MCP `tools/list` 发现）、`extra`（管理员手加 REST）。`spec` / `plugin` / `mcp` 可启停不可删；`extra` 可启停也可删。
 - **Registry 仅注册 `enabled = true` 的行**。引擎、HITL、登录门闸继续读 Registry，不直接扫目录；`GET /v0/tools` 改为读目录，因此能看见停用行。
 - **Agent 不绑定 Connector 子集**：每次 Run 把 Registry 中全部启用工具交给模型（跨 Connector 工具名全局唯一，冲突拒绝）。
 - **合并规则（PUT 与开机相同）**：发现列表里新出现的 `spec`/`plugin` 名插入并默认启用；仍在的同名保留 `enabled`、行上门闸与 `title`；`description_custom=true` 时说明保留，否则用发现侧说明覆盖；若本次 PUT/YAML 显式带了 `require_login` / `require_approval` 数组则按名单重写；消失的 `spec`/`plugin` 行删除；`extra` 行除非 DELETE 否则保留；省略目录字段则保留行上已有值。Apply 失败时该次拟写入回滚，Registry 保持失败前状态。
@@ -79,7 +81,7 @@
 ## 4. 插件协议 v0（HTTP + JSON）
 
 侧车 Connector 与 Runtime **同网 HTTP 互通**；OpenAPI 通配 Connector 由 Runtime 内建，不走本协议。  
-MCP 为可选桥：MCP Tool 映射为内部 `Tool`，不替代本协议。
+MCP 桥（v0 已实现）：MCP Tool 映射为内部 `Tool`（`source=mcp`），不替代本协议。
 
 ### 4.1 约定
 
