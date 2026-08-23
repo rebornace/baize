@@ -205,8 +205,33 @@ body {
   font-size: 0.95rem;
 }
 
-.bubble {
+.bubble-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   max-width: 92%;
+}
+
+.bubble-row.user {
+  align-self: flex-end;
+}
+
+.bubble-row.assistant {
+  align-self: flex-start;
+}
+
+.bubble-row.system {
+  align-self: center;
+}
+
+.bubble-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.bubble {
+  max-width: 100%;
   padding: 0.65rem 0.85rem;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -216,16 +241,13 @@ body {
 }
 
 .bubble.user {
-  align-self: flex-end;
   background: var(--user);
 }
 
 .bubble.assistant {
-  align-self: flex-start;
 }
 
 .bubble.system {
-  align-self: center;
   background: var(--system);
   font-size: 0.9rem;
 }

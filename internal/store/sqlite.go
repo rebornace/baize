@@ -755,3 +755,21 @@ func (s *SQLite) UpsertSetting(key string, jsonRaw []byte) error {
 	)
 	return err
 }
+
+func (s *SQLite) HasActiveRun(conversationID string) (bool, error) {
+	if conversationID == "" {
+		return false, nil
+	}
+	var one int
+	err := s.db.QueryRow(
+		`SELECT 1 FROM runs WHERE conversation_id = ? AND status IN ('queued','running','waiting_human') LIMIT 1`,
+		conversationID,
+	).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

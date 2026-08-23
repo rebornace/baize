@@ -402,6 +402,7 @@ With the default SQLite driver, Baize persists conversation messages and capture
 
 - `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Values `<=0` are normalized to `40` on load.
 - Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API. An empty conversation also **disappears from the left list**.
+- **Rollback / Fork (`/ui`)**: user bubbles — edit & rollback (truncate from that message); assistant — regenerate; any message — fork prefix into a new conversation (identities not copied). Blocked while a run is active.
 - `GET /v0/conversations` lists summaries; title is the first user message, truncated to 40 runes (no LLM titles).
 - `data/baize.db` is a runtime artifact; do not commit it to git (the default `.gitignore` already excludes `data/`).
 
@@ -414,6 +415,14 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
 
 # Clear turns without signing out
 curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# Rollback from a message (deletes that message and everything after)
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages/<message_id>/rollback
+
+# Fork: copy prefix through a message into a new conversation
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
+  -H 'Content-Type: application/json' \
+  -d '{"through_message_id":"<message_id>"}'
 ```
 
 ---

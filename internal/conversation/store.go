@@ -15,6 +15,8 @@ type Store interface {
 	ListWindow(conversationID string, n int) []Message
 	ListSummaries() []Summary
 	Clear(conversationID string)
+	TruncateFrom(conversationID, messageID string) (deleted int, err error)
+	Fork(srcConversationID, throughMessageID string) (newConversationID string, copied int, err error)
 }
 
 // MemoryStore is an in-memory Store implementation.
@@ -82,4 +84,52 @@ func (s *MemoryStore) Clear(conversationID string) {
 	defer s.mu.Unlock()
 
 	delete(s.msgs, conversationID)
+}
+
+func (s *MemoryStore) TruncateFrom(conversationID, messageID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	msgs := s.msgs[conversationID]
+	anchorIdx := -1
+	for i, m := range msgs {
+		if m.ID == messageID {
+			anchorIdx = i
+			break
+		}
+	}
+	if anchorIdx < 0 {
+		return 0, ErrMessageNotFound
+	}
+	deleted := len(msgs) - anchorIdx
+	s.msgs[conversationID] = msgs[:anchorIdx]
+	return deleted, nil
+}
+
+func (s *MemoryStore) Fork(srcConversationID, throughMessageID string) (string, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	src := s.msgs[srcConversationID]
+	anchorIdx := -1
+	for i, m := range src {
+		if m.ID == throughMessageID {
+			anchorIdx = i
+			break
+		}
+	}
+	if anchorIdx < 0 {
+		return "", 0, ErrMessageNotFound
+	}
+	newID := "conv_" + uuid.NewString()
+	prefix := src[:anchorIdx+1]
+	copied := make([]Message, 0, len(prefix))
+	for _, m := range prefix {
+		cp := m
+		cp.ID = "msg_" + uuid.NewString()
+		cp.ConversationID = newID
+		copied = append(copied, cp)
+	}
+	s.msgs[newID] = copied
+	return newID, len(copied), nil
 }

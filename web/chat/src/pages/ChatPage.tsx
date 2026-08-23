@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   createRun,
+  forkConversation,
   getRun,
   getUIConfig,
   isTerminal,
@@ -9,6 +10,7 @@ import {
   listEvents,
   listMessages,
   openRunStream,
+  rollbackMessages,
   type ChatMessage,
   type Event,
   type RunStatus,
@@ -50,6 +52,7 @@ export function ChatPage() {
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [runWebhookUrl, setRunWebhookUrl] = useState('')
+  const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
 
   const cancelStreamRef = useRef<(() => void) | null>(null)
   const pollTimerRef = useRef<number | null>(null)
@@ -235,6 +238,7 @@ export function ChatPage() {
     setBusy(false)
     setError(null)
     setStatus('')
+    setComposerDraft(undefined)
     setConversationId(newConversationId())
   }
 
@@ -283,6 +287,74 @@ export function ChatPage() {
       } catch {
         /* keep optimistic row */
       }
+    }
+  }
+
+  const onRollbackUser = async (m: ChatMessage) => {
+    if (busy || liveRunId) return
+    setError(null)
+    try {
+      const res = await rollbackMessages(conversationId, m.id)
+      setMessages(res.messages)
+      setComposerDraft(m.content)
+      await refreshConversations()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const onRegenerate = async (m: ChatMessage) => {
+    if (busy || liveRunId) return
+    setError(null)
+    setBusy(true)
+    try {
+      const res = await rollbackMessages(conversationId, m.id, {
+        regenerate: true,
+        agentId,
+      })
+      setMessages(res.messages)
+      setComposerDraft(undefined)
+      await refreshConversations()
+      if (!res.regenerated_run) {
+        setBusy(false)
+        return
+      }
+      const runId = res.regenerated_run.run_id
+      setStatus(statusLabel(res.regenerated_run.status))
+      setLiveRunId(runId)
+      setLiveEvents([])
+      lastEventIndexRef.current = -1
+      startStream(runId, conversationId, -1)
+    } catch (err) {
+      setBusy(false)
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const onRollbackTo = async (m: ChatMessage) => {
+    if (busy || liveRunId) return
+    setError(null)
+    try {
+      const res = await rollbackMessages(conversationId, m.id)
+      setMessages(res.messages)
+      setComposerDraft(undefined)
+      await refreshConversations()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const onFork = async (m: ChatMessage) => {
+    if (busy || liveRunId) return
+    setError(null)
+    try {
+      const res = await forkConversation(conversationId, m.id)
+      setConversationId(res.conversation_id)
+      setMessages(res.messages)
+      setComposerDraft(undefined)
+      await refreshConversations()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -344,9 +416,32 @@ export function ChatPage() {
           {messages.map((m) => {
             const bubbleClass =
               m.role === 'user' ? 'user' : m.role === 'system_note' ? 'system' : 'assistant'
+            const persisted = !m.id.startsWith('local_')
             return (
-              <div key={m.id} className={`bubble ${bubbleClass}`}>
-                {m.content}
+              <div key={m.id} className={`bubble-row ${bubbleClass}`}>
+                <div className={`bubble ${bubbleClass}`}>{m.content}</div>
+                {persisted && !busy && !liveRunId && (
+                  <div className="bubble-menu">
+                    {m.role === 'user' && (
+                      <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
+                        编辑并回滚
+                      </button>
+                    )}
+                    {m.role === 'assistant' && (
+                      <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
+                        重新生成
+                      </button>
+                    )}
+                    {m.role === 'system_note' && (
+                      <button type="button" className="btn ghost sm" onClick={() => void onRollbackTo(m)}>
+                        回滚到此
+                      </button>
+                    )}
+                    <button type="button" className="btn ghost sm" onClick={() => void onFork(m)}>
+                      Fork 到此
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -399,7 +494,7 @@ export function ChatPage() {
           </label>
         </details>
 
-        <Composer disabled={busy} onSend={(t) => void onSend(t)} />
+        <Composer disabled={busy} draft={composerDraft} onSend={(t) => void onSend(t)} />
       </main>
     </div>
   )

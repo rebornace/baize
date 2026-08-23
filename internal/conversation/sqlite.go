@@ -139,6 +139,86 @@ func (s *SQLiteStore) Clear(conversationID string) {
 	_, _ = s.db.Exec(`DELETE FROM messages WHERE conversation_id = ?`, conversationID)
 }
 
+func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error) {
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?`,
+		messageID, conversationID,
+	).Scan(&createdAt)
+	if err == sql.ErrNoRows {
+		return 0, ErrMessageNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(
+		`DELETE FROM messages WHERE conversation_id = ? AND created_at >= ?`,
+		conversationID, createdAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, int, error) {
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?`,
+		throughMessageID, srcConversationID,
+	).Scan(&createdAt)
+	if err == sql.ErrNoRows {
+		return "", 0, ErrMessageNotFound
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	rows, err := s.db.Query(
+		`SELECT id, conversation_id, role, content, run_id, created_at
+		 FROM messages WHERE conversation_id = ? AND created_at <= ? ORDER BY created_at ASC`,
+		srcConversationID, createdAt,
+	)
+	if err != nil {
+		return "", 0, err
+	}
+	defer rows.Close()
+
+	var toCopy []Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return "", 0, err
+		}
+		toCopy = append(toCopy, m)
+	}
+	if err := rows.Err(); err != nil {
+		return "", 0, err
+	}
+	if len(toCopy) == 0 {
+		return "", 0, ErrMessageNotFound
+	}
+
+	newID := "conv_" + uuid.NewString()
+	for _, m := range toCopy {
+		newMsg := m
+		newMsg.ID = "msg_" + uuid.NewString()
+		newMsg.ConversationID = newID
+		var runID any
+		if newMsg.RunID != "" {
+			runID = newMsg.RunID
+		}
+		_, err := s.db.Exec(
+			`INSERT INTO messages (id, conversation_id, role, content, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, runID, newMsg.CreatedAt.Format(time.RFC3339Nano),
+		)
+		if err != nil {
+			return "", 0, err
+		}
+	}
+	return newID, len(toCopy), nil
+}
+
 func scanMessage(scanner interface {
 	Scan(dest ...any) error
 }) (Message, error) {

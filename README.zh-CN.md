@@ -413,6 +413,7 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
 
 - `conversation.max_messages`（默认 `40`）控制回喂给 LLM 的最近轮次窗口；更早的消息仍留存数据库备查，但不会进入提示词。配置为 `<=0` 时会在加载时回填为 `40`。
 - 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。消息清空后该对话也会从**左栏列表消失**。
+- **回滚 / Fork（`/ui`）**：用户气泡「编辑并回滚」截断该条及之后；助手气泡「重新生成」截断后自动重跑；任意气泡可「Fork 到此」复制前缀到新对话（不复制登录态）。进行中 Run 时不可用。
 - `GET /v0/conversations` 返回摘要；标题取自首条用户消息，截断到 40 字（不用 LLM 起标题）。
 - `data/baize.db` 是运行时产物，请勿提交到 git（默认 `.gitignore` 已忽略 `data/`）。
 
@@ -425,6 +426,14 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
 
 # 清空聊天但不退出登录
 curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# 回滚到某条消息（含该条及之后删除）
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages/<message_id>/rollback
+
+# Fork：复制到某条消息为止的前缀到新会话
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
+  -H 'Content-Type: application/json' \
+  -d '{"through_message_id":"<message_id>"}'
 ```
 
 ---

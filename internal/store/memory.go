@@ -346,3 +346,21 @@ func (s *Memory) GetHITL(runID string) (*HITLPayload, error) {
 	}
 	return &cp, nil
 }
+
+func (s *Memory) HasActiveRun(conversationID string) (bool, error) {
+	if conversationID == "" {
+		return false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.runs {
+		if r.ConversationID != conversationID {
+			continue
+		}
+		switch r.Status {
+		case StatusQueued, StatusRunning, StatusWaitingHuman:
+			return true, nil
+		}
+	}
+	return false, nil
+}
