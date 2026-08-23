@@ -73,7 +73,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure **execution callback URL** (§4.3) per OpenAPI / HTTP Connector; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
+- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
 - Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
