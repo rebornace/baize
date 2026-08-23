@@ -377,6 +377,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Type                   string          `json:"type"`
 		Spec                   string          `json:"spec"`
 		SpecContent            string          `json:"spec_content"`
+		SpecURL                string          `json:"spec_url"`
 		ImportFormat           string          `json:"import_format"`
 		BaseURL                string          `json:"base_url"`
 		ExecutionCallbackURL   string          `json:"execution_callback_url"`
@@ -400,6 +401,14 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "spec and spec_content are mutually exclusive")
 		return
 	}
+	if body.Spec != "" && strings.TrimSpace(body.SpecURL) != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "spec and spec_url are mutually exclusive")
+		return
+	}
+	if body.SpecContent != "" && strings.TrimSpace(body.SpecURL) != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "spec_content and spec_url are mutually exclusive")
+		return
+	}
 	const maxSpecContentSize = 4 << 20
 	if len(body.SpecContent) > maxSpecContentSize {
 		writeError(w, http.StatusBadRequest, "invalid_request", "spec_content exceeds 4 MiB limit")
@@ -417,12 +426,41 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 
 	specPath := body.Spec
 	importFormatDetected := ""
-	if body.SpecContent != "" {
+	specImportContent := body.SpecContent
+	if strings.TrimSpace(body.SpecURL) != "" {
+		fetched, err := specimport.FetchSpecFromURL(body.SpecURL)
+		if err != nil {
+			if errors.Is(err, specimport.ErrInvalidSpecURL) {
+				writeError(w, http.StatusBadRequest, "invalid_spec_url", err.Error())
+				return
+			}
+			if errors.Is(err, specimport.ErrFetchBlocked) {
+				writeError(w, http.StatusBadRequest, "spec_fetch_blocked", err.Error())
+				return
+			}
+			if errors.Is(err, specimport.ErrFetchFailed) {
+				writeError(w, http.StatusBadRequest, "spec_fetch_failed", err.Error())
+				return
+			}
+			if errors.Is(err, specimport.ErrInvalidSpec) {
+				writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		specImportContent = string(fetched)
+	}
+	if specImportContent != "" {
 		if strings.TrimSpace(s.DataDir) == "" {
 			writeError(w, http.StatusInternalServerError, "internal_error", "data directory is not configured")
 			return
 		}
-		content := []byte(body.SpecContent)
+		if len(specImportContent) > maxSpecContentSize {
+			writeError(w, http.StatusBadRequest, "invalid_request", "spec_content exceeds 4 MiB limit")
+			return
+		}
+		content := []byte(specImportContent)
 		normalized, detected, err := specimport.Normalize(content, importFormat, body.BaseURL)
 		if err != nil {
 			if errors.Is(err, specimport.ErrUnsupportedFormat) {

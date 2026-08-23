@@ -77,7 +77,7 @@ export function connectorToForm(c: ConnectorInfo): OpenApiFormState {
 
 export function validateOpenApiForm(
   form: OpenApiFormState,
-  options: { editing: boolean; hasNewSpec: boolean },
+  options: { editing: boolean; hasNewSpec: boolean; hasSpecUrl?: boolean },
 ):
   | {
       ok: true
@@ -96,8 +96,8 @@ export function validateOpenApiForm(
   if (!baseUrl) {
     return { ok: false, code: 'invalid_request', message: 'base_url 不能为空' }
   }
-  if (!options.editing && !options.hasNewSpec) {
-    return { ok: false, code: 'invalid_request', message: '请上传接口文档' }
+  if (!options.editing && !options.hasNewSpec && !options.hasSpecUrl) {
+    return { ok: false, code: 'invalid_request', message: '请上传接口文档或填写文档 URL' }
   }
   const authBuilt = buildConnectorAuth(form.authMode, form.authHeadersText, form.authPassthroughText)
   if (!authBuilt.ok) {
@@ -154,6 +154,7 @@ export function OpenApiSettings() {
   const [submitting, setSubmitting] = useState(false)
   const [specContent, setSpecContent] = useState<string | null>(null)
   const [specFileName, setSpecFileName] = useState<string | null>(null)
+  const [specUrl, setSpecUrl] = useState('')
   const [detectedFormat, setDetectedFormat] = useState<DetectedImportFormat | null>(null)
 
   const load = useCallback(async () => {
@@ -186,6 +187,7 @@ export function OpenApiSettings() {
   const resetSpecState = () => {
     setSpecContent(null)
     setSpecFileName(null)
+    setSpecUrl('')
     setDetectedFormat(null)
   }
 
@@ -221,6 +223,7 @@ export function OpenApiSettings() {
       const text = typeof reader.result === 'string' ? reader.result : ''
       setSpecContent(text)
       setSpecFileName(file.name)
+      setSpecUrl('')
       setDetectedFormat(detectImportFormat(text))
     }
     reader.onerror = () => {
@@ -232,8 +235,10 @@ export function OpenApiSettings() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    const trimmedSpecUrl = specUrl.trim()
     const hasNewSpec = specContent != null
-    const validated = validateOpenApiForm(form, { editing, hasNewSpec })
+    const hasSpecUrl = trimmedSpecUrl !== ''
+    const validated = validateOpenApiForm(form, { editing, hasNewSpec, hasSpecUrl })
     if (!validated.ok) {
       setFormError(`${validated.code}: ${validated.message}`)
       return
@@ -247,6 +252,7 @@ export function OpenApiSettings() {
         auth: validated.auth,
         import_format: form.importFormat,
         spec_content: hasNewSpec ? specContent! : undefined,
+        spec_url: hasSpecUrl && !hasNewSpec ? trimmedSpecUrl : undefined,
         execution_callback_url:
           validated.executionCallbackUrl !== '' ? validated.executionCallbackUrl : undefined,
         require_approval:
@@ -270,16 +276,19 @@ export function OpenApiSettings() {
   const specHint =
     specContent != null
       ? detectedFormatHint(detectedFormat)
-      : editing
-        ? '未选择新文件时将沿用已有文档'
-        : null
+      : specUrl.trim() !== ''
+        ? '保存时由服务端从 URL 抓取并识别格式'
+        : editing
+          ? '未选择新文件时将沿用已有文档'
+          : null
 
   return (
     <div className="settings-section settings-openapi">
       <h1 className="settings-heading">OpenAPI</h1>
       <p className="settings-meta">
-        上传企业接口文档（OpenAPI 3、Swagger 2、Postman Collection v2.1），服务端自动转换为 OpenAPI 3
-        并发现全部 Tools。若文档内 host 不正确，以填写的 base_url 为准。工具在{' '}
+        上传企业接口文档（OpenAPI 3、Swagger 2、Postman Collection v2.1），或填写线上文档地址（支持直接
+        .json/.yaml 链接与 Swagger UI 页面，由服务端抓取）。服务端自动转换为 OpenAPI 3 并发现全部 Tools。若文档内
+        host 不正确，以填写的 base_url 为准。工具在{' '}
         <Link to="/settings/tools" className="settings-link">
           Tools
         </Link>{' '}
@@ -393,8 +402,26 @@ export function OpenApiSettings() {
                   onChange={onSpecFileChange}
                 />
                 {specFileName && <span className="settings-muted">已选：{specFileName}</span>}
-                {specHint && <span className="settings-muted">{specHint}</span>}
               </label>
+              <label className="settings-field">
+                <span className="settings-field-label">或文档 URL（http/https）</span>
+                <input
+                  className="settings-input"
+                  value={specUrl}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setSpecUrl(v)
+                    if (v.trim() !== '') {
+                      setSpecContent(null)
+                      setSpecFileName(null)
+                      setDetectedFormat(null)
+                    }
+                  }}
+                  disabled={submitting}
+                  placeholder="https://api.example.com/swagger.json 或 Swagger UI 页面地址"
+                />
+              </label>
+              {specHint && <p className="settings-muted">{specHint}</p>}
               <label className="settings-field">
                 <span className="settings-field-label">import_format</span>
                 <select

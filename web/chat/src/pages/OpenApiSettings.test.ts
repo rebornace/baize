@@ -70,6 +70,12 @@ describe('validateOpenApiForm', () => {
     expect(validateOpenApiForm(base, { editing: false, hasNewSpec: false }).ok).toBe(false)
   })
 
+  it('accepts spec url on create', () => {
+    expect(
+      validateOpenApiForm(base, { editing: false, hasNewSpec: false, hasSpecUrl: true }).ok,
+    ).toBe(true)
+  })
+
   it('allows edit without new spec', () => {
     expect(validateOpenApiForm(base, { editing: true, hasNewSpec: false }).ok).toBe(true)
   })

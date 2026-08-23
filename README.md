@@ -135,7 +135,7 @@ Changing Connector / Tools requires the admin token. This is not the same key as
 Register your HTTP service as Tools by uploading an API document.
 
 1. Open `/ui` → **Settings → OpenAPI** (admin).
-2. **Add Connector**: set `id`, `base_url`, and upload your API document (`.json`, `.yaml`, `.yml`).
+2. **Add Connector**: set `id`, `base_url`, upload your API document (`.json`, `.yaml`, `.yml`), or paste a document URL (direct `.json`/`yaml` link or Swagger UI page; Runtime fetches server-side).
 3. Save — the server detects the format, converts to OpenAPI 3, and discovers all operations.
 4. Manage tools under **Settings → Tools**; run via `/ui` or `POST /v0/runs`.
 
