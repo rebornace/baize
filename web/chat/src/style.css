@@ -288,6 +288,42 @@ body {
   margin-bottom: 0;
 }
 
+.tool-card-details {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.tool-card-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.analysis-page-preview {
+  margin-bottom: 0.5rem;
+}
+
+.analysis-page-preview iframe {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.analysis-page-preview-link {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.analysis-page-preview-link:hover {
+  text-decoration: underline;
+}
+
 .tool-card-actions {
   display: flex;
   gap: 0.5rem;

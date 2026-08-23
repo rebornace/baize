@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -40,6 +41,7 @@ type Runner interface {
 type Server struct {
 	Store          store.Store
 	Registry       *tool.Registry
+	Artifacts      artifact.Store // optional; nil = artifact routes unavailable
 	Runner         Runner
 	SkillCatalog   *skill.Catalog
 	Identities     identity.Store
@@ -138,6 +140,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
+	s.mux.HandleFunc("GET /v0/artifacts/{id}", s.handleGetArtifact)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
@@ -1084,6 +1087,27 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, runRec)
+}
+
+func (s *Server) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
+	if s.Artifacts == nil {
+		writeError(w, http.StatusNotFound, "artifact_not_found", "artifact not found")
+		return
+	}
+	id := r.PathValue("id")
+	html, runID, err := s.Artifacts.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "artifact_not_found", "artifact not found")
+		return
+	}
+	if _, err := s.Store.GetRun(runID); err != nil {
+		writeError(w, http.StatusNotFound, "artifact_not_found", "artifact not found")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(html))
 }
 
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {

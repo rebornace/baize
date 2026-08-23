@@ -280,6 +280,33 @@ The trial pack lives at `examples/skills/ticket-triage`; only `demo` / `docker-d
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 
+### Data analytics & reports
+
+For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Enable the optional **`data-analytics`** Skill pack (`examples/skills/data-analytics`) via Settings → Skills or `activate_skill`.
+
+**Recommended:** `create_analysis_page` → a self-contained analysis page with **filters**, chart **drilldown**, and in-browser **PDF export**. The tool returns `{ artifact_id, artifact_url, kind: "analysis_page" }`; `/ui` embeds the page in an iframe.
+
+**Token strategy:**
+
+| Approach | When to use |
+|----------|-------------|
+| `format: "sections"` + `binding` | **Default** — aggregate Connector JSON into `datasets` in the model, bind charts / KPIs / tables; smallest token footprint |
+| `echarts.option` in a section | Complex charts that `binding` cannot express |
+| `format: "html"` | Full layout freedom; larger payload; Runtime wraps and validates the HTML |
+
+Pull JSON from your Connector tools and reshape into `datasets` in the model — do not dump raw large JSON into a single section.
+
+**Optional — AntV MCP for static PNG:**
+
+Baize does **not** pre-register AntV. Admins may add MCP Server `@antv/mcp-server-chart` (stdio `npx`) under **Settings → MCP** for single-chart PNG URLs — useful for Office / slides, not a full analysis site. MCP results still appear as JSON tool cards in chat (no dedicated image embed).
+
+| | `create_analysis_page` | AntV MCP |
+|--|------------------------|----------|
+| Output | **Full analysis page** (multi-block + filters + drilldown) | Usually **one chart** + image URL |
+| Narrative | markdown / KPI / mixed tables & charts | None |
+| Hosting | Baize artifact + chat iframe | External image URL |
+| Flexibility | sections + full ECharts option; or whole-page HTML | Fixed `generate_*` chart types |
+
 ### Production one-shot (native Go)
 
 `baize start` uses `configs/minimal.yaml`: **no demo Connector, no mock-ticket, real LLM**. Set an API key first:
