@@ -10,6 +10,11 @@ import {
   type ToolInfo,
 } from '../api'
 import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
+import {
+  captureToDraft,
+  mergeAuthWithCapture,
+  type CaptureDraft,
+} from './captureForm'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -148,6 +153,7 @@ export function ToolsSettings() {
   const [submitting, setSubmitting] = useState(false)
   const [connectorMeta, setConnectorMeta] = useState<Record<string, ConnectorInfo>>({})
   const [callbackDrafts, setCallbackDrafts] = useState<Record<string, string>>({})
+  const [captureDrafts, setCaptureDrafts] = useState<Record<string, CaptureDraft>>({})
   const [callbackSaving, setCallbackSaving] = useState<string | null>(null)
   const [callbackError, setCallbackError] = useState<string | null>(null)
   const didInitExpand = useRef(false)
@@ -194,6 +200,7 @@ export function ToolsSettings() {
           if (!cancelled) {
             setConnectorMeta((prev) => ({ ...prev, [id]: c }))
             setCallbackDrafts((prev) => ({ ...prev, [id]: c.execution_callback_url ?? '' }))
+            setCaptureDrafts((prev) => ({ ...prev, [id]: captureToDraft(c.auth?.capture) }))
           }
         } catch {
           /* per-connector load failure is non-fatal */
@@ -302,7 +309,9 @@ export function ToolsSettings() {
   const supportsExecutionCallback = (c: ConnectorInfo | undefined) =>
     c?.type === 'openapi' || c?.type === 'http'
 
-  const saveCallbackURL = async (connectorId: string) => {
+  const supportsLoginCapture = (c: ConnectorInfo | undefined) => c?.type === 'openapi'
+
+  const saveConnectorSettings = async (connectorId: string) => {
     const meta = connectorMeta[connectorId]
     if (!meta) {
       setCallbackError(`${connectorId}：尚未加载 Connector 详情`)
@@ -311,23 +320,35 @@ export function ToolsSettings() {
     setCallbackSaving(connectorId)
     setCallbackError(null)
     try {
+      const captureDraft = captureDrafts[connectorId] ?? captureToDraft(meta.auth?.capture)
+      const auth = supportsLoginCapture(meta)
+        ? mergeAuthWithCapture(meta.auth, captureDraft)
+        : meta.auth
       const updated = await putConnector(connectorId, {
         type: meta.type,
         spec: meta.spec,
         base_url: meta.base_url,
         execution_callback_url: (callbackDrafts[connectorId] ?? '').trim(),
-        auth: meta.auth,
+        auth,
         require_approval: meta.require_approval,
         require_login: meta.require_login,
         mcp: meta.mcp,
       })
       setConnectorMeta((prev) => ({ ...prev, [connectorId]: updated }))
       setCallbackDrafts((prev) => ({ ...prev, [connectorId]: updated.execution_callback_url ?? '' }))
+      setCaptureDrafts((prev) => ({ ...prev, [connectorId]: captureToDraft(updated.auth?.capture) }))
     } catch (err) {
       setCallbackError(`${connectorId}：${errorMessage(err)}`)
     } finally {
       setCallbackSaving(null)
     }
+  }
+
+  const updateCaptureDraft = (connectorId: string, patch: Partial<CaptureDraft>) => {
+    setCaptureDrafts((prev) => ({
+      ...prev,
+      [connectorId]: { ...(prev[connectorId] ?? captureToDraft(undefined)), ...patch },
+    }))
   }
 
   const onGroupEnabled = async (groupKey: string, rows: ToolInfo[], enabled: boolean) => {
@@ -612,32 +633,96 @@ export function ToolsSettings() {
                     </div>
                     {connectorOpen && (
                       <div className="settings-group-body">
-                        {supportsExecutionCallback(connectorMeta[group.connectorId]) && (
+                        {(supportsExecutionCallback(connectorMeta[group.connectorId]) ||
+                          supportsLoginCapture(connectorMeta[group.connectorId])) && (
                           <div className="settings-callback-bar settings-form" style={{ marginBottom: '0.75rem' }}>
-                            <label className="settings-field">
-                              <span className="settings-label">执行回调 URL（§4.3）</span>
-                              <input
-                                className="settings-input"
-                                value={callbackDrafts[group.connectorId] ?? ''}
-                                onChange={(e) =>
-                                  setCallbackDrafts((prev) => ({
-                                    ...prev,
-                                    [group.connectorId]: e.target.value,
-                                  }))
-                                }
-                                placeholder="https://enterprise.example/baize/execute"
-                              />
-                            </label>
+                            {supportsExecutionCallback(connectorMeta[group.connectorId]) && (
+                              <label className="settings-field">
+                                <span className="settings-label">执行回调 URL（§4.3）</span>
+                                <input
+                                  className="settings-input"
+                                  value={callbackDrafts[group.connectorId] ?? ''}
+                                  onChange={(e) =>
+                                    setCallbackDrafts((prev) => ({
+                                      ...prev,
+                                      [group.connectorId]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="https://enterprise.example/baize/execute"
+                                />
+                              </label>
+                            )}
+                            {supportsLoginCapture(connectorMeta[group.connectorId]) && (
+                              <>
+                                <label className="settings-field">
+                                  <span className="settings-label">登录捕获 tool_name_glob</span>
+                                  <input
+                                    className="settings-input"
+                                    value={captureDrafts[group.connectorId]?.toolNameGlob ?? ''}
+                                    onChange={(e) =>
+                                      updateCaptureDraft(group.connectorId, { toolNameGlob: e.target.value })
+                                    }
+                                    placeholder="*login*（__none__ 关闭）"
+                                  />
+                                </label>
+                                <label className="settings-field">
+                                  <span className="settings-label">token_json_paths（每行一条）</span>
+                                  <textarea
+                                    className="settings-input"
+                                    rows={3}
+                                    value={captureDrafts[group.connectorId]?.tokenPathsText ?? ''}
+                                    onChange={(e) =>
+                                      updateCaptureDraft(group.connectorId, { tokenPathsText: e.target.value })
+                                    }
+                                    placeholder="accessToken&#10;data.token"
+                                  />
+                                </label>
+                                <label className="settings-field">
+                                  <span className="settings-label">label_json_paths（每行一条）</span>
+                                  <textarea
+                                    className="settings-input"
+                                    rows={2}
+                                    value={captureDrafts[group.connectorId]?.labelPathsText ?? ''}
+                                    onChange={(e) =>
+                                      updateCaptureDraft(group.connectorId, { labelPathsText: e.target.value })
+                                    }
+                                    placeholder="email"
+                                  />
+                                </label>
+                                <label className="settings-field">
+                                  <span className="settings-label">header_template</span>
+                                  <input
+                                    className="settings-input"
+                                    value={captureDrafts[group.connectorId]?.headerTemplate ?? ''}
+                                    onChange={(e) =>
+                                      updateCaptureDraft(group.connectorId, { headerTemplate: e.target.value })
+                                    }
+                                    placeholder="Bearer {{token}}"
+                                  />
+                                </label>
+                                <label className="settings-field">
+                                  <span className="settings-label">default_scheme（可选）</span>
+                                  <input
+                                    className="settings-input"
+                                    value={captureDrafts[group.connectorId]?.defaultScheme ?? ''}
+                                    onChange={(e) =>
+                                      updateCaptureDraft(group.connectorId, { defaultScheme: e.target.value })
+                                    }
+                                    placeholder="bearer"
+                                  />
+                                </label>
+                              </>
+                            )}
                             <button
                               type="button"
                               className="btn sm"
                               disabled={callbackSaving === group.connectorId}
-                              onClick={() => void saveCallbackURL(group.connectorId)}
+                              onClick={() => void saveConnectorSettings(group.connectorId)}
                             >
-                              {callbackSaving === group.connectorId ? '保存中…' : '保存回调'}
+                              {callbackSaving === group.connectorId ? '保存中…' : '保存 Connector 设置'}
                             </button>
                             <p className="settings-hint">
-                              配置后工具 invoke 走企业统一回调，不再直连 base_url 或侧车 invoke。
+                              执行回调：invoke 走企业统一 URL。登录捕获：匹配 glob 的工具结果写入会话身份。
                             </p>
                           </div>
                         )}
