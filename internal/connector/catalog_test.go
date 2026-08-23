@@ -88,6 +88,27 @@ func TestMergeCatalogApprovalRewritesAndDropsMissingPlugin(t *testing.T) {
 	}
 }
 
+func TestMergeCatalogDropsMissingMCP(t *testing.T) {
+	existing := []store.Tool{
+		{Name: "echo", ConnectorID: "c", Source: store.ToolSourceMCP, Enabled: true},
+		{Name: "gone", ConnectorID: "c", Source: store.ToolSourceMCP, Enabled: true},
+	}
+	discovered := []store.Tool{
+		{Name: "echo", ConnectorID: "c", Source: store.ToolSourceMCP},
+	}
+	out := MergeCatalog(MergeOpts{Existing: existing, Discovered: discovered})
+	by := map[string]store.Tool{}
+	for _, r := range out {
+		by[r.Name] = r
+	}
+	if _, ok := by["gone"]; ok {
+		t.Fatal("mcp row missing from discovered should drop")
+	}
+	if !by["echo"].Enabled {
+		t.Fatalf("echo=%+v", by["echo"])
+	}
+}
+
 func TestMergeCatalogPreservesTitleAndCustomDescription(t *testing.T) {
 	existing := []store.Tool{
 		{
