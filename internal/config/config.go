@@ -74,6 +74,12 @@ type Config struct {
 		OperatorToken string `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
 		AdminToken    string `yaml:"admin_token"`    // 空=未配；同上
 	} `yaml:"control_plane"`
+	Events struct {
+		Webhook struct {
+			URL     string            `yaml:"url"`
+			Headers map[string]string `yaml:"headers"`
+		} `yaml:"webhook"`
+	} `yaml:"events"`
 }
 
 // Load reads and unmarshals a YAML config file.

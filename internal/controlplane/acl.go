@@ -34,6 +34,9 @@ var aclRules = []routeRule{
 	{method: "POST", segments: []string{"v0", "skills"}, role: RoleAdmin},
 	{method: "DELETE", segments: []string{"v0", "skills", "{id}"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "agents", "{id}"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "events-webhook"}, role: RoleAdmin},
+	{method: "PUT", segments: []string{"v0", "settings", "events-webhook"}, role: RoleAdmin},
+	{method: "POST", segments: []string{"v0", "settings", "events-webhook", "test"}, role: RoleAdmin},
 }
 
 func MinRole(method, path string) Role {
