@@ -6,9 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
+	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
@@ -36,6 +38,11 @@ type registerOneContext struct {
 
 	// plugin-only:
 	client *httpplugin.Client
+
+	// mcp-only:
+	mcpSession     *mcp.ClientSession
+	mcpHTTPURL     string
+	mcpHTTPHeaders map[string]string
 }
 
 // registerOne registers a single enabled catalog row into the Registry with
@@ -55,7 +62,8 @@ func registerOne(ctx registerOneContext, t store.Tool) {
 
 	var securitySchemes []string
 	var invoker tool.Invoker
-	if t.Source == store.ToolSourceSpec || t.Source == store.ToolSourceExtra {
+	switch t.Source {
+	case store.ToolSourceSpec, store.ToolSourceExtra:
 		invoker = openapiInvokerClosure(ctx, t.Name)
 		if ctx.inv != nil {
 			for _, r := range ctx.inv.Tools {
@@ -65,7 +73,9 @@ func registerOne(ctx registerOneContext, t store.Tool) {
 				}
 			}
 		}
-	} else {
+	case store.ToolSourceMCP:
+		invoker = mcpInvokerClosure(ctx, t.Name)
+	default:
 		invoker = pluginInvokerClosure(ctx, t.Name)
 	}
 
@@ -231,6 +241,81 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 	}
 }
 
+// mcpInvokerClosure builds the conversation-aware invoker for an MCP tool row.
+// stdio connectors reuse the pooled session; HTTP connectors connect per call.
+func mcpInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
+	return func(c context.Context, args map[string]any) (map[string]any, bool, error) {
+		conv := identity.ConversationIDFrom(c)
+		var overlay map[string]string
+		if conv == "" {
+			overlay = ctx.headers
+			if ctx.authMode == "passthrough" {
+				if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
+					overlay = h
+				} else {
+					overlay = nil
+				}
+			}
+		}
+		var usedID string
+		resOK := false
+		if ctx.identities != nil && ctx.resolver != nil {
+			force := identity.ForceIdentityIDFrom(c)
+			var defaultHeaders map[string]string
+			if conv == "" {
+				defaultHeaders = ctx.headers
+				if ctx.authMode == "passthrough" {
+					if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
+						defaultHeaders = h
+					} else {
+						defaultHeaders = nil
+					}
+				}
+			}
+			in := authresolve.ResolveInput{
+				Identities:      ctx.identities.List(conv),
+				SecuritySchemes: nil,
+				DefaultHeaders:  defaultHeaders,
+				ForceIdentityID: force,
+			}
+			res := ctx.resolver.Resolve(c, in)
+			if res.OK {
+				overlay = res.Headers
+				usedID = res.IdentityID
+				resOK = true
+			} else if conv != "" {
+				overlay = nil
+			}
+		}
+		if conv != "" && ctx.reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
+			return tool.LoginRequiredContent(), true, nil
+		}
+		_ = overlay // MCP auth is configured on the connector, not via overlay.
+
+		var result *mcp.CallToolResult
+		var err error
+		if ctx.mcpSession != nil {
+			result, err = mcpbridge.CallTool(c, ctx.mcpSession, name, args)
+		} else if ctx.mcpHTTPURL != "" {
+			session, connErr := mcpbridge.ConnectHTTP(c, ctx.mcpHTTPURL, ctx.mcpHTTPHeaders)
+			if connErr != nil {
+				return nil, true, connErr
+			}
+			defer session.Close()
+			result, err = mcpbridge.CallTool(c, session, name, args)
+		} else {
+			return nil, true, fmt.Errorf("mcp session not configured for tool %q", name)
+		}
+		if err != nil {
+			return nil, true, err
+		}
+		if usedID != "" && ctx.identities != nil {
+			_ = ctx.identities.Touch(conv, usedID)
+		}
+		return mcpbridge.ToolResultContent(result), result.IsError, nil
+	}
+}
+
 // listsFromTools aggregates the RequireLogin / RequireApproval tool-name lists
 // from a merged catalog and returns them sorted. Used to echo the lists back
 // onto the persisted Connector row.
@@ -270,6 +355,9 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	if typ == "http" && t.Source == store.ToolSourceExtra {
 		return fmt.Errorf("plugin connector %q does not support extra tools", c.ID)
 	}
+	if typ == "mcp" && t.Source == store.ToolSourceExtra {
+		return fmt.Errorf("mcp connector %q does not support extra tools", c.ID)
+	}
 
 	authCfg := authcred.Config{
 		Mode:        c.Auth.Mode,
@@ -285,10 +373,41 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 
 	var inv *openapi.Invoker
 	var client *httpplugin.Client
+	var mcpSession *mcp.ClientSession
+	var mcpHTTPURL string
+	var mcpHTTPHeaders map[string]string
 	var capture identity.CaptureConfig
 	switch typ {
 	case "http":
 		client = httpplugin.NewClient(c.BaseURL)
+	case "mcp":
+		cfg := c.MCP
+		transport := strings.TrimSpace(cfg.Transport)
+		if transport == "" {
+			transport = "stdio"
+		}
+		switch transport {
+		case "stdio":
+			env, err := mcpbridge.ResolveEnv(cfg.Env)
+			if err != nil {
+				return err
+			}
+			session, err := mcpPool.ConnectStdio(context.Background(), cfg.Command, cfg.Args, env)
+			if err != nil {
+				return fmt.Errorf("%w: %w", mcpbridge.ErrInvalidMCP, err)
+			}
+			mcpPool.CommitStdio(c.ID, session)
+			mcpSession = session
+		case "http":
+			headers, err := mcpbridge.ResolveHeaders(cfg.Headers)
+			if err != nil {
+				return err
+			}
+			mcpHTTPURL = cfg.URL
+			mcpHTTPHeaders = headers
+		default:
+			return fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
+		}
 	case "openapi":
 		routes, err := openapi.LoadTools(c.Spec)
 		if err != nil {
@@ -324,15 +443,18 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	}
 
 	rctx := registerOneContext{
-		reg:        reg,
-		id:         c.ID,
-		headers:    headers,
-		authMode:   authMode,
-		identities: ids,
-		resolver:   authresolve.OpenAPISecurityResolver{},
-		inv:        inv,
-		capture:    capture,
-		client:     client,
+		reg:            reg,
+		id:             c.ID,
+		headers:        headers,
+		authMode:       authMode,
+		identities:     ids,
+		resolver:       authresolve.OpenAPISecurityResolver{},
+		inv:            inv,
+		capture:        capture,
+		client:         client,
+		mcpSession:     mcpSession,
+		mcpHTTPURL:     mcpHTTPURL,
+		mcpHTTPHeaders: mcpHTTPHeaders,
 	}
 	registerOne(rctx, t)
 	return nil

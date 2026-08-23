@@ -74,7 +74,7 @@ cd baize
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；账号页操作员可用；MCP / 插件为「即将接入」空状态（不填假配置）
+- 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；HTTP 插件 Connector 仍通过 `PUT` 手动注册
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；断流后 UI 回退为 700ms 轮询
 
@@ -167,7 +167,74 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
   -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
-HITL 仍使用 `require_approval`。默认 `baize start` 仍是仓库自带的演示 OpenAPI Connector。
+HITL 仍使用 `require_approval`。试用 OpenAPI Connector 请用 `baize demo`。
+
+### MCP Connector（可选）
+
+[MCP](https://modelcontextprotocol.io/) Server 通过 **stdio**（本地子进程）或 **Streamable HTTP**（远程 URL）暴露工具。用 `PUT /v0/connectors/{id}`（`type: mcp`）或 **设置 → MCP**（管理员）注册；发现的工具写入目录 `source: mcp`，启停、HITL `require_approval`、Run 调用与 OpenAPI / HTTP 插件一致。Connector 上的 `auth` 块**忽略**，鉴权写在 `mcp.env`（stdio）或 `mcp.headers`（HTTP）。生产 `baize start` **不**预置任何 MCP Server。
+
+**stdio — 本地子进程**（`npx` 命令需在 **与 Baize 同一台宿主机** 上执行）：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/analytics-db \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@bytebase/dbhub\",\"--transport\",\"stdio\",\"--dsn\",\"postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable\"]},\"require_approval\":[\"execute_sql\"]}"
+```
+
+**HTTP — Streamable HTTP 端点**（远程 MCP，或 Baize 在容器内、Server 在宿主机时）：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+配置错误或 Server 不可达 → `400 invalid_mcp`（Registry 不变）。工具名全局冲突 → `409 tool_conflict`。
+
+#### MCP + Postgres 试用（`docker-compose.mcp-demo.yml`）
+
+仅 Postgres 演示库 + Baize Runtime — **不含** Node/DBHub 容器，**不**预注册 MCP：
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+- Postgres：`postgres://baize:baize@127.0.0.1:5432/demo`（`examples/mcp-demo/init.sql` 含示例 `tickets` 表）
+- Runtime / UI：http://127.0.0.1:8080 （`/ui`）
+
+Baize 镜像不含 Node，请在**宿主机**（Node 18+）运行 [DBHub](https://github.com/bytebase/dbhub)，再 `PUT` 注册：
+
+```bash
+# 宿主机 — stdio DBHub 连 compose Postgres（Baize 也需跑在宿主机）
+npx -y @bytebase/dbhub --transport stdio --dsn "postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable"
+```
+
+用上方 stdio `PUT` 片段（`command` / `args`）注册。Baize 在 **Docker 内**时，在宿主机以 HTTP 模式起 DBHub，再注册 `transport: http`，例如 `url: http://host.docker.internal:9090/mcp`（端口/路径以 DBHub 文档为准）。
+
+生产环境建议只读 DSN；compose 凭据仅供本地试用。
+
+#### 搜索 / 联网 MCP（仅文档）
+
+白泽不代理公网 — 由 MCP Server 访问搜索 API。**无**搜索 compose；`baize start` 后自行在设置 → MCP 或 `PUT` 添加。
+
+**Tavily（HTTP）** — 远程 Streamable HTTP，API Key 写在 URL：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+**Brave Search（stdio）** — 宿主机 `npx`，自备 `BRAVE_API_KEY`：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@modelcontextprotocol/server-brave-search\"],\"env\":{\"BRAVE_API_KEY\":\"env:BRAVE_API_KEY\"}}}"
+```
+
+工具名以各 Server 为准，且在所有 Connector 间全局唯一。
 
 ### 工具目录（启用 / 停用 / 手加 REST）
 
@@ -225,7 +292,7 @@ Remove-Item -Recurse -Force .\data\baize.db -ErrorAction SilentlyContinue
 
 启动日志应出现 `baize start: config=configs/minimal.yaml agent=default-agent llm=openai_compatible`，且**不应**有 `persisted connectors restored`（全新库时）。
 
-启动后工具目录为空，需注册 Connector（`PUT /v0/connectors/{id}`）或通过设置页（规划中 MCP）接入。SQLite 仍用于 Run / 对话落盘。
+启动后工具目录为空，需注册 Connector（`PUT /v0/connectors/{id}`）或 MCP Server（`type: mcp`）。SQLite 仍用于 Run / 对话落盘。
 
 ### 真实 LLM 与对接业务 API
 
@@ -354,6 +421,15 @@ docker compose -f docker-compose.demo.yml up --build
 - 使用 `configs/docker-demo.yaml`；`mock-ticket` 为独立容器
 
 试用 compose 可设置 `BAIZE_CONNECTOR_TOKEN` 为 `dev`，仅供不带会话的脚本；`/ui` 不会用它。不要把密钥写进 YAML。
+
+**MCP + Postgres 试用**（Runtime + 演示库，不含 MCP Server）：
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+DBHub 宿主机 `npx` 与 `PUT` 示例见 [MCP Connector](#mcp-connector可选)。
 
 **自定义 YAML 挂载**：
 

@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useGate } from './gateContext'
 import { ChatPage } from './pages/ChatPage'
 import { ComingSoon } from './pages/ComingSoon'
+import { McpSettings } from './pages/McpSettings'
 import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
 import { SettingsLayout } from './pages/SettingsLayout'
@@ -51,7 +52,7 @@ createRoot(document.getElementById('app')!).render(
               path="mcp"
               element={
                 <AdminOnly>
-                  <ComingSoon title="MCP" />
+                  <McpSettings />
                 </AdminOnly>
               }
             />

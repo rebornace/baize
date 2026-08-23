@@ -26,13 +26,23 @@ func cloneAgent(a Agent) Agent {
 }
 
 type Connector struct {
-	ID              string   `json:"id"`
-	Type            string   `json:"type"` // openapi
-	Spec            string   `json:"spec"`
-	BaseURL         string   `json:"base_url"`
-	RequireApproval []string `json:"require_approval,omitempty"`
-	RequireLogin    []string `json:"require_login,omitempty"`
+	ID              string        `json:"id"`
+	Type            string        `json:"type"` // openapi, mcp
+	Spec            string        `json:"spec"`
+	BaseURL         string        `json:"base_url"`
+	RequireApproval []string      `json:"require_approval,omitempty"`
+	RequireLogin    []string      `json:"require_login,omitempty"`
 	Auth            ConnectorAuth `json:"auth,omitempty"`
+	MCP             MCPConfig     `json:"mcp,omitempty"`
+}
+
+type MCPConfig struct {
+	Transport string            `json:"transport"`
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 // Tool source constants describing how a tool row entered the catalog.
@@ -40,6 +50,7 @@ const (
 	ToolSourceSpec   = "spec"
 	ToolSourceExtra  = "extra"
 	ToolSourcePlugin = "plugin"
+	ToolSourceMCP    = "mcp"
 )
 
 // Tool is a single row in the connector tool catalog.

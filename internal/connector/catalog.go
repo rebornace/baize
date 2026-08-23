@@ -53,7 +53,7 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 	// Discovered spec/plugin rows replace their prior counterparts.
 	for _, d := range opts.Discovered {
 		row := d
-		if ex, ok := existingByName[d.Name]; ok && (ex.Source == store.ToolSourceSpec || ex.Source == store.ToolSourcePlugin) {
+		if ex, ok := existingByName[d.Name]; ok && (ex.Source == store.ToolSourceSpec || ex.Source == store.ToolSourcePlugin || ex.Source == store.ToolSourceMCP) {
 			row = ex
 			row.Method = d.Method
 			row.Path = d.Path

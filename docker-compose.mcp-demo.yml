@@ -1,0 +1,34 @@
+# Trial stack: Postgres + Baize Runtime for MCP (DBHub) walkthrough.
+# Does not bundle Node, DBHub, or any pre-registered MCP connector.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: baize
+      POSTGRES_PASSWORD: baize
+      POSTGRES_DB: demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./examples/mcp-demo/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U baize -d demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  baize:
+    build: .
+    command: ["/app/baize", "serve", "-config", "/app/configs/docker-minimal.yaml"]
+    ports:
+      - "8080:8080"
+    environment:
+      BAIZE_API_KEY: ${BAIZE_API_KEY:?set BAIZE_API_KEY for mcp-demo compose}
+    volumes:
+      - baize-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  baize-data:

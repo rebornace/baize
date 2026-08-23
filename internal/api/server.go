@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
+	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
@@ -361,12 +362,13 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type            string     `json:"type"`
-		Spec            string     `json:"spec"`
-		BaseURL         string     `json:"base_url"`
-		RequireApproval []string   `json:"require_approval"`
-		RequireLogin    *[]string  `json:"require_login"`
-		Auth            authBody   `json:"auth"`
+		Type            string          `json:"type"`
+		Spec            string          `json:"spec"`
+		BaseURL         string          `json:"base_url"`
+		RequireApproval []string        `json:"require_approval"`
+		RequireLogin    *[]string       `json:"require_login"`
+		Auth            authBody        `json:"auth"`
+		MCP             store.MCPConfig `json:"mcp"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -375,7 +377,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	if body.Type == "" {
 		body.Type = "openapi"
 	}
-	if body.Type != "openapi" && body.Type != "http" {
+	if body.Type != "openapi" && body.Type != "http" && body.Type != "mcp" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
 		return
 	}
@@ -390,25 +392,28 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 
 	// Persist the auth configuration shape (mode + references), not the
 	// resolved secrets, on the stored Connector. Capture defaults / clearing
-	// for HTTP are handled inside connector.Apply.
-	connectorAuth := store.ConnectorAuth{
-		Mode: body.Auth.Mode,
-		Static: store.StaticAuth{
-			Headers: body.Auth.Static.Headers,
-		},
-		Passthrough: store.PassThruAuth{
-			Headers: body.Auth.Passthrough.Headers,
-		},
-		VaultRef: store.VaultRefAuth{
-			Headers: body.Auth.VaultRef.Headers,
-		},
-		Capture: store.CaptureAuth{
-			ToolNameGlob:   body.Auth.Capture.ToolNameGlob,
-			TokenJSONPaths: body.Auth.Capture.TokenJSONPaths,
-			LabelJSONPaths: body.Auth.Capture.LabelJSONPaths,
-			HeaderTemplate: body.Auth.Capture.HeaderTemplate,
-			DefaultScheme:  body.Auth.Capture.DefaultScheme,
-		},
+	// for HTTP are handled inside connector.Apply. MCP connectors ignore auth.
+	var connectorAuth store.ConnectorAuth
+	if body.Type != "mcp" {
+		connectorAuth = store.ConnectorAuth{
+			Mode: body.Auth.Mode,
+			Static: store.StaticAuth{
+				Headers: body.Auth.Static.Headers,
+			},
+			Passthrough: store.PassThruAuth{
+				Headers: body.Auth.Passthrough.Headers,
+			},
+			VaultRef: store.VaultRefAuth{
+				Headers: body.Auth.VaultRef.Headers,
+			},
+			Capture: store.CaptureAuth{
+				ToolNameGlob:   body.Auth.Capture.ToolNameGlob,
+				TokenJSONPaths: body.Auth.Capture.TokenJSONPaths,
+				LabelJSONPaths: body.Auth.Capture.LabelJSONPaths,
+				HeaderTemplate: body.Auth.Capture.HeaderTemplate,
+				DefaultScheme:  body.Auth.Capture.DefaultScheme,
+			},
+		}
 	}
 
 	c, infos, err := connector.Apply(connector.ApplyInput{
@@ -422,6 +427,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		RequireApproval: body.RequireApproval,
 		RequireLogin:    body.RequireLogin,
 		Auth:            connectorAuth,
+		MCP:             body.MCP,
 	})
 	if err != nil {
 		if errors.Is(err, authcred.ErrInvalidAuth) {
@@ -430,6 +436,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, httpplugin.ErrInvalidPlugin) {
 			writeError(w, http.StatusBadRequest, "invalid_plugin", err.Error())
+			return
+		}
+		if errors.Is(err, mcpbridge.ErrInvalidMCP) {
+			writeError(w, http.StatusBadRequest, "invalid_mcp", err.Error())
 			return
 		}
 		if errors.Is(err, httpplugin.ErrToolConflict) || errors.Is(err, openapi.ErrToolConflict) {
@@ -447,10 +457,12 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	// Single-process single-active-connector assumption (matches existing
 	// runtime): a successful PUT updates the server's active auth mode and
 	// passthrough whitelist so subsequent POST /runs pick the right headers.
-	s.AuthMode = authcred.NormalizeMode(body.Auth.Mode)
-	s.AuthWhitelist = body.Auth.Passthrough.Headers
+	if body.Type != "mcp" {
+		s.AuthMode = authcred.NormalizeMode(body.Auth.Mode)
+		s.AuthWhitelist = body.Auth.Passthrough.Headers
+	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"id":               c.ID,
 		"type":             c.Type,
 		"spec":             c.Spec,
@@ -459,7 +471,11 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"require_login":    c.RequireLogin,
 		"auth":             c.Auth,
 		"tools":            infos,
-	})
+	}
+	if c.Type == "mcp" {
+		resp["mcp"] = c.MCP
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // authBody mirrors store.ConnectorAuth / authcred.Config for JSON decoding of
@@ -496,7 +512,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 	if tools == nil {
 		tools = []store.Tool{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"id":               c.ID,
 		"type":             c.Type,
 		"spec":             c.Spec,
@@ -505,7 +521,11 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"require_login":    c.RequireLogin,
 		"auth":             c.Auth,
 		"tools":            tools,
-	})
+	}
+	if c.Type == "mcp" {
+		resp["mcp"] = c.MCP
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {

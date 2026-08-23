@@ -73,7 +73,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; MCP / plugins are “coming soon” empty states (no fake forms)
+- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; HTTP plugin connectors remain manual `PUT`
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
@@ -168,6 +168,73 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
 
+### MCP connectors (optional)
+
+[MCP](https://modelcontextprotocol.io/) Servers expose tools over **stdio** (local subprocess) or **Streamable HTTP** (remote URL). Register one with `PUT /v0/connectors/{id}` (`type: mcp`) or **Settings → MCP** (admin). Discovered tools enter the catalog with `source: mcp`; enable/disable, HITL `require_approval`, and Run invoke behave like OpenAPI / HTTP plugin tools. The `auth` block on the Connector is **ignored** — pass secrets via `mcp.env` (stdio) or `mcp.headers` (HTTP). Production `baize start` does **not** pre-register any MCP Server.
+
+**stdio — local subprocess** (needs Node.js on the **same host as Baize** for `npx` commands):
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/analytics-db \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@bytebase/dbhub\",\"--transport\",\"stdio\",\"--dsn\",\"postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable\"]},\"require_approval\":[\"execute_sql\"]}"
+```
+
+**HTTP — Streamable HTTP endpoint** (remote MCP or a Server you run on the host while Baize is in Docker):
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+Bad config or unreachable Server → `400 invalid_mcp` (Registry unchanged). Global tool name conflicts → `409 tool_conflict`.
+
+#### MCP + Postgres trial (`docker-compose.mcp-demo.yml`)
+
+Postgres demo DB + Baize Runtime only — **no** Node/DBHub container and **no** pre-registered MCP connector:
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+- Postgres: `postgres://baize:baize@127.0.0.1:5432/demo` (sample `tickets` table from `examples/mcp-demo/init.sql`)
+- Runtime / UI: http://127.0.0.1:8080 (`/ui`)
+
+Because the Baize image does not include Node, run [DBHub](https://github.com/bytebase/dbhub) on your **host** (Node 18+), then register MCP:
+
+```bash
+# Host terminal — stdio DBHub against compose Postgres (Baize must also run on the host)
+npx -y @bytebase/dbhub --transport stdio --dsn "postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable"
+```
+
+Use the stdio `PUT` snippet above (`command` / `args` instead of a one-off shell). When Baize runs **inside** Docker, start DBHub on the host with HTTP transport and register `transport: http` — e.g. `url: http://host.docker.internal:9090/mcp` (port/path per DBHub docs).
+
+Prefer a read-only DSN in production; the compose credentials are for local trials only.
+
+#### Search / web MCP (documentation only)
+
+Baize does not proxy the public internet — the MCP Server calls search APIs. There is **no** search compose stack; add connectors yourself after `baize start` or via Settings → MCP.
+
+**Tavily (HTTP)** — remote Streamable HTTP, your API key in the URL:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+**Brave Search (stdio)** — host `npx`, your `BRAVE_API_KEY`:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@modelcontextprotocol/server-brave-search\"],\"env\":{\"BRAVE_API_KEY\":\"env:BRAVE_API_KEY\"}}}"
+```
+
+Tool names come from each Server; they must be globally unique across all Connectors.
+
 ### Tool catalog (enable / disable / add REST)
 
 Each Connector owns a **tool catalog** persisted in the store (SQLite by default). `GET /v0/tools` returns catalog rows — including disabled ones — so the Settings page can list and re-enable them; the in-memory Registry only registers `enabled = true` rows, so a disabled tool is invisible to the model and to invoke.
@@ -214,7 +281,7 @@ go run ./cmd/baize start
 
 Optional: copy `configs/minimal.yaml` → `configs/minimal.local.yaml` (gitignored) to override `llm.base_url` / `model`.
 
-The tool catalog is empty until you register a Connector (`PUT /v0/connectors/{id}`) or connect MCP (planned). SQLite still stores runs and conversations.
+The tool catalog is empty until you register a Connector (`PUT /v0/connectors/{id}`) or an MCP Server (`type: mcp`). SQLite still stores runs and conversations.
 
 ### Real LLM and your APIs
 
@@ -343,6 +410,15 @@ docker compose -f docker-compose.demo.yml up --build
 - Uses `configs/docker-demo.yaml`; `mock-ticket` runs as a separate container
 
 Trial compose may set `BAIZE_CONNECTOR_TOKEN` to `dev` for machine-path scripts; `/ui` does not use it. Do not put secrets in YAML.
+
+**MCP + Postgres trial** (Runtime + demo DB, no bundled MCP Server):
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+See [MCP connectors](#mcp-connectors-optional) for DBHub on the host and `PUT` examples.
 
 **Custom YAML mount**:
 

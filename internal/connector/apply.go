@@ -8,11 +8,15 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
+	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var mcpPool = &mcpbridge.SessionPool{}
 
 // ApplyInput configures connector registration shared by bootstrap and PUT.
 type ApplyInput struct {
@@ -24,6 +28,7 @@ type ApplyInput struct {
 	RequireApprovalMutating bool
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
 	Auth                    store.ConnectorAuth
+	MCP                     store.MCPConfig
 }
 
 // Apply resolves auth, discovers the connector's tools, merges them with the
@@ -56,6 +61,9 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 	var discovered []store.Tool
 	var inv *openapi.Invoker
 	var client *httpplugin.Client
+	var mcpSession *mcp.ClientSession
+	var mcpHTTPURL string
+	var mcpHTTPHeaders map[string]string
 	var capture identity.CaptureConfig
 	switch typ {
 	case "http":
@@ -127,6 +135,50 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			capture.DefaultScheme = UniqueSecurityScheme(routes)
 		}
 		inv = &openapi.Invoker{BaseURL: in.BaseURL, Tools: routes}
+	case "mcp":
+		cfg := in.MCP
+		transport := strings.TrimSpace(cfg.Transport)
+		if transport == "" {
+			transport = "stdio"
+		}
+		switch transport {
+		case "stdio":
+			if strings.TrimSpace(cfg.Command) == "" {
+				return store.Connector{}, nil, fmt.Errorf("%w: mcp.command is required", mcpbridge.ErrInvalidMCP)
+			}
+			env, err := mcpbridge.ResolveEnv(cfg.Env)
+			if err != nil {
+				return store.Connector{}, nil, err
+			}
+			session, err := mcpPool.ConnectStdio(context.Background(), cfg.Command, cfg.Args, env)
+			if err != nil {
+				return store.Connector{}, nil, fmt.Errorf("%w: %w", mcpbridge.ErrInvalidMCP, err)
+			}
+			tools, err := mcpbridge.DiscoverTools(context.Background(), session, in.ID)
+			if err != nil {
+				_ = session.Close()
+				return store.Connector{}, nil, err
+			}
+			discovered = tools
+			mcpSession = session
+		case "http":
+			if strings.TrimSpace(cfg.URL) == "" {
+				return store.Connector{}, nil, fmt.Errorf("%w: mcp.url is required", mcpbridge.ErrInvalidMCP)
+			}
+			headers, err := mcpbridge.ResolveHeaders(cfg.Headers)
+			if err != nil {
+				return store.Connector{}, nil, err
+			}
+			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
+			if err != nil {
+				return store.Connector{}, nil, err
+			}
+			discovered = tools
+			mcpHTTPURL = cfg.URL
+			mcpHTTPHeaders = headers
+		default:
+			return store.Connector{}, nil, fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
+		}
 	default:
 		return store.Connector{}, nil, fmt.Errorf("unsupported connector type: %s", typ)
 	}
@@ -174,8 +226,15 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 	}
 	for _, t := range merged {
 		if otherNames[t.Name] {
+			if mcpSession != nil {
+				_ = mcpSession.Close()
+			}
 			return store.Connector{}, nil, openapi.ErrToolConflict
 		}
+	}
+
+	if mcpSession != nil {
+		mcpPool.CommitStdio(in.ID, mcpSession)
 	}
 
 	// Phase 4: persist. ReplaceConnectorTools swaps the connector's rows
@@ -203,6 +262,9 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		RequireApproval: approval,
 		RequireLogin:    login,
 		Auth:            auth,
+	}
+	if typ == "mcp" {
+		c.MCP = in.MCP
 	}
 	in.Store.UpsertConnector(c)
 
@@ -237,6 +299,9 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		capture:                 capture,
 		requireApprovalMutating: in.RequireApprovalMutating,
 		client:                  client,
+		mcpSession:              mcpSession,
+		mcpHTTPURL:              mcpHTTPURL,
+		mcpHTTPHeaders:          mcpHTTPHeaders,
 	}
 	for _, t := range merged {
 		if !t.Enabled {
@@ -249,7 +314,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		// the nil ctx.inv) and panic at invoke time. The invariant is also
 		// enforced at the POST entry (task 4), but Apply must not rely on
 		// upstream callers to keep the catalog clean.
-		if typ == "http" && t.Source == store.ToolSourceExtra {
+		if (typ == "http" || typ == "mcp") && t.Source == store.ToolSourceExtra {
 			continue
 		}
 		registerOne(rctx, t)
