@@ -54,6 +54,9 @@ func TestMinimalYAMLProductionDefaults(t *testing.T) {
 	if cfg.Skills.BuiltinDir != "./skills" {
 		t.Fatalf("skills.builtin_dir=%q want ./skills", cfg.Skills.BuiltinDir)
 	}
+	if len(cfg.SkillBuiltinDirs()) != 1 || cfg.SkillBuiltinDirs()[0] != "./skills" {
+		t.Fatalf("SkillBuiltinDirs=%v want [./skills]", cfg.SkillBuiltinDirs())
+	}
 }
 
 func TestDemoYAMLTrialStack(t *testing.T) {
@@ -70,8 +73,18 @@ func TestDemoYAMLTrialStack(t *testing.T) {
 	if cfg.Connector.ID != "ticket-api" {
 		t.Fatalf("connector.id=%q", cfg.Connector.ID)
 	}
-	if cfg.Skills.BuiltinDir != "./skills" {
-		t.Fatalf("skills.builtin_dir=%q want ./skills", cfg.Skills.BuiltinDir)
+	if cfg.Skills.BuiltinDir != "" {
+		t.Fatalf("skills.builtin_dir=%q want empty when builtin_dirs set", cfg.Skills.BuiltinDir)
+	}
+	wantDirs := []string{"./skills", "./examples/skills"}
+	gotDirs := cfg.SkillBuiltinDirs()
+	if len(gotDirs) != len(wantDirs) {
+		t.Fatalf("SkillBuiltinDirs=%v want %v", gotDirs, wantDirs)
+	}
+	for i, w := range wantDirs {
+		if gotDirs[i] != w {
+			t.Fatalf("SkillBuiltinDirs[%d]=%q want %q", i, gotDirs[i], w)
+		}
 	}
 	wantSkills := []string{"data-analytics", "ticket-triage"}
 	if len(cfg.Agent.Skills) != len(wantSkills) {
@@ -120,8 +133,18 @@ func TestDockerDemoYAML(t *testing.T) {
 	if cfg.LLM.Provider != "mock" {
 		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
 	}
-	if cfg.Skills.BuiltinDir != "/app/skills" {
-		t.Fatalf("skills.builtin_dir=%q want /app/skills", cfg.Skills.BuiltinDir)
+	if cfg.Skills.BuiltinDir != "" {
+		t.Fatalf("skills.builtin_dir=%q want empty when builtin_dirs set", cfg.Skills.BuiltinDir)
+	}
+	wantDirs := []string{"/app/skills", "/app/examples/skills"}
+	gotDirs := cfg.SkillBuiltinDirs()
+	if len(gotDirs) != len(wantDirs) {
+		t.Fatalf("SkillBuiltinDirs=%v want %v", gotDirs, wantDirs)
+	}
+	for i, w := range wantDirs {
+		if gotDirs[i] != w {
+			t.Fatalf("SkillBuiltinDirs[%d]=%q want %q", i, gotDirs[i], w)
+		}
 	}
 	wantSkills := []string{"data-analytics", "ticket-triage"}
 	if len(cfg.Agent.Skills) != len(wantSkills) {

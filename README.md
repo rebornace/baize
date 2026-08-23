@@ -290,7 +290,7 @@ Skills are an optional **configuration** layer (not a sixth Runtime abstract): a
 | Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
 | Intersection | Visible tools = ∪(active Skill `tools`) ∩ catalog `enabled`; Skills cannot turn on a disabled catalog row |
 
-Built-in Skills live under `skills/` (`data-analytics` is core; `ticket-triage` is the demo ticket pack). `minimal.yaml` defaults to `data-analytics`; `demo.yaml` activates both. Visible under Settings → Skills.
+Built-in Skills use two tiers: `skills/` for core packs (`minimal` scans only this; default `data-analytics`); `examples/skills/` for demo trials (`demo` / `docker-demo` add it via `builtin_dirs`). Clean deployments list only core packs under Settings → Skills.
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 

@@ -24,17 +24,17 @@ var (
 )
 
 type Catalog struct {
-	mu         sync.RWMutex
-	byID       map[string]Package
-	builtinDir string
-	userDir    string
+	mu          sync.RWMutex
+	byID        map[string]Package
+	builtinDirs []string
+	userDir     string
 }
 
-func LoadCatalog(builtin, user string) (*Catalog, error) {
+func LoadCatalog(builtinDirs []string, user string) (*Catalog, error) {
 	c := &Catalog{
-		byID:       make(map[string]Package),
-		builtinDir: builtin,
-		userDir:    user,
+		byID:        make(map[string]Package),
+		builtinDirs: append([]string(nil), builtinDirs...),
+		userDir:     user,
 	}
 	if err := c.Reload(); err != nil {
 		return nil, err
@@ -66,8 +66,10 @@ func (c *Catalog) List() []Package {
 
 func (c *Catalog) Reload() error {
 	byID := make(map[string]Package)
-	if err := scanDir(c.builtinDir, SourceBuiltin, byID); err != nil {
-		return err
+	for _, dir := range c.builtinDirs {
+		if err := scanDir(dir, SourceBuiltin, byID); err != nil {
+			return err
+		}
 	}
 	if err := scanDir(c.userDir, SourceUser, byID); err != nil {
 		return err

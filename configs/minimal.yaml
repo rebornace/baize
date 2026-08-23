@@ -16,7 +16,7 @@ llm:
   disable_thinking: true
   api_key_env: BAIZE_API_KEY
 skills:
-  # 内置 Skill：data-analytics（核心）、ticket-triage（demo 试用）
+  # 核心内置 Skill（minimal 仅扫描此目录）
   builtin_dir: ./skills
   user_dir: ./data/skills
 agent:
