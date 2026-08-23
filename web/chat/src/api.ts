@@ -187,6 +187,69 @@ export async function createConnectorTool(
   return parseJSON<ToolInfo>(res)
 }
 
+export interface MCPConfig {
+  transport: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+}
+
+export interface ConnectorInfo {
+  id: string
+  type: string
+  mcp?: MCPConfig
+  require_approval?: string[]
+  require_login?: string[]
+  tools?: ToolInfo[]
+}
+
+export class ApiError extends Error {
+  readonly code: string
+  readonly status: number
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+async function parseConnectorJSON<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let code = 'unknown'
+    let message = res.statusText
+    try {
+      const body = (await res.json()) as { error?: { code?: string; message?: string } }
+      if (body.error?.code) code = body.error.code
+      if (body.error?.message) message = body.error.message
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, code, message)
+  }
+  return (await res.json()) as T
+}
+
+export async function getConnector(id: string): Promise<ConnectorInfo> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}`, { headers: authInit() })
+  return parseConnectorJSON<ConnectorInfo>(res)
+}
+
+export async function putConnector(
+  id: string,
+  body: { type: string; mcp?: MCPConfig; require_approval?: string[] },
+): Promise<ConnectorInfo> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseConnectorJSON<ConnectorInfo>(res)
+}
+
 export async function deleteConnectorTool(connectorId: string, name: string): Promise<void> {
   const res = await fetch(
     `/v0/connectors/${encodeURIComponent(connectorId)}/tools/${encodeURIComponent(name)}`,
