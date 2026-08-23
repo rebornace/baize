@@ -73,7 +73,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; HTTP plugin connectors remain manual `PUT`
+- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); if the stream drops, the UI falls back to 700ms polling
 
@@ -161,10 +161,9 @@ When your HTTP service has no usable OpenAPI spec, run a sidecar that implements
 
 ```bash
 go run ./examples/http-plugin/cmd/http-plugin
-curl -s -X PUT http://127.0.0.1:8080/v0/connectors/legacy-sidecar \
-  -H "Content-Type: application/json" \
-  -d "{\"type\":\"http\",\"base_url\":\"http://127.0.0.1:19090\",\"require_approval\":[\"create_ticket\"]}"
 ```
+
+Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`type: http`):
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
 
