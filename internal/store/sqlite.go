@@ -124,14 +124,14 @@ func OpenSQLite(path string) (*SQLite, error) {
 // into the in-memory maps so reads can stay lock-free and consistent with the
 // existing runs/events pattern.
 func (s *SQLite) loadConnectorsAndTools() error {
-	rows, err := s.db.Query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url FROM connectors`)
+	rows, err := s.db.Query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format FROM connectors`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var c Connector
-		var requireApproval, requireLogin, auth, mcp, execCallback sql.NullString
-		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback); err != nil {
+		var requireApproval, requireLogin, auth, mcp, execCallback, importFormat sql.NullString
+		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback, &importFormat); err != nil {
 			rows.Close()
 			return err
 		}
@@ -161,6 +161,9 @@ func (s *SQLite) loadConnectorsAndTools() error {
 		}
 		if execCallback.Valid {
 			c.ExecutionCallbackURL = execCallback.String
+		}
+		if importFormat.Valid {
+			c.ImportFormat = importFormat.String
 		}
 		s.connectors[c.ID] = c
 	}
@@ -220,6 +223,7 @@ func migrateConnectorsColumns(db *sql.DB) error {
 	for _, q := range []string{
 		`ALTER TABLE connectors ADD COLUMN mcp_json TEXT`,
 		`ALTER TABLE connectors ADD COLUMN execution_callback_url TEXT`,
+		`ALTER TABLE connectors ADD COLUMN import_format TEXT`,
 	} {
 		_, err := db.Exec(q)
 		if err == nil || isDuplicateColumnErr(err) {
@@ -324,15 +328,16 @@ func (s *SQLite) UpsertConnector(c Connector) {
 		}
 	}
 	_, _ = s.db.Exec(
-		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET type=excluded.type, spec=excluded.spec, base_url=excluded.base_url,
 		   require_approval_json=excluded.require_approval_json,
 		   require_login_json=excluded.require_login_json,
 		   auth_json=excluded.auth_json,
 		   mcp_json=excluded.mcp_json,
-		   execution_callback_url=excluded.execution_callback_url`,
-		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL,
+		   execution_callback_url=excluded.execution_callback_url,
+		   import_format=excluded.import_format`,
+		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL, c.ImportFormat,
 	)
 }
 

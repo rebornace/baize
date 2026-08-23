@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useGate } from './gateContext'
 import { ChatPage } from './pages/ChatPage'
 import { McpSettings } from './pages/McpSettings'
+import { OpenApiSettings } from './pages/OpenApiSettings'
 import { PluginSettings } from './pages/PluginSettings'
 import { WebhookSettings } from './pages/WebhookSettings'
 import { GateRoot } from './pages/GateRoot'
@@ -37,6 +38,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <ToolsSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="openapi"
+              element={
+                <AdminOnly>
+                  <OpenApiSettings />
                 </AdminOnly>
               }
             />

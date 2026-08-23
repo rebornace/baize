@@ -29,6 +29,7 @@ type Connector struct {
 	ID                     string        `json:"id"`
 	Type                   string        `json:"type"` // openapi, http, mcp
 	Spec                   string        `json:"spec"`
+	ImportFormat           string        `json:"import_format_detected,omitempty"`
 	BaseURL                string        `json:"base_url"`
 	ExecutionCallbackURL   string        `json:"execution_callback_url,omitempty"`
 	RequireApproval        []string      `json:"require_approval,omitempty"`

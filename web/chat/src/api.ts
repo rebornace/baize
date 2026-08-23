@@ -247,12 +247,15 @@ export interface ConnectorAuth {
   }
 }
 
+export type ImportFormat = 'auto' | 'openapi3' | 'swagger2' | 'postman'
+
 export interface ConnectorInfo {
   id: string
   type: string
   spec?: string
   base_url?: string
   execution_callback_url?: string
+  import_format_detected?: string
   auth?: ConnectorAuth
   mcp?: MCPConfig
   require_approval?: string[]
@@ -263,6 +266,8 @@ export interface ConnectorInfo {
 export interface PutConnectorBody {
   type: string
   spec?: string
+  spec_content?: string
+  import_format?: ImportFormat
   base_url?: string
   execution_callback_url?: string
   auth?: ConnectorAuth

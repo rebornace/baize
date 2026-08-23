@@ -74,7 +74,7 @@ cd baize
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
+- 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
@@ -133,10 +133,28 @@ curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
 
 ### 有 OpenAPI
 
-把你的 HTTP 服务的 OpenAPI 注册成 Tools。
+通过上传接口文档，把 HTTP 服务注册成 Tools。
 
-1. 准备 OpenAPI 文件与 Runtime 可访问的 `base_url`。
-2. 注册 / 替换 Connector：
+1. 打开 `/ui` → **设置 → OpenAPI**（管理员）。
+2. **添加 Connector**：填写 `id`、`base_url`，上传接口文档（`.json`、`.yaml`、`.yml`）。
+3. 保存 — 服务端识别格式、转换为 OpenAPI 3，并发现全部 operation。
+4. 在 **设置 → Tools** 管理工具；通过 `/ui` 或 `POST /v0/runs` 运行。
+
+| 格式 | 扩展名 | 说明 |
+|------|--------|------|
+| OpenAPI 3 | `.json`、`.yaml`、`.yml` | OpenAPI 3.0 / 3.1 |
+| Swagger 2 | `.json`、`.yaml`、`.yml` | 转换为 OpenAPI 3 |
+| Postman Collection v2.1 | `.json` | 转换为 OpenAPI 3 |
+
+**不支持（v0）：** PDF、Word、WSDL/SOAP。
+
+若文档内 host 不正确，以表单填写的 `base_url` 为准。
+
+同 `id` 再 `PUT` 会与该 Connector 已有目录**合并**：原 `spec`/`plugin` 行保留 `enabled` 与 `require_login`，消失的 operation 删除，新 operation 默认启用，`extra` 行除非显式 DELETE 否则保留。省略目录相关字段（`require_login` / `require_approval` / `tools`）则保持磁盘目录不变。坏 Spec 返回 `400`，不污染已有 Registry 或目录。
+
+#### 高级：curl / YAML 启动
+
+自动化或启动默认值时，可用 `PUT /v0/connectors/{id}` 指定服务端 `spec` 路径或 `spec_content`：
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
@@ -144,17 +162,13 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
   -d "{\"type\":\"openapi\",\"spec\":\"examples/mock-ticket/openapi.yaml\",\"base_url\":\"http://127.0.0.1:18080\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
-3. 核对 Tools：
+核对 Tools：
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/tools
 ```
 
 应看到 `method` / `path` / `operation_id` / `connector_id`。
-
-4. 通过 `POST /v0/runs` 或打开 `/ui` 跑一次。
-
-同 `id` 再 `PUT` 会与该 Connector 已有目录**合并**：原 `spec`/`plugin` 行保留 `enabled` 与 `require_login`，消失的 operation 删除，新 operation 默认启用，`extra` 行除非显式 DELETE 否则保留。省略目录相关字段（`require_login` / `require_approval` / `tools`）则保持磁盘目录不变。坏 Spec 返回 `400`，不污染已有 Registry 或目录。
 
 ### 无 OpenAPI：HTTP 插件
 

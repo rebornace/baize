@@ -73,7 +73,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
+- Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
 - Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
@@ -132,10 +132,28 @@ Changing Connector / Tools requires the admin token. This is not the same key as
 
 ### With OpenAPI
 
-Register your HTTP service's OpenAPI as Tools.
+Register your HTTP service as Tools by uploading an API document.
 
-1. Prepare an OpenAPI file and a Runtime-reachable `base_url`.
-2. Register / replace a Connector:
+1. Open `/ui` → **Settings → OpenAPI** (admin).
+2. **Add Connector**: set `id`, `base_url`, and upload your API document (`.json`, `.yaml`, `.yml`).
+3. Save — the server detects the format, converts to OpenAPI 3, and discovers all operations.
+4. Manage tools under **Settings → Tools**; run via `/ui` or `POST /v0/runs`.
+
+| Format | Extensions | Notes |
+|--------|------------|-------|
+| OpenAPI 3 | `.json`, `.yaml`, `.yml` | OpenAPI 3.0 / 3.1 |
+| Swagger 2 | `.json`, `.yaml`, `.yml` | Converted to OpenAPI 3 |
+| Postman Collection v2.1 | `.json` | Converted to OpenAPI 3 |
+
+**Not supported (v0):** PDF, Word, WSDL/SOAP.
+
+If the document’s host is wrong, the form `base_url` wins.
+
+Re-`PUT` with the same `id` **merges** that Connector’s Tools: existing `spec`/`plugin` rows keep their `enabled` and `require_login` state, disappeared operations are removed, new operations default to enabled, and `extra` rows survive unless explicitly deleted. Omit the catalog fields (`require_login` / `require_approval` / `tools`) to keep the on-disk catalog untouched. Invalid specs return `400` without corrupting the existing Registry or catalog.
+
+#### Advanced: curl / YAML bootstrap
+
+For automation or bootstrap defaults, register via `PUT /v0/connectors/{id}` with a server-side `spec` path or `spec_content`:
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
@@ -143,17 +161,13 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
   -d "{\"type\":\"openapi\",\"spec\":\"examples/mock-ticket/openapi.yaml\",\"base_url\":\"http://127.0.0.1:18080\",\"require_approval\":[\"create_ticket\"]}"
 ```
 
-3. Inspect Tools:
+Inspect Tools:
 
 ```bash
 curl -s http://127.0.0.1:8080/v0/tools
 ```
 
 You should see `method`, `path`, `operation_id`, and `connector_id`.
-
-4. Run via `POST /v0/runs` or open `/ui`.
-
-Re-`PUT` with the same `id` **merges** that Connector’s Tools: existing `spec`/`plugin` rows keep their `enabled` and `require_login` state, disappeared operations are removed, new operations default to enabled, and `extra` rows survive unless explicitly deleted. Omit the catalog fields (`require_login` / `require_approval` / `tools`) to keep the on-disk catalog untouched. Invalid specs return `400` without corrupting the existing Registry or catalog.
 
 ### No OpenAPI: HTTP plugin
 
