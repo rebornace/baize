@@ -17,6 +17,7 @@ COPY --from=build /out/baize /app/baize
 COPY --from=build /out/mock-ticket /app/mock-ticket
 COPY configs/docker-minimal.yaml /app/configs/docker-minimal.yaml
 COPY configs/docker-demo.yaml /app/configs/docker-demo.yaml
+COPY skills /app/skills
 COPY examples/skills /app/examples/skills
 EXPOSE 8080
 CMD ["/app/baize", "serve", "-config", "/app/configs/docker-minimal.yaml"]

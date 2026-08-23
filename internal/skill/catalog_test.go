@@ -177,6 +177,34 @@ func TestLoadRepoTicketTriage(t *testing.T) {
 	}
 }
 
+func TestLoadRepoDataAnalytics(t *testing.T) {
+	builtin := filepath.Join("..", "..", "skills")
+	user := t.TempDir()
+	cat, err := skill.LoadCatalog(builtin, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("data-analytics")
+	if !ok {
+		t.Fatal("data-analytics not found in skills/")
+	}
+	if p.Source != skill.SourceBuiltin {
+		t.Fatalf("source=%q want builtin", p.Source)
+	}
+	if !containsString(p.Tools, "create_analysis_page") {
+		t.Fatalf("tools=%v want create_analysis_page", p.Tools)
+	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
 func mustWriteSkill(t *testing.T, dir, name, desc string, tools []string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

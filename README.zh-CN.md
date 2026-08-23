@@ -291,13 +291,13 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 | `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
 | 求交 | 可见工具 = ∪(已激活 Skill 的 `tools`) ∩ 目录 `enabled`；Skill **不能**启用已停用的目录行 |
 
-开箱试用包在 `examples/skills/ticket-triage`；仅 `demo` / `docker-demo` 扫描该目录。生产 `minimal.yaml` 的 `skills.builtin_dir` 为空，设置页 Skills 初始为空，需自行上传。
+开箱试用包 `ticket-triage` 在 `examples/skills`（仅 `demo` / `docker-demo` 扫描）。生产 `minimal.yaml` 扫描 `./skills`，内置 **`data-analytics`**（默认激活），设置 → Skills 可见。
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
 ### 数据分析与报表
 
-多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。可选启用 **`data-analytics`** Skill 包（`examples/skills/data-analytics`）：在「设置 → Skills」勾选，或由模型调用 `activate_skill`。
+多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。开箱内置 Skill **`data-analytics`**（`skills/data-analytics`，`minimal.yaml` 默认激活）：在「设置 → Skills」可取消勾选，或由模型调用 `activate_skill`。无 Connector 时仍可用 `create_analysis_page`；注册 OpenAPI 后 Skill 中的 `list_tickets` / `get_ticket` 随目录启用而可见。
 
 **推荐路径：** `create_analysis_page` → 自包含分析页，支持**筛选**、图表**下钻**、页内**导出 PDF**。工具返回 `{ artifact_id, artifact_url, kind: "analysis_page" }`；`/ui` 以 iframe 嵌入。
 
