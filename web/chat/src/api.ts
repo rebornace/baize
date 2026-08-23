@@ -196,13 +196,40 @@ export interface MCPConfig {
   headers?: Record<string, string>
 }
 
+export interface ConnectorAuth {
+  mode?: string
+  static?: { headers?: Record<string, string> }
+  passthrough?: { headers?: string[] }
+  vault_ref?: { headers?: Record<string, string> }
+  capture?: {
+    tool_name_glob?: string
+    token_json_paths?: string[]
+    label_json_paths?: string[]
+    header_template?: string
+    default_scheme?: string
+  }
+}
+
 export interface ConnectorInfo {
   id: string
   type: string
+  spec?: string
+  base_url?: string
+  auth?: ConnectorAuth
   mcp?: MCPConfig
   require_approval?: string[]
   require_login?: string[]
   tools?: ToolInfo[]
+}
+
+export interface PutConnectorBody {
+  type: string
+  spec?: string
+  base_url?: string
+  auth?: ConnectorAuth
+  mcp?: MCPConfig
+  require_approval?: string[]
+  require_login?: string[]
 }
 
 export class ApiError extends Error {
@@ -238,10 +265,7 @@ export async function getConnector(id: string): Promise<ConnectorInfo> {
   return parseConnectorJSON<ConnectorInfo>(res)
 }
 
-export async function putConnector(
-  id: string,
-  body: { type: string; mcp?: MCPConfig; require_approval?: string[] },
-): Promise<ConnectorInfo> {
+export async function putConnector(id: string, body: PutConnectorBody): Promise<ConnectorInfo> {
   const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
