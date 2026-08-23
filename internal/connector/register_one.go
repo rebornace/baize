@@ -392,10 +392,11 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 			if err != nil {
 				return err
 			}
-			session, err := mcpPool.OpenStdio(context.Background(), c.ID, cfg.Command, cfg.Args, env)
+			session, err := mcpPool.ConnectStdio(context.Background(), cfg.Command, cfg.Args, env)
 			if err != nil {
 				return fmt.Errorf("%w: %w", mcpbridge.ErrInvalidMCP, err)
 			}
+			mcpPool.CommitStdio(c.ID, session)
 			mcpSession = session
 		case "http":
 			headers, err := mcpbridge.ResolveHeaders(cfg.Headers)

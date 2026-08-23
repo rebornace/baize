@@ -141,6 +141,14 @@ func TestApplyMCPBadCommandPreservesRegistry(t *testing.T) {
 	if len(after) != len(before) {
 		t.Fatalf("registry changed: before=%+v after=%+v", before, after)
 	}
+
+	out, isErr, invErr := reg.Invoke(context.Background(), "echo", map[string]any{"message": "still-works"})
+	if invErr != nil || isErr {
+		t.Fatalf("invoke after failed Apply: isErr=%v err=%v", isErr, invErr)
+	}
+	if out["message"] != "still-works" {
+		t.Fatalf("echo content after failed Apply=%+v", out)
+	}
 }
 
 func TestRegisterOneFromConnectorRejectsMCPExtra(t *testing.T) {

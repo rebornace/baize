@@ -21,8 +21,20 @@ type SessionPool struct {
 	sessions map[string]*mcp.ClientSession
 }
 
-// OpenStdio starts or replaces the stdio session for connectorID.
-func (p *SessionPool) OpenStdio(ctx context.Context, connectorID, command string, args, env []string) (*mcp.ClientSession, error) {
+// ConnectStdio opens a new stdio session without changing the pooled session.
+// Call CommitStdio after discovery succeeds to replace the pooled entry.
+func (p *SessionPool) ConnectStdio(ctx context.Context, command string, args, env []string) (*mcp.ClientSession, error) {
+	cmd := exec.Command(command, args...)
+	if len(env) > 0 {
+		cmd.Env = append(cmd.Environ(), env...)
+	}
+
+	client := mcp.NewClient(baizeClientInfo, nil)
+	return client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+}
+
+// CommitStdio stores session in the pool, closing any prior session for connectorID.
+func (p *SessionPool) CommitStdio(connectorID string, session *mcp.ClientSession) {
 	if p.sessions == nil {
 		p.sessions = make(map[string]*mcp.ClientSession)
 	}
@@ -32,20 +44,17 @@ func (p *SessionPool) OpenStdio(ctx context.Context, connectorID, command string
 
 	if existing, ok := p.sessions[connectorID]; ok {
 		_ = existing.Close()
-		delete(p.sessions, connectorID)
 	}
+	p.sessions[connectorID] = session
+}
 
-	cmd := exec.Command(command, args...)
-	if len(env) > 0 {
-		cmd.Env = append(cmd.Environ(), env...)
-	}
-
-	client := mcp.NewClient(baizeClientInfo, nil)
-	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+// OpenStdio connects and immediately commits the stdio session for connectorID.
+func (p *SessionPool) OpenStdio(ctx context.Context, connectorID, command string, args, env []string) (*mcp.ClientSession, error) {
+	session, err := p.ConnectStdio(ctx, command, args, env)
 	if err != nil {
 		return nil, err
 	}
-	p.sessions[connectorID] = session
+	p.CommitStdio(connectorID, session)
 	return session, nil
 }
 

@@ -150,14 +150,16 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			if err != nil {
 				return store.Connector{}, nil, err
 			}
-			session, err := mcpPool.OpenStdio(context.Background(), in.ID, cfg.Command, cfg.Args, env)
+			session, err := mcpPool.ConnectStdio(context.Background(), cfg.Command, cfg.Args, env)
 			if err != nil {
 				return store.Connector{}, nil, fmt.Errorf("%w: %w", mcpbridge.ErrInvalidMCP, err)
 			}
 			tools, err := mcpbridge.DiscoverTools(context.Background(), session, in.ID)
 			if err != nil {
+				_ = session.Close()
 				return store.Connector{}, nil, err
 			}
+			mcpPool.CommitStdio(in.ID, session)
 			discovered = tools
 			mcpSession = session
 		case "http":
