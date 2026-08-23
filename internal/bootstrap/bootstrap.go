@@ -163,7 +163,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	closer := &storeAndMCPCloser{inner: storeCloser(st)}
 	reg := tool.NewRegistry()
 
-	skillCat, err := skill.LoadCatalog(cfg.Skills.BuiltinDir, cfg.Skills.UserDir)
+	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir)
 	if err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("load skill catalog: %w", err)

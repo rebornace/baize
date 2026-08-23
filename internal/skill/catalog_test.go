@@ -18,7 +18,7 @@ func TestCatalogUserOverridesBuiltin(t *testing.T) {
 	user := filepath.Join(root, "user")
 	mustWriteSkill(t, filepath.Join(builtin, "demo"), "demo", "from-builtin", []string{"a"})
 	mustWriteSkill(t, filepath.Join(user, "demo"), "demo", "from-user", []string{"b"})
-	cat, err := skill.LoadCatalog(builtin, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestCatalogSkipsDirWithoutSkillMD(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(builtin, "empty"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog(builtin, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("no frontmatter\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := skill.LoadCatalog(builtin, user); err == nil {
+		if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
 			t.Fatal("expected error for missing frontmatter")
 		}
 	})
@@ -78,7 +78,7 @@ func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(raw), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := skill.LoadCatalog(builtin2, user2); err == nil {
+		if _, err := skill.LoadCatalog([]string{builtin2}, user2); err == nil {
 			t.Fatal("expected error for missing name")
 		}
 	})
@@ -91,7 +91,7 @@ func TestDeleteUser(t *testing.T) {
 	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "x", []string{"a"})
 	mustWriteSkill(t, filepath.Join(user, "user-skill"), "user-skill", "y", []string{"b"})
 
-	cat, err := skill.LoadCatalog(builtin, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestDeleteUser(t *testing.T) {
 
 func TestInstallMDRejectsUnsafeName(t *testing.T) {
 	root := t.TempDir()
-	cat, err := skill.LoadCatalog(filepath.Join(root, "builtin"), filepath.Join(root, "user"))
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	cat, err := skill.LoadCatalog(filepath.Join(root, "builtin"), filepath.Join(root, "user"))
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,15 +147,15 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 }
 
 func TestLoadRepoTicketTriage(t *testing.T) {
-	builtin := filepath.Join("..", "..", "skills")
+	builtin := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog(builtin, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, ok := cat.Get("ticket-triage")
 	if !ok {
-		t.Fatal("ticket-triage not found in repo skills")
+		t.Fatal("ticket-triage not found in examples/skills")
 	}
 	if p.Description != "工单分诊与建单流程（mock-ticket）" {
 		t.Fatalf("description=%q", p.Description)
@@ -177,10 +177,33 @@ func TestLoadRepoTicketTriage(t *testing.T) {
 	}
 }
 
+func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
+	core := filepath.Join("..", "..", "skills")
+	demo := filepath.Join("..", "..", "examples", "skills")
+	user := t.TempDir()
+	cat, err := skill.LoadCatalog([]string{core, demo}, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("data-analytics"); !ok {
+		t.Fatal("data-analytics not found")
+	}
+	if _, ok := cat.Get("ticket-triage"); !ok {
+		t.Fatal("ticket-triage not found")
+	}
+	catMinimal, err := skill.LoadCatalog([]string{core}, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := catMinimal.Get("ticket-triage"); ok {
+		t.Fatal("minimal scan should not include ticket-triage")
+	}
+}
+
 func TestLoadRepoDataAnalytics(t *testing.T) {
 	builtin := filepath.Join("..", "..", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog(builtin, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
 	if err != nil {
 		t.Fatal(err)
 	}

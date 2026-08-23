@@ -44,7 +44,7 @@ func loadTestCatalog(t *testing.T, skills map[string]struct {
 			t.Fatal(err)
 		}
 	}
-	cat, err := skill.LoadCatalog(root, filepath.Join(root, "_user"))
+	cat, err := skill.LoadCatalog([]string{root}, filepath.Join(root, "_user"))
 	if err != nil {
 		t.Fatal(err)
 	}

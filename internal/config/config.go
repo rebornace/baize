@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,8 +25,9 @@ type Config struct {
 		DisableThinking  bool   `yaml:"disable_thinking"` // DeepSeek V4：关闭 thinking 省 token
 	} `yaml:"llm"`
 	Skills struct {
-		BuiltinDir string `yaml:"builtin_dir"`
-		UserDir    string `yaml:"user_dir"`
+		BuiltinDir  string   `yaml:"builtin_dir"`
+		BuiltinDirs []string `yaml:"builtin_dirs"`
+		UserDir     string   `yaml:"user_dir"`
 	} `yaml:"skills"`
 	Agent struct {
 		ID     string   `yaml:"id"`
@@ -122,4 +124,22 @@ func Load(path string) (Config, error) {
 		cfg.Skills.UserDir = "./data/skills"
 	}
 	return cfg, nil
+}
+
+// SkillBuiltinDirs returns builtin skill scan roots. builtin_dirs wins over builtin_dir when set.
+func (c *Config) SkillBuiltinDirs() []string {
+	if len(c.Skills.BuiltinDirs) > 0 {
+		out := make([]string, 0, len(c.Skills.BuiltinDirs))
+		for _, d := range c.Skills.BuiltinDirs {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
+	if d := strings.TrimSpace(c.Skills.BuiltinDir); d != "" {
+		return []string{d}
+	}
+	return nil
 }

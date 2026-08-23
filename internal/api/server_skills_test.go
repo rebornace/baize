@@ -23,7 +23,7 @@ func skillsServer(t *testing.T) (*Server, store.Store, http.Handler, *skill.Cata
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
 	mustWriteSkillDir(t, filepath.Join(builtin, "builtin-skill"), "builtin-skill", "from-builtin", []string{"a"})
-	cat, err := skill.LoadCatalog(builtin, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
 	if err != nil {
 		t.Fatal(err)
 	}
