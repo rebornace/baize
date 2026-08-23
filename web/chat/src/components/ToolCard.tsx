@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
+import { AnalysisPagePreview } from './AnalysisPagePreview'
 import type { ChatBlock } from '../foldEvents'
 
 type ToolBlock = Extract<ChatBlock, { kind: 'tool' }>
@@ -24,6 +26,8 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
   const [error, setError] = useState<string | null>(null)
 
   const waiting = block.status === 'waiting_human'
+  const analysisPage =
+    block.result !== undefined ? parseAnalysisPageResult(block.result) : null
 
   // running → waiting_human: auto-expand arguments (user may still collapse).
   useEffect(() => {
@@ -62,9 +66,16 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
           {block.arguments !== undefined && (
             <pre className="tool-card-json">{formatJSON(block.arguments)}</pre>
           )}
-          {block.result !== undefined && (
-            <pre className="tool-card-json">{formatJSON(block.result)}</pre>
-          )}
+          {analysisPage && <AnalysisPagePreview artifactUrl={analysisPage.artifactUrl} />}
+          {block.result !== undefined &&
+            (analysisPage ? (
+              <details className="tool-card-details">
+                <summary>详情</summary>
+                <pre className="tool-card-json">{formatJSON(block.result)}</pre>
+              </details>
+            ) : (
+              <pre className="tool-card-json">{formatJSON(block.result)}</pre>
+            ))}
         </div>
       )}
 
