@@ -169,6 +169,8 @@ type Store interface {
 	GetHITL(runID string) (*HITLPayload, error)
 	SetPassthroughHeaders(runID string, headers map[string]string) error
 
+	HasActiveRun(conversationID string) (bool, error)
+
 	ListConnectors() []Connector
 	ListTools() []Tool
 	ListToolsByConnector(id string) []Tool

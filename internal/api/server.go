@@ -152,6 +152,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/conversations", s.handleListConversations)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/messages/{message_id}/rollback", s.handleRollbackMessages)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/fork", s.handleForkConversation)
 	s.mux.HandleFunc("GET /v0/settings/events-webhook", s.handleGetEventsWebhook)
 	s.mux.HandleFunc("PUT /v0/settings/events-webhook", s.handlePutEventsWebhook)
 	s.mux.HandleFunc("POST /v0/settings/events-webhook/test", s.handlePostEventsWebhookTest)
@@ -1453,4 +1455,197 @@ func (s *Server) handleClearMessages(w http.ResponseWriter, r *http.Request) {
 		s.Messages.Clear(r.PathValue("id"))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) {
+	convID := strings.TrimSpace(r.PathValue("id"))
+	msgID := strings.TrimSpace(r.PathValue("message_id"))
+	if convID == "" || msgID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation or message id")
+		return
+	}
+	if s.Messages == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "message store not configured")
+		return
+	}
+	busy, err := s.Store.HasActiveRun(convID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if busy {
+		writeError(w, http.StatusConflict, "conversation_busy", "conversation has an active run")
+		return
+	}
+
+	var body struct {
+		Regenerate bool   `json:"regenerate"`
+		AgentID    string `json:"agent_id"`
+	}
+	if r.Body != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+			return
+		}
+	}
+
+	deleted, err := s.Messages.TruncateFrom(convID, msgID)
+	if errors.Is(err, conversation.ErrMessageNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	msgs := s.Messages.List(convID)
+	if msgs == nil {
+		msgs = []conversation.Message{}
+	}
+	out := map[string]any{
+		"conversation_id": convID,
+		"deleted_count":   deleted,
+		"messages":        msgs,
+	}
+
+	if body.Regenerate {
+		input := lastUserMessageContent(msgs)
+		if input == "" {
+			writeError(w, http.StatusConflict, "regenerate_unavailable", "no user message to regenerate from")
+			return
+		}
+		agentID := strings.TrimSpace(body.AgentID)
+		if agentID == "" {
+			agentID = s.DefaultAgentID
+		}
+		if agentID == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "agent_id is required")
+			return
+		}
+		runRec, err := s.createAndExecuteRun(r, agentID, input, convID, "")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		out["regenerated_run"] = map[string]string{
+			"run_id": runRec.ID,
+			"status": string(runRec.Status),
+		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleForkConversation(w http.ResponseWriter, r *http.Request) {
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if convID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	if s.Messages == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "message store not configured")
+		return
+	}
+	busy, err := s.Store.HasActiveRun(convID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if busy {
+		writeError(w, http.StatusConflict, "conversation_busy", "conversation has an active run")
+		return
+	}
+
+	var body struct {
+		ThroughMessageID string `json:"through_message_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	throughID := strings.TrimSpace(body.ThroughMessageID)
+	if throughID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "through_message_id is required")
+		return
+	}
+
+	newID, copied, err := s.Messages.Fork(convID, throughID)
+	if errors.Is(err, conversation.ErrMessageNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	msgs := s.Messages.List(newID)
+	if msgs == nil {
+		msgs = []conversation.Message{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source_conversation_id": convID,
+		"conversation_id":        newID,
+		"copied_count":           copied,
+		"messages":               msgs,
+	})
+}
+
+func lastUserMessageContent(msgs []conversation.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == conversation.RoleUser {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
+// createAndExecuteRun creates a run, appends the user message, and starts Execute in background.
+func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, identityID string) (*store.Run, error) {
+	ag, err := s.Store.GetAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("unknown agent")
+	}
+	createIn := store.CreateRunInput{
+		AgentID:        agentID,
+		Input:          input,
+		ConversationID: convID,
+		IdentityID:     strings.TrimSpace(identityID),
+	}
+	if authcred.NormalizeMode(s.AuthMode) == authcred.ModePassthrough {
+		createIn.PassthroughHeaders = authcred.PickHeaders(r.Header, s.AuthWhitelist)
+	}
+	runRec, err := s.Store.CreateRun(createIn)
+	if err != nil {
+		return nil, err
+	}
+	if s.Messages != nil && convID != "" {
+		_, _ = s.Messages.Append(convID, conversation.Message{
+			Role:    conversation.RoleUser,
+			Content: input,
+			RunID:   runRec.ID,
+		})
+	}
+	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
+	go func(runID, in string, def agent.Def) {
+		err := s.Runner.Execute(context.Background(), runID, def, in)
+		if err == nil {
+			return
+		}
+		cur, getErr := s.Store.GetRun(runID)
+		if getErr != nil || cur == nil {
+			return
+		}
+		if s.Messages != nil && cur.ConversationID != "" {
+			_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
+				Role:    conversation.RoleSystemNote,
+				Content: "运行失败：" + err.Error(),
+				RunID:   runID,
+			})
+		}
+	}(runRec.ID, input, def)
+	return runRec, nil
 }

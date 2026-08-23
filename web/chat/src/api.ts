@@ -446,6 +446,54 @@ export async function clearMessages(conversationId: string): Promise<void> {
   await parseJSON<{ status: string }>(res)
 }
 
+export interface RollbackMessagesResult {
+  conversation_id: string
+  deleted_count: number
+  messages: ChatMessage[]
+  regenerated_run?: { run_id: string; status: string }
+}
+
+export async function rollbackMessages(
+  conversationId: string,
+  messageId: string,
+  opts?: { regenerate?: boolean; agentId?: string },
+): Promise<RollbackMessagesResult> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/rollback`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        regenerate: opts?.regenerate ?? false,
+        agent_id: opts?.agentId,
+      }),
+    },
+  )
+  return parseJSON<RollbackMessagesResult>(res)
+}
+
+export interface ForkConversationResult {
+  source_conversation_id: string
+  conversation_id: string
+  copied_count: number
+  messages: ChatMessage[]
+}
+
+export async function forkConversation(
+  conversationId: string,
+  throughMessageId: string,
+): Promise<ForkConversationResult> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/fork`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ through_message_id: throughMessageId }),
+    },
+  )
+  return parseJSON<ForkConversationResult>(res)
+}
+
 export async function listConversations(): Promise<
   { id: string; title: string; updated_at: string }[]
 > {

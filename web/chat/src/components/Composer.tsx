@@ -1,12 +1,19 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 
 export interface ComposerProps {
   disabled?: boolean
   onSend: (text: string) => void
+  draft?: string
 }
 
-export function Composer({ disabled, onSend }: ComposerProps) {
+export function Composer({ disabled, onSend, draft }: ComposerProps) {
   const [text, setText] = useState('')
+
+  useEffect(() => {
+    if (draft !== undefined) {
+      setText(draft)
+    }
+  }, [draft])
 
   const submit = () => {
     const trimmed = text.trim()
