@@ -308,7 +308,8 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					}
 				}
 
-				content, isError, invErr := e.Tools.Invoke(ctx, tc.Name, tc.Arguments)
+				invokeCtx := identity.WithToolCallID(ctx, tc.ID)
+				content, isError, invErr := e.Tools.Invoke(invokeCtx, tc.Name, tc.Arguments)
 				if invErr != nil {
 					isError = true
 					if content == nil {

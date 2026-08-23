@@ -19,3 +19,10 @@ func TestRunAndAgentIDContext(t *testing.T) {
 		t.Fatalf("AgentIDFrom=%q", got)
 	}
 }
+
+func TestToolCallIDContext(t *testing.T) {
+	ctx := WithToolCallID(context.Background(), "call_1")
+	if got := ToolCallIDFrom(ctx); got != "call_1" {
+		t.Fatalf("ToolCallIDFrom=%q", got)
+	}
+}

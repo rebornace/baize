@@ -9,6 +9,7 @@ const (
 	ctxKeyForceIdentityID
 	ctxKeyRunID
 	ctxKeyAgentID
+	ctxKeyToolCallID
 )
 
 func WithConversationID(ctx context.Context, id string) context.Context {
@@ -44,6 +45,15 @@ func WithAgentID(ctx context.Context, id string) context.Context {
 
 func AgentIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeyAgentID).(string)
+	return v
+}
+
+func WithToolCallID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, ctxKeyToolCallID, id)
+}
+
+func ToolCallIDFrom(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyToolCallID).(string)
 	return v
 }
 

@@ -74,7 +74,7 @@ cd baize
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
+- 设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置 **执行回调 URL**（§4.3）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
@@ -169,6 +169,16 @@ go run ./examples/http-plugin/cmd/http-plugin
 用 **设置 → 插件**（管理员）或 `PUT /v0/connectors/{id}`（`type: http`）注册：
 
 HITL 仍使用 `require_approval`。试用 OpenAPI Connector 请用 `baize demo`。
+
+### 企业执行回调（§4.3）
+
+遗留系统只暴露一个统一执行入口、不想被 Runtime 按 operation 直连时，在 Connector 上配置 `execution_callback_url`。工具清单仍来自 OpenAPI 或 HTTP 侧车发现；invoke 时 Runtime POST 到企业 URL（body 含 `tool`、`arguments`、`run_id`、`idempotency_key`）。可在 **设置 → Tools** 每个 Connector 组头编辑，或 `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`。
+
+参考样例：
+
+```bash
+go run ./examples/enterprise-callback
+```
 
 ### MCP Connector（可选）
 

@@ -2,8 +2,11 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createConnectorTool,
   deleteConnectorTool,
+  getConnector,
   listTools,
   patchTool,
+  putConnector,
+  type ConnectorInfo,
   type ToolInfo,
 } from '../api'
 import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
@@ -143,6 +146,10 @@ export function ToolsSettings() {
   const [form, setForm] = useState<AddFormState>(EMPTY_FORM)
   const [formConnectorId, setFormConnectorId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [connectorMeta, setConnectorMeta] = useState<Record<string, ConnectorInfo>>({})
+  const [callbackDrafts, setCallbackDrafts] = useState<Record<string, string>>({})
+  const [callbackSaving, setCallbackSaving] = useState<string | null>(null)
+  const [callbackError, setCallbackError] = useState<string | null>(null)
   const didInitExpand = useRef(false)
   const prevSearchRef = useRef(false)
 
@@ -168,7 +175,35 @@ export function ToolsSettings() {
   }, [])
 
   const openConnectorIds = useMemo(() => (tools == null ? [] : openApiConnectorIds(tools)), [tools])
+  const catalogConnectorIds = useMemo(() => {
+    if (tools == null) return [] as string[]
+    const seen = new Set<string>()
+    for (const t of tools) {
+      if (t.connector_id) seen.add(t.connector_id)
+    }
+    return [...seen]
+  }, [tools])
   const searchActive = query.trim() !== ''
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      for (const id of catalogConnectorIds) {
+        try {
+          const c = await getConnector(id)
+          if (!cancelled) {
+            setConnectorMeta((prev) => ({ ...prev, [id]: c }))
+            setCallbackDrafts((prev) => ({ ...prev, [id]: c.execution_callback_url ?? '' }))
+          }
+        } catch {
+          /* per-connector load failure is non-fatal */
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [catalogConnectorIds])
 
   useEffect(() => {
     if (tools == null) return
@@ -261,6 +296,37 @@ export function ToolsSettings() {
       setError(`${t.name}：${errorMessage(err)}`)
     } finally {
       setDeleting(null)
+    }
+  }
+
+  const supportsExecutionCallback = (c: ConnectorInfo | undefined) =>
+    c?.type === 'openapi' || c?.type === 'http'
+
+  const saveCallbackURL = async (connectorId: string) => {
+    const meta = connectorMeta[connectorId]
+    if (!meta) {
+      setCallbackError(`${connectorId}：尚未加载 Connector 详情`)
+      return
+    }
+    setCallbackSaving(connectorId)
+    setCallbackError(null)
+    try {
+      const updated = await putConnector(connectorId, {
+        type: meta.type,
+        spec: meta.spec,
+        base_url: meta.base_url,
+        execution_callback_url: (callbackDrafts[connectorId] ?? '').trim(),
+        auth: meta.auth,
+        require_approval: meta.require_approval,
+        require_login: meta.require_login,
+        mcp: meta.mcp,
+      })
+      setConnectorMeta((prev) => ({ ...prev, [connectorId]: updated }))
+      setCallbackDrafts((prev) => ({ ...prev, [connectorId]: updated.execution_callback_url ?? '' }))
+    } catch (err) {
+      setCallbackError(`${connectorId}：${errorMessage(err)}`)
+    } finally {
+      setCallbackSaving(null)
     }
   }
 
@@ -521,6 +587,7 @@ export function ToolsSettings() {
             )}
           </div>
           {tools.length === 0 && <p className="settings-empty">尚未注册 Connector</p>}
+          {callbackError && <p className="settings-error">{callbackError}</p>}
           {tools.length > 0 && visible.length === 0 && <p className="settings-empty">无匹配</p>}
           {visible.length > 0 && (
             <div className="settings-tree">
@@ -545,6 +612,35 @@ export function ToolsSettings() {
                     </div>
                     {connectorOpen && (
                       <div className="settings-group-body">
+                        {supportsExecutionCallback(connectorMeta[group.connectorId]) && (
+                          <div className="settings-callback-bar settings-form" style={{ marginBottom: '0.75rem' }}>
+                            <label className="settings-field">
+                              <span className="settings-label">执行回调 URL（§4.3）</span>
+                              <input
+                                className="settings-input"
+                                value={callbackDrafts[group.connectorId] ?? ''}
+                                onChange={(e) =>
+                                  setCallbackDrafts((prev) => ({
+                                    ...prev,
+                                    [group.connectorId]: e.target.value,
+                                  }))
+                                }
+                                placeholder="https://enterprise.example/baize/execute"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="btn sm"
+                              disabled={callbackSaving === group.connectorId}
+                              onClick={() => void saveCallbackURL(group.connectorId)}
+                            >
+                              {callbackSaving === group.connectorId ? '保存中…' : '保存回调'}
+                            </button>
+                            <p className="settings-hint">
+                              配置后工具 invoke 走企业统一回调，不再直连 base_url 或侧车 invoke。
+                            </p>
+                          </div>
+                        )}
                         {group.prefixes.map((prefixGroup) => {
                           const pKey = prefixExpandKey(group.connectorId, prefixGroup.prefix)
                           const prefixOpen = isPrefixOpen(group.connectorId, prefixGroup.prefix)

@@ -24,6 +24,7 @@ type ApplyInput struct {
 	Registry                *tool.Registry
 	Identities              identity.Store
 	ID, Type, Spec, BaseURL string
+	ExecutionCallbackURL    string
 	RequireApproval         []string
 	RequireApprovalMutating bool
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
@@ -255,13 +256,14 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		auth.Capture = store.CaptureAuth{}
 	}
 	c := store.Connector{
-		ID:              in.ID,
-		Type:            typ,
-		Spec:            in.Spec,
-		BaseURL:         in.BaseURL,
-		RequireApproval: approval,
-		RequireLogin:    login,
-		Auth:            auth,
+		ID:                   in.ID,
+		Type:                 typ,
+		Spec:                 in.Spec,
+		BaseURL:              in.BaseURL,
+		ExecutionCallbackURL: strings.TrimSpace(in.ExecutionCallbackURL),
+		RequireApproval:      approval,
+		RequireLogin:         login,
+		Auth:                 auth,
 	}
 	if typ == "mcp" {
 		c.MCP = in.MCP
@@ -302,6 +304,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		mcpSession:              mcpSession,
 		mcpHTTPURL:              mcpHTTPURL,
 		mcpHTTPHeaders:          mcpHTTPHeaders,
+		callbackURL:             strings.TrimSpace(in.ExecutionCallbackURL),
 	}
 	for _, t := range merged {
 		if !t.Enabled {

@@ -126,11 +126,11 @@ POST /v0/tools/{tool_name}/invoke      → ToolResult
 { "content": { }, "is_error": false }
 ```
 
-Runtime 已实现该协议的客户端；`callback_urls` 与 §4.3 企业回调尚未实现。
+Runtime 已实现该协议的客户端；侧车 invoke 上下文里的 `callback_urls` 尚未实现。
 
-### 4.3 企业执行回调（补充路径）
+### 4.3 企业执行回调（补充路径，v0 已实现）
 
-Runtime 作为客户端调用企业提供的 endpoint（注册在 Connector / Agent 配置中）：
+Runtime 作为客户端调用企业提供的 endpoint（注册在 Connector 配置 `execution_callback_url` 中）：
 
 ```http
 POST {enterprise_callback_url}

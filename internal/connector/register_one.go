@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
+	"github.com/rebornace/baize/internal/connector/executecallback"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
@@ -43,6 +44,9 @@ type registerOneContext struct {
 	mcpSession     *mcp.ClientSession
 	mcpHTTPURL     string
 	mcpHTTPHeaders map[string]string
+
+	// enterprise execution callback (openapi / http plugin invoke path):
+	callbackURL string
 }
 
 // registerOne registers a single enabled catalog row into the Registry with
@@ -153,7 +157,15 @@ func openapiInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		if conv != "" && ctx.reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
 			return tool.LoginRequiredContent(), true, nil
 		}
-		out, err := ctx.inv.InvokeWithHeaders(c, name, args, overlay)
+		var out openapi.InvokeResult
+		var err error
+		if ctx.callbackURL != "" {
+			cbOut, cbErr := invokeEnterpriseCallback(ctx.callbackURL, c, name, args, overlay)
+			out = cbOut
+			err = cbErr
+		} else {
+			out, err = ctx.inv.InvokeWithHeaders(c, name, args, overlay)
+		}
 		if err != nil {
 			return nil, true, err
 		}
@@ -225,6 +237,16 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		}
 		if conv != "" && ctx.reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
 			return tool.LoginRequiredContent(), true, nil
+		}
+		if ctx.callbackURL != "" {
+			out, invErr := invokeEnterpriseCallback(ctx.callbackURL, c, name, args, overlay)
+			if invErr != nil {
+				return nil, true, invErr
+			}
+			if usedID != "" && ctx.identities != nil {
+				_ = ctx.identities.Touch(conv, usedID)
+			}
+			return out.Content, out.IsError, nil
 		}
 		out, invErr := ctx.client.Invoke(c, name, args, httpplugin.InvokeMeta{
 			RunID:   identity.RunIDFrom(c),
@@ -455,7 +477,22 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 		mcpSession:     mcpSession,
 		mcpHTTPURL:     mcpHTTPURL,
 		mcpHTTPHeaders: mcpHTTPHeaders,
+		callbackURL:    strings.TrimSpace(c.ExecutionCallbackURL),
 	}
 	registerOne(rctx, t)
 	return nil
+}
+
+func invokeEnterpriseCallback(callbackURL string, c context.Context, name string, args map[string]any, overlay map[string]string) (openapi.InvokeResult, error) {
+	client := executecallback.NewClient(callbackURL)
+	out, err := client.Invoke(c, name, args, executecallback.InvokeMeta{
+		RunID:          identity.RunIDFrom(c),
+		AgentID:        identity.AgentIDFrom(c),
+		IdempotencyKey: identity.ToolCallIDFrom(c),
+		Headers:        overlay,
+	})
+	if err != nil {
+		return openapi.InvokeResult{}, err
+	}
+	return openapi.InvokeResult{Content: out.Content, IsError: out.IsError}, nil
 }

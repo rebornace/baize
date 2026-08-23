@@ -73,7 +73,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
+- Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure **execution callback URL** (§4.3) per OpenAPI / HTTP Connector; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
 - Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
@@ -168,6 +168,16 @@ go run ./examples/http-plugin/cmd/http-plugin
 Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`type: http`):
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
+
+### Enterprise execution callback (§4.3)
+
+When the legacy system exposes a single execution endpoint instead of per-operation HTTP, set `execution_callback_url` on the Connector. Tool discovery still comes from OpenAPI or the HTTP sidecar; invoke POSTs to your URL with `tool`, `arguments`, `run_id`, and `idempotency_key`. Edit per Connector under **Settings → Tools**, or via `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`.
+
+Reference server:
+
+```bash
+go run ./examples/enterprise-callback
+```
 
 ### MCP connectors (optional)
 
