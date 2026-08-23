@@ -106,6 +106,16 @@ type Event struct {
 	Data      map[string]any `json:"data,omitempty"`
 }
 
+// WebhookConfig is per-run webhook delivery overrides. Stored in webhook_json;
+// never echoed on GET /v0/runs/{id} (json:"-").
+type WebhookConfig struct {
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// SettingKeyEventsWebhook is the settings KV key for global events webhook config.
+const SettingKeyEventsWebhook = "events_webhook"
+
 type Run struct {
 	ID             string    `json:"id"`
 	AgentID        string    `json:"agent_id"`
@@ -120,6 +130,9 @@ type Run struct {
 	// never serialized to JSON (json:"-") so they cannot leak via GET /runs/{id}
 	// or events. SQLite persists them in a dedicated passthrough_json column.
 	PassthroughHeaders map[string]string `json:"-"`
+	// WebhookConfig carries per-run webhook URL/header overrides for outbound
+	// event delivery. Never serialized to JSON (json:"-").
+	WebhookConfig *WebhookConfig `json:"-"`
 }
 
 // CreateRunInput is the input for creating a new run.
@@ -129,6 +142,7 @@ type CreateRunInput struct {
 	ConversationID     string
 	IdentityID         string
 	PassthroughHeaders map[string]string
+	WebhookConfig      *WebhookConfig
 }
 
 type HITLPayload struct {
@@ -160,4 +174,7 @@ type Store interface {
 	UpsertTool(Tool)
 	DeleteTool(name string) error
 	ReplaceConnectorTools(connectorID string, tools []Tool)
+
+	GetSetting(key string) (jsonRaw []byte, ok bool, err error)
+	UpsertSetting(key string, jsonRaw []byte) error
 }

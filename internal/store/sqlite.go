@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS tools (
   require_approval INTEGER,
   operation_id TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL
+);
 `
 
 // SQLite is a file-backed Store implementation.
@@ -198,7 +202,7 @@ func (s *SQLite) loadConnectorsAndTools() error {
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
 // existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
@@ -500,8 +504,9 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
+		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
 	}
-	var passthroughSQL sql.NullString
+	var passthroughSQL, webhookSQL sql.NullString
 	if len(r.PassthroughHeaders) > 0 {
 		b, err := json.Marshal(r.PassthroughHeaders)
 		if err != nil {
@@ -509,11 +514,18 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 		}
 		passthroughSQL = sql.NullString{String: string(b), Valid: true}
 	}
+	if r.WebhookConfig != nil {
+		b, err := json.Marshal(r.WebhookConfig)
+		if err != nil {
+			return nil, err
+		}
+		webhookSQL = sql.NullString{String: string(b), Valid: true}
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), r.CreatedAt.Format(time.RFC3339Nano),
-		r.ConversationID, r.IdentityID, passthroughSQL,
+		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL,
 	)
 	if err != nil {
 		return nil, err
@@ -524,11 +536,11 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 func (s *SQLite) GetRun(id string) (*Run, error) {
 	var r Run
 	var status, createdAt string
-	var conversationID, identityID, passthroughSQL sql.NullString
+	var conversationID, identityID, passthroughSQL, webhookSQL sql.NullString
 	err := s.db.QueryRow(
-		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json FROM runs WHERE id = ?`,
+		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json FROM runs WHERE id = ?`,
 		id,
-	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL)
+	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL, &webhookSQL)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("run not found")
 	}
@@ -546,6 +558,13 @@ func (s *SQLite) GetRun(id string) (*Run, error) {
 		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
 			return nil, fmt.Errorf("parse passthrough_json: %w", err)
 		}
+	}
+	if webhookSQL.Valid && webhookSQL.String != "" && webhookSQL.String != "null" {
+		var wc WebhookConfig
+		if err := json.Unmarshal([]byte(webhookSQL.String), &wc); err != nil {
+			return nil, fmt.Errorf("parse webhook_json: %w", err)
+		}
+		r.WebhookConfig = &wc
 	}
 	ts, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
@@ -695,4 +714,28 @@ func (s *SQLite) GetHITL(runID string) (*HITLPayload, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+func (s *SQLite) GetSetting(key string) ([]byte, bool, error) {
+	var value sql.NullString
+	err := s.db.QueryRow(`SELECT value_json FROM settings WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if !value.Valid || value.String == "" {
+		return nil, false, nil
+	}
+	return []byte(value.String), true, nil
+}
+
+func (s *SQLite) UpsertSetting(key string, jsonRaw []byte) error {
+	_, err := s.db.Exec(
+		`INSERT INTO settings (key, value_json) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`,
+		key, string(jsonRaw),
+	)
+	return err
 }

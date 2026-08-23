@@ -311,3 +311,43 @@ func TestReplaceConnectorToolsKeepsOthers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSettingsRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	raw := []byte(`{"url":"https://example.com","headers":{"Authorization":"env:TOK"}}`)
+	if err := s.UpsertSetting(store.SettingKeyEventsWebhook, raw); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetSetting(store.SettingKeyEventsWebhook)
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if string(got) != string(raw) {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestCreateRunPersistsWebhookConfig(t *testing.T) {
+	s := store.NewMemory()
+	r, err := s.CreateRun(store.CreateRunInput{
+		AgentID: "a1",
+		Input:   "hi",
+		WebhookConfig: &store.WebhookConfig{
+			URL:     "https://hook.example/run",
+			Headers: map[string]string{"X-Hook": "env:SECRET"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WebhookConfig == nil || got.WebhookConfig.URL != "https://hook.example/run" {
+		t.Fatalf("webhook=%+v", got.WebhookConfig)
+	}
+	if got.WebhookConfig.Headers["X-Hook"] != "env:SECRET" {
+		t.Fatalf("headers=%+v", got.WebhookConfig.Headers)
+	}
+}

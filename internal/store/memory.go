@@ -18,6 +18,7 @@ type Memory struct {
 	runs       map[string]*Run
 	events     map[string][]Event
 	hitl       map[string]*HITLPayload
+	settings   map[string][]byte
 }
 
 // NewMemory creates an empty in-memory Store.
@@ -29,6 +30,7 @@ func NewMemory() *Memory {
 		runs:       map[string]*Run{},
 		events:     map[string][]Event{},
 		hitl:       map[string]*HITLPayload{},
+		settings:   map[string][]byte{},
 	}
 }
 
@@ -189,6 +191,7 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
+		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
 	}
 	s.runs[id] = r
 	s.events[id] = nil
@@ -204,6 +207,7 @@ func (s *Memory) GetRun(id string) (*Run, error) {
 	}
 	cp := *r
 	cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
+	cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
 	return &cp, nil
 }
 
@@ -229,6 +233,41 @@ func cloneHeaders(h map[string]string) map[string]string {
 		cp[k] = v
 	}
 	return cp
+}
+
+func cloneWebhookConfig(w *WebhookConfig) *WebhookConfig {
+	if w == nil {
+		return nil
+	}
+	cp := &WebhookConfig{URL: w.URL}
+	if w.Headers != nil {
+		cp.Headers = make(map[string]string, len(w.Headers))
+		for k, v := range w.Headers {
+			cp.Headers[k] = v
+		}
+	}
+	return cp
+}
+
+func (s *Memory) GetSetting(key string) ([]byte, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, ok := s.settings[key]
+	if !ok {
+		return nil, false, nil
+	}
+	cp := make([]byte, len(raw))
+	copy(cp, raw)
+	return cp, true, nil
+}
+
+func (s *Memory) UpsertSetting(key string, jsonRaw []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, len(jsonRaw))
+	copy(cp, jsonRaw)
+	s.settings[key] = cp
+	return nil
 }
 
 func (s *Memory) UpdateRun(id string, status Status, output, errMsg string) error {
