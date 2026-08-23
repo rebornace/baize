@@ -160,6 +160,33 @@ func TestSetPassthroughHeadersMissingRun(t *testing.T) {
 	}
 }
 
+func TestToolSourceMCP(t *testing.T) {
+	if store.ToolSourceMCP != "mcp" {
+		t.Fatalf("ToolSourceMCP=%q", store.ToolSourceMCP)
+	}
+}
+
+func TestConnectorStoresMCPConfig(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertConnector(store.Connector{
+		ID:   "m1",
+		Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "stdio",
+			Command:   "echo",
+			Args:      []string{"ok"},
+			Env:       map[string]string{"K": "v"},
+		},
+	})
+	c, err := s.GetConnector("m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MCP.Transport != "stdio" || c.MCP.Command != "echo" || c.MCP.Env["K"] != "v" {
+		t.Fatalf("%+v", c.MCP)
+	}
+}
+
 func TestConnectorStoresAuthConfig(t *testing.T) {
 	s := store.NewMemory()
 	s.UpsertConnector(store.Connector{

@@ -438,3 +438,31 @@ func TestSQLiteToolColumnsMigrateFromOldSchema(t *testing.T) {
 		t.Fatalf("migrated=%+v", got)
 	}
 }
+
+func TestSQLiteConnectorMCPJSONRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "b.db")
+	s, err := store.OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c := store.Connector{
+		ID:   "m1",
+		Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "stdio",
+			Command:   "echo",
+			Args:      []string{"ok"},
+			Env:       map[string]string{"K": "v"},
+		},
+	}
+	s.UpsertConnector(c)
+	got, err := s.GetConnector("m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MCP.Transport != "stdio" || got.MCP.Command != "echo" {
+		t.Fatalf("mcp=%+v", got.MCP)
+	}
+}
