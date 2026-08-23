@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   createConnectorTool,
   deleteConnectorTool,
@@ -607,7 +608,14 @@ export function ToolsSettings() {
               </button>
             )}
           </div>
-          {tools.length === 0 && <p className="settings-empty">尚未注册 Connector</p>}
+          {tools.length === 0 && (
+            <p className="settings-empty">
+              尚未注册 Connector。{' '}
+              <Link to="/settings/openapi" className="settings-link">
+                去 OpenAPI 设置注册
+              </Link>
+            </p>
+          )}
           {callbackError && <p className="settings-error">{callbackError}</p>}
           {tools.length > 0 && visible.length === 0 && <p className="settings-empty">无匹配</p>}
           {visible.length > 0 && (
@@ -774,6 +782,13 @@ export function ToolsSettings() {
                 关闭
               </button>
             </div>
+            <p className="settings-hint">
+              此处仅添加单条 extra 工具；批量导入请用{' '}
+              <Link to="/settings/openapi" className="settings-link">
+                OpenAPI 设置
+              </Link>
+              上传接口文档。
+            </p>
             {drawerError && <p className="settings-error">{drawerError}</p>}
             <form className="settings-form" onSubmit={onAddSubmit}>
               {openConnectorIds.length > 1 && (
