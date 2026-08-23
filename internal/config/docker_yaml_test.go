@@ -70,6 +70,18 @@ func TestDemoYAMLTrialStack(t *testing.T) {
 	if cfg.Connector.ID != "ticket-api" {
 		t.Fatalf("connector.id=%q", cfg.Connector.ID)
 	}
+	if cfg.Skills.BuiltinDir != "./skills" {
+		t.Fatalf("skills.builtin_dir=%q want ./skills", cfg.Skills.BuiltinDir)
+	}
+	wantSkills := []string{"data-analytics", "ticket-triage"}
+	if len(cfg.Agent.Skills) != len(wantSkills) {
+		t.Fatalf("agent.skills=%v want %v", cfg.Agent.Skills, wantSkills)
+	}
+	for i, w := range wantSkills {
+		if cfg.Agent.Skills[i] != w {
+			t.Fatalf("agent.skills[%d]=%q want %q", i, cfg.Agent.Skills[i], w)
+		}
+	}
 }
 
 func TestDockerMinimalYAML(t *testing.T) {
@@ -107,5 +119,17 @@ func TestDockerDemoYAML(t *testing.T) {
 	}
 	if cfg.LLM.Provider != "mock" {
 		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
+	}
+	if cfg.Skills.BuiltinDir != "/app/skills" {
+		t.Fatalf("skills.builtin_dir=%q want /app/skills", cfg.Skills.BuiltinDir)
+	}
+	wantSkills := []string{"data-analytics", "ticket-triage"}
+	if len(cfg.Agent.Skills) != len(wantSkills) {
+		t.Fatalf("agent.skills=%v want %v", cfg.Agent.Skills, wantSkills)
+	}
+	for i, w := range wantSkills {
+		if cfg.Agent.Skills[i] != w {
+			t.Fatalf("agent.skills[%d]=%q want %q", i, cfg.Agent.Skills[i], w)
+		}
 	}
 }

@@ -291,7 +291,7 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 | `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
 | 求交 | 可见工具 = ∪(已激活 Skill 的 `tools`) ∩ 目录 `enabled`；Skill **不能**启用已停用的目录行 |
 
-开箱试用包 `ticket-triage` 在 `examples/skills`（仅 `demo` / `docker-demo` 扫描）。生产 `minimal.yaml` 扫描 `./skills`，内置 **`data-analytics`**（默认激活），设置 → Skills 可见。
+内置 Skill 在 `skills/`（`data-analytics` 为核心、`ticket-triage` 为 demo 工单演示）。`minimal.yaml` 默认激活 `data-analytics`；`demo.yaml` 默认同时激活两者。设置 → Skills 可见。
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
