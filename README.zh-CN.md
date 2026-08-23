@@ -281,6 +281,33 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
+### 数据分析与报表
+
+多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。可选启用 **`data-analytics`** Skill 包（`examples/skills/data-analytics`）：在「设置 → Skills」勾选，或由模型调用 `activate_skill`。
+
+**推荐路径：** `create_analysis_page` → 自包含分析页，支持**筛选**、图表**下钻**、页内**导出 PDF**。工具返回 `{ artifact_id, artifact_url, kind: "analysis_page" }`；`/ui` 以 iframe 嵌入。
+
+**Token 策略：**
+
+| 方式 | 适用场景 |
+|------|----------|
+| `format: "sections"` + `binding` | **默认** — 在模型侧把 Connector JSON 聚合为 `datasets`，用 binding 绑定图 / KPI / 表；token 最省 |
+| section 内 `echarts.option` | binding 表达不了的复杂图 |
+| `format: "html"` | 版式完全自由；payload 更大；Runtime 会包装并校验 HTML |
+
+从企业工具拉 JSON，在模型侧重构为 `datasets`；勿把原始大 JSON 塞进单个 section。
+
+**可选 — AntV MCP 静态 PNG：**
+
+白泽**不**开箱预置 AntV。管理员可在 **设置 → MCP** 自行注册 `@antv/mcp-server-chart`（stdio `npx`），得到单图 PNG URL — 适合 Office / 幻灯片，不是完整分析站。MCP 结果仍以 JSON 工具卡展示（无专用图片嵌入组件）。
+
+| | `create_analysis_page` | AntV MCP |
+|--|------------------------|----------|
+| 产物 | **整页分析站**（多区块 + 筛选 + 下钻） | 多为 **单图** + 图片 URL |
+| 叙事 | markdown / KPI / 表与图混排 | 无 |
+| 托管 | Baize artifact + 对话 iframe | 外部图床 URL |
+| 灵活性 | sections + 完整 ECharts option；或整页 HTML | 固定 `generate_*` 图表类型 |
+
 ### 生产一键启动（Go 原生）
 
 `baize start` 使用 `configs/minimal.yaml`：**无演示 Connector、无 mock-ticket、真实 LLM**。须先设置 API Key：
