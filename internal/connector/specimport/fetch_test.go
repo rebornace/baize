@@ -72,6 +72,45 @@ func TestFetchSpecFromURLBlocksPrivateHost(t *testing.T) {
 	}
 }
 
+func TestFetchSpecFromURLNestJSInitEmbedded(t *testing.T) {
+	specimport.SetAllowPrivateFetchHosts(true)
+	defer specimport.SetAllowPrivateFetchHosts(false)
+
+	embedded := string(readFixture(t, "openapi3-min.json"))
+	initJS := `window.onload = function() {
+  let options = {
+  "swaggerDoc": ` + embedded + `,
+  "customOptions": {}
+};
+  SwaggerUIBundle({ spec: options.swaggerDoc });
+}`
+	initSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		_, _ = w.Write([]byte(initJS))
+	}))
+	defer initSrv.Close()
+
+	html := `<!DOCTYPE html><html><body>
+<script src="./swagger-ui-init.js"></script>
+</body></html>`
+	uiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "swagger-ui-init.js") {
+			http.Redirect(w, r, initSrv.URL+"/swagger-ui-init.js", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte(html))
+	}))
+	defer uiSrv.Close()
+
+	body, err := specimport.FetchSpecFromURL(uiSrv.URL + "/api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specimport.DetectFormat(body) != specimport.FormatOpenAPI3 {
+		t.Fatalf("detect=%q want openapi3", specimport.DetectFormat(body))
+	}
+}
+
 func TestFetchSpecFromURLRejectsNonHTTP(t *testing.T) {
 	_, err := specimport.FetchSpecFromURL("file:///etc/passwd")
 	if err == nil {
