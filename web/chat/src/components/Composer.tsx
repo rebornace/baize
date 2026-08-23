@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 export interface ComposerProps {
   disabled?: boolean
@@ -8,12 +8,20 @@ export interface ComposerProps {
 
 export function Composer({ disabled, onSend, draft }: ComposerProps) {
   const [text, setText] = useState('')
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (draft !== undefined) {
       setText(draft)
     }
   }, [draft])
+
+  useEffect(() => {
+    const el = taRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [text])
 
   const submit = () => {
     const trimmed = text.trim()
@@ -31,27 +39,26 @@ export function Composer({ disabled, onSend, draft }: ComposerProps) {
 
   return (
     <div className="composer">
-      <button
-        type="button"
-        className="btn ghost composer-plus"
-        title="连接器在设置中配置"
-        disabled
-        aria-label="连接器在设置中配置"
-      >
-        +
-      </button>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="输入消息…"
-        rows={1}
-        disabled={disabled}
-        aria-label="消息输入"
-      />
-      <button type="button" className="btn primary" onClick={submit} disabled={disabled || !text.trim()}>
-        发送
-      </button>
+      <div className="composer-box">
+        <textarea
+          ref={taRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+          rows={1}
+          disabled={disabled}
+          aria-label="消息输入"
+        />
+        <button
+          type="button"
+          className="btn primary composer-send"
+          onClick={submit}
+          disabled={disabled || !text.trim()}
+        >
+          发送
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  cancelRun,
   createRun,
   forkConversation,
   getRun,
@@ -15,12 +16,17 @@ import {
   type Event,
   type RunStatus,
 } from '../api'
+import { extractAnalysisPagesFromEvents } from '../analysisPage'
+import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
+import { MarkdownText } from '../components/MarkdownText'
 import { ToolCard } from '../components/ToolCard'
+import { TypewriterText } from '../components/TypewriterText'
 import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
 import { useGate } from '../gateContext'
+import { useStickToBottom } from '../useStickToBottom'
 
 const CONV_KEY = 'baize.conversation_id'
 const POLL_MS = 700
@@ -49,16 +55,32 @@ export function ChatPage() {
   const [liveEvents, setLiveEvents] = useState<Event[]>([])
   const [liveRunId, setLiveRunId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [historyMutating, setHistoryMutating] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [runWebhookUrl, setRunWebhookUrl] = useState('')
+  const [sessionToken, setSessionToken] = useState('')
   const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
+  /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
+  const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
 
   const cancelStreamRef = useRef<(() => void) | null>(null)
   const pollTimerRef = useRef<number | null>(null)
   const lastEventIndexRef = useRef(-1)
   const conversationIdRef = useRef(conversationId)
   conversationIdRef.current = conversationId
+  const liveRunIdRef = useRef(liveRunId)
+  liveRunIdRef.current = liveRunId
+  const liveEventsRef = useRef(liveEvents)
+  liveEventsRef.current = liveEvents
+
+  const { scrollerRef, bottomRef, onScroll, scrollToBottom } = useStickToBottom([
+    messages,
+    liveEvents,
+    liveRunId,
+    conversationId,
+    historyPages,
+  ])
 
   const setConversationId = useCallback((id: string) => {
     setConversationIdState(id)
@@ -86,10 +108,33 @@ export function ChatPage() {
     }
   }, [])
 
+  const mergeHistoryPages = useCallback((runId: string, urls: string[]) => {
+    if (!runId || urls.length === 0) return
+    setHistoryPages((prev) => {
+      const existing = prev[runId] ?? []
+      const merged = [...existing]
+      for (const u of urls) {
+        if (!merged.includes(u)) merged.push(u)
+      }
+      if (merged.length === existing.length) return prev
+      return { ...prev, [runId]: merged }
+    })
+  }, [])
+
   const finishLiveRun = useCallback(
     async (id: string) => {
       stopStream()
       stopPoll()
+      const runId = liveRunIdRef.current
+      if (runId) {
+        const pages = extractAnalysisPagesFromEvents(liveEventsRef.current)
+        if (pages.length > 0) {
+          mergeHistoryPages(
+            runId,
+            pages.map((p) => p.artifactUrl),
+          )
+        }
+      }
       setLiveRunId(null)
       setLiveEvents([])
       lastEventIndexRef.current = -1
@@ -104,7 +149,7 @@ export function ChatPage() {
       }
       await refreshConversations()
     },
-    [refreshConversations, stopPoll, stopStream],
+    [mergeHistoryPages, refreshConversations, stopPoll, stopStream],
   )
 
   const applyEvents = useCallback((events: Event[]) => {
@@ -204,6 +249,7 @@ export function ChatPage() {
     stopPoll()
     setLiveRunId(null)
     setLiveEvents([])
+    setHistoryPages({})
     lastEventIndexRef.current = -1
     setBusy(false)
     setError(null)
@@ -215,6 +261,7 @@ export function ChatPage() {
         const msgs = await listMessages(id)
         if (cancelled || conversationIdRef.current !== id) return
         setMessages(msgs)
+        requestAnimationFrame(() => scrollToBottom('auto'))
         await restoreLiveRun(id, msgs)
       } catch (err) {
         if (cancelled || conversationIdRef.current !== id) return
@@ -227,13 +274,52 @@ export function ChatPage() {
       stopStream()
       stopPoll()
     }
-  }, [conversationId, restoreLiveRun, stopPoll, stopStream])
+  }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
+
+  // Load analysis page previews for completed turns (refresh / reopen conversation).
+  useEffect(() => {
+    const runIds = [
+      ...new Set(
+        messages
+          .filter((m) => m.role === 'assistant' && m.run_id)
+          .map((m) => m.run_id as string),
+      ),
+    ]
+    if (runIds.length === 0) return
+    let cancelled = false
+    void (async () => {
+      await Promise.all(
+        runIds.map(async (runId) => {
+          if (historyPages[runId]?.length) return
+          try {
+            const events = await listEvents(runId)
+            if (cancelled) return
+            const pages = extractAnalysisPagesFromEvents(events)
+            if (pages.length > 0) {
+              mergeHistoryPages(
+                runId,
+                pages.map((p) => p.artifactUrl),
+              )
+            }
+          } catch {
+            /* ignore missing runs */
+          }
+        }),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+    // historyPages intentionally omitted: we only fetch missing run ids.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, mergeHistoryPages])
 
   const onNewChat = () => {
     stopStream()
     stopPoll()
     setLiveRunId(null)
     setLiveEvents([])
+    setHistoryPages({})
     setMessages([])
     setBusy(false)
     setError(null)
@@ -250,6 +336,7 @@ export function ChatPage() {
   const onSend = async (text: string) => {
     const sentConversationId = conversationId
     setBusy(true)
+    setComposerDraft(undefined)
     setError(null)
     setStatus('发送中…')
     setMessages((prev) => [
@@ -264,11 +351,14 @@ export function ChatPage() {
     ])
     setLiveEvents([])
     lastEventIndexRef.current = -1
+    requestAnimationFrame(() => scrollToBottom('smooth'))
 
     try {
       const webhookUrl = runWebhookUrl.trim()
+      const token = sessionToken.trim()
       const created = await createRun(agentId, text, sentConversationId, {
         webhookUrl: webhookUrl || undefined,
+        sessionToken: token || undefined,
       })
       await refreshConversations()
       if (conversationIdRef.current !== sentConversationId) return
@@ -291,8 +381,9 @@ export function ChatPage() {
   }
 
   const onRollbackUser = async (m: ChatMessage) => {
-    if (busy || liveRunId) return
+    if (busy || liveRunId || historyMutating) return
     setError(null)
+    setHistoryMutating(true)
     try {
       const res = await rollbackMessages(conversationId, m.id)
       setMessages(res.messages)
@@ -300,13 +391,16 @@ export function ChatPage() {
       await refreshConversations()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setHistoryMutating(false)
     }
   }
 
   const onRegenerate = async (m: ChatMessage) => {
-    if (busy || liveRunId) return
+    if (busy || liveRunId || historyMutating) return
     setError(null)
     setBusy(true)
+    setHistoryMutating(true)
     try {
       const res = await rollbackMessages(conversationId, m.id, {
         regenerate: true,
@@ -328,12 +422,15 @@ export function ChatPage() {
     } catch (err) {
       setBusy(false)
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setHistoryMutating(false)
     }
   }
 
   const onRollbackTo = async (m: ChatMessage) => {
-    if (busy || liveRunId) return
+    if (busy || liveRunId || historyMutating) return
     setError(null)
+    setHistoryMutating(true)
     try {
       const res = await rollbackMessages(conversationId, m.id)
       setMessages(res.messages)
@@ -341,12 +438,15 @@ export function ChatPage() {
       await refreshConversations()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setHistoryMutating(false)
     }
   }
 
   const onFork = async (m: ChatMessage) => {
-    if (busy || liveRunId) return
+    if (busy || liveRunId || historyMutating) return
     setError(null)
+    setHistoryMutating(true)
     try {
       const res = await forkConversation(conversationId, m.id)
       setConversationId(res.conversation_id)
@@ -355,11 +455,34 @@ export function ChatPage() {
       await refreshConversations()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setHistoryMutating(false)
+    }
+  }
+
+  const onCancelRun = async () => {
+    if (!liveRunId) return
+    setError(null)
+    setStatus('正在取消…')
+    try {
+      await cancelRun(liveRunId)
+      await finishLiveRun(conversationId)
+      setStatus('已取消')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      try {
+        await finishLiveRun(conversationId)
+      } catch {
+        setBusy(false)
+        setLiveRunId(null)
+      }
     }
   }
 
   const liveBlocks: ChatBlock[] = liveRunId ? foldEvents(liveRunId, liveEvents) : []
   const showWelcome = messages.length === 0 && liveBlocks.length === 0
+  const composerDisabled = busy || historyMutating
+  const showStop = Boolean(liveRunId && busy)
 
   return (
     <div className="chat-shell">
@@ -409,92 +532,153 @@ export function ChatPage() {
       </aside>
 
       <main className="chat-main">
-        <div className="messages" aria-live="polite">
-          {showWelcome && (
-            <p className="welcome">你好，发送一条消息开始对话。</p>
-          )}
-          {messages.map((m) => {
-            const bubbleClass =
-              m.role === 'user' ? 'user' : m.role === 'system_note' ? 'system' : 'assistant'
-            const persisted = !m.id.startsWith('local_')
-            return (
-              <div key={m.id} className={`bubble-row ${bubbleClass}`}>
-                <div className={`bubble ${bubbleClass}`}>{m.content}</div>
-                {persisted && !busy && !liveRunId && (
-                  <div className="bubble-menu">
-                    {m.role === 'user' && (
-                      <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
-                        编辑并回滚
-                      </button>
-                    )}
-                    {m.role === 'assistant' && (
-                      <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
-                        重新生成
-                      </button>
-                    )}
-                    {m.role === 'system_note' && (
-                      <button type="button" className="btn ghost sm" onClick={() => void onRollbackTo(m)}>
-                        回滚到此
-                      </button>
-                    )}
-                    <button type="button" className="btn ghost sm" onClick={() => void onFork(m)}>
-                      Fork 到此
-                    </button>
-                  </div>
-                )}
+        <div
+          className="messages"
+          aria-live="polite"
+          ref={scrollerRef}
+          onScroll={onScroll}
+        >
+          <div className="messages-inner">
+            {showWelcome && (
+              <div className="welcome">
+                <p className="welcome-title">开始对话</p>
+                <p className="welcome-sub">发送一条消息，或粘贴临时 Token 后直接查询数据。</p>
               </div>
-            )
-          })}
-          {liveBlocks.map((block, i) => {
-            switch (block.kind) {
-              case 'assistant':
-                return (
-                  <div key={`live-a-${i}`} className="bubble assistant">
-                    {block.text}
+            )}
+            {messages.map((m) => {
+              const bubbleClass =
+                m.role === 'user' ? 'user' : m.role === 'system_note' ? 'system' : 'assistant'
+              const persisted = !m.id.startsWith('local_')
+              const pages =
+                m.role === 'assistant' && m.run_id && m.run_id !== liveRunId
+                  ? historyPages[m.run_id] ?? []
+                  : []
+              return (
+                <div key={m.id} className={`msg-row ${bubbleClass}`}>
+                  <div className={`msg ${bubbleClass}`}>
+                    {m.role === 'assistant' ? (
+                      <MarkdownText text={m.content} />
+                    ) : (
+                      <MarkdownText text={m.content} plain />
+                    )}
                   </div>
-                )
-              case 'system':
-                return (
-                  <div key={`live-s-${i}`} className="bubble system">
-                    {block.text}
-                  </div>
-                )
-              case 'tool':
-                return <ToolCard key={`live-t-${i}`} block={block} />
-              case 'user':
-                return (
-                  <div key={`live-u-${i}`} className="bubble user">
-                    {block.text}
-                  </div>
-                )
-              default: {
-                const _exhaustive: never = block
-                return _exhaustive
+                  {pages.length > 0 && (
+                    <div className="msg-analysis-pages">
+                      {pages.map((url) => (
+                        <AnalysisPagePreview key={url} artifactUrl={url} />
+                      ))}
+                    </div>
+                  )}
+                  {persisted && !busy && !liveRunId && !historyMutating && (
+                    <div className="msg-actions">
+                      {m.role === 'user' && (
+                        <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
+                          编辑并回滚
+                        </button>
+                      )}
+                      {m.role === 'assistant' && (
+                        <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
+                          重新生成
+                        </button>
+                      )}
+                      {m.role === 'system_note' && (
+                        <button type="button" className="btn ghost sm" onClick={() => void onRollbackTo(m)}>
+                          回滚到此
+                        </button>
+                      )}
+                      <button type="button" className="btn ghost sm" onClick={() => void onFork(m)}>
+                        Fork
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {liveBlocks.map((block, i) => {
+              switch (block.kind) {
+                case 'assistant':
+                  return (
+                    <div key={`live-a-${i}`} className="msg-row assistant">
+                      <div className="msg assistant">
+                        <TypewriterText text={block.text} active />
+                      </div>
+                    </div>
+                  )
+                case 'system':
+                  return (
+                    <div key={`live-s-${i}`} className="msg-row system">
+                      <div className="msg system">
+                        <MarkdownText text={block.text} plain />
+                      </div>
+                    </div>
+                  )
+                case 'tool':
+                  return (
+                    <div key={`live-t-${i}`} className="msg-row tool">
+                      <ToolCard block={block} />
+                    </div>
+                  )
+                case 'user':
+                  return (
+                    <div key={`live-u-${i}`} className="msg-row user">
+                      <div className="msg user">
+                        <MarkdownText text={block.text} plain />
+                      </div>
+                    </div>
+                  )
+                default: {
+                  const _exhaustive: never = block
+                  return _exhaustive
+                }
               }
-            }
-          })}
+            })}
+            <div ref={bottomRef} className="messages-end" aria-hidden />
+          </div>
         </div>
 
-        {(status || error) && (
-          <p className={`status${error ? ' status-error' : ''}`}>{error ?? status}</p>
-        )}
+        <div className="chat-footer">
+          {(status || error || showStop) && (
+            <div className="chat-status-row">
+              <p className={`status${error ? ' status-error' : ''}`}>{error ?? status}</p>
+              {showStop && (
+                <button type="button" className="btn danger sm" onClick={() => void onCancelRun()}>
+                  停止
+                </button>
+              )}
+            </div>
+          )}
 
-        <details className="chat-advanced">
-          <summary className="chat-advanced-summary">高级</summary>
-          <label className="chat-advanced-field">
-            <span className="chat-advanced-label">本次 Run Webhook URL（留空使用全局配置）</span>
-            <input
-              className="chat-advanced-input"
-              type="url"
-              value={runWebhookUrl}
-              onChange={(e) => setRunWebhookUrl(e.target.value)}
-              disabled={busy}
-              placeholder="https://example.com/hooks/this-run"
-            />
-          </label>
-        </details>
+          <details className="chat-advanced">
+            <summary className="chat-advanced-summary">高级</summary>
+            <label className="chat-advanced-field">
+              <span className="chat-advanced-label">
+                临时用户 Token（Bearer 或 JWT，仅本次会话；也可在消息里写 token: …）
+              </span>
+              <input
+                className="chat-advanced-input"
+                type="password"
+                value={sessionToken}
+                onChange={(e) => setSessionToken(e.target.value)}
+                disabled={composerDisabled}
+                placeholder="Bearer eyJ… 或粘贴 accessToken"
+                autoComplete="off"
+              />
+            </label>
+            <label className="chat-advanced-field">
+              <span className="chat-advanced-label">本次 Run Webhook URL（留空使用全局配置）</span>
+              <input
+                className="chat-advanced-input"
+                type="url"
+                value={runWebhookUrl}
+                onChange={(e) => setRunWebhookUrl(e.target.value)}
+                disabled={busy}
+                placeholder="https://example.com/hooks/this-run"
+              />
+            </label>
+          </details>
 
-        <Composer disabled={busy} draft={composerDraft} onSend={(t) => void onSend(t)} />
+          <Composer disabled={composerDisabled} draft={composerDraft} onSend={(t) => void onSend(t)} />
+        </div>
       </main>
     </div>
   )
@@ -512,6 +696,8 @@ function statusLabel(status: string): string {
       return '已完成'
     case 'failed':
       return '失败'
+    case 'cancelled':
+      return '已取消'
     default:
       return status
   }

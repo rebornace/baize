@@ -10,6 +10,7 @@ const (
 	StatusSucceeded    Status = "succeeded"
 	StatusFailed       Status = "failed"
 	StatusWaitingHuman Status = "waiting_human"
+	StatusCancelled    Status = "cancelled"
 )
 
 type Agent struct {

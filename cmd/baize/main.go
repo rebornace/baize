@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/rebornace/baize/internal/bootstrap"
 	"github.com/rebornace/baize/internal/config"
@@ -33,12 +34,12 @@ func main() {
 			log.Fatal(err)
 		}
 	case "demo":
-		cfgPath := demoConfigPath()
-		cfg, err := config.Load(cfgPath)
+		cfg, cfgPaths, err := loadDemoConfig()
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("baize demo: config=%s agent=%s llm=%s", cfgPath, cfg.Agent.ID, cfg.LLM.Provider)
+		log.Printf("baize demo: config=%v agent=%s llm=%s", cfgPaths, cfg.Agent.ID, cfg.LLM.Provider)
+		warnIfLLMKeyMissing(cfg)
 		if err := bootstrap.Run(cfg); err != nil {
 			log.Fatal(err)
 		}
@@ -62,7 +63,7 @@ func main() {
 func printUsage() {
 	fmt.Println("usage: baize <start|demo|serve>")
 	fmt.Println("  start  clean Runtime (configs/minimal.yaml); requires BAIZE_API_KEY")
-	fmt.Println("  demo   trial stack with mock LLM + demo HTTP (configs/demo.yaml)")
+	fmt.Println("  demo   trial stack (configs/demo.yaml + optional default.local.yaml / demo.local.yaml)")
 	fmt.Println("  serve  Runtime only with explicit -config")
 }
 
@@ -74,10 +75,24 @@ func startConfigPath() string {
 	return "configs/minimal.yaml"
 }
 
-func demoConfigPath() string {
-	const local = "configs/demo.local.yaml"
-	if _, err := os.Stat(local); err == nil {
-		return local
+func loadDemoConfig() (config.Config, []string, error) {
+	return config.LoadLayered(
+		"configs/demo.yaml",
+		"configs/default.local.yaml",
+		"configs/demo.local.yaml",
+	)
+}
+
+func warnIfLLMKeyMissing(cfg config.Config) {
+	prov := strings.ToLower(strings.TrimSpace(cfg.LLM.Provider))
+	if prov != "openai_compatible" {
+		return
 	}
-	return "configs/demo.yaml"
+	env := cfg.LLM.APIKeyEnv
+	if env == "" {
+		env = "BAIZE_API_KEY"
+	}
+	if strings.TrimSpace(os.Getenv(env)) == "" {
+		log.Printf("warning: %s is not set; real LLM calls will fail (set it in .env)", env)
+	}
 }

@@ -9,9 +9,14 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var pathParamPattern = regexp.MustCompile(`\{([^}]+)\}`)
+
+// defaultHTTPClient bounds OpenAPI tool calls when Invoker.HTTPClient is nil.
+// Engine also applies a per-invoke context timeout; this is a backstop.
+var defaultHTTPClient = &http.Client{Timeout: 60 * time.Second}
 
 // InvokeResult is the normalized result of an HTTP tool call.
 type InvokeResult struct {
@@ -77,7 +82,7 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 
 	client := inv.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient
 	}
 	resp, err := client.Do(req)
 	if err != nil {

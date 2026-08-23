@@ -17,6 +17,7 @@ export type RunStatus =
   | 'waiting_human'
   | 'succeeded'
   | 'failed'
+  | 'cancelled'
 
 export interface Run {
   id: string
@@ -81,6 +82,7 @@ export async function getMe(): Promise<{ role: string }> {
 
 export interface CreateRunOptions {
   identityId?: string
+  sessionToken?: string
   webhookUrl?: string
   webhookHeaders?: Record<string, string>
 }
@@ -97,6 +99,7 @@ export async function createRun(
     conversation_id: conversationId,
   }
   if (options?.identityId) body.identity_id = options.identityId
+  if (options?.sessionToken) body.session_token = options.sessionToken
   if (options?.webhookUrl) body.webhook_url = options.webhookUrl
   if (options?.webhookHeaders && Object.keys(options.webhookHeaders).length > 0) {
     body.webhook_headers = options.webhookHeaders
@@ -163,8 +166,16 @@ export async function resumeRun(
   return parseJSON<ResumeResponse>(res)
 }
 
+export async function cancelRun(runId: string): Promise<ResumeResponse> {
+  const res = await fetch(`/v0/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON<ResumeResponse>(res)
+}
+
 export function isTerminal(status: RunStatus): boolean {
-  return status === 'succeeded' || status === 'failed'
+  return status === 'succeeded' || status === 'failed' || status === 'cancelled'
 }
 
 export interface ToolInfo {
@@ -395,6 +406,25 @@ export async function listIdentities(conversationId: string): Promise<IdentityVi
     { headers: authInit() },
   )
   return parseJSON<IdentityView[]>(res)
+}
+
+export async function createIdentity(
+  conversationId: string,
+  token: string,
+  label?: string,
+): Promise<IdentityView> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/identities`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        token,
+        label: label?.trim() || undefined,
+      }),
+    },
+  )
+  return parseJSON<IdentityView>(res)
 }
 
 export async function setDefaultIdentity(conversationId: string, id: string): Promise<void> {

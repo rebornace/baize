@@ -2,7 +2,10 @@ package run
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
 )
@@ -62,6 +65,19 @@ func (e *Engine) composeSystem(base string, runID string) string {
 	return skill.ComposeSystem(base, e.Skills, activated)
 }
 
+func (e *Engine) appendSessionAuthHint(system, conversationID string) string {
+	if !identity.ConversationHasSessionAuth(e.Identities, conversationID) {
+		return system
+	}
+	if strings.Contains(system, identity.SessionAuthReadyHint) {
+		return system
+	}
+	if strings.TrimSpace(system) == "" {
+		return identity.SessionAuthReadyHint
+	}
+	return system + "\n\n" + identity.SessionAuthReadyHint
+}
+
 func (e *Engine) enabledToolMap() map[string]bool {
 	enabled := make(map[string]bool)
 	if e.Tools == nil {
@@ -93,6 +109,9 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 		visibleNames = skill.VisibleTools(e.Skills, st.activated, enabled)
 	}
 
+	// Skills declare guidance tools; connectors added at runtime must still reach the model.
+	visibleNames = unionEnabledToolNames(visibleNames, enabled)
+
 	byName := make(map[string]llm.ToolSpec, len(all))
 	for _, spec := range all {
 		byName[spec.Name] = spec
@@ -104,6 +123,24 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 		}
 	}
 	out = append(out, skill.ActivateToolSpec())
+	return out
+}
+
+func unionEnabledToolNames(skillNames []string, enabled map[string]bool) []string {
+	seen := make(map[string]struct{}, len(skillNames)+len(enabled))
+	for _, name := range skillNames {
+		seen[name] = struct{}{}
+	}
+	for name, on := range enabled {
+		if on {
+			seen[name] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -168,9 +205,12 @@ func (e *Engine) handleActivateSkill(runID string, args map[string]any) (map[str
 		}
 	}
 
+	available := skill.VisibleTools(e.Skills, st.activated, enabled)
+
 	return map[string]any{
-		"activated":   append([]string(nil), st.activated...),
-		"added_tools": added,
+		"activated":       append([]string(nil), st.activated...),
+		"added_tools":       added,
+		"available_tools": available,
 	}, false
 }
 

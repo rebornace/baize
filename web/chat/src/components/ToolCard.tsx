@@ -61,12 +61,18 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
         <span className="tool-card-status">{STATUS_LABEL[block.status]}</span>
       </button>
 
+      {/* Analysis pages stay visible even when the tool card is collapsed. */}
+      {analysisPage && (
+        <div className="tool-card-preview">
+          <AnalysisPagePreview artifactUrl={analysisPage.artifactUrl} />
+        </div>
+      )}
+
       {expanded && (
         <div className="tool-card-body">
           {block.arguments !== undefined && (
             <pre className="tool-card-json">{formatJSON(block.arguments)}</pre>
           )}
-          {analysisPage && <AnalysisPagePreview artifactUrl={analysisPage.artifactUrl} />}
           {block.result !== undefined &&
             (analysisPage ? (
               <details className="tool-card-details">

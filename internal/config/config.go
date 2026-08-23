@@ -65,6 +65,8 @@ type Config struct {
 	} `yaml:"connector"`
 	Run struct {
 		MaxSteps int `yaml:"max_steps"`
+		// ToolTimeoutSec is per-tool HTTP/invoke deadline (default 60).
+		ToolTimeoutSec int `yaml:"tool_timeout_sec"`
 	} `yaml:"run"`
 	Conversation struct {
 		MaxMessages       int   `yaml:"max_messages"`
@@ -87,19 +89,114 @@ type Config struct {
 
 // Load reads and unmarshals a YAML config file.
 func Load(path string) (Config, error) {
+	cfg, err := loadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	applyDefaults(&cfg)
+	return cfg, nil
+}
+
+// LoadLayered reads base then deep-merges each existing overlay file (later wins).
+// Returns the merged config and the list of files actually applied (base + overlays).
+func LoadLayered(basePath string, overlayPaths ...string) (Config, []string, error) {
+	baseRaw, err := os.ReadFile(basePath)
+	if err != nil {
+		return Config{}, nil, fmt.Errorf("read config %s: %w", basePath, err)
+	}
+	merged, err := unmarshalYAMLMap(baseRaw)
+	if err != nil {
+		return Config{}, nil, fmt.Errorf("parse config %s: %w", basePath, err)
+	}
+	applied := []string{basePath}
+	for _, path := range overlayPaths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return Config{}, nil, fmt.Errorf("read config %s: %w", path, err)
+		}
+		overlay, err := unmarshalYAMLMap(raw)
+		if err != nil {
+			return Config{}, nil, fmt.Errorf("parse config %s: %w", path, err)
+		}
+		deepMergeMap(merged, overlay)
+		applied = append(applied, path)
+	}
+	cfg, err := configFromMap(merged)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	applyDefaults(&cfg)
+	return cfg, applied, nil
+}
+
+func loadFile(path string) (Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
-	var cfg Config
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	m, err := unmarshalYAMLMap(raw)
+	if err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
+	return configFromMap(m)
+}
+
+func unmarshalYAMLMap(raw []byte) (map[string]interface{}, error) {
+	var m map[string]interface{}
+	if err := yaml.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	return m, nil
+}
+
+func configFromMap(m map[string]interface{}) (Config, error) {
+	out, err := yaml.Marshal(m)
+	if err != nil {
+		return Config{}, fmt.Errorf("marshal merged config: %w", err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(out, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parse merged config: %w", err)
+	}
+	return cfg, nil
+}
+
+func deepMergeMap(dst, src map[string]interface{}) {
+	for k, srcVal := range src {
+		dstVal, ok := dst[k]
+		if !ok {
+			dst[k] = srcVal
+			continue
+		}
+		dstMap, dstOk := dstVal.(map[string]interface{})
+		srcMap, srcOk := srcVal.(map[string]interface{})
+		if dstOk && srcOk {
+			deepMergeMap(dstMap, srcMap)
+			continue
+		}
+		dst[k] = srcVal
+	}
+}
+
+func applyDefaults(cfg *Config) {
 	if cfg.LLM.APIKeyEnv == "" {
 		cfg.LLM.APIKeyEnv = "BAIZE_API_KEY"
 	}
 	if cfg.Run.MaxSteps <= 0 {
 		cfg.Run.MaxSteps = 16
+	}
+	if cfg.Run.ToolTimeoutSec <= 0 {
+		cfg.Run.ToolTimeoutSec = 60
 	}
 	if cfg.Listen == "" {
 		cfg.Listen = ":8080"
@@ -123,7 +220,6 @@ func Load(path string) (Config, error) {
 	if cfg.Skills.UserDir == "" {
 		cfg.Skills.UserDir = "./data/skills"
 	}
-	return cfg, nil
 }
 
 // SkillBuiltinDirs returns builtin skill scan roots. builtin_dirs wins over builtin_dir when set.

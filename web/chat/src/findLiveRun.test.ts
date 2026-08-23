@@ -64,5 +64,6 @@ describe('isActiveRunStatus', () => {
   it('is false for terminal statuses', () => {
     expect(isActiveRunStatus('succeeded')).toBe(false)
     expect(isActiveRunStatus('failed')).toBe(false)
+    expect(isActiveRunStatus('cancelled')).toBe(false)
   })
 })
