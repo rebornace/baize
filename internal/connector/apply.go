@@ -24,6 +24,7 @@ type ApplyInput struct {
 	Registry                *tool.Registry
 	Identities              identity.Store
 	ID, Type, Spec, BaseURL string
+	ImportFormat            string
 	ExecutionCallbackURL    string
 	RequireApproval         []string
 	RequireApprovalMutating bool
@@ -259,6 +260,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		ID:                   in.ID,
 		Type:                 typ,
 		Spec:                 in.Spec,
+		ImportFormat:         in.ImportFormat,
 		BaseURL:              in.BaseURL,
 		ExecutionCallbackURL: strings.TrimSpace(in.ExecutionCallbackURL),
 		RequireApproval:      approval,

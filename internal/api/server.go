@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,6 +21,8 @@ import (
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/connector/specimport"
+	"github.com/rebornace/baize/internal/connector/specstore"
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
@@ -60,6 +63,7 @@ type Server struct {
 	OperatorToken string
 	AdminToken    string
 	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
+	DataDir       string              // parent dir for specstore (sqlite dir); required for spec_content PUT
 	mux           *http.ServeMux
 }
 
@@ -372,6 +376,8 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Type                   string          `json:"type"`
 		Spec                   string          `json:"spec"`
+		SpecContent            string          `json:"spec_content"`
+		ImportFormat           string          `json:"import_format"`
 		BaseURL                string          `json:"base_url"`
 		ExecutionCallbackURL   string          `json:"execution_callback_url"`
 		RequireApproval        []string        `json:"require_approval"`
@@ -390,7 +396,67 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported connector type")
 		return
 	}
-	if body.Type == "openapi" && body.Spec == "" {
+	if body.Spec != "" && body.SpecContent != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "spec and spec_content are mutually exclusive")
+		return
+	}
+	const maxSpecContentSize = 4 << 20
+	if len(body.SpecContent) > maxSpecContentSize {
+		writeError(w, http.StatusBadRequest, "invalid_request", "spec_content exceeds 4 MiB limit")
+		return
+	}
+
+	importFormat := body.ImportFormat
+	if importFormat == "" {
+		importFormat = specimport.FormatAuto
+	}
+	if !validImportFormat(importFormat) {
+		writeError(w, http.StatusBadRequest, "unsupported_import_format", "unsupported import_format")
+		return
+	}
+
+	specPath := body.Spec
+	importFormatDetected := ""
+	if body.SpecContent != "" {
+		if strings.TrimSpace(s.DataDir) == "" {
+			writeError(w, http.StatusInternalServerError, "internal_error", "data directory is not configured")
+			return
+		}
+		content := []byte(body.SpecContent)
+		normalized, detected, err := specimport.Normalize(content, importFormat, body.BaseURL)
+		if err != nil {
+			if errors.Is(err, specimport.ErrUnsupportedFormat) {
+				writeError(w, http.StatusBadRequest, "unsupported_import_format", err.Error())
+				return
+			}
+			if errors.Is(err, specimport.ErrInvalidSpec) {
+				writeError(w, http.StatusBadRequest, "invalid_spec", err.Error())
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		relPath, err := specstore.Write(s.DataDir, id, content, normalized)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		specPath = filepath.Join(s.DataDir, relPath)
+		importFormatDetected = detected
+	} else if body.Type == "openapi" && specPath == "" {
+		existing, err := s.Store.GetConnector(id)
+		if err != nil || strings.TrimSpace(existing.Spec) == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
+			return
+		}
+		if _, err := os.Stat(existing.Spec); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
+			return
+		}
+		specPath = existing.Spec
+		importFormatDetected = existing.ImportFormat
+	}
+	if body.Type == "openapi" && specPath == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
 		return
 	}
@@ -431,7 +497,8 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Identities:             s.Identities,
 		ID:                     id,
 		Type:                   body.Type,
-		Spec:                   body.Spec,
+		Spec:                   specPath,
+		ImportFormat:           importFormatDetected,
 		BaseURL:                body.BaseURL,
 		ExecutionCallbackURL:   body.ExecutionCallbackURL,
 		RequireApproval:        body.RequireApproval,
@@ -476,6 +543,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"id":                       c.ID,
 		"type":                     c.Type,
 		"spec":                     c.Spec,
+		"import_format_detected":   c.ImportFormat,
 		"base_url":                 c.BaseURL,
 		"execution_callback_url":   c.ExecutionCallbackURL,
 		"require_approval":         c.RequireApproval,
@@ -487,6 +555,15 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		resp["mcp"] = c.MCP
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func validImportFormat(format string) bool {
+	switch format {
+	case specimport.FormatAuto, specimport.FormatOpenAPI3, specimport.FormatSwagger2, specimport.FormatPostman:
+		return true
+	default:
+		return false
+	}
 }
 
 // authBody mirrors store.ConnectorAuth / authcred.Config for JSON decoding of
@@ -527,6 +604,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"id":                       c.ID,
 		"type":                     c.Type,
 		"spec":                     c.Spec,
+		"import_format_detected":   c.ImportFormat,
 		"base_url":                 c.BaseURL,
 		"execution_callback_url":   c.ExecutionCallbackURL,
 		"require_approval":         c.RequireApproval,

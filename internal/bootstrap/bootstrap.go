@@ -249,6 +249,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	}
 	srv.OperatorToken = op
 	srv.AdminToken = adm
+	if strings.TrimSpace(cfg.Store.SQLitePath) != "" {
+		srv.DataDir = filepath.Dir(cfg.Store.SQLitePath)
+	}
 	return srv, closer, nil
 }
 
