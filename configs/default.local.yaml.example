@@ -13,6 +13,7 @@ llm:
   model: deepseek-chat
   api_key_env: BAIZE_API_KEY
   disable_thinking: true
+  # supports_vision: false   # default; set true for vision-capable models (e.g. gpt-4o)
 agent:
   id: miao-agent
   system: "你是业务助手，只能通过已注册工具访问后端 API。"

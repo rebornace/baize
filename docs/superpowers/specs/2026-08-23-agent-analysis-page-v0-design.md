@@ -30,7 +30,7 @@
 
 - 自研 26 种图引擎或 AntV 级 MCP 替代
 - 筛选触发 **回连 Baize API / 企业 Connector** 拉新数据（v0 仅 **页内 datasets 客户端过滤/聚合**；再查数由 Agent 新 Run 调工具）
-- Composer「+」Skill 多选、对话附件 CSV（可并行 v0.1）
+- Composer「+」Skill 多选、对话附件 CSV — **见** [Chat Skill 符号与附件 v0.1](2026-08-25-chat-skills-attachments-v0-design.md)（`@`/`/` 符号、多类型附件、vision 硬失败）
 - 服务端 headless Chrome 出 PDF（v0 用浏览器打印 / 客户端导出，见 §3.6）
 - 聊天内嵌 AntV **远程图片 URL** 专用组件（MCP 仍走 JSON 工具卡）
 
