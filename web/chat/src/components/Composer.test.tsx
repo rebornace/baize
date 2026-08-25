@@ -10,12 +10,25 @@ const skills: SkillSummary[] = [
 ]
 
 describe('Composer', () => {
-  it('renders textarea, file input and a disabled send button when empty', () => {
+  it('renders textarea, a visible attachment button and a disabled send button when empty', () => {
     const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
     expect(html).toContain('aria-label="消息输入"')
+    // The visible attachment button must carry the accessible label and the
+    // composer-attach class (the hidden file input is aria-hidden / tabIndex=-1).
+    expect(html).toContain('composer-attach')
     expect(html).toContain('aria-label="添加附件"')
     expect(html).toContain('disabled=""')
     expect(html).toContain('发送')
+  })
+
+  it('hides the raw file input from assistive tech and tabs (button triggers it)', () => {
+    const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
+    expect(html).toContain('aria-hidden="true"')
+    expect(html).toContain('tabindex="-1"')
+    // The hidden input must not carry the visible label (button owns it).
+    const inputMatch = html.match(/<input[^>]*composer-file-input[^>]*>/)
+    expect(inputMatch).toBeTruthy()
+    expect(inputMatch![0]).not.toContain('aria-label="添加附件"')
   })
 
   it('lists available skill ids as a hint when skills are provided', () => {
@@ -34,12 +47,16 @@ describe('Composer', () => {
     expect(html).not.toContain('composer-hint')
   })
 
-  it('disables inputs when disabled prop is set', () => {
+  it('disables the attachment button and inputs when disabled prop is set', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, disabled: true }),
     )
-    expect(html).toContain('aria-label="添加附件"')
-    // both textarea and file input carry the disabled attribute
-    expect(html.match(/disabled=""/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+    // attachment button, file input, textarea and send button all carry disabled
+    const disabledCount = html.match(/disabled=""/g)?.length ?? 0
+    expect(disabledCount).toBeGreaterThanOrEqual(3)
+    // The attachment button specifically must be disabled.
+    const attachBtn = html.match(/<button[^>]*composer-attach[^>]*>/)
+    expect(attachBtn).toBeTruthy()
+    expect(attachBtn![0]).toContain('disabled=""')
   })
 })

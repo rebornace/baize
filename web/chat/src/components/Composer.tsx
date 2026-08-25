@@ -154,6 +154,10 @@ export function Composer({ disabled, onSend, draft, skills }: ComposerProps) {
 
   const canSend = !disabled && (text.trim().length > 0 || files.length > 0)
 
+  const openFilePicker = () => {
+    fileInputRef.current?.click()
+  }
+
   return (
     <div className="composer">
       {files.length > 0 && (
@@ -181,10 +185,33 @@ export function Composer({ disabled, onSend, draft, skills }: ComposerProps) {
           multiple
           accept={ACCEPT}
           className="composer-file-input"
-          aria-label="添加附件"
+          aria-hidden="true"
+          tabIndex={-1}
           onChange={(e) => addFiles(e.target.files)}
           disabled={disabled}
         />
+        <button
+          type="button"
+          className="composer-attach"
+          aria-label="添加附件"
+          title="添加附件"
+          onClick={openFilePicker}
+          disabled={disabled}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
         <textarea
           ref={taRef}
           value={text}

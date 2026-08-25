@@ -1197,6 +1197,38 @@ body {
   position: absolute;
 }
 
+.composer-attach {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--system);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.composer-attach:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--panel);
+}
+
+.composer-attach:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.22);
+  border-color: var(--accent);
+}
+
+.composer-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .composer-box {
   position: relative;
 }
