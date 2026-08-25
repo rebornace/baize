@@ -434,7 +434,9 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 func newLLM(cfg config.Config) (llm.Provider, error) {
 	switch strings.ToLower(cfg.LLM.Provider) {
 	case "", "mock":
-		return llm.NewMock(), nil
+		m := llm.NewMock()
+		m.VisionSupported = cfg.LLM.SupportsVision
+		return m, nil
 	case "openai_compatible":
 		env := cfg.LLM.APIKeyEnv
 		if env == "" {
