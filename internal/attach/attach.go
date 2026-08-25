@@ -155,17 +155,25 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// truncateText truncates s to at most max runes. MaxTextChars is defined in
-// characters (runes), so multi-byte text is cut on a rune boundary and never
-// produces a partial-codepoint tail.
+// truncatedMarker is appended to any text that is cut by truncateText so the
+// model (and the operator reading logs) can tell the content was shortened, as
+// promised by the spec and README.
+const truncatedMarker = "…[truncated]"
+
+// truncateText truncates s to at most max runes and, when truncation occurs,
+// appends truncatedMarker. MaxTextChars is defined in characters (runes), so
+// multi-byte text is cut on a rune boundary and never produces a partial-
+// codepoint tail. The marker sits outside the rune budget so the visible
+// content prefix is exactly max runes.
 func truncateText(s string, max int) string {
 	if max <= 0 {
 		return s
 	}
-	if len([]rune(s)) <= max {
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
-	return string([]rune(s)[:max])
+	return string(runes[:max]) + truncatedMarker
 }
 
 func isTextMIME(m string) bool {

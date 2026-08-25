@@ -335,17 +335,26 @@ func TestProcessTextTruncation(t *testing.T) {
 	if len(texts) != 1 {
 		t.Fatalf("got %d texts, want 1", len(texts))
 	}
-	if len(texts[0].Text) > 64<<10 {
-		t.Fatalf("text len=%d, want <= %d", len(texts[0].Text), 64<<10)
+	got := texts[0].Text
+	// The content prefix is capped at 64 KiB runes; the truncation marker is
+	// appended after that budget, so the total length is slightly over 64 KiB.
+	const marker = "…[truncated]"
+	if !strings.HasSuffix(got, marker) {
+		t.Fatalf("truncated text missing %q marker; tail=%q", marker, got[len(got)-len(marker):])
 	}
-	if len(texts[0].Text) < 1<<10 {
-		t.Fatalf("text len=%d, want non-trivial", len(texts[0].Text))
+	prefix := strings.TrimSuffix(got, marker)
+	if len([]rune(prefix)) != 64<<10 {
+		t.Fatalf("content prefix rune count=%d, want %d", len([]rune(prefix)), 64<<10)
+	}
+	if len(prefix) < 1<<10 {
+		t.Fatalf("prefix len=%d, want non-trivial", len(prefix))
 	}
 }
 
 // TestProcessTextTruncationRuneCount verifies MaxTextChars is interpreted as a
 // rune (character) count, not a byte count, so multi-byte text is cut on a
-// code-point boundary and never overruns the limit.
+// code-point boundary and never overruns the limit. The truncation marker is
+// appended after the rune-budgeted prefix.
 func TestProcessTextTruncationRuneCount(t *testing.T) {
 	// 3 bytes per rune in UTF-8. 50k runes = 150k bytes > 64k rune limit.
 	seg := "中文" // 2 runes, 6 bytes
@@ -362,17 +371,46 @@ func TestProcessTextTruncationRuneCount(t *testing.T) {
 	if len(texts) != 1 {
 		t.Fatalf("got %d texts, want 1", len(texts))
 	}
+	const marker = "…[truncated]"
 	got := texts[0].Text
-	if rn := utf8.RuneCountInString(got); rn != 100 {
-		t.Fatalf("rune count=%d, want 100", rn)
+	if !strings.HasSuffix(got, marker) {
+		t.Fatalf("truncated text missing %q marker: %q", marker, got)
+	}
+	prefix := strings.TrimSuffix(got, marker)
+	// The content prefix is exactly the rune budget; the marker is extra.
+	if rn := utf8.RuneCountInString(prefix); rn != 100 {
+		t.Fatalf("prefix rune count=%d, want 100", rn)
 	}
 	// Truncated text must be valid UTF-8 (no half-codepoint tail).
 	if !utf8.ValidString(got) {
 		t.Fatalf("truncated text is not valid UTF-8: %q", got)
 	}
-	// And the tail must equal the corresponding prefix of the input.
-	if got != string([]rune(big)[:100]) {
-		t.Fatalf("truncated text does not match input prefix")
+	// And the prefix must equal the corresponding prefix of the input.
+	if prefix != string([]rune(big)[:100]) {
+		t.Fatalf("truncated prefix does not match input prefix")
+	}
+}
+
+// TestProcessTextNotTruncatedOmitsMarker verifies the marker is only added
+// when truncation actually happens; an under-budget text is returned verbatim.
+func TestProcessTextNotTruncatedOmitsMarker(t *testing.T) {
+	small := strings.Repeat("a", 1000) // well under 64 KiB
+	texts, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename:   "small.txt",
+		MediaType:  mimeTxt,
+		ContentB64: b64([]byte(small)),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(texts) != 1 {
+		t.Fatalf("got %d texts, want 1", len(texts))
+	}
+	if texts[0].Text != small {
+		t.Fatalf("under-budget text was altered: got=%q want=%q", texts[0].Text, small)
+	}
+	if strings.Contains(texts[0].Text, "…[truncated]") {
+		t.Fatalf("under-budget text must not carry the truncation marker: %q", texts[0].Text)
 	}
 }
 
