@@ -442,6 +442,7 @@ func newLLM(cfg config.Config) (llm.Provider, error) {
 		}
 		p := llm.NewOpenAI(cfg.LLM.BaseURL, os.Getenv(env), cfg.LLM.Model)
 		p.DisableThinking = cfg.LLM.DisableThinking
+		p.VisionSupported = cfg.LLM.SupportsVision
 		return p, nil
 	default:
 		return nil, fmt.Errorf("unknown llm.provider: %s", cfg.LLM.Provider)

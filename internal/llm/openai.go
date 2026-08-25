@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,10 @@ type OpenAI struct {
 	APIKey          string
 	Model           string
 	DisableThinking bool
+	// VisionSupported reports whether the backing model accepts image parts.
+	// When false, callers should fall back to text-only. Defaults to false.
+	// Exposed as SupportsVision() through the Provider interface.
+	VisionSupported bool
 	HTTPClient      *http.Client
 }
 
@@ -111,9 +116,20 @@ type openAIThinking struct {
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
+	Content    any             `json:"content,omitempty"` // string or []openAIContentPart
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+}
+
+// openAIContentPart is one element of the OpenAI multimodal content array.
+type openAIContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	ImageURL *openAIImageURL `json:"image_url,omitempty"`
+}
+
+type openAIImageURL struct {
+	URL string `json:"url"`
 }
 
 type openAIToolCall struct {
@@ -149,8 +165,12 @@ func toOpenAIMessages(messages []Message) []openAIMessage {
 	for _, m := range messages {
 		om := openAIMessage{
 			Role:       string(m.Role),
-			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
+		}
+		if len(m.Parts) > 0 {
+			om.Content = toOpenAIContentParts(m.Parts)
+		} else if m.Content != "" {
+			om.Content = m.Content
 		}
 		for _, tc := range m.ToolCalls {
 			args, _ := json.Marshal(tc.Arguments)
@@ -170,6 +190,45 @@ func toOpenAIMessages(messages []Message) []openAIMessage {
 	}
 	return out
 }
+
+// toOpenAIContentParts encodes Message.Parts as the OpenAI multimodal content
+// array. Text parts are forwarded as {"type":"text","text":...}; image parts
+// become {"type":"image_url","image_url":{"url":"data:<mime>;base64,<...>"}}.
+// A ContentPart with DataURL set forwards that URI verbatim. Empty/invalid
+// image parts (no bytes and no DataURL) are dropped to avoid sending a
+// malformed image_url entry.
+func toOpenAIContentParts(parts []ContentPart) []openAIContentPart {
+	out := make([]openAIContentPart, 0, len(parts))
+	for _, p := range parts {
+		switch p.Type {
+		case "text":
+			if p.Text == "" {
+				continue
+			}
+			out = append(out, openAIContentPart{Type: "text", Text: p.Text})
+		case "image":
+			url := p.DataURL
+			if url == "" {
+				if len(p.ImageBytes) == 0 {
+					continue
+				}
+				mime := p.ImageMIME
+				if mime == "" {
+					mime = "image/png"
+				}
+				url = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(p.ImageBytes)
+			}
+			out = append(out, openAIContentPart{
+				Type:     "image_url",
+				ImageURL: &openAIImageURL{URL: url},
+			})
+		}
+	}
+	return out
+}
+
+// SupportsVision implements Provider.
+func (o *OpenAI) SupportsVision() bool { return o.VisionSupported }
 
 func toOpenAITools(tools []ToolSpec) []openAITool {
 	out := make([]openAITool, 0, len(tools))
@@ -193,7 +252,7 @@ func toOpenAITools(tools []ToolSpec) []openAITool {
 func fromOpenAIMessage(m openAIMessage) (Message, error) {
 	msg := Message{
 		Role:       Role(m.Role),
-		Content:    m.Content,
+		Content:    contentString(m.Content),
 		ToolCallID: m.ToolCallID,
 	}
 	for _, tc := range m.ToolCalls {
@@ -220,4 +279,30 @@ func truncateBytes(b []byte, n int) string {
 		return string(b)
 	}
 	return string(b[:n]) + "…"
+}
+
+// contentString extracts the plain-text content from an openAIMessage.Content
+// field. The OpenAI chat/completions response always returns content as a
+// string, but we defensively handle the array form (concatenating text parts)
+// in case a proxy returns the multimodal shape.
+func contentString(c any) string {
+	switch v := c.(type) {
+	case string:
+		return v
+	case []any:
+		var sb strings.Builder
+		for _, p := range v {
+			mp, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			if t, _ := mp["type"].(string); t == "text" {
+				if txt, _ := mp["text"].(string); txt != "" {
+					sb.WriteString(txt)
+				}
+			}
+		}
+		return sb.String()
+	}
+	return ""
 }

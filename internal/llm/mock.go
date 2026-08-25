@@ -7,11 +7,19 @@ import (
 )
 
 // Mock is a heuristic Provider for Demo A (no external LLM).
-type Mock struct{}
+type Mock struct {
+	// VisionSupported reports whether the mock pretends to accept image parts.
+	// Defaults to false. Tests and demos can flip this to exercise the
+	// supports_vision wiring without a real backend.
+	VisionSupported bool
+}
 
 func NewMock() *Mock {
 	return &Mock{}
 }
+
+// SupportsVision implements Provider.
+func (m *Mock) SupportsVision() bool { return m.VisionSupported }
 
 func (m *Mock) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (Message, error) {
 	_ = ctx
