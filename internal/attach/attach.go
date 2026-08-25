@@ -58,10 +58,12 @@ var (
 
 // Process extracts text and image attachments. It returns the text and image
 // results separately; on error the returned slices are nil.
+//
+// Any zero-valued Options field is replaced with its DefaultOptions value, so
+// a caller may pass a partially populated Options (or the zero value) and get
+// the spec defaults for the fields they left unset.
 func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Extracted, err error) {
-	if opts.MaxCount == 0 {
-		opts = DefaultOptions()
-	}
+	opts = opts.withDefaults()
 	if len(atts) > opts.MaxCount {
 		return nil, nil, fmt.Errorf("%w: %d > %d", ErrTooMany, len(atts), opts.MaxCount)
 	}
@@ -133,16 +135,37 @@ func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Ext
 	return texts, images, nil
 }
 
+// withDefaults returns a copy of opts where every zero-valued field is
+// replaced by the corresponding DefaultOptions value. This lets callers pass
+// a partially populated Options and still get sane limits for the rest.
+func (o Options) withDefaults() Options {
+	d := DefaultOptions()
+	if o.MaxCount == 0 {
+		o.MaxCount = d.MaxCount
+	}
+	if o.MaxTotalBytes == 0 {
+		o.MaxTotalBytes = d.MaxTotalBytes
+	}
+	if o.MaxTextChars == 0 {
+		o.MaxTextChars = d.MaxTextChars
+	}
+	if o.MaxImageEdge == 0 {
+		o.MaxImageEdge = d.MaxImageEdge
+	}
+	return o
+}
+
+// truncateText truncates s to at most max runes. MaxTextChars is defined in
+// characters (runes), so multi-byte text is cut on a rune boundary and never
+// produces a partial-codepoint tail.
 func truncateText(s string, max int) string {
-	if max <= 0 || len(s) <= max {
+	if max <= 0 {
 		return s
 	}
-	// Cut on rune boundary if possible, staying within byte budget.
-	r := []rune(s)
-	if len(r) <= max {
+	if len([]rune(s)) <= max {
 		return s
 	}
-	return string(r[:max])
+	return string([]rune(s)[:max])
 }
 
 func isTextMIME(m string) bool {

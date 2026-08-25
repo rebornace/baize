@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/xuri/excelize/v2"
@@ -341,3 +342,79 @@ func TestProcessTextTruncation(t *testing.T) {
 		t.Fatalf("text len=%d, want non-trivial", len(texts[0].Text))
 	}
 }
+
+// TestProcessTextTruncationRuneCount verifies MaxTextChars is interpreted as a
+// rune (character) count, not a byte count, so multi-byte text is cut on a
+// code-point boundary and never overruns the limit.
+func TestProcessTextTruncationRuneCount(t *testing.T) {
+	// 3 bytes per rune in UTF-8. 50k runes = 150k bytes > 64k rune limit.
+	seg := "中文" // 2 runes, 6 bytes
+	big := strings.Repeat(seg, 25_000) // 50_000 runes
+	opts := attach.Options{MaxTextChars: 100} // small limit for fast test
+	texts, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename:   "zh.txt",
+		MediaType:  mimeTxt,
+		ContentB64: b64([]byte(big)),
+	}}, opts)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(texts) != 1 {
+		t.Fatalf("got %d texts, want 1", len(texts))
+	}
+	got := texts[0].Text
+	if rn := utf8.RuneCountInString(got); rn != 100 {
+		t.Fatalf("rune count=%d, want 100", rn)
+	}
+	// Truncated text must be valid UTF-8 (no half-codepoint tail).
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated text is not valid UTF-8: %q", got)
+	}
+	// And the tail must equal the corresponding prefix of the input.
+	if got != string([]rune(big)[:100]) {
+		t.Fatalf("truncated text does not match input prefix")
+	}
+}
+
+// TestProcessZeroOptionsEqualsDefault proves a zero-valued Options is treated
+// identically to DefaultOptions for every limit (count, bytes, text chars,
+// image edge).
+func TestProcessZeroOptionsEqualsDefault(t *testing.T) {
+	pngBig := makePng(3000, 4000) // long edge > 2048 to exercise MaxImageEdge
+	atts := []attach.AttachmentIn{
+		{Filename: "a.txt", MediaType: mimeTxt, ContentB64: b64([]byte("hello"))},
+		{Filename: "a.png", MediaType: mimePng, ContentB64: b64(pngBig)},
+	}
+	t1, i1, err1 := attach.Process(atts, attach.Options{})
+	t2, i2, err2 := attach.Process(atts, attach.DefaultOptions())
+	if err1 != nil || err2 != nil {
+		t.Fatalf("errors: zero=%v default=%v", err1, err2)
+	}
+	if len(t1) != len(t2) || len(i1) != len(i2) {
+		t.Fatalf("counts differ: zero=(%d,%d) default=(%d,%d)", len(t1), len(i1), len(t2), len(i2))
+	}
+	if t1[0].Text != t2[0].Text {
+		t.Fatalf("text differs: zero=%q default=%q", t1[0].Text, t2[0].Text)
+	}
+	if !bytes.Equal(i1[0].ImageBytes, i2[0].ImageBytes) {
+		t.Fatalf("thumbnail bytes differ (zero vs default)")
+	}
+}
+
+// TestProcessPartialOptionsKeepsCustom proves a partially populated Options
+// keeps the caller's value for the set field while filling defaults for the
+// rest. Here MaxCount=2 (custom) is honored → 3 attachments → ErrTooMany,
+// while the other limits fall back to defaults so a normal-sized payload is
+// not rejected as too large.
+func TestProcessPartialOptionsKeepsCustom(t *testing.T) {
+	atts := []attach.AttachmentIn{
+		{Filename: "a.txt", MediaType: mimeTxt, ContentB64: b64([]byte("a"))},
+		{Filename: "b.txt", MediaType: mimeTxt, ContentB64: b64([]byte("b"))},
+		{Filename: "c.txt", MediaType: mimeTxt, ContentB64: b64([]byte("c"))},
+	}
+	_, _, err := attach.Process(atts, attach.Options{MaxCount: 2})
+	if !errors.Is(err, attach.ErrTooMany) {
+		t.Fatalf("err=%v, want ErrTooMany", err)
+	}
+}
+
