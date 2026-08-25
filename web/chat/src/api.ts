@@ -70,7 +70,13 @@ async function parseJSON<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-export async function getUIConfig(): Promise<{ agent_id: string; gate_enabled: boolean }> {
+export interface UIConfig {
+  agent_id: string
+  gate_enabled: boolean
+  supports_vision: boolean
+}
+
+export async function getUIConfig(): Promise<UIConfig> {
   const res = await fetch('/v0/ui-config')
   return parseJSON(res)
 }
@@ -80,11 +86,55 @@ export async function getMe(): Promise<{ role: string }> {
   return parseJSON(res)
 }
 
+export interface Attachment {
+  filename: string
+  media_type: string
+  content_base64: string
+}
+
+/** Read a File into an Attachment (base64-encoded content). */
+export function fileToAttachment(file: File): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        reject(new Error('unsupported file read result'))
+        return
+      }
+      const comma = result.indexOf(',')
+      const content_base64 = comma < 0 ? result : result.slice(comma + 1)
+      resolve({
+        filename: file.name,
+        media_type: file.type || 'application/octet-stream',
+        content_base64,
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+const IMAGE_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+])
+
+/** True for image MIME types the backend accepts as vision attachments. */
+export function isImageAttachment(mediaType: string): boolean {
+  return IMAGE_MIMES.has(mediaType.toLowerCase())
+}
+
 export interface CreateRunOptions {
   identityId?: string
   sessionToken?: string
   webhookUrl?: string
   webhookHeaders?: Record<string, string>
+  skills?: string[]
+  attachments?: Attachment[]
 }
 
 export async function createRun(
@@ -104,11 +154,29 @@ export async function createRun(
   if (options?.webhookHeaders && Object.keys(options.webhookHeaders).length > 0) {
     body.webhook_headers = options.webhookHeaders
   }
+  if (options?.skills && options.skills.length > 0) {
+    body.skills = options.skills
+  }
+  if (options?.attachments && options.attachments.length > 0) {
+    body.attachments = options.attachments
+  }
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: authInit({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
+  if (!res.ok) {
+    let code = 'unknown'
+    let message = res.statusText
+    try {
+      const errBody = (await res.json()) as { error?: { code?: string; message?: string } }
+      if (errBody.error?.code) code = errBody.error.code
+      if (errBody.error?.message) message = errBody.error.message
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, code, message)
+  }
   return parseJSON<CreateRunResponse>(res)
 }
 
