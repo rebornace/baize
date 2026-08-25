@@ -25,6 +25,8 @@ func (slowToolLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm
 	}}, nil
 }
 
+func (slowToolLLM) SupportsVision() bool { return false }
+
 func TestToolInvokeTimeout(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
@@ -118,3 +120,5 @@ func (blockThenCancelLLM) Chat(ctx context.Context, messages []llm.Message, tool
 		{ID: "c1", Name: "block", Arguments: map[string]any{}},
 	}}, nil
 }
+
+func (blockThenCancelLLM) SupportsVision() bool { return false }

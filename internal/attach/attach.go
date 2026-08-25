@@ -16,9 +16,9 @@ import (
 
 // AttachmentIn is a single inbound attachment as received from the API.
 type AttachmentIn struct {
-	Filename   string
-	MediaType  string
-	ContentB64 string
+	Filename   string `json:"filename"`
+	MediaType   string `json:"media_type"`
+	ContentB64 string `json:"content_base64"`
 }
 
 // Extracted is the result of processing one attachment.

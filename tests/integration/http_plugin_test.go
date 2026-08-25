@@ -219,3 +219,5 @@ func (s *httpPluginScriptLLM) Chat(ctx context.Context, messages []llm.Message, 
 	}
 	return llm.Message{Role: llm.RoleAssistant, Content: "done"}, nil
 }
+
+func (s *httpPluginScriptLLM) SupportsVision() bool { return false }

@@ -31,6 +31,8 @@ func (c *captureLLM) Chat(ctx context.Context, messages []llm.Message, tools []l
 	return c.onChat(messages, tools), nil
 }
 
+func (c *captureLLM) SupportsVision() bool { return false }
+
 type scriptLLM struct{ calls int }
 
 func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
@@ -42,6 +44,8 @@ func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []ll
 	}
 	return llm.Message{Role: llm.RoleAssistant, Content: "已创建"}, nil
 }
+
+func (s *scriptLLM) SupportsVision() bool { return false }
 
 func TestEngineReActToolThenMessage(t *testing.T) {
 	st := store.NewMemory()
@@ -319,6 +323,8 @@ func (s *loginScriptLLM) Chat(ctx context.Context, messages []llm.Message, tools
 	return llm.Message{Role: llm.RoleAssistant, Content: "ok"}, nil
 }
 
+func (s *loginScriptLLM) SupportsVision() bool { return false }
+
 func TestContinueFromHITLInjectsConversationID(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
@@ -474,6 +480,8 @@ func (s *probeScriptLLM) Chat(ctx context.Context, messages []llm.Message, tools
 	}
 	return llm.Message{Role: llm.RoleAssistant, Content: "done"}, nil
 }
+
+func (s *probeScriptLLM) SupportsVision() bool { return false }
 
 func waitStatus(t *testing.T, st store.Store, id string, want store.Status) {
 	t.Helper()
@@ -907,7 +915,7 @@ func TestBuildMessagesAfterTruncateAndResend(t *testing.T) {
 	_, _ = msgStore.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "u2-edited", RunID: "run_new"})
 
 	eng := &Engine{Messages: msgStore, MaxMessages: 40}
-	got := eng.buildMessages("sys", "c1", "u2-edited")
+	got := eng.buildMessages("sys", "c1", "u2-edited", nil)
 	if len(got) != 4 {
 		t.Fatalf("len=%d want 4; got=%+v", len(got), got)
 	}

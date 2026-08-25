@@ -231,6 +231,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
+	srv.LLM = provider
 
 	if sqliteStore != nil && strings.TrimSpace(cfg.Store.SQLitePath) != "" {
 		artDir := filepath.Join(filepath.Dir(cfg.Store.SQLitePath), "artifacts")

@@ -148,3 +148,5 @@ func (m *enterpriseCallbackLLM) Chat(_ context.Context, _ []llm.Message, _ []llm
 		}},
 	}, nil
 }
+
+func (m *enterpriseCallbackLLM) SupportsVision() bool { return false }

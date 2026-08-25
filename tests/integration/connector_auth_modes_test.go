@@ -228,6 +228,8 @@ func (s *authModesScriptLLM) Chat(ctx context.Context, messages []llm.Message, t
 	return llm.Message{Role: llm.RoleAssistant, Content: "done"}, nil
 }
 
+func (s *authModesScriptLLM) SupportsVision() bool { return false }
+
 // TestConnectorAuthModesIdentityPriority verifies that a captured session
 // identity takes precedence over vault_ref default headers resolved from ENV.
 func TestConnectorAuthModesIdentityPriority(t *testing.T) {
