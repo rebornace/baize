@@ -25,11 +25,12 @@ import (
 )
 
 type captureUserLLM struct {
-	vision bool
-	mu     sync.Mutex
-	lastUserText  string
-	sawImagePart  bool
-	chatCalls     int
+	vision       bool
+	mu           sync.Mutex
+	lastUserText string
+	lastSystem   string
+	sawImagePart bool
+	chatCalls    int
 }
 
 func (c *captureUserLLM) SupportsVision() bool { return c.vision }
@@ -40,6 +41,9 @@ func (c *captureUserLLM) Chat(ctx context.Context, messages []llm.Message, tools
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.chatCalls++
+	if len(messages) > 0 && messages[0].Role == llm.RoleSystem {
+		c.lastSystem = messages[0].Content
+	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role != llm.RoleUser {
 			continue
@@ -65,6 +69,12 @@ func (c *captureUserLLM) snapshot() (string, bool, int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.lastUserText, c.sawImagePart, c.chatCalls
+}
+
+func (c *captureUserLLM) systemSnapshot() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastSystem
 }
 
 func attachmentsServer(t *testing.T, vision bool) (*api.Server, store.Store, *captureUserLLM, http.Handler, *skill.Catalog) {
@@ -169,14 +179,14 @@ func TestPostRunImageWithoutVisionReturns400(t *testing.T) {
 	putAgent(t, h, "a1")
 
 	rr := postRun(t, h, map[string]any{
-		"agent_id":         "a1",
-		"input":            "look at this",
-		"conversation_id":  "c1",
+		"agent_id":        "a1",
+		"input":           "look at this",
+		"conversation_id": "c1",
 		"attachments": []map[string]any{
 			{
 				"filename":       "dot.png",
-				"media_type":      "image/png",
-				"content_base64":  tinyPNGBase64(t),
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
 			},
 		},
 	})
@@ -204,8 +214,8 @@ func TestPostRunMarkdownAttachmentInjected(t *testing.T) {
 		"attachments": []map[string]any{
 			{
 				"filename":       "notes.md",
-				"media_type":      "text/markdown",
-				"content_base64":  base64.StdEncoding.EncodeToString([]byte(md)),
+				"media_type":     "text/markdown",
+				"content_base64": base64.StdEncoding.EncodeToString([]byte(md)),
 			},
 		},
 	})
@@ -271,8 +281,8 @@ func TestPostRunImageWithVisionSendsImagePart(t *testing.T) {
 		"attachments": []map[string]any{
 			{
 				"filename":       "dot.png",
-				"media_type":      "image/png",
-				"content_base64":  tinyPNGBase64(t),
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
 			},
 		},
 	})
@@ -343,3 +353,73 @@ func TestPostRunSkillMentionOverridesAgentDefaults(t *testing.T) {
 	}
 }
 
+// TestPostRunEmptySkillsClearsAgentDefaults asserts that an explicit
+// "skills": [] in the request body deactivates the agent's default skills for
+// this run. The observation point is the composed system prompt: when no skill
+// is activated, skill.ComposeSystem omits the per-skill "## Skill: <id>"
+// guidance section. The agent (a1) is configured with default skill
+// "data-analytics"; sending skills: [] must therefore produce a system prompt
+// that does NOT contain "## Skill: data-analytics".
+func TestPostRunEmptySkillsClearsAgentDefaults(t *testing.T) {
+	_, _, llmMock, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "plain question",
+		"conversation_id": "c1",
+		"skills":          []string{},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := created["run_id"].(string)
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+
+	sys := llmMock.systemSnapshot()
+	if strings.Contains(sys, "## Skill: data-analytics") {
+		t.Fatalf("explicit skills:[] must deactivate agent default skill; system prompt still contains it: %q", sys)
+	}
+	if strings.Contains(sys, "use list_tickets for analytics") {
+		t.Fatalf("explicit skills:[] must drop the default skill guidance body from the system prompt: %q", sys)
+	}
+}
+
+// TestPostRunSkillMentionActivatesSkill asserts that an @id (or /id) mention in
+// the input actually activates the referenced skill for the run, not just
+// strips the marker from the user text. The observation point is the composed
+// system prompt: an activated skill produces a "## Skill: <id>" section
+// carrying the skill's guidance body. The agent (a1) is configured with
+// default skill "data-analytics", but the input carries no body.skills, so
+// activation here is driven solely by the @data-analytics mention.
+func TestPostRunSkillMentionActivatesSkill(t *testing.T) {
+	_, _, llmMock, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "@data-analytics build a dashboard",
+		"conversation_id": "c1",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := created["run_id"].(string)
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+
+	sys := llmMock.systemSnapshot()
+	if !strings.Contains(sys, "## Skill: data-analytics") {
+		t.Fatalf("mention must activate the skill; system prompt missing skill section: %q", sys)
+	}
+	if !strings.Contains(sys, "use list_tickets for analytics") {
+		t.Fatalf("mention must activate the skill; system prompt missing skill guidance body: %q", sys)
+	}
+}

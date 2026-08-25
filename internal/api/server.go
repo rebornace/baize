@@ -83,8 +83,8 @@ type Server struct {
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision
 	// (image attachments are rejected with vision_unsupported).
-	LLM           llm.Provider
-	mux           *http.ServeMux
+	LLM llm.Provider
+	mux *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
