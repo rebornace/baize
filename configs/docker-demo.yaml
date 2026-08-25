@@ -10,6 +10,7 @@ control_plane:
   admin_token: ""
 llm:
   provider: mock
+  # supports_vision: false   # default; set true when using a vision-capable model
 skills:
   builtin_dirs:
     - /app/skills

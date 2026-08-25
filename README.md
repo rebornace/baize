@@ -290,6 +290,20 @@ Skills are an optional **configuration** layer (not a sixth Runtime abstract): a
 | Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
 | Intersection | Visible tools = ∪(active Skill `tools`) ∩ catalog `enabled`; Skills cannot turn on a disabled catalog row |
 
+**Chat composer — Skill symbols (`@` / `/`):** In `/ui`, type `@skill-id` or `/skill-id` (equivalent) to activate packs for **that Run only**. Multiple mentions are deduplicated in order and merged with the optional `skills` field on `POST /v0/runs`; together they **override** the Agent default list (not append). Unknown ids → `400 unknown_skill`. Symbols are stripped from the stored user text. `@` / `/` also open an autocomplete list (`GET /v0/skills` is readable by operators).
+
+**Chat attachments:** Use the paperclip in `/ui` or send `attachments[]` on `POST /v0/runs` (base64 JSON). Supported types:
+
+| Extension | Handling |
+|-----------|----------|
+| `.txt` `.md` `.csv` | UTF-8 text injected into the user context |
+| `.docx` `.xlsx` `.pdf` | Text extracted (PDF text layer only; no page rendering) |
+| `.png` `.jpg` `.jpeg` `.webp` `.gif` | Multimodal image parts when vision is enabled |
+
+Limits: up to 5 files, 8 MiB total decoded, 64 KiB extracted text per file (truncated with `…[truncated]`). Other extensions → `400 unsupported_attachment`. PDF with no extractable text → `400 empty_pdf_text`.
+
+**Vision hard failure:** `llm.supports_vision` defaults to `false` (see sample YAML comments). If a Run includes image attachments while `supports_vision=false`, the server returns **`400 vision_unsupported`** and **does not create a Run** — images are never silently downgraded to filenames only. Set `supports_vision: true` when using a vision-capable model. `/ui` reads `GET /v0/ui-config` and blocks image sends locally; the server remains authoritative.
+
 Built-in Skills use two tiers: `skills/` for core packs (`minimal` scans only this; default `data-analytics`); `examples/skills/` for demo trials (`demo` / `docker-demo` add it via `builtin_dirs`). Clean deployments list only core packs under Settings → Skills.
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.

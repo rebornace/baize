@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  ApiError,
   cancelRun,
   createRun,
+  fileToAttachment,
   forkConversation,
   getRun,
   getUIConfig,
+  isImageAttachment,
   isTerminal,
   listConversations,
   listEvents,
   listMessages,
+  listSkills,
   openRunStream,
   rollbackMessages,
+  type Attachment,
   type ChatMessage,
   type Event,
   type RunStatus,
+  type SkillSummary,
 } from '../api'
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
 import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
@@ -61,6 +67,8 @@ export function ChatPage() {
   const [runWebhookUrl, setRunWebhookUrl] = useState('')
   const [sessionToken, setSessionToken] = useState('')
   const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
+  const [skills, setSkills] = useState<SkillSummary[]>([])
+  const [supportsVision, setSupportsVision] = useState(true)
   /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
   const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
 
@@ -236,11 +244,17 @@ export function ChatPage() {
     void getUIConfig()
       .then((cfg) => {
         if (cfg.agent_id) setAgentId(cfg.agent_id)
+        setSupportsVision(cfg.supports_vision !== false)
       })
       .catch(() => {
         /* keep fallback */
       })
     void refreshConversations()
+    // Skills drive the Composer @-completion popup. GET /v0/skills is operator
+    // readable; load failures just disable the popup rather than blocking chat.
+    void listSkills()
+      .then((res) => setSkills(res.skills ?? []))
+      .catch(() => setSkills([]))
   }, [refreshConversations])
 
   useEffect(() => {
@@ -333,19 +347,47 @@ export function ChatPage() {
     setConversationId(id)
   }
 
-  const onSend = async (text: string) => {
+  const onSend = async (text: string, files: File[]) => {
     const sentConversationId = conversationId
     setBusy(true)
     setComposerDraft(undefined)
     setError(null)
     setStatus('发送中…')
+
+    // Build attachments from selected files. Image attachments require a
+    // vision-capable model; when supports_vision is false we reject up-front
+    // (mirrors the server's vision_unsupported check) so no run is created.
+    let attachments: Attachment[] | undefined
+    if (files.length > 0) {
+      try {
+        const built = await Promise.all(files.map((f) => fileToAttachment(f)))
+        if (!supportsVision && built.some((a) => isImageAttachment(a.media_type))) {
+          setBusy(false)
+          setError('当前模型不支持图片附件，请移除图片或切换到支持视觉的模型。')
+          setStatus('')
+          return
+        }
+        attachments = built
+      } catch (err) {
+        setBusy(false)
+        setError(err instanceof Error ? err.message : String(err))
+        setStatus('')
+        return
+      }
+    }
+
+    const displayNames = attachments && attachments.length > 0
+      ? `（附件：${attachments.map((a) => a.filename).join(', ')}）`
+      : ''
+    const userBubble = (text + (displayNames ? ` ${displayNames}` : '')).trim()
+
     setMessages((prev) => [
       ...prev,
       {
         id: `local_${Date.now()}`,
         conversation_id: sentConversationId,
         role: 'user',
-        content: text,
+        content: userBubble,
         created_at: new Date().toISOString(),
       },
     ])
@@ -359,6 +401,7 @@ export function ChatPage() {
       const created = await createRun(agentId, text, sentConversationId, {
         webhookUrl: webhookUrl || undefined,
         sessionToken: token || undefined,
+        attachments,
       })
       await refreshConversations()
       if (conversationIdRef.current !== sentConversationId) return
@@ -369,7 +412,11 @@ export function ChatPage() {
       if (conversationIdRef.current !== sentConversationId) return
       setBusy(false)
       setLiveRunId(null)
-      setError(err instanceof Error ? err.message : String(err))
+      if (err instanceof ApiError && err.code === 'vision_unsupported') {
+        setError('当前模型不支持图片附件，请移除图片或切换到支持视觉的模型。')
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
       setStatus('')
       try {
         const msgs = await listMessages(sentConversationId)
@@ -677,7 +724,12 @@ export function ChatPage() {
             </label>
           </details>
 
-          <Composer disabled={composerDisabled} draft={composerDraft} onSend={(t) => void onSend(t)} />
+          <Composer
+            disabled={composerDisabled}
+            draft={composerDraft}
+            skills={skills}
+            onSend={(t, f) => void onSend(t, f)}
+          />
         </div>
       </main>
     </div>

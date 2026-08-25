@@ -13,6 +13,7 @@ llm:
   base_url: https://api.deepseek.com
   model: deepseek-chat
   disable_thinking: true
+  # supports_vision: false   # default; set true for vision-capable models (e.g. gpt-4o)
   api_key_env: BAIZE_API_KEY
 skills:
   builtin_dir: /app/skills

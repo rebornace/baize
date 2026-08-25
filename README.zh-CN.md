@@ -291,6 +291,20 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 | `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
 | 求交 | 可见工具 = ∪(已激活 Skill 的 `tools`) ∩ 目录 `enabled`；Skill **不能**启用已停用的目录行 |
 
+**Chat Composer — Skill 符号（`@` / `/`）：** 在 `/ui` 输入 `@skill-id` 或 `/skill-id`（等价）即可为**本 Run** 激活 Skill 包。一条消息可多个，去重保序；与 `POST /v0/runs` 可选字段 `skills` 合并后**覆盖** Agent 默认列表（不是追加到默认之上）。未知 id → `400 unknown_skill`；符号会从落库的用户文案中剥离。输入 `@` / `/` 会弹出补全（`GET /v0/skills` 对操作员可读）。
+
+**对话附件：** 使用 `/ui` 纸夹按钮，或在 `POST /v0/runs` 传 `attachments[]`（base64 JSON）。支持类型：
+
+| 扩展名 | 处理 |
+|--------|------|
+| `.txt` `.md` `.csv` | UTF-8 原文注入 user 上下文 |
+| `.docx` `.xlsx` `.pdf` | 抽取文本（PDF 仅文本层，不做页渲染） |
+| `.png` `.jpg` `.jpeg` `.webp` `.gif` | 在启用 vision 时作为多模态 image part |
+
+限额：单次最多 5 个文件、解码后合计 ≤ 8 MiB、单文件抽取文本 ≤ 64 KiB（超出截断并标注 `…[truncated]`）。其它扩展名 → `400 unsupported_attachment`；PDF 无可用文本 → `400 empty_pdf_text`。
+
+**Vision 硬失败：** `llm.supports_vision` 默认为 `false`（见示例 YAML 注释）。Run 含图片附件且 `supports_vision=false` 时，服务端返回 **`400 vision_unsupported`** 且**不创建 Run** — 禁止把图片静默降级为「仅文件名」后继续执行。换支持识图的模型时请显式设 `supports_vision: true`。`/ui` 会读取 `GET /v0/ui-config` 并在发送前拦截图片；服务端仍为权威。
+
 内置 Skill 分两层目录：`skills/` 为核心（`minimal` 仅扫描此目录，默认 `data-analytics`）；`examples/skills/` 为 demo 试用包（仅 `demo` / `docker-demo` 通过 `builtin_dirs` 额外扫描）。干净部署在设置 → Skills 只见核心包。
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。

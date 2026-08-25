@@ -1131,3 +1131,157 @@ body {
 .settings-drawer .settings-form {
   margin-top: 0;
 }
+
+/* Composer: attachment chips, @-completion popup, file input. */
+
+.composer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.4rem 0.15rem;
+}
+
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 16rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--system);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.composer-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-chip-remove:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+.composer-chip-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-file-input {
+  flex-shrink: 0;
+  width: 0.1px;
+  height: 0.1px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+}
+
+.composer-attach {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--system);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.composer-attach:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--panel);
+}
+
+.composer-attach:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.22);
+  border-color: var(--accent);
+}
+
+.composer-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-box {
+  position: relative;
+}
+
+.composer-complete {
+  position: absolute;
+  z-index: 5;
+  left: 0.85rem;
+  right: 0.65rem;
+  bottom: calc(100% + 0.3rem);
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.composer-complete-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+.composer-complete-item.active {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.composer-complete-id {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.composer-complete-desc {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-hint {
+  display: block;
+  margin: 0.35rem 0.15rem 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

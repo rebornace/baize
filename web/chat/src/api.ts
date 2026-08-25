@@ -70,7 +70,13 @@ async function parseJSON<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-export async function getUIConfig(): Promise<{ agent_id: string; gate_enabled: boolean }> {
+export interface UIConfig {
+  agent_id: string
+  gate_enabled: boolean
+  supports_vision: boolean
+}
+
+export async function getUIConfig(): Promise<UIConfig> {
   const res = await fetch('/v0/ui-config')
   return parseJSON(res)
 }
@@ -80,11 +86,93 @@ export async function getMe(): Promise<{ role: string }> {
   return parseJSON(res)
 }
 
+export interface Attachment {
+  filename: string
+  media_type: string
+  content_base64: string
+}
+
+// EXTENSION_MIME maps supported attachment extensions to the canonical MIME
+// the backend's attach.Process accepts. We infer from the extension (rather
+// than trusting File.type) because Windows often gives .md an empty type and
+// .csv "application/vnd.ms-excel", which would otherwise be rejected as
+// unsupported_attachment before the bytes are even inspected.
+const EXTENSION_MIME: Record<string, string> = {
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.csv': 'text/csv',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+}
+
+/**
+ * inferMediaType returns the canonical backend MIME for a file by extension,
+ * falling back to the browser-provided type (or application/octet-stream) for
+ * unknown extensions. This normalizes platform quirks (e.g. .csv reported as
+ * application/vnd.ms-excel on Windows) so the backend doesn't reject a
+ * supported file as unsupported_attachment.
+ */
+export function inferMediaType(file: File): string {
+  const name = file.name.toLowerCase()
+  const dot = name.lastIndexOf('.')
+  if (dot >= 0) {
+    const ext = name.slice(dot)
+    const canonical = EXTENSION_MIME[ext]
+    if (canonical) return canonical
+  }
+  return file.type || 'application/octet-stream'
+}
+
+/** Read a File into an Attachment (base64-encoded content). */
+export function fileToAttachment(file: File): Promise<Attachment> {
+  const media_type = inferMediaType(file)
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        reject(new Error('unsupported file read result'))
+        return
+      }
+      const comma = result.indexOf(',')
+      const content_base64 = comma < 0 ? result : result.slice(comma + 1)
+      resolve({
+        filename: file.name,
+        media_type,
+        content_base64,
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+const IMAGE_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+])
+
+/** True for image MIME types the backend accepts as vision attachments. */
+export function isImageAttachment(mediaType: string): boolean {
+  return IMAGE_MIMES.has(mediaType.toLowerCase())
+}
+
 export interface CreateRunOptions {
   identityId?: string
   sessionToken?: string
   webhookUrl?: string
   webhookHeaders?: Record<string, string>
+  skills?: string[]
+  attachments?: Attachment[]
 }
 
 export async function createRun(
@@ -104,11 +192,29 @@ export async function createRun(
   if (options?.webhookHeaders && Object.keys(options.webhookHeaders).length > 0) {
     body.webhook_headers = options.webhookHeaders
   }
+  if (options?.skills && options.skills.length > 0) {
+    body.skills = options.skills
+  }
+  if (options?.attachments && options.attachments.length > 0) {
+    body.attachments = options.attachments
+  }
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: authInit({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
+  if (!res.ok) {
+    let code = 'unknown'
+    let message = res.statusText
+    try {
+      const errBody = (await res.json()) as { error?: { code?: string; message?: string } }
+      if (errBody.error?.code) code = errBody.error.code
+      if (errBody.error?.message) message = errBody.error.message
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, code, message)
+  }
   return parseJSON<CreateRunResponse>(res)
 }
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/artifact"
+	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -27,8 +28,10 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
+	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/ui"
@@ -39,6 +42,14 @@ import (
 type Runner interface {
 	Execute(ctx context.Context, runID string, ag agent.Def, input string) error
 	ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error
+}
+
+// RunWithOptions is implemented by runners that accept per-run overrides
+// (skills override + multimodal user parts). When the runner does not
+// implement it, the server falls back to plain Execute (no skills override,
+// no image parts). run.Engine implements this; test fakes need not.
+type RunWithOptions interface {
+	ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def, input string, opts run.RunOptions) error
 }
 
 // RunCanceller is implemented by run.Engine for cooperative cancel.
@@ -69,7 +80,11 @@ type Server struct {
 	AdminToken    string
 	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	DataDir       string              // parent dir for specstore (sqlite dir); required for spec_content PUT
-	mux           *http.ServeMux
+	// LLM is the active provider, used to report supports_vision via ui-config
+	// and to gate image attachments before a run is created. nil = no vision
+	// (image attachments are rejected with vision_unsupported).
+	LLM llm.Provider
+	mux *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
@@ -190,15 +205,27 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 type uiConfig struct {
-	AgentID     string `json:"agent_id"`
-	GateEnabled bool   `json:"gate_enabled"`
+	AgentID        string `json:"agent_id"`
+	GateEnabled    bool   `json:"gate_enabled"`
+	SupportsVision bool   `json:"supports_vision"`
 }
 
 func (s *Server) handleUIConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, uiConfig{
-		AgentID:     s.DefaultAgentID,
-		GateEnabled: controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}.Enabled(),
+		AgentID:        s.DefaultAgentID,
+		GateEnabled:    controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}.Enabled(),
+		SupportsVision: s.supportsVision(),
 	})
+}
+
+// supportsVision reports whether the active LLM provider can accept image
+// parts. When no provider is configured, vision is unavailable so image
+// attachments are rejected up-front rather than silently dropped.
+func (s *Server) supportsVision() bool {
+	if s.LLM == nil {
+		return false
+	}
+	return s.LLM.SupportsVision()
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -994,13 +1021,15 @@ func syncRequireLoginList(list []string, name string, require bool) []string {
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AgentID        string            `json:"agent_id"`
-		Input          string            `json:"input"`
-		ConversationID string            `json:"conversation_id"`
-		IdentityID     string            `json:"identity_id"`
-		SessionToken   string            `json:"session_token"`
-		WebhookURL     string            `json:"webhook_url"`
-		WebhookHeaders map[string]string `json:"webhook_headers"`
+		AgentID        string                  `json:"agent_id"`
+		Input          string                  `json:"input"`
+		ConversationID string                  `json:"conversation_id"`
+		IdentityID     string                  `json:"identity_id"`
+		SessionToken   string                  `json:"session_token"`
+		WebhookURL     string                  `json:"webhook_url"`
+		WebhookHeaders map[string]string       `json:"webhook_headers"`
+		Skills         []string                `json:"skills"`
+		Attachments    []attach.AttachmentIn   `json:"attachments"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -1020,8 +1049,8 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// Omitting conversation_id keeps the machine path (default connector
 	// headers apply; require_login is not enforced). Chat always sends an id.
 	conv := strings.TrimSpace(body.ConversationID)
-	runInput := body.Input
 	identityID := strings.TrimSpace(body.IdentityID)
+	runInput := body.Input
 	if conv != "" && s.Identities != nil {
 		cleaned, sessionID, err := identity.PrepareSessionAuth(s.Identities, conv, runInput, body.SessionToken)
 		if err != nil {
@@ -1034,9 +1063,83 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Attachments: extract text + images up-front so size/type/vision failures
+	// reject the request before any run is created. Image bytes never enter
+	// SQLite; only filenames surface in the persisted user bubble.
+	textExts, imageExts, err := attach.Process(body.Attachments, attach.DefaultOptions())
+	if err != nil {
+		s.writeAttachmentError(w, err)
+		return
+	}
+	if len(imageExts) > 0 && !s.supportsVision() {
+		writeError(w, http.StatusBadRequest, "vision_unsupported",
+			"model does not support vision; remove image attachments or switch to a vision-capable model")
+		return
+	}
+
+	// Skill mentions (@id / /id) are stripped from the user text and merged
+	// with body.skills. Omitting skills with no mentions keeps agent defaults;
+	// any explicit input (non-nil body.skills or a mention) overrides for this
+	// run, with an empty merged set meaning "no default skill active".
+	cleanedInput, mentionIDs := skillparse.Parse(runInput)
+	var runSkills []string
+	if body.Skills != nil || len(mentionIDs) > 0 {
+		merged := mergeSkillIDs(mentionIDs, body.Skills)
+		if s.SkillCatalog != nil {
+			var unknown []string
+			for _, id := range merged {
+				if _, ok := s.SkillCatalog.Get(id); !ok {
+					unknown = append(unknown, id)
+				}
+			}
+			if len(unknown) > 0 {
+				writeError(w, http.StatusBadRequest, "unknown_skill",
+					"unknown skill id: "+strings.Join(unknown, ", "))
+				return
+			}
+		}
+		runSkills = merged
+	}
+
+	// Build the LLM-bound user content (cleaned text + text-attachment blocks)
+	// and the multimodal Parts payload when any attachments are present. The
+	// persisted bubble stores only the visible text + filenames (no base64).
+	llmText := cleanedInput
+	var userParts []llm.ContentPart
+	if len(textExts) > 0 || len(imageExts) > 0 {
+		var b strings.Builder
+		b.WriteString(cleanedInput)
+		for _, t := range textExts {
+			b.WriteString("\n\n【附件: ")
+			b.WriteString(t.Filename)
+			b.WriteString("】\n")
+			b.WriteString(t.Text)
+		}
+		llmText = b.String()
+		userParts = append(userParts, llm.ContentPart{Type: "text", Text: llmText})
+		for _, img := range imageExts {
+			userParts = append(userParts, llm.ContentPart{
+				Type:       "image",
+				ImageMIME:  img.ImageMIME,
+				ImageBytes: img.ImageBytes,
+			})
+		}
+	}
+	displayText := cleanedInput
+	if n := len(textExts) + len(imageExts); n > 0 {
+		names := make([]string, 0, n)
+		for _, e := range textExts {
+			names = append(names, e.Filename)
+		}
+		for _, e := range imageExts {
+			names = append(names, e.Filename)
+		}
+		displayText = strings.TrimSpace(cleanedInput) + "（附件：" + strings.Join(names, ", ") + "）"
+	}
+
 	createIn := store.CreateRunInput{
 		AgentID:        body.AgentID,
-		Input:          runInput,
+		Input:          displayText,
 		ConversationID: conv,
 		IdentityID:     identityID,
 	}
@@ -1060,22 +1163,24 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist the user turn before executing so the conversation window survives
-	// crashes and is visible via GET /v0/conversations/{id}/messages. Execute's
-	// buildMessages dedups the trailing user input against this appended entry.
+	// crashes and is visible via GET /v0/conversations/{id}/messages. The stored
+	// content is the visible bubble (visible text + attachment filenames); image
+	// bytes and extracted attachment text live only in this Execute call.
 	if s.Messages != nil && conv != "" {
 		_, _ = s.Messages.Append(conv, conversation.Message{
 			Role:    conversation.RoleUser,
-			Content: runInput,
+			Content: displayText,
 			RunID:   runRec.ID,
 		})
 	}
 
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+	runOpts := run.RunOptions{Skills: runSkills, UserParts: userParts}
 	// Persist run.started before returning so the UI never polls an empty event stream
 	// while the worker is still scheduling / contending on SQLite.
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	go func(runID, input string, def agent.Def) {
-		err := s.Runner.Execute(context.Background(), runID, def, input)
+	go func(runID, input string, def agent.Def, opts run.RunOptions) {
+		err := s.runExecute(context.Background(), runID, def, input, opts)
 		if err == nil {
 			return
 		}
@@ -1106,7 +1211,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
-	}(runRec.ID, runInput, def)
+	}(runRec.ID, displayText, def, runOpts)
 
 	updated, err := s.Store.GetRun(runRec.ID)
 	if err != nil {
@@ -1118,6 +1223,66 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		"status":          updated.Status,
 		"conversation_id": conv,
 	})
+}
+
+// runExecute dispatches to a RunWithOptions runner when available so per-run
+// skills and multimodal user parts are honored; otherwise it falls back to the
+// plain Execute path. Test fakes that only implement Runner still work.
+func (s *Server) runExecute(ctx context.Context, runID string, def agent.Def, input string, opts run.RunOptions) error {
+	if ex, ok := s.Runner.(RunWithOptions); ok {
+		return ex.ExecuteWithOpts(ctx, runID, def, input, opts)
+	}
+	return s.Runner.Execute(ctx, runID, def, input)
+}
+
+// writeAttachmentError maps an attach.Process error to the spec's API error
+// codes. Unsupported MIME, size/count limits, and empty-PDF each get a distinct
+// code; everything else (e.g. bad base64) is reported as invalid_attachment.
+func (s *Server) writeAttachmentError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, attach.ErrUnsupported):
+		writeError(w, http.StatusBadRequest, "unsupported_attachment", err.Error())
+	case errors.Is(err, attach.ErrTooLarge):
+		writeError(w, http.StatusBadRequest, "attachment_too_large", err.Error())
+	case errors.Is(err, attach.ErrTooMany):
+		writeError(w, http.StatusBadRequest, "too_many_attachments", err.Error())
+	case errors.Is(err, attach.ErrEmptyPDFText):
+		writeError(w, http.StatusBadRequest, "empty_pdf_text", err.Error())
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_attachment", err.Error())
+	}
+}
+
+// mergeSkillIDs concatenates mention IDs and body.skills, dropping empties and
+// preserving first-seen order. It always returns a non-nil slice (empty when
+// both inputs are empty) so callers can distinguish "explicit override with an
+// empty set" from "omit / use agent defaults".
+func mergeSkillIDs(mentionIDs, bodySkills []string) []string {
+	seen := make(map[string]struct{}, len(mentionIDs)+len(bodySkills))
+	out := make([]string, 0, len(mentionIDs)+len(bodySkills))
+	for _, id := range mentionIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, id := range bodySkills {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
@@ -1733,6 +1898,10 @@ func lastUserID(m *conversation.Message) string {
 type executeRunOpts struct {
 	skipUserAppend bool
 	rebindUserID   string
+	// runOpts carries per-run skill overrides and multimodal user parts. The
+	// regenerate path leaves this zero-valued (reuse agent defaults, no parts)
+	// since attachments are not re-sent on regenerate.
+	runOpts run.RunOptions
 }
 
 // createAndExecuteRun creates a run, appends the user message, and starts Execute in background.
@@ -1770,8 +1939,8 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 	}
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	go func(runID, in string, def agent.Def) {
-		err := s.Runner.Execute(context.Background(), runID, def, in)
+	go func(runID, in string, def agent.Def, ro run.RunOptions) {
+		err := s.runExecute(context.Background(), runID, def, in, ro)
 		if err == nil {
 			return
 		}
@@ -1786,6 +1955,6 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 				RunID:   runID,
 			})
 		}
-	}(runRec.ID, input, def)
+	}(runRec.ID, input, def, opts.runOpts)
 	return runRec, nil
 }

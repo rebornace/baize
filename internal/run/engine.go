@@ -61,7 +61,29 @@ type Engine struct {
 	cancels  map[string]context.CancelFunc
 }
 
+// RunOptions carries per-run overrides for ExecuteWithOpts.
+type RunOptions struct {
+	// Skills overrides the agent's default skills for this run. nil = use
+	// agent.Def.Skills; a non-nil slice (including an empty slice) replaces
+	// the default set for this run (empty = explicit clear, no skill active
+	// beyond activate_skill).
+	Skills []string
+	// UserParts is an optional multimodal payload for the current user turn.
+	// When non-empty, the engine sends the user message as Parts (text +
+	// image parts) instead of a plain Content string, and replaces the
+	// trailing persisted user message (which carries only the display text)
+	// with this multimodal version so the LLM sees exactly one user turn.
+	UserParts []llm.ContentPart
+}
+
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
+	return e.ExecuteWithOpts(ctx, runID, ag, input, RunOptions{})
+}
+
+// ExecuteWithOpts is the per-run entry point. See RunOptions for the semantics
+// of each override. It is safe to call via Execute (zero opts) for callers that
+// do not need per-run skills or multimodal user content.
+func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def, input string, opts RunOptions) error {
 	runRec, err := e.Store.GetRun(runID)
 	if err != nil {
 		return err
@@ -77,10 +99,14 @@ func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input 
 	if err := e.ensureRunStarted(runID); err != nil {
 		return err
 	}
-	e.beginRunSkills(runID, ag.Skills, ag.System)
+	skills := opts.Skills
+	if skills == nil {
+		skills = ag.Skills
+	}
+	e.beginRunSkills(runID, skills, ag.System)
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)
-	messages := e.buildMessages(sys, runRec.ConversationID, input)
+	messages := e.buildMessages(sys, runRec.ConversationID, input, opts.UserParts)
 	err = e.runLoop(ctx, runID, messages)
 	if errors.Is(err, context.Canceled) {
 		e.markCancelled(runID)
@@ -161,7 +187,13 @@ func (e *Engine) toolTimeout() time.Duration {
 // user message with the same content as input (the API appends the user message
 // before calling Execute), the current input is not appended again to avoid a
 // duplicate turn.
-func (e *Engine) buildMessages(system, conversationID, input string) []llm.Message {
+//
+// When userParts is non-empty, the trailing persisted user message (which carries
+// only the display text, without attachment content or image bytes) is replaced
+// with a multimodal user message built from userParts. This keeps exactly one
+// user turn in the prompt while injecting attachment text and image parts that
+// are never persisted to SQLite.
+func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 	if e.Messages != nil && conversationID != "" {
 		for _, m := range e.Messages.ListWindow(conversationID, e.MaxMessages) {
@@ -172,6 +204,14 @@ func (e *Engine) buildMessages(system, conversationID, input string) []llm.Messa
 				messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: m.Content})
 			}
 		}
+	}
+	if len(userParts) > 0 {
+		if len(messages) > 0 && messages[len(messages)-1].Role == llm.RoleUser {
+			messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Parts: userParts}
+		} else {
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Parts: userParts})
+		}
+		return messages
 	}
 	if len(messages) > 0 {
 		last := messages[len(messages)-1]
@@ -275,7 +315,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 // recorded for this run. This keeps cross-restart HITL from dropping prior
 // conversation context while avoiding duplicate system or user-input messages.
 func (e *Engine) buildResumeMessages(system, conversationID, input string, evs []store.Event) []llm.Message {
-	messages := e.buildMessages(system, conversationID, input)
+	messages := e.buildMessages(system, conversationID, input, nil)
 	messages = append(messages, eventsAfterInput(evs)...)
 	return messages
 }

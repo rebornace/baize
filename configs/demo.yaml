@@ -10,6 +10,7 @@ control_plane:
   admin_token: ""      # 空=未配；可填 env:BAIZE_ADMIN_TOKEN 或 file:/path 或明文
 llm:
   provider: mock
+  # supports_vision: false   # default; set true when using a vision-capable model
 skills:
   builtin_dirs:
     - ./skills

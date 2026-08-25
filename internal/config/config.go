@@ -23,6 +23,9 @@ type Config struct {
 		Model            string `yaml:"model"`
 		APIKeyEnv        string `yaml:"api_key_env"` // 默认 BAIZE_API_KEY
 		DisableThinking  bool   `yaml:"disable_thinking"` // DeepSeek V4：关闭 thinking 省 token
+		// SupportsVision declares whether the backing model accepts image parts.
+		// Defaults to false; enable for vision-capable OpenAI-compatible models.
+		SupportsVision   bool   `yaml:"supports_vision"`
 	} `yaml:"llm"`
 	Skills struct {
 		BuiltinDir  string   `yaml:"builtin_dir"`

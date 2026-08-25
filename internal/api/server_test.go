@@ -50,6 +50,8 @@ func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []ll
 	return llm.Message{Role: llm.RoleAssistant, Content: "已创建"}, nil
 }
 
+func (s *scriptLLM) SupportsVision() bool { return false }
+
 func TestUIIndex(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
