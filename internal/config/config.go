@@ -88,7 +88,25 @@ type Config struct {
 			Headers map[string]string `yaml:"headers"`
 		} `yaml:"webhook"`
 	} `yaml:"events"`
+	// Runtime governs sidecar callback_urls injection (Phase 2).
+	// PublicBaseURL: base address advertised to sidecars; empty => do not inject
+	//   callback URLs (avoid handing an unreachable address to a remote sidecar).
+	// CallbackHMACSecret: HMAC key for short-lived callback tokens; empty =>
+	//   bootstrap generates an ephemeral secret and logs "ephemeral".
+	// CallbackTokenTTLSec: token lifetime; <=0 falls back to DefaultCallbackTokenTTLSec.
+	Runtime RuntimeConfig `yaml:"runtime"`
 }
+
+// RuntimeConfig holds sidecar callback configuration (Phase 2).
+type RuntimeConfig struct {
+	PublicBaseURL       string `yaml:"public_base_url"`
+	CallbackHMACSecret  string `yaml:"callback_hmac_secret"`
+	CallbackTokenTTLSec int    `yaml:"callback_token_ttl_sec"`
+}
+
+// DefaultCallbackTokenTTLSec is the default callback token lifetime (1 hour),
+// matching the v0 design spec §3.3.
+const DefaultCallbackTokenTTLSec = 3600
 
 // Load reads and unmarshals a YAML config file.
 func Load(path string) (Config, error) {
@@ -222,6 +240,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Skills.UserDir == "" {
 		cfg.Skills.UserDir = "./data/skills"
+	}
+	if cfg.Runtime.CallbackTokenTTLSec <= 0 {
+		cfg.Runtime.CallbackTokenTTLSec = DefaultCallbackTokenTTLSec
 	}
 }
 
