@@ -22,6 +22,7 @@ import {
   parseLineList,
   type PluginAuthMode,
 } from './PluginSettings'
+import { captureSummaryLabel, mergeAuthPreserveCapture } from './captureForm'
 import { confirmAndDeleteConnector, defaultConnectorDeleteDeps } from './connectorDelete'
 
 export interface OpenApiFormState {
@@ -151,6 +152,7 @@ export function OpenApiSettings() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<OpenApiFormState>(EMPTY_FORM)
+  const [editingConnector, setEditingConnector] = useState<ConnectorInfo | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -195,6 +197,7 @@ export function OpenApiSettings() {
 
   const openCreate = () => {
     setEditing(false)
+    setEditingConnector(null)
     setForm(EMPTY_FORM)
     resetSpecState()
     setFormError(null)
@@ -204,6 +207,7 @@ export function OpenApiSettings() {
 
   const openEdit = (c: ConnectorInfo) => {
     setEditing(true)
+    setEditingConnector(c)
     setForm(connectorToForm(c))
     resetSpecState()
     setFormError(null)
@@ -267,7 +271,7 @@ export function OpenApiSettings() {
       await putConnector(form.id.trim(), {
         type: 'openapi',
         base_url: validated.baseUrl,
-        auth: validated.auth,
+        auth: mergeAuthPreserveCapture(validated.auth, editingConnector?.auth),
         import_format: form.importFormat,
         spec_content: hasNewSpec ? specContent! : undefined,
         spec_url: hasSpecUrl && !hasNewSpec ? trimmedSpecUrl : undefined,
@@ -333,6 +337,10 @@ export function OpenApiSettings() {
                 }
                 if (info.require_login && info.require_login.length > 0) {
                   requireParts.push(`登录：${info.require_login.join(', ')}`)
+                }
+                const captureLabel = captureSummaryLabel(info.auth?.capture)
+                if (captureLabel) {
+                  requireParts.push(captureLabel)
                 }
                 const formatLabel = importFormatLabel(info.import_format_detected)
                 return (
