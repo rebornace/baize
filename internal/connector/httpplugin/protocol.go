@@ -21,6 +21,11 @@ type InvokeMeta struct {
 	RunID   string
 	AgentID string
 	Headers map[string]string
+	// CallbackEventURL, when non-empty, is advertised to the sidecar as
+	// context.callback_urls.event. The Runtime computes it from a signed
+	// short-lived token bound to RunID; empty means "no callback channel"
+	// (e.g. no RunID, or PublicBase/secret unavailable).
+	CallbackEventURL string
 }
 
 type InvokeResult struct {

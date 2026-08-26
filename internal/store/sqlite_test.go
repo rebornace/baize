@@ -294,6 +294,39 @@ func TestOpenUnknownDriver(t *testing.T) {
 	}
 }
 
+func TestSQLiteDeleteConnectorCascadesTools(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "delete-connector.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testDeleteConnectorCascadesTools(t, s)
+	if c, ok := s.(io.Closer); ok {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s2, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s2.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	if _, err := s2.GetConnector("c1"); err == nil {
+		t.Fatal("connector should not persist after delete")
+	}
+	if byC := s2.ListToolsByConnector("c1"); len(byC) != 0 {
+		t.Fatalf("tools for c1=%+v want empty after reopen", byC)
+	}
+	if _, err := s2.GetTool("keep_tool"); err != nil {
+		t.Fatalf("keep_tool should persist: %v", err)
+	}
+}
+
 func TestSQLiteToolCatalogRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tools.db")
 	s, err := store.Open("sqlite", path)

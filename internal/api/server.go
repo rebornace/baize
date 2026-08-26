@@ -29,6 +29,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skillparse"
@@ -84,7 +85,20 @@ type Server struct {
 	// and to gate image attachments before a run is created. nil = no vision
 	// (image attachments are rejected with vision_unsupported).
 	LLM llm.Provider
-	mux *http.ServeMux
+	// CallbackSecret is the HMAC key used to verify sidecar plugin callback
+	// tokens. Set by bootstrap; empty => handlePluginCallback rejects every
+	// request with 401 (no token can verify).
+	CallbackSecret []byte
+	// CallbackLimiter caps per-run callback throughput. nil => no limiting
+	// (bootstrap always sets one).
+	CallbackLimiter *plugincallback.Limiter
+	// CallbackSigner / CallbackPublicBase / CallbackTTL configure
+	// callback_urls.event injection into sidecar invoke context. When any
+	// piece is missing the URL is omitted (fail-open). Set by bootstrap.
+	CallbackSigner     httpplugin.CallbackSigner
+	CallbackPublicBase string
+	CallbackTTL        time.Duration
+	mux                *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
@@ -155,6 +169,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/tools", s.handlePostConnectorTool)
 	s.mux.HandleFunc("DELETE /v0/connectors/{id}/tools/{name}", s.handleDeleteConnectorTool)
+	s.mux.HandleFunc("DELETE /v0/connectors/{id}", s.handleDeleteConnector)
 	s.mux.HandleFunc("GET /v0/skills", s.handleListSkills)
 	s.mux.HandleFunc("GET /v0/skills/{id}", s.handleGetSkill)
 	s.mux.HandleFunc("POST /v0/skills", s.handlePostSkill)
@@ -162,6 +177,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("POST /v0/runs/{id}/cancel", s.handlePostCancel)
+	s.mux.HandleFunc("POST /v0/runs/{id}/plugin-callbacks", s.handlePluginCallback)
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
@@ -566,19 +582,23 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c, infos, err := connector.Apply(connector.ApplyInput{
-		Store:                  s.Store,
-		Registry:               s.Registry,
-		Identities:             s.Identities,
-		ID:                     id,
-		Type:                   body.Type,
-		Spec:                   specPath,
-		ImportFormat:           importFormatDetected,
-		BaseURL:                body.BaseURL,
-		ExecutionCallbackURL:   body.ExecutionCallbackURL,
-		RequireApproval:        body.RequireApproval,
-		RequireLogin:           body.RequireLogin,
-		Auth:                   connectorAuth,
-		MCP:                    body.MCP,
+		Store:                s.Store,
+		Registry:             s.Registry,
+		Identities:           s.Identities,
+		ID:                   id,
+		Type:                 body.Type,
+		Spec:                 specPath,
+		ImportFormat:         importFormatDetected,
+		BaseURL:              body.BaseURL,
+		ExecutionCallbackURL:  body.ExecutionCallbackURL,
+		RequireApproval:     body.RequireApproval,
+		RequireLogin:         body.RequireLogin,
+		Auth:                connectorAuth,
+		MCP:                 body.MCP,
+		CallbackSigner:       s.CallbackSigner,
+		CallbackSecret:       s.CallbackSecret,
+		CallbackPublicBase:   s.CallbackPublicBase,
+		CallbackTTL:          s.CallbackTTL,
 	})
 	if err != nil {
 		if errors.Is(err, authcred.ErrInvalidAuth) {
@@ -863,7 +883,12 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 // invoker closure Apply uses. It does not write the Store; the caller is
 // responsible for UpsertTool before calling.
 func (s *Server) registerOne(c store.Connector, t store.Tool) error {
-	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, c, t)
+	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, c, t, connector.CallbackConfig{
+		Signer:     s.CallbackSigner,
+		Secret:     s.CallbackSecret,
+		PublicBase: s.CallbackPublicBase,
+		TTL:        s.CallbackTTL,
+	})
 }
 
 func (s *Server) handlePostConnectorTool(w http.ResponseWriter, r *http.Request) {
@@ -978,6 +1003,29 @@ func (s *Server) handleDeleteConnectorTool(w http.ResponseWriter, r *http.Reques
 		s.Store.UpsertConnector(c)
 	}
 
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteConnector cascades a connector away: it first ensures the
+// connector exists (404 connector_not_found otherwise), unregisters all its
+// tools from the in-process Registry, then deletes the connector row and its
+// tools from the Store. On success it returns 204 No Content, matching the
+// single-tool DELETE handler.
+func (s *Server) handleDeleteConnector(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing connector id")
+		return
+	}
+	if _, err := s.Store.GetConnector(id); err != nil {
+		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
+		return
+	}
+	s.Registry.UnregisterConnector(id)
+	if err := s.Store.DeleteConnector(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1475,6 +1523,90 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, runRec)
+}
+
+// maxPluginCallbackPayloadBytes is the upper bound on the serialized payload
+// field of a plugin callback body (spec §3.4: 64KiB). The whole body is
+// bounded by http.MaxBytesReader; the payload itself is checked after decode.
+const maxPluginCallbackPayloadBytes = 64 * 1024
+
+// handlePluginCallback receives a sidecar plugin event for a specific Run.
+// Auth is by HMAC token only (ACL: RoleNone); the control-plane gate never
+// applies. Flow: verify token → run exists → rate limiter → decode → size
+// check → append event → 204.
+func (s *Server) handlePluginCallback(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	if runID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing run id")
+		return
+	}
+	token := r.URL.Query().Get("token")
+	if token == "" || len(s.CallbackSecret) == 0 {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing callback token")
+		return
+	}
+	if err := plugincallback.Verify(s.CallbackSecret, runID, token, time.Now()); err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid callback token")
+		return
+	}
+	if _, err := s.Store.GetRun(runID); err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if s.CallbackLimiter != nil && !s.CallbackLimiter.Allow(runID, time.Now()) {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "callback budget exhausted for this run")
+		return
+	}
+
+	var body struct {
+		Type    string         `json:"type"`
+		Name    string         `json:"name"`
+		Payload map[string]any `json:"payload"`
+	}
+	// Cap the whole request body at 1MiB so a hostile sidecar cannot stream
+	// gigabytes into the decoder; the payload field is size-checked after.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing name")
+		return
+	}
+	var payloadBytes int
+	if body.Payload != nil {
+		raw, err := json.Marshal(body.Payload)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "payload not serializable")
+			return
+		}
+		payloadBytes = len(raw)
+	}
+	if payloadBytes > maxPluginCallbackPayloadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "payload exceeds 64KiB")
+		return
+	}
+
+	// Event.Type is the fixed classification; the sidecar's body.type is the
+	// event's own subtype, preserved as data.type for downstream consumers.
+	data := map[string]any{
+		"name":    body.Name,
+		"payload": body.Payload,
+	}
+	if t := strings.TrimSpace(body.Type); t != "" {
+		data["type"] = t
+	}
+	if err := s.Store.AppendEvent(runID, store.Event{
+		Type: "plugin.callback",
+		Data: data,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "append event failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetArtifact(w http.ResponseWriter, r *http.Request) {

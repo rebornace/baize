@@ -1,5 +1,9 @@
 # 容器试用栈：配合 docker-compose.demo.yml（Runtime + mock-ticket）。
 listen: ":8080"
+# runtime:
+#   public_base_url: "http://baize:8080"
+#   callback_hmac_secret: ""
+#   callback_token_ttl_sec: 3600
 store:
   driver: sqlite
   sqlite_path: /app/data/baize.db

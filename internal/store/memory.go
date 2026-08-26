@@ -89,6 +89,21 @@ func (s *Memory) GetConnector(id string) (Connector, error) {
 	return c, nil
 }
 
+func (s *Memory) DeleteConnector(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.connectors[id]; !ok {
+		return fmt.Errorf("connector not found")
+	}
+	delete(s.connectors, id)
+	for name, t := range s.tools {
+		if t.ConnectorID == id {
+			delete(s.tools, name)
+		}
+	}
+	return nil
+}
+
 func (s *Memory) ListConnectors() []Connector {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

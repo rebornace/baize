@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,11 +22,13 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
+	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
@@ -156,6 +159,28 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		return nil, nil, err
 	}
 
+	// Resolve sidecar callback wiring (Phase 2). An empty secret triggers an
+	// ephemeral key so single-process dev still works; an explicit secret is
+	// required for multi-process deployments where the API and the sidecar
+	// invoke path must share the key.
+	callbackSecret, secretEphemeral := resolveCallbackSecret(cfg.Runtime.CallbackHMACSecret)
+	if secretEphemeral {
+		log.Printf("runtime.callback_hmac_secret empty: generated ephemeral secret (not valid across restarts)")
+	}
+	callbackTTL := time.Duration(cfg.Runtime.CallbackTokenTTLSec) * time.Second
+	if callbackTTL <= 0 {
+		callbackTTL = time.Duration(config.DefaultCallbackTokenTTLSec) * time.Second
+	}
+	callbackPublicBase := strings.TrimSpace(cfg.Runtime.PublicBaseURL)
+	callbackSigner := httpplugin.CallbackSigner(plugincallback.Issue)
+	callbackLimiter := plugincallback.NewLimiter(plugincallback.DefaultBudget, plugincallback.DefaultWindow)
+	callbackCfg := connector.CallbackConfig{
+		Signer:     callbackSigner,
+		Secret:     callbackSecret,
+		PublicBase: callbackPublicBase,
+		TTL:        callbackTTL,
+	}
+
 	st, err := store.Open(cfg.Store.Driver, cfg.Store.SQLitePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
@@ -181,11 +206,11 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		return nil, nil, fmt.Errorf("open conversation/identity stores: %w", err)
 	}
 
-	if err := registerConnector(st, reg, cfg, identities); err != nil {
+	if err := registerConnector(st, reg, cfg, identities, callbackCfg); err != nil {
 		_ = closer.Close()
 		return nil, nil, err
 	}
-	loadStoredConnectors(st, reg, cfg, identities)
+	loadStoredConnectors(st, reg, cfg, identities, callbackCfg)
 	if n := len(st.ListConnectors()); n > 0 {
 		ids := make([]string, 0, n)
 		for _, c := range st.ListConnectors() {
@@ -232,6 +257,11 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Messages = messages
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
+	srv.CallbackSecret = callbackSecret
+	srv.CallbackLimiter = callbackLimiter
+	srv.CallbackSigner = callbackSigner
+	srv.CallbackPublicBase = callbackPublicBase
+	srv.CallbackTTL = callbackTTL
 
 	if sqliteStore != nil && strings.TrimSpace(cfg.Store.SQLitePath) != "" {
 		artDir := filepath.Join(filepath.Dir(cfg.Store.SQLitePath), "artifacts")
@@ -360,7 +390,7 @@ func (c *storeAndMCPCloser) Close() error {
 	return nil
 }
 
-func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) error {
+func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store, cb connector.CallbackConfig) error {
 	if strings.TrimSpace(cfg.Connector.ID) == "" {
 		return nil
 	}
@@ -394,9 +424,13 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 				TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
 				LabelJSONPaths: cfg.Connector.Auth.Capture.LabelJSONPaths,
 				HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
-				DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
-			},
+			DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
 		},
+		},
+		CallbackSigner:     cb.Signer,
+		CallbackSecret:     cb.Secret,
+		CallbackPublicBase: cb.PublicBase,
+		CallbackTTL:        cb.TTL,
 	})
 	return err
 }
@@ -407,7 +441,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 // enabled rows. Errors are logged but do not abort startup so a single bad
 // connector cannot brick the runtime; the YAML connector is skipped because it
 // was just registered by registerConnector.
-func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store) {
+func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store, cb connector.CallbackConfig) {
 	for _, c := range st.ListConnectors() {
 		if c.ID == cfg.Connector.ID {
 			continue
@@ -425,6 +459,10 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			MCP:             c.MCP,
 			RequireApproval: c.RequireApproval,
 			RequireLogin:    nil, // preserve persisted per-tool require_login
+			CallbackSigner:     cb.Signer,
+			CallbackSecret:     cb.Secret,
+			CallbackPublicBase: cb.PublicBase,
+			CallbackTTL:        cb.TTL,
 		})
 		if err != nil {
 			log.Printf("loadStoredConnectors: %s: %v", c.ID, err)
@@ -488,6 +526,28 @@ func localHTTPBase(listen string) string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, port)
+}
+
+// resolveCallbackSecret returns the configured HMAC secret, or a freshly
+// generated 32-byte ephemeral secret when none is configured. The second
+// return is true when the secret was ephemeral so the caller can log it.
+// An ephemeral secret is only valid for the lifetime of this process; tokens
+// issued before a restart are invalid afterwards, which is acceptable for
+// local dev but not for multi-process deployments.
+func resolveCallbackSecret(configured string) ([]byte, bool) {
+	if s := strings.TrimSpace(configured); s != "" {
+		return []byte(s), false
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		// rand.Read should never fail on modern systems; fall back to a
+		// time-seeded-ish key to keep startup alive (still ephemeral).
+		log.Printf("crypto/rand failed (%v); using weak ephemeral secret", err)
+		for i := range buf {
+			buf[i] = byte(time.Now().UnixNano() >> uint(i%8))
+		}
+	}
+	return buf, true
 }
 
 func printCurlHints(runtimeBase, agentID, ticketBase string) {

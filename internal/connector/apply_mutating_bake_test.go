@@ -128,7 +128,7 @@ func TestApplyRequireApprovalMutatingBakesIntoRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg.Unregister("create_ticket")
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, ct); err != nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, c, ct, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("RegisterOneFromConnector: %v", err)
 	}
 	if !reg.RequiresApproval("create_ticket") {

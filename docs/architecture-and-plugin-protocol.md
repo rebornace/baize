@@ -118,7 +118,7 @@ POST /v0/tools/{tool_name}/invoke      → ToolResult
     "run_id": "run_...",
     "agent_id": "agent_...",
     "tenant_id": "",
-    "callback_urls": { "event": "https://runtime/.../callbacks/..." }
+    "callback_urls": { "event": "https://runtime/.../v0/runs/{run_id}/plugin-callbacks?token=..." }
   }
 }
 
@@ -126,7 +126,7 @@ POST /v0/tools/{tool_name}/invoke      → ToolResult
 { "content": { }, "is_error": false }
 ```
 
-Runtime 已实现该协议的客户端；侧车 invoke 上下文里的 `callback_urls` 尚未实现。
+Runtime 已实现该协议的客户端。当配置了 `runtime.public_base_url`（及 HMAC 密钥）且 invoke 带 `run_id` 时，会注入短期签名的 `callback_urls.event`；侧车可 `POST` 该 URL 写入 Run 事件流（类型 `plugin.callback`）。未配置 `public_base_url` 则不注入。详见规格 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md`。
 
 ### 4.3 企业执行回调（补充路径，v0 已实现）
 

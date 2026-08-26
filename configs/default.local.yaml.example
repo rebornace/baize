@@ -2,6 +2,10 @@
 # 密钥放 .env：BAIZE_API_KEY=sk-...
 # baize demo 会加载：demo.yaml → default.local.yaml → demo.local.yaml（后者优先）
 listen: ":8080"
+# runtime:
+#   public_base_url: "http://127.0.0.1:8080"  # empty => do not inject callback_urls
+#   callback_hmac_secret: ""
+#   callback_token_ttl_sec: 3600
 store:
   driver: sqlite
   sqlite_path: ./data/baize.db

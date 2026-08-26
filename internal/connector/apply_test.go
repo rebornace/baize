@@ -657,7 +657,7 @@ func TestRegisterOneFromConnectorRegistersRow(t *testing.T) {
 		t.Fatal("getMe should be unregistered before wrapper call")
 	}
 
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, toolRow); err != nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, c, toolRow, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("RegisterOneFromConnector: %v", err)
 	}
 	info, ok := reg.Get("getMe")
@@ -709,7 +709,7 @@ func TestRegisterOneFromConnectorRejectsPluginExtra(t *testing.T) {
 		Path:        "/phantom",
 		InputSchema: map[string]any{"type": "object"},
 	}
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra); err == nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra, connector.CallbackConfig{}); err == nil {
 		t.Fatal("expected error registering extra on plugin connector, got nil")
 	}
 	if _, ok := reg.Get("phantom"); ok {

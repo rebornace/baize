@@ -1,5 +1,9 @@
 # 试用栈：mock LLM + 内嵌演示 HTTP。使用 baize demo（勿用于生产）。
 listen: ":8080"
+# runtime:
+#   public_base_url: "http://127.0.0.1:8080"  # demo/local; empty => no callback_urls injection
+#   callback_hmac_secret: ""
+#   callback_token_ttl_sec: 3600
 store:
   driver: sqlite
   sqlite_path: ./data/baize-demo.db

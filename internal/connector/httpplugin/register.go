@@ -5,10 +5,12 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -129,11 +131,12 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			if conv != "" && reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
 				return tool.LoginRequiredContent(), true, nil
 			}
-			out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
-				RunID:   identity.RunIDFrom(ctx),
-				AgentID: identity.AgentIDFrom(ctx),
-				Headers: overlay,
-			})
+		out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
+			RunID:            identity.RunIDFrom(ctx),
+			AgentID:          identity.AgentIDFrom(ctx),
+			Headers:          overlay,
+			CallbackEventURL: buildCallbackEventURL(opts, identity.RunIDFrom(ctx)),
+		})
 			if invErr != nil {
 				return nil, true, invErr
 			}
@@ -166,4 +169,34 @@ func filterInfos(reg *tool.Registry, connectorID string) []tool.Info {
 		}
 	}
 	return out
+}
+
+// buildCallbackEventURL returns the callback_urls.event value for the given
+// runID, or "" when callback injection is not possible. Injection requires
+// all of: non-empty runID, non-nil Signer, non-empty Secret, non-empty
+// PublicBase. PublicBase is normalized by stripping trailing slashes. A
+// Signer/Issue error also yields "" (fail-open: invoke proceeds without
+// callback_urls rather than erroring the tool call).
+func buildCallbackEventURL(opts RegisterOpts, runID string) string {
+	return SignCallbackEventURL(opts.CallbackSigner, opts.CallbackSecret, opts.CallbackPublicBase, opts.CallbackTTL, runID)
+}
+
+// SignCallbackEventURL issues a short-lived token and formats the callback
+// URL advertised to sidecars. It is the exported counterpart of
+// buildCallbackEventURL, used by callers (e.g. connector.Apply's plugin
+// invoker) that do not carry a full RegisterOpts. Returns "" when any piece
+// is missing or signing fails, so callers can fail open.
+func SignCallbackEventURL(signer CallbackSigner, secret []byte, publicBase string, ttl time.Duration, runID string) string {
+	if runID == "" || signer == nil || len(secret) == 0 || strings.TrimSpace(publicBase) == "" {
+		return ""
+	}
+	if ttl <= 0 {
+		ttl = defaultCallbackTTL
+	}
+	token, _, err := signer(secret, runID, ttl)
+	if err != nil {
+		return ""
+	}
+	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
+	return plugincallback.FormatTokenURL(base, runID, token)
 }

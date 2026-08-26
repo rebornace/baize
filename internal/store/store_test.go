@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rebornace/baize/internal/store"
@@ -201,6 +202,39 @@ func TestConnectorStoresAuthConfig(t *testing.T) {
 	}
 	if c.Auth.Mode != "vault_ref" || c.Auth.VaultRef.Headers["Authorization"] != "env:TOK" {
 		t.Fatalf("%+v", c.Auth)
+	}
+}
+
+func TestDeleteConnectorCascadesTools(t *testing.T) {
+	testDeleteConnectorCascadesTools(t, store.NewMemory())
+}
+
+func testDeleteConnectorCascadesTools(t *testing.T, s store.Store) {
+	s.UpsertConnector(store.Connector{ID: "c1", Type: "openapi", Spec: "s.yaml", BaseURL: "http://x"})
+	s.UpsertTool(store.Tool{ConnectorID: "c1", Name: "tool_a", Source: store.ToolSourceSpec, Enabled: true})
+	s.UpsertTool(store.Tool{ConnectorID: "c1", Name: "tool_b", Source: store.ToolSourceSpec, Enabled: true})
+	s.UpsertConnector(store.Connector{ID: "c2", Type: "openapi", Spec: "s2.yaml", BaseURL: "http://y"})
+	s.UpsertTool(store.Tool{ConnectorID: "c2", Name: "keep_tool", Source: store.ToolSourceSpec, Enabled: true})
+
+	if err := s.DeleteConnector("c1"); err != nil {
+		t.Fatalf("DeleteConnector: %v", err)
+	}
+	if _, err := s.GetConnector("c1"); err == nil {
+		t.Fatal("expected connector not found after delete")
+	}
+	if byC := s.ListToolsByConnector("c1"); len(byC) != 0 {
+		t.Fatalf("tools for c1=%+v want empty", byC)
+	}
+	if _, err := s.GetTool("tool_a"); err == nil {
+		t.Fatal("tool_a should be deleted")
+	}
+	if _, err := s.GetTool("keep_tool"); err != nil {
+		t.Fatalf("keep_tool should remain: %v", err)
+	}
+	if err := s.DeleteConnector("missing"); err == nil {
+		t.Fatal("expected error deleting missing connector")
+	} else if !strings.Contains(err.Error(), "connector not found") {
+		t.Fatalf("DeleteConnector(missing) err=%q want connector not found", err)
 	}
 }
 

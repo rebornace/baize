@@ -94,12 +94,18 @@ func (c *Client) Invoke(ctx context.Context, name string, args map[string]any, m
 	if args == nil {
 		args = map[string]any{}
 	}
+	ctxMap := map[string]any{
+		"run_id":   meta.RunID,
+		"agent_id": meta.AgentID,
+	}
+	if strings.TrimSpace(meta.CallbackEventURL) != "" {
+		ctxMap["callback_urls"] = map[string]any{
+			"event": meta.CallbackEventURL,
+		}
+	}
 	payload := map[string]any{
 		"arguments": args,
-		"context": map[string]any{
-			"run_id":   meta.RunID,
-			"agent_id": meta.AgentID,
-		},
+		"context":   ctxMap,
 	}
 	rawPayload, err := json.Marshal(payload)
 	if err != nil {

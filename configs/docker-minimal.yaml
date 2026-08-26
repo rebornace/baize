@@ -1,5 +1,9 @@
 # 容器生产默认：仅 Baize Runtime，无演示 Connector。
 listen: ":8080"
+# runtime:
+#   public_base_url: "http://baize:8080"  # address reachable by sidecars; empty => no injection
+#   callback_hmac_secret: ""
+#   callback_token_ttl_sec: 3600
 store:
   driver: sqlite
   sqlite_path: /app/data/baize.db

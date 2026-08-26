@@ -79,6 +79,35 @@ func TestClientInvokeSendsContextAndHeaders(t *testing.T) {
 	if ctx["run_id"] != "run_1" || ctx["agent_id"] != "ag_1" {
 		t.Fatalf("body=%+v", gotBody)
 	}
+	if _, ok := ctx["callback_urls"]; ok {
+		t.Fatalf("callback_urls must be absent when CallbackEventURL empty: %+v", ctx)
+	}
+}
+
+func TestClientInvokeSendsCallbackEventURL(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
+	}))
+	defer srv.Close()
+	c := httpplugin.NewClient(srv.URL)
+	const want = "https://base.example/v0/runs/run_2/plugin-callbacks?token=abc.def"
+	if _, err := c.Invoke(context.Background(), "echo", nil, httpplugin.InvokeMeta{
+		RunID:            "run_2",
+		CallbackEventURL: want,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, _ := gotBody["context"].(map[string]any)
+	urls, _ := ctx["callback_urls"].(map[string]any)
+	if urls == nil || urls["event"] != want {
+		t.Fatalf("callback_urls=%+v ctx=%+v", urls, ctx)
+	}
+	if ctx["run_id"] != "run_2" {
+		t.Fatalf("run_id missing: %+v", ctx)
+	}
 }
 
 func TestClientInvokeHTTPErrorIsToolError(t *testing.T) {

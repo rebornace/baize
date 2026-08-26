@@ -73,7 +73,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
+- Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from OpenAPI, Plugins, or MCP settings (with confirmation); Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
 - Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
@@ -182,6 +182,8 @@ go run ./examples/http-plugin/cmd/http-plugin
 Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`type: http`):
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
+
+Set `runtime.public_base_url` (Runtime root URL reachable by the sidecar) to inject a short-lived signed `callback_urls.event` on HTTP plugin invoke; the sidecar may POST notes/progress into the Run event stream (`plugin.callback`). If unset, nothing is injected. See architecture doc §4.2.
 
 ### Enterprise execution callback (§4.3)
 

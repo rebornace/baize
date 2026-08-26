@@ -9,6 +9,7 @@ import {
   type ConnectorInfo,
   type ToolInfo,
 } from '../api'
+import { confirmAndDeleteConnector, defaultConnectorDeleteDeps } from './connectorDelete'
 
 export type PluginAuthMode = 'static' | 'passthrough' | 'vault_ref'
 
@@ -207,6 +208,7 @@ export function PluginSettings() {
   const [form, setForm] = useState<PluginFormState>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -255,6 +257,22 @@ export function PluginSettings() {
     setFormOpen(false)
   }
 
+  const onDelete = async (id: string) => {
+    setDeleting(id)
+    setStatus(null)
+    try {
+      const deleted = await confirmAndDeleteConnector(id, defaultConnectorDeleteDeps)
+      if (!deleted) return
+      setStatus(`已删除 ${id}`)
+      setError(null)
+      await load()
+    } catch (err) {
+      setError(apiErrorMessage(err))
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     const validated = validatePluginForm(form)
@@ -285,7 +303,7 @@ export function PluginSettings() {
   }
 
   const loadFailed = rows === null && error !== null
-  const busy = submitting
+  const busy = submitting || deleting !== null
 
   return (
     <div className="settings-section settings-plugins">
@@ -342,6 +360,16 @@ export function PluginSettings() {
                         onClick={() => openEdit(info)}
                       >
                         编辑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn danger sm"
+                        disabled={busy}
+                        onClick={() => {
+                          void onDelete(info.id)
+                        }}
+                      >
+                        {deleting === info.id ? '删除中…' : '删除'}
                       </button>
                     </span>
                   </li>

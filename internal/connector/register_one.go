@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rebornace/baize/internal/authcred"
@@ -47,6 +48,13 @@ type registerOneContext struct {
 
 	// enterprise execution callback (openapi / http plugin invoke path):
 	callbackURL string
+
+	// sidecar plugin callback_urls.event injection (Phase 2). Only the http
+	// plugin invoke path consumes these; openapi/mcp invokers ignore them.
+	callbackSigner     httpplugin.CallbackSigner
+	callbackSecret     []byte
+	callbackPublicBase string
+	callbackTTL        time.Duration
 }
 
 // registerOne registers a single enabled catalog row into the Registry with
@@ -248,11 +256,12 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 			}
 			return out.Content, out.IsError, nil
 		}
-		out, invErr := ctx.client.Invoke(c, name, args, httpplugin.InvokeMeta{
-			RunID:   identity.RunIDFrom(c),
-			AgentID: identity.AgentIDFrom(c),
-			Headers: overlay,
-		})
+	out, invErr := ctx.client.Invoke(c, name, args, httpplugin.InvokeMeta{
+		RunID:            identity.RunIDFrom(c),
+		AgentID:          identity.AgentIDFrom(c),
+		Headers:          overlay,
+		CallbackEventURL: httpplugin.SignCallbackEventURL(ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c)),
+	})
 		if invErr != nil {
 			return nil, true, invErr
 		}
@@ -355,6 +364,15 @@ func listsFromTools(tools []store.Tool) (login, approval []string) {
 	return
 }
 
+// CallbackConfig carries the sidecar callback injection pieces needed by
+// RegisterOneFromConnector. Zero value => no callback_urls injected.
+type CallbackConfig struct {
+	Signer     httpplugin.CallbackSigner
+	Secret     []byte
+	PublicBase string
+	TTL        time.Duration
+}
+
 // RegisterOneFromConnector registers a single enabled catalog row into the
 // Registry, reconstructing the registerOneContext from the persisted
 // Connector + Tool. It is the exported entry point for task 4 PATCH/POST
@@ -369,7 +387,10 @@ func listsFromTools(tools []store.Tool) (login, approval []string) {
 // For plugin (type=http) connectors, extra rows are rejected with an error to
 // match Apply's defense-in-depth guard; callers must not register extras on
 // plugin connectors.
-func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.Store, c store.Connector, t store.Tool) error {
+//
+// cb wires callback_urls.event injection for the http plugin invoke path;
+// pass a zero CallbackConfig to disable injection.
+func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.Store, c store.Connector, t store.Tool, cb CallbackConfig) error {
 	typ := strings.TrimSpace(c.Type)
 	if typ == "" {
 		typ = "openapi"
@@ -465,19 +486,23 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	}
 
 	rctx := registerOneContext{
-		reg:            reg,
-		id:             c.ID,
-		headers:        headers,
-		authMode:       authMode,
-		identities:     ids,
-		resolver:       authresolve.OpenAPISecurityResolver{},
-		inv:            inv,
-		capture:        capture,
-		client:         client,
-		mcpSession:     mcpSession,
-		mcpHTTPURL:     mcpHTTPURL,
-		mcpHTTPHeaders: mcpHTTPHeaders,
-		callbackURL:    strings.TrimSpace(c.ExecutionCallbackURL),
+		reg:                reg,
+		id:                 c.ID,
+		headers:            headers,
+		authMode:           authMode,
+		identities:         ids,
+		resolver:           authresolve.OpenAPISecurityResolver{},
+		inv:                inv,
+		capture:            capture,
+		client:             client,
+		mcpSession:         mcpSession,
+		mcpHTTPURL:         mcpHTTPURL,
+		mcpHTTPHeaders:     mcpHTTPHeaders,
+		callbackURL:        strings.TrimSpace(c.ExecutionCallbackURL),
+		callbackSigner:     cb.Signer,
+		callbackSecret:     cb.Secret,
+		callbackPublicBase: cb.PublicBase,
+		callbackTTL:        cb.TTL,
 	}
 	registerOne(rctx, t)
 	return nil
