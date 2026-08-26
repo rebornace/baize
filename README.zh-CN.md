@@ -184,6 +184,8 @@ go run ./examples/http-plugin/cmd/http-plugin
 
 HITL 仍使用 `require_approval`。试用 OpenAPI Connector 请用 `baize demo`。
 
+配置 `runtime.public_base_url`（侧车可达的 Runtime 根地址）后，HTTP 插件 invoke 会注入短期签名的 `callback_urls.event`；侧车可回投进度/备注到 Run 事件流（`plugin.callback`）。未配置则不注入。详见架构文档 §4.2。
+
 ### 企业执行回调（§4.3）
 
 遗留系统只暴露一个统一执行入口、不想被 Runtime 按 operation 直连时，在 Connector 上配置 `execution_callback_url`。工具清单仍来自 OpenAPI 或 HTTP 侧车发现；invoke 时 Runtime POST 到企业 URL（body 含 `tool`、`arguments`、`run_id`、`idempotency_key`）。可在 **设置 → Tools** 每个 Connector 组头编辑，或 `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`。

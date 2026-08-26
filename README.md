@@ -183,6 +183,8 @@ Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`ty
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
 
+Set `runtime.public_base_url` (Runtime root URL reachable by the sidecar) to inject a short-lived signed `callback_urls.event` on HTTP plugin invoke; the sidecar may POST notes/progress into the Run event stream (`plugin.callback`). If unset, nothing is injected. See architecture doc §4.2.
+
 ### Enterprise execution callback (§4.3)
 
 When the legacy system exposes a single execution endpoint instead of per-operation HTTP, set `execution_callback_url` on the Connector. Tool discovery still comes from OpenAPI or the HTTP sidecar; invoke POSTs to your URL with `tool`, `arguments`, `run_id`, and `idempotency_key`. Edit per Connector under **Settings → Tools**, or via `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`.
