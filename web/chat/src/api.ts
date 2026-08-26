@@ -453,6 +453,24 @@ export async function deleteConnectorTool(connectorId: string, name: string): Pr
   }
 }
 
+export async function deleteConnector(id: string): Promise<void> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authInit(),
+  })
+  if (res.status === 204) return
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const errBody = (await res.json()) as { error?: { message?: string } }
+      if (errBody.error?.message) detail = errBody.error.message
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`HTTP ${res.status}: ${detail}`)
+  }
+}
+
 export type SkillSummary = {
   id: string
   name: string
