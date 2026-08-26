@@ -197,6 +197,69 @@ func TestRegisterRequireApproval(t *testing.T) {
 	}
 }
 
+const registerHTTPCaptureJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkB4LmNvbSIsImVtYWlsIjoiYWRtaW5AeC5jb20iLCJleHAiOjk5OTk5OTk5OTl9.sig"
+
+func TestRegisterWithOptsCapturesLogin(t *testing.T) {
+	var lastAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuth = r.Header.Get("Authorization")
+		switch {
+		case r.URL.Path == "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.URL.Path == "/v0/tools" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"tools":[{"name":"login","description":"login"},{"name":"ping","description":"ping"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/login/invoke"):
+			_, _ = w.Write([]byte(`{"content":{"accessToken":"` + registerHTTPCaptureJWT + `","email":"admin@x.com"},"is_error":false}`))
+		case strings.HasSuffix(r.URL.Path, "/ping/invoke"):
+			_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	_, _, err := httpplugin.RegisterWithOpts(st, reg, httpplugin.RegisterOpts{
+		ID:           "side",
+		BaseURL:      srv.URL,
+		Headers:      map[string]string{"Authorization": "Bearer PLUGIN_ENV"},
+		RequireLogin: []string{"ping"},
+		Identities:   ids,
+		Resolver:     authresolve.OpenAPISecurityResolver{},
+		Capture: identity.CaptureConfig{
+			ToolNameGlob:   "*login*",
+			TokenJSONPaths: []string{"accessToken"},
+			LabelJSONPaths: []string{"email"},
+			HeaderTemplate: "Bearer {{token}}",
+			DefaultScheme:  "bearer",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := identity.WithConversationID(context.Background(), "conv_http_reg")
+	_, isErr, err := reg.Invoke(ctx, "login", map[string]any{})
+	if err != nil || isErr {
+		t.Fatalf("login: isErr=%v err=%v", isErr, err)
+	}
+	if len(ids.List("conv_http_reg")) == 0 {
+		t.Fatal("expected captured identity after login")
+	}
+
+	lastAuth = ""
+	_, isErr, err = reg.Invoke(ctx, "ping", nil)
+	if err != nil || isErr {
+		t.Fatalf("ping: isErr=%v err=%v", isErr, err)
+	}
+	wantCaptured := "Bearer " + registerHTTPCaptureJWT
+	if lastAuth != wantCaptured {
+		t.Fatalf("after-login Authorization=%q, want %q", lastAuth, wantCaptured)
+	}
+}
+
 func TestRegisterPassthroughUsesContextHeaders(t *testing.T) {
 	var lastAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

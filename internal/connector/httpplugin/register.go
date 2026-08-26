@@ -73,6 +73,9 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			schema = map[string]any{"type": "object"}
 		}
 		needApproval := approval[name]
+		if !approval[name] && identity.MatchToolName(opts.Capture.ToolNameGlob, name) {
+			needApproval = false
+		}
 		needLogin := login[name]
 		reg.RegisterMeta(tool.Meta{
 			Spec: llm.ToolSpec{
@@ -143,10 +146,33 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			if usedID != "" && opts.Identities != nil {
 				_ = opts.Identities.Touch(conv, usedID)
 			}
+			if conv != "" && !out.IsError && opts.Identities != nil && identity.MatchToolName(opts.Capture.ToolNameGlob, name) {
+				if h, label, sub, claims, ok := identity.ExtractCredential(opts.Capture, out.Content); ok {
+					_, _ = opts.Identities.Upsert(conv, identity.Identity{
+						Label:             label,
+						Scheme:            opts.Capture.DefaultScheme,
+						Subject:           sub,
+						CredentialHeaders: h,
+						Source:            identity.SourceLoginCapture,
+						ClaimsSummary:     claims,
+						IsDefault:         true,
+					})
+				}
+			}
 			return out.Content, out.IsError, nil
 		}, needApproval)
 	}
 
+	auth := opts.Auth
+	if strings.TrimSpace(auth.Capture.ToolNameGlob) == "" && strings.TrimSpace(opts.Capture.ToolNameGlob) != "" {
+		auth.Capture = store.CaptureAuth{
+			ToolNameGlob:   opts.Capture.ToolNameGlob,
+			TokenJSONPaths: opts.Capture.TokenJSONPaths,
+			LabelJSONPaths: opts.Capture.LabelJSONPaths,
+			HeaderTemplate: opts.Capture.HeaderTemplate,
+			DefaultScheme:  opts.Capture.DefaultScheme,
+		}
+	}
 	c := store.Connector{
 		ID:              opts.ID,
 		Type:            "http",
@@ -154,7 +180,7 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 		BaseURL:         opts.BaseURL,
 		RequireApproval: opts.RequireApproval,
 		RequireLogin:    requireLogin,
-		Auth:            opts.Auth,
+		Auth:            auth,
 	}
 	st.UpsertConnector(c)
 	return c, filterInfos(reg, opts.ID), nil
