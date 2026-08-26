@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rebornace/baize/internal/store"
@@ -232,6 +233,8 @@ func testDeleteConnectorCascadesTools(t *testing.T, s store.Store) {
 	}
 	if err := s.DeleteConnector("missing"); err == nil {
 		t.Fatal("expected error deleting missing connector")
+	} else if !strings.Contains(err.Error(), "connector not found") {
+		t.Fatalf("DeleteConnector(missing) err=%q want connector not found", err)
 	}
 }
 
