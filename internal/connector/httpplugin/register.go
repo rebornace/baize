@@ -9,6 +9,7 @@ import (
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -129,11 +130,12 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			if conv != "" && reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
 				return tool.LoginRequiredContent(), true, nil
 			}
-			out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
-				RunID:   identity.RunIDFrom(ctx),
-				AgentID: identity.AgentIDFrom(ctx),
-				Headers: overlay,
-			})
+		out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
+			RunID:            identity.RunIDFrom(ctx),
+			AgentID:          identity.AgentIDFrom(ctx),
+			Headers:          overlay,
+			CallbackEventURL: buildCallbackEventURL(opts, identity.RunIDFrom(ctx)),
+		})
 			if invErr != nil {
 				return nil, true, invErr
 			}
@@ -166,4 +168,26 @@ func filterInfos(reg *tool.Registry, connectorID string) []tool.Info {
 		}
 	}
 	return out
+}
+
+// buildCallbackEventURL returns the callback_urls.event value for the given
+// runID, or "" when callback injection is not possible. Injection requires
+// all of: non-empty runID, non-nil Signer, non-empty Secret, non-empty
+// PublicBase. PublicBase is normalized by stripping trailing slashes. A
+// Signer/Issue error also yields "" (fail-open: invoke proceeds without
+// callback_urls rather than erroring the tool call).
+func buildCallbackEventURL(opts RegisterOpts, runID string) string {
+	if runID == "" || opts.CallbackSigner == nil || len(opts.CallbackSecret) == 0 || strings.TrimSpace(opts.CallbackPublicBase) == "" {
+		return ""
+	}
+	ttl := opts.CallbackTTL
+	if ttl <= 0 {
+		ttl = defaultCallbackTTL
+	}
+	token, _, err := opts.CallbackSigner(opts.CallbackSecret, runID, ttl)
+	if err != nil {
+		return ""
+	}
+	base := strings.TrimRight(strings.TrimSpace(opts.CallbackPublicBase), "/")
+	return plugincallback.FormatTokenURL(base, runID, token)
 }
