@@ -155,6 +155,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/tools", s.handlePostConnectorTool)
 	s.mux.HandleFunc("DELETE /v0/connectors/{id}/tools/{name}", s.handleDeleteConnectorTool)
+	s.mux.HandleFunc("DELETE /v0/connectors/{id}", s.handleDeleteConnector)
 	s.mux.HandleFunc("GET /v0/skills", s.handleListSkills)
 	s.mux.HandleFunc("GET /v0/skills/{id}", s.handleGetSkill)
 	s.mux.HandleFunc("POST /v0/skills", s.handlePostSkill)
@@ -978,6 +979,29 @@ func (s *Server) handleDeleteConnectorTool(w http.ResponseWriter, r *http.Reques
 		s.Store.UpsertConnector(c)
 	}
 
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteConnector cascades a connector away: it first ensures the
+// connector exists (404 connector_not_found otherwise), unregisters all its
+// tools from the in-process Registry, then deletes the connector row and its
+// tools from the Store. On success it returns 204 No Content, matching the
+// single-tool DELETE handler.
+func (s *Server) handleDeleteConnector(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing connector id")
+		return
+	}
+	if _, err := s.Store.GetConnector(id); err != nil {
+		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
+		return
+	}
+	s.Registry.UnregisterConnector(id)
+	if err := s.Store.DeleteConnector(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
