@@ -251,7 +251,7 @@ func TestRegisterOneFromConnectorRejectsMCPExtra(t *testing.T) {
 		Path:        "/phantom",
 		InputSchema: map[string]any{"type": "object"},
 	}
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra); err == nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra, connector.CallbackConfig{}); err == nil {
 		t.Fatal("expected error registering extra on mcp connector")
 	}
 }

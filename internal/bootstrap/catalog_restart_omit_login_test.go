@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/config"
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -36,7 +37,7 @@ func TestCatalogRestartOmittedRequireLoginPreservesPerToolFlag(t *testing.T) {
 	cfg.Connector.Auth.Mode = "static"
 	// require_login 省略 → cfg.Connector.RequireLogin == nil
 
-	if err := registerConnector(st, reg, cfg, ids); err != nil {
+	if err := registerConnector(st, reg, cfg, ids, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector: %v", err)
 	}
 	if _, ok := reg.Get("probe"); !ok {
@@ -64,10 +65,10 @@ func TestCatalogRestartOmittedRequireLoginPreservesPerToolFlag(t *testing.T) {
 	reg2 := tool.NewRegistry()
 	ids2 := identity.NewMemoryStore()
 
-	if err := registerConnector(st2, reg2, cfg, ids2); err != nil {
+	if err := registerConnector(st2, reg2, cfg, ids2, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector after restart: %v", err)
 	}
-	loadStoredConnectors(st2, reg2, cfg, ids2)
+	loadStoredConnectors(st2, reg2, cfg, ids2, connector.CallbackConfig{})
 
 	// Per-tool require_login must survive the restart.
 	got, err := st2.GetTool("probe")

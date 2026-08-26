@@ -60,15 +60,22 @@ func TestVerifyTamperedToken(t *testing.T) {
 	if len(parts) != 2 {
 		t.Fatalf("token parts=%d", len(parts))
 	}
-	// Flip last char of signature
+	// Flip a char in the middle of the signature. The last char of a
+	// RawURLEncoding string may carry only padding bits (ignored on decode),
+	// so flipping it can be a no-op; a middle char always carries real bits.
 	sig := parts[1]
-	flipped := sig
-	if strings.HasSuffix(sig, "A") {
-		flipped = sig[:len(sig)-1] + "B"
-	} else {
-		flipped = sig[:len(sig)-1] + "A"
+	if len(sig) < 2 {
+		t.Fatalf("signature too short: %q", sig)
 	}
-	tampered := parts[0] + "." + flipped
+	mid := len(sig) / 2
+	c := sig[mid]
+	var flipped byte
+	if c == 'A' {
+		flipped = 'B'
+	} else {
+		flipped = 'A'
+	}
+	tampered := parts[0] + "." + sig[:mid] + string(flipped) + sig[mid+1:]
 	if err := Verify(secret, runID, tampered, now); err == nil {
 		t.Fatal("expected tamper error, got nil")
 	}

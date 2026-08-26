@@ -12,6 +12,7 @@ var aclRules = []routeRule{
 	{method: "GET", segments: []string{"v0", "me"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "runs"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "runs", "{id}", "resume"}, role: RoleOperator},
+	{method: "POST", segments: []string{"v0", "runs", "{id}", "plugin-callbacks"}, role: RoleNone},
 	{method: "GET", segments: []string{"v0", "runs", "{id}", "stream"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "runs", "{id}", "events"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "runs", "{id}"}, role: RoleOperator},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
@@ -31,6 +32,18 @@ type ApplyInput struct {
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
 	Auth                    store.ConnectorAuth
 	MCP                     store.MCPConfig
+
+	// Callback injection (Phase 2). When all four are usable and the
+	// per-invoke ctx carries a RunID, the plugin invoker issues a short-lived
+	// token via CallbackSigner and advertises
+	//   {CallbackPublicBase}/v0/runs/{runID}/plugin-callbacks?token={token}
+	// as context.callback_urls.event. Any missing piece => omit callback_urls.
+	// Only the http plugin (type=http) invoke path honors these today;
+	// openapi/mcp invokers ignore them.
+	CallbackSigner     httpplugin.CallbackSigner
+	CallbackSecret     []byte
+	CallbackPublicBase string
+	CallbackTTL        time.Duration
 }
 
 // Apply resolves auth, discovers the connector's tools, merges them with the
@@ -307,6 +320,10 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		mcpHTTPURL:              mcpHTTPURL,
 		mcpHTTPHeaders:          mcpHTTPHeaders,
 		callbackURL:             strings.TrimSpace(in.ExecutionCallbackURL),
+		callbackSigner:          in.CallbackSigner,
+		callbackSecret:          in.CallbackSecret,
+		callbackPublicBase:      in.CallbackPublicBase,
+		callbackTTL:             in.CallbackTTL,
 	}
 	for _, t := range merged {
 		if !t.Enabled {

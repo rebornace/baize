@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/identity"
@@ -177,17 +178,25 @@ func filterInfos(reg *tool.Registry, connectorID string) []tool.Info {
 // Signer/Issue error also yields "" (fail-open: invoke proceeds without
 // callback_urls rather than erroring the tool call).
 func buildCallbackEventURL(opts RegisterOpts, runID string) string {
-	if runID == "" || opts.CallbackSigner == nil || len(opts.CallbackSecret) == 0 || strings.TrimSpace(opts.CallbackPublicBase) == "" {
+	return SignCallbackEventURL(opts.CallbackSigner, opts.CallbackSecret, opts.CallbackPublicBase, opts.CallbackTTL, runID)
+}
+
+// SignCallbackEventURL issues a short-lived token and formats the callback
+// URL advertised to sidecars. It is the exported counterpart of
+// buildCallbackEventURL, used by callers (e.g. connector.Apply's plugin
+// invoker) that do not carry a full RegisterOpts. Returns "" when any piece
+// is missing or signing fails, so callers can fail open.
+func SignCallbackEventURL(signer CallbackSigner, secret []byte, publicBase string, ttl time.Duration, runID string) string {
+	if runID == "" || signer == nil || len(secret) == 0 || strings.TrimSpace(publicBase) == "" {
 		return ""
 	}
-	ttl := opts.CallbackTTL
 	if ttl <= 0 {
 		ttl = defaultCallbackTTL
 	}
-	token, _, err := opts.CallbackSigner(opts.CallbackSecret, runID, ttl)
+	token, _, err := signer(secret, runID, ttl)
 	if err != nil {
 		return ""
 	}
-	base := strings.TrimRight(strings.TrimSpace(opts.CallbackPublicBase), "/")
+	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
 	return plugincallback.FormatTokenURL(base, runID, token)
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/config"
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -43,7 +44,7 @@ func TestRegisterConnectorStaticMissingEnvFails(t *testing.T) {
 		"Authorization": "Bearer ${BOOTSTRAP_MISSING_ENV_XYZ}",
 	}
 
-	err := registerConnector(st, reg, cfg, identity.NewMemoryStore())
+	err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), connector.CallbackConfig{})
 	if err == nil {
 		t.Fatal("expected error for unresolved static env, got nil")
 	}
@@ -73,7 +74,7 @@ func TestRegisterConnectorVaultRefPersistsAuthShape(t *testing.T) {
 		"Authorization": "env:BOOTSTRAP_VAULT_TOK",
 	}
 
-	if err := registerConnector(st, reg, cfg, identity.NewMemoryStore()); err != nil {
+	if err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector: %v", err)
 	}
 	c, err := st.GetConnector("bs-vault")
