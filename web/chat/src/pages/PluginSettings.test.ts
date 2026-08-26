@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { mergeAuthPreserveCapture } from './captureForm'
 import {
   buildConnectorAuth,
   connectorToForm,
@@ -128,5 +129,15 @@ describe('validatePluginForm', () => {
   it('requires id and base_url', () => {
     expect(validatePluginForm({ ...base, id: '' }).ok).toBe(false)
     expect(validatePluginForm({ ...base, baseUrl: '' }).ok).toBe(false)
+  })
+})
+
+describe('plugin settings preserve capture', () => {
+  it('mergeAuthPreserveCapture keeps custom glob when editing auth only', () => {
+    const validatedAuth = { mode: 'static' as const, static: { headers: { Authorization: 'Bearer new' } } }
+    const existingAuth = { mode: 'static' as const, capture: { tool_name_glob: 'custom_*' } }
+    const auth = mergeAuthPreserveCapture(validatedAuth, existingAuth)
+    expect(auth.capture?.tool_name_glob).toBe('custom_*')
+    expect(auth.static?.headers?.Authorization).toBe('Bearer new')
   })
 })

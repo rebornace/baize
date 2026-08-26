@@ -9,6 +9,7 @@ import {
   type ConnectorInfo,
   type ToolInfo,
 } from '../api'
+import { captureSummaryLabel, mergeAuthPreserveCapture } from './captureForm'
 import { confirmAndDeleteConnector, defaultConnectorDeleteDeps } from './connectorDelete'
 
 export type PluginAuthMode = 'static' | 'passthrough' | 'vault_ref'
@@ -206,6 +207,7 @@ export function PluginSettings() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<PluginFormState>(EMPTY_FORM)
+  const [editingConnector, setEditingConnector] = useState<ConnectorInfo | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -238,6 +240,7 @@ export function PluginSettings() {
 
   const openCreate = () => {
     setEditing(false)
+    setEditingConnector(null)
     setForm(EMPTY_FORM)
     setFormError(null)
     setStatus(null)
@@ -246,6 +249,7 @@ export function PluginSettings() {
 
   const openEdit = (c: ConnectorInfo) => {
     setEditing(true)
+    setEditingConnector(c)
     setForm(connectorToForm(c))
     setFormError(null)
     setStatus(null)
@@ -286,7 +290,7 @@ export function PluginSettings() {
       await putConnector(form.id.trim(), {
         type: 'http',
         base_url: validated.baseUrl,
-        auth: validated.auth,
+        auth: mergeAuthPreserveCapture(validated.auth, editingConnector?.auth),
         require_approval:
           validated.requireApproval.length > 0 ? validated.requireApproval : undefined,
         require_login: validated.requireLogin.length > 0 ? validated.requireLogin : undefined,
@@ -313,7 +317,8 @@ export function PluginSettings() {
         <Link to="/settings/tools" className="settings-link">
           Tools
         </Link>{' '}
-        中管理。参考实现见仓库 <code>examples/http-plugin</code>。
+        中管理。登录捕获与执行回调 URL 在 Tools 页按 Connector 配置。参考实现见仓库{' '}
+        <code>examples/http-plugin</code>。
       </p>
       {loadFailed && <p className="settings-error">无法加载插件：{error}</p>}
       {!loadFailed && error && <p className="settings-error">{error}</p>}
@@ -336,6 +341,10 @@ export function PluginSettings() {
                 }
                 if (info.require_login && info.require_login.length > 0) {
                   requireParts.push(`登录：${info.require_login.join(', ')}`)
+                }
+                const captureLabel = captureSummaryLabel(info.auth?.capture)
+                if (captureLabel) {
+                  requireParts.push(captureLabel)
                 }
                 return (
                   <li key={info.id} className="settings-list-item settings-plugins-row">

@@ -67,3 +67,37 @@ export function mergeAuthWithCapture(
   auth.capture = buildCaptureFromDraft(draft)
   return auth
 }
+
+export function connectorSupportsLoginCapture(type: string | undefined): boolean {
+  return type === 'openapi' || type === 'http'
+}
+
+function hasStoredCapture(capture: ConnectorAuth['capture'] | undefined): boolean {
+  if (!capture) return false
+  if ((capture.tool_name_glob ?? '').trim() === '__none__') return true
+  if ((capture.tool_name_glob ?? '').trim() !== '') return true
+  if ((capture.token_json_paths?.length ?? 0) > 0) return true
+  if ((capture.label_json_paths?.length ?? 0) > 0) return true
+  if ((capture.header_template ?? '').trim() !== '') return true
+  if ((capture.default_scheme ?? '').trim() !== '') return true
+  return false
+}
+
+export function captureSummaryLabel(capture: ConnectorAuth['capture'] | undefined): string | null {
+  if (!hasStoredCapture(capture)) return null
+  const glob = (capture?.tool_name_glob ?? '').trim()
+  if (glob === '__none__') return '捕获已关闭'
+  if (glob !== '') {
+    const shown = glob.length > 32 ? `${glob.slice(0, 29)}…` : glob
+    return `捕获 ${shown}`
+  }
+  return '捕获（默认 *login*）'
+}
+
+export function mergeAuthPreserveCapture(
+  built: ConnectorAuth,
+  existing: ConnectorAuth | undefined,
+): ConnectorAuth {
+  if (!hasStoredCapture(existing?.capture)) return built
+  return { ...built, capture: { ...existing!.capture! } }
+}
