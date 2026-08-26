@@ -152,6 +152,8 @@ X-Baize-Protocol: v0
    带 `conversation_id` 时**不用** Connector 默认头。「需要登录」是操作员开关（`require_login`），不是从 OpenAPI `security` 推断；默认公开。有会话且工具需要登录、第 1–2 步又无可用凭证时，不发下游 HTTP。完整凭证不出现在 events 与 GET run。
 3. 覆盖不了的遗留逻辑 → 侧车插件或执行回调。
 
+HTTP 插件侧车在 `POST /v0/tools/{name}/invoke` 成功返回后，亦可按 Connector 的 `auth.capture` 将工具结果写入会话身份（配置与 OpenAPI Connector 相同）。
+
 ### 4.5 版本策略
 
 - 头与路径中的 `v0` 表示实验协议；破坏性变更增至 `v1` 并保留迁移说明。  

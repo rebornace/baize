@@ -92,6 +92,9 @@ func TestEchoAndCreateTicket(t *testing.T) {
 	if _, ok := names["echo"]; !ok {
 		t.Fatalf("missing echo: %+v", toolsBody.Tools)
 	}
+	if _, ok := names["login"]; !ok {
+		t.Fatalf("missing login: %+v", toolsBody.Tools)
+	}
 	desc, ok := names["create_ticket"]
 	if !ok {
 		t.Fatalf("missing create_ticket: %+v", toolsBody.Tools)
@@ -156,6 +159,33 @@ func TestEchoAndCreateTicket(t *testing.T) {
 	}
 	if createResp.Content["title"] != "x" {
 		t.Fatalf("content=%v", createResp.Content)
+	}
+}
+
+func TestLoginInvoke(t *testing.T) {
+	h := httppluginex.NewHandler()
+	body, _ := json.Marshal(map[string]any{"arguments": map[string]any{}})
+	req := httptest.NewRequest(http.MethodPost, "/v0/tools/login/invoke", bytes.NewReader(body))
+	withProto(req)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("login status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Content map[string]any `json:"content"`
+		IsError bool           `json:"is_error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.IsError {
+		t.Fatalf("login is_error: %+v", resp)
+	}
+	token, _ := resp.Content["accessToken"].(string)
+	if token == "" {
+		t.Fatalf("content=%v", resp.Content)
 	}
 }
 

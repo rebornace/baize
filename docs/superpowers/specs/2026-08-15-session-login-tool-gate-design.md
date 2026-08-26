@@ -1,5 +1,7 @@
 # Baize 设计规格：按会话登录、工具「需要登录」与 Connector 热更新接线
 
+> **更新（2026-08-26）：** HTTP 插件「不捕获」边界已由 `2026-08-26-http-plugin-login-capture-v0-design.md` 取代；实现以新规格为准。
+
 > 状态：已批准  
 > 日期：2026-08-15  
 > 前置：会话身份库、Connector 三种默认凭证模式、HTTP 插件 v0、Chat UI 壳已落地  
