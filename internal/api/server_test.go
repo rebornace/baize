@@ -1802,7 +1802,7 @@ func TestPatchToolRequireLogin(t *testing.T) {
 	}
 }
 
-func TestPutHTTPPluginUsesIdentitiesNoCapture(t *testing.T) {
+func TestPutHTTPPluginPreservesCaptureAndUsesIdentity(t *testing.T) {
 	var lastAuth string
 	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -1858,8 +1858,8 @@ func TestPutHTTPPluginUsesIdentitiesNoCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Auth.Capture.ToolNameGlob != "" {
-		t.Fatalf("HTTP PUT must clear Capture, got %+v", c.Auth.Capture)
+	if c.Auth.Capture.ToolNameGlob != "*login*" {
+		t.Fatalf("HTTP PUT must persist Capture, got %+v", c.Auth.Capture)
 	}
 
 	ctx := identity.WithConversationID(context.Background(), "conv_http_put")
