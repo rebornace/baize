@@ -114,6 +114,13 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		if len(discovered) == 0 {
 			return store.Connector{}, nil, httpplugin.ErrInvalidPlugin
 		}
+		capture = CaptureDefaults(identity.CaptureConfig{
+			ToolNameGlob:   in.Auth.Capture.ToolNameGlob,
+			TokenJSONPaths: in.Auth.Capture.TokenJSONPaths,
+			LabelJSONPaths: in.Auth.Capture.LabelJSONPaths,
+			HeaderTemplate: in.Auth.Capture.HeaderTemplate,
+			DefaultScheme:  in.Auth.Capture.DefaultScheme,
+		})
 		client = cl
 	case "openapi":
 		if strings.TrimSpace(in.Spec) == "" {
@@ -258,7 +265,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 	in.Store.ReplaceConnectorTools(in.ID, merged)
 	login, approval := listsFromTools(merged)
 	auth := in.Auth
-	if typ == "openapi" {
+	if typ == "openapi" || typ == "http" {
 		auth.Capture = store.CaptureAuth{
 			ToolNameGlob:   capture.ToolNameGlob,
 			TokenJSONPaths: capture.TokenJSONPaths,

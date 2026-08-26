@@ -74,7 +74,7 @@ cd baize
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
+- 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
@@ -415,8 +415,8 @@ go run ./cmd/baize start
   - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
   - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
   - `vault_ref` — 注册时解析 `env:` / `file:` 引用
-- 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）
-- `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI）
+- 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）。插件侧车中名称匹配 `*login*` 的工具同样可捕获。
+- `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI 与 HTTP 插件 Connector）
 - 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 会把 `enabled` / `require_login` 落到目录（SQLite 重启后仍在），并立即在内存 Registry 中注册或卸下该工具。这个开关与对话里登录下游系统（会话身份）、与控制面口令不是同一回事。
 
 ```bash

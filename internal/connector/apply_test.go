@@ -313,15 +313,24 @@ func TestApplyOmitsCaptureUsesLoginGlob(t *testing.T) {
 	}
 }
 
-func TestApplyHTTPIgnoresCapture(t *testing.T) {
+func TestApplyHTTPPersistsAndCaptures(t *testing.T) {
+	var lastAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/healthz":
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		case r.URL.Path == "/v0/tools" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"tools":[{"name":"login","description":"login"}]}`))
+			_, _ = w.Write([]byte(`{"tools":[
+				{"name":"login","description":"login"},
+				{"name":"secure_ping","description":"needs auth"}
+			]}`))
 		case strings.HasSuffix(r.URL.Path, "/invoke"):
-			_, _ = w.Write([]byte(`{"content":{"accessToken":"tok","email":"a@x.com"},"is_error":false}`))
+			if strings.Contains(r.URL.Path, "/tools/login/") {
+				_, _ = w.Write([]byte(`{"content":{"accessToken":"tok-http","email":"a@x.com"},"is_error":false}`))
+				return
+			}
+			lastAuth = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte(`{"content":{"ok":true},"is_error":false}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -334,7 +343,7 @@ func TestApplyHTTPIgnoresCapture(t *testing.T) {
 	if _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "side", Type: "http", BaseURL: srv.URL,
-		RequireLogin: ptr([]string{}),
+		RequireLogin: ptr([]string{"secure_ping"}),
 		Auth: store.ConnectorAuth{
 			Mode: "static",
 			Capture: store.CaptureAuth{
@@ -352,8 +361,8 @@ func TestApplyHTTPIgnoresCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Auth.Capture.ToolNameGlob != "" || len(c.Auth.Capture.TokenJSONPaths) != 0 {
-		t.Fatalf("HTTP connector must clear Capture, got %+v", c.Auth.Capture)
+	if c.Auth.Capture.ToolNameGlob != "*login*" || len(c.Auth.Capture.TokenJSONPaths) == 0 {
+		t.Fatalf("HTTP connector must persist Capture, got %+v", c.Auth.Capture)
 	}
 
 	ctx := identity.WithConversationID(context.Background(), "conv_http")
@@ -361,8 +370,16 @@ func TestApplyHTTPIgnoresCapture(t *testing.T) {
 	if invErr != nil || isErr {
 		t.Fatalf("invoke login: isErr=%v err=%v", isErr, invErr)
 	}
-	if len(ids.List("conv_http")) != 0 {
-		t.Fatalf("HTTP plugin must not capture identities, got %+v", ids.List("conv_http"))
+	if len(ids.List("conv_http")) == 0 {
+		t.Fatal("expected captured identity after plugin login")
+	}
+
+	_, isErr, invErr = reg.Invoke(ctx, "secure_ping", map[string]any{})
+	if invErr != nil || isErr {
+		t.Fatalf("secure_ping: isErr=%v err=%v", isErr, invErr)
+	}
+	if lastAuth != "Bearer tok-http" {
+		t.Fatalf("Authorization=%q want Bearer tok-http", lastAuth)
 	}
 }
 

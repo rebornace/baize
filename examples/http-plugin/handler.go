@@ -65,6 +65,14 @@ func (s *server) handleListTools(w http.ResponseWriter, _ *http.Request) {
 					"required": []string{"title"},
 				},
 			},
+			{
+				"name":        "login",
+				"description": "Demo login; returns accessToken for Baize capture",
+				"input_schema": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{},
+				},
+			},
 		},
 	})
 }
@@ -90,6 +98,15 @@ func (s *server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch name {
+	case "login":
+		writeJSON(w, http.StatusOK, map[string]any{
+			"content": map[string]any{
+				"accessToken": "demo-plugin-token",
+				"email":       "demo@example.com",
+			},
+			"is_error": false,
+		})
+		return
 	case "echo":
 		writeJSON(w, http.StatusOK, map[string]any{
 			"content":  req.Arguments,

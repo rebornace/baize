@@ -19,6 +19,7 @@ type RegisterOpts struct {
 	Auth            store.ConnectorAuth
 	Identities      identity.Store
 	Resolver        authresolve.Resolver
+	Capture         identity.CaptureConfig // ToolNameGlob empty disables capture
 
 	// CallbackURL injection (Phase 2). When all four are usable and the
 	// per-invoke ctx carries a RunID, RegisterWithOpts issues a short-lived
