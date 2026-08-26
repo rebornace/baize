@@ -1,6 +1,6 @@
 # 登录捕获设置 v1 设计规格
 
-> 状态：待用户审查  
+> 状态：已批准（2026-08-26）  
 > 日期：2026-08-26  
 > 前置：`2026-08-23-auth-capture-settings-v0`（OpenAPI Tools 页 capture 表单）、`2026-08-26-http-plugin-login-capture-v0`（HTTP 后端捕获）  
 > 依据：头脑风暴确认「开发阶段一步到位」——实施方不靠 YAML/curl 即可配通 HTTP 侧车登录捕获全流程  
