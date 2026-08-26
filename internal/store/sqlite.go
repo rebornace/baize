@@ -351,6 +351,43 @@ func (s *SQLite) GetConnector(id string) (Connector, error) {
 	return c, nil
 }
 
+func (s *SQLite) DeleteConnector(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM tools WHERE connector_id = ?`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM connectors WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("connector not found")
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	delete(s.connectors, id)
+	for name, t := range s.tools {
+		if t.ConnectorID == id {
+			delete(s.tools, name)
+		}
+	}
+	return nil
+}
+
 func (s *SQLite) ListConnectors() []Connector {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

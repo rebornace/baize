@@ -161,6 +161,7 @@ type Store interface {
 	ListAgents() []Agent
 	UpsertConnector(Connector)
 	GetConnector(id string) (Connector, error)
+	DeleteConnector(id string) error
 	CreateRun(in CreateRunInput) (*Run, error)
 	GetRun(id string) (*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
