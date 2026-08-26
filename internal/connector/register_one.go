@@ -180,19 +180,7 @@ func openapiInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		if usedID != "" && ctx.identities != nil {
 			_ = ctx.identities.Touch(conv, usedID)
 		}
-		if conv != "" && !out.IsError && ctx.identities != nil && identity.MatchToolName(ctx.capture.ToolNameGlob, name) {
-			if h, label, sub, claims, ok := identity.ExtractCredential(ctx.capture, out.Content); ok {
-				_, _ = ctx.identities.Upsert(conv, identity.Identity{
-					Label:             label,
-					Scheme:            ctx.capture.DefaultScheme,
-					Subject:           sub,
-					CredentialHeaders: h,
-					Source:            identity.SourceLoginCapture,
-					ClaimsSummary:      claims,
-					IsDefault:         true,
-				})
-			}
-		}
+		maybeCaptureLogin(conv, ctx.identities, ctx.capture, name, out.Content, out.IsError)
 		return out.Content, out.IsError, nil
 	}
 }
@@ -254,20 +242,22 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 			if usedID != "" && ctx.identities != nil {
 				_ = ctx.identities.Touch(conv, usedID)
 			}
+			maybeCaptureLogin(conv, ctx.identities, ctx.capture, name, out.Content, out.IsError)
 			return out.Content, out.IsError, nil
 		}
-	out, invErr := ctx.client.Invoke(c, name, args, httpplugin.InvokeMeta{
-		RunID:            identity.RunIDFrom(c),
-		AgentID:          identity.AgentIDFrom(c),
-		Headers:          overlay,
-		CallbackEventURL: httpplugin.SignCallbackEventURL(ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c)),
-	})
+		out, invErr := ctx.client.Invoke(c, name, args, httpplugin.InvokeMeta{
+			RunID:            identity.RunIDFrom(c),
+			AgentID:          identity.AgentIDFrom(c),
+			Headers:          overlay,
+			CallbackEventURL: httpplugin.SignCallbackEventURL(ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c)),
+		})
 		if invErr != nil {
 			return nil, true, invErr
 		}
 		if usedID != "" && ctx.identities != nil {
 			_ = ctx.identities.Touch(conv, usedID)
 		}
+		maybeCaptureLogin(conv, ctx.identities, ctx.capture, name, out.Content, out.IsError)
 		return out.Content, out.IsError, nil
 	}
 }
@@ -423,6 +413,13 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	switch typ {
 	case "http":
 		client = httpplugin.NewClient(c.BaseURL)
+		capture = CaptureDefaults(identity.CaptureConfig{
+			ToolNameGlob:   c.Auth.Capture.ToolNameGlob,
+			TokenJSONPaths: c.Auth.Capture.TokenJSONPaths,
+			LabelJSONPaths: c.Auth.Capture.LabelJSONPaths,
+			HeaderTemplate: c.Auth.Capture.HeaderTemplate,
+			DefaultScheme:  c.Auth.Capture.DefaultScheme,
+		})
 	case "mcp":
 		cfg := c.MCP
 		transport := strings.TrimSpace(cfg.Transport)
