@@ -3,7 +3,8 @@
 > 状态：已批准（2026-08-23，延续规划队列）  
 > 日期：2026-08-23  
 > 前置：会话登录门闸、企业执行回调 Tools 扩展区已落地  
-> 依据：`2026-08-15-session-login-tool-gate-design.md` §5.1；HTTP 插件设置页 v0「capture 仍 YAML」
+> 依据：`2026-08-15-session-login-tool-gate-design.md` §5.1；HTTP 插件设置页 v0「capture 仍 YAML」  
+> **后续：** HTTP 插件 capture UI、插件/OpenAPI 页 preserve capture、列表摘要见 `2026-08-26-login-capture-settings-v1-design.md`
 
 ---
 

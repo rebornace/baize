@@ -1,6 +1,6 @@
 # HTTP 插件登录捕获 v0 设计规格
 
-> 状态：待用户审查  
+> 状态：已批准（2026-08-26）  
 > 日期：2026-08-26  
 > 前置：会话身份与 OpenAPI 登录捕获、HTTP 插件会话 Resolver（无捕获）、Tools 设置页 capture 表单已落地  
 > 依据：`2026-08-15-session-login-tool-gate` §8「插件登录捕获列为后续」；头脑风暴锁定「插拔内核更深 → 插件登录捕获 → 复用 Connector `capture` → invoke 闭包镜像 OpenAPI」  
