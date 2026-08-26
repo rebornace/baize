@@ -60,7 +60,7 @@ v1 生产路径已锁定为 **接 MCP 生态**（而非 Runtime 直连业务库�
 - MCP 工具 `extra` 手加、DELETE 工具行（与 `plugin` 相同：仅启停）
 - OpenAPI 登录捕获套在 MCP 上
 - SSE 传输（若 Server 仅 SSE 无 Streamable HTTP，文档说明先用 stdio 或换 Server）
-- `DELETE /v0/connectors/{id}`（与现网一致，本里程碑不新增）
+- ~~`DELETE /v0/connectors/{id}`~~ — **已实现**，见 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md` §2
 - Run 事件 **Webhook**（另里程碑）
 
 ---

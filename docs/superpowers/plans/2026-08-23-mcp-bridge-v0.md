@@ -12,7 +12,7 @@
 
 **全局约束：**
 - 不在 `main` 上改实现：先 `git checkout -b feat/mcp-bridge`
-- 不做内置 DB 驱动、搜索 compose、MCP 市场、Webhook、`DELETE /v0/connectors/{id}`
+- 不做内置 DB 驱动、搜索 compose、MCP 市场、Webhook（`DELETE /v0/connectors/{id}` 已实现，见 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md`）
 - 不修改 `configs/minimal.yaml` 默认（生产 start 不带 MCP）
 - commit 中文 `type(scope): 说明`；PowerShell 不用 bash HEREDOC
 - Go：`$env:GOPROXY='https://goproxy.cn,direct'`；`$env:PATH='C:\Users\Administrator\sdk\go\bin;'+$env:PATH`

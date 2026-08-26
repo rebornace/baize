@@ -16,7 +16,7 @@
 - commit 中文 `type(scope): 说明`
 - Go：`$env:GOPROXY='https://goproxy.cn,direct'`；`$env:PATH='C:\Users\Administrator\sdk\go\bin;'+$env:PATH`
 - UI 后 `npm run build` + `internal/ui/dist/**`
-- 不做 DELETE connector、PDF/Word/WSDL
+- 不做 PDF/Word/WSDL（整删 Connector 已实现，见 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md`）
 
 **实现选定：**
 - Swagger 2：`github.com/getkin/kin-openapi/openapi2conv` → OAS3

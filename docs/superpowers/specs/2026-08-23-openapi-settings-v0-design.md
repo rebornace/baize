@@ -25,7 +25,7 @@
 
 **不做（v0）：**
 
-- `DELETE /v0/connectors/{id}`
+- ~~`DELETE /v0/connectors/{id}`~~ — **已实现**（OpenAPI / HTTP 插件 / MCP 设置页整删 + 二次确认），见 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md` §2
 - `auth.capture` 完整表单（仍 Tools 页 OpenAPI 组头）
 - 在线编辑文档正文
 - 从 URL 拉取远程文档（v1）
