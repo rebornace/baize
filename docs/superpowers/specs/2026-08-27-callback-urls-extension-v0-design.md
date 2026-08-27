@@ -1,6 +1,6 @@
 # callback_urls 扩展 v0 设计规格
 
-> 状态：待用户审查  
+> 状态：已批准（2026-08-27）  
 > 日期：2026-08-27  
 > 前置：`2026-08-26-connector-delete-and-callback-urls-v0`（HTTP 侧车注入 + `plugin-callbacks` 接收端已落地）  
 > 依据：头脑风暴选定方案 1 — MCP + 企业 execution_callback 注入，复用现有接收端与 token  
