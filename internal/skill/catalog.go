@@ -113,16 +113,19 @@ func scanDir(dir, source string, byID map[string]Package) error {
 		pkg.ID = id
 		pkg.Source = source
 		pkg.Dir = filepath.Join(dir, id)
-		wfRaw, wfErr := os.ReadFile(filepath.Join(pkg.Dir, "workflow.yaml"))
+		wfPath := filepath.Join(pkg.Dir, "workflow.yaml")
+		wfRaw, wfErr := os.ReadFile(wfPath)
 		if wfErr == nil {
 			wf, perr := workflow.Parse(wfRaw)
 			if perr != nil {
-				return fmt.Errorf("%s: %w", filepath.Join(pkg.Dir, "workflow.yaml"), perr)
+				return fmt.Errorf("%s: %w", wfPath, perr)
 			}
 			if wf.Name != pkg.ID {
 				log.Printf("skill: warning: %s workflow name=%q != id=%q", pkg.Dir, wf.Name, pkg.ID)
 			}
 			pkg.Workflow = wf
+		} else if !os.IsNotExist(wfErr) {
+			return fmt.Errorf("%s: %w", wfPath, wfErr)
 		}
 		byID[id] = pkg
 	}

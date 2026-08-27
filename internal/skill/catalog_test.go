@@ -213,6 +213,26 @@ func TestLoadCatalogWithoutWorkflowYAML(t *testing.T) {
 	}
 }
 
+func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "broken")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: broken\n---\nb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// workflow.yaml 建成目录：ReadFile 对目录报非 NotExist 错误（Windows/Unix 均稳定）。
+	if err := os.MkdirAll(filepath.Join(dir, "workflow.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
+		t.Fatal("want workflow.yaml read error to fail load")
+	}
+}
+
 func TestLoadRepoTicketTriage(t *testing.T) {
 	builtin := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()
