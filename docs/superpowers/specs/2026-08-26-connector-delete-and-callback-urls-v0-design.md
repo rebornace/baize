@@ -4,6 +4,7 @@
 > 日期：2026-08-26  
 > 前置：HTTP 插件协议客户端、企业执行回调、OpenAPI/插件/MCP 设置页、工具目录 DELETE tool 行已落地  
 > 依据：架构 §4.2「callback_urls 尚未实现」；openapi-settings「不做整 Connector DELETE」；头脑风暴选定 B→A 两阶段  
+> **后续：** MCP / 企业 execution_callback 路径注入见 `2026-08-27-callback-urls-extension-v0-design.md`  
 > 分支建议：`feat/connector-delete-callback-urls`
 
 ---
