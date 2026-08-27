@@ -313,6 +313,8 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
+Skill 包可附 `workflow.yaml` 定义确定性流水线：`{{input.text}}` 取用户输入、`{{<步骤id>.result.x}}` 取上一步结果；审批标 `approve: true`。
+
 ### 数据分析与报表
 
 多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。开箱内置 Skill **`data-analytics`**（`skills/data-analytics`，`minimal.yaml` 默认激活）：在「设置 → Skills」可取消勾选，或由模型调用 `activate_skill`。无 Connector 时仍可用 `create_analysis_page`；注册 OpenAPI 后 Skill 中的 `list_tickets` / `get_ticket` 随目录启用而可见。
