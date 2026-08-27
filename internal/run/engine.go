@@ -17,21 +17,26 @@ import (
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/workflow"
 )
 
 const (
-	EventRunStarted   = "run.started"
-	EventLLMToolCall  = "llm.tool_call"
-	EventToolResult   = "tool.result"
-	EventLLMMessage   = "llm.message"
-	EventLLMError     = "llm.error"
-	EventHITLWaiting  = "hitl.waiting"
-	EventHITLResumed  = "hitl.resumed"
-	EventHITLRejected = "hitl.rejected"
-	EventRunCancelled = "run.cancelled"
+	EventRunStarted     = "run.started"
+	EventLLMToolCall    = "llm.tool_call"
+	EventToolResult     = "tool.result"
+	EventLLMMessage     = "llm.message"
+	EventLLMError       = "llm.error"
+	EventHITLWaiting    = "hitl.waiting"
+	EventHITLResumed    = "hitl.resumed"
+	EventHITLRejected   = "hitl.rejected"
+	EventRunCancelled   = "run.cancelled"
+	EventWorkflowPrefix = "workflow."
 
 	DefaultToolTimeout = 60 * time.Second
 )
+
+// ErrHITLRejected reports that a human rejected the pending tool approval.
+var ErrHITLRejected = errors.New("hitl rejected")
 
 type Engine struct {
 	Store    store.Store
@@ -103,7 +108,7 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 	if skills == nil {
 		skills = ag.Skills
 	}
-	e.beginRunSkills(runID, skills, ag.System)
+	e.beginRunSkills(runID, skills, ag.System, beginRunInput(input))
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)
 	messages := e.buildMessages(sys, runRec.ConversationID, input, opts.UserParts)
@@ -249,6 +254,24 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		return fmt.Errorf("no hitl payload")
 	}
 
+	evs0, err := e.Store.ListEvents(runID)
+	if err != nil {
+		return err
+	}
+	// Cold resume into an in-flight workflow run: reject BEFORE invoking the
+	// pending step — the persisted tree/step state cannot be rebuilt, and
+	// firing side effects from a broken pipeline is worse than stopping.
+	if workflowInterrupted(evs0) {
+		errMsg := "workflow run interrupted by restart; please re-run"
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventLLMError,
+			Data: map[string]any{"error": errMsg},
+		})
+		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", errMsg)
+		e.recordTerminalMessage(runID)
+		return fmt.Errorf("%s", errMsg)
+	}
+
 	if !d.Approve {
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventHITLRejected,
@@ -296,7 +319,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		return err
 	}
 	if e.getRunSkillState(runID) == nil {
-		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System)
+		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(run.Input))
 	}
 	evs, err := e.Store.ListEvents(runID)
 	if err != nil {
@@ -404,14 +427,6 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 				if e.isCancelled(runID) {
 					return context.Canceled
 				}
-				_ = e.Store.AppendEvent(runID, store.Event{
-					Type: EventLLMToolCall,
-					Data: map[string]any{
-						"id":        tc.ID,
-						"name":      tc.Name,
-						"arguments": tc.Arguments,
-					},
-				})
 
 				if tc.Name == skill.ActivateToolName {
 					content, isError := e.handleActivateSkill(runID, tc.Arguments)
@@ -433,66 +448,18 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 						ToolCallID: tc.ID,
 						Content:    string(raw),
 					})
-					continue
-				}
-
-				if e.blockedByLogin(ctx, tc.Name) {
-					content, isError := tool.LoginRequiredContent(), true
-					_ = e.Store.AppendEvent(runID, store.Event{
-						Type: EventToolResult,
-						Data: map[string]any{
-							"tool_call_id": tc.ID,
-							"name":         tc.Name,
-							"content":      identity.RedactSensitive(content),
-							"is_error":     isError,
-						},
-					})
-					raw, _ := json.Marshal(content)
-					messages = append(messages, llm.Message{
-						Role:       llm.RoleTool,
-						ToolCallID: tc.ID,
-						Content:    string(raw),
-					})
-					continue
-				}
-
-				if e.Tools.RequiresApproval(tc.Name) {
-					if err := e.awaitHITL(ctx, runID, tc); err != nil {
-						return err
-					}
-					if e.isCancelled(runID) {
-						return context.Canceled
-					}
-				}
-
-				invokeCtx := identity.WithToolCallID(ctx, tc.ID)
-				toolCtx, toolCancel := context.WithTimeout(invokeCtx, e.toolTimeout())
-				content, isError, invErr := e.Tools.Invoke(toolCtx, tc.Name, tc.Arguments)
-				toolCancel()
-				if invErr != nil {
-					isError = true
-					if content == nil {
-						msg := invErr.Error()
-						if errors.Is(invErr, context.DeadlineExceeded) {
-							msg = fmt.Sprintf("tool timed out after %s", e.toolTimeout())
+					if !isError {
+						if werr := e.maybeRunWorkflow(ctx, runID); werr != errNoWorkflow {
+							return werr
 						}
-						content = map[string]any{"error": msg}
 					}
-				}
-				if ctx.Err() != nil || e.isCancelled(runID) {
-					return context.Canceled
+					continue
 				}
 
-				_ = e.Store.AppendEvent(runID, store.Event{
-					Type: EventToolResult,
-					Data: map[string]any{
-						"tool_call_id": tc.ID,
-						"name":         tc.Name,
-						"content":      identity.RedactSensitive(content),
-						"is_error":     isError,
-					},
-				})
-
+				content, _, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments)
+				if tcErr != nil && errors.Is(tcErr, ErrHITLRejected) {
+					return tcErr
+				}
 				raw, _ := json.Marshal(content)
 				messages = append(messages, llm.Message{
 					Role:       llm.RoleTool,
@@ -546,14 +513,188 @@ func (e *Engine) blockedByLogin(ctx context.Context, name string) bool {
 	return !res.OK || len(res.Headers) == 0
 }
 
+// awaitHITL is the ReAct-path wrapper: shapes the payload from the LLM tool
+// call and delegates to the payload-level kernel.
 func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) error {
+	return e.awaitHITLPayload(ctx, runID,
+		fmt.Sprintf("Approve tool %s?", tc.Name), tc.Name, tc.Arguments)
+}
+
+var errNoWorkflow = errors.New("run has no workflow")
+
+func beginRunInput(input string) map[string]any {
+	return map[string]any{"text": input}
+}
+
+// maybeRunWorkflow switches a run into pipeline mode when the just-activated
+// skill carries a workflow.yaml, executes it to completion, and finalizes the
+// run. It returns errNoWorkflow when no workflow applies.
+func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
+	st := e.getRunSkillState(runID)
+	if st == nil || st.workflowStarted || e.Skills == nil {
+		return errNoWorkflow
+	}
+	var wf *workflow.Workflow
+	for _, id := range st.activated {
+		if pkg, ok := e.Skills.Get(id); ok && pkg.Workflow != nil {
+			wf = pkg.Workflow
+			break
+		}
+	}
+	if wf == nil {
+		return errNoWorkflow
+	}
+
+	e.runMu.Lock()
+	st.workflowStarted = true
+	st.workflowSkill = wf.Name
+	e.runMu.Unlock()
+
+	werr := wf.Run(ctx, st.workflowResults, workflow.ExecHooks{
+		Emit: func(typ string, data map[string]any) error {
+			return e.Store.AppendEvent(runID, store.Event{Type: typ, Data: data})
+		},
+		Gate: func(gctx context.Context, p store.HITLPayload) (bool, error) {
+			if err := e.awaitHITLPayload(gctx, runID, p.Prompt, p.ToolName, p.Arguments); err != nil {
+				if errors.Is(err, ErrHITLRejected) {
+					return false, nil
+				}
+				return false, err
+			}
+			return true, nil
+		},
+		Invoke: func(ictx context.Context, toolName string, stepID string, args map[string]any) (map[string]any, bool, error) {
+			callID := fmt.Sprintf("wf-%s-%s", st.workflowSkill, stepID)
+			return e.invokeTool(ictx, runID, callID, toolName, args)
+		},
+	})
+	if werr != nil {
+		return e.finalizeFailedRun(runID, werr)
+	}
+
+	content := "workflow completed"
+	_ = e.Store.AppendEvent(runID, store.Event{
+		Type: EventLLMMessage,
+		Data: map[string]any{"content": content},
+	})
+	if err := e.Store.UpdateRun(runID, store.StatusSucceeded, content, ""); err != nil {
+		return err
+	}
+	e.recordTerminalMessage(runID)
+	return nil
+}
+
+func (e *Engine) finalizeFailedRun(runID string, cause error) error {
+	errMsg := cause.Error()
+	_ = e.Store.AppendEvent(runID, store.Event{
+		Type: EventLLMError,
+		Data: map[string]any{"error": errMsg},
+	})
+	_ = e.Store.UpdateRun(runID, store.StatusFailed, "", errMsg)
+	e.recordTerminalMessage(runID)
+	return cause
+}
+
+// workflowInterrupted reports whether the event stream shows a workflow run
+// that started but never reached a terminal event (llm.message completion or
+// llm.error failure) — i.e. a cold resume would land mid-pipeline.
+func workflowInterrupted(evs []store.Event) bool {
+	started := false
+	for _, ev := range evs {
+		switch ev.Type {
+		case EventWorkflowPrefix + "started":
+			started = true
+		case "workflow.completed", EventLLMMessage, EventLLMError:
+			started = false
+		}
+	}
+	return started
+}
+
+// invokeTool performs one full tool interaction for a run: pre-call gate
+// (login / approval) and events, then the timeout-bounded Invoke with the same
+// event/data shapes as before. A rejection returns ErrHITLRejected and the run
+// has already been finalized as failed; the caller must stop instead of
+// appending further results. Transient failures inside one interaction keep the
+// last-known return shape so the value/error contract stays uniform.
+func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any) (map[string]any, bool, error) {
+	isError := false
+	content := map[string]any{}
+
+	rejected, rerr := func() (bool, error) {
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventLLMToolCall,
+			Data: map[string]any{"id": callID, "name": name, "arguments": args},
+		})
+
+		if e.blockedByLogin(ctx, name) {
+			content = tool.LoginRequiredContent()
+			isError = true
+			return false, nil
+		}
+
+		if e.Tools.RequiresApproval(name) {
+			if err := e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: name, Arguments: args}); err != nil {
+				if !errors.Is(err, ErrHITLRejected) {
+					if ctx.Err() != nil || e.isCancelled(runID) {
+						return false, context.Canceled
+					}
+					return false, err
+				}
+				return true, nil
+			}
+			if e.isCancelled(runID) {
+				return false, context.Canceled
+			}
+		}
+
+		invokeCtx := identity.WithToolCallID(ctx, callID)
+		toolCtx, cancel := context.WithTimeout(invokeCtx, e.toolTimeout())
+		c, _, ierr := e.Tools.Invoke(toolCtx, name, args)
+		cancel()
+		if ierr != nil {
+			isError = true
+			if c == nil {
+				msg := ierr.Error()
+				if errors.Is(ierr, context.DeadlineExceeded) {
+					msg = fmt.Sprintf("tool timed out after %s", e.toolTimeout())
+				}
+				c = map[string]any{"error": msg}
+			}
+		}
+		content = c
+		return false, nil
+	}()
+	if rejected {
+		return nil, true, ErrHITLRejected
+	}
+	if rerr != nil && (ctx.Err() != nil || e.isCancelled(runID)) {
+		return nil, false, rerr
+	}
+	if ctx.Err() != nil || e.isCancelled(runID) {
+		return nil, false, context.Canceled
+	}
+
+	_ = e.Store.AppendEvent(runID, store.Event{
+		Type: EventToolResult,
+		Data: map[string]any{
+			"tool_call_id": callID,
+			"name":         name,
+			"content":      identity.RedactSensitive(content),
+			"is_error":     isError,
+		},
+	})
+	return content, isError, nil
+}
+
+func (e *Engine) awaitHITLPayload(ctx context.Context, runID, prompt, toolName string, args map[string]any) error {
 	if e.Gate == nil {
 		return fmt.Errorf("approval required but gate is nil")
 	}
 	payload := &store.HITLPayload{
-		Prompt:    fmt.Sprintf("Approve tool %s?", tc.Name),
-		ToolName:  tc.Name,
-		Arguments: tc.Arguments,
+		Prompt:    prompt,
+		ToolName:  toolName,
+		Arguments: args,
 	}
 
 	// Arm the waiter before advertising waiting_human so resume cannot miss it.
@@ -589,7 +730,7 @@ func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) e
 		_ = e.Store.SetHITL(runID, nil)
 		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", "hitl rejected")
 		e.recordTerminalMessage(runID)
-		return fmt.Errorf("hitl rejected")
+		return ErrHITLRejected
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventHITLResumed,

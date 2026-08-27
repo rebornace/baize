@@ -8,9 +8,10 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
-// InvokeFunc invokes one registered tool. Mirrors tool.Registry.Invoke:
-// isErr=true means the invocation ran but reported a tool-level error.
-type InvokeFunc func(ctx context.Context, tool string, args map[string]any) (map[string]any, bool, error)
+// InvokeFunc invokes one registered tool for a workflow step. Mirrors
+// tool.Registry.Invoke: isErr=true means the invocation ran but reported a
+// tool-level error. stepID lets the engine mint a stable per-step call id.
+type InvokeFunc func(ctx context.Context, tool string, stepID string, args map[string]any) (map[string]any, bool, error)
 
 // EmitFunc persists one event; the engine wraps store.AppendEvent.
 type EmitFunc func(typ string, data map[string]any) error
@@ -83,7 +84,7 @@ func (w *Workflow) Run(ctx context.Context, tree map[string]any, h ExecHooks) er
 			return err
 		}
 
-		content, isErr, ierr := h.Invoke(ctx, s.Tool, args)
+		content, isErr, ierr := h.Invoke(ctx, s.Tool, s.ID, args)
 		if ierr != nil || isErr {
 			detail := "tool returned is_error"
 			if ierr != nil {

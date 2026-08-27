@@ -14,6 +14,13 @@ type runSkillState struct {
 	activated       []string
 	defaultNonEmpty bool
 	baseSystem      string
+
+	// workflow pipeline mode: set once when an activated skill carries a
+	// workflow.yaml; workflowResults is the template data tree (input +
+	// "<step_id>.result" nodes).
+	workflowStarted bool
+	workflowSkill   string
+	workflowResults map[string]any
 }
 
 func (e *Engine) ensureRuns() {
@@ -22,7 +29,7 @@ func (e *Engine) ensureRuns() {
 	}
 }
 
-func (e *Engine) beginRunSkills(runID string, defaultSkills []string, baseSystem string) {
+func (e *Engine) beginRunSkills(runID string, defaultSkills []string, baseSystem string, input ...map[string]any) {
 	e.runMu.Lock()
 	defer e.runMu.Unlock()
 	e.ensureRuns()
@@ -30,6 +37,10 @@ func (e *Engine) beginRunSkills(runID string, defaultSkills []string, baseSystem
 	state := &runSkillState{
 		defaultNonEmpty: len(defaultSkills) > 0,
 		baseSystem:      baseSystem,
+		workflowResults: map[string]any{"input": map[string]any{}},
+	}
+	if len(input) > 0 && input[0] != nil {
+		state.workflowResults["input"] = input[0]
 	}
 	if e.Skills != nil {
 		for _, id := range defaultSkills {

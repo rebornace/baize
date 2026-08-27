@@ -34,7 +34,7 @@ func TestRunExecutesLinearlyWithEvents(t *testing.T) {
 			calls = append(calls, typ)
 			return nil
 		},
-		Invoke: func(ctx context.Context, tool string, args map[string]any) (map[string]any, bool, error) {
+		Invoke: func(ctx context.Context, tool, stepID string, args map[string]any) (map[string]any, bool, error) {
 			calls = append(calls, "invoke:"+tool)
 			if tool == "ta" {
 				return map[string]any{"ok": true}, false, nil
@@ -77,7 +77,7 @@ steps:
 	var invokes int
 	hooks := ExecHooks{
 		Emit: func(typ string, d map[string]any) error { return nil },
-		Invoke: func(ctx context.Context, tool string, args map[string]any) (map[string]any, bool, error) {
+		Invoke: func(ctx context.Context, tool, stepID string, args map[string]any) (map[string]any, bool, error) {
 			invokes++
 			return map[string]any{"ok": true}, false, nil
 		},
@@ -119,7 +119,7 @@ steps:
 		Gate: func(ctx context.Context, p store.HITLPayload) (bool, error) {
 			return false, nil
 		},
-		Invoke: func(ctx context.Context, tool string, args map[string]any) (map[string]any, bool, error) {
+		Invoke: func(ctx context.Context, tool, stepID string, args map[string]any) (map[string]any, bool, error) {
 			invokes++
 			return map[string]any{}, false, nil
 		},
@@ -161,7 +161,7 @@ steps:
 			got = p
 			return true, nil
 		},
-		Invoke: func(ctx context.Context, tool string, args map[string]any) (map[string]any, bool, error) {
+		Invoke: func(ctx context.Context, tool, stepID string, args map[string]any) (map[string]any, bool, error) {
 			return map[string]any{"done": true}, false, nil
 		},
 	}
@@ -199,7 +199,7 @@ steps:
 		Gate: func(ctx context.Context, p store.HITLPayload) (bool, error) {
 			return false, context.Canceled
 		},
-		Invoke: func(ctx context.Context, tool string, args map[string]any) (map[string]any, bool, error) {
+		Invoke: func(ctx context.Context, tool, stepID string, args map[string]any) (map[string]any, bool, error) {
 			invokes++
 			return nil, false, nil
 		},
