@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/rebornace/baize/internal/workflow"
 )
 
 const (
@@ -111,6 +113,20 @@ func scanDir(dir, source string, byID map[string]Package) error {
 		pkg.ID = id
 		pkg.Source = source
 		pkg.Dir = filepath.Join(dir, id)
+		wfPath := filepath.Join(pkg.Dir, "workflow.yaml")
+		wfRaw, wfErr := os.ReadFile(wfPath)
+		if wfErr == nil {
+			wf, perr := workflow.Parse(wfRaw)
+			if perr != nil {
+				return fmt.Errorf("%s: %w", wfPath, perr)
+			}
+			if wf.Name != pkg.ID {
+				log.Printf("skill: warning: %s workflow name=%q != id=%q", pkg.Dir, wf.Name, pkg.ID)
+			}
+			pkg.Workflow = wf
+		} else if !os.IsNotExist(wfErr) {
+			return fmt.Errorf("%s: %w", wfPath, wfErr)
+		}
 		byID[id] = pkg
 	}
 	return nil

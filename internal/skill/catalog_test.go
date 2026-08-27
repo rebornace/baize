@@ -146,6 +146,93 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestLoadCatalogReadsWorkflowYAML(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "pipe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"),
+		[]byte("---\nname: pipe\ntools:\n  - t\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"),
+		[]byte("name: pipe\nsteps:\n  - id: a\n    tool: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	if err != nil {
+		t.Fatalf("LoadCatalog: %v", err)
+	}
+	p, ok := cat.Get("pipe")
+	if !ok {
+		t.Fatal("pkg missing")
+	}
+	if p.Workflow == nil || p.Workflow.Name != "pipe" || len(p.Workflow.Steps) != 1 {
+		t.Fatalf("wf=%+v", p.Workflow)
+	}
+}
+
+func TestLoadCatalogInvalidWorkflowFails(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "bad")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: bad\n---\nb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte("name:\nsteps: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
+		t.Fatal("want invalid workflow to fail load")
+	}
+}
+
+func TestLoadCatalogWithoutWorkflowYAML(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "plain"), "plain", "no pipeline", []string{"a"})
+	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("plain")
+	if !ok {
+		t.Fatal("plain skill should be loaded")
+	}
+	if p.Workflow != nil {
+		t.Fatalf("want nil Workflow, got %+v", p.Workflow)
+	}
+}
+
+func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "broken")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: broken\n---\nb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// workflow.yaml 建成目录：ReadFile 对目录报非 NotExist 错误（Windows/Unix 均稳定）。
+	if err := os.MkdirAll(filepath.Join(dir, "workflow.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
+		t.Fatal("want workflow.yaml read error to fail load")
+	}
+}
+
 func TestLoadRepoTicketTriage(t *testing.T) {
 	builtin := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()

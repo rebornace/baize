@@ -379,6 +379,47 @@ body {
   background: var(--hitl-bg);
 }
 
+.workflow-card-header {
+  cursor: default;
+}
+
+.workflow-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0.85rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.workflow-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.workflow-step-id {
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+.workflow-step-status {
+  color: var(--muted, #666);
+}
+
+.workflow-step-running .workflow-step-status {
+  color: var(--accent, #2563eb);
+}
+
+.workflow-step-done .workflow-step-status {
+  color: #15803d;
+}
+
+.workflow-step-failed .workflow-step-status {
+  color: #b91c1c;
+}
+
 .tool-card-header {
   display: flex;
   width: 100%;

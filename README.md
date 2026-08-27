@@ -312,6 +312,8 @@ Built-in Skills use two tiers: `skills/` for core packs (`minimal` scans only th
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 
+Skill packs may include an optional `workflow.yaml` for a deterministic linear pipeline: use `{{input.text}}` for the user input and `{{<step_id>.result.x}}` for a prior step’s output; set `approve: true` on a step to route it through HITL.
+
 ### Data analytics & reports
 
 For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Built-in Skill **`data-analytics`** (`skills/data-analytics`, default in `minimal.yaml`): toggle in Settings → Skills or via `activate_skill`. Works with only `create_analysis_page` before any Connector; `list_tickets` / `get_ticket` appear once those tools are registered.

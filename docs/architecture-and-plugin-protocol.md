@@ -185,6 +185,22 @@ HTTP 插件侧车在 `POST /v0/tools/{name}/invoke` 成功返回后，亦可按 
 - **激活（Run overlay）**：内置工具 `activate_skill` 仅扩大**本 Run** 的激活集与可见工具并集；新 Run 从 Agent 默认 `skills` 重开。可见工具始终与工具目录 `enabled` **求交**，不能启用已停用行。
 - **配置边界**：Skill 不改变 Connector / 工具目录启停、HITL、会话身份语义；上传删除走控制面 API，正文不在线编辑。
 
+### 线性流水线（workflow.yaml）
+
+Skill 包目录内可选 `workflow.yaml`（与 `SKILL.md` 并列）。激活该 Skill 且包内存在合法 workflow 时，Run 进入**线性流水线模式**：按 `steps[]` 顺序调用已注册工具，**不经过 LLM 逐步决策**；全部步骤成功则 Run 直接 `succeeded`（无总结性 `llm.message`）。
+
+| 字段 | 含义 |
+|------|------|
+| `name` | 工作流名（通常与 Skill id 一致） |
+| `steps[].id` | 步骤 id（全局唯一，供模板引用） |
+| `steps[].tool` | Registry 中工具名 |
+| `steps[].args` | 可选；值支持 `{{路径}}` 模板 |
+| `steps[].approve` | 可选 `true` → 该步走既有 HITL 门 |
+
+**模板（v0）：** 仅 `{{dot.path}}`。Run 输入在树中为 `input.text`（用户字符串）；已完成步骤输出为 `<step_id>.result`（工具返回的 content map）。例：`{{input.text}}`、`{{list.result.items}}`。
+
+**与 ReAct 的分工：** 需要条件分支、动态选工具或 LLM 编排的场景**不要**写 workflow，保留 `SKILL.md` 正文 + ReAct；workflow 只覆盖「步骤与参数已确定、仅需顺序执行 + 可选审批」的路径。事件：`workflow.started` / `workflow.step_started` / `workflow.step_completed`（SSE 与 `/events` 同通道）。
+
 ---
 
 ## 6. 开源 / 商业切分（提醒）

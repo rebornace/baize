@@ -27,6 +27,7 @@ import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ToolCard } from '../components/ToolCard'
+import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
 import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
@@ -663,6 +664,12 @@ export function ChatPage() {
                   return (
                     <div key={`live-t-${i}`} className="msg-row tool">
                       <ToolCard block={block} />
+                    </div>
+                  )
+                case 'workflow':
+                  return (
+                    <div key={`live-w-${i}`} className="msg-row tool">
+                      <WorkflowCard block={block} />
                     </div>
                   )
                 case 'user':

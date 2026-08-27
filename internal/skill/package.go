@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/rebornace/baize/internal/workflow"
 )
 
 type Package struct {
@@ -15,6 +17,7 @@ type Package struct {
 	Body        string
 	Source      string // builtin | user
 	Dir         string
+	Workflow    *workflow.Workflow // optional pipeline from workflow.yaml
 }
 
 type frontmatter struct {
