@@ -89,14 +89,29 @@ func ListTools(ctx context.Context, session *mcp.ClientSession) (*mcp.ListToolsR
 	return session.ListTools(ctx, &mcp.ListToolsParams{})
 }
 
-// CallTool invokes a tool with a 30s timeout.
-func CallTool(ctx context.Context, session *mcp.ClientSession, name string, arguments any) (*mcp.CallToolResult, error) {
+// CallToolOpts carries Baize identity and callback metadata for MCP tools/call.
+type CallToolOpts struct {
+	RunID            string
+	AgentID          string
+	CallbackEventURL string
+}
+
+// CallToolWithOpts invokes a tool with optional _meta injection and a 30s timeout.
+func CallToolWithOpts(ctx context.Context, session *mcp.ClientSession, name string, arguments any, opts CallToolOpts) (*mcp.CallToolResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-	return session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      name,
-		Arguments: arguments,
-	})
+
+	meta := BuildCallMeta(opts.RunID, opts.AgentID, opts.CallbackEventURL)
+	params := &mcp.CallToolParams{Name: name, Arguments: arguments}
+	if len(meta) > 0 {
+		params.Meta = meta
+	}
+	return session.CallTool(ctx, params)
+}
+
+// CallTool invokes a tool with a 30s timeout.
+func CallTool(ctx context.Context, session *mcp.ClientSession, name string, arguments any) (*mcp.CallToolResult, error) {
+	return CallToolWithOpts(ctx, session, name, arguments, CallToolOpts{})
 }
 
 // DiscoverTools lists MCP tools and maps them to store.Tool rows.
