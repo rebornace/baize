@@ -87,3 +87,44 @@ func TestPlaceholderRegexOnlyMatchesFullOrPart(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderMultiplePlaceholdersConcatenate(t *testing.T) {
+	tree := tree()
+	tree["input"].(map[string]any)["order"] = "A100"
+	tree["b"] = map[string]any{"result": "user-bob"}
+	got, ok := workflow.RenderArg("订单 {{input.order}} - 用户 {{b.result}}", tree)
+	if !ok || got != "订单 A100 - 用户 user-bob" {
+		t.Fatalf("got=%#v ok=%v", got, ok)
+	}
+	got, ok = workflow.RenderArg("{{fetch.result.summary}}{{fetch.result.count}}", tree)
+	if !ok || got != "fire report3" {
+		t.Fatalf("got=%#v ok=%v", got, ok)
+	}
+}
+
+func TestRenderMultiplePlaceholdersOneMissingFails(t *testing.T) {
+	_, ok := workflow.RenderArg("订单 {{input.order}} - 用户 {{input.nope}}", tree())
+	if ok {
+		t.Fatal("want not-found when second placeholder missing")
+	}
+}
+
+func TestRenderMalformedBraceIsError(t *testing.T) {
+	cases := []string{
+		"{{ a b }}",           // 非法路径字符（空格）
+		"x {{ a b }} y",       // 混入合法文本之间
+		"{{fetch.result.x}{}", // 前段合法后段畸形
+		"{{input.text!}}",     // 含 {{ 但路径含非法字符，正则不命中
+	}
+	for _, in := range cases {
+		if got, ok := workflow.RenderArg(in, tree()); ok {
+			t.Fatalf("%q leaked through as %#v", in, got)
+		}
+	}
+}
+
+func TestRenderNonPathCharsInBracesFails(t *testing.T) {
+	if got, ok := workflow.RenderArg("{{结果.x}}", tree()); ok {
+		t.Fatalf("中文键占位符泄漏: %#v", got)
+	}
+}

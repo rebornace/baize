@@ -8,7 +8,7 @@ import (
 )
 
 // phRe matches {{ path }} placeholders: dot-separated identifiers or numeric
-// indexes. Used only to locate one placeholder; surrounding text is kept.
+// indexes. Used only to locate placeholders; surrounding text is kept.
 var phRe = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.]+?)\s*\}\}`)
 
 // Resolve walks a dot path over the data tree, descending through
@@ -40,31 +40,47 @@ func Resolve(tree map[string]any, path string) (any, bool) {
 // RenderArg renders one scalar argument value. Non-string values pass through
 // unchanged. A string consisting of exactly one placeholder resolves to the
 // referenced value with its native type preserved (bool stays bool); a string
-// mixing placeholders and literal text concatenates resolved values as "%v".
-// Returns ok=false when the placeholder path cannot be resolved. Only the first
-// placeholder is inspected; the execution path uses TryRenderArgs so that
-// unresolved references fail fast instead of rendering partial output.
+// mixing placeholders and literal text concatenates all resolved values as
+// "%v". Returns ok=false when a placeholder path cannot be resolved, or when
+// the string contains "{{" that does not form a resolvable placeholder — no
+// malformed reference is ever passed through. The execution path uses
+// TryRenderArgs so unresolved references fail fast instead of rendering
+// partial output.
 func RenderArg(v any, tree map[string]any) (any, bool) {
 	s, isStr := v.(string)
 	if !isStr {
 		return v, true
 	}
-	loc := phRe.FindStringSubmatchIndex(s)
-	if loc == nil {
-		return v, true
-	}
-	expr := s[loc[2]:loc[3]]
-	val, found := Resolve(tree, expr)
-	if !found {
-		return nil, false
-	}
-	if loc[0] == 0 && loc[1] == len(s) {
+	locs := phRe.FindAllStringSubmatchIndex(s, -1)
+	if len(locs) == 1 && locs[0][0] == 0 && locs[0][1] == len(s) {
+		val, found := Resolve(tree, s[locs[0][2]:locs[0][3]])
+		if !found {
+			return nil, false
+		}
 		return val, true // 整值占位：保原生类型
 	}
 	var b strings.Builder
-	b.WriteString(s[:loc[0]])
-	fmt.Fprintf(&b, "%v", val)
-	b.WriteString(s[loc[1]:])
+	last := 0
+	for _, loc := range locs {
+		if strings.Contains(s[last:loc[0]], "{{") {
+			return nil, false // 未匹配的 "{{" 混在字面文本里：fail-fast
+		}
+		val, found := Resolve(tree, s[loc[2]:loc[3]])
+		if !found {
+			return nil, false
+		}
+		b.WriteString(s[last:loc[0]])
+		fmt.Fprintf(&b, "%v", val)
+		last = loc[1]
+	}
+	tail := s[last:]
+	if strings.Contains(tail, "{{") {
+		return nil, false
+	}
+	if last == 0 {
+		return s, true // 无占位符且无残留 "{{"
+	}
+	b.WriteString(tail)
 	return b.String(), true
 }
 
