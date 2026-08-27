@@ -42,11 +42,11 @@ func TestRegisterWithOptsResolveAndCapture(t *testing.T) {
 	reg := tool.NewRegistry()
 	envAuth := "Bearer ENV_TOKEN"
 	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
-		ID:       "auth-sample",
-		Type:     "openapi",
-		SpecPath: spec,
-		BaseURL:  srv.URL,
-		Headers:  map[string]string{"Authorization": envAuth},
+		ID:         "auth-sample",
+		Type:       "openapi",
+		SpecPath:   spec,
+		BaseURL:    srv.URL,
+		Headers:    map[string]string{"Authorization": envAuth},
 		Identities: mem,
 		Resolver:   authresolve.OpenAPISecurityResolver{},
 		Capture: identity.CaptureConfig{
@@ -349,7 +349,7 @@ func TestRegisterPassthroughUsesContextHeaders(t *testing.T) {
 	reg := tool.NewRegistry()
 	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
 		ID:         "c",
-		SpecPath:    spec,
+		SpecPath:   spec,
 		BaseURL:    srv.URL,
 		Identities: identity.NewMemoryStore(),
 		Resolver:   authresolve.OpenAPISecurityResolver{},
@@ -382,10 +382,10 @@ func TestRegisterPassthroughNoContextHeadersSendsNone(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
-		ID:         "c2",
-		SpecPath:   spec,
-		BaseURL:    srv.URL,
-		AuthMode:   "passthrough",
+		ID:       "c2",
+		SpecPath: spec,
+		BaseURL:  srv.URL,
+		AuthMode: "passthrough",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -410,10 +410,10 @@ func TestRegisterWithOptsPersistsAuthShape(t *testing.T) {
 		},
 	}
 	_, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
-		ID:      "persist-c",
+		ID:       "persist-c",
 		SpecPath: spec,
-		BaseURL: "http://example.invalid",
-		Auth:    authShape,
+		BaseURL:  "http://example.invalid",
+		Auth:     authShape,
 	})
 	if err != nil {
 		t.Fatal(err)

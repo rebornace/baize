@@ -134,12 +134,12 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			if conv != "" && reg.RequiresLogin(name) && (!resOK || len(overlay) == 0) {
 				return tool.LoginRequiredContent(), true, nil
 			}
-		out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
-			RunID:            identity.RunIDFrom(ctx),
-			AgentID:          identity.AgentIDFrom(ctx),
-			Headers:          overlay,
-			CallbackEventURL: buildCallbackEventURL(opts, identity.RunIDFrom(ctx)),
-		})
+			out, invErr := client.Invoke(ctx, name, args, InvokeMeta{
+				RunID:            identity.RunIDFrom(ctx),
+				AgentID:          identity.AgentIDFrom(ctx),
+				Headers:          overlay,
+				CallbackEventURL: buildCallbackEventURL(opts, identity.RunIDFrom(ctx)),
+			})
 			if invErr != nil {
 				return nil, true, invErr
 			}

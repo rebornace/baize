@@ -14,11 +14,11 @@ import (
 
 func TestClientInvoke(t *testing.T) {
 	var got struct {
-		Tool            string         `json:"tool"`
-		Arguments       map[string]any `json:"arguments"`
-		RunID           string         `json:"run_id"`
-		AgentID         string         `json:"agent_id"`
-		IdempotencyKey  string         `json:"idempotency_key"`
+		Tool           string         `json:"tool"`
+		Arguments      map[string]any `json:"arguments"`
+		RunID          string         `json:"run_id"`
+		AgentID        string         `json:"agent_id"`
+		IdempotencyKey string         `json:"idempotency_key"`
 	}
 	var protocol, runHdr, authHdr string
 
@@ -31,7 +31,7 @@ func TestClientInvoke(t *testing.T) {
 			t.Errorf("unmarshal: %v", err)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"content": map[string]any{"echo": true},
+			"content":  map[string]any{"echo": true},
 			"is_error": false,
 		})
 	}))

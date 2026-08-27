@@ -18,14 +18,14 @@ type Config struct {
 		Enabled bool `yaml:"enabled"`
 	} `yaml:"ui"`
 	LLM struct {
-		Provider         string `yaml:"provider"`
-		BaseURL          string `yaml:"base_url"`
-		Model            string `yaml:"model"`
-		APIKeyEnv        string `yaml:"api_key_env"` // 默认 BAIZE_API_KEY
-		DisableThinking  bool   `yaml:"disable_thinking"` // DeepSeek V4：关闭 thinking 省 token
+		Provider        string `yaml:"provider"`
+		BaseURL         string `yaml:"base_url"`
+		Model           string `yaml:"model"`
+		APIKeyEnv       string `yaml:"api_key_env"`      // 默认 BAIZE_API_KEY
+		DisableThinking bool   `yaml:"disable_thinking"` // DeepSeek V4：关闭 thinking 省 token
 		// SupportsVision declares whether the backing model accepts image parts.
 		// Defaults to false; enable for vision-capable OpenAI-compatible models.
-		SupportsVision   bool   `yaml:"supports_vision"`
+		SupportsVision bool `yaml:"supports_vision"`
 	} `yaml:"llm"`
 	Skills struct {
 		BuiltinDir  string   `yaml:"builtin_dir"`
@@ -46,9 +46,9 @@ type Config struct {
 		RequireApproval         []string `yaml:"require_approval"`
 		RequireApprovalMutating bool     `yaml:"require_approval_mutating"`
 		RequireLogin            []string `yaml:"require_login"`
-		Auth struct {
-			Mode        string `yaml:"mode"`
-			Static      struct {
+		Auth                    struct {
+			Mode   string `yaml:"mode"`
+			Static struct {
 				Headers map[string]string `yaml:"headers"`
 			} `yaml:"static"`
 			Passthrough struct {

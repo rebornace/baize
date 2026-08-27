@@ -61,10 +61,10 @@ func TestPostRunWebhookNotEchoedOnGetRun(t *testing.T) {
 	srv.Store.UpsertAgent(store.Agent{ID: "a1", System: "sys"})
 
 	postReq := httptest.NewRequest(http.MethodPost, "/v0/runs", jsonBody(t, map[string]any{
-		"agent_id":         "a1",
-		"input":            "hi",
-		"webhook_url":      "https://secret.example/hook",
-		"webhook_headers":  map[string]string{"X-Test": "1"},
+		"agent_id":        "a1",
+		"input":           "hi",
+		"webhook_url":     "https://secret.example/hook",
+		"webhook_headers": map[string]string{"X-Test": "1"},
 	}))
 	postRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(postRR, postReq)

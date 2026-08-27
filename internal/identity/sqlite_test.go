@@ -248,10 +248,10 @@ func TestSQLiteStoreClearCaptured(t *testing.T) {
 	s := newSQLiteStore(t)
 	now := time.Now().UTC()
 	if _, err := s.Upsert("conv1", identity.Identity{
-		Label:   "env",
-		Scheme:  "bearer",
-		Source:  identity.SourceEnv,
-		Subject: "env",
+		Label:         "env",
+		Scheme:        "bearer",
+		Source:        identity.SourceEnv,
+		Subject:       "env",
 		ClaimsSummary: map[string]any{"k": "v"},
 	}); err != nil {
 		t.Fatal(err)

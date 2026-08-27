@@ -26,10 +26,10 @@ type RegisterOpts struct {
 	// token via CallbackSigner and advertises
 	//   {CallbackPublicBase}/v0/runs/{runID}/plugin-callbacks?token={token}
 	// as context.callback_urls.event. Any missing piece => omit callback_urls.
-	CallbackSigner    CallbackSigner
-	CallbackSecret    []byte
+	CallbackSigner     CallbackSigner
+	CallbackSecret     []byte
 	CallbackPublicBase string
-	CallbackTTL       time.Duration
+	CallbackTTL        time.Duration
 }
 
 // CallbackSigner issues a short-lived HMAC token bound to runID. It mirrors

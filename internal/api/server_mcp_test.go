@@ -90,10 +90,10 @@ func TestPutMCPStdioConnectorRegistersTools(t *testing.T) {
 	}
 
 	var put struct {
-		ID    string      `json:"id"`
-		Type  string      `json:"type"`
+		ID    string          `json:"id"`
+		Type  string          `json:"type"`
 		MCP   store.MCPConfig `json:"mcp"`
-		Tools []tool.Info `json:"tools"`
+		Tools []tool.Info     `json:"tools"`
 	}
 	if err := json.NewDecoder(strings.NewReader(putBody)).Decode(&put); err != nil {
 		t.Fatal(err)
@@ -134,8 +134,8 @@ func TestPutMCPStdioConnectorRegistersTools(t *testing.T) {
 		t.Fatalf("GET missing env ref shape: %s", getBody)
 	}
 	var got struct {
-		Type string          `json:"type"`
-		MCP  store.MCPConfig `json:"mcp"`
+		Type string              `json:"type"`
+		MCP  store.MCPConfig     `json:"mcp"`
 		Auth store.ConnectorAuth `json:"auth"`
 	}
 	if err := json.NewDecoder(strings.NewReader(getBody)).Decode(&got); err != nil {

@@ -36,7 +36,7 @@ func TestCatalogPatchPreservesMutatingHITL(t *testing.T) {
 			Mode: "static",
 		},
 		RequireApprovalMutating: true,
-		RequireLogin:           &emptyLogin,
+		RequireLogin:            &emptyLogin,
 	}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

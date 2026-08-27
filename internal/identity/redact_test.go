@@ -8,7 +8,7 @@ import (
 
 func TestRedactSensitiveNestedTokens(t *testing.T) {
 	in := map[string]any{
-		"email": "a@x.com",
+		"email":       "a@x.com",
 		"accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.sig",
 		"data": map[string]any{
 			"token": "secret-jwt",

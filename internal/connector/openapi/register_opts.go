@@ -13,11 +13,11 @@ type RegisterOpts struct {
 	SpecPath                string
 	BaseURL                 string
 	RequireApproval         []string
-	RequireApprovalMutating bool // if true, all non-GET/HEAD/OPTIONS tools require HITL
-	RequireLogin            []string               // tool names that require session login in conversation
+	RequireApprovalMutating bool     // if true, all non-GET/HEAD/OPTIONS tools require HITL
+	RequireLogin            []string // tool names that require session login in conversation
 	Headers                 map[string]string
-	AuthMode                string // "passthrough" → use ctx passthrough headers as DefaultHeaders
-	Auth                    store.ConnectorAuth // stored on Connector (mode + references, not secrets)
+	AuthMode                string                 // "passthrough" → use ctx passthrough headers as DefaultHeaders
+	Auth                    store.ConnectorAuth    // stored on Connector (mode + references, not secrets)
 	Identities              identity.Store         // nil → same as Headers-only behavior
 	Resolver                authresolve.Resolver   // nil → use Headers only
 	Capture                 identity.CaptureConfig // ToolNameGlob empty disables capture

@@ -198,10 +198,10 @@ paths:
 
 	req := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
 		jsonBody(t, map[string]any{
-			"type":              "openapi",
-			"spec":              specPath,
-			"base_url":          "http://127.0.0.1:18080",
-			"require_approval":  []string{"create_ticket"},
+			"type":             "openapi",
+			"spec":             specPath,
+			"base_url":         "http://127.0.0.1:18080",
+			"require_approval": []string{"create_ticket"},
 		}))
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
@@ -561,12 +561,12 @@ paths:
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		ID               string      `json:"id"`
-		Type             string      `json:"type"`
-		Spec             string      `json:"spec"`
-		BaseURL          string      `json:"base_url"`
-		RequireApproval  []string    `json:"require_approval"`
-		Tools            []tool.Info `json:"tools"`
+		ID              string      `json:"id"`
+		Type            string      `json:"type"`
+		Spec            string      `json:"spec"`
+		BaseURL         string      `json:"base_url"`
+		RequireApproval []string    `json:"require_approval"`
+		Tools           []tool.Info `json:"tools"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatal(err)

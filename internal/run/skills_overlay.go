@@ -209,7 +209,7 @@ func (e *Engine) handleActivateSkill(runID string, args map[string]any) (map[str
 
 	return map[string]any{
 		"activated":       append([]string(nil), st.activated...),
-		"added_tools":       added,
+		"added_tools":     added,
 		"available_tools": available,
 	}, false
 }

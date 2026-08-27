@@ -14,7 +14,7 @@ func TestRegistryListAndConnectorReplace(t *testing.T) {
 		return map[string]any{}, false, nil
 	}
 	r.RegisterMeta(tool.Meta{
-		Spec: llm.ToolSpec{Name: "create_ticket", Description: "c"},
+		Spec:        llm.ToolSpec{Name: "create_ticket", Description: "c"},
 		ConnectorID: "ticket", OperationID: "create_ticket",
 		Method: "POST", Path: "/tickets",
 	}, nop, true)
@@ -86,7 +86,7 @@ func TestRegistrySetDescription(t *testing.T) {
 		return map[string]any{}, false, nil
 	}
 	r.RegisterMeta(tool.Meta{
-		Spec: llm.ToolSpec{Name: "create_ticket", Description: "old"},
+		Spec:        llm.ToolSpec{Name: "create_ticket", Description: "old"},
 		ConnectorID: "ticket", Method: "POST", Path: "/tickets",
 	}, nop, true)
 	if err := r.SetDescription("create_ticket", "new"); err != nil {

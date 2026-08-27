@@ -116,7 +116,7 @@ type openAIThinking struct {
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    any             `json:"content,omitempty"` // string or []openAIContentPart
+	Content    any              `json:"content,omitempty"` // string or []openAIContentPart
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 }

@@ -104,8 +104,8 @@ func TestDispatcherPerRunURLOverride(t *testing.T) {
 	d.Attach(hub)
 
 	run, err := st.CreateRun(store.CreateRunInput{
-		AgentID: "a1",
-		Input:   "hi",
+		AgentID:       "a1",
+		Input:         "hi",
 		WebhookConfig: &store.WebhookConfig{URL: perRunSrv.URL},
 	})
 	if err != nil {

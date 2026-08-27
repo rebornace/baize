@@ -590,4 +590,3 @@ func TestCatalogPostExtraSetsTitleAndCustom(t *testing.T) {
 		t.Fatalf("extra=%+v ok=%v", ex, ok)
 	}
 }
-

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -14,7 +15,6 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var mcpPool = &mcpbridge.SessionPool{}

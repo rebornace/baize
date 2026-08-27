@@ -60,12 +60,12 @@ func TestRegisterInjectsCallbackEventURL(t *testing.T) {
 	defer srv.Close()
 	publicBase := "https://runtime.example/"
 	reg := registerWithCallback(t, srv, httpplugin.RegisterOpts{
-		ID:                "side",
-		BaseURL:           srv.URL,
-		CallbackSigner:    httpplugin.CallbackSigner(plugincallback.Issue),
-		CallbackSecret:    []byte("s3cret"),
+		ID:                 "side",
+		BaseURL:            srv.URL,
+		CallbackSigner:     httpplugin.CallbackSigner(plugincallback.Issue),
+		CallbackSecret:     []byte("s3cret"),
 		CallbackPublicBase: publicBase, // trailing slash on purpose
-		CallbackTTL:       30 * time.Minute,
+		CallbackTTL:        30 * time.Minute,
 	})
 	ctx := identity.WithRunID(context.Background(), "run_42")
 	if _, isErr, err := reg.Invoke(ctx, "echo", nil); err != nil || isErr {
@@ -90,10 +90,10 @@ func TestRegisterOmitsCallbackURLWithoutRunID(t *testing.T) {
 	srv, gotBody := stubSidecar(t)
 	defer srv.Close()
 	reg := registerWithCallback(t, srv, httpplugin.RegisterOpts{
-		ID:                "side",
-		BaseURL:           srv.URL,
-		CallbackSigner:    httpplugin.CallbackSigner(plugincallback.Issue),
-		CallbackSecret:    []byte("s3cret"),
+		ID:                 "side",
+		BaseURL:            srv.URL,
+		CallbackSigner:     httpplugin.CallbackSigner(plugincallback.Issue),
+		CallbackSecret:     []byte("s3cret"),
 		CallbackPublicBase: "https://runtime.example",
 	})
 	// no WithRunID
@@ -118,14 +118,14 @@ func TestRegisterOmitsCallbackURLWithoutSignerOrSecretOrPublicBase(t *testing.T)
 			CallbackPublicBase: "https://runtime.example",
 		}},
 		{"no secret", httpplugin.RegisterOpts{
-			ID: "side",
+			ID:                 "side",
 			CallbackSigner:     httpplugin.CallbackSigner(plugincallback.Issue),
 			CallbackPublicBase: "https://runtime.example",
 		}},
 		{"no publicbase", httpplugin.RegisterOpts{
 			ID:             "side",
-			CallbackSigner:  httpplugin.CallbackSigner(plugincallback.Issue),
-			CallbackSecret:  []byte("s3cret"),
+			CallbackSigner: httpplugin.CallbackSigner(plugincallback.Issue),
+			CallbackSecret: []byte("s3cret"),
 		}},
 	}
 	for _, tc := range cases {
@@ -152,10 +152,10 @@ func TestRegisterCallbackURLTokenVerifies(t *testing.T) {
 	defer srv.Close()
 	const secret = "topsecret"
 	reg := registerWithCallback(t, srv, httpplugin.RegisterOpts{
-		ID:                "side",
-		BaseURL:           srv.URL,
-		CallbackSigner:    httpplugin.CallbackSigner(plugincallback.Issue),
-		CallbackSecret:    []byte(secret),
+		ID:                 "side",
+		BaseURL:            srv.URL,
+		CallbackSigner:     httpplugin.CallbackSigner(plugincallback.Issue),
+		CallbackSecret:     []byte(secret),
 		CallbackPublicBase: "https://runtime.example",
 	})
 	ctx := identity.WithRunID(context.Background(), "run_99")

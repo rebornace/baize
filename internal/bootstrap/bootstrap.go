@@ -424,8 +424,8 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 				TokenJSONPaths: cfg.Connector.Auth.Capture.TokenJSONPaths,
 				LabelJSONPaths: cfg.Connector.Auth.Capture.LabelJSONPaths,
 				HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
-			DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
-		},
+				DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
+			},
 		},
 		CallbackSigner:     cb.Signer,
 		CallbackSecret:     cb.Secret,
@@ -447,22 +447,22 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			continue
 		}
 		_, _, err := connector.Apply(connector.ApplyInput{
-			Store:           st,
-			Registry:        reg,
-			Identities:      identities,
-			ID:              c.ID,
-			Type:            c.Type,
-			Spec:            c.Spec,
+			Store:                st,
+			Registry:             reg,
+			Identities:           identities,
+			ID:                   c.ID,
+			Type:                 c.Type,
+			Spec:                 c.Spec,
 			BaseURL:              c.BaseURL,
 			ExecutionCallbackURL: c.ExecutionCallbackURL,
 			Auth:                 c.Auth,
-			MCP:             c.MCP,
-			RequireApproval: c.RequireApproval,
-			RequireLogin:    nil, // preserve persisted per-tool require_login
-			CallbackSigner:     cb.Signer,
-			CallbackSecret:     cb.Secret,
-			CallbackPublicBase: cb.PublicBase,
-			CallbackTTL:        cb.TTL,
+			MCP:                  c.MCP,
+			RequireApproval:      c.RequireApproval,
+			RequireLogin:         nil, // preserve persisted per-tool require_login
+			CallbackSigner:       cb.Signer,
+			CallbackSecret:       cb.Secret,
+			CallbackPublicBase:   cb.PublicBase,
+			CallbackTTL:          cb.TTL,
 		})
 		if err != nil {
 			log.Printf("loadStoredConnectors: %s: %v", c.ID, err)
