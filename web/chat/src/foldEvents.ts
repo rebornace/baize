@@ -1,5 +1,7 @@
 import type { Event } from './api'
 
+export type WorkflowStepStatus = 'pending' | 'running' | 'done' | 'failed'
+
 export type ChatBlock =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
@@ -13,8 +15,15 @@ export type ChatBlock =
       isError?: boolean
       runId: string
     }
+  | {
+      kind: 'workflow'
+      skill: string
+      steps: { id: string; status: WorkflowStepStatus }[]
+      runId: string
+    }
 
 type ToolBlock = Extract<ChatBlock, { kind: 'tool' }>
+type WorkflowBlock = Extract<ChatBlock, { kind: 'workflow' }>
 
 function isUnfinished(status: ToolBlock['status']): boolean {
   switch (status) {
@@ -60,6 +69,29 @@ function hitlToolName(data: Record<string, unknown> | undefined): string | undef
   if (data?.tool_name != null) return String(data.tool_name)
   if (data?.name != null) return String(data.name)
   return undefined
+}
+
+function findLastWorkflow(blocks: ChatBlock[]): WorkflowBlock | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'workflow') return b
+  }
+  return undefined
+}
+
+function workflowStepIds(data: Record<string, unknown> | undefined): string[] {
+  const raw = data?.steps
+  if (!Array.isArray(raw)) return []
+  return raw.map((id) => String(id))
+}
+
+function setWorkflowStepStatus(
+  block: WorkflowBlock,
+  stepId: string,
+  status: WorkflowStepStatus,
+): void {
+  const step = block.steps.find((s) => s.id === stepId)
+  if (step) step.status = status
 }
 
 export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
@@ -143,6 +175,29 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
       }
       case 'llm.error': {
         blocks.push({ kind: 'system', text: String(data?.error ?? '未知错误') })
+        break
+      }
+      case 'workflow.started': {
+        blocks.push({
+          kind: 'workflow',
+          skill: String(data?.skill ?? 'workflow'),
+          steps: workflowStepIds(data).map((id) => ({ id, status: 'pending' as const })),
+          runId,
+        })
+        break
+      }
+      case 'workflow.step_started': {
+        const block = findLastWorkflow(blocks)
+        const stepId = String(data?.step ?? '')
+        if (block && stepId) setWorkflowStepStatus(block, stepId, 'running')
+        break
+      }
+      case 'workflow.step_completed': {
+        const block = findLastWorkflow(blocks)
+        const stepId = String(data?.step ?? '')
+        if (block && stepId) {
+          setWorkflowStepStatus(block, stepId, data?.is_error ? 'failed' : 'done')
+        }
         break
       }
       default:

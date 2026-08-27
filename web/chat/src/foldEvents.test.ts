@@ -128,6 +128,47 @@ describe('foldEvents', () => {
     ])
   })
 
+  it('folds workflow events into a progress block', () => {
+    let blocks = foldEvents('run_wf', [
+      ev('workflow.started', { skill: 'triage', steps: ['fetch', 'reply'] }),
+    ])
+    expect(blocks.at(-1)).toEqual({
+      kind: 'workflow',
+      skill: 'triage',
+      steps: [
+        { id: 'fetch', status: 'pending' },
+        { id: 'reply', status: 'pending' },
+      ],
+      runId: 'run_wf',
+    })
+
+    blocks = foldEvents('run_wf', [
+      ev('workflow.started', { skill: 'triage', steps: ['fetch', 'reply'] }),
+      ev('workflow.step_started', { step: 'fetch', tool: 'search_tickets' }),
+      ev('workflow.step_completed', { step: 'fetch', is_error: false }),
+      ev('workflow.step_started', { step: 'reply', tool: 'reply_ticket' }),
+    ])
+    const wf = blocks.at(-1)
+    expect(wf?.kind).toBe('workflow')
+    if (wf?.kind === 'workflow') {
+      expect(wf.steps[0].status).toBe('done')
+      expect(wf.steps[1].status).toBe('running')
+    }
+  })
+
+  it('marks workflow step failed when step_completed has is_error', () => {
+    const blocks = foldEvents('run_wf_fail', [
+      ev('workflow.started', { skill: 'triage', steps: ['fetch'] }),
+      ev('workflow.step_started', { step: 'fetch', tool: 'search_tickets' }),
+      ev('workflow.step_completed', { step: 'fetch', is_error: true }),
+    ])
+    const wf = blocks.at(-1)
+    expect(wf?.kind).toBe('workflow')
+    if (wf?.kind === 'workflow') {
+      expect(wf.steps[0].status).toBe('failed')
+    }
+  })
+
   it('matches tool.result to the topmost unfinished same-name tool', () => {
     const events: Event[] = [
       ev('llm.tool_call', { name: 'echo', arguments: { n: 1 } }),
