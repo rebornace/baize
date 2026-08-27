@@ -183,7 +183,7 @@ Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`ty
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
 
-Set `runtime.public_base_url` (Runtime root URL reachable by the sidecar) to inject a short-lived signed `callback_urls.event` on HTTP plugin invoke; the sidecar may POST notes/progress into the Run event stream (`plugin.callback`). If unset, nothing is injected. See architecture doc §4.2.
+Set `runtime.public_base_url` (Runtime root URL reachable by the sidecar) to inject a short-lived signed `callback_urls.event` on HTTP plugin invoke; the sidecar may POST notes/progress into the Run event stream (`plugin.callback`). MCP `tools/call` and enterprise execution callbacks receive the same `callback_urls.event` at invoke time for async Run event posts. If unset, nothing is injected. See architecture doc §4.2.
 
 ### Enterprise execution callback (§4.3)
 

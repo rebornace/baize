@@ -184,7 +184,7 @@ go run ./examples/http-plugin/cmd/http-plugin
 
 HITL 仍使用 `require_approval`。试用 OpenAPI Connector 请用 `baize demo`。
 
-配置 `runtime.public_base_url`（侧车可达的 Runtime 根地址）后，HTTP 插件 invoke 会注入短期签名的 `callback_urls.event`；侧车可回投进度/备注到 Run 事件流（`plugin.callback`）。未配置则不注入。详见架构文档 §4.2。
+配置 `runtime.public_base_url`（侧车可达的 Runtime 根地址）后，HTTP 插件 invoke 会注入短期签名的 `callback_urls.event`；侧车可回投进度/备注到 Run 事件流（`plugin.callback`）。MCP `tools/call` 与企业执行回调在 invoke 时亦会收到同一 `callback_urls.event`，用于异步回投 Run 事件。未配置则不注入。详见架构文档 §4.2。
 
 ### 企业执行回调（§4.3）
 

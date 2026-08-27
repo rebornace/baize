@@ -126,7 +126,7 @@ POST /v0/tools/{tool_name}/invoke      → ToolResult
 { "content": { }, "is_error": false }
 ```
 
-Runtime 已实现该协议的客户端。当配置了 `runtime.public_base_url`（及 HMAC 密钥）且 invoke 带 `run_id` 时，会注入短期签名的 `callback_urls.event`；侧车可 `POST` 该 URL 写入 Run 事件流（类型 `plugin.callback`）。未配置 `public_base_url` 则不注入。详见规格 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md`。
+Runtime 已实现该协议的客户端。当配置了 `runtime.public_base_url`（及 HMAC 密钥）且 invoke 带 `run_id` 时，会注入短期签名的 `callback_urls.event`；侧车可 `POST` 该 URL 写入 Run 事件流（类型 `plugin.callback`）。未配置 `public_base_url` 则不注入。MCP `tools/call` 通过 `_meta.io.baize/callback_urls` 注入同一 URL 与 token；企业 execution_callback POST body 的 `callback_urls` 亦使用同一签发逻辑。详见规格 `docs/superpowers/specs/2026-08-26-connector-delete-and-callback-urls-v0-design.md` 与 `docs/superpowers/specs/2026-08-27-callback-urls-extension-v0-design.md`。
 
 ### 4.3 企业执行回调（补充路径，v0 已实现）
 
@@ -135,10 +135,16 @@ Runtime 作为客户端调用企业提供的 endpoint（注册在 Connector 配�
 ```http
 POST {enterprise_callback_url}
 X-Baize-Protocol: v0
-{ "tool": "approve_payment", "arguments": { }, "run_id": "run_...", "idempotency_key": "..." }
+{
+  "tool": "approve_payment",
+  "arguments": { },
+  "run_id": "run_...",
+  "idempotency_key": "...",
+  "callback_urls": { "event": "https://runtime/.../v0/runs/{run_id}/plugin-callbacks?token=..." }
+}
 ```
 
-与侧车 `/invoke` 语义对齐；企业无需实现 `/v0/tools` 发现（工具清单由配置或 OpenAPI 提供）。
+与侧车 `/invoke` 语义对齐；企业无需实现 `/v0/tools` 发现（工具清单由配置或 OpenAPI 提供）。`callback_urls.event` 为可选字段：仅当 invoke 带 `run_id` 且 Runtime 配置了 `public_base_url` 时注入。
 
 ### 4.4 内建 OpenAPI Connector
 

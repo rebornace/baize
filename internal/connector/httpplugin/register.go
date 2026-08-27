@@ -213,16 +213,5 @@ func buildCallbackEventURL(opts RegisterOpts, runID string) string {
 // invoker) that do not carry a full RegisterOpts. Returns "" when any piece
 // is missing or signing fails, so callers can fail open.
 func SignCallbackEventURL(signer CallbackSigner, secret []byte, publicBase string, ttl time.Duration, runID string) string {
-	if runID == "" || signer == nil || len(secret) == 0 || strings.TrimSpace(publicBase) == "" {
-		return ""
-	}
-	if ttl <= 0 {
-		ttl = defaultCallbackTTL
-	}
-	token, _, err := signer(secret, runID, ttl)
-	if err != nil {
-		return ""
-	}
-	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
-	return plugincallback.FormatTokenURL(base, runID, token)
+	return plugincallback.EventURL(plugincallback.Signer(signer), secret, publicBase, ttl, runID)
 }

@@ -24,10 +24,11 @@ func NewClient(url string) *Client {
 }
 
 type InvokeMeta struct {
-	RunID          string
-	AgentID        string
-	IdempotencyKey string
-	Headers        map[string]string
+	RunID            string
+	AgentID          string
+	IdempotencyKey   string
+	Headers          map[string]string
+	CallbackEventURL string
 }
 
 type InvokeResult struct {
@@ -40,11 +41,16 @@ func (c *Client) Invoke(ctx context.Context, tool string, args map[string]any, m
 		args = map[string]any{}
 	}
 	payload := map[string]any{
-		"tool":             tool,
-		"arguments":        args,
-		"run_id":           meta.RunID,
-		"agent_id":         meta.AgentID,
-		"idempotency_key":  meta.IdempotencyKey,
+		"tool":            tool,
+		"arguments":       args,
+		"run_id":          meta.RunID,
+		"agent_id":        meta.AgentID,
+		"idempotency_key": meta.IdempotencyKey,
+	}
+	if strings.TrimSpace(meta.CallbackEventURL) != "" {
+		payload["callback_urls"] = map[string]any{
+			"event": meta.CallbackEventURL,
+		}
 	}
 	rawPayload, err := json.Marshal(payload)
 	if err != nil {

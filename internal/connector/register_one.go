@@ -49,8 +49,8 @@ type registerOneContext struct {
 	// enterprise execution callback (openapi / http plugin invoke path):
 	callbackURL string
 
-	// sidecar plugin callback_urls.event injection (Phase 2). Only the http
-	// plugin invoke path consumes these; openapi/mcp invokers ignore them.
+	// sidecar plugin callback_urls.event injection (Phase 2). HTTP plugin and MCP
+	// tools/call paths consume these; openapi invoker ignores them.
 	callbackSigner     httpplugin.CallbackSigner
 	callbackSecret     []byte
 	callbackPublicBase string
@@ -168,7 +168,10 @@ func openapiInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		var out openapi.InvokeResult
 		var err error
 		if ctx.callbackURL != "" {
-			cbOut, cbErr := invokeEnterpriseCallback(ctx.callbackURL, c, name, args, overlay)
+			eventURL := httpplugin.SignCallbackEventURL(
+				ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c),
+			)
+			cbOut, cbErr := invokeEnterpriseCallback(ctx.callbackURL, eventURL, c, name, args, overlay)
 			out = cbOut
 			err = cbErr
 		} else {
@@ -235,7 +238,10 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 			return tool.LoginRequiredContent(), true, nil
 		}
 		if ctx.callbackURL != "" {
-			out, invErr := invokeEnterpriseCallback(ctx.callbackURL, c, name, args, overlay)
+			eventURL := httpplugin.SignCallbackEventURL(
+				ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c),
+			)
+			out, invErr := invokeEnterpriseCallback(ctx.callbackURL, eventURL, c, name, args, overlay)
 			if invErr != nil {
 				return nil, true, invErr
 			}
@@ -313,17 +319,26 @@ func mcpInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		}
 		_ = overlay // MCP auth is configured on the connector, not via overlay.
 
+		eventURL := httpplugin.SignCallbackEventURL(
+			ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c),
+		)
+		opts := mcpbridge.CallToolOpts{
+			RunID:            identity.RunIDFrom(c),
+			AgentID:          identity.AgentIDFrom(c),
+			CallbackEventURL: eventURL,
+		}
+
 		var result *mcp.CallToolResult
 		var err error
 		if ctx.mcpSession != nil {
-			result, err = mcpbridge.CallTool(c, ctx.mcpSession, name, args)
+			result, err = mcpbridge.CallToolWithOpts(c, ctx.mcpSession, name, args, opts)
 		} else if ctx.mcpHTTPURL != "" {
 			session, connErr := mcpbridge.ConnectHTTP(c, ctx.mcpHTTPURL, ctx.mcpHTTPHeaders)
 			if connErr != nil {
 				return nil, true, connErr
 			}
 			defer session.Close()
-			result, err = mcpbridge.CallTool(c, session, name, args)
+			result, err = mcpbridge.CallToolWithOpts(c, session, name, args, opts)
 		} else {
 			return nil, true, fmt.Errorf("mcp session not configured for tool %q", name)
 		}
@@ -505,13 +520,14 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	return nil
 }
 
-func invokeEnterpriseCallback(callbackURL string, c context.Context, name string, args map[string]any, overlay map[string]string) (openapi.InvokeResult, error) {
+func invokeEnterpriseCallback(callbackURL string, callbackEventURL string, c context.Context, name string, args map[string]any, overlay map[string]string) (openapi.InvokeResult, error) {
 	client := executecallback.NewClient(callbackURL)
 	out, err := client.Invoke(c, name, args, executecallback.InvokeMeta{
-		RunID:          identity.RunIDFrom(c),
-		AgentID:        identity.AgentIDFrom(c),
-		IdempotencyKey: identity.ToolCallIDFrom(c),
-		Headers:        overlay,
+		RunID:            identity.RunIDFrom(c),
+		AgentID:          identity.AgentIDFrom(c),
+		IdempotencyKey:   identity.ToolCallIDFrom(c),
+		Headers:          overlay,
+		CallbackEventURL: callbackEventURL,
 	})
 	if err != nil {
 		return openapi.InvokeResult{}, err
