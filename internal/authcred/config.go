@@ -11,10 +11,10 @@ const (
 )
 
 type Config struct {
-	Mode        string    `json:"mode,omitempty" yaml:"mode"`
-	Static      Static    `json:"static,omitempty" yaml:"static"`
-	Passthrough PassThru  `json:"passthrough,omitempty" yaml:"passthrough"`
-	VaultRef    VaultRef  `json:"vault_ref,omitempty" yaml:"vault_ref"`
+	Mode        string   `json:"mode,omitempty" yaml:"mode"`
+	Static      Static   `json:"static,omitempty" yaml:"static"`
+	Passthrough PassThru `json:"passthrough,omitempty" yaml:"passthrough"`
+	VaultRef    VaultRef `json:"vault_ref,omitempty" yaml:"vault_ref"`
 }
 
 type Static struct {

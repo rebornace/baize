@@ -5,6 +5,7 @@ import (
 
 	"github.com/rebornace/baize/internal/store"
 )
+
 func DiscoverToolsHTTP(ctx context.Context, endpoint string, headers map[string]string, connectorID string) ([]store.Tool, error) {
 	session, err := ConnectHTTP(ctx, endpoint, headers)
 	if err != nil {

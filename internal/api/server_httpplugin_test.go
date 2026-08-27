@@ -39,10 +39,10 @@ func TestPutHTTPConnectorRegistersTools(t *testing.T) {
 		t.Fatal("http connector should not require spec")
 	}
 	var body struct {
-		ID     string      `json:"id"`
-		Type   string      `json:"type"`
-		Spec   string      `json:"spec"`
-		Tools  []tool.Info `json:"tools"`
+		ID    string      `json:"id"`
+		Type  string      `json:"type"`
+		Spec  string      `json:"spec"`
+		Tools []tool.Info `json:"tools"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatal(err)

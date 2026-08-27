@@ -35,12 +35,12 @@ func newHandler() http.Handler {
 }
 
 type executeBody struct {
-	Tool            string         `json:"tool"`
-	Arguments       map[string]any `json:"arguments"`
-	RunID           string         `json:"run_id"`
-	AgentID         string         `json:"agent_id"`
-	IdempotencyKey  string         `json:"idempotency_key"`
-	CallbackURLs    struct {
+	Tool           string         `json:"tool"`
+	Arguments      map[string]any `json:"arguments"`
+	RunID          string         `json:"run_id"`
+	AgentID        string         `json:"agent_id"`
+	IdempotencyKey string         `json:"idempotency_key"`
+	CallbackURLs   struct {
 		Event string `json:"event"`
 	} `json:"callback_urls"`
 }

@@ -765,10 +765,10 @@ paths:
 
 func TestApplyOpenAPIEnterpriseCallback(t *testing.T) {
 	var got struct {
-		Tool            string         `json:"tool"`
-		Arguments       map[string]any `json:"arguments"`
-		RunID           string         `json:"run_id"`
-		IdempotencyKey  string         `json:"idempotency_key"`
+		Tool           string         `json:"tool"`
+		Arguments      map[string]any `json:"arguments"`
+		RunID          string         `json:"run_id"`
+		IdempotencyKey string         `json:"idempotency_key"`
 	}
 	callback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -788,14 +788,14 @@ func TestApplyOpenAPIEnterpriseCallback(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	if _, _, err := connector.Apply(connector.ApplyInput{
-		Store:                  st,
-		Registry:               reg,
-		ID:                     "c",
-		Type:                   "openapi",
-		Spec:                   spec,
-		BaseURL:                direct.URL,
-		ExecutionCallbackURL:   callback.URL + "/execute",
-		Auth:                   store.ConnectorAuth{Mode: "static"},
+		Store:                st,
+		Registry:             reg,
+		ID:                   "c",
+		Type:                 "openapi",
+		Spec:                 spec,
+		BaseURL:              direct.URL,
+		ExecutionCallbackURL: callback.URL + "/execute",
+		Auth:                 store.ConnectorAuth{Mode: "static"},
 	}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

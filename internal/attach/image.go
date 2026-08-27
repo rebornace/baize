@@ -9,10 +9,10 @@ import (
 	"image/jpeg"
 	"image/png"
 
+	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	_ "golang.org/x/image/webp"
 )
 
 // processImage decodes an image attachment, shrinks it so its long edge is at

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/bootstrap"
+	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/store"
 )
 

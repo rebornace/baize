@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	reScriptSrc        = regexp.MustCompile(`<script[^>]+src=["']([^"']+)["']`)
-	reInitSwaggerURL   = regexp.MustCompile(`"swaggerUrl"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`)
-	reInitSwaggerURL2  = regexp.MustCompile(`swaggerUrl\s*:\s*["']([^"']+)["']`)
+	reScriptSrc       = regexp.MustCompile(`<script[^>]+src=["']([^"']+)["']`)
+	reInitSwaggerURL  = regexp.MustCompile(`"swaggerUrl"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`)
+	reInitSwaggerURL2 = regexp.MustCompile(`swaggerUrl\s*:\s*["']([^"']+)["']`)
 )
 
 func resolveHTMLSwaggerPage(html string, pageURL *url.URL) ([]byte, error) {

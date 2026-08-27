@@ -104,4 +104,3 @@ func resolveFileRef(ref string) (string, error) {
 	}
 	return val, nil
 }
-

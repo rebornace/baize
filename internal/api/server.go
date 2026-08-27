@@ -426,17 +426,17 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type                   string          `json:"type"`
-		Spec                   string          `json:"spec"`
-		SpecContent            string          `json:"spec_content"`
-		SpecURL                string          `json:"spec_url"`
-		ImportFormat           string          `json:"import_format"`
-		BaseURL                string          `json:"base_url"`
-		ExecutionCallbackURL   string          `json:"execution_callback_url"`
-		RequireApproval        []string        `json:"require_approval"`
-		RequireLogin           *[]string       `json:"require_login"`
-		Auth                   authBody        `json:"auth"`
-		MCP                    store.MCPConfig `json:"mcp"`
+		Type                 string          `json:"type"`
+		Spec                 string          `json:"spec"`
+		SpecContent          string          `json:"spec_content"`
+		SpecURL              string          `json:"spec_url"`
+		ImportFormat         string          `json:"import_format"`
+		BaseURL              string          `json:"base_url"`
+		ExecutionCallbackURL string          `json:"execution_callback_url"`
+		RequireApproval      []string        `json:"require_approval"`
+		RequireLogin         *[]string       `json:"require_login"`
+		Auth                 authBody        `json:"auth"`
+		MCP                  store.MCPConfig `json:"mcp"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -590,11 +590,11 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Spec:                 specPath,
 		ImportFormat:         importFormatDetected,
 		BaseURL:              body.BaseURL,
-		ExecutionCallbackURL:  body.ExecutionCallbackURL,
-		RequireApproval:     body.RequireApproval,
+		ExecutionCallbackURL: body.ExecutionCallbackURL,
+		RequireApproval:      body.RequireApproval,
 		RequireLogin:         body.RequireLogin,
-		Auth:                connectorAuth,
-		MCP:                 body.MCP,
+		Auth:                 connectorAuth,
+		MCP:                  body.MCP,
 		CallbackSigner:       s.CallbackSigner,
 		CallbackSecret:       s.CallbackSecret,
 		CallbackPublicBase:   s.CallbackPublicBase,
@@ -634,16 +634,16 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
-		"id":                       c.ID,
-		"type":                     c.Type,
-		"spec":                     c.Spec,
-		"import_format_detected":   c.ImportFormat,
-		"base_url":                 c.BaseURL,
-		"execution_callback_url":   c.ExecutionCallbackURL,
-		"require_approval":         c.RequireApproval,
-		"require_login":            c.RequireLogin,
-		"auth":                     c.Auth,
-		"tools":                    infos,
+		"id":                     c.ID,
+		"type":                   c.Type,
+		"spec":                   c.Spec,
+		"import_format_detected": c.ImportFormat,
+		"base_url":               c.BaseURL,
+		"execution_callback_url": c.ExecutionCallbackURL,
+		"require_approval":       c.RequireApproval,
+		"require_login":          c.RequireLogin,
+		"auth":                   c.Auth,
+		"tools":                  infos,
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = c.MCP
@@ -664,8 +664,8 @@ func validImportFormat(format string) bool {
 // PUT /v0/connectors/{id} body.auth. Kept local to avoid pulling store types
 // into the request body struct directly.
 type authBody struct {
-	Mode        string `json:"mode"`
-	Static      struct {
+	Mode   string `json:"mode"`
+	Static struct {
 		Headers map[string]string `json:"headers"`
 	} `json:"static"`
 	Passthrough struct {
@@ -695,16 +695,16 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		tools = []store.Tool{}
 	}
 	resp := map[string]any{
-		"id":                       c.ID,
-		"type":                     c.Type,
-		"spec":                     c.Spec,
-		"import_format_detected":   c.ImportFormat,
-		"base_url":                 c.BaseURL,
-		"execution_callback_url":   c.ExecutionCallbackURL,
-		"require_approval":         c.RequireApproval,
-		"require_login":            c.RequireLogin,
-		"auth":                     c.Auth,
-		"tools":                    tools,
+		"id":                     c.ID,
+		"type":                   c.Type,
+		"spec":                   c.Spec,
+		"import_format_detected": c.ImportFormat,
+		"base_url":               c.BaseURL,
+		"execution_callback_url": c.ExecutionCallbackURL,
+		"require_approval":       c.RequireApproval,
+		"require_login":          c.RequireLogin,
+		"auth":                   c.Auth,
+		"tools":                  tools,
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = c.MCP
@@ -1069,15 +1069,15 @@ func syncRequireLoginList(list []string, name string, require bool) []string {
 
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AgentID        string                  `json:"agent_id"`
-		Input          string                  `json:"input"`
-		ConversationID string                  `json:"conversation_id"`
-		IdentityID     string                  `json:"identity_id"`
-		SessionToken   string                  `json:"session_token"`
-		WebhookURL     string                  `json:"webhook_url"`
-		WebhookHeaders map[string]string       `json:"webhook_headers"`
-		Skills         []string                `json:"skills"`
-		Attachments    []attach.AttachmentIn   `json:"attachments"`
+		AgentID        string                `json:"agent_id"`
+		Input          string                `json:"input"`
+		ConversationID string                `json:"conversation_id"`
+		IdentityID     string                `json:"identity_id"`
+		SessionToken   string                `json:"session_token"`
+		WebhookURL     string                `json:"webhook_url"`
+		WebhookHeaders map[string]string     `json:"webhook_headers"`
+		Skills         []string              `json:"skills"`
+		Attachments    []attach.AttachmentIn `json:"attachments"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")

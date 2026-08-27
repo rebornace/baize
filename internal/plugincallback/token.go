@@ -24,8 +24,8 @@ const msgSep = "|"
 // Errors returned by Verify. Comparison is by errors.Is / direct equality.
 var (
 	ErrMalformedToken = errors.New("plugincallback: malformed token")
-	ErrTokenExpired  = errors.New("plugincallback: token expired")
-	ErrBadSignature  = errors.New("plugincallback: bad signature")
+	ErrTokenExpired   = errors.New("plugincallback: token expired")
+	ErrBadSignature   = errors.New("plugincallback: bad signature")
 )
 
 // Issue signs a short-lived token binding the given runID with an expiry

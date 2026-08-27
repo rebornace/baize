@@ -23,8 +23,8 @@ type Store interface {
 
 // MemoryStore is an in-memory Store implementation.
 type MemoryStore struct {
-	mu    sync.RWMutex
-	msgs  map[string][]Message
+	mu   sync.RWMutex
+	msgs map[string][]Message
 }
 
 // NewMemoryStore creates an empty in-memory Store.

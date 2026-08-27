@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/config"
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"

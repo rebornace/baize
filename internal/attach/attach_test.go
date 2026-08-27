@@ -357,8 +357,8 @@ func TestProcessTextTruncation(t *testing.T) {
 // appended after the rune-budgeted prefix.
 func TestProcessTextTruncationRuneCount(t *testing.T) {
 	// 3 bytes per rune in UTF-8. 50k runes = 150k bytes > 64k rune limit.
-	seg := "中文" // 2 runes, 6 bytes
-	big := strings.Repeat(seg, 25_000) // 50_000 runes
+	seg := "中文"                               // 2 runes, 6 bytes
+	big := strings.Repeat(seg, 25_000)        // 50_000 runes
 	opts := attach.Options{MaxTextChars: 100} // small limit for fast test
 	texts, _, err := attach.Process([]attach.AttachmentIn{{
 		Filename:   "zh.txt",
@@ -455,4 +455,3 @@ func TestProcessPartialOptionsKeepsCustom(t *testing.T) {
 		t.Fatalf("err=%v, want ErrTooMany", err)
 	}
 }
-

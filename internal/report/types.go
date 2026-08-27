@@ -52,9 +52,9 @@ type Section struct {
 
 // KPIItem is one metric card in a kpi section.
 type KPIItem struct {
-	Label   string    `json:"label"`
-	Value   any       `json:"value,omitempty"`
-	Binding *Binding  `json:"binding,omitempty"`
+	Label   string   `json:"label"`
+	Value   any      `json:"value,omitempty"`
+	Binding *Binding `json:"binding,omitempty"`
 }
 
 // Binding is the shorthand for deriving chart/table data from datasets.

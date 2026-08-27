@@ -27,16 +27,16 @@ func cloneAgent(a Agent) Agent {
 }
 
 type Connector struct {
-	ID                     string        `json:"id"`
-	Type                   string        `json:"type"` // openapi, http, mcp
-	Spec                   string        `json:"spec"`
-	ImportFormat           string        `json:"import_format_detected,omitempty"`
-	BaseURL                string        `json:"base_url"`
-	ExecutionCallbackURL   string        `json:"execution_callback_url,omitempty"`
-	RequireApproval        []string      `json:"require_approval,omitempty"`
-	RequireLogin           []string      `json:"require_login,omitempty"`
-	Auth                   ConnectorAuth `json:"auth,omitempty"`
-	MCP                    MCPConfig     `json:"mcp,omitempty"`
+	ID                   string        `json:"id"`
+	Type                 string        `json:"type"` // openapi, http, mcp
+	Spec                 string        `json:"spec"`
+	ImportFormat         string        `json:"import_format_detected,omitempty"`
+	BaseURL              string        `json:"base_url"`
+	ExecutionCallbackURL string        `json:"execution_callback_url,omitempty"`
+	RequireApproval      []string      `json:"require_approval,omitempty"`
+	RequireLogin         []string      `json:"require_login,omitempty"`
+	Auth                 ConnectorAuth `json:"auth,omitempty"`
+	MCP                  MCPConfig     `json:"mcp,omitempty"`
 }
 
 type MCPConfig struct {
@@ -58,19 +58,19 @@ const (
 
 // Tool is a single row in the connector tool catalog.
 type Tool struct {
-	ConnectorID     string         `json:"connector_id"`
-	Name            string         `json:"name"`
-	Source          string         `json:"source"`
+	ConnectorID       string         `json:"connector_id"`
+	Name              string         `json:"name"`
+	Source            string         `json:"source"`
 	Enabled           bool           `json:"enabled"`
 	Title             string         `json:"title,omitempty"`
 	Description       string         `json:"description,omitempty"`
 	DescriptionCustom bool           `json:"description_custom"`
-	Method          string         `json:"method,omitempty"`
-	Path            string         `json:"path,omitempty"`
-	InputSchema     map[string]any `json:"input_schema,omitempty"`
-	RequireLogin    bool           `json:"require_login"`
-	RequireApproval bool           `json:"require_approval"`
-	OperationID     string         `json:"operation_id,omitempty"`
+	Method            string         `json:"method,omitempty"`
+	Path              string         `json:"path,omitempty"`
+	InputSchema       map[string]any `json:"input_schema,omitempty"`
+	RequireLogin      bool           `json:"require_login"`
+	RequireApproval   bool           `json:"require_approval"`
+	OperationID       string         `json:"operation_id,omitempty"`
 }
 
 // ConnectorAuth stores the connector auth configuration shape (mode + references),

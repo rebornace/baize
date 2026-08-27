@@ -22,7 +22,7 @@ type Store interface {
 
 // MemoryStore is an in-process Identity store keyed by conversation ID.
 type MemoryStore struct {
-	mu    sync.RWMutex
+	mu     sync.RWMutex
 	byConv map[string]map[string]*Identity // conversationID -> identityID -> Identity
 }
 

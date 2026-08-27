@@ -409,7 +409,7 @@ func TestContinueFromHITLColdApprove(t *testing.T) {
 	// LLM after cold resume: only the follow-up message (tool already done).
 	eng := &Engine{
 		Store: st,
-		LLM: &scriptLLM{calls: 1}, // next Chat returns final message
+		LLM:   &scriptLLM{calls: 1}, // next Chat returns final message
 		Tools: reg,
 		Gate:  NewGate(), // empty — no waiter
 	}

@@ -374,14 +374,14 @@ type scanner interface {
 
 func scanIdentity(sc scanner) (Identity, error) {
 	var (
-		id           Identity
-		convID       string
-		isDefault    int
-		headersJSON  sql.NullString
-		claimsJSON   sql.NullString
-		lastUsedAt   sql.NullString
-		createdAt    string
-		updatedAt    string
+		id          Identity
+		convID      string
+		isDefault   int
+		headersJSON sql.NullString
+		claimsJSON  sql.NullString
+		lastUsedAt  sql.NullString
+		createdAt   string
+		updatedAt   string
 	)
 	if err := sc.Scan(
 		&id.ID, &convID, &id.Label, &id.Scheme, &id.Subject, &id.Source,
