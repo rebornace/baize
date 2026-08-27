@@ -168,7 +168,10 @@ func openapiInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		var out openapi.InvokeResult
 		var err error
 		if ctx.callbackURL != "" {
-			cbOut, cbErr := invokeEnterpriseCallback(ctx.callbackURL, c, name, args, overlay)
+			eventURL := httpplugin.SignCallbackEventURL(
+				ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c),
+			)
+			cbOut, cbErr := invokeEnterpriseCallback(ctx.callbackURL, eventURL, c, name, args, overlay)
 			out = cbOut
 			err = cbErr
 		} else {
@@ -235,7 +238,10 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 			return tool.LoginRequiredContent(), true, nil
 		}
 		if ctx.callbackURL != "" {
-			out, invErr := invokeEnterpriseCallback(ctx.callbackURL, c, name, args, overlay)
+			eventURL := httpplugin.SignCallbackEventURL(
+				ctx.callbackSigner, ctx.callbackSecret, ctx.callbackPublicBase, ctx.callbackTTL, identity.RunIDFrom(c),
+			)
+			out, invErr := invokeEnterpriseCallback(ctx.callbackURL, eventURL, c, name, args, overlay)
 			if invErr != nil {
 				return nil, true, invErr
 			}
@@ -514,13 +520,14 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	return nil
 }
 
-func invokeEnterpriseCallback(callbackURL string, c context.Context, name string, args map[string]any, overlay map[string]string) (openapi.InvokeResult, error) {
+func invokeEnterpriseCallback(callbackURL string, callbackEventURL string, c context.Context, name string, args map[string]any, overlay map[string]string) (openapi.InvokeResult, error) {
 	client := executecallback.NewClient(callbackURL)
 	out, err := client.Invoke(c, name, args, executecallback.InvokeMeta{
-		RunID:          identity.RunIDFrom(c),
-		AgentID:        identity.AgentIDFrom(c),
-		IdempotencyKey: identity.ToolCallIDFrom(c),
-		Headers:        overlay,
+		RunID:            identity.RunIDFrom(c),
+		AgentID:          identity.AgentIDFrom(c),
+		IdempotencyKey:   identity.ToolCallIDFrom(c),
+		Headers:          overlay,
+		CallbackEventURL: callbackEventURL,
 	})
 	if err != nil {
 		return openapi.InvokeResult{}, err
