@@ -168,6 +168,47 @@ func TestPluginCallbackOversizedPayload(t *testing.T) {
 	}
 }
 
+// TestPluginCallbackAcceptsEnterpriseIssuedToken documents that enterprise
+// execution_callback and MCP paths share the same token URL format as HTTP
+// sidecars: plugincallback.EventURL issues a URL accepted by this endpoint.
+func TestPluginCallbackAcceptsEnterpriseIssuedToken(t *testing.T) {
+	_, st, h, runID, secret := callbackTestServer(t)
+	eventURL := plugincallback.EventURL(plugincallback.Issue, secret, "https://runtime.example", time.Hour, runID)
+	if eventURL == "" {
+		t.Fatal("EventURL empty")
+	}
+	body := map[string]any{
+		"type":    "event",
+		"name":    "enterprise.note",
+		"payload": map[string]any{"ok": true},
+	}
+	raw, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, eventURL, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status=%d want 204 body=%s", rr.Code, rr.Body.String())
+	}
+	evs, err := st.ListEvents(runID)
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	var found *store.Event
+	for i := range evs {
+		if evs[i].Type == "plugin.callback" {
+			found = &evs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("no plugin.callback event among %d events", len(evs))
+	}
+	if got := found.Data["name"]; got != "enterprise.note" {
+		t.Fatalf("event.data.name=%v want enterprise.note", got)
+	}
+}
+
 func TestPluginCallbackGateOffAllowsAnonymous(t *testing.T) {
 	// Even with the control-plane gate on, plugin-callbacks is RoleNone so
 	// no Bearer token is required; only the HMAC token matters.
