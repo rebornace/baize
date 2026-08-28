@@ -38,6 +38,15 @@ func (m *Mock) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (
 	lower := strings.ToLower(userText)
 
 	switch {
+	case strings.Contains(userText, "激活流水线") || strings.Contains(userText, "@ticket-triage"):
+		return Message{
+			Role: RoleAssistant,
+			ToolCalls: []ToolCall{{
+				ID:        "call_activate_skill",
+				Name:      "activate_skill",
+				Arguments: map[string]any{"id": "ticket-triage"},
+			}},
+		}, nil
 	case strings.Contains(userText, "创建") || strings.Contains(lower, "create"):
 		args := map[string]any{
 			"title": extractTitle(userText),

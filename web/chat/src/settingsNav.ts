@@ -18,6 +18,7 @@ export function settingsNavItems(role: SettingsRole): SettingsNavItem[] {
         { to: '/settings/mcp', label: 'MCP' },
         { to: '/settings/plugins', label: '插件' },
         { to: '/settings/webhooks', label: 'Webhook' },
+        { to: '/settings/inbox', label: 'Inbox' },
       ]
     default: {
       const _exhaustive: never = role

@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	EventInboxReceived  = "inbox.received"
 	EventRunStarted     = "run.started"
 	EventLLMToolCall    = "llm.tool_call"
 	EventToolResult     = "tool.result"
@@ -456,7 +457,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					continue
 				}
 
-				content, _, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments)
+				content, _, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments, false)
 				if tcErr != nil && errors.Is(tcErr, ErrHITLRejected) {
 					return tcErr
 				}
@@ -550,6 +551,11 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 	st.workflowSkill = wf.Name
 	e.runMu.Unlock()
 
+	stepApproved := make(map[string]bool, len(wf.Steps))
+	for _, s := range wf.Steps {
+		stepApproved[s.ID] = s.Approve
+	}
+
 	werr := wf.Run(ctx, st.workflowResults, workflow.ExecHooks{
 		Emit: func(typ string, data map[string]any) error {
 			return e.Store.AppendEvent(runID, store.Event{Type: typ, Data: data})
@@ -565,7 +571,7 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 		},
 		Invoke: func(ictx context.Context, toolName string, stepID string, args map[string]any) (map[string]any, bool, error) {
 			callID := fmt.Sprintf("wf-%s-%s", st.workflowSkill, stepID)
-			return e.invokeTool(ictx, runID, callID, toolName, args)
+			return e.invokeTool(ictx, runID, callID, toolName, args, stepApproved[stepID])
 		},
 	})
 	if werr != nil {
@@ -617,7 +623,7 @@ func workflowInterrupted(evs []store.Event) bool {
 // has already been finalized as failed; the caller must stop instead of
 // appending further results. Transient failures inside one interaction keep the
 // last-known return shape so the value/error contract stays uniform.
-func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any) (map[string]any, bool, error) {
+func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval bool) (map[string]any, bool, error) {
 	isError := false
 	content := map[string]any{}
 
@@ -633,7 +639,7 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 			return false, nil
 		}
 
-		if e.Tools.RequiresApproval(name) {
+		if !skipApproval && e.Tools.RequiresApproval(name) {
 			if err := e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: name, Arguments: args}); err != nil {
 				if !errors.Is(err, ErrHITLRejected) {
 					if ctx.Err() != nil || e.isCancelled(runID) {

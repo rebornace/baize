@@ -11,26 +11,30 @@ import (
 
 // Memory is an in-memory Store implementation.
 type Memory struct {
-	mu         sync.RWMutex
-	agents     map[string]Agent
-	connectors map[string]Connector
-	tools      map[string]Tool
-	runs       map[string]*Run
-	events     map[string][]Event
-	hitl       map[string]*HITLPayload
-	settings   map[string][]byte
+	mu              sync.RWMutex
+	agents          map[string]Agent
+	connectors      map[string]Connector
+	tools           map[string]Tool
+	runs            map[string]*Run
+	events          map[string][]Event
+	hitl            map[string]*HITLPayload
+	settings        map[string][]byte
+	inboxDeliveries map[string]map[string]InboxDelivery
+	inboxThreads    map[string]map[string]string
 }
 
 // NewMemory creates an empty in-memory Store.
 func NewMemory() *Memory {
 	return &Memory{
-		agents:     map[string]Agent{},
-		connectors: map[string]Connector{},
-		tools:      map[string]Tool{},
-		runs:       map[string]*Run{},
-		events:     map[string][]Event{},
-		hitl:       map[string]*HITLPayload{},
-		settings:   map[string][]byte{},
+		agents:          map[string]Agent{},
+		connectors:      map[string]Connector{},
+		tools:           map[string]Tool{},
+		runs:            map[string]*Run{},
+		events:          map[string][]Event{},
+		hitl:            map[string]*HITLPayload{},
+		settings:        map[string][]byte{},
+		inboxDeliveries: map[string]map[string]InboxDelivery{},
+		inboxThreads:    map[string]map[string]string{},
 	}
 }
 
@@ -378,4 +382,86 @@ func (s *Memory) HasActiveRun(conversationID string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (s *Memory) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byKey, ok := s.inboxDeliveries[channelID]
+	if !ok {
+		return InboxDelivery{}, false, nil
+	}
+	d, ok := byKey[idempotencyKey]
+	if !ok {
+		return InboxDelivery{}, false, nil
+	}
+	// Rows older than InboxDeliveryTTL are treated as misses so the same key
+	// may be claimed again after the window.
+	if !InboxDeliveryFresh(d, time.Now()) {
+		return InboxDelivery{}, false, nil
+	}
+	return d, true, nil
+}
+
+func (s *Memory) PutInboxDelivery(d InboxDelivery) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byKey, ok := s.inboxDeliveries[d.ChannelID]
+	if !ok {
+		byKey = map[string]InboxDelivery{}
+		s.inboxDeliveries[d.ChannelID] = byKey
+	}
+	if existing, exists := byKey[d.IdempotencyKey]; exists {
+		// Allow overwrite of expired rows; reject fresh duplicates.
+		if InboxDeliveryFresh(existing, time.Now()) {
+			return ErrInboxDeliveryExists
+		}
+	}
+	if d.CreatedAt.IsZero() {
+		d.CreatedAt = time.Now().UTC()
+	}
+	byKey[d.IdempotencyKey] = d
+	return nil
+}
+
+func (s *Memory) UpdateInboxDelivery(channelID, idempotencyKey, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byKey, ok := s.inboxDeliveries[channelID]
+	if !ok {
+		return fmt.Errorf("inbox delivery not found")
+	}
+	d, ok := byKey[idempotencyKey]
+	if !ok || !InboxDeliveryFresh(d, time.Now()) {
+		return fmt.Errorf("inbox delivery not found")
+	}
+	d.RunID = runID
+	byKey[idempotencyKey] = d
+	return nil
+}
+
+func (s *Memory) GetInboxThread(channelID, externalID string) (string, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byExt, ok := s.inboxThreads[channelID]
+	if !ok {
+		return "", false, nil
+	}
+	conv, ok := byExt[externalID]
+	if !ok {
+		return "", false, nil
+	}
+	return conv, true, nil
+}
+
+func (s *Memory) PutInboxThread(channelID, externalID, conversationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byExt, ok := s.inboxThreads[channelID]
+	if !ok {
+		byExt = map[string]string{}
+		s.inboxThreads[channelID] = byExt
+	}
+	byExt[externalID] = conversationID
+	return nil
 }

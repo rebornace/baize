@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
@@ -28,6 +29,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
@@ -77,10 +79,13 @@ type Server struct {
 	// OperatorToken / AdminToken configure the control-plane gate. When both
 	// are empty the gate is off and all routes behave as before. When at least
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
-	OperatorToken string
-	AdminToken    string
-	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
-	DataDir       string              // parent dir for specstore (sqlite dir); required for spec_content PUT
+	OperatorToken    string
+	AdminToken       string
+	Webhook          *webhook.Dispatcher // optional; nil = no outbound webhook delivery
+	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
+	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
+	inboxLimiterOnce sync.Once
+	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision
 	// (image attachments are rejected with vision_unsupported).
@@ -111,6 +116,17 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	}
 	s.routes()
 	return s
+}
+
+// inboxLimiter returns the configured limiter, lazily creating a default once
+// when InboxLimiter was left nil (bootstrap normally sets one).
+func (s *Server) inboxLimiter() *inbox.RateLimiter {
+	s.inboxLimiterOnce.Do(func() {
+		if s.InboxLimiter == nil {
+			s.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+		}
+	})
+	return s.InboxLimiter
 }
 
 func (s *Server) Handler() http.Handler {
@@ -175,6 +191,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/skills", s.handlePostSkill)
 	s.mux.HandleFunc("DELETE /v0/skills/{id}", s.handleDeleteSkill)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
+	s.mux.HandleFunc("POST /v0/inbox/{channel_id}", s.handlePostInbox)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)
 	s.mux.HandleFunc("POST /v0/runs/{id}/cancel", s.handlePostCancel)
 	s.mux.HandleFunc("POST /v0/runs/{id}/plugin-callbacks", s.handlePluginCallback)
@@ -195,6 +212,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/events-webhook", s.handleGetEventsWebhook)
 	s.mux.HandleFunc("PUT /v0/settings/events-webhook", s.handlePutEventsWebhook)
 	s.mux.HandleFunc("POST /v0/settings/events-webhook/test", s.handlePostEventsWebhookTest)
+	s.mux.HandleFunc("GET /v0/settings/inbox-channels", s.handleGetInboxChannels)
+	s.mux.HandleFunc("PUT /v0/settings/inbox-channels", s.handlePutInboxChannels)
+	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/rotate-secret", s.handlePostInboxRotateSecret)
+	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/test", s.handlePostInboxTest)
 }
 
 type apiError struct {
@@ -1088,8 +1109,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ag, err := s.Store.GetAgent(body.AgentID)
-	if err != nil {
+	if _, err := s.Store.GetAgent(body.AgentID); err != nil {
 		writeError(w, http.StatusNotFound, "agent_not_found", "unknown agent")
 		return
 	}
@@ -1185,83 +1205,28 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		displayText = strings.TrimSpace(cleanedInput) + "（附件：" + strings.Join(names, ", ") + "）"
 	}
 
-	createIn := store.CreateRunInput{
-		AgentID:        body.AgentID,
-		Input:          displayText,
-		ConversationID: conv,
-		IdentityID:     identityID,
-	}
-	// Only passthrough mode pulls headers off the inbound request into the
-	// run's private PassthroughHeaders; other modes ignore the request headers
-	// and rely on the connector's resolved DefaultHeaders.
+	var passthrough map[string]string
 	if authcred.NormalizeMode(s.AuthMode) == authcred.ModePassthrough {
-		createIn.PassthroughHeaders = authcred.PickHeaders(r.Header, s.AuthWhitelist)
+		passthrough = authcred.PickHeaders(r.Header, s.AuthWhitelist)
 	}
+	var webhookCfg *store.WebhookConfig
 	if u := strings.TrimSpace(body.WebhookURL); u != "" || len(body.WebhookHeaders) > 0 {
-		createIn.WebhookConfig = &store.WebhookConfig{
+		webhookCfg = &store.WebhookConfig{
 			URL:     u,
 			Headers: body.WebhookHeaders,
 		}
 	}
 
-	runRec, err := s.Store.CreateRun(createIn)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-
-	// Persist the user turn before executing so the conversation window survives
-	// crashes and is visible via GET /v0/conversations/{id}/messages. The stored
-	// content is the visible bubble (visible text + attachment filenames); image
-	// bytes and extracted attachment text live only in this Execute call.
-	if s.Messages != nil && conv != "" {
-		_, _ = s.Messages.Append(conv, conversation.Message{
-			Role:    conversation.RoleUser,
-			Content: displayText,
-			RunID:   runRec.ID,
-		})
-	}
-
-	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
-	runOpts := run.RunOptions{Skills: runSkills, UserParts: userParts}
-	// Persist run.started before returning so the UI never polls an empty event stream
-	// while the worker is still scheduling / contending on SQLite.
-	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	go func(runID, input string, def agent.Def, opts run.RunOptions) {
-		err := s.runExecute(context.Background(), runID, def, input, opts)
-		if err == nil {
-			return
-		}
-		cur, getErr := s.Store.GetRun(runID)
-		if getErr != nil || cur == nil {
-			return
-		}
-		switch cur.Status {
-		case store.StatusRunning, store.StatusQueued:
-			_ = s.Store.UpdateRun(runID, store.StatusFailed, "", err.Error())
-			_ = s.Store.AppendEvent(runID, store.Event{
-				Type: run.EventLLMError,
-				Data: map[string]any{"error": err.Error()},
-			})
-			// Engine may have returned before recordTerminalMessage (e.g. early
-			// failure while still running). Mirror its failed-note format here.
-			if s.Messages != nil && cur.ConversationID != "" {
-				note := strings.TrimSpace(err.Error())
-				if note == "" {
-					note = "运行失败"
-				} else {
-					note = "运行失败：" + note
-				}
-				_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
-					Role:    conversation.RoleSystemNote,
-					Content: note,
-					RunID:   runID,
-				})
-			}
-		}
-	}(runRec.ID, displayText, def, runOpts)
-
-	updated, err := s.Store.GetRun(runRec.ID)
+	updated, err := s.startRun(r.Context(), startRunInput{
+		AgentID:        body.AgentID,
+		Input:          displayText,
+		ConversationID: conv,
+		IdentityID:     identityID,
+		Skills:         runSkills,
+		Webhook:        webhookCfg,
+		Passthrough:    passthrough,
+		UserParts:      userParts,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

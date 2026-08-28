@@ -27,6 +27,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
@@ -237,6 +238,12 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	dispatcher := webhook.NewDispatcher(st, webhookCfg)
 	dispatcher.Attach(hub)
 
+	inboxReg := inbox.NewRegistry()
+	if err := seedInboxChannels(cfg, st, inboxReg); err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("seed inbox channels: %w", err)
+	}
+
 	engine := &run.Engine{
 		Store:       st,
 		LLM:         provider,
@@ -252,6 +259,8 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv := api.NewServer(st, reg, engine)
 	srv.Hub = hub
 	srv.Webhook = dispatcher
+	srv.Inbox = inboxReg
+	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
 	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages
@@ -323,6 +332,37 @@ func loadEventsWebhook(st store.Store, cfg config.Config) (webhook.Config, error
 		return webhook.Config{}, err
 	}
 	return def, nil
+}
+
+// seedInboxChannels loads channel config from the settings KV when present,
+// otherwise seeds from YAML and persists generated secrets to the store.
+func seedInboxChannels(cfg config.Config, st store.Store, reg *inbox.Registry) error {
+	raw, ok, err := st.GetSetting(store.SettingKeyInboxChannels)
+	if err != nil {
+		return err
+	}
+	if ok && len(raw) > 0 {
+		var channels []inbox.Channel
+		if err := json.Unmarshal(raw, &channels); err != nil {
+			return err
+		}
+		reg.Replace(channels)
+		return nil
+	}
+
+	channels := append([]inbox.Channel(nil), cfg.Inbox.Channels...)
+	for i := range channels {
+		if strings.TrimSpace(channels[i].Secret) == "" {
+			channels[i].Secret = inbox.GenerateSecret()
+			log.Printf("warning: inbox channel %q had empty secret; generated and persisted to store", channels[i].ID)
+		}
+	}
+	reg.Replace(channels)
+	b, err := json.Marshal(channels)
+	if err != nil {
+		return err
+	}
+	return st.UpsertSetting(store.SettingKeyInboxChannels, b)
 }
 
 // openConversationAndIdentities builds the conversation message store and the

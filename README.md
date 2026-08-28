@@ -447,6 +447,100 @@ curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
 
 ---
 
+## Production integration: Webhook Inbox
+
+**One-liner:** External systems POST signed JSON to Baize Inbox; the Runtime starts an Agent Run; optional outbound Webhooks stream events back to your platform.
+
+```
+Monitor / ITSM / script          Baize Runtime                    Your callback
+        │                               │                               │
+        │  POST /v0/inbox/{channel_id}  │                               │
+        │  + HMAC (channel secret)       │                               │
+        ├──────────────────────────────►│  verify → idempotency → Run    │
+        │  202 {delivery_id, run_id}    │                               │
+        │◄──────────────────────────────┤                               │
+        │                               │  POST run events + run.ended    │
+        │                               ├──────────────────────────────►│
+        │                               │  (global or channel webhook)    │
+```
+
+Capability name is **Inbox v1**; HTTP routes stay under the **`/v0/`** protocol prefix (optional header `X-Baize-Protocol: v0`).
+
+### Configure a channel
+
+1. Open `/ui` → **Settings → Inbox** (admin).
+2. Add a channel: `id` (URL slug, e.g. `alerts`), `agent_id`, optional **Skills** and per-channel outbound `webhook_url` / headers.
+3. Copy the inbound URL (`https://<host>/v0/inbox/{id}`) and the **secret** (shown once on create or **Rotate secret**).
+4. **Send test** from the settings page, or use the script below.
+
+YAML seed (optional startup default; runtime authority is SQLite `settings`):
+
+```yaml
+inbox:
+  channels:
+    - id: alerts
+      agent_id: ticket-agent
+      enabled: true
+      skills: [ticket-triage]
+```
+
+Admin API: `GET/PUT /v0/settings/inbox-channels`, `POST .../{id}/rotate-secret`, `POST .../{id}/test`.
+
+### Signed POST (curl + OpenSSL)
+
+```bash
+export RUNTIME_URL=http://127.0.0.1:8080
+export INBOX_SECRET='<channel-secret>'
+TS=$(date +%s)
+BODY='{"input":"VPN fault, employee 10086","idempotency_key":"alert-20260828-001","external_id":"jira-OPS-1234"}'
+SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$INBOX_SECRET" | awk '{print $2}')"
+curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
+  -H "Content-Type: application/json" \
+  -H "X-Baize-Inbox-Timestamp: $TS" \
+  -H "X-Baize-Inbox-Signature: $SIG" \
+  -d "$BODY"
+```
+
+PowerShell: see [`examples/inbox-alert/post.ps1`](examples/inbox-alert/post.ps1).
+
+**Headers (required):** `Content-Type: application/json`, `X-Baize-Inbox-Timestamp` (Unix seconds), `X-Baize-Inbox-Signature: v1=<hex>` where `v1=<HMAC-SHA256(secret, "<timestamp>.<raw_body>")>`.
+
+**Body (fixed schema):** `input` (required, 1–8192 chars after trim); optional `idempotency_key`, `conversation_id`, `external_id`, `metadata` (stored on `inbox.received` only, not passed to the LLM). Max body **64 KiB**.
+
+**Success:** `202 Accepted` with `delivery_id`, `run_id`, `status: accepted`, and `conversation_id` when threaded.
+
+### Idempotency and threading
+
+| Mechanism | Behavior |
+|-----------|----------|
+| `idempotency_key` | Same `(channel_id, key)` and same body hash within **24h** → **200 OK**, same `run_id` / `delivery_id` (no duplicate Run). Same key, different body → **409** `idempotency_conflict`. |
+| `external_id` | Maps to a stable `conversation_id` per channel; each POST still creates a **new Run**, but later messages share conversation context. |
+| `conversation_id` | Explicit thread id (used as-is; created if unknown). |
+
+Omit both `external_id` and `conversation_id` for a stateless machine path (no conversation binding).
+
+### Pair with outbound Webhook
+
+- **Global:** Settings → Webhook — URL + headers for all runs (unless overridden).
+- **Per channel:** Inbox channel `webhook_url` / `webhook_headers` — used for runs started via that channel.
+- **Per run:** Chat **Advanced** `webhook_url` (UI / `POST /v0/runs` only; not on Inbox body in v1).
+
+Outbound delivery POSTs each run event and a terminal `run.ended` payload (see Settings → Webhook test). Inbox runs also emit `inbox.received` as the first event.
+
+### Security checklist (production)
+
+1. Enable `control_plane.admin_token`; expose Inbox URLs only on internal networks or behind an API gateway.
+2. Use a **separate secret per channel**; rotate periodically (`POST /v0/settings/inbox-channels/{id}/rotate-secret`).
+3. Callers should send **`idempotency_key`** on every delivery (retries, webhooks, queues).
+4. Configure a global or channel-level **outbound Webhook** for audit and integration.
+5. Optional **WAF / mTLS** at the gateway — not built into Baize.
+
+**Built-in limits:** invalid or missing signature → **401**; timestamp skew > **300s** → **401** `timestamp_skew`; disabled or unknown channel → **404**; **120 requests/minute per channel** → **429** with `Retry-After: 60` (in-memory, single process).
+
+Runnable sample: [`examples/inbox-alert/`](examples/inbox-alert/).
+
+---
+
 ## Run and deploy
 
 Baize is a single static binary. Optional launchers (set a China module proxy when `GOPROXY` is unset):

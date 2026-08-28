@@ -36,6 +36,11 @@ func TestMinRoleTable(t *testing.T) {
 		{"POST", "/v0/skills", RoleAdmin},
 		{"DELETE", "/v0/skills/x", RoleAdmin},
 		{"GET", "/v0/agents/ticket-agent", RoleAdmin},
+		{"POST", "/v0/inbox/alerts", RoleNone},
+		{"GET", "/v0/settings/inbox-channels", RoleAdmin},
+		{"PUT", "/v0/settings/inbox-channels", RoleAdmin},
+		{"POST", "/v0/settings/inbox-channels/alerts/rotate-secret", RoleAdmin},
+		{"POST", "/v0/settings/inbox-channels/alerts/test", RoleAdmin},
 		{"GET", "/v0/unknown", RoleAdmin},
 		{"POST", "/v0/runs/r1/resume/extra", RoleAdmin},
 	}

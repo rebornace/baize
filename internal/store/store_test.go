@@ -3,6 +3,7 @@ package store_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/store"
 )
@@ -358,6 +359,69 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 	if string(got) != string(raw) {
 		t.Fatalf("got %s", got)
+	}
+}
+
+func TestInboxDeliveryRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	d := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k1",
+		DeliveryID: "dlv_x", RunID: "run_y", BodyHash: "abc",
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetInboxDelivery("alerts", "k1")
+	if err != nil || !ok || got.RunID != "run_y" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestInboxDeliveryTTLAndUpdate(t *testing.T) {
+	s := store.NewMemory()
+	expired := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k-ttl",
+		DeliveryID: "dlv_old", RunID: "run_old", BodyHash: "hash-a",
+		CreatedAt: time.Now().UTC().Add(-25 * time.Hour),
+	}
+	if err := s.PutInboxDelivery(expired); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.GetInboxDelivery("alerts", "k-ttl"); err != nil || ok {
+		t.Fatalf("expired should miss ok=%v err=%v", ok, err)
+	}
+
+	fresh := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k-ttl",
+		DeliveryID: "dlv_new", RunID: "", BodyHash: "hash-b",
+	}
+	if err := s.PutInboxDelivery(fresh); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetInboxDelivery("alerts", "k-ttl")
+	if err != nil || !ok || got.DeliveryID != "dlv_new" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+	if err := s.UpdateInboxDelivery("alerts", "k-ttl", "run_new"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err = s.GetInboxDelivery("alerts", "k-ttl")
+	if err != nil || !ok || got.RunID != "run_new" {
+		t.Fatalf("after update got=%+v ok=%v err=%v", got, ok, err)
+	}
+	if err := s.PutInboxDelivery(fresh); err == nil {
+		t.Fatal("expected ErrInboxDeliveryExists for fresh duplicate")
+	}
+}
+
+func TestInboxThreadRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	if err := s.PutInboxThread("alerts", "jira-1", "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	conv, ok, err := s.GetInboxThread("alerts", "jira-1")
+	if err != nil || !ok || conv != "conv-1" {
+		t.Fatalf("conv=%q ok=%v", conv, ok)
 	}
 }
 
