@@ -1,12 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"time"
 
@@ -251,4 +254,226 @@ func writeInboxAccepted(w http.ResponseWriter, status int, deliveryID, runID, co
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+type inboxChannelView struct {
+	ID             string            `json:"id"`
+	AgentID        string            `json:"agent_id"`
+	Enabled        bool              `json:"enabled"`
+	Skills         []string          `json:"skills,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	WebhookURL     string            `json:"webhook_url,omitempty"`
+	WebhookHeaders map[string]string `json:"webhook_headers,omitempty"`
+	SecretHint     string            `json:"secret_hint"`
+}
+
+type inboxChannelInput struct {
+	ID             string            `json:"id"`
+	AgentID        string            `json:"agent_id"`
+	Enabled        bool              `json:"enabled"`
+	Skills         []string          `json:"skills,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	WebhookURL     string            `json:"webhook_url,omitempty"`
+	WebhookHeaders map[string]string `json:"webhook_headers,omitempty"`
+	Secret         string            `json:"secret,omitempty"`
+}
+
+func (s *Server) loadInboxChannels() []inbox.Channel {
+	raw, ok, err := s.Store.GetSetting(store.SettingKeyInboxChannels)
+	if err != nil || !ok || len(raw) == 0 {
+		return nil
+	}
+	var channels []inbox.Channel
+	if err := json.Unmarshal(raw, &channels); err != nil {
+		return nil
+	}
+	return channels
+}
+
+func (s *Server) persistInboxChannels(channels []inbox.Channel) error {
+	raw, err := json.Marshal(channels)
+	if err != nil {
+		return err
+	}
+	if err := s.Store.UpsertSetting(store.SettingKeyInboxChannels, raw); err != nil {
+		return err
+	}
+	if s.Inbox != nil {
+		s.Inbox.Replace(channels)
+	}
+	return nil
+}
+
+func inboxChannelsToViews(channels []inbox.Channel) []inboxChannelView {
+	if len(channels) == 0 {
+		return []inboxChannelView{}
+	}
+	out := make([]inboxChannelView, 0, len(channels))
+	for _, c := range channels {
+		skills := c.Skills
+		if skills == nil {
+			skills = []string{}
+		}
+		headers := c.WebhookHeaders
+		if headers == nil {
+			headers = map[string]string{}
+		}
+		out = append(out, inboxChannelView{
+			ID:             c.ID,
+			AgentID:        c.AgentID,
+			Enabled:        c.Enabled,
+			Skills:         skills,
+			Description:    c.Description,
+			WebhookURL:     c.WebhookURL,
+			WebhookHeaders: headers,
+			SecretHint:     inbox.SecretHint(c.Secret),
+		})
+	}
+	return out
+}
+
+func (s *Server) handleGetInboxChannels(w http.ResponseWriter, r *http.Request) {
+	channels := s.loadInboxChannels()
+	writeJSON(w, http.StatusOK, map[string]any{"channels": inboxChannelsToViews(channels)})
+}
+
+func (s *Server) handlePutInboxChannels(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Channels []inboxChannelInput `json:"channels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+
+	existingList := s.loadInboxChannels()
+	existing := make(map[string]inbox.Channel, len(existingList))
+	for _, c := range existingList {
+		existing[c.ID] = c
+	}
+
+	seen := make(map[string]struct{}, len(body.Channels))
+	merged := make([]inbox.Channel, 0, len(body.Channels))
+	for _, in := range body.Channels {
+		id := strings.TrimSpace(in.ID)
+		if id == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "channel id is required")
+			return
+		}
+		if _, dup := seen[id]; dup {
+			writeError(w, http.StatusBadRequest, "invalid_request", "duplicate channel id: "+id)
+			return
+		}
+		seen[id] = struct{}{}
+
+		secret := strings.TrimSpace(in.Secret)
+		if secret == "" {
+			if prev, ok := existing[id]; ok {
+				secret = prev.Secret
+			} else {
+				secret = inbox.GenerateSecret()
+			}
+		}
+
+		c := inbox.Channel{
+			ID:             id,
+			AgentID:        strings.TrimSpace(in.AgentID),
+			Enabled:        in.Enabled,
+			Skills:         in.Skills,
+			Description:    in.Description,
+			WebhookURL:     in.WebhookURL,
+			WebhookHeaders: in.WebhookHeaders,
+			Secret:         secret,
+		}
+		if err := c.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if _, err := s.Store.GetAgent(c.AgentID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "unknown agent: "+c.AgentID)
+			return
+		}
+		merged = append(merged, c)
+	}
+
+	if err := s.persistInboxChannels(merged); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channels": inboxChannelsToViews(merged)})
+}
+
+func (s *Server) handlePostInboxRotateSecret(w http.ResponseWriter, r *http.Request) {
+	channelID := strings.TrimSpace(r.PathValue("id"))
+	if channelID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing channel id")
+		return
+	}
+
+	channels := s.loadInboxChannels()
+	idx := -1
+	for i, c := range channels {
+		if c.ID == channelID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		writeError(w, http.StatusNotFound, "channel_not_found", "unknown channel")
+		return
+	}
+
+	newSecret := inbox.GenerateSecret()
+	channels[idx].Secret = newSecret
+	if err := s.persistInboxChannels(channels); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"secret": newSecret})
+}
+
+func (s *Server) handlePostInboxTest(w http.ResponseWriter, r *http.Request) {
+	if s.Inbox == nil {
+		writeError(w, http.StatusNotFound, "channel_not_found", "inbox not configured")
+		return
+	}
+	channelID := strings.TrimSpace(r.PathValue("id"))
+	if channelID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing channel id")
+		return
+	}
+
+	var channel inbox.Channel
+	found := false
+	for _, c := range s.loadInboxChannels() {
+		if c.ID == channelID {
+			channel = c
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "channel_not_found", "unknown channel")
+		return
+	}
+	if !channel.Enabled || strings.TrimSpace(channel.Secret) == "" {
+		writeError(w, http.StatusNotFound, "channel_not_found", "unknown or disabled channel")
+		return
+	}
+
+	body := []byte(`{"input":"inbox test"}`)
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	sig := inbox.Sign(channel.Secret, ts, body)
+	req := httptest.NewRequest(http.MethodPost, "/v0/inbox/"+channelID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Baize-Inbox-Timestamp", ts)
+	req.Header.Set("X-Baize-Inbox-Signature", sig)
+	req.SetPathValue("channel_id", channelID)
+
+	rr := httptest.NewRecorder()
+	s.handlePostInbox(rr, req)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(rr.Code)
+	_, _ = io.Copy(w, rr.Body)
 }

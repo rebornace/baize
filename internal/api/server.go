@@ -199,6 +199,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/events-webhook", s.handleGetEventsWebhook)
 	s.mux.HandleFunc("PUT /v0/settings/events-webhook", s.handlePutEventsWebhook)
 	s.mux.HandleFunc("POST /v0/settings/events-webhook/test", s.handlePostEventsWebhookTest)
+	s.mux.HandleFunc("GET /v0/settings/inbox-channels", s.handleGetInboxChannels)
+	s.mux.HandleFunc("PUT /v0/settings/inbox-channels", s.handlePutInboxChannels)
+	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/rotate-secret", s.handlePostInboxRotateSecret)
+	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/test", s.handlePostInboxTest)
 }
 
 type apiError struct {
