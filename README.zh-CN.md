@@ -458,6 +458,100 @@ curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
 
 ---
 
+## 生产集成：Webhook Inbox
+
+**一句话：** 告警、工单或自研网关向 Baize Inbox 签名 POST，Runtime 自动建 Run；可选出站 Webhook 把 Run 事件推回你的平台。
+
+```
+监控 / 工单 / 脚本                 Baize Runtime                    你的回调
+        │                               │                               │
+        │  POST /v0/inbox/{channel_id}  │                               │
+        │  + HMAC（Channel Secret）        │                               │
+        ├──────────────────────────────►│  验签 → 幂等 → 建 Run           │
+        │  202 {delivery_id, run_id}    │                               │
+        │◄──────────────────────────────┤                               │
+        │                               │  POST run 事件 + run.ended      │
+        │                               ├──────────────────────────────►│
+        │                               │  （全局或 Channel 级 Webhook）   │
+```
+
+能力称 **Inbox v1**；HTTP 路径仍在 **`/v0/`** 协议前缀下（可选头 `X-Baize-Protocol: v0`）。
+
+### 配置 Channel
+
+1. 打开 `/ui` → **设置 → Inbox**（管理员）。
+2. 新建 Channel：`id`（URL 段，如 `alerts`）、`agent_id`、可选 **Skills** 与 Channel 级出站 `webhook_url` / headers。
+3. 复制入站 URL（`https://<host>/v0/inbox/{id}`）与 **Secret**（创建或 **轮换 Secret** 时明文展示一次）。
+4. 在设置页 **发送测试**，或使用下方脚本。
+
+YAML 种子（可选启动默认；运行时以 SQLite `settings` 为准）：
+
+```yaml
+inbox:
+  channels:
+    - id: alerts
+      agent_id: ticket-agent
+      enabled: true
+      skills: [ticket-triage]
+```
+
+管理 API：`GET/PUT /v0/settings/inbox-channels`、`POST .../{id}/rotate-secret`、`POST .../{id}/test`。
+
+### 签名 POST（curl + OpenSSL）
+
+```bash
+export RUNTIME_URL=http://127.0.0.1:8080
+export INBOX_SECRET='<channel-secret>'
+TS=$(date +%s)
+BODY='{"input":"VPN 故障，工号 10086","idempotency_key":"alert-20260828-001","external_id":"jira-OPS-1234"}'
+SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$INBOX_SECRET" | awk '{print $2}')"
+curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
+  -H "Content-Type: application/json" \
+  -H "X-Baize-Inbox-Timestamp: $TS" \
+  -H "X-Baize-Inbox-Signature: $SIG" \
+  -d "$BODY"
+```
+
+PowerShell：见 [`examples/inbox-alert/post.ps1`](examples/inbox-alert/post.ps1)。
+
+**请求头（必填）：** `Content-Type: application/json`、`X-Baize-Inbox-Timestamp`（Unix 秒）、`X-Baize-Inbox-Signature: v1=<hex>`，其中 `v1=<HMAC-SHA256(secret, "<timestamp>.<raw_body>")>`。
+
+**请求体（固定 schema）：** `input`（必填，trim 后 1–8192 字符）；可选 `idempotency_key`、`conversation_id`、`external_id`、`metadata`（仅写入 `inbox.received` 事件，不传入 LLM）。Body 上限 **64 KiB**。
+
+**成功：** `202 Accepted`，返回 `delivery_id`、`run_id`、`status: accepted`；有会话绑定时含 `conversation_id`。
+
+### 幂等与续聊
+
+| 机制 | 行为 |
+|------|------|
+| `idempotency_key` | 相同 `(channel_id, key)` 且 body hash 相同，**24h** 内重投 → **200 OK**，同一 `run_id` / `delivery_id`（不重复建 Run）。同 key 不同 body → **409** `idempotency_conflict`。 |
+| `external_id` | 按 Channel 映射稳定 `conversation_id`；每次 POST 仍建**新 Run**，后续消息共享对话上下文。 |
+| `conversation_id` | 显式指定会话 id（未知则创建并沿用）。 |
+
+同时省略 `external_id` 与 `conversation_id` 时，为无会话的机器路径。
+
+### 与出站 Webhook 配对
+
+- **全局：** 设置 → Webhook — 所有 Run 的事件 URL（可被覆盖）。
+- **按 Channel：** Inbox 的 `webhook_url` / `webhook_headers` — 仅该 Channel 触发的 Run。
+- **按 Run：** 聊天页 **高级** `webhook_url`（仅 UI / `POST /v0/runs`；Inbox v1 请求体不含此字段）。
+
+出站投递会 POST 每条 Run 事件及终态 `run.ended`（可在设置 → Webhook 发测试）。Inbox 触发的 Run 首条事件为 `inbox.received`。
+
+### 安全清单（生产）
+
+1. 启用 `control_plane.admin_token`；Inbox URL 仅在内网或 API 网关后暴露。
+2. **每个 Channel 独立 Secret**；定期轮换（`POST /v0/settings/inbox-channels/{id}/rotate-secret`）。
+3. 调用方应始终携带 **`idempotency_key`**（重试、Webhook、队列投递）。
+4. 配置全局或 Channel 级**出站 Webhook** 做审计与集成。
+5. 网关层可选 **WAF / mTLS**（Baize 不内置）。
+
+**内置限制：** 无效或缺失签名 → **401**；时间戳偏移 > **300s** → **401** `timestamp_skew`；Channel 禁用或不存在 → **404**；每 Channel **120 次/分钟** → **429**，`Retry-After: 60`（内存计数，单进程）。
+
+可运行示例：[`examples/inbox-alert/`](examples/inbox-alert/)。
+
+---
+
 ## 部署
 
 白泽是单个静态二进制。可选启动脚本（Windows 无需全局 `baize` 命令）：
