@@ -95,6 +95,18 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bodyHash := sha256Hex(rawBody)
+	action := strings.TrimSpace(payload.Action)
+	switch {
+	case action == "" || action == inbox.ActionCreateRun:
+		s.handleInboxCreateRun(w, r, channel, channelID, payload, bodyHash)
+	case action == inbox.ActionResume:
+		s.handleInboxResume(w, r, channel, channelID, payload, bodyHash)
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "unknown action")
+	}
+}
+
+func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, channel inbox.Channel, channelID string, payload inbox.Payload, bodyHash string) {
 	idempotencyKey := strings.TrimSpace(payload.IdempotencyKey)
 	deliveryID := "dlv_" + uuid.NewString()
 	claimed := false
@@ -222,6 +234,129 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeInboxAccepted(w, http.StatusAccepted, deliveryID, runRec.ID, convID)
+}
+
+func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, channel inbox.Channel, channelID string, payload inbox.Payload, bodyHash string) {
+	idempotencyKey := strings.TrimSpace(payload.IdempotencyKey)
+	deliveryID := "dlv_" + uuid.NewString()
+
+	if idempotencyKey != "" {
+		if existing, found, err := s.Store.GetInboxDelivery(channelID, idempotencyKey); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		} else if found {
+			if existing.BodyHash != bodyHash {
+				writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key reused with different body")
+				return
+			}
+			existing, err = waitInboxDeliveryRunID(s.Store, channelID, idempotencyKey, 2*time.Second)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			status := ""
+			if runRec, getErr := s.Store.GetRun(existing.RunID); getErr == nil && runRec != nil {
+				status = string(runRec.Status)
+			}
+			writeInboxResumeOK(w, existing.DeliveryID, existing.RunID, status)
+			return
+		}
+	}
+
+	// Validate before claiming the idempotency slot so 404/403/409 cannot
+	// leave an empty-RunID placeholder that poisons later replays.
+	runID := strings.TrimSpace(payload.RunID)
+	runRec, err := s.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if runRec.AgentID != channel.AgentID {
+		writeError(w, http.StatusForbidden, "run_forbidden", "run does not belong to this channel agent")
+		return
+	}
+	if runRec.Status != store.StatusWaitingHuman {
+		writeError(w, http.StatusConflict, "not_waiting", "run is not waiting_human")
+		return
+	}
+
+	if idempotencyKey != "" {
+		// Claim after validation, with RunID filled, so concurrent same-key
+		// POSTs lose the race and replay instead of double ContinueFromHITL.
+		if err := s.Store.PutInboxDelivery(store.InboxDelivery{
+			ChannelID:      channelID,
+			IdempotencyKey: idempotencyKey,
+			DeliveryID:     deliveryID,
+			RunID:          runID,
+			BodyHash:       bodyHash,
+		}); err != nil {
+			if errors.Is(err, store.ErrInboxDeliveryExists) {
+				existing, found, getErr := s.Store.GetInboxDelivery(channelID, idempotencyKey)
+				if getErr != nil {
+					writeError(w, http.StatusInternalServerError, "internal_error", getErr.Error())
+					return
+				}
+				if found {
+					if existing.BodyHash != bodyHash {
+						writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key reused with different body")
+						return
+					}
+					existing, waitErr := waitInboxDeliveryRunID(s.Store, channelID, idempotencyKey, 2*time.Second)
+					if waitErr != nil {
+						writeError(w, http.StatusInternalServerError, "internal_error", waitErr.Error())
+						return
+					}
+					status := ""
+					if got, getErr := s.Store.GetRun(existing.RunID); getErr == nil && got != nil {
+						status = string(got.Status)
+					}
+					writeInboxResumeOK(w, existing.DeliveryID, existing.RunID, status)
+					return
+				}
+			}
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
+
+	decision := strings.TrimSpace(payload.Decision)
+	approve := decision == "approve"
+	_ = s.Runner.ContinueFromHITL(r.Context(), runID, run.Decision{
+		Approve: approve,
+		Comment: payload.Comment,
+	})
+
+	eventData := map[string]any{
+		"channel_id":  channel.ID,
+		"delivery_id": deliveryID,
+		"decision":    decision,
+	}
+	if c := strings.TrimSpace(payload.Comment); c != "" {
+		eventData["comment"] = c
+	}
+	if err := s.Store.AppendEvent(runID, store.Event{
+		Type: run.EventInboxResumed,
+		Data: eventData,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	updated, err := s.Store.GetRun(runID)
+	if err != nil || updated == nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "run missing after resume")
+		return
+	}
+	writeInboxResumeOK(w, deliveryID, updated.ID, string(updated.Status))
+}
+
+func writeInboxResumeOK(w http.ResponseWriter, deliveryID, runID, status string) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"delivery_id": deliveryID,
+		"run_id":      runID,
+		"status":      status,
+		"action":      "resume",
+	})
 }
 
 // waitInboxDeliveryRunID polls until a claimed delivery has a non-empty RunID

@@ -1,21 +1,41 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
+
+// hitlResumeFakeRunner updates waiting runs to running on ContinueFromHITL
+// and optionally counts resume calls for idempotency assertions.
+type hitlResumeFakeRunner struct {
+	store store.Store
+	n     atomic.Int32
+}
+
+func (f *hitlResumeFakeRunner) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {
+	_ = f.store.AppendEvent(runID, store.Event{Type: "run.started"})
+	return f.store.UpdateRun(runID, store.StatusSucceeded, "已创建", "")
+}
+
+func (f *hitlResumeFakeRunner) ContinueFromHITL(ctx context.Context, runID string, d run.Decision) error {
+	f.n.Add(1)
+	return f.store.UpdateRun(runID, store.StatusRunning, "", "")
+}
 
 func testServerWithInbox(t *testing.T, st store.Store, reg *inbox.Registry) *api.Server {
 	t.Helper()
@@ -438,5 +458,199 @@ func TestInboxRateLimitAfterSignature(t *testing.T) {
 	srv2.Handler().ServeHTTP(okRR, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
 	if okRR.Code != http.StatusAccepted {
 		t.Fatalf("signed after unsigned code=%d body=%s", okRR.Code, okRR.Body.String())
+	}
+}
+
+func TestInboxResumeApprove(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	runner := &hitlResumeFakeRunner{store: st}
+	srv := api.NewServer(st, tool.NewRegistry(), runner)
+	srv.Inbox = reg
+	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+	h := srv.Handler()
+
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "need approve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusWaitingHuman, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"action":"resume","run_id":"` + runRec.ID + `","decision":"approve","comment":"lgtm"}`)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["action"] != "resume" {
+		t.Fatalf("action=%v", resp["action"])
+	}
+	if resp["run_id"] != runRec.ID {
+		t.Fatalf("run_id=%v want %s", resp["run_id"], runRec.ID)
+	}
+	if resp["delivery_id"] == nil || resp["delivery_id"] == "" {
+		t.Fatalf("missing delivery_id: %v", resp)
+	}
+
+	evs, err := st.ListEvents(runRec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ev := range evs {
+		if ev.Type == run.EventInboxResumed {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("events=%+v missing %q", evs, run.EventInboxResumed)
+	}
+}
+
+func TestInboxResumeForbiddenAgent(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	st.UpsertAgent(store.Agent{ID: "b", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "b", Input: "other agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusWaitingHuman, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"action":"resume","run_id":"` + runRec.ID + `","decision":"approve"}`)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr); got != "run_forbidden" {
+		t.Fatalf("code=%q", got)
+	}
+}
+
+func TestInboxResumeNotWaiting(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusSucceeded, "ok", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"action":"resume","run_id":"` + runRec.ID + `","decision":"approve"}`)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr); got != "not_waiting" {
+		t.Fatalf("code=%q", got)
+	}
+}
+
+func TestInboxResumeIdempotent(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	runner := &hitlResumeFakeRunner{store: st}
+	srv := api.NewServer(st, tool.NewRegistry(), runner)
+	srv.Inbox = reg
+	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+	h := srv.Handler()
+
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "need approve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusWaitingHuman, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"action":"resume","run_id":"` + runRec.ID + `","decision":"approve","idempotency_key":"resume-once"}`)
+	rr1 := httptest.NewRecorder()
+	h.ServeHTTP(rr1, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("first code=%d body=%s", rr1.Code, rr1.Body.String())
+	}
+	if n := runner.n.Load(); n != 1 {
+		t.Fatalf("ContinueFromHITL calls after first=%d want 1", n)
+	}
+
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("second code=%d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if n := runner.n.Load(); n != 1 {
+		t.Fatalf("ContinueFromHITL calls after replay=%d want 1", n)
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(rr2.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["action"] != "resume" || resp["run_id"] != runRec.ID {
+		t.Fatalf("replay resp=%v", resp)
+	}
+}
+
+func TestInboxResumeNotWaitingWithIdempotencyKey(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusSucceeded, "ok", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"action":"resume","run_id":"` + runRec.ID + `","decision":"approve","idempotency_key":"resume-fail-key"}`)
+	rr1 := httptest.NewRecorder()
+	h.ServeHTTP(rr1, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr1.Code != http.StatusConflict {
+		t.Fatalf("first code=%d body=%s", rr1.Code, rr1.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr1); got != "not_waiting" {
+		t.Fatalf("first code=%q", got)
+	}
+
+	// Same key + body must still return the business error, not a wait timeout 500
+	// from a poisoned empty-RunID delivery slot.
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr2.Code != http.StatusConflict {
+		t.Fatalf("replay code=%d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr2); got != "not_waiting" {
+		t.Fatalf("replay code=%q", got)
 	}
 }

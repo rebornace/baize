@@ -52,6 +52,8 @@ curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
 
 The first event should include `inbox.received` with `channel_id`, `delivery_id`, and any `external_id` / `metadata` you sent.
 
+When the run reaches `waiting_human`, you can approve or reject via the **same signed POST** with `action: "resume"`, `run_id`, and `decision` (`approve` | `reject`) — same HMAC headers as create. See [README.zh-CN — 机器审批（HITL resume）](../../README.zh-CN.md#机器审批hitl-resume).
+
 ## Signing (v1)
 
 | Item | Value |
