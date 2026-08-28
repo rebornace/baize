@@ -1,6 +1,7 @@
 package webhook_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -36,6 +37,9 @@ func TestDispatcherPostsEventAndEnd(t *testing.T) {
 	st := eventbus.Notify(mem, hub)
 	d := webhook.NewDispatcher(st, webhook.Config{URL: srv.URL})
 	d.Attach(hub)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.StartWorker(ctx)
 
 	run, err := st.CreateRun(store.CreateRunInput{AgentID: "a1", Input: "hi"})
 	if err != nil {
@@ -102,6 +106,9 @@ func TestDispatcherPerRunURLOverride(t *testing.T) {
 	st := eventbus.Notify(mem, hub)
 	d := webhook.NewDispatcher(st, webhook.Config{URL: globalSrv.URL})
 	d.Attach(hub)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.StartWorker(ctx)
 
 	run, err := st.CreateRun(store.CreateRunInput{
 		AgentID:       "a1",
@@ -132,11 +139,103 @@ func TestSendTest(t *testing.T) {
 	defer srv.Close()
 
 	d := webhook.NewDispatcher(store.NewMemory(), webhook.Config{URL: srv.URL})
-	if err := d.SendTest(t.Context()); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.StartWorker(ctx)
+	if err := d.SendTest(ctx); err != nil {
 		t.Fatal(err)
 	}
 	ev, ok := body["event"].(map[string]any)
 	if !ok || ev["type"] != "webhook.test" {
 		t.Fatalf("body=%+v", body)
+	}
+}
+
+func TestDispatcherRetries503ThenSucceeds(t *testing.T) {
+	var mu sync.Mutex
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		if n <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	mem := store.NewMemory()
+	d := webhook.NewDispatcher(mem, webhook.Config{URL: srv.URL})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.StartWorker(ctx)
+
+	_, _, err := mem.PutWebhookOutboxIfAbsent(store.WebhookOutboxEntry{
+		RunID:       "test",
+		Kind:        store.WebhookOutboxKindEvent,
+		EventIndex:  0,
+		PayloadJSON: []byte(`{"run_id":"test","event":{"type":"webhook.test"}}`),
+		TargetURL:   srv.URL,
+		HeadersJSON: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		mu.Lock()
+		n := calls
+		mu.Unlock()
+		dead, err := mem.ListWebhookOutbox([]store.WebhookOutboxStatus{store.WebhookOutboxDead}, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delivered, err := mem.ListWebhookOutbox([]store.WebhookOutboxStatus{store.WebhookOutboxDelivered}, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(delivered) == 1 {
+			break
+		}
+		if len(dead) > 0 || time.Now().After(deadline) {
+			t.Fatalf("calls=%d delivered=%d dead=%d", n, len(delivered), len(dead))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls < 3 {
+		t.Fatalf("calls=%d want >=3", calls)
+	}
+}
+
+func TestDispatcher4xxGoesDead(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	mem := store.NewMemory()
+	d := webhook.NewDispatcher(mem, webhook.Config{URL: srv.URL})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.StartWorker(ctx)
+
+	err := d.SendTest(ctx)
+	if err == nil {
+		t.Fatal("expected delivery failure")
+	}
+
+	dead, err := mem.ListWebhookOutbox([]store.WebhookOutboxStatus{store.WebhookOutboxDead}, 10)
+	if err != nil || len(dead) != 1 {
+		t.Fatalf("dead=%+v err=%v", dead, err)
+	}
+	if dead[0].Attempt != 1 {
+		t.Fatalf("attempt=%d want 1", dead[0].Attempt)
 	}
 }

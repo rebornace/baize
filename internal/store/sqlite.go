@@ -70,6 +70,24 @@ CREATE TABLE IF NOT EXISTS inbox_threads (
   conversation_id TEXT NOT NULL,
   UNIQUE(channel_id, external_id)
 );
+CREATE TABLE IF NOT EXISTS webhook_outbox (
+  id TEXT PRIMARY KEY,
+  delivery_key TEXT NOT NULL UNIQUE,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  event_index INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  headers_json TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  status TEXT NOT NULL,
+  last_error TEXT,
+  next_retry_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
 `
 
 // SQLite is a file-backed Store implementation.

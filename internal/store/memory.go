@@ -21,6 +21,7 @@ type Memory struct {
 	settings        map[string][]byte
 	inboxDeliveries map[string]map[string]InboxDelivery
 	inboxThreads    map[string]map[string]string
+	webhookOutbox   map[string]WebhookOutboxEntry
 }
 
 // NewMemory creates an empty in-memory Store.
@@ -35,6 +36,7 @@ func NewMemory() *Memory {
 		settings:        map[string][]byte{},
 		inboxDeliveries: map[string]map[string]InboxDelivery{},
 		inboxThreads:    map[string]map[string]string{},
+		webhookOutbox:   map[string]WebhookOutboxEntry{},
 	}
 }
 

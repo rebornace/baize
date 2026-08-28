@@ -62,7 +62,7 @@
 | 启动 Run | `POST /v0/runs` → `{ run_id }` |
 | 查询轨迹 | `GET /v0/runs/{id}` · `GET /v0/runs/{id}/events` |
 | 恢复 HITL | `POST /v0/runs/{id}/resume` |
-| 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook 出站（已实现；UI：**设置 → Webhook**） |
+| 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook 出站（已实现；UI：**设置 → Webhook**）· 出站失败自动退避重试与死信（SQLite outbox + 进程内 worker；admin 可列表重投） |
 
 `Run` 状态机（最小）：`queued` → `running` → (`waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`。
 
