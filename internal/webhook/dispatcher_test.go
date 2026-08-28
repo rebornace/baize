@@ -130,21 +130,27 @@ func TestDispatcherPerRunURLOverride(t *testing.T) {
 }
 
 func TestSendTest(t *testing.T) {
+	var mu sync.Mutex
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &body)
+		var got map[string]any
+		_ = json.Unmarshal(raw, &got)
+		mu.Lock()
+		body = got
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
+	// SendTest does a synchronous first deliverOne; do not start the worker or it
+	// may POST the same outbox row concurrently (races the handler body map).
 	d := webhook.NewDispatcher(store.NewMemory(), webhook.Config{URL: srv.URL})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go d.StartWorker(ctx)
-	if err := d.SendTest(ctx); err != nil {
+	if err := d.SendTest(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	ev, ok := body["event"].(map[string]any)
 	if !ok || ev["type"] != "webhook.test" {
 		t.Fatalf("body=%+v", body)
@@ -225,11 +231,8 @@ func TestDispatcher4xxGoesDead(t *testing.T) {
 
 	mem := store.NewMemory()
 	d := webhook.NewDispatcher(mem, webhook.Config{URL: srv.URL})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go d.StartWorker(ctx)
-
-	err := d.SendTest(ctx)
+	// SendTest delivers synchronously; worker not needed and would race.
+	err := d.SendTest(context.Background())
 	if err == nil {
 		t.Fatal("expected delivery failure")
 	}
