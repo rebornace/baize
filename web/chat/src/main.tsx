@@ -6,6 +6,7 @@ import { ChatPage } from './pages/ChatPage'
 import { McpSettings } from './pages/McpSettings'
 import { OpenApiSettings } from './pages/OpenApiSettings'
 import { PluginSettings } from './pages/PluginSettings'
+import { InboxSettings } from './pages/InboxSettings'
 import { WebhookSettings } from './pages/WebhookSettings'
 import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
@@ -79,6 +80,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <WebhookSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="inbox"
+              element={
+                <AdminOnly>
+                  <InboxSettings />
                 </AdminOnly>
               }
             />
