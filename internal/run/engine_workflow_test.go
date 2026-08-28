@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/llm"
@@ -223,6 +224,86 @@ func TestExecuteActivateNonWorkflowSkillKeepsReAct(t *testing.T) {
 	st2 := e_getState(eng, r.ID)
 	if st2.workflowStarted {
 		t.Fatal("workflowStarted flag leaked into ReAct run")
+	}
+}
+
+func TestExecuteWorkflowApproveStepSkipsConnectorApproval(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	reg.Register("ta", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	})
+	var tbCalls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "tb"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		tbCalls.Add(1)
+		return map[string]any{"id": "1"}, false, nil
+	}, true)
+
+	wfYAML := `name: demo
+steps:
+  - id: a
+    tool: ta
+  - id: b
+    tool: tb
+    approve: true
+    args:
+      title: "{{input.text}}"
+`
+	cat := loadWorkflowCatalog(t, "demo", wfYAML)
+
+	llmMock := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}},
+		}}
+	}}
+
+	gate := NewGate()
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat, Gate: gate}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input)
+	}()
+
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if tbCalls.Load() != 0 {
+		t.Fatalf("tool called before workflow gate approve: %d", tbCalls.Load())
+	}
+	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute timed out")
+	}
+
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s want succeeded", got.Status)
+	}
+	if tbCalls.Load() != 1 {
+		t.Fatalf("tb calls=%d want 1 (no double approval)", tbCalls.Load())
+	}
+
+	evs, _ := st.ListEvents(r.ID)
+	var hitlWaits int
+	for _, ev := range evs {
+		if ev.Type == EventHITLWaiting {
+			hitlWaits++
+		}
+	}
+	if hitlWaits != 1 {
+		t.Fatalf("hitl.waiting count=%d want 1 (workflow gate only)", hitlWaits)
 	}
 }
 
