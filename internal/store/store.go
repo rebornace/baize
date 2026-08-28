@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -125,6 +126,53 @@ const SettingKeyEventsWebhook = "events_webhook"
 // SettingKeyInboxChannels is the settings KV key for inbox channel configuration.
 const SettingKeyInboxChannels = "inbox_channels"
 
+// WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.
+const WebhookOutboxMaxAttempts = 5
+
+// WebhookOutboxStatus is the lifecycle state of an outbound webhook delivery row.
+type WebhookOutboxStatus string
+
+const (
+	WebhookOutboxPending   WebhookOutboxStatus = "pending"
+	WebhookOutboxDelivered WebhookOutboxStatus = "delivered"
+	WebhookOutboxDead      WebhookOutboxStatus = "dead"
+)
+
+// WebhookOutboxKind distinguishes event payloads from terminal run.ended posts.
+type WebhookOutboxKind string
+
+const (
+	WebhookOutboxKindEvent WebhookOutboxKind = "event"
+	WebhookOutboxKindEnded WebhookOutboxKind = "ended"
+)
+
+// WebhookOutboxEntry is a durable outbound webhook delivery attempt.
+type WebhookOutboxEntry struct {
+	ID           string
+	DeliveryKey  string
+	RunID        string
+	Kind         WebhookOutboxKind
+	EventIndex   int
+	PayloadJSON  []byte
+	TargetURL    string
+	HeadersJSON  []byte
+	Attempt      int
+	MaxAttempts  int
+	Status       WebhookOutboxStatus
+	LastError    string
+	NextRetryAt  time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ErrWebhookOutboxNotFound is returned when a webhook outbox row is missing.
+var ErrWebhookOutboxNotFound = errors.New("webhook outbox entry not found")
+
+// WebhookOutboxDeliveryKey builds the deduplication key for a logical delivery.
+func WebhookOutboxDeliveryKey(runID string, kind WebhookOutboxKind, eventIndex int) string {
+	return fmt.Sprintf("%s:%s:%d", runID, kind, eventIndex)
+}
+
 // InboxDeliveryTTL is the idempotency retention window. GetInboxDelivery treats
 // rows older than this as misses; PutInboxDelivery may overwrite expired rows.
 const InboxDeliveryTTL = 24 * time.Hour
@@ -217,4 +265,11 @@ type Store interface {
 	UpdateInboxDelivery(channelID, idempotencyKey, runID string) error
 	GetInboxThread(channelID, externalID string) (conversationID string, ok bool, err error)
 	PutInboxThread(channelID, externalID, conversationID string) error
+
+	PutWebhookOutboxIfAbsent(entry WebhookOutboxEntry) (created bool, id string, err error)
+	ListWebhookOutboxDue(now time.Time, limit int) ([]WebhookOutboxEntry, error)
+	ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([]WebhookOutboxEntry, error)
+	GetWebhookOutbox(id string) (WebhookOutboxEntry, error)
+	UpdateWebhookOutbox(entry WebhookOutboxEntry) error
+	ResetWebhookOutboxRetry(id string) error
 }

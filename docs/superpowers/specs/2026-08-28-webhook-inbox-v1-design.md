@@ -30,7 +30,7 @@
 | 任意 JSONPath / 模板映射 payload | v1 固定 schema；复杂转换由调用方网关完成 |
 | 多 Channel 广播、路由规则引擎 | YAGNI |
 | IP 白名单、WAF 集成 | 部署侧解决 |
-| 出站 Webhook 重试/死信 | 独立里程碑（可与 Inbox 同批发布但**不阻塞** Inbox v1 验收） |
+| 出站 Webhook 重试/死信 | **已实现**（2026-08-28，`webhook-outbound-retry-v0`）；见 `docs/superpowers/specs/2026-08-28-webhook-outbound-retry-v0-design.md` |
 | 附件 / 多模态入站 | v1 仅 `input` 字符串 |
 | `tenant_id` 路由 | 开源默认单租户 |
 
