@@ -101,7 +101,7 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 			"data":      map[string]any{},
 		},
 	}
-	id, created, err := d.enqueue(ctx, "test", store.WebhookOutboxKindEvent, 0, url, headers, payload)
+	id, created, err := d.enqueue(ctx, "test", store.WebhookOutboxKindEvent, 0, url, headers, payload, false)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {
 		"index":  ev.Index,
 		"event":  ev.Event,
 	}
-	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEvent, ev.Index, url, headers, payload)
+	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEvent, ev.Index, url, headers, payload, true)
 }
 
 func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
@@ -166,10 +166,10 @@ func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
 		"ended":  true,
 		"status": string(status),
 	}
-	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEnded, -1, url, headers, payload)
+	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEnded, -1, url, headers, payload, true)
 }
 
-func (d *Dispatcher) enqueue(ctx context.Context, runID string, kind store.WebhookOutboxKind, eventIndex int, url string, headers map[string]string, payload any) (string, bool, error) {
+func (d *Dispatcher) enqueue(ctx context.Context, runID string, kind store.WebhookOutboxKind, eventIndex int, url string, headers map[string]string, payload any, notifyWorker bool) (string, bool, error) {
 	_ = ctx
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -191,7 +191,7 @@ func (d *Dispatcher) enqueue(ctx context.Context, runID string, kind store.Webho
 	if err != nil {
 		return "", false, err
 	}
-	if created {
+	if created && notifyWorker {
 		d.signalWake()
 	}
 	return id, created, nil
