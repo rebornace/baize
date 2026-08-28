@@ -395,6 +395,11 @@ func (s *Memory) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelive
 	if !ok {
 		return InboxDelivery{}, false, nil
 	}
+	// Rows older than InboxDeliveryTTL are treated as misses so the same key
+	// may be claimed again after the window.
+	if !InboxDeliveryFresh(d, time.Now()) {
+		return InboxDelivery{}, false, nil
+	}
 	return d, true, nil
 }
 
@@ -406,13 +411,32 @@ func (s *Memory) PutInboxDelivery(d InboxDelivery) error {
 		byKey = map[string]InboxDelivery{}
 		s.inboxDeliveries[d.ChannelID] = byKey
 	}
-	if _, exists := byKey[d.IdempotencyKey]; exists {
-		return fmt.Errorf("inbox delivery already exists")
+	if existing, exists := byKey[d.IdempotencyKey]; exists {
+		// Allow overwrite of expired rows; reject fresh duplicates.
+		if InboxDeliveryFresh(existing, time.Now()) {
+			return ErrInboxDeliveryExists
+		}
 	}
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = time.Now().UTC()
 	}
 	byKey[d.IdempotencyKey] = d
+	return nil
+}
+
+func (s *Memory) UpdateInboxDelivery(channelID, idempotencyKey, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byKey, ok := s.inboxDeliveries[channelID]
+	if !ok {
+		return fmt.Errorf("inbox delivery not found")
+	}
+	d, ok := byKey[idempotencyKey]
+	if !ok || !InboxDeliveryFresh(d, time.Now()) {
+		return fmt.Errorf("inbox delivery not found")
+	}
+	d.RunID = runID
+	byKey[idempotencyKey] = d
 	return nil
 }
 

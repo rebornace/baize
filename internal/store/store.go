@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type Status string
 
@@ -122,10 +125,26 @@ const SettingKeyEventsWebhook = "events_webhook"
 // SettingKeyInboxChannels is the settings KV key for inbox channel configuration.
 const SettingKeyInboxChannels = "inbox_channels"
 
+// InboxDeliveryTTL is the idempotency retention window. GetInboxDelivery treats
+// rows older than this as misses; PutInboxDelivery may overwrite expired rows.
+const InboxDeliveryTTL = 24 * time.Hour
+
+// ErrInboxDeliveryExists is returned by PutInboxDelivery when a fresh row
+// already occupies the (channel_id, idempotency_key) slot.
+var ErrInboxDeliveryExists = errors.New("inbox delivery already exists")
+
 // InboxDelivery records an accepted inbound webhook delivery for idempotency.
 type InboxDelivery struct {
 	ChannelID, IdempotencyKey, DeliveryID, RunID, BodyHash string
 	CreatedAt time.Time
+}
+
+// InboxDeliveryFresh reports whether d is within InboxDeliveryTTL of now.
+func InboxDeliveryFresh(d InboxDelivery, now time.Time) bool {
+	if d.CreatedAt.IsZero() {
+		return false
+	}
+	return now.Sub(d.CreatedAt) < InboxDeliveryTTL
 }
 
 type Run struct {
@@ -195,6 +214,7 @@ type Store interface {
 
 	GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error)
 	PutInboxDelivery(d InboxDelivery) error
+	UpdateInboxDelivery(channelID, idempotencyKey, runID string) error
 	GetInboxThread(channelID, externalID string) (conversationID string, ok bool, err error)
 	PutInboxThread(channelID, externalID, conversationID string) error
 }

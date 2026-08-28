@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
@@ -82,7 +83,8 @@ type Server struct {
 	AdminToken    string
 	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	Inbox         *inbox.Registry     // optional; nil = inbox routes unavailable
-	InboxLimiter  *inbox.RateLimiter  // optional; nil => default per-channel limiter
+	InboxLimiter  *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
+	inboxLimiterOnce sync.Once
 	DataDir       string              // parent dir for specstore (sqlite dir); required for spec_content PUT
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision
@@ -114,6 +116,17 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	}
 	s.routes()
 	return s
+}
+
+// inboxLimiter returns the configured limiter, lazily creating a default once
+// when InboxLimiter was left nil (bootstrap normally sets one).
+func (s *Server) inboxLimiter() *inbox.RateLimiter {
+	s.inboxLimiterOnce.Do(func() {
+		if s.InboxLimiter == nil {
+			s.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+		}
+	})
+	return s.InboxLimiter
 }
 
 func (s *Server) Handler() http.Handler {

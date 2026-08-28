@@ -36,10 +36,19 @@ func (r *Registry) Replace(channels []Channel) {
 
 // Get returns a channel when it is enabled and has a non-empty secret.
 func (r *Registry) Get(id string) (Channel, bool) {
+	c, ok := r.GetAny(id)
+	if !ok || !c.Enabled || strings.TrimSpace(c.Secret) == "" {
+		return Channel{}, false
+	}
+	return c, true
+}
+
+// GetAny returns a channel by id regardless of enabled/secret state.
+func (r *Registry) GetAny(id string) (Channel, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	c, ok := r.channels[id]
-	if !ok || !c.Enabled || strings.TrimSpace(c.Secret) == "" {
+	if !ok {
 		return Channel{}, false
 	}
 	return c, true

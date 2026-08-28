@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/store"
 	_ "modernc.org/sqlite"
@@ -493,6 +494,46 @@ func TestSQLiteInboxDeliveryRoundTrip(t *testing.T) {
 	}
 	got, ok, err := s.GetInboxDelivery("alerts", "k1")
 	if err != nil || !ok || got.RunID != "run_y" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestSQLiteInboxDeliveryTTLAndUpdate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inbox-ttl.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	expired := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k-ttl",
+		DeliveryID: "dlv_old", RunID: "run_old", BodyHash: "hash-a",
+		CreatedAt: time.Now().UTC().Add(-25 * time.Hour),
+	}
+	if err := s.PutInboxDelivery(expired); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.GetInboxDelivery("alerts", "k-ttl"); err != nil || ok {
+		t.Fatalf("expired should miss ok=%v err=%v", ok, err)
+	}
+
+	fresh := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k-ttl",
+		DeliveryID: "dlv_new", RunID: "", BodyHash: "hash-b",
+	}
+	if err := s.PutInboxDelivery(fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateInboxDelivery("alerts", "k-ttl", "run_new"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetInboxDelivery("alerts", "k-ttl")
+	if err != nil || !ok || got.RunID != "run_new" || got.DeliveryID != "dlv_new" {
 		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
 	}
 }

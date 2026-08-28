@@ -38,9 +38,13 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channel, ok := s.Inbox.Get(channelID)
-	if !ok {
-		writeError(w, http.StatusNotFound, "channel_not_found", "unknown or disabled channel")
+	channel, exists := s.Inbox.GetAny(channelID)
+	if !exists {
+		writeError(w, http.StatusNotFound, "channel_not_found", "unknown channel")
+		return
+	}
+	if !channel.Enabled || strings.TrimSpace(channel.Secret) == "" {
+		writeError(w, http.StatusNotFound, "channel_disabled", "channel disabled or secret missing")
 		return
 	}
 
@@ -57,21 +61,6 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limiter := s.InboxLimiter
-	if limiter == nil {
-		limiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
-	}
-	if !limiter.Allow(channelID) {
-		w.Header().Set("Retry-After", inboxRetryAfter)
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "channel rate limit exceeded")
-		return
-	}
-
-	if proto := strings.TrimSpace(r.Header.Get("X-Baize-Protocol")); proto != "" && proto != "v0" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported protocol version")
-		return
-	}
-
 	now := time.Now()
 	if err := inbox.Verify(channel.Secret, timestamp, rawBody, sigHeader, now, inboxMaxSkew); err != nil {
 		switch {
@@ -80,6 +69,18 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "invalid inbox signature")
 		}
+		return
+	}
+
+	// Rate limit only after a valid signature so unsigned traffic cannot burn quota.
+	if !s.inboxLimiter().Allow(channelID) {
+		w.Header().Set("Retry-After", inboxRetryAfter)
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "channel rate limit exceeded")
+		return
+	}
+
+	if proto := strings.TrimSpace(r.Header.Get("X-Baize-Protocol")); proto != "" && proto != "v0" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported protocol version")
 		return
 	}
 
@@ -95,6 +96,9 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 
 	bodyHash := sha256Hex(rawBody)
 	idempotencyKey := strings.TrimSpace(payload.IdempotencyKey)
+	deliveryID := "dlv_" + uuid.NewString()
+	claimed := false
+
 	if idempotencyKey != "" {
 		if existing, found, err := s.Store.GetInboxDelivery(channelID, idempotencyKey); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -102,6 +106,11 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 		} else if found {
 			if existing.BodyHash != bodyHash {
 				writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key reused with different body")
+				return
+			}
+			existing, err = waitInboxDeliveryRunID(s.Store, channelID, idempotencyKey, 2*time.Second)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
 			convID := inboxReplayConversationID(s.Store, existing.RunID)
@@ -115,8 +124,44 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if idempotencyKey != "" {
+		// Claim the idempotency slot before startRun so concurrent POSTs cannot
+		// create duplicate Runs. RunID is filled after startRun via UpdateInboxDelivery.
+		if err := s.Store.PutInboxDelivery(store.InboxDelivery{
+			ChannelID:      channelID,
+			IdempotencyKey: idempotencyKey,
+			DeliveryID:     deliveryID,
+			RunID:          "",
+			BodyHash:       bodyHash,
+		}); err != nil {
+			if errors.Is(err, store.ErrInboxDeliveryExists) {
+				existing, found, getErr := s.Store.GetInboxDelivery(channelID, idempotencyKey)
+				if getErr != nil {
+					writeError(w, http.StatusInternalServerError, "internal_error", getErr.Error())
+					return
+				}
+				if found {
+					if existing.BodyHash != bodyHash {
+						writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key reused with different body")
+						return
+					}
+					existing, waitErr := waitInboxDeliveryRunID(s.Store, channelID, idempotencyKey, 2*time.Second)
+					if waitErr != nil {
+						writeError(w, http.StatusInternalServerError, "internal_error", waitErr.Error())
+						return
+					}
+					convID := inboxReplayConversationID(s.Store, existing.RunID)
+					writeInboxAccepted(w, http.StatusOK, existing.DeliveryID, existing.RunID, convID)
+					return
+				}
+			}
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		claimed = true
+	}
+
 	convID := resolveConversation(s.Store, channel, payload)
-	deliveryID := "dlv_" + uuid.NewString()
 	inputText := strings.TrimSpace(payload.Input)
 
 	var runSkills []string
@@ -162,23 +207,8 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if idempotencyKey != "" {
-		d := store.InboxDelivery{
-			ChannelID:      channelID,
-			IdempotencyKey: idempotencyKey,
-			DeliveryID:     deliveryID,
-			RunID:          runRec.ID,
-			BodyHash:       bodyHash,
-		}
-		if err := s.Store.PutInboxDelivery(d); err != nil {
-			if existing, found, getErr := s.Store.GetInboxDelivery(channelID, idempotencyKey); getErr == nil && found {
-				if existing.BodyHash == bodyHash {
-					writeInboxAccepted(w, http.StatusOK, existing.DeliveryID, existing.RunID, convID)
-					return
-				}
-				writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key reused with different body")
-				return
-			}
+	if claimed {
+		if err := s.Store.UpdateInboxDelivery(channelID, idempotencyKey, runRec.ID); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -192,6 +222,28 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeInboxAccepted(w, http.StatusAccepted, deliveryID, runRec.ID, convID)
+}
+
+// waitInboxDeliveryRunID polls until a claimed delivery has a non-empty RunID
+// (winner of the Put claim finished UpdateInboxDelivery) or timeout.
+func waitInboxDeliveryRunID(st store.Store, channelID, idempotencyKey string, timeout time.Duration) (store.InboxDelivery, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		d, ok, err := st.GetInboxDelivery(channelID, idempotencyKey)
+		if err != nil {
+			return store.InboxDelivery{}, err
+		}
+		if ok && d.RunID != "" {
+			return d, nil
+		}
+		if time.Now().After(deadline) {
+			if ok {
+				return d, errors.New("inbox delivery run_id not ready")
+			}
+			return store.InboxDelivery{}, errors.New("inbox delivery missing")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 var (
@@ -270,7 +322,7 @@ type inboxChannelView struct {
 type inboxChannelInput struct {
 	ID             string            `json:"id"`
 	AgentID        string            `json:"agent_id"`
-	Enabled        bool              `json:"enabled"`
+	Enabled        *bool             `json:"enabled"`
 	Skills         []string          `json:"skills,omitempty"`
 	Description    string            `json:"description,omitempty"`
 	WebhookURL     string            `json:"webhook_url,omitempty"`
@@ -375,10 +427,15 @@ func (s *Server) handlePutInboxChannels(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 
+		enabled := true
+		if in.Enabled != nil {
+			enabled = *in.Enabled
+		}
+
 		c := inbox.Channel{
 			ID:             id,
 			AgentID:        strings.TrimSpace(in.AgentID),
-			Enabled:        in.Enabled,
+			Enabled:        enabled,
 			Skills:         in.Skills,
 			Description:    in.Description,
 			WebhookURL:     in.WebhookURL,
@@ -457,7 +514,7 @@ func (s *Server) handlePostInboxTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !channel.Enabled || strings.TrimSpace(channel.Secret) == "" {
-		writeError(w, http.StatusNotFound, "channel_not_found", "unknown or disabled channel")
+		writeError(w, http.StatusNotFound, "channel_disabled", "channel disabled or secret missing")
 		return
 	}
 

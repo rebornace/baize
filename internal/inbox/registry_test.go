@@ -33,6 +33,18 @@ func TestRegistryGetEnabledChannel(t *testing.T) {
 	}
 }
 
+func TestRegistryGetAnyIncludesDisabled(t *testing.T) {
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "a", AgentID: "x", Secret: "s", Enabled: false}})
+	got, ok := reg.GetAny("a")
+	if !ok || got.Enabled {
+		t.Fatalf("got=%+v ok=%v", got, ok)
+	}
+	if _, ok := reg.Get("a"); ok {
+		t.Fatal("Get must hide disabled")
+	}
+}
+
 func TestSecretHint(t *testing.T) {
 	if got := inbox.SecretHint("abcdefghij"); got != "ghij" {
 		t.Fatalf("hint=%q want ghij", got)

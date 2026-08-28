@@ -11,7 +11,9 @@ import (
 var channelIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 const (
-	maxPayloadInputLen = 8192
+	maxPayloadInputLen     = 8192
+	maxIdempotencyKeyLen   = 128
+	maxExternalIDLen       = 256
 )
 
 // Channel is an inbound webhook entry binding an agent and signing secret.
@@ -68,6 +70,16 @@ func (p *Payload) Validate() error {
 	}
 	if len(input) > maxPayloadInputLen {
 		return fmt.Errorf("inbox payload: input exceeds %d characters", maxPayloadInputLen)
+	}
+	if key := strings.TrimSpace(p.IdempotencyKey); key != "" {
+		if n := len(key); n < 1 || n > maxIdempotencyKeyLen {
+			return fmt.Errorf("inbox payload: idempotency_key length must be 1-%d", maxIdempotencyKeyLen)
+		}
+	}
+	if ext := strings.TrimSpace(p.ExternalID); ext != "" {
+		if n := len(ext); n < 1 || n > maxExternalIDLen {
+			return fmt.Errorf("inbox payload: external_id length must be 1-%d", maxExternalIDLen)
+		}
 	}
 	return nil
 }

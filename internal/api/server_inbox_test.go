@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -225,5 +226,217 @@ func TestRotateInboxSecret(t *testing.T) {
 	h.ServeHTTP(newRR, newReq)
 	if newRR.Code != http.StatusAccepted {
 		t.Fatalf("new secret code=%d body=%s", newRR.Code, newRR.Body.String())
+	}
+}
+
+func decodeInboxErrCode(t *testing.T, rr *httptest.ResponseRecorder) string {
+	t.Helper()
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatalf("decode error body: %v raw=%s", err, rr.Body.String())
+	}
+	return wrap.Error.Code
+}
+
+func TestInboxIdempotencyConflict(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	body1 := []byte(`{"input":"one","idempotency_key":"same-key"}`)
+	rr1 := httptest.NewRecorder()
+	h.ServeHTTP(rr1, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body1))
+	if rr1.Code != http.StatusAccepted {
+		t.Fatalf("first code=%d body=%s", rr1.Code, rr1.Body.String())
+	}
+
+	body2 := []byte(`{"input":"two","idempotency_key":"same-key"}`)
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body2))
+	if rr2.Code != http.StatusConflict {
+		t.Fatalf("conflict code=%d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr2); got != "idempotency_conflict" {
+		t.Fatalf("code=%q", got)
+	}
+}
+
+func TestInboxTimestampSkew(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+
+	body := []byte(`{"input":"hello"}`)
+	ts := strconv.FormatInt(time.Now().Add(-10*time.Minute).Unix(), 10)
+	sig := inbox.Sign("sec", ts, body)
+	req := httptest.NewRequest(http.MethodPost, "/v0/inbox/alerts", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Baize-Inbox-Timestamp", ts)
+	req.Header.Set("X-Baize-Inbox-Signature", sig)
+
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr); got != "timestamp_skew" {
+		t.Fatalf("code=%q", got)
+	}
+}
+
+func TestInboxChannelDisabled(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: false}})
+	srv := testServerWithInbox(t, st, reg)
+
+	body := []byte(`{"input":"hello"}`)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr); got != "channel_disabled" {
+		t.Fatalf("code=%q", got)
+	}
+
+	rrMissing := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rrMissing, signedInboxRequest(t, http.MethodPost, "/v0/inbox/missing", "sec", body))
+	if rrMissing.Code != http.StatusNotFound {
+		t.Fatalf("missing code=%d body=%s", rrMissing.Code, rrMissing.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rrMissing); got != "channel_not_found" {
+		t.Fatalf("missing code=%q", got)
+	}
+}
+
+func TestPutInboxChannelsEnabledDefaultsTrue(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	putBody := map[string]any{
+		"channels": []map[string]any{{
+			"id":       "alerts",
+			"agent_id": "a",
+			"secret":   "sec-secret-abcdefghij",
+		}},
+	}
+	putRR := httptest.NewRecorder()
+	h.ServeHTTP(putRR, httptest.NewRequest(http.MethodPut, "/v0/settings/inbox-channels", jsonBody(t, putBody)))
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("PUT code=%d body=%s", putRR.Code, putRR.Body.String())
+	}
+	var got struct {
+		Channels []struct {
+			Enabled bool `json:"enabled"`
+		} `json:"channels"`
+	}
+	if err := json.NewDecoder(putRR.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Channels) != 1 || !got.Channels[0].Enabled {
+		t.Fatalf("channels=%+v want enabled=true", got.Channels)
+	}
+}
+
+func TestInboxConcurrentIdempotency(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	body := []byte(`{"input":"concurrent","idempotency_key":"conc-key-1"}`)
+	const n = 8
+	type result struct {
+		code  int
+		runID string
+	}
+	results := make([]result, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+			var resp map[string]any
+			_ = json.NewDecoder(rr.Body).Decode(&resp)
+			runID, _ := resp["run_id"].(string)
+			results[i] = result{code: rr.Code, runID: runID}
+		}(i)
+	}
+	wg.Wait()
+
+	var runID string
+	for i, r := range results {
+		if r.code != http.StatusAccepted && r.code != http.StatusOK {
+			t.Fatalf("goroutine %d code=%d", i, r.code)
+		}
+		if r.runID == "" {
+			t.Fatalf("goroutine %d missing run_id", i)
+		}
+		if runID == "" {
+			runID = r.runID
+		} else if r.runID != runID {
+			t.Fatalf("run_id mismatch: %q vs %q", runID, r.runID)
+		}
+	}
+}
+
+func TestInboxRateLimitAfterSignature(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	srv.InboxLimiter = inbox.NewRateLimiter(1, time.Minute)
+	h := srv.Handler()
+
+	body := []byte(`{"input":"hello"}`)
+	rr1 := httptest.NewRecorder()
+	h.ServeHTTP(rr1, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr1.Code != http.StatusAccepted {
+		t.Fatalf("first code=%d body=%s", rr1.Code, rr1.Body.String())
+	}
+
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second code=%d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr2); got != "rate_limited" {
+		t.Fatalf("code=%q", got)
+	}
+
+	// Unsigned requests must not consume the budget (already exhausted above would
+	// still be 401, and a fresh limiter proves verify-before-limit ordering).
+	srv2 := testServerWithInbox(t, st, reg)
+	srv2.InboxLimiter = inbox.NewRateLimiter(1, time.Minute)
+	bad := httptest.NewRequest(http.MethodPost, "/v0/inbox/alerts", strings.NewReader(string(body)))
+	bad.Header.Set("Content-Type", "application/json")
+	badRR := httptest.NewRecorder()
+	srv2.Handler().ServeHTTP(badRR, bad)
+	if badRR.Code != http.StatusUnauthorized {
+		t.Fatalf("unsigned code=%d", badRR.Code)
+	}
+	okRR := httptest.NewRecorder()
+	srv2.Handler().ServeHTTP(okRR, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if okRR.Code != http.StatusAccepted {
+		t.Fatalf("signed after unsigned code=%d body=%s", okRR.Code, okRR.Body.String())
 	}
 }

@@ -826,7 +826,7 @@ func (s *SQLite) HasActiveRun(conversationID string) (bool, error) {
 	return true, nil
 }
 
-func (s *SQLite) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+func (s *SQLite) getInboxDeliveryRaw(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
 	var d InboxDelivery
 	var createdAt string
 	err := s.db.QueryRow(
@@ -851,6 +851,19 @@ func (s *SQLite) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelive
 	return d, true, nil
 }
 
+func (s *SQLite) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+	d, ok, err := s.getInboxDeliveryRaw(channelID, idempotencyKey)
+	if err != nil || !ok {
+		return d, ok, err
+	}
+	// Rows older than InboxDeliveryTTL are treated as misses so the same key
+	// may be claimed again after the window.
+	if !InboxDeliveryFresh(d, time.Now()) {
+		return InboxDelivery{}, false, nil
+	}
+	return d, true, nil
+}
+
 func (s *SQLite) PutInboxDelivery(d InboxDelivery) error {
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = time.Now().UTC()
@@ -861,10 +874,46 @@ func (s *SQLite) PutInboxDelivery(d InboxDelivery) error {
 		d.ChannelID, d.IdempotencyKey, d.DeliveryID, d.RunID, d.BodyHash,
 		d.CreatedAt.Format(time.RFC3339Nano),
 	)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
-		return fmt.Errorf("inbox delivery already exists")
+	if err == nil {
+		return nil
 	}
+	if !strings.Contains(strings.ToLower(err.Error()), "unique") {
+		return err
+	}
+	existing, ok, getErr := s.getInboxDeliveryRaw(d.ChannelID, d.IdempotencyKey)
+	if getErr != nil {
+		return getErr
+	}
+	if !ok || InboxDeliveryFresh(existing, time.Now()) {
+		return ErrInboxDeliveryExists
+	}
+	// Overwrite expired row for the same (channel_id, idempotency_key).
+	_, err = s.db.Exec(
+		`UPDATE inbox_deliveries
+		 SET delivery_id = ?, run_id = ?, body_hash = ?, created_at = ?
+		 WHERE channel_id = ? AND idempotency_key = ?`,
+		d.DeliveryID, d.RunID, d.BodyHash, d.CreatedAt.Format(time.RFC3339Nano),
+		d.ChannelID, d.IdempotencyKey,
+	)
 	return err
+}
+
+func (s *SQLite) UpdateInboxDelivery(channelID, idempotencyKey, runID string) error {
+	res, err := s.db.Exec(
+		`UPDATE inbox_deliveries SET run_id = ? WHERE channel_id = ? AND idempotency_key = ?`,
+		runID, channelID, idempotencyKey,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("inbox delivery not found")
+	}
+	return nil
 }
 
 func (s *SQLite) GetInboxThread(channelID, externalID string) (string, bool, error) {
