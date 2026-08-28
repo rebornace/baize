@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/eventbus"
