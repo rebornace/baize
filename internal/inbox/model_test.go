@@ -21,6 +21,35 @@ func TestPayloadValidateRequiresInput(t *testing.T) {
 	}
 }
 
+func TestPayloadValidateCreateRequiresInput(t *testing.T) {
+	p := inbox.Payload{Action: "", Input: ""}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPayloadValidateResume(t *testing.T) {
+	p := inbox.Payload{Action: "resume", RunID: "run_1", Decision: "approve"}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	p.Decision = "nope"
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected invalid decision")
+	}
+	p = inbox.Payload{Action: "resume", Decision: "approve"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected missing run_id")
+	}
+}
+
+func TestPayloadValidateUnknownAction(t *testing.T) {
+	p := inbox.Payload{Action: "warp", Input: "x"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestPayloadValidateIdempotencyAndExternalIDLength(t *testing.T) {
 	ok := inbox.Payload{Input: "hi", IdempotencyKey: "k", ExternalID: "ext"}
 	if err := ok.Validate(); err != nil {

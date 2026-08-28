@@ -176,7 +176,7 @@ HTTP 插件侧车在 `POST /v0/tools/{name}/invoke` 成功返回后，亦可按 
 | 多 Agent | 多个 Agent 配置 + Run 间消息（非默认） |
 | Skill 包 | **配置形态**（不升格为与 Runtime / Agent / Tool / Connector / Run 并列的第六抽象）：`SKILL.md` 流程正文 + `tools` 清单；无在线自闭环、无市场 |
 | Memory | Run 工作记忆内置；企业 Memory 插件默认关 |
-| Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；企业微信（样板，非内核概念） |
+| Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，支持 `action=resume`（HITL 机器审批），见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；企业微信（样板，非内核概念） |
 
 ### Skill：发现与激活（语义）
 
