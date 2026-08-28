@@ -148,21 +148,21 @@ const (
 
 // WebhookOutboxEntry is a durable outbound webhook delivery attempt.
 type WebhookOutboxEntry struct {
-	ID           string
-	DeliveryKey  string
-	RunID        string
-	Kind         WebhookOutboxKind
-	EventIndex   int
-	PayloadJSON  []byte
-	TargetURL    string
-	HeadersJSON  []byte
-	Attempt      int
-	MaxAttempts  int
-	Status       WebhookOutboxStatus
-	LastError    string
-	NextRetryAt  time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID          string
+	DeliveryKey string
+	RunID       string
+	Kind        WebhookOutboxKind
+	EventIndex  int
+	PayloadJSON []byte
+	TargetURL   string
+	HeadersJSON []byte
+	Attempt     int
+	MaxAttempts int
+	Status      WebhookOutboxStatus
+	LastError   string
+	NextRetryAt time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // ErrWebhookOutboxNotFound is returned when a webhook outbox row is missing.
