@@ -136,7 +136,7 @@ var ErrInboxDeliveryExists = errors.New("inbox delivery already exists")
 // InboxDelivery records an accepted inbound webhook delivery for idempotency.
 type InboxDelivery struct {
 	ChannelID, IdempotencyKey, DeliveryID, RunID, BodyHash string
-	CreatedAt time.Time
+	CreatedAt                                              time.Time
 }
 
 // InboxDeliveryFresh reports whether d is within InboxDeliveryTTL of now.

@@ -11,9 +11,9 @@ import (
 var channelIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 const (
-	maxPayloadInputLen     = 8192
-	maxIdempotencyKeyLen   = 128
-	maxExternalIDLen       = 256
+	maxPayloadInputLen   = 8192
+	maxIdempotencyKeyLen = 128
+	maxExternalIDLen     = 256
 )
 
 // Channel is an inbound webhook entry binding an agent and signing secret.

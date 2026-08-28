@@ -11,13 +11,13 @@ import (
 
 // Memory is an in-memory Store implementation.
 type Memory struct {
-	mu         sync.RWMutex
-	agents     map[string]Agent
-	connectors map[string]Connector
-	tools      map[string]Tool
-	runs       map[string]*Run
-	events     map[string][]Event
-	hitl       map[string]*HITLPayload
+	mu              sync.RWMutex
+	agents          map[string]Agent
+	connectors      map[string]Connector
+	tools           map[string]Tool
+	runs            map[string]*Run
+	events          map[string][]Event
+	hitl            map[string]*HITLPayload
 	settings        map[string][]byte
 	inboxDeliveries map[string]map[string]InboxDelivery
 	inboxThreads    map[string]map[string]string
@@ -26,12 +26,12 @@ type Memory struct {
 // NewMemory creates an empty in-memory Store.
 func NewMemory() *Memory {
 	return &Memory{
-		agents:     map[string]Agent{},
-		connectors: map[string]Connector{},
-		tools:      map[string]Tool{},
-		runs:       map[string]*Run{},
-		events:     map[string][]Event{},
-		hitl:       map[string]*HITLPayload{},
+		agents:          map[string]Agent{},
+		connectors:      map[string]Connector{},
+		tools:           map[string]Tool{},
+		runs:            map[string]*Run{},
+		events:          map[string][]Event{},
+		hitl:            map[string]*HITLPayload{},
 		settings:        map[string][]byte{},
 		inboxDeliveries: map[string]map[string]InboxDelivery{},
 		inboxThreads:    map[string]map[string]string{},

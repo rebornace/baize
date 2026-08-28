@@ -79,13 +79,13 @@ type Server struct {
 	// OperatorToken / AdminToken configure the control-plane gate. When both
 	// are empty the gate is off and all routes behave as before. When at least
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
-	OperatorToken string
-	AdminToken    string
-	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
-	Inbox         *inbox.Registry     // optional; nil = inbox routes unavailable
-	InboxLimiter  *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
+	OperatorToken    string
+	AdminToken       string
+	Webhook          *webhook.Dispatcher // optional; nil = no outbound webhook delivery
+	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
+	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
 	inboxLimiterOnce sync.Once
-	DataDir       string              // parent dir for specstore (sqlite dir); required for spec_content PUT
+	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision
 	// (image attachments are rejected with vision_unsupported).
