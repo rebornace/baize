@@ -516,9 +516,27 @@ PowerShell：见 [`examples/inbox-alert/post.ps1`](examples/inbox-alert/post.ps1
 
 **请求头（必填）：** `Content-Type: application/json`、`X-Baize-Inbox-Timestamp`（Unix 秒）、`X-Baize-Inbox-Signature: v1=<hex>`，其中 `v1=<HMAC-SHA256(secret, "<timestamp>.<raw_body>")>`。
 
-**请求体（固定 schema）：** `input`（必填，trim 后 1–8192 字符）；可选 `idempotency_key`、`conversation_id`、`external_id`、`metadata`（仅写入 `inbox.received` 事件，不传入 LLM）。Body 上限 **64 KiB**。
+**请求体（create_run，默认）：** `input`（必填，trim 后 1–8192 字符）；可选 `idempotency_key`、`conversation_id`、`external_id`、`metadata`（仅写入 `inbox.received` 事件，不传入 LLM）。`action` 可省略，等价 `create_run`。Body 上限 **64 KiB**。
 
 **成功：** `202 Accepted`，返回 `delivery_id`、`run_id`、`status: accepted`；有会话绑定时含 `conversation_id`。
+
+### 机器审批（HITL resume）
+
+Run 进入 `waiting_human` 后，可用**同一 Inbox URL 与签名方式**投递 `action: resume`，走与控制面 `POST /v0/runs/{id}/resume` 相同的 `ContinueFromHITL` 路径（适合工单/审批网关自动批过，无需 Operator Token）。
+
+```bash
+export RUN_ID='<run_id_from_create_or_webhook>'
+TS=$(date +%s)
+BODY='{"action":"resume","run_id":"'"$RUN_ID"'","decision":"approve","comment":"自动审批","idempotency_key":"alert-20260828-approve-001"}'
+SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$INBOX_SECRET" | awk '{print $2}')"
+curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
+  -H "Content-Type: application/json" \
+  -H "X-Baize-Inbox-Timestamp: $TS" \
+  -H "X-Baize-Inbox-Signature: $SIG" \
+  -d "$BODY"
+```
+
+`decision` 为 `approve` 或 `reject`；`comment` 可选。成功 **200 OK**，返回 `delivery_id`、`run_id`、`status`（resume 后 Run 状态）、`action: resume`。Run 的 `agent_id` 须与本 Channel 一致，否则 **403**；非 `waiting_human`（含已被 `/ui` 批过）→ **409** `not_waiting`。幂等规则与 create 相同（同 `idempotency_key` + body hash → 200 重放首次响应）。轨迹含 `inbox.resumed` 事件。规格见 [`docs/superpowers/specs/2026-08-28-inbox-hitl-resume-v0-design.md`](docs/superpowers/specs/2026-08-28-inbox-hitl-resume-v0-design.md)。
 
 ### 幂等与续聊
 
