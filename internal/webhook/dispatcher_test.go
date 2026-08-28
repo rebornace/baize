@@ -39,7 +39,7 @@ func TestDispatcherPostsEventAndEnd(t *testing.T) {
 	d.Attach(hub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d.StartWorker(ctx)
+	go d.StartWorker(ctx)
 
 	run, err := st.CreateRun(store.CreateRunInput{AgentID: "a1", Input: "hi"})
 	if err != nil {
@@ -108,7 +108,7 @@ func TestDispatcherPerRunURLOverride(t *testing.T) {
 	d.Attach(hub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d.StartWorker(ctx)
+	go d.StartWorker(ctx)
 
 	run, err := st.CreateRun(store.CreateRunInput{
 		AgentID:       "a1",
@@ -141,7 +141,7 @@ func TestSendTest(t *testing.T) {
 	d := webhook.NewDispatcher(store.NewMemory(), webhook.Config{URL: srv.URL})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d.StartWorker(ctx)
+	go d.StartWorker(ctx)
 	if err := d.SendTest(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -171,9 +171,9 @@ func TestDispatcherRetries503ThenSucceeds(t *testing.T) {
 	d := webhook.NewDispatcher(mem, webhook.Config{URL: srv.URL})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d.StartWorker(ctx)
+	go d.StartWorker(ctx)
 
-	_, _, err := mem.PutWebhookOutboxIfAbsent(store.WebhookOutboxEntry{
+	_, id, err := mem.PutWebhookOutboxIfAbsent(store.WebhookOutboxEntry{
 		RunID:       "test",
 		Kind:        store.WebhookOutboxKindEvent,
 		EventIndex:  0,
@@ -182,6 +182,9 @@ func TestDispatcherRetries503ThenSucceeds(t *testing.T) {
 		HeadersJSON: []byte(`{}`),
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.RetryDelivery(id); err != nil {
 		t.Fatal(err)
 	}
 
@@ -224,7 +227,7 @@ func TestDispatcher4xxGoesDead(t *testing.T) {
 	d := webhook.NewDispatcher(mem, webhook.Config{URL: srv.URL})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d.StartWorker(ctx)
+	go d.StartWorker(ctx)
 
 	err := d.SendTest(ctx)
 	if err == nil {
