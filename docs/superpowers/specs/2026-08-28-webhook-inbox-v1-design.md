@@ -26,7 +26,7 @@
 | 项 | 原因 |
 |----|------|
 | 企业微信 / 钉钉原生协议适配 | 独立 Channel 样板；v1 文档说明「IM 网关转发 JSON 即可」 |
-| 入站触发 HITL `resume` | 需额外状态机；v1 仅 **建 Run** |
+| 入站触发 HITL `resume` | **本版开发中** — 见 `2026-08-28-inbox-hitl-resume-v0-design.md`（同路径 `action: resume`） |
 | 任意 JSONPath / 模板映射 payload | v1 固定 schema；复杂转换由调用方网关完成 |
 | 多 Channel 广播、路由规则引擎 | YAGNI |
 | IP 白名单、WAF 集成 | 部署侧解决 |
