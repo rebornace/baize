@@ -28,6 +28,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
@@ -80,6 +81,7 @@ type Server struct {
 	OperatorToken string
 	AdminToken    string
 	Webhook       *webhook.Dispatcher // optional; nil = no outbound webhook delivery
+	Inbox         *inbox.Registry     // optional; nil = inbox routes unavailable
 	DataDir       string              // parent dir for specstore (sqlite dir); required for spec_content PUT
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision

@@ -50,3 +50,5 @@ conversation:
   persist_identities: true
 mock_ticket:
   listen: ":18080"
+inbox:
+  channels: []

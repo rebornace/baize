@@ -40,3 +40,5 @@ conversation:
   persist_identities: true
 mock_ticket:
   listen: off
+inbox:
+  channels: []

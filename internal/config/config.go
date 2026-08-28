@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rebornace/baize/internal/inbox"
 	"gopkg.in/yaml.v3"
 )
 
@@ -95,6 +96,12 @@ type Config struct {
 	//   bootstrap generates an ephemeral secret and logs "ephemeral".
 	// CallbackTokenTTLSec: token lifetime; <=0 falls back to DefaultCallbackTokenTTLSec.
 	Runtime RuntimeConfig `yaml:"runtime"`
+	Inbox   InboxConfig   `yaml:"inbox"`
+}
+
+// InboxConfig holds bootstrap defaults for inbound webhook channels.
+type InboxConfig struct {
+	Channels []inbox.Channel `yaml:"channels"`
 }
 
 // RuntimeConfig holds sidecar callback configuration (Phase 2).
