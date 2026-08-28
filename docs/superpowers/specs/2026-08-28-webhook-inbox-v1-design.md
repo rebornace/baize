@@ -1,6 +1,6 @@
 # HTTP Webhook Inbox v1 设计规格
 
-> 状态：待用户审查（2026-08-28）  
+> 状态：已批准（2026-08-28）  
 > 定位：架构 §5「参考 Channel — HTTP Webhook Inbox」的**生产可用首版**。与已落地的出站 Run Webhook 对称，完成「外部 HTTP 进 → Agent Run → 事件 Webhook 出」集成闭环。  
 > 前置：SSE、出站 Webhook、HITL、会话持久化、控制面 Gate、`plugincallback` HMAC 模式  
 > 命名说明：能力称 **Inbox v1**（生产集成级）；HTTP 路径仍挂在 **`/v0/`** 协议前缀下（与 `X-Baize-Protocol: v0` 一致），不另开 `/v1/` 路由树。
