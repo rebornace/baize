@@ -40,6 +40,8 @@ var aclRules = []routeRule{
 	{method: "GET", segments: []string{"v0", "settings", "events-webhook"}, role: RoleAdmin},
 	{method: "PUT", segments: []string{"v0", "settings", "events-webhook"}, role: RoleAdmin},
 	{method: "POST", segments: []string{"v0", "settings", "events-webhook", "test"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "events-webhook", "deliveries"}, role: RoleAdmin},
+	{method: "POST", segments: []string{"v0", "settings", "events-webhook", "deliveries", "{id}", "retry"}, role: RoleAdmin},
 	{method: "POST", segments: []string{"v0", "inbox", "{id}"}, role: RoleNone},
 	{method: "GET", segments: []string{"v0", "settings", "inbox-channels"}, role: RoleAdmin},
 	{method: "PUT", segments: []string{"v0", "settings", "inbox-channels"}, role: RoleAdmin},

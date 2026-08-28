@@ -1,9 +1,12 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
   getEventsWebhook,
+  getEventsWebhookDeliveries,
   putEventsWebhook,
+  retryEventsWebhookDelivery,
   testEventsWebhook,
   type EventsWebhookConfig,
+  type EventsWebhookDelivery,
 } from '../api'
 import { formatKeyValueMap, parseKeyValueLines } from './McpSettings'
 
@@ -15,6 +18,25 @@ export interface WebhookFormState {
 const EMPTY_FORM: WebhookFormState = {
   url: '',
   headersText: '',
+}
+
+export function formatDeliveryStatus(status: string): string {
+  switch (status) {
+    case 'dead':
+      return '死信'
+    case 'pending':
+      return '待投递'
+    case 'delivered':
+      return '已投递'
+    default:
+      return status
+  }
+}
+
+export function deliverySummary(d: EventsWebhookDelivery): string {
+  const kind = d.kind === 'ended' ? 'run.ended' : `event#${d.event_index}`
+  const err = d.last_error ? ` · ${d.last_error}` : ''
+  return `${d.run_id} · ${kind} · ${d.attempt}/${d.max_attempts}${err}`
 }
 
 export function configToForm(cfg: EventsWebhookConfig): WebhookFormState {
@@ -47,12 +69,23 @@ function apiErrorMessage(err: unknown): string {
 
 export function WebhookSettings() {
   const [form, setForm] = useState<WebhookFormState>(EMPTY_FORM)
+  const [deliveries, setDeliveries] = useState<EventsWebhookDelivery[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
+
+  const loadDeliveries = useCallback(async () => {
+    try {
+      const rows = await getEventsWebhookDeliveries()
+      setDeliveries(rows)
+    } catch {
+      setDeliveries([])
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -60,12 +93,13 @@ export function WebhookSettings() {
       const cfg = await getEventsWebhook()
       setForm(configToForm(cfg))
       setError(null)
+      await loadDeliveries()
     } catch (err) {
       setError(apiErrorMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadDeliveries])
 
   useEffect(() => {
     void load()
@@ -108,7 +142,22 @@ export function WebhookSettings() {
     }
   }
 
-  const busy = submitting || testing
+  const onRetry = async (id: string) => {
+    setRetryingId(id)
+    setError(null)
+    setStatus(null)
+    try {
+      await retryEventsWebhookDelivery(id)
+      setStatus('已加入重投队列')
+      await loadDeliveries()
+    } catch (err) {
+      setError(apiErrorMessage(err))
+    } finally {
+      setRetryingId(null)
+    }
+  }
+
+  const busy = submitting || testing || retryingId !== null
 
   return (
     <div className="settings-section settings-webhook">
@@ -157,6 +206,39 @@ export function WebhookSettings() {
             </button>
           </div>
         </form>
+      )}
+      {!loading && (
+        <section className="settings-webhook-deliveries">
+          <h2 className="settings-subheading">最近投递</h2>
+          <p className="settings-meta">
+            展示最近 pending / dead 出站投递；5xx、网络错误或 429 会自动退避重试（最多 5 次），其他 4xx
+            直接死信。
+          </p>
+          {deliveries.length === 0 ? (
+            <p className="settings-muted">暂无待投递或死信记录。</p>
+          ) : (
+            <ul className="settings-list">
+              {deliveries.map((d) => (
+                <li key={d.id} className="settings-list-item">
+                  <div className="settings-tool-line">
+                    <span className="settings-badge">{formatDeliveryStatus(d.status)}</span>
+                    <span>{deliverySummary(d)}</span>
+                  </div>
+                  {(d.status === 'dead' || d.status === 'pending') && (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      disabled={busy}
+                      onClick={() => void onRetry(d.id)}
+                    >
+                      {retryingId === d.id ? '重投中…' : '重投'}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </div>
   )

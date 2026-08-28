@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -27,6 +28,7 @@ type Dispatcher struct {
 	cfg    Config
 	store  store.Store
 	client *http.Client
+	wake   chan struct{}
 }
 
 // NewDispatcher creates a webhook dispatcher with the given initial config.
@@ -37,6 +39,7 @@ func NewDispatcher(st store.Store, cfg Config) *Dispatcher {
 		client: &http.Client{
 			Timeout: postTimeout,
 		},
+		wake: make(chan struct{}, 1),
 	}
 }
 
@@ -48,6 +51,22 @@ func (d *Dispatcher) Attach(hub *eventbus.Hub) {
 	hub.OnEnd(func(runID string, status store.Status) {
 		d.dispatchEnd(runID, status)
 	})
+}
+
+// StartWorker processes due outbox rows until ctx is cancelled.
+func (d *Dispatcher) StartWorker(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.wake:
+			d.processDue(ctx)
+		case <-ticker.C:
+			d.processDue(ctx)
+		}
+	}
 }
 
 // UpdateConfig hot-reloads the global webhook configuration.
@@ -64,7 +83,7 @@ func (d *Dispatcher) Config() Config {
 	return d.cfg
 }
 
-// SendTest posts a webhook.test event to the configured URL.
+// SendTest enqueues a webhook.test delivery and waits for the first POST attempt.
 func (d *Dispatcher) SendTest(ctx context.Context) error {
 	url, headers, err := d.resolveTarget("", nil)
 	if err != nil {
@@ -82,7 +101,35 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 			"data":      map[string]any{},
 		},
 	}
-	return d.post(ctx, url, headers, "test", payload)
+	id, created, err := d.enqueue(ctx, "test", store.WebhookOutboxKindEvent, 0, url, headers, payload)
+	if err != nil {
+		return err
+	}
+	if !created {
+		entry, err := d.store.GetWebhookOutbox(id)
+		if err != nil {
+			return err
+		}
+		if entry.Status == store.WebhookOutboxDelivered {
+			return nil
+		}
+	}
+	entry, err := d.store.GetWebhookOutbox(id)
+	if err != nil {
+		return err
+	}
+	d.deliverOne(ctx, entry)
+	entry, err = d.store.GetWebhookOutbox(id)
+	if err != nil {
+		return err
+	}
+	if entry.Status == store.WebhookOutboxDelivered {
+		return nil
+	}
+	if entry.LastError != "" {
+		return errors.New(entry.LastError)
+	}
+	return ErrDeliveryFailed
 }
 
 func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {
@@ -99,9 +146,7 @@ func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {
 		"index":  ev.Index,
 		"event":  ev.Event,
 	}
-	go func() {
-		_ = d.post(context.Background(), url, headers, runID, payload)
-	}()
+	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEvent, ev.Index, url, headers, payload)
 }
 
 func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
@@ -121,12 +166,113 @@ func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
 		"ended":  true,
 		"status": string(status),
 	}
-	go func() {
-		_ = d.post(context.Background(), url, headers, runID, payload)
-	}()
+	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEnded, -1, url, headers, payload)
+}
+
+func (d *Dispatcher) enqueue(ctx context.Context, runID string, kind store.WebhookOutboxKind, eventIndex int, url string, headers map[string]string, payload any) (string, bool, error) {
+	_ = ctx
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", false, err
+	}
+	headersJSON, err := json.Marshal(headers)
+	if err != nil {
+		return "", false, err
+	}
+	entry := store.WebhookOutboxEntry{
+		RunID:       runID,
+		Kind:        kind,
+		EventIndex:  eventIndex,
+		PayloadJSON: body,
+		TargetURL:   url,
+		HeadersJSON: headersJSON,
+	}
+	created, id, err := d.store.PutWebhookOutboxIfAbsent(entry)
+	if err != nil {
+		return "", false, err
+	}
+	if created {
+		d.signalWake()
+	}
+	return id, created, nil
+}
+
+func (d *Dispatcher) signalWake() {
+	select {
+	case d.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (d *Dispatcher) processDue(ctx context.Context) {
+	entries, err := d.store.ListWebhookOutboxDue(time.Now().UTC(), 20)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		d.deliverOne(ctx, entry)
+	}
+}
+
+func (d *Dispatcher) deliverOne(ctx context.Context, entry store.WebhookOutboxEntry) {
+	headers, err := store.DecodeWebhookOutboxHeaders(entry.HeadersJSON)
+	if err != nil {
+		entry.Attempt++
+		entry.Status = store.WebhookOutboxDead
+		entry.LastError = err.Error()
+		_ = d.store.UpdateWebhookOutbox(entry)
+		d.maybeEmitDeadEvent(entry)
+		return
+	}
+
+	statusCode, postErr := d.post(ctx, entry.TargetURL, headers, entry.RunID, entry.PayloadJSON)
+	if postErr == nil && statusCode >= 200 && statusCode < 300 {
+		entry.Status = store.WebhookOutboxDelivered
+		entry.LastError = ""
+		_ = d.store.UpdateWebhookOutbox(entry)
+		return
+	}
+
+	entry.Attempt++
+	entry.LastError = formatDeliveryError(statusCode, postErr)
+	if !Retryable(statusCode, postErr) || entry.Attempt >= entry.MaxAttempts {
+		entry.Status = store.WebhookOutboxDead
+		_ = d.store.UpdateWebhookOutbox(entry)
+		d.maybeEmitDeadEvent(entry)
+		return
+	}
+	entry.NextRetryAt = time.Now().UTC().Add(Backoff(entry.Attempt))
+	_ = d.store.UpdateWebhookOutbox(entry)
+}
+
+func (d *Dispatcher) maybeEmitDeadEvent(entry store.WebhookOutboxEntry) {
+	if entry.RunID == "" || entry.RunID == "test" {
+		return
+	}
+	_ = d.store.AppendEvent(entry.RunID, store.Event{
+		Type:      "webhook.delivery_dead",
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"delivery_id": entry.ID,
+			"kind":        string(entry.Kind),
+			"event_index": entry.EventIndex,
+			"attempt":     entry.Attempt,
+			"error":       entry.LastError,
+		},
+	})
+}
+
+// RetryDelivery resets a dead/pending row for manual replay.
+func (d *Dispatcher) RetryDelivery(id string) error {
+	if err := d.store.ResetWebhookOutboxRetry(id); err != nil {
+		return err
+	}
+	d.signalWake()
+	return nil
 }
 
 func (d *Dispatcher) resolveTarget(runID string, perRun *store.WebhookConfig) (string, map[string]string, error) {
+	_ = runID
 	d.mu.RLock()
 	global := d.cfg
 	d.mu.RUnlock()
@@ -148,14 +294,10 @@ func (d *Dispatcher) resolveTarget(runID string, perRun *store.WebhookConfig) (s
 	return url, resolved, nil
 }
 
-func (d *Dispatcher) post(ctx context.Context, url string, headers map[string]string, runID string, payload any) error {
-	body, err := json.Marshal(payload)
+func (d *Dispatcher) post(ctx context.Context, url string, headers map[string]string, runID string, payload []byte) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(protocolHeader, protocolValue)
@@ -165,14 +307,11 @@ func (d *Dispatcher) post(ctx context.Context, url string, headers map[string]st
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ErrDeliveryFailed
-	}
-	return nil
+	return resp.StatusCode, nil
 }
 
 func cloneHeaders(h map[string]string) map[string]string {

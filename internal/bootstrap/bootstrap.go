@@ -237,6 +237,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	}
 	dispatcher := webhook.NewDispatcher(st, webhookCfg)
 	dispatcher.Attach(hub)
+	webhookWorkerCtx, webhookWorkerCancel := context.WithCancel(context.Background())
+	go dispatcher.StartWorker(webhookWorkerCtx)
+	closer.stops = append(closer.stops, webhookWorkerCancel)
 
 	inboxReg := inbox.NewRegistry()
 	if err := seedInboxChannels(cfg, st, inboxReg); err != nil {
@@ -420,9 +423,15 @@ func storeCloser(st store.Store) io.Closer {
 
 type storeAndMCPCloser struct {
 	inner io.Closer
+	stops []func()
 }
 
 func (c *storeAndMCPCloser) Close() error {
+	for i := len(c.stops) - 1; i >= 0; i-- {
+		if c.stops[i] != nil {
+			c.stops[i]()
+		}
+	}
 	connector.CloseAllMCPSessions()
 	if c.inner != nil {
 		return c.inner.Close()

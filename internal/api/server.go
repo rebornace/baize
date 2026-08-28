@@ -212,6 +212,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/events-webhook", s.handleGetEventsWebhook)
 	s.mux.HandleFunc("PUT /v0/settings/events-webhook", s.handlePutEventsWebhook)
 	s.mux.HandleFunc("POST /v0/settings/events-webhook/test", s.handlePostEventsWebhookTest)
+	s.mux.HandleFunc("GET /v0/settings/events-webhook/deliveries", s.handleGetEventsWebhookDeliveries)
+	s.mux.HandleFunc("POST /v0/settings/events-webhook/deliveries/{id}/retry", s.handlePostEventsWebhookDeliveryRetry)
 	s.mux.HandleFunc("GET /v0/settings/inbox-channels", s.handleGetInboxChannels)
 	s.mux.HandleFunc("PUT /v0/settings/inbox-channels", s.handlePutInboxChannels)
 	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/rotate-secret", s.handlePostInboxRotateSecret)
@@ -794,6 +796,84 @@ func (s *Server) handlePostEventsWebhookTest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleGetEventsWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	statusParam := strings.TrimSpace(r.URL.Query().Get("status"))
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	var statuses []store.WebhookOutboxStatus
+	if statusParam == "" {
+		statuses = []store.WebhookOutboxStatus{store.WebhookOutboxDead, store.WebhookOutboxPending}
+	} else {
+		for _, part := range strings.Split(statusParam, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			statuses = append(statuses, store.WebhookOutboxStatus(part))
+		}
+	}
+	entries, err := s.Store.ListWebhookOutbox(statuses, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	type row struct {
+		ID          string `json:"id"`
+		RunID       string `json:"run_id"`
+		Kind        string `json:"kind"`
+		EventIndex  int    `json:"event_index"`
+		Status      string `json:"status"`
+		Attempt     int    `json:"attempt"`
+		MaxAttempts int    `json:"max_attempts"`
+		LastError   string `json:"last_error,omitempty"`
+		NextRetryAt string `json:"next_retry_at"`
+		CreatedAt   string `json:"created_at"`
+		UpdatedAt   string `json:"updated_at"`
+	}
+	out := make([]row, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, row{
+			ID:          e.ID,
+			RunID:       e.RunID,
+			Kind:        string(e.Kind),
+			EventIndex:  e.EventIndex,
+			Status:      string(e.Status),
+			Attempt:     e.Attempt,
+			MaxAttempts: e.MaxAttempts,
+			LastError:   e.LastError,
+			NextRetryAt: e.NextRetryAt.UTC().Format(time.RFC3339Nano),
+			CreatedAt:   e.CreatedAt.UTC().Format(time.RFC3339Nano),
+			UpdatedAt:   e.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deliveries": out})
+}
+
+func (s *Server) handlePostEventsWebhookDeliveryRetry(w http.ResponseWriter, r *http.Request) {
+	if s.Webhook == nil {
+		writeError(w, http.StatusServiceUnavailable, "webhook_unavailable", "webhook dispatcher is not configured")
+		return
+	}
+	id := r.PathValue("id")
+	if strings.TrimSpace(id) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing delivery id")
+		return
+	}
+	if err := s.Webhook.RetryDelivery(id); err != nil {
+		if errors.Is(err, store.ErrWebhookOutboxNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "delivery not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
 }
 
 func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {

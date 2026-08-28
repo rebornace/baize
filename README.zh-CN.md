@@ -78,7 +78,7 @@ cd baize
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
 - 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
-- 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递
+- 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；出站 Webhook 会 POST 每条事件与终态 `run.ended`；断流后 UI 回退为 700ms 轮询
 
@@ -537,6 +537,8 @@ PowerShell：见 [`examples/inbox-alert/post.ps1`](examples/inbox-alert/post.ps1
 - **按 Run：** 聊天页 **高级** `webhook_url`（仅 UI / `POST /v0/runs`；Inbox v1 请求体不含此字段）。
 
 出站投递会 POST 每条 Run 事件及终态 `run.ended`（可在设置 → Webhook 发测试）。Inbox 触发的 Run 首条事件为 `inbox.received`。
+
+**出站可靠性（v0）：** 下游 **5xx / 网络错误 / 429** 时自动重试（最多 5 次 POST，退避 1s→2s→4s→8s→16s，单次间隔上限 60s）；其他 **4xx** 不重试，进入死信。SQLite `webhook_outbox` 持久化 pending，进程重启可续投。管理员在 **设置 → Webhook → 最近投递** 查看 pending / dead 并手动重投。
 
 ### 安全清单（生产）
 
