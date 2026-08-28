@@ -260,6 +260,7 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.Hub = hub
 	srv.Webhook = dispatcher
 	srv.Inbox = inboxReg
+	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
 	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages

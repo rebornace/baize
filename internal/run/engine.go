@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	EventInboxReceived  = "inbox.received"
 	EventRunStarted     = "run.started"
 	EventLLMToolCall    = "llm.tool_call"
 	EventToolResult     = "tool.result"
