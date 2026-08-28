@@ -18,7 +18,9 @@ type Memory struct {
 	runs       map[string]*Run
 	events     map[string][]Event
 	hitl       map[string]*HITLPayload
-	settings   map[string][]byte
+	settings        map[string][]byte
+	inboxDeliveries map[string]map[string]InboxDelivery
+	inboxThreads    map[string]map[string]string
 }
 
 // NewMemory creates an empty in-memory Store.
@@ -30,7 +32,9 @@ func NewMemory() *Memory {
 		runs:       map[string]*Run{},
 		events:     map[string][]Event{},
 		hitl:       map[string]*HITLPayload{},
-		settings:   map[string][]byte{},
+		settings:        map[string][]byte{},
+		inboxDeliveries: map[string]map[string]InboxDelivery{},
+		inboxThreads:    map[string]map[string]string{},
 	}
 }
 
@@ -378,4 +382,62 @@ func (s *Memory) HasActiveRun(conversationID string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (s *Memory) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byKey, ok := s.inboxDeliveries[channelID]
+	if !ok {
+		return InboxDelivery{}, false, nil
+	}
+	d, ok := byKey[idempotencyKey]
+	if !ok {
+		return InboxDelivery{}, false, nil
+	}
+	return d, true, nil
+}
+
+func (s *Memory) PutInboxDelivery(d InboxDelivery) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byKey, ok := s.inboxDeliveries[d.ChannelID]
+	if !ok {
+		byKey = map[string]InboxDelivery{}
+		s.inboxDeliveries[d.ChannelID] = byKey
+	}
+	if _, exists := byKey[d.IdempotencyKey]; exists {
+		return fmt.Errorf("inbox delivery already exists")
+	}
+	if d.CreatedAt.IsZero() {
+		d.CreatedAt = time.Now().UTC()
+	}
+	byKey[d.IdempotencyKey] = d
+	return nil
+}
+
+func (s *Memory) GetInboxThread(channelID, externalID string) (string, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	byExt, ok := s.inboxThreads[channelID]
+	if !ok {
+		return "", false, nil
+	}
+	conv, ok := byExt[externalID]
+	if !ok {
+		return "", false, nil
+	}
+	return conv, true, nil
+}
+
+func (s *Memory) PutInboxThread(channelID, externalID, conversationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byExt, ok := s.inboxThreads[channelID]
+	if !ok {
+		byExt = map[string]string{}
+		s.inboxThreads[channelID] = byExt
+	}
+	byExt[externalID] = conversationID
+	return nil
 }

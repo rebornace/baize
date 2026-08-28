@@ -361,6 +361,32 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestInboxDeliveryRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	d := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k1",
+		DeliveryID: "dlv_x", RunID: "run_y", BodyHash: "abc",
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetInboxDelivery("alerts", "k1")
+	if err != nil || !ok || got.RunID != "run_y" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestInboxThreadRoundTrip(t *testing.T) {
+	s := store.NewMemory()
+	if err := s.PutInboxThread("alerts", "jira-1", "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	conv, ok, err := s.GetInboxThread("alerts", "jira-1")
+	if err != nil || !ok || conv != "conv-1" {
+		t.Fatalf("conv=%q ok=%v", conv, ok)
+	}
+}
+
 func TestCreateRunPersistsWebhookConfig(t *testing.T) {
 	s := store.NewMemory()
 	r, err := s.CreateRun(store.CreateRunInput{

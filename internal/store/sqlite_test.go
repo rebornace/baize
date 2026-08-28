@@ -472,6 +472,52 @@ func TestSQLiteToolColumnsMigrateFromOldSchema(t *testing.T) {
 	}
 }
 
+func TestSQLiteInboxDeliveryRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inbox-delivery.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	d := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k1",
+		DeliveryID: "dlv_x", RunID: "run_y", BodyHash: "abc",
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetInboxDelivery("alerts", "k1")
+	if err != nil || !ok || got.RunID != "run_y" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestSQLiteInboxThreadRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inbox-thread.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	if err := s.PutInboxThread("alerts", "jira-1", "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	conv, ok, err := s.GetInboxThread("alerts", "jira-1")
+	if err != nil || !ok || conv != "conv-1" {
+		t.Fatalf("conv=%q ok=%v", conv, ok)
+	}
+}
+
 func TestSQLiteConnectorMCPJSONRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "b.db")

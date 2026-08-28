@@ -119,6 +119,15 @@ type WebhookConfig struct {
 // SettingKeyEventsWebhook is the settings KV key for global events webhook config.
 const SettingKeyEventsWebhook = "events_webhook"
 
+// SettingKeyInboxChannels is the settings KV key for inbox channel configuration.
+const SettingKeyInboxChannels = "inbox_channels"
+
+// InboxDelivery records an accepted inbound webhook delivery for idempotency.
+type InboxDelivery struct {
+	ChannelID, IdempotencyKey, DeliveryID, RunID, BodyHash string
+	CreatedAt time.Time
+}
+
 type Run struct {
 	ID             string    `json:"id"`
 	AgentID        string    `json:"agent_id"`
@@ -183,4 +192,9 @@ type Store interface {
 
 	GetSetting(key string) (jsonRaw []byte, ok bool, err error)
 	UpsertSetting(key string, jsonRaw []byte) error
+
+	GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error)
+	PutInboxDelivery(d InboxDelivery) error
+	GetInboxThread(channelID, externalID string) (conversationID string, ok bool, err error)
+	PutInboxThread(channelID, externalID, conversationID string) error
 }
