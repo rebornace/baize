@@ -11,6 +11,9 @@ import (
 var channelIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 const (
+	ActionCreateRun = "create_run"
+	ActionResume    = "resume"
+
 	maxPayloadInputLen   = 8192
 	maxIdempotencyKeyLen = 128
 	maxExternalIDLen     = 256
@@ -30,7 +33,11 @@ type Channel struct {
 
 // Payload is the fixed inbound request body schema.
 type Payload struct {
+	Action         string         `json:"action,omitempty"`
 	Input          string         `json:"input"`
+	RunID          string         `json:"run_id,omitempty"`
+	Decision       string         `json:"decision,omitempty"`
+	Comment        string         `json:"comment,omitempty"`
 	IdempotencyKey string         `json:"idempotency_key,omitempty"`
 	ConversationID string         `json:"conversation_id,omitempty"`
 	ExternalID     string         `json:"external_id,omitempty"`
@@ -62,15 +69,35 @@ func (c *Channel) Validate() error {
 	return nil
 }
 
-// Validate checks that input is non-empty after trim and within length bounds.
+// Validate checks payload fields according to action (create_run or resume).
 func (p *Payload) Validate() error {
-	input := strings.TrimSpace(p.Input)
-	if input == "" {
-		return errors.New("inbox payload: input required")
+	action := strings.TrimSpace(p.Action)
+	if action == "" {
+		action = ActionCreateRun
 	}
-	if len(input) > maxPayloadInputLen {
-		return fmt.Errorf("inbox payload: input exceeds %d characters", maxPayloadInputLen)
+
+	switch action {
+	case ActionResume:
+		if strings.TrimSpace(p.RunID) == "" {
+			return errors.New("inbox payload: run_id required")
+		}
+		switch strings.TrimSpace(p.Decision) {
+		case "approve", "reject":
+		default:
+			return errors.New("inbox payload: decision must be approve or reject")
+		}
+	case ActionCreateRun:
+		input := strings.TrimSpace(p.Input)
+		if input == "" {
+			return errors.New("inbox payload: input required")
+		}
+		if len(input) > maxPayloadInputLen {
+			return fmt.Errorf("inbox payload: input exceeds %d characters", maxPayloadInputLen)
+		}
+	default:
+		return errors.New("inbox payload: unknown action")
 	}
+
 	if key := strings.TrimSpace(p.IdempotencyKey); key != "" {
 		if n := len(key); n < 1 || n > maxIdempotencyKeyLen {
 			return fmt.Errorf("inbox payload: idempotency_key length must be 1-%d", maxIdempotencyKeyLen)
