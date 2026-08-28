@@ -239,7 +239,6 @@ func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, ch
 func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, channel inbox.Channel, channelID string, payload inbox.Payload, bodyHash string) {
 	idempotencyKey := strings.TrimSpace(payload.IdempotencyKey)
 	deliveryID := "dlv_" + uuid.NewString()
-	claimed := false
 
 	if idempotencyKey != "" {
 		if existing, found, err := s.Store.GetInboxDelivery(channelID, idempotencyKey); err != nil {
@@ -264,12 +263,31 @@ func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, chann
 		}
 	}
 
+	// Validate before claiming the idempotency slot so 404/403/409 cannot
+	// leave an empty-RunID placeholder that poisons later replays.
+	runID := strings.TrimSpace(payload.RunID)
+	runRec, err := s.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if runRec.AgentID != channel.AgentID {
+		writeError(w, http.StatusForbidden, "run_forbidden", "run does not belong to this channel agent")
+		return
+	}
+	if runRec.Status != store.StatusWaitingHuman {
+		writeError(w, http.StatusConflict, "not_waiting", "run is not waiting_human")
+		return
+	}
+
 	if idempotencyKey != "" {
+		// Claim after validation, with RunID filled, so concurrent same-key
+		// POSTs lose the race and replay instead of double ContinueFromHITL.
 		if err := s.Store.PutInboxDelivery(store.InboxDelivery{
 			ChannelID:      channelID,
 			IdempotencyKey: idempotencyKey,
 			DeliveryID:     deliveryID,
-			RunID:          "",
+			RunID:          runID,
 			BodyHash:       bodyHash,
 		}); err != nil {
 			if errors.Is(err, store.ErrInboxDeliveryExists) {
@@ -289,8 +307,8 @@ func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, chann
 						return
 					}
 					status := ""
-					if runRec, getErr := s.Store.GetRun(existing.RunID); getErr == nil && runRec != nil {
-						status = string(runRec.Status)
+					if got, getErr := s.Store.GetRun(existing.RunID); getErr == nil && got != nil {
+						status = string(got.Status)
 					}
 					writeInboxResumeOK(w, existing.DeliveryID, existing.RunID, status)
 					return
@@ -299,22 +317,6 @@ func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, chann
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		claimed = true
-	}
-
-	runID := strings.TrimSpace(payload.RunID)
-	runRec, err := s.Store.GetRun(runID)
-	if err != nil || runRec == nil {
-		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
-		return
-	}
-	if runRec.AgentID != channel.AgentID {
-		writeError(w, http.StatusForbidden, "run_forbidden", "run does not belong to this channel agent")
-		return
-	}
-	if runRec.Status != store.StatusWaitingHuman {
-		writeError(w, http.StatusConflict, "not_waiting", "run is not waiting_human")
-		return
 	}
 
 	decision := strings.TrimSpace(payload.Decision)
@@ -338,13 +340,6 @@ func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, chann
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
-	}
-
-	if claimed {
-		if err := s.Store.UpdateInboxDelivery(channelID, idempotencyKey, runID); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
 	}
 
 	updated, err := s.Store.GetRun(runID)

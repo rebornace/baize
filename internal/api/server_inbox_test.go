@@ -616,3 +616,41 @@ func TestInboxResumeIdempotent(t *testing.T) {
 		t.Fatalf("replay resp=%v", resp)
 	}
 }
+
+func TestInboxResumeNotWaitingWithIdempotencyKey(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusSucceeded, "ok", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"action":"resume","run_id":"` + runRec.ID + `","decision":"approve","idempotency_key":"resume-fail-key"}`)
+	rr1 := httptest.NewRecorder()
+	h.ServeHTTP(rr1, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr1.Code != http.StatusConflict {
+		t.Fatalf("first code=%d body=%s", rr1.Code, rr1.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr1); got != "not_waiting" {
+		t.Fatalf("first code=%q", got)
+	}
+
+	// Same key + body must still return the business error, not a wait timeout 500
+	// from a poisoned empty-RunID delivery slot.
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr2.Code != http.StatusConflict {
+		t.Fatalf("replay code=%d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rr2); got != "not_waiting" {
+		t.Fatalf("replay code=%q", got)
+	}
+}
