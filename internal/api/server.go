@@ -117,7 +117,7 @@ type Server struct {
 	WeixinILink    weixin.ILink
 	WeixinChannel  *weixin.Channel
 	WeixinRuntime  *channel.Runtime
-	WeixinCredsDir string // default ./data/channels/weixin
+	WeixinCredsDir string          // default ./data/channels/weixin
 	WeixinRunCtx   context.Context // long-lived ctx for Channel.Start; nil => Background
 	weixinMu       sync.Mutex
 

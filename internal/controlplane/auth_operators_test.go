@@ -4,7 +4,7 @@ import "testing"
 
 func TestAuthenticateNamedOperators(t *testing.T) {
 	tok := Tokens{
-		Admin: "adm",
+		Admin:     "adm",
 		Operators: []Operator{{ID: "alice", Token: "ta"}, {ID: "bob", Token: "tb"}},
 	}
 	p, ok := AuthenticatePrincipal("Bearer ta", tok)

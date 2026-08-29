@@ -120,8 +120,8 @@ func (e *errChannel) SendMedia(context.Context, string, string, string, []byte, 
 
 type recordingMediaChannel struct {
 	fakeChannel
-	mu     sync.Mutex
-	media  []sentMedia
+	mu    sync.Mutex
+	media []sentMedia
 }
 
 type sentMedia struct {
