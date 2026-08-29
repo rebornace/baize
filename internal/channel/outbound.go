@@ -4,9 +4,21 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/conversation"
 )
+
+// Outbound role prefixes — both UI operator and assistant text are sent as Bot
+// bubbles on WeChat, so labels are required for the phone user to tell them apart.
+const (
+	OutboundPrefixOperator  = "【客服】"
+	OutboundPrefixAssistant = "【助手】"
+)
+
+// OperatorOutboundSettle is waited after mirroring a /ui operator turn so the
+// WeChat client is more likely to show it before the following assistant reply.
+const OperatorOutboundSettle = 400 * time.Millisecond
 
 // OutboundMedia is an optional attachment to deliver alongside assistant text.
 type OutboundMedia struct {
@@ -38,6 +50,30 @@ func weixinPeer(ch Channel, meta conversation.Meta) (peer string, ok bool) {
 	return peer, true
 }
 
+// FormatOperatorOutbound prefixes a /ui operator turn for WeChat display.
+func FormatOperatorOutbound(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if strings.HasPrefix(text, OutboundPrefixOperator) || strings.HasPrefix(text, OutboundPrefixAssistant) {
+		return text
+	}
+	return OutboundPrefixOperator + text
+}
+
+// FormatAssistantOutbound prefixes an assistant reply for WeChat display.
+func FormatAssistantOutbound(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if strings.HasPrefix(text, OutboundPrefixOperator) || strings.HasPrefix(text, OutboundPrefixAssistant) {
+		return text
+	}
+	return OutboundPrefixAssistant + text
+}
+
 // DeliverUserText mirrors a /ui (or API) user turn to the weixin peer so the
 // phone chat shows what the operator typed. Failures are logged only.
 func DeliverUserText(ctx context.Context, ch Channel, meta conversation.Meta, text string, extras map[string]string) {
@@ -45,12 +81,20 @@ func DeliverUserText(ctx context.Context, ch Channel, meta conversation.Meta, te
 	if !ok {
 		return
 	}
-	text = strings.TrimSpace(text)
+	text = FormatOperatorOutbound(text)
 	if text == "" {
 		return
 	}
 	if err := ch.SendText(ctx, peer, text, copyExtras(extras)); err != nil {
 		log.Printf("channel outbound user: SendText peer=%s: %v", peer, err)
+		return
+	}
+	// Sequential HTTP is not always enough for WeChat UI ordering; brief settle.
+	t := time.NewTimer(OperatorOutboundSettle)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
 	}
 }
 
@@ -62,7 +106,7 @@ func DeliverAssistantReply(ctx context.Context, ch Channel, meta conversation.Me
 	if !ok {
 		return
 	}
-	text = strings.TrimSpace(text)
+	text = FormatAssistantOutbound(text)
 	if text == "" && len(media) == 0 {
 		return
 	}

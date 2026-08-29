@@ -584,6 +584,7 @@ New peer DMs get `owner_id = assignee` (default `channel:weixin` if unset — ma
 ### Media, groups, and v0 limits
 
 - **Media:** DM text, images, and common files can enter Runs as attachments; assistant text can sync back. **CDN AES decryption is not implemented** — encrypted CDN media may be unusable after download.
+- **Outbound display:** Operator turns from `/ui` and assistant replies both arrive as Bot bubbles; they are prefixed with `【客服】` / `【助手】`. A short settle delay follows the operator mirror so WeChat is less likely to reorder it after the assistant reply.
 - **Outbound `context_token`:** Cached in-process only; after a restart the peer must send another WeChat message before `/ui` outbound sync is reliable (not persisted in v0).
 - **Allowlist:** Persisted in settings; **inbound filtering is not enforced in v0**.
 - **Groups:** Ordinary WeChat groups are unsupported (iLink bots typically do not deliver them).
