@@ -5,6 +5,8 @@ export type GateRole = 'operator' | 'admin'
 export interface GateContextValue {
   role: GateRole
   gateEnabled: boolean
+  /** Current operator id from /v0/me (or local-dev when gate is off). */
+  operatorId: string
 }
 
 export const GateContext = createContext<GateContextValue | null>(null)

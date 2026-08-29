@@ -19,6 +19,7 @@ export function settingsNavItems(role: SettingsRole): SettingsNavItem[] {
         { to: '/settings/plugins', label: '插件' },
         { to: '/settings/webhooks', label: 'Webhook' },
         { to: '/settings/inbox', label: 'Inbox' },
+        { to: '/settings/channels/weixin', label: '渠道' },
         { to: '/settings/storage', label: '存储' },
       ]
     default: {
