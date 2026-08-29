@@ -74,6 +74,8 @@ func (f *Fake) GetUpdates(context.Context, string, string) ([]Update, string, er
 	defer f.mu.Unlock()
 	out := make([]Update, len(f.Updates))
 	copy(out, f.Updates)
+	// Drain so poll loops do not re-deliver the same batch.
+	f.Updates = nil
 	return out, f.NextCursor, nil
 }
 
