@@ -23,11 +23,24 @@ func TestDeliverUserTextWeixinMetaSendsText(t *testing.T) {
 	if len(sent) != 1 {
 		t.Fatalf("SendText calls = %d, want 1", len(sent))
 	}
-	if sent[0].peerID != "peer-1" || sent[0].text != "来自 UI 的用户话" {
+	if sent[0].peerID != "peer-1" || sent[0].text != OutboundPrefixOperator+"来自 UI 的用户话" {
 		t.Fatalf("SendText = %+v", sent[0])
 	}
 	if sent[0].extras["context_token"] != "tok-u" {
 		t.Fatalf("extras = %+v", sent[0].extras)
+	}
+}
+
+func TestFormatOutboundPrefixes(t *testing.T) {
+	if got := FormatOperatorOutbound("hi"); got != OutboundPrefixOperator+"hi" {
+		t.Fatalf("operator=%q", got)
+	}
+	if got := FormatAssistantOutbound("yo"); got != OutboundPrefixAssistant+"yo" {
+		t.Fatalf("assistant=%q", got)
+	}
+	// Idempotent when already prefixed.
+	if got := FormatOperatorOutbound(OutboundPrefixOperator + "x"); got != OutboundPrefixOperator+"x" {
+		t.Fatalf("operator idempotent=%q", got)
 	}
 }
 
@@ -53,7 +66,7 @@ func TestDeliverAssistantReplyWeixinMetaSendsText(t *testing.T) {
 	if len(sent) != 1 {
 		t.Fatalf("SendText calls = %d, want 1", len(sent))
 	}
-	if sent[0].peerID != "peer-1" || sent[0].text != "助手回复" {
+	if sent[0].peerID != "peer-1" || sent[0].text != OutboundPrefixAssistant+"助手回复" {
 		t.Fatalf("SendText = %+v", sent[0])
 	}
 	if sent[0].extras["context_token"] != "tok-1" {

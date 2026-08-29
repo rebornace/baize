@@ -979,7 +979,7 @@ func TestExecuteOutboundWeixinMetaSendsText(t *testing.T) {
 	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问"); err != nil {
 		t.Fatal(err)
 	}
-	if len(ch.texts) != 1 || ch.texts[0].peer != "peer-1" || ch.texts[0].text != "微信侧可见" {
+	if len(ch.texts) != 1 || ch.texts[0].peer != "peer-1" || ch.texts[0].text != "【助手】微信侧可见" {
 		t.Fatalf("outbound = %+v", ch.texts)
 	}
 	if ch.texts[0].extras["context_token"] != "ctx-x" {

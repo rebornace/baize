@@ -28,6 +28,7 @@ type Channel struct {
 	credsDir  string
 
 	mu            sync.Mutex
+	sendMu        sync.Mutex // serializes outbound SendMessage (ordering)
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
 	started       bool
@@ -265,6 +266,8 @@ func (c *Channel) sendViaILink(ctx context.Context, peerID, text string, extras 
 	if extras != nil {
 		ctxToken = extras["context_token"]
 	}
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
 	return c.ilink.SendMessage(ctx, c.token, OutboundMessage{
 		ToUserID:     peerID,
 		Text:         text,
