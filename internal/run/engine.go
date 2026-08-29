@@ -11,6 +11,7 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/authresolve"
+	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
@@ -60,6 +61,13 @@ type Engine struct {
 	// Skills is optional. When non-nil and non-empty, runLoop filters tool
 	// specs by activated skills and exposes activate_skill.
 	Skills *skill.Catalog
+	// Meta is optional. When set with Outbound, succeeded assistant replies
+	// for weixin conversations are delivered to the channel peer.
+	Meta conversation.MetaStore
+	// Outbound is optional channel used for UI→peer sync after a succeeded run.
+	Outbound channel.Channel
+	// OutboundExtras optionally supplies per-conversation extras (e.g. context_token).
+	OutboundExtras func(conversationID string) map[string]string
 
 	runMu sync.Mutex
 	runs  map[string]*runSkillState
@@ -795,6 +803,7 @@ func (e *Engine) recordTerminalMessage(runID string) {
 			Content: runRec.Output,
 			RunID:   runID,
 		})
+		e.deliverOutbound(runRec.ConversationID, runRec.Output)
 	case store.StatusFailed:
 		note := strings.TrimSpace(runRec.Error)
 		if note == "" {
@@ -814,6 +823,24 @@ func (e *Engine) recordTerminalMessage(runID string) {
 			RunID:   runID,
 		})
 	}
+}
+
+// deliverOutbound mirrors succeeded assistant text to a channel peer when the
+// conversation meta is weixin-backed. Failures are logged inside Deliver; they
+// must not change the run's succeeded status.
+func (e *Engine) deliverOutbound(conversationID, text string) {
+	if e.Outbound == nil || e.Meta == nil || conversationID == "" {
+		return
+	}
+	meta, err := e.Meta.GetMeta(conversationID)
+	if err != nil {
+		return
+	}
+	var extras map[string]string
+	if e.OutboundExtras != nil {
+		extras = e.OutboundExtras(conversationID)
+	}
+	channel.DeliverAssistantReply(context.Background(), e.Outbound, meta, text, nil, extras)
 }
 
 func (e *Engine) userTurnStillLinked(runRec *store.Run) bool {

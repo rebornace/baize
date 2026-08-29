@@ -411,6 +411,10 @@ func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, mess
 	srv.WeixinCredsDir = credsDir
 	srv.WeixinRunCtx = runCtx
 
+	engine.Meta = meta
+	engine.Outbound = ch
+	engine.OutboundExtras = rt.OutboundExtras
+
 	if credErr == nil && settings.Enabled {
 		if err := ch.Start(runCtx); err != nil {
 			log.Printf("weixin channel: start skipped: %v", err)

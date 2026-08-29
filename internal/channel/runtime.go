@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rebornace/baize/internal/attach"
@@ -43,6 +44,9 @@ type Runtime struct {
 	SupportsVision bool
 	// AfterCreateRun is an optional hook to start the engine after CreateRun.
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
+
+	tokenMu sync.Mutex
+	tokens  map[string]string // conversation_id -> context_token
 }
 
 // HandleInbound maps a peer message to a conversation, replies busy if needed,
@@ -86,6 +90,7 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 	}); err != nil {
 		return fmt.Errorf("channel: ensure meta: %w", err)
 	}
+	r.rememberContextToken(convID, in.Extras)
 
 	busy, err := r.Runs.HasActiveRun(convID)
 	if err != nil {
@@ -143,6 +148,36 @@ func copyExtras(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (r *Runtime) rememberContextToken(conversationID string, extras map[string]string) {
+	if r == nil || extras == nil {
+		return
+	}
+	tok := strings.TrimSpace(extras["context_token"])
+	if tok == "" {
+		return
+	}
+	r.tokenMu.Lock()
+	defer r.tokenMu.Unlock()
+	if r.tokens == nil {
+		r.tokens = make(map[string]string)
+	}
+	r.tokens[conversationID] = tok
+}
+
+// OutboundExtras returns cached channel extras (e.g. context_token) for a conversation.
+func (r *Runtime) OutboundExtras(conversationID string) map[string]string {
+	if r == nil {
+		return nil
+	}
+	r.tokenMu.Lock()
+	defer r.tokenMu.Unlock()
+	tok := r.tokens[conversationID]
+	if tok == "" {
+		return nil
+	}
+	return map[string]string{"context_token": tok}
 }
 
 // buildInboundContent mirrors internal/api handlePostRun attachment assembly:
