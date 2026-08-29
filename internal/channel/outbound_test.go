@@ -9,6 +9,36 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 )
 
+func TestDeliverUserTextWeixinMetaSendsText(t *testing.T) {
+	ch := &fakeChannel{name: "fake"}
+	meta := conversation.Meta{
+		ID:          "weixin:acc:peer-1",
+		Source:      "weixin",
+		ChannelPeer: "peer-1",
+	}
+	DeliverUserText(context.Background(), ch, meta, "来自 UI 的用户话", map[string]string{
+		"context_token": "tok-u",
+	})
+	sent := ch.texts()
+	if len(sent) != 1 {
+		t.Fatalf("SendText calls = %d, want 1", len(sent))
+	}
+	if sent[0].peerID != "peer-1" || sent[0].text != "来自 UI 的用户话" {
+		t.Fatalf("SendText = %+v", sent[0])
+	}
+	if sent[0].extras["context_token"] != "tok-u" {
+		t.Fatalf("extras = %+v", sent[0].extras)
+	}
+}
+
+func TestDeliverUserTextUIMetaSkips(t *testing.T) {
+	ch := &fakeChannel{name: "fake"}
+	DeliverUserText(context.Background(), ch, conversation.Meta{Source: "ui"}, "hello", nil)
+	if n := len(ch.texts()); n != 0 {
+		t.Fatalf("SendText calls = %d, want 0", n)
+	}
+}
+
 func TestDeliverAssistantReplyWeixinMetaSendsText(t *testing.T) {
 	ch := &fakeChannel{name: "fake"}
 	meta := conversation.Meta{

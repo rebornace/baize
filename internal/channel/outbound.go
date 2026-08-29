@@ -21,21 +21,45 @@ type startedReporter interface {
 	IsStarted() bool
 }
 
+func weixinPeer(ch Channel, meta conversation.Meta) (peer string, ok bool) {
+	if ch == nil {
+		return "", false
+	}
+	if sr, ok := ch.(startedReporter); ok && !sr.IsStarted() {
+		return "", false
+	}
+	if strings.TrimSpace(meta.Source) != "weixin" {
+		return "", false
+	}
+	peer = strings.TrimSpace(meta.ChannelPeer)
+	if peer == "" {
+		return "", false
+	}
+	return peer, true
+}
+
+// DeliverUserText mirrors a /ui (or API) user turn to the weixin peer so the
+// phone chat shows what the operator typed. Failures are logged only.
+func DeliverUserText(ctx context.Context, ch Channel, meta conversation.Meta, text string, extras map[string]string) {
+	peer, ok := weixinPeer(ch, meta)
+	if !ok {
+		return
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if err := ch.SendText(ctx, peer, text, copyExtras(extras)); err != nil {
+		log.Printf("channel outbound user: SendText peer=%s: %v", peer, err)
+	}
+}
+
 // DeliverAssistantReply sends a succeeded assistant reply to the channel peer
 // when meta identifies a weixin conversation. Failures are logged only; callers
 // must not treat errors as run failures. Nil channel is a no-op.
 func DeliverAssistantReply(ctx context.Context, ch Channel, meta conversation.Meta, text string, media []OutboundMedia, extras map[string]string) {
-	if ch == nil {
-		return
-	}
-	if sr, ok := ch.(startedReporter); ok && !sr.IsStarted() {
-		return
-	}
-	if strings.TrimSpace(meta.Source) != "weixin" {
-		return
-	}
-	peer := strings.TrimSpace(meta.ChannelPeer)
-	if peer == "" {
+	peer, ok := weixinPeer(ch, meta)
+	if !ok {
 		return
 	}
 	text = strings.TrimSpace(text)
