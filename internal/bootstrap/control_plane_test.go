@@ -62,6 +62,32 @@ func TestNewAPIServerControlPlaneFileMissingFails(t *testing.T) {
 	}
 }
 
+// TestNewAPIServerControlPlaneOperatorsResolved: named operator tokens resolve
+// into srv.Operators for gate authentication.
+func TestNewAPIServerControlPlaneOperatorsResolved(t *testing.T) {
+	t.Setenv("BAIZE_ADMIN_TOKEN", "adm1")
+	t.Setenv("BAIZE_OP_ALICE", "ta1")
+
+	cfg := minimalControlPlaneCfg(t)
+	cfg.ControlPlane.AdminToken = "env:BAIZE_ADMIN_TOKEN"
+	cfg.ControlPlane.Operators = []config.OperatorEntry{
+		{ID: "alice", Token: "env:BAIZE_OP_ALICE"},
+		{ID: "bob", Token: "env:BAIZE_OP_BOB"},
+	}
+
+	srv, closer, err := newAPIServer(cfg, "")
+	if err != nil {
+		t.Fatalf("newAPIServer: %v", err)
+	}
+	defer func() { _ = closer.Close() }()
+	if srv.AdminToken != "adm1" {
+		t.Fatalf("AdminToken=%q want adm1", srv.AdminToken)
+	}
+	if len(srv.Operators) != 1 || srv.Operators[0].ID != "alice" || srv.Operators[0].Token != "ta1" {
+		t.Fatalf("Operators=%+v", srv.Operators)
+	}
+}
+
 // minimalControlPlaneCfg returns a config that builds an in-memory API server
 // without touching real ports or a live upstream. The openapi spec is resolved
 // relative to the repo root (test runs from internal/bootstrap).

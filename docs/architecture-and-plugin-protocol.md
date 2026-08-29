@@ -66,7 +66,7 @@
 
 `Run` 状态机（最小）：`queued` → `running` → (`waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`。
 
-可选控制面口令（`control_plane.operator_token` / `admin_token`）：挡住 Runtime 的 `/v0`。操作员可跑 Run / HITL / 会话身份；管理员可改 Agent、Connector、Tools。不是下游业务 IAM，也不是多租户 SSO。
+可选控制面口令（`control_plane.operator_token` / `admin_token`，或具名 `operators[]`）：挡住 Runtime 的 `/v0`。操作员可跑 Run / HITL / 会话身份；管理员可改 Agent、Connector、Tools、渠道。具名操作员使 `/ui` 会话按 `owner_id` 互不可见（admin 可看全部）。Gate 全空为开发态，**无**多运营隔离。不是下游业务 IAM，也不是多租户 SSO。
 
 #### 工具目录与 Registry 的关系
 
@@ -176,7 +176,7 @@ HTTP 插件侧车在 `POST /v0/tools/{name}/invoke` 成功返回后，亦可按 
 | 多 Agent | 多个 Agent 配置 + Run 间消息（非默认） |
 | Skill 包 | **配置形态**（不升格为与 Runtime / Agent / Tool / Connector / Run 并列的第六抽象）：`SKILL.md` 流程正文 + `tools` 清单；无在线自闭环、无市场 |
 | Memory | Run 工作记忆内置；企业 Memory 插件默认关 |
-| Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，支持 `action=resume`（HITL 机器审批），见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；企业微信（样板，非内核概念） |
+| Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，支持 `action=resume`（HITL 机器审批），见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；**微信个人号 Channel v0（已实现）** — iLink 扫码 + 长轮询私信、会话 `owner_id`、与 `/ui` 权限内双向同步，见 [README 微信 Channel](../README.zh-CN.md#微信-channel个人号-ilink)；企微 / 钉钉为后续同契约插件（非本版） |
 
 ### Skill：发现与激活（语义）
 

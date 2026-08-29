@@ -39,8 +39,9 @@ vendor/
 # 头脑风暴视觉伴侣会话
 .superpowers/
 
-# 本地运行数据
+# 本地运行数据（含渠道凭证；下方 channels 行显式标明微信目录）
 data/
+/data/channels/
 
 baize-stdout.log
 baize-stderr.log

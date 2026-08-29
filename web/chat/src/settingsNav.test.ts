@@ -17,7 +17,15 @@ describe('settingsNavItems', () => {
       '/settings/plugins',
       '/settings/webhooks',
       '/settings/inbox',
+      '/settings/channels/weixin',
       '/settings/storage',
     ])
+  })
+
+  it('admin includes 渠道 label', () => {
+    expect(settingsNavItems('admin').find((x) => x.to === '/settings/channels/weixin')).toEqual({
+      to: '/settings/channels/weixin',
+      label: '渠道',
+    })
   })
 })

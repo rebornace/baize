@@ -26,6 +26,11 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		return nil, err
 	}
 
+	conv := strings.TrimSpace(in.ConversationID)
+	if err := s.prepareConversationMeta(ctx, conv); err != nil {
+		return nil, err
+	}
+
 	createIn := store.CreateRunInput{
 		AgentID:            in.AgentID,
 		Input:              in.Input,
@@ -40,7 +45,6 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		return nil, err
 	}
 
-	conv := strings.TrimSpace(in.ConversationID)
 	if s.Messages != nil && conv != "" {
 		_, _ = s.Messages.Append(conv, conversation.Message{
 			Role:    conversation.RoleUser,

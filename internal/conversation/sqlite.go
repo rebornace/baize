@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+CREATE TABLE IF NOT EXISTS conversation_meta (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  title TEXT,
+  channel_peer TEXT,
+  updated_at TEXT NOT NULL
+);
 `
 
 // SQLiteStore persists conversation messages in SQLite.
@@ -225,6 +233,106 @@ func (s *SQLiteStore) SetRunID(messageID, runID string) error {
 		return ErrMessageNotFound
 	}
 	return nil
+}
+
+var _ MetaStore = (*SQLiteStore)(nil)
+
+func (s *SQLiteStore) EnsureMeta(m Meta) error {
+	if m.ID == "" {
+		return fmt.Errorf("meta id required")
+	}
+	if m.UpdatedAt.IsZero() {
+		m.UpdatedAt = time.Now().UTC()
+	}
+	_, err := s.exec(
+		`INSERT INTO conversation_meta (id, owner_id, source, title, channel_peer, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO NOTHING`,
+		m.ID, m.OwnerID, m.Source, nullIfEmpty(m.Title), nullIfEmpty(m.ChannelPeer),
+		m.UpdatedAt.Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetMeta(id string) (Meta, error) {
+	row := s.queryRow(
+		`SELECT id, owner_id, source, title, channel_peer, updated_at
+		 FROM conversation_meta WHERE id = ?`, id,
+	)
+	m, err := scanMeta(row)
+	if err == sql.ErrNoRows {
+		return Meta{}, ErrMetaNotFound
+	}
+	if err != nil {
+		return Meta{}, err
+	}
+	return m, nil
+}
+
+func (s *SQLiteStore) ListMeta(filter MetaFilter) ([]Meta, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if filter.OwnerID != "" {
+		rows, err = s.query(
+			`SELECT id, owner_id, source, title, channel_peer, updated_at
+			 FROM conversation_meta WHERE owner_id = ? ORDER BY updated_at DESC`,
+			filter.OwnerID,
+		)
+	} else {
+		rows, err = s.query(
+			`SELECT id, owner_id, source, title, channel_peer, updated_at
+			 FROM conversation_meta ORDER BY updated_at DESC`,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Meta
+	for rows.Next() {
+		m, err := scanMeta(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func scanMeta(scanner interface {
+	Scan(dest ...any) error
+}) (Meta, error) {
+	var m Meta
+	var title, peer sql.NullString
+	var updatedAt string
+	if err := scanner.Scan(&m.ID, &m.OwnerID, &m.Source, &title, &peer, &updatedAt); err != nil {
+		return Meta{}, err
+	}
+	if title.Valid {
+		m.Title = title.String
+	}
+	if peer.Valid {
+		m.ChannelPeer = peer.String
+	}
+	ts, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		ts, err = time.Parse(time.RFC3339, updatedAt)
+		if err != nil {
+			return Meta{}, fmt.Errorf("parse updated_at: %w", err)
+		}
+	}
+	m.UpdatedAt = ts
+	return m, nil
 }
 
 func scanMessage(scanner interface {

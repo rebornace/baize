@@ -1326,3 +1326,67 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.conversation-scope {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.15rem;
+}
+
+.conversation-scope-btn {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 0.28rem 0.4rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+.conversation-scope-btn.active {
+  background: var(--panel);
+  color: var(--text);
+  border-color: #c5cad3;
+  font-weight: 600;
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.weixin-login-block {
+  margin: 0 0 1.25rem;
+}
+
+.weixin-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.weixin-qr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 18rem;
+}
+
+.weixin-qr-img {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.weixin-qr-url {
+  word-break: break-all;
+  font-size: 0.75rem;
+}

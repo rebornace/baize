@@ -25,13 +25,59 @@ type Store interface {
 type MemoryStore struct {
 	mu   sync.RWMutex
 	msgs map[string][]Message
+	meta map[string]Meta
 }
 
 // NewMemoryStore creates an empty in-memory Store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		msgs: map[string][]Message{},
+		meta: map[string]Meta{},
 	}
+}
+
+var _ MetaStore = (*MemoryStore)(nil)
+
+func (s *MemoryStore) EnsureMeta(m Meta) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.meta == nil {
+		s.meta = map[string]Meta{}
+	}
+	if _, exists := s.meta[m.ID]; exists {
+		return nil
+	}
+	if m.UpdatedAt.IsZero() {
+		m.UpdatedAt = time.Now().UTC()
+	}
+	s.meta[m.ID] = m
+	return nil
+}
+
+func (s *MemoryStore) GetMeta(id string) (Meta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m, ok := s.meta[id]
+	if !ok {
+		return Meta{}, ErrMetaNotFound
+	}
+	return m, nil
+}
+
+func (s *MemoryStore) ListMeta(filter MetaFilter) ([]Meta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Meta, 0, len(s.meta))
+	for _, m := range s.meta {
+		if filter.OwnerID != "" && m.OwnerID != filter.OwnerID {
+			continue
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	return out, nil
 }
 
 func (s *MemoryStore) Append(conversationID string, msg Message) (Message, error) {

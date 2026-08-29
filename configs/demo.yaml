@@ -10,8 +10,15 @@ store:
 ui:
   enabled: true
 control_plane:
-  operator_token: ""   # 空=未配；可填 env:BAIZE_OPERATOR_TOKEN 或 file:/path 或明文
+  operator_token: ""   # 空=未配；可填 env:BAIZE_OPERATOR_TOKEN 或 file:/path 或明文；无 operators 时视为 id=operator
   admin_token: ""      # 空=未配；可填 env:BAIZE_ADMIN_TOKEN 或 file:/path 或明文
+  # 具名操作员（多运营会话隔离）。Gate 全空（无 admin / operator_token / operators）= 开发态，无隐私隔离。
+  # operators:
+  #   - id: alice
+  #     token: env:BAIZE_OP_ALICE
+  #   - id: bob
+  #     token: env:BAIZE_OP_BOB
+
 llm:
   provider: mock
   # supports_vision: false   # default; set true when using a vision-capable model

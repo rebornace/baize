@@ -19,6 +19,8 @@ import (
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -82,6 +84,7 @@ type Server struct {
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
 	OperatorToken    string
 	AdminToken       string
+	Operators        []controlplane.Operator
 	Webhook          *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
@@ -108,7 +111,17 @@ type Server struct {
 	CallbackSigner     httpplugin.CallbackSigner
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
-	mux                *http.ServeMux
+
+	// Weixin channel settings API (login / logout / settings). Optional;
+	// nil ILink means routes return 503. Set by bootstrap or tests (Fake).
+	WeixinILink    weixin.ILink
+	WeixinChannel  *weixin.Channel
+	WeixinRuntime  *channel.Runtime
+	WeixinCredsDir string // default ./data/channels/weixin
+	WeixinRunCtx   context.Context // long-lived ctx for Channel.Start; nil => Background
+	weixinMu       sync.Mutex
+
+	mux *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
@@ -152,7 +165,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 	if path == "/healthz" || strings.HasPrefix(path, "/ui/") || path == "/ui" {
 		return r, true
 	}
-	tok := controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}
+	tok := s.gateTokens()
 	if !tok.Enabled() {
 		return r, true
 	}
@@ -160,12 +173,12 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 	if min == controlplane.RoleNone {
 		return r, true
 	}
-	role, ok := controlplane.Authenticate(r.Header.Get("Authorization"), tok)
+	principal, ok := controlplane.AuthenticatePrincipal(r.Header.Get("Authorization"), tok)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "需要控制面口令")
 		return nil, false
 	}
-	if !role.AtLeast(min) {
+	if !principal.Role.AtLeast(min) {
 		writeError(w, http.StatusForbidden, "forbidden", "需要管理员口令")
 		return nil, false
 	}
@@ -174,7 +187,126 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 	// passthrough_json（SQLite），进而被机器路径打到下游 API。门关着时
 	// authorize 在上面已提前 return，不会执行到这里，故不影响现有 passthrough。
 	r.Header.Del("Authorization")
-	return r.WithContext(controlplane.WithRole(r.Context(), role)), true
+	ctx := controlplane.WithRole(r.Context(), principal.Role)
+	if principal.OperatorID != "" {
+		ctx = controlplane.WithOperatorID(ctx, principal.OperatorID)
+	}
+	return r.WithContext(ctx), true
+}
+
+func (s *Server) gateTokens() controlplane.Tokens {
+	return controlplane.Tokens{
+		Operator:  s.OperatorToken,
+		Admin:     s.AdminToken,
+		Operators: s.Operators,
+	}
+}
+
+func (s *Server) metaStore() conversation.MetaStore {
+	if ms, ok := s.Messages.(conversation.MetaStore); ok {
+		return ms
+	}
+	return nil
+}
+
+func (s *Server) principalFrom(ctx context.Context) controlplane.Principal {
+	return controlplane.Principal{
+		Role:       controlplane.RoleFrom(ctx),
+		OperatorID: controlplane.OperatorIDFrom(ctx),
+	}
+}
+
+var errConversationForbidden = errors.New("无权访问该会话")
+
+// requireConversationAccess enforces owner checks when the gate is on.
+// Missing meta is allowed for admin (legacy rows) and denied for operators.
+// Store/DB errors surface as HTTP 500.
+func (s *Server) requireConversationAccess(w http.ResponseWriter, r *http.Request, convID string) bool {
+	if err := s.checkConversationAccess(r.Context(), convID); err != nil {
+		if errors.Is(err, errConversationForbidden) {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return false
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return false
+	}
+	return true
+}
+
+func (s *Server) checkConversationAccess(ctx context.Context, convID string) error {
+	if !s.gateTokens().Enabled() || convID == "" {
+		return nil
+	}
+	ms := s.metaStore()
+	if ms == nil {
+		return nil
+	}
+	p := s.principalFrom(ctx)
+	meta, err := ms.GetMeta(convID)
+	if errors.Is(err, conversation.ErrMetaNotFound) {
+		if p.Role == controlplane.RoleAdmin {
+			return nil
+		}
+		return errConversationForbidden
+	}
+	if err != nil {
+		return err
+	}
+	if !conversation.CanAccess(p, meta) {
+		return errConversationForbidden
+	}
+	return nil
+}
+
+// ensureConversationMeta creates ownership on first UI use, or checks access if meta exists.
+// Returns false after writing an error response.
+func (s *Server) ensureConversationMeta(w http.ResponseWriter, r *http.Request, convID string) bool {
+	if err := s.prepareConversationMeta(r.Context(), convID); err != nil {
+		if errors.Is(err, errConversationForbidden) {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return false
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return false
+	}
+	return true
+}
+
+func (s *Server) prepareConversationMeta(ctx context.Context, convID string) error {
+	if convID == "" {
+		return nil
+	}
+	ms := s.metaStore()
+	if ms == nil {
+		return nil
+	}
+	meta, err := ms.GetMeta(convID)
+	if err == nil {
+		if !s.gateTokens().Enabled() {
+			return nil
+		}
+		if !conversation.CanAccess(s.principalFrom(ctx), meta) {
+			return errConversationForbidden
+		}
+		return nil
+	}
+	if !errors.Is(err, conversation.ErrMetaNotFound) {
+		return err
+	}
+	owner := "local-dev"
+	if s.gateTokens().Enabled() {
+		if id := controlplane.OperatorIDFrom(ctx); id != "" {
+			owner = id
+		} else if controlplane.RoleFrom(ctx) == controlplane.RoleAdmin {
+			owner = "admin"
+		}
+	}
+	return ms.EnsureMeta(conversation.Meta{
+		ID:        convID,
+		OwnerID:   owner,
+		Source:    "ui",
+		UpdatedAt: time.Now().UTC(),
+	})
 }
 
 func (s *Server) routes() {
@@ -226,6 +358,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/store", s.handleGetStoreSettings)
 	s.mux.HandleFunc("PUT /v0/settings/store", s.handlePutStoreSettings)
 	s.mux.HandleFunc("POST /v0/settings/store/restart", s.handlePostStoreRestart)
+	s.mux.HandleFunc("POST /v0/settings/channels/weixin/login/start", s.handleWeixinLoginStart)
+	s.mux.HandleFunc("GET /v0/settings/channels/weixin/login/status", s.handleWeixinLoginStatus)
+	s.mux.HandleFunc("POST /v0/settings/channels/weixin/logout", s.handleWeixinLogout)
+	s.mux.HandleFunc("GET /v0/settings/channels/weixin", s.handleGetWeixinSettings)
+	s.mux.HandleFunc("PUT /v0/settings/channels/weixin", s.handlePutWeixinSettings)
 }
 
 type apiError struct {
@@ -260,7 +397,7 @@ type uiConfig struct {
 func (s *Server) handleUIConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, uiConfig{
 		AgentID:        s.DefaultAgentID,
-		GateEnabled:    controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}.Enabled(),
+		GateEnabled:    s.gateTokens().Enabled(),
 		SupportsVision: s.supportsVision(),
 	})
 }
@@ -276,7 +413,11 @@ func (s *Server) supportsVision() bool {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"role": string(controlplane.RoleFrom(r.Context()))})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"role":         string(controlplane.RoleFrom(r.Context())),
+		"operator_id":  controlplane.OperatorIDFrom(r.Context()),
+		"gate_enabled": s.gateTokens().Enabled(),
+	})
 }
 
 func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
@@ -1316,6 +1457,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		UserParts:      userParts,
 	})
 	if err != nil {
+		if err.Error() == "无权访问该会话" {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -1387,11 +1532,15 @@ func mergeSkillIDs(mentionIDs, bodySkills []string) []string {
 }
 
 func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Identities == nil {
 		writeJSON(w, http.StatusOK, []identity.PublicView{})
 		return
 	}
-	views := s.Identities.ListPublic(r.PathValue("id"))
+	views := s.Identities.ListPublic(convID)
 	if views == nil {
 		views = []identity.PublicView{}
 	}
@@ -1406,6 +1555,9 @@ func (s *Server) handlePostIdentity(w http.ResponseWriter, r *http.Request) {
 	convID := strings.TrimSpace(r.PathValue("id"))
 	if convID == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	if !s.requireConversationAccess(w, r, convID) {
 		return
 	}
 	var body struct {
@@ -1450,6 +1602,9 @@ func (s *Server) handleSetDefaultIdentity(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
 	}
+	if !s.requireConversationAccess(w, r, r.PathValue("id")) {
+		return
+	}
 	if err := s.Identities.SetDefault(r.PathValue("id"), r.PathValue("iid")); err != nil {
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
@@ -1462,6 +1617,9 @@ func (s *Server) handleDeleteIdentity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
 	}
+	if !s.requireConversationAccess(w, r, r.PathValue("id")) {
+		return
+	}
 	if err := s.Identities.Delete(r.PathValue("id"), r.PathValue("iid")); err != nil {
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
@@ -1470,6 +1628,9 @@ func (s *Server) handleDeleteIdentity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConversationAccess(w, r, r.PathValue("id")) {
+		return
+	}
 	if s.Identities != nil {
 		s.Identities.ClearCaptured(r.PathValue("id"))
 	}
@@ -1518,6 +1679,9 @@ func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
 	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
 		return
 	}
 	if runRec.Status != store.StatusWaitingHuman {
@@ -1573,6 +1737,9 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
 		return
 	}
 	writeJSON(w, http.StatusOK, runRec)
@@ -1685,6 +1852,14 @@ func (s *Server) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	runRec, err := s.Store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
+		return
+	}
 	evs, err := s.Store.ListEvents(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
@@ -1701,6 +1876,9 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
 		return
 	}
 
@@ -1890,15 +2068,87 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			out = sum
 		}
 	}
+	if s.gateTokens().Enabled() {
+		filtered, err := s.filterConversationSummaries(r, out)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = filtered
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
 }
 
+func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.Summary) ([]conversation.Summary, error) {
+	ms := s.metaStore()
+	if ms == nil {
+		return in, nil
+	}
+	p := s.principalFrom(r.Context())
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	filterOwner := ""
+	switch p.Role {
+	case controlplane.RoleAdmin:
+		if scope == "mine" {
+			filterOwner = p.OperatorID
+			if filterOwner == "" {
+				filterOwner = "admin"
+			}
+		}
+		// default / scope=all: no owner filter
+	default:
+		// operators always see mine
+		filterOwner = p.OperatorID
+	}
+
+	allowed := map[string]bool{}
+	metas, err := ms.ListMeta(conversation.MetaFilter{OwnerID: filterOwner})
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range metas {
+		if filterOwner == "" {
+			// admin all: still require CanAccess (always true for admin)
+			if conversation.CanAccess(p, m) {
+				allowed[m.ID] = true
+			}
+		} else {
+			allowed[m.ID] = true
+		}
+	}
+	// Admin all also includes meta-less legacy conversations.
+	includeOrphans := p.Role == controlplane.RoleAdmin && scope != "mine"
+
+	out := make([]conversation.Summary, 0, len(in))
+	for _, sum := range in {
+		if allowed[sum.ID] {
+			out = append(out, sum)
+			continue
+		}
+		if includeOrphans {
+			_, gerr := ms.GetMeta(sum.ID)
+			if errors.Is(gerr, conversation.ErrMetaNotFound) {
+				out = append(out, sum)
+				continue
+			}
+			if gerr != nil {
+				return nil, gerr
+			}
+		}
+	}
+	return out, nil
+}
+
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Messages == nil {
 		writeJSON(w, http.StatusOK, []conversation.Message{})
 		return
 	}
-	msgs := s.Messages.List(r.PathValue("id"))
+	msgs := s.Messages.List(convID)
 	if msgs == nil {
 		msgs = []conversation.Message{}
 	}
@@ -1906,8 +2156,12 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleClearMessages(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Messages != nil {
-		s.Messages.Clear(r.PathValue("id"))
+		s.Messages.Clear(convID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -1917,6 +2171,9 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 	msgID := strings.TrimSpace(r.PathValue("message_id"))
 	if convID == "" || msgID == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation or message id")
+		return
+	}
+	if !s.requireConversationAccess(w, r, convID) {
 		return
 	}
 	if s.Messages == nil {
@@ -2006,6 +2263,9 @@ func (s *Server) handleForkConversation(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
 		return
 	}
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Messages == nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "message store not configured")
 		return
@@ -2040,6 +2300,9 @@ func (s *Server) handleForkConversation(w http.ResponseWriter, r *http.Request) 
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !s.ensureConversationMeta(w, r, newID) {
 		return
 	}
 	msgs := s.Messages.List(newID)
@@ -2094,6 +2357,9 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 	ag, err := s.Store.GetAgent(agentID)
 	if err != nil {
 		return nil, fmt.Errorf("unknown agent")
+	}
+	if err := s.prepareConversationMeta(r.Context(), convID); err != nil {
+		return nil, err
 	}
 	createIn := store.CreateRunInput{
 		AgentID:        agentID,

@@ -78,6 +78,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from OpenAPI, Plugins, or MCP settings (with confirmation); Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
+- Settings → Channels / Weixin (admin-only): iLink QR login for a personal WeChat bot, default Agent, assignee, and allowlist (see **Weixin Channel** below)
 - Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); outbound webhooks POST each event and a terminal `run.ended` payload; if the stream drops, the UI falls back to 700ms polling
 
@@ -538,6 +539,56 @@ Outbound delivery POSTs each run event and a terminal `run.ended` payload (see S
 **Built-in limits:** invalid or missing signature → **401**; timestamp skew > **300s** → **401** `timestamp_skew`; disabled or unknown channel → **404**; **120 requests/minute per channel** → **429** with `Retry-After: 60` (in-memory, single process).
 
 Runnable sample: [`examples/inbox-alert/`](examples/inbox-alert/).
+
+---
+
+## Weixin Channel (personal WeChat via iLink)
+
+**One-liner:** Admins QR-login a personal WeChat bot (Tencent iLink) in Settings; DM text / common media create Runs; operators with access can reply in `/ui` and sync outbound to WeChat. Complements Inbox (HMAC alert ingress) — does not replace it.
+
+| | Inbox | Weixin Channel |
+|--|--------|----------------|
+| Use case | Alerts / ITSM / custom gateway | Human DMs to a personal WeChat bot |
+| Auth | Channel secret HMAC | iLink QR token |
+| Transport | Caller HTTP POST | Long-poll + send |
+| Thread key | `external_id`, etc. | `weixin:<account_id>:<peer_id>` |
+
+### Named operators and dev mode
+
+For multi-operator isolation (recommended in production):
+
+```yaml
+control_plane:
+  admin_token: "env:BAIZE_ADMIN_TOKEN"
+  operators:
+    - id: alice
+      token: "env:BAIZE_OP_ALICE"
+    - id: bob
+      token: "env:BAIZE_OP_BOB"
+```
+
+- A lone `operator_token` (no `operators` list) maps to operator id `operator`.
+- Conversations carry `owner_id`: operators see their own by default; admin can view all (UI **All / Mine**).
+- **Gate off** (empty `admin_token` / `operator_token` / `operators`): dev mode — UI acts as a single local admin, `owner_id` may be `local-dev`, **no multi-operator privacy**. Configure named operators (or at least control-plane tokens) for isolation.
+
+### QR login (Settings)
+
+1. Open `/ui` → **Settings → Channels / Weixin** (admin).
+2. **Get QR code**, scan with WeChat; the page polls until `success`.
+3. Set `agent_id`, **assignee** (operator id), optional allowlist (one peer id per line), then save.
+4. Credentials land in `./data/channels/weixin/` (gitignored); a restart with valid creds resumes long-poll automatically.
+5. Logout clears local creds and stops polling.
+
+New peer DMs get `owner_id = assignee` (default `channel:weixin` if unset — mainly visible to admin). An active Run for the same peer skips a second Run and replies with a busy message on WeChat.
+
+### Media, groups, and v0 limits
+
+- **Media:** DM text, images, and common files can enter Runs as attachments; assistant text can sync back. **CDN AES decryption is not implemented** — encrypted CDN media may be unusable after download.
+- **Outbound `context_token`:** Cached in-process only; after a restart the peer must send another WeChat message before `/ui` outbound sync is reliable (not persisted in v0).
+- **Allowlist:** Persisted in settings; **inbound filtering is not enforced in v0**.
+- **Groups:** Ordinary WeChat groups are unsupported (iLink bots typically do not deliver them).
+- **Verification:** Fake iLink unit tests cover login / ownership; **real-device QR and DM round-trips are manual** — not automated in CI.
+- **Deploy:** Single-instance for one bot account in this milestone.
 
 ---
 

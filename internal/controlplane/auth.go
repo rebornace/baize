@@ -3,7 +3,6 @@ package controlplane
 import (
 	"context"
 	"crypto/subtle"
-	"strings"
 )
 
 type Role string
@@ -15,12 +14,21 @@ const (
 )
 
 type Tokens struct {
-	Operator string
-	Admin    string
+	Operator  string
+	Admin     string
+	Operators []Operator
 }
 
 func (t Tokens) Enabled() bool {
-	return t.Operator != "" || t.Admin != ""
+	if t.Admin != "" || t.Operator != "" {
+		return true
+	}
+	for _, op := range t.Operators {
+		if op.Token != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (r Role) AtLeast(min Role) bool {
@@ -39,17 +47,8 @@ func (r Role) AtLeast(min Role) bool {
 const bearerPrefix = "Bearer "
 
 func Authenticate(authorizationHeader string, t Tokens) (Role, bool) {
-	if !strings.HasPrefix(authorizationHeader, bearerPrefix) {
-		return RoleNone, false
-	}
-	token := authorizationHeader[len(bearerPrefix):]
-	if t.Admin != "" && secretEqual(token, t.Admin) {
-		return RoleAdmin, true
-	}
-	if t.Operator != "" && secretEqual(token, t.Operator) {
-		return RoleOperator, true
-	}
-	return RoleNone, false
+	p, ok := AuthenticatePrincipal(authorizationHeader, t)
+	return p.Role, ok
 }
 
 func secretEqual(got, want string) bool {
@@ -69,6 +68,8 @@ func secretEqual(got, want string) bool {
 
 type roleKey struct{}
 
+type operatorIDKey struct{}
+
 func WithRole(ctx context.Context, role Role) context.Context {
 	return context.WithValue(ctx, roleKey{}, role)
 }
@@ -76,4 +77,13 @@ func WithRole(ctx context.Context, role Role) context.Context {
 func RoleFrom(ctx context.Context) Role {
 	role, _ := ctx.Value(roleKey{}).(Role)
 	return role
+}
+
+func WithOperatorID(ctx context.Context, operatorID string) context.Context {
+	return context.WithValue(ctx, operatorIDKey{}, operatorID)
+}
+
+func OperatorIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(operatorIDKey{}).(string)
+	return id
 }

@@ -81,9 +81,71 @@ export async function getUIConfig(): Promise<UIConfig> {
   return parseJSON(res)
 }
 
-export async function getMe(): Promise<{ role: string }> {
+export interface MeResponse {
+  role: string
+  operator_id?: string
+  gate_enabled?: boolean
+}
+
+export async function getMe(): Promise<MeResponse> {
   const res = await fetch('/v0/me', { headers: { ...authHeaders(true) } })
   return parseJSON(res)
+}
+
+export interface WeixinChannelSettings {
+  agent_id: string
+  allowlist: string[]
+  assignee: string
+  enabled: boolean
+}
+
+export interface WeixinLoginStart {
+  ticket: string
+  qr_url: string
+}
+
+export interface WeixinLoginStatus {
+  status: string
+}
+
+export async function startWeixinLogin(): Promise<WeixinLoginStart> {
+  const res = await fetch('/v0/settings/channels/weixin/login/start', {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON<WeixinLoginStart>(res)
+}
+
+export async function getWeixinLoginStatus(ticket: string): Promise<WeixinLoginStatus> {
+  const qs = new URLSearchParams({ ticket })
+  const res = await fetch(`/v0/settings/channels/weixin/login/status?${qs}`, {
+    headers: authInit(),
+  })
+  return parseJSON<WeixinLoginStatus>(res)
+}
+
+export async function logoutWeixin(): Promise<{ status: string }> {
+  const res = await fetch('/v0/settings/channels/weixin/logout', {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON<{ status: string }>(res)
+}
+
+export async function getWeixinSettings(): Promise<WeixinChannelSettings> {
+  const res = await fetch('/v0/settings/channels/weixin', { headers: authInit() })
+  return parseJSON<WeixinChannelSettings>(res)
+}
+
+export async function putWeixinSettings(
+  body: WeixinChannelSettings,
+): Promise<WeixinChannelSettings> {
+  const res = await fetch('/v0/settings/channels/weixin', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<WeixinChannelSettings>(res)
 }
 
 export interface Attachment {
@@ -767,13 +829,20 @@ export async function forkConversation(
   return parseJSON<ForkConversationResult>(res)
 }
 
-export async function listConversations(): Promise<
-  { id: string; title: string; updated_at: string }[]
-> {
-  const res = await fetch('/v0/conversations', { headers: authInit() })
-  const body = await parseJSON<{
-    conversations: { id: string; title: string; updated_at: string }[]
-  }>(res)
+export type ConversationScope = 'mine' | 'all'
+
+export interface ConversationSummary {
+  id: string
+  title: string
+  updated_at: string
+}
+
+export async function listConversations(
+  scope?: ConversationScope,
+): Promise<ConversationSummary[]> {
+  const qs = scope ? `?scope=${encodeURIComponent(scope)}` : ''
+  const res = await fetch(`/v0/conversations${qs}`, { headers: authInit() })
+  const body = await parseJSON<{ conversations: ConversationSummary[] }>(res)
   return body.conversations ?? []
 }
 

@@ -951,3 +951,87 @@ func TestRecordTerminalMessageSkipsSupersededRun(t *testing.T) {
 		t.Fatalf("expected no assistant append after rollback; got %+v", msgStore.List("c1"))
 	}
 }
+
+func TestExecuteOutboundWeixinMetaSendsText(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{
+		ID:          "weixin:acc:peer-1",
+		Source:      "weixin",
+		ChannelPeer: "peer-1",
+		OwnerID:     "alice",
+	})
+	ch := &outboundFakeChannel{}
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, Content: "微信侧可见"}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, MaxMessages: 40,
+		Meta: msgStore, Outbound: ch,
+		OutboundExtras: func(string) map[string]string {
+			return map[string]string{"context_token": "ctx-x"}
+		},
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "问", ConversationID: "weixin:acc:peer-1"})
+	_, _ = msgStore.Append("weixin:acc:peer-1", conversation.Message{Role: conversation.RoleUser, Content: "问", RunID: r.ID})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ch.texts) != 1 || ch.texts[0].peer != "peer-1" || ch.texts[0].text != "微信侧可见" {
+		t.Fatalf("outbound = %+v", ch.texts)
+	}
+	if ch.texts[0].extras["context_token"] != "ctx-x" {
+		t.Fatalf("extras = %+v", ch.texts[0].extras)
+	}
+}
+
+func TestExecuteOutboundUIMetaSkips(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "ui-1", Source: "ui", OwnerID: "alice"})
+	ch := &outboundFakeChannel{}
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, Content: "仅 UI"}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, MaxMessages: 40,
+		Meta: msgStore, Outbound: ch,
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "问", ConversationID: "ui-1"})
+	_, _ = msgStore.Append("ui-1", conversation.Message{Role: conversation.RoleUser, Content: "问", RunID: r.ID})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "问"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ch.texts) != 0 {
+		t.Fatalf("unexpected outbound for ui meta: %+v", ch.texts)
+	}
+}
+
+type outboundFakeChannel struct {
+	texts []struct {
+		peer, text string
+		extras     map[string]string
+	}
+}
+
+func (o *outboundFakeChannel) Name() string                { return "fake" }
+func (o *outboundFakeChannel) Start(context.Context) error { return nil }
+func (o *outboundFakeChannel) Stop(context.Context) error  { return nil }
+func (o *outboundFakeChannel) SendText(_ context.Context, peerID, text string, extras map[string]string) error {
+	cp := map[string]string{}
+	for k, v := range extras {
+		cp[k] = v
+	}
+	o.texts = append(o.texts, struct {
+		peer, text string
+		extras     map[string]string
+	}{peer: peerID, text: text, extras: cp})
+	return nil
+}
+func (o *outboundFakeChannel) SendMedia(context.Context, string, string, string, []byte, map[string]string) error {
+	return nil
+}

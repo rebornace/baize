@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -68,7 +69,7 @@ func TestGateOffAllowsAnonymous(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/v0/me", nil)
 	rr = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)
-	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"role":""`) {
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"role":""`) || !strings.Contains(rr.Body.String(), `"gate_enabled":false`) {
 		t.Fatalf("me=%d %s", rr.Code, rr.Body.String())
 	}
 }
@@ -116,7 +117,7 @@ func TestGateOperatorForbiddenOnAdminRoutes(t *testing.T) {
 	auth(req)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"role":"operator"`) {
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"role":"operator"`) || !strings.Contains(rr.Body.String(), `"operator_id":"operator"`) {
 		t.Fatalf("me=%d %s", rr.Code, rr.Body.String())
 	}
 
@@ -187,6 +188,18 @@ func TestGateSameTokenIsAdmin(t *testing.T) {
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != 200 {
 		t.Fatalf("code=%d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestGateNamedOperatorMe(t *testing.T) {
+	srv := gateServer(t, "", "adm")
+	srv.Operators = []controlplane.Operator{{ID: "alice", Token: "ta"}, {ID: "bob", Token: "tb"}}
+	req := httptest.NewRequest(http.MethodGet, "/v0/me", nil)
+	req.Header.Set("Authorization", "Bearer ta")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"operator_id":"alice"`) {
+		t.Fatalf("me=%d %s", rr.Code, rr.Body.String())
 	}
 }
 

@@ -79,6 +79,7 @@ cd baize
 - 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
+- 设置 → 渠道 / 微信（仅管理员）：iLink 扫码登录个人微信 Bot、配置默认 Agent、受理人与 allowlist（见下文「微信 Channel」）
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；出站 Webhook 会 POST 每条事件与终态 `run.ended`；断流后 UI 回退为 700ms 轮询
 
@@ -571,6 +572,56 @@ curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
 **内置限制：** 无效或缺失签名 → **401**；时间戳偏移 > **300s** → **401** `timestamp_skew`；Channel 禁用或不存在 → **404**；每 Channel **120 次/分钟** → **429**，`Retry-After: 60`（内存计数，单进程）。
 
 可运行示例：[`examples/inbox-alert/`](examples/inbox-alert/)。
+
+---
+
+## 微信 Channel（个人号 iLink）
+
+**一句话：** 管理员在设置页扫码登录个人微信 Bot（腾讯 iLink），私信文本 / 常见媒体入站建 Run；有权限的操作员可在 `/ui` 同会话回复并出站回微信。与 Inbox（HMAC 告警入站）并行，互不替代。
+
+| | Inbox | 微信 Channel |
+|--|--------|----------------|
+| 场景 | 告警 / 工单 / 自建网关 | 人在个人微信**私信** bot |
+| 鉴权 | Channel Secret HMAC | iLink 扫码 token |
+| 传输 | 调用方 HTTP POST | 长轮询 + send |
+| 会话键 | `external_id` 等 | `weixin:<account_id>:<peer_id>` |
+
+### 具名操作员与开发态
+
+多运营时在 YAML 配置具名操作员（推荐生产）：
+
+```yaml
+control_plane:
+  admin_token: "env:BAIZE_ADMIN_TOKEN"
+  operators:
+    - id: alice
+      token: "env:BAIZE_OP_ALICE"
+    - id: bob
+      token: "env:BAIZE_OP_BOB"
+```
+
+- 仍只配单个 `operator_token`（无 `operators`）时，视为唯一操作员 `id=operator`。
+- 会话带 `owner_id`：普通操作员默认只看自己的对话；admin 可看全部（UI「全部 / 我的」）。
+- **Gate 关闭**（`admin_token` / `operator_token` / `operators` 皆空）：开发态，UI 按单一本地 admin 渲染，`owner_id` 可为 `local-dev`——**无多运营隐私隔离**。要隔离必须配置具名操作员（或至少控制面口令）。
+
+### 设置页扫码步骤
+
+1. 打开 `/ui` → **设置 → 渠道 / 微信**（管理员）。
+2. **获取登录二维码**，用手机微信扫码；页面轮询至 `success`。
+3. 配置 `agent_id`、**受理人**（`assignee`，操作员 id）、可选 allowlist（每行一个 peer id），保存。
+4. 凭证写入 `./data/channels/weixin/`（`creds.json` 等，已 gitignore）；进程启动若凭证有效会自动恢复长轮询。
+5. 登出：清除本地凭证并停止轮询。
+
+新 peer 首条私信创建会话时：`owner_id = 受理人`；未配置受理人时默认为 `channel:weixin`（仅 admin 默认列表可见）。同 peer 已有进行中的 Run 时不建第二 Run，微信侧回复「请稍候，上一轮还在处理」。
+
+### 媒体、群与已知限制（v0）
+
+- **媒体：** 私信文本、图片与常见文件可入站为附件并进 Run（vision 开启则图片多模态，否则文本说明）；助手文本可出站回 peer。**CDN AES 解密尚未实现**——依赖加密 CDN 的媒体可能下载后无法使用。
+- **出站 `context_token`：** 仅缓存在进程内存；服务重启后需该 peer 再发一条微信消息，之后才能从 `/ui` 可靠出站（本版不落盘）。
+- **allowlist：** 设置页可保存；**v0 未做入站过滤**（字段已落盘，不据此拒收私信）。
+- **群聊：** 普通微信群默认不支持（iLink bot 通常不推群）。
+- **验收：** 假 iLink 单测覆盖登录 / 归属等；**真机扫码与私信往返需手工验收**，仓库未做自动化真机测。
+- **部署：** 本版按**单实例**使用同一 bot 凭证；勿多副本抢同一账号。
 
 ---
 

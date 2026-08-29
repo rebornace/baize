@@ -7,7 +7,7 @@ import { UnlockPage } from './UnlockPage'
 type GateState =
   | { status: 'loading' }
   | { status: 'locked' }
-  | { status: 'ready'; role: GateRole; gateEnabled: boolean }
+  | { status: 'ready'; role: GateRole; gateEnabled: boolean; operatorId: string }
 
 function asGateRole(role: string): GateRole | null {
   if (role === 'operator' || role === 'admin') return role
@@ -30,7 +30,12 @@ export function GateRoot({ children }: { children: ReactNode }) {
         if (cancelled) return
         if (!cfg.gate_enabled) {
           setGateEnabled(false)
-          setState({ status: 'ready', role: 'admin', gateEnabled: false })
+          setState({
+            status: 'ready',
+            role: 'admin',
+            gateEnabled: false,
+            operatorId: 'local-dev',
+          })
           return
         }
         setGateEnabled(true)
@@ -47,7 +52,9 @@ export function GateRoot({ children }: { children: ReactNode }) {
             setState({ status: 'locked' })
             return
           }
-          setState({ status: 'ready', role, gateEnabled: true })
+          const operatorId =
+            (me.operator_id ?? '').trim() || (role === 'admin' ? 'admin' : '')
+          setState({ status: 'ready', role, gateEnabled: true, operatorId })
         } catch (err) {
           if (cancelled) return
           if (isUnauthorized(err)) clearControlToken()
@@ -56,7 +63,12 @@ export function GateRoot({ children }: { children: ReactNode }) {
       } catch {
         if (cancelled) return
         setGateEnabled(false)
-        setState({ status: 'ready', role: 'admin', gateEnabled: false })
+        setState({
+          status: 'ready',
+          role: 'admin',
+          gateEnabled: false,
+          operatorId: 'local-dev',
+        })
       }
     })()
     return () => {
@@ -71,7 +83,13 @@ export function GateRoot({ children }: { children: ReactNode }) {
       return <UnlockPage onUnlocked={() => setReload((n) => n + 1)} />
     case 'ready':
       return (
-        <GateContext.Provider value={{ role: state.role, gateEnabled: state.gateEnabled }}>
+        <GateContext.Provider
+          value={{
+            role: state.role,
+            gateEnabled: state.gateEnabled,
+            operatorId: state.operatorId,
+          }}
+        >
           {children}
         </GateContext.Provider>
       )

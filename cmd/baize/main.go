@@ -9,6 +9,9 @@ import (
 
 	"github.com/rebornace/baize/internal/bootstrap"
 	"github.com/rebornace/baize/internal/config"
+
+	// Register weixin Channel factory (Start/Runtime wiring in Task 6).
+	_ "github.com/rebornace/baize/internal/channel/weixin"
 )
 
 func main() {

@@ -81,8 +81,9 @@ type Config struct {
 		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
 	} `yaml:"mock_ticket"`
 	ControlPlane struct {
-		OperatorToken string `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
-		AdminToken    string `yaml:"admin_token"`    // 空=未配；同上
+		OperatorToken string          `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
+		AdminToken    string          `yaml:"admin_token"`    // 空=未配；同上
+		Operators     []OperatorEntry `yaml:"operators"`
 	} `yaml:"control_plane"`
 	Events struct {
 		Webhook struct {
@@ -103,6 +104,12 @@ type Config struct {
 // InboxConfig holds bootstrap defaults for inbound webhook channels.
 type InboxConfig struct {
 	Channels []inbox.Channel `yaml:"channels"`
+}
+
+// OperatorEntry is a named control-plane operator (id + token ref).
+type OperatorEntry struct {
+	ID    string `yaml:"id"`
+	Token string `yaml:"token"`
 }
 
 // RuntimeConfig holds sidecar callback configuration (Phase 2).

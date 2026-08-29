@@ -16,10 +16,13 @@ import (
 	"time"
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
+	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/analysis"
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -314,12 +317,112 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("control_plane.admin_token: %w", err)
 	}
+	var operators []controlplane.Operator
+	for _, entry := range cfg.ControlPlane.Operators {
+		token, err := controlplane.ResolveSecret(entry.Token)
+		if err != nil {
+			_ = closer.Close()
+			return nil, nil, fmt.Errorf("control_plane.operators[%s]: %w", entry.ID, err)
+		}
+		if token == "" {
+			continue
+		}
+		operators = append(operators, controlplane.Operator{ID: entry.ID, Token: token})
+	}
 	srv.OperatorToken = op
 	srv.AdminToken = adm
+	srv.Operators = operators
 	if dir := dataDir(cfg); dir != "" {
 		srv.DataDir = dir
 	}
+	if err := wireWeixinChannel(srv, st, engine, messages, provider, closer); err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("wire weixin channel: %w", err)
+	}
 	return srv, closer, nil
+}
+
+func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, messages conversation.Store, provider llm.Provider, closer *storeAndMCPCloser) error {
+	credsDir := api.DefaultWeixinCredsDir
+	settings, err := api.LoadWeixinChannelSettings(credsDir)
+	if err != nil {
+		return err
+	}
+
+	assignee := strings.TrimSpace(settings.Assignee)
+	if assignee == "" {
+		assignee = "channel:weixin"
+	}
+	agentID := strings.TrimSpace(settings.AgentID)
+	if agentID == "" {
+		agentID = srv.DefaultAgentID
+	}
+
+	meta, ok := messages.(conversation.MetaStore)
+	if !ok {
+		return fmt.Errorf("conversation store does not support meta")
+	}
+
+	supportsVision := false
+	if provider != nil {
+		supportsVision = provider.SupportsVision()
+	}
+
+	rt := &channel.Runtime{
+		Runs:           st,
+		Meta:           meta,
+		Messages:       messages,
+		Assignee:       assignee,
+		DefaultAgentID: agentID,
+		SupportsVision: supportsVision,
+		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
+			ag, err := st.GetAgent(runRec.AgentID)
+			if err != nil {
+				return err
+			}
+			def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+			opts := run.RunOptions{UserParts: userParts}
+			go func() {
+				_ = engine.ExecuteWithOpts(context.Background(), runRec.ID, def, runRec.Input, opts)
+			}()
+			return nil
+		},
+	}
+
+	accountID, token, credErr := weixin.LoadCreds(credsDir)
+	if credErr != nil {
+		accountID, token = "", ""
+	}
+	ilink := weixin.NewClient("", nil)
+	ch := weixin.New(ilink, rt, accountID, token)
+	ch.SetCredsDir(credsDir)
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	closer.stops = append(closer.stops, func() {
+		cancel()
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stopCancel()
+		_ = ch.Stop(stopCtx)
+	})
+
+	srv.WeixinILink = ilink
+	srv.WeixinChannel = ch
+	srv.WeixinRuntime = rt
+	srv.WeixinCredsDir = credsDir
+	srv.WeixinRunCtx = runCtx
+
+	engine.Meta = meta
+	engine.Outbound = ch
+	engine.OutboundExtras = rt.OutboundExtras
+
+	if credErr == nil && settings.Enabled {
+		if err := ch.Start(runCtx); err != nil {
+			log.Printf("weixin channel: start skipped: %v", err)
+		} else {
+			log.Printf("weixin channel: started (creds_dir=%s)", credsDir)
+		}
+	}
+	return nil
 }
 
 func dataDir(cfg config.Config) string {

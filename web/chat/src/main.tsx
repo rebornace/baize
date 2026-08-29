@@ -14,6 +14,7 @@ import { SettingsLayout } from './pages/SettingsLayout'
 import { SkillsSettings } from './pages/SkillsSettings'
 import { StorageSettings } from './pages/StorageSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
+import { WeixinChannelSettings } from './pages/WeixinChannelSettings'
 import './style.css'
 
 function AdminOnly({ children }: { children: ReactNode }) {
@@ -89,6 +90,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <InboxSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="channels/weixin"
+              element={
+                <AdminOnly>
+                  <WeixinChannelSettings />
                 </AdminOnly>
               }
             />

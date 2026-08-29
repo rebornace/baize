@@ -18,6 +18,8 @@ import {
   rollbackMessages,
   type Attachment,
   type ChatMessage,
+  type ConversationScope,
+  type ConversationSummary,
   type Event,
   type RunStatus,
   type SkillSummary,
@@ -29,6 +31,7 @@ import { MarkdownText } from '../components/MarkdownText'
 import { ToolCard } from '../components/ToolCard'
 import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
+import { conversationListLabel } from '../conversationLabel'
 import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
@@ -36,10 +39,9 @@ import { useGate } from '../gateContext'
 import { useStickToBottom } from '../useStickToBottom'
 
 const CONV_KEY = 'baize.conversation_id'
+const SCOPE_KEY = 'baize.conversation_scope'
 const POLL_MS = 700
 const AGENT_FALLBACK = 'ticket-agent'
-
-type ConversationSummary = { id: string; title: string; updated_at: string }
 
 function newConversationId(): string {
   return `conv_${crypto.randomUUID()}`
@@ -53,10 +55,19 @@ function loadConversationId(): string {
   return id
 }
 
+function loadConversationScope(isAdmin: boolean): ConversationScope {
+  if (!isAdmin) return 'mine'
+  const raw = localStorage.getItem(SCOPE_KEY)?.trim()
+  return raw === 'mine' ? 'mine' : 'all'
+}
+
 export function ChatPage() {
   const { role, gateEnabled } = useGate()
   const [agentId, setAgentId] = useState(AGENT_FALLBACK)
   const [conversationId, setConversationIdState] = useState(loadConversationId)
+  const [conversationScope, setConversationScopeState] = useState<ConversationScope>(() =>
+    loadConversationScope(role === 'admin'),
+  )
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [liveEvents, setLiveEvents] = useState<Event[]>([])
@@ -82,6 +93,8 @@ export function ChatPage() {
   liveRunIdRef.current = liveRunId
   const liveEventsRef = useRef(liveEvents)
   liveEventsRef.current = liveEvents
+  const conversationScopeRef = useRef(conversationScope)
+  conversationScopeRef.current = conversationScope
 
   const { scrollerRef, bottomRef, onScroll, scrollToBottom } = useStickToBottom([
     messages,
@@ -94,6 +107,11 @@ export function ChatPage() {
   const setConversationId = useCallback((id: string) => {
     setConversationIdState(id)
     localStorage.setItem(CONV_KEY, id)
+  }, [])
+
+  const setConversationScope = useCallback((scope: ConversationScope) => {
+    setConversationScopeState(scope)
+    localStorage.setItem(SCOPE_KEY, scope)
   }, [])
 
   const stopPoll = useCallback(() => {
@@ -110,12 +128,13 @@ export function ChatPage() {
 
   const refreshConversations = useCallback(async () => {
     try {
-      const list = await listConversations()
+      const scope = role === 'admin' ? conversationScopeRef.current : undefined
+      const list = await listConversations(scope)
       setConversations(list)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }, [])
+  }, [role])
 
   const mergeHistoryPages = useCallback((runId: string, urls: string[]) => {
     if (!runId || urls.length === 0) return
@@ -250,13 +269,16 @@ export function ChatPage() {
       .catch(() => {
         /* keep fallback */
       })
-    void refreshConversations()
     // Skills drive the Composer @-completion popup. GET /v0/skills is operator
     // readable; load failures just disable the popup rather than blocking chat.
     void listSkills()
       .then((res) => setSkills(res.skills ?? []))
       .catch(() => setSkills([]))
-  }, [refreshConversations])
+  }, [])
+
+  useEffect(() => {
+    void refreshConversations()
+  }, [conversationScope, refreshConversations])
 
   useEffect(() => {
     let cancelled = false
@@ -539,6 +561,32 @@ export function ChatPage() {
           <button type="button" className="btn ghost sidebar-new" onClick={onNewChat}>
             新对话
           </button>
+          {role === 'admin' && (
+            <div className="conversation-scope" role="group" aria-label="会话范围">
+              <button
+                type="button"
+                className={
+                  conversationScope === 'all'
+                    ? 'conversation-scope-btn active'
+                    : 'conversation-scope-btn'
+                }
+                onClick={() => setConversationScope('all')}
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                className={
+                  conversationScope === 'mine'
+                    ? 'conversation-scope-btn active'
+                    : 'conversation-scope-btn'
+                }
+                onClick={() => setConversationScope('mine')}
+              >
+                我的
+              </button>
+            </div>
+          )}
           <ul className="conversation-list">
             {conversations.map((c) => (
               <li key={c.id}>
@@ -551,7 +599,7 @@ export function ChatPage() {
                   }
                   onClick={() => onSelectConversation(c.id)}
                 >
-                  {c.title || '新对话'}
+                  {conversationListLabel(c.id, c.title)}
                 </button>
               </li>
             ))}
