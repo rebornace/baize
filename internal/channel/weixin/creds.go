@@ -60,3 +60,15 @@ func LoadCreds(dir string) (accountID, token string, err error) {
 	}
 	return p.AccountID, p.Token, nil
 }
+
+// ClearCreds removes dir/creds.json if present (idempotent).
+func ClearCreds(dir string) error {
+	if dir == "" {
+		return fmt.Errorf("weixin creds: empty dir")
+	}
+	path := filepath.Join(dir, credsFileName)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("weixin creds: remove: %w", err)
+	}
+	return nil
+}

@@ -19,6 +19,8 @@ import (
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -109,7 +111,17 @@ type Server struct {
 	CallbackSigner     httpplugin.CallbackSigner
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
-	mux                *http.ServeMux
+
+	// Weixin channel settings API (login / logout / settings). Optional;
+	// nil ILink means routes return 503. Set by bootstrap or tests (Fake).
+	WeixinILink    weixin.ILink
+	WeixinChannel  *weixin.Channel
+	WeixinRuntime  *channel.Runtime
+	WeixinCredsDir string // default ./data/channels/weixin
+	WeixinRunCtx   context.Context // long-lived ctx for Channel.Start; nil => Background
+	weixinMu       sync.Mutex
+
+	mux *http.ServeMux
 }
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
@@ -346,6 +358,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/store", s.handleGetStoreSettings)
 	s.mux.HandleFunc("PUT /v0/settings/store", s.handlePutStoreSettings)
 	s.mux.HandleFunc("POST /v0/settings/store/restart", s.handlePostStoreRestart)
+	s.mux.HandleFunc("POST /v0/settings/channels/weixin/login/start", s.handleWeixinLoginStart)
+	s.mux.HandleFunc("GET /v0/settings/channels/weixin/login/status", s.handleWeixinLoginStatus)
+	s.mux.HandleFunc("POST /v0/settings/channels/weixin/logout", s.handleWeixinLogout)
+	s.mux.HandleFunc("GET /v0/settings/channels/weixin", s.handleGetWeixinSettings)
+	s.mux.HandleFunc("PUT /v0/settings/channels/weixin", s.handlePutWeixinSettings)
 }
 
 type apiError struct {

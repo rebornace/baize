@@ -53,6 +53,36 @@ func (c *Channel) SetRuntime(rt *channel.Runtime) {
 	c.runtime = rt
 }
 
+// SetCredsDir sets the directory used for credential persistence.
+func (c *Channel) SetCredsDir(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.credsDir = dir
+}
+
+// SetCredentials updates in-memory account/token (after login).
+func (c *Channel) SetCredentials(accountID, token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.accountID = accountID
+	c.token = token
+}
+
+// ClearCredentials clears in-memory account/token (after logout).
+func (c *Channel) ClearCredentials() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.accountID = ""
+	c.token = ""
+}
+
+// IsStarted reports whether the poll loop is running.
+func (c *Channel) IsStarted() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.started
+}
+
 func openFromConfig(cfg channel.Config) (channel.Channel, error) {
 	dir := strings.TrimSpace(cfg["creds_dir"])
 	if dir == "" {
