@@ -41,6 +41,7 @@ import { useStickToBottom } from '../useStickToBottom'
 const CONV_KEY = 'baize.conversation_id'
 const SCOPE_KEY = 'baize.conversation_scope'
 const POLL_MS = 700
+const IDLE_SYNC_MS = 2000
 const AGENT_FALLBACK = 'ticket-agent'
 
 function newConversationId(): string {
@@ -312,6 +313,48 @@ export function ChatPage() {
       stopPoll()
     }
   }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
+
+  // Idle sync: weixin (and other external) inbound turns append messages / create
+  // runs without this tab knowing. Poll while a conversation is open so /ui
+  // picks them up without a manual refresh.
+  useEffect(() => {
+    const id = conversationId
+    let cancelled = false
+    let fingerprint = ''
+
+    const tick = async () => {
+      if (cancelled || conversationIdRef.current !== id) return
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+      try {
+        await refreshConversations()
+        const msgs = await listMessages(id)
+        if (cancelled || conversationIdRef.current !== id) return
+        const next =
+          msgs.length === 0
+            ? '0'
+            : `${msgs.length}:${msgs[msgs.length - 1]?.id ?? ''}:${msgs[msgs.length - 1]?.run_id ?? ''}`
+        if (next !== fingerprint) {
+          fingerprint = next
+          setMessages(msgs)
+        }
+        if (!liveRunIdRef.current) {
+          await restoreLiveRun(id, msgs)
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+    }
+
+    const timer = window.setInterval(() => {
+      void tick()
+    }, IDLE_SYNC_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [conversationId, refreshConversations, restoreLiveRun])
 
   // Load analysis page previews for completed turns (refresh / reopen conversation).
   useEffect(() => {

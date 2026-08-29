@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
@@ -51,6 +52,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 			Content: in.Input,
 			RunID:   runRec.ID,
 		})
+		s.deliverWeixinUserOutbound(ctx, conv, in.Input)
 	}
 
 	for _, ev := range in.PreEvents {
@@ -93,4 +95,25 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	}(runRec.ID, in.Input, def, runOpts)
 
 	return s.Store.GetRun(runRec.ID)
+}
+
+// deliverWeixinUserOutbound mirrors a UI/API user turn to the weixin peer when
+// the conversation is channel-backed. No-op for ui-only conversations.
+func (s *Server) deliverWeixinUserOutbound(ctx context.Context, convID, text string) {
+	if s == nil || s.WeixinChannel == nil || strings.TrimSpace(text) == "" || strings.TrimSpace(convID) == "" {
+		return
+	}
+	ms := s.metaStore()
+	if ms == nil {
+		return
+	}
+	meta, err := ms.GetMeta(convID)
+	if err != nil {
+		return
+	}
+	var extras map[string]string
+	if s.WeixinRuntime != nil {
+		extras = s.WeixinRuntime.OutboundExtras(convID)
+	}
+	channel.DeliverUserText(ctx, s.WeixinChannel, meta, text, extras)
 }
