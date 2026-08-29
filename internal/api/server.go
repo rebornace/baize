@@ -1532,11 +1532,15 @@ func mergeSkillIDs(mentionIDs, bodySkills []string) []string {
 }
 
 func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Identities == nil {
 		writeJSON(w, http.StatusOK, []identity.PublicView{})
 		return
 	}
-	views := s.Identities.ListPublic(r.PathValue("id"))
+	views := s.Identities.ListPublic(convID)
 	if views == nil {
 		views = []identity.PublicView{}
 	}
@@ -1735,6 +1739,9 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
 		return
 	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, runRec)
 }
 
@@ -1845,6 +1852,14 @@ func (s *Server) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	runRec, err := s.Store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
+		return
+	}
 	evs, err := s.Store.ListEvents(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
@@ -1861,6 +1876,9 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
 		return
 	}
 

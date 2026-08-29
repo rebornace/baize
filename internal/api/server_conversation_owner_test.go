@@ -267,3 +267,86 @@ func TestCrossOwnerIdentityMutateForbidden(t *testing.T) {
 		t.Fatalf("bob DELETE identities want 403 got %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestCrossOwnerGetRunForbidden(t *testing.T) {
+	srv, msgs, h := ownerTestServer(t)
+	seedOwnedConv(t, msgs, "c-alice", "alice", "secret")
+	runRec, err := srv.Store.CreateRun(store.CreateRunInput{
+		AgentID: "a1", Input: "hi", ConversationID: "c-alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+runRec.ID, nil)
+	req.Header.Set("Authorization", "Bearer tb")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("bob GET alice run want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCrossOwnerGetRunEventsForbidden(t *testing.T) {
+	srv, msgs, h := ownerTestServer(t)
+	seedOwnedConv(t, msgs, "c-alice", "alice", "secret")
+	runRec, err := srv.Store.CreateRun(store.CreateRunInput{
+		AgentID: "a1", Input: "hi", ConversationID: "c-alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = srv.Store.AppendEvent(runRec.ID, store.Event{Type: "run.started"})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+runRec.ID+"/events", nil)
+	req.Header.Set("Authorization", "Bearer tb")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("bob GET alice events want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCrossOwnerGetRunStreamForbidden(t *testing.T) {
+	srv, msgs, h := ownerTestServer(t)
+	seedOwnedConv(t, msgs, "c-alice", "alice", "secret")
+	runRec, err := srv.Store.CreateRun(store.CreateRunInput{
+		AgentID: "a1", Input: "hi", ConversationID: "c-alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/runs/"+runRec.ID+"/stream", nil)
+	req.Header.Set("Authorization", "Bearer tb")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("bob GET alice stream want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCrossOwnerListIdentitiesForbidden(t *testing.T) {
+	st := store.NewMemory()
+	msgs := conversation.NewMemoryStore()
+	ids := identity.NewMemoryStore()
+	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
+	srv.Messages = msgs
+	srv.Identities = ids
+	srv.AdminToken = "adm"
+	srv.Operators = []controlplane.Operator{
+		{ID: "alice", Token: "ta"},
+		{ID: "bob", Token: "tb"},
+	}
+	h := srv.Handler()
+
+	seedOwnedConv(t, msgs, "c-alice", "alice", "secret")
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/c-alice/identities", nil)
+	req.Header.Set("Authorization", "Bearer tb")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("bob GET alice identities want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+}
