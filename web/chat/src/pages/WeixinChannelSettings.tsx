@@ -7,6 +7,7 @@ import {
   startWeixinLogin,
   type WeixinChannelSettings,
 } from '../api'
+import { qrDataUrlFromText } from '../qrDataUrl'
 
 const POLL_MS = 2000
 
@@ -50,6 +51,8 @@ export function WeixinChannelSettings() {
 
   const [ticket, setTicket] = useState<string | null>(null)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
+  /** PNG data URL rendered from qrUrl (liteapp link is not an image). */
+  const [qrImgSrc, setQrImgSrc] = useState<string | null>(null)
   const [loginStatus, setLoginStatus] = useState<string | null>(null)
   const pollRef = useRef<number | null>(null)
 
@@ -61,6 +64,27 @@ export function WeixinChannelSettings() {
   }, [])
 
   useEffect(() => () => stopPoll(), [stopPoll])
+
+  useEffect(() => {
+    if (!qrUrl) {
+      setQrImgSrc(null)
+      return
+    }
+    let cancelled = false
+    void qrDataUrlFromText(qrUrl)
+      .then((dataUrl) => {
+        if (!cancelled) setQrImgSrc(dataUrl)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setQrImgSrc(null)
+          setError(apiErrorMessage(err))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [qrUrl])
 
   const applySettings = useCallback((s: WeixinChannelSettings) => {
     setAgentId(s.agent_id ?? '')
@@ -198,8 +222,12 @@ export function WeixinChannelSettings() {
         </div>
         {qrUrl && (
           <div className="weixin-qr">
-            <img src={qrUrl} alt="微信登录二维码" className="weixin-qr-img" />
-            <p className="settings-muted weixin-qr-url">{qrUrl}</p>
+            {qrImgSrc ? (
+              <img src={qrImgSrc} alt="微信登录二维码" className="weixin-qr-img" />
+            ) : (
+              <p className="settings-muted">正在生成二维码…</p>
+            )}
+            <p className="settings-muted weixin-qr-url">请用手机微信扫码（内容：{qrUrl}）</p>
             {ticket && <p className="settings-muted">ticket: {ticket}</p>}
             {loginStatus && (
               <p className="settings-muted">{loginStatusLabel(loginStatus)}</p>
