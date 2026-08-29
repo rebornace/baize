@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rebornace/baize/internal/store"
 )
 
 const sqliteIdentitiesSchema = `
@@ -36,7 +37,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_identities_conv_scheme_subject
 // (see store.OpenSQLite). Without these settings, concurrent writers may hit
 // "database is locked".
 type SQLiteStore struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect store.SQLDialect
 }
 
 var _ Store = (*SQLiteStore)(nil)
@@ -46,13 +48,7 @@ var _ Store = (*SQLiteStore)(nil)
 // *sql.DB opened by store.OpenSQLite. OpenSQLite does not apply connection-pool
 // or pragma settings.
 func OpenSQLite(db *sql.DB) (*SQLiteStore, error) {
-	if db == nil {
-		return nil, fmt.Errorf("db is nil")
-	}
-	if _, err := db.Exec(sqliteIdentitiesSchema); err != nil {
-		return nil, fmt.Errorf("migrate identities schema: %w", err)
-	}
-	return &SQLiteStore{db: db}, nil
+	return OpenSQL(db, store.DialectSQLite)
 }
 
 // Upsert inserts or updates an identity. Same conversation + scheme + subject
@@ -70,7 +66,7 @@ func (s *SQLiteStore) Upsert(conversationID string, id Identity) (string, error)
 		existingID     string
 		existingClaims sql.NullString
 	)
-	err = tx.QueryRow(
+	err = s.txQueryRow(tx,
 		`SELECT id, claims_json FROM identities WHERE conversation_id = ? AND scheme = ? AND subject = ?`,
 		conversationID, id.Scheme, id.Subject,
 	).Scan(&existingID, &existingClaims)
@@ -103,7 +99,7 @@ func (s *SQLiteStore) Upsert(conversationID string, id Identity) (string, error)
 			return "", err
 		}
 
-		if _, err := tx.Exec(
+		if _, err := s.txExec(tx,
 			`UPDATE identities SET label = ?, headers_json = ?, claims_json = ?, updated_at = ? WHERE id = ?`,
 			id.Label, headersJSON, claimsJSON, updatedAt.Format(time.RFC3339Nano), existingID,
 		); err != nil {
@@ -111,13 +107,13 @@ func (s *SQLiteStore) Upsert(conversationID string, id Identity) (string, error)
 		}
 
 		if id.IsDefault {
-			if _, err := tx.Exec(
+			if _, err := s.txExec(tx,
 				`UPDATE identities SET is_default = 0 WHERE conversation_id = ? AND scheme = ? AND id <> ?`,
 				conversationID, id.Scheme, existingID,
 			); err != nil {
 				return "", err
 			}
-			if _, err := tx.Exec(
+			if _, err := s.txExec(tx,
 				`UPDATE identities SET is_default = 1 WHERE id = ?`,
 				existingID,
 			); err != nil {
@@ -154,7 +150,7 @@ func (s *SQLiteStore) Upsert(conversationID string, id Identity) (string, error)
 		claimsJSON = string(b)
 	}
 
-	if _, err := tx.Exec(
+	if _, err := s.txExec(tx,
 		`INSERT INTO identities (id, conversation_id, label, scheme, subject, source, is_default, headers_json, claims_json, last_used_at, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
 		newID, conversationID, id.Label, id.Scheme, id.Subject, id.Source, boolToInt(id.IsDefault),
@@ -164,7 +160,7 @@ func (s *SQLiteStore) Upsert(conversationID string, id Identity) (string, error)
 	}
 
 	if id.IsDefault {
-		if _, err := tx.Exec(
+		if _, err := s.txExec(tx,
 			`UPDATE identities SET is_default = 0 WHERE conversation_id = ? AND scheme = ? AND id <> ?`,
 			conversationID, id.Scheme, newID,
 		); err != nil {
@@ -180,7 +176,7 @@ func (s *SQLiteStore) Upsert(conversationID string, id Identity) (string, error)
 
 // List returns all identities for a conversation.
 func (s *SQLiteStore) List(conversationID string) []Identity {
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		`SELECT id, conversation_id, label, scheme, subject, source, is_default, headers_json, claims_json, last_used_at, created_at, updated_at
 		 FROM identities WHERE conversation_id = ? ORDER BY created_at ASC`,
 		conversationID,
@@ -206,7 +202,7 @@ func (s *SQLiteStore) List(conversationID string) []Identity {
 
 // Get returns a single identity by id within a conversation.
 func (s *SQLiteStore) Get(conversationID, id string) (Identity, error) {
-	row := s.db.QueryRow(
+	row := s.queryRow(
 		`SELECT id, conversation_id, label, scheme, subject, source, is_default, headers_json, claims_json, last_used_at, created_at, updated_at
 		 FROM identities WHERE conversation_id = ? AND id = ?`,
 		conversationID, id,
@@ -223,7 +219,7 @@ func (s *SQLiteStore) Get(conversationID, id string) (Identity, error) {
 
 // ListPublic returns sanitized public views without credential headers.
 func (s *SQLiteStore) ListPublic(conversationID string) []PublicView {
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		`SELECT id, label, scheme, source, is_default, claims_json, last_used_at
 		 FROM identities WHERE conversation_id = ? ORDER BY created_at ASC`,
 		conversationID,
@@ -270,7 +266,7 @@ func (s *SQLiteStore) ListPublic(conversationID string) []PublicView {
 
 // Delete removes an identity from a conversation.
 func (s *SQLiteStore) Delete(conversationID, id string) error {
-	res, err := s.db.Exec(
+	res, err := s.exec(
 		`DELETE FROM identities WHERE conversation_id = ? AND id = ?`,
 		conversationID, id,
 	)
@@ -297,7 +293,7 @@ func (s *SQLiteStore) SetDefault(conversationID, id string) error {
 	defer func() { _ = tx.Rollback() }()
 
 	var scheme string
-	err = tx.QueryRow(
+	err = s.txQueryRow(tx,
 		`SELECT scheme FROM identities WHERE conversation_id = ? AND id = ?`,
 		conversationID, id,
 	).Scan(&scheme)
@@ -308,13 +304,13 @@ func (s *SQLiteStore) SetDefault(conversationID, id string) error {
 		return err
 	}
 
-	if _, err := tx.Exec(
+	if _, err := s.txExec(tx,
 		`UPDATE identities SET is_default = 0 WHERE conversation_id = ? AND scheme = ?`,
 		conversationID, scheme,
 	); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(
+	if _, err := s.txExec(tx,
 		`UPDATE identities SET is_default = 1 WHERE conversation_id = ? AND id = ?`,
 		conversationID, id,
 	); err != nil {
@@ -325,7 +321,7 @@ func (s *SQLiteStore) SetDefault(conversationID, id string) error {
 
 // ClearCaptured removes login_capture and manual identities for a conversation.
 func (s *SQLiteStore) ClearCaptured(conversationID string) {
-	_, _ = s.db.Exec(
+	_, _ = s.exec(
 		`DELETE FROM identities WHERE conversation_id = ? AND source IN (?, ?)`,
 		conversationID, SourceLoginCapture, SourceManual,
 	)
@@ -333,7 +329,7 @@ func (s *SQLiteStore) ClearCaptured(conversationID string) {
 
 // Touch updates LastUsedAt for an identity.
 func (s *SQLiteStore) Touch(conversationID, id string) error {
-	res, err := s.db.Exec(
+	res, err := s.exec(
 		`UPDATE identities SET last_used_at = ? WHERE conversation_id = ? AND id = ?`,
 		time.Now().UTC().Format(time.RFC3339Nano), conversationID, id,
 	)

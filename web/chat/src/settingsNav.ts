@@ -19,6 +19,7 @@ export function settingsNavItems(role: SettingsRole): SettingsNavItem[] {
         { to: '/settings/plugins', label: '插件' },
         { to: '/settings/webhooks', label: 'Webhook' },
         { to: '/settings/inbox', label: 'Inbox' },
+        { to: '/settings/storage', label: '存储' },
       ]
     default: {
       const _exhaustive: never = role

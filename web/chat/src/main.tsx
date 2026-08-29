@@ -12,6 +12,7 @@ import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
 import { SettingsLayout } from './pages/SettingsLayout'
 import { SkillsSettings } from './pages/SkillsSettings'
+import { StorageSettings } from './pages/StorageSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
 import './style.css'
 
@@ -88,6 +89,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <InboxSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="storage"
+              element={
+                <AdminOnly>
+                  <StorageSettings />
                 </AdminOnly>
               }
             />

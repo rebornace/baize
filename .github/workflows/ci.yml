@@ -9,6 +9,22 @@ on:
 jobs:
   go:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: baize
+          POSTGRES_PASSWORD: baize
+          POSTGRES_DB: baize_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U baize -d baize_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BAIZE_TEST_PG_DSN: postgres://baize:baize@localhost:5432/baize_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

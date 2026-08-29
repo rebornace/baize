@@ -14,6 +14,7 @@ type Config struct {
 	Store  struct {
 		Driver     string `yaml:"driver"`
 		SQLitePath string `yaml:"sqlite_path"`
+		DSN        string `yaml:"dsn"`
 	} `yaml:"store"`
 	UI struct {
 		Enabled bool `yaml:"enabled"`

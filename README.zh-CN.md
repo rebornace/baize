@@ -431,6 +431,8 @@ curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
 
 默认 SQLite 驱动下，白泽会把对话消息与捕获的身份写入 `data/baize.db`（可用 `store.sqlite_path` 配置）。Runtime 重启后，按 `conversation_id` 恢复历史轮次与已登录账号。
 
+**PostgreSQL（可选）：** 在配置中设置 `store.driver: postgres` 与 `store.dsn`，或在 **设置 → 存储**（管理员）选择 `postgres` 并填写 DSN 后 **保存并重启**。会话、身份与 Run 目录共用同一 DSN。**不会**自动从 SQLite 迁移数据；换库前请自行备份或导出。本版为单实例部署；Docker 请配置 `restart: unless-stopped` 以便重启后容器继续运行。新增 SQL 驱动可参考 `internal/store` 注册表模式（`RegisterDriver` + 独立包）。
+
 - `conversation.max_messages`（默认 `40`）控制回喂给 LLM 的最近轮次窗口；更早的消息仍留存数据库备查，但不会进入提示词。配置为 `<=0` 时会在加载时回填为 `40`。
 - 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。消息清空后该对话也会从**左栏列表消失**。
 - **回滚 / Fork（`/ui`）**：用户气泡「编辑并回滚」截断该条及之后；助手气泡「重新生成」截断后自动重跑；任意气泡可「Fork 到此」复制前缀到新对话（不复制登录态）。进行中 Run 时不可用。
