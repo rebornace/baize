@@ -15,7 +15,7 @@ func TestNewAPIServerControlPlaneTokensEmpty(t *testing.T) {
 	cfg.ControlPlane.OperatorToken = "env:BAIZE_OPERATOR_TOKEN"
 	cfg.ControlPlane.AdminToken = "env:BAIZE_ADMIN_TOKEN"
 
-	srv, closer, err := newAPIServer(cfg)
+	srv, closer, err := newAPIServer(cfg, "")
 	if err != nil {
 		t.Fatalf("newAPIServer: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestNewAPIServerControlPlaneTokensResolved(t *testing.T) {
 	cfg.ControlPlane.OperatorToken = "env:BAIZE_OPERATOR_TOKEN"
 	cfg.ControlPlane.AdminToken = "env:BAIZE_ADMIN_TOKEN"
 
-	srv, closer, err := newAPIServer(cfg)
+	srv, closer, err := newAPIServer(cfg, "")
 	if err != nil {
 		t.Fatalf("newAPIServer: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestNewAPIServerControlPlaneFileMissingFails(t *testing.T) {
 	cfg := minimalControlPlaneCfg(t)
 	cfg.ControlPlane.OperatorToken = "file:" + filepath.Join(t.TempDir(), "no-such-file")
 
-	if _, _, err := newAPIServer(cfg); err == nil {
+	if _, _, err := newAPIServer(cfg, ""); err == nil {
 		t.Fatal("expected error for missing operator token file, got nil")
 	}
 }

@@ -145,12 +145,12 @@ func (s *Memory) ResetWebhookOutboxRetry(id string) error {
 	return nil
 }
 
-func (s *SQLite) PutWebhookOutboxIfAbsent(entry WebhookOutboxEntry) (bool, string, error) {
+func (s *SQLStore) PutWebhookOutboxIfAbsent(entry WebhookOutboxEntry) (bool, string, error) {
 	now := time.Now().UTC()
 	normalizeWebhookOutboxEntry(&entry, now)
 
 	var existingID, existingStatus sql.NullString
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT id, status FROM webhook_outbox WHERE delivery_key = ?`, entry.DeliveryKey,
 	).Scan(&existingID, &existingStatus)
 	if err == nil {
@@ -161,7 +161,7 @@ func (s *SQLite) PutWebhookOutboxIfAbsent(entry WebhookOutboxEntry) (bool, strin
 		return false, "", err
 	}
 
-	_, err = s.db.Exec(`INSERT INTO webhook_outbox (
+	_, err = s.exec(`INSERT INTO webhook_outbox (
 		id, delivery_key, run_id, kind, event_index, payload_json, target_url, headers_json,
 		attempt, max_attempts, status, last_error, next_retry_at, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -209,11 +209,11 @@ func scanWebhookOutboxRow(sc interface {
 	return e, nil
 }
 
-func (s *SQLite) ListWebhookOutboxDue(now time.Time, limit int) ([]WebhookOutboxEntry, error) {
+func (s *SQLStore) ListWebhookOutboxDue(now time.Time, limit int) ([]WebhookOutboxEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.db.Query(`
+	rows, err := s.query(`
 		SELECT id, delivery_key, run_id, kind, event_index, payload_json, target_url, headers_json,
 		       attempt, max_attempts, status, last_error, next_retry_at, created_at, updated_at
 		FROM webhook_outbox
@@ -246,7 +246,7 @@ func joinPlaceholders(parts []string) string {
 	return out
 }
 
-func (s *SQLite) ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([]WebhookOutboxEntry, error) {
+func (s *SQLStore) ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([]WebhookOutboxEntry, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -267,7 +267,7 @@ func (s *SQLite) ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([
 		WHERE status IN (%s)
 		ORDER BY updated_at DESC
 		LIMIT ?`, joinPlaceholders(placeholders))
-	rows, err := s.db.Query(q, args...)
+	rows, err := s.query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -283,8 +283,8 @@ func (s *SQLite) ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([
 	return out, rows.Err()
 }
 
-func (s *SQLite) GetWebhookOutbox(id string) (WebhookOutboxEntry, error) {
-	row := s.db.QueryRow(`
+func (s *SQLStore) GetWebhookOutbox(id string) (WebhookOutboxEntry, error) {
+	row := s.queryRow(`
 		SELECT id, delivery_key, run_id, kind, event_index, payload_json, target_url, headers_json,
 		       attempt, max_attempts, status, last_error, next_retry_at, created_at, updated_at
 		FROM webhook_outbox WHERE id = ?`, id)
@@ -295,9 +295,9 @@ func (s *SQLite) GetWebhookOutbox(id string) (WebhookOutboxEntry, error) {
 	return e, err
 }
 
-func (s *SQLite) UpdateWebhookOutbox(entry WebhookOutboxEntry) error {
+func (s *SQLStore) UpdateWebhookOutbox(entry WebhookOutboxEntry) error {
 	entry.UpdatedAt = time.Now().UTC()
-	res, err := s.db.Exec(`UPDATE webhook_outbox SET
+	res, err := s.exec(`UPDATE webhook_outbox SET
 		attempt = ?, max_attempts = ?, status = ?, last_error = ?, next_retry_at = ?, updated_at = ?
 		WHERE id = ?`,
 		entry.Attempt, entry.MaxAttempts, string(entry.Status), entry.LastError,
@@ -318,9 +318,9 @@ func (s *SQLite) UpdateWebhookOutbox(entry WebhookOutboxEntry) error {
 	return nil
 }
 
-func (s *SQLite) ResetWebhookOutboxRetry(id string) error {
+func (s *SQLStore) ResetWebhookOutboxRetry(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := s.db.Exec(`UPDATE webhook_outbox SET
+	res, err := s.exec(`UPDATE webhook_outbox SET
 		status = ?, attempt = 0, last_error = '', next_retry_at = ?, updated_at = ?
 		WHERE id = ?`,
 		string(WebhookOutboxPending), now, now, id,

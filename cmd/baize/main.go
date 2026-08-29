@@ -21,6 +21,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "start":
+		basePath := "configs/minimal.yaml"
 		cfgPath := startConfigPath()
 		cfg, err := config.Load(cfgPath)
 		if err != nil {
@@ -30,7 +31,7 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("baize start: config=%s agent=%s llm=%s", cfgPath, cfg.Agent.ID, cfg.LLM.Provider)
-		if err := bootstrap.Serve(cfg); err != nil {
+		if err := bootstrap.Serve(cfg, basePath); err != nil {
 			log.Fatal(err)
 		}
 	case "demo":
@@ -40,7 +41,7 @@ func main() {
 		}
 		log.Printf("baize demo: config=%v agent=%s llm=%s", cfgPaths, cfg.Agent.ID, cfg.LLM.Provider)
 		warnIfLLMKeyMissing(cfg)
-		if err := bootstrap.Run(cfg); err != nil {
+		if err := bootstrap.Run(cfg, "configs/demo.yaml"); err != nil {
 			log.Fatal(err)
 		}
 	case "serve":
@@ -51,7 +52,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := bootstrap.Serve(cfg); err != nil {
+		if err := bootstrap.Serve(cfg, *cfgPath); err != nil {
 			log.Fatal(err)
 		}
 	default:

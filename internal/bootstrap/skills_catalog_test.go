@@ -26,7 +26,7 @@ func TestNewAPIServerInvalidSkillCatalogFails(t *testing.T) {
 	cfg.Skills.BuiltinDir = builtin
 	cfg.Skills.UserDir = user
 
-	if _, _, err := newAPIServer(cfg); err == nil {
+	if _, _, err := newAPIServer(cfg, ""); err == nil {
 		t.Fatal("expected error for invalid skill catalog, got nil")
 	}
 }
@@ -48,7 +48,7 @@ func TestNewAPIServerWiresEngineSkills(t *testing.T) {
 	cfg.Skills.BuiltinDir = builtin
 	cfg.Skills.UserDir = user
 
-	srv, closer, err := newAPIServer(cfg)
+	srv, closer, err := newAPIServer(cfg, "")
 	if err != nil {
 		t.Fatalf("newAPIServer: %v", err)
 	}

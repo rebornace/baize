@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rebornace/baize/internal/store"
 )
 
 const sqliteMessagesSchema = `
@@ -27,7 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id
 // SetMaxOpenConns(1), SetMaxIdleConns(1), and PRAGMA busy_timeout (see store.OpenSQLite).
 // Without these settings, concurrent writers may hit "database is locked".
 type SQLiteStore struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect store.SQLDialect
 }
 
 var _ Store = (*SQLiteStore)(nil)
@@ -37,13 +39,7 @@ var _ Store = (*SQLiteStore)(nil)
 // db must already use MaxOpenConns(1) and busy_timeout, or be the same *sql.DB opened
 // by store.OpenSQLite. OpenSQLite does not apply connection-pool or pragma settings.
 func OpenSQLite(db *sql.DB) (*SQLiteStore, error) {
-	if db == nil {
-		return nil, fmt.Errorf("db is nil")
-	}
-	if _, err := db.Exec(sqliteMessagesSchema); err != nil {
-		return nil, fmt.Errorf("migrate messages schema: %w", err)
-	}
-	return &SQLiteStore{db: db}, nil
+	return OpenSQL(db, store.DialectSQLite)
 }
 
 func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error) {
@@ -56,7 +52,7 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 		runID = msg.RunID
 	}
 
-	_, err := s.db.Exec(
+	_, err := s.exec(
 		`INSERT INTO messages (id, conversation_id, role, content, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		msg.ID, msg.ConversationID, msg.Role, msg.Content, runID, msg.CreatedAt.Format(time.RFC3339Nano),
 	)
@@ -67,7 +63,7 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 }
 
 func (s *SQLiteStore) List(conversationID string) []Message {
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		`SELECT id, conversation_id, role, content, run_id, created_at
 		 FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,
 		conversationID,
@@ -100,7 +96,7 @@ func (s *SQLiteStore) ListWindow(conversationID string, n int) []Message {
 }
 
 func (s *SQLiteStore) ListSummaries() []Summary {
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		`SELECT conversation_id, MAX(created_at) FROM messages GROUP BY conversation_id`,
 	)
 	if err != nil {
@@ -136,12 +132,12 @@ func (s *SQLiteStore) ListSummaries() []Summary {
 }
 
 func (s *SQLiteStore) Clear(conversationID string) {
-	_, _ = s.db.Exec(`DELETE FROM messages WHERE conversation_id = ?`, conversationID)
+	_, _ = s.exec(`DELETE FROM messages WHERE conversation_id = ?`, conversationID)
 }
 
 func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error) {
 	var createdAt string
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?`,
 		messageID, conversationID,
 	).Scan(&createdAt)
@@ -151,7 +147,7 @@ func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.Exec(
+	res, err := s.exec(
 		`DELETE FROM messages WHERE conversation_id = ? AND created_at >= ?`,
 		conversationID, createdAt,
 	)
@@ -164,7 +160,7 @@ func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error
 
 func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, int, error) {
 	var createdAt string
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?`,
 		throughMessageID, srcConversationID,
 	).Scan(&createdAt)
@@ -174,7 +170,7 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 	if err != nil {
 		return "", 0, err
 	}
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		`SELECT id, conversation_id, role, content, run_id, created_at
 		 FROM messages WHERE conversation_id = ? AND created_at <= ? ORDER BY created_at ASC`,
 		srcConversationID, createdAt,
@@ -208,7 +204,7 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 		if newMsg.RunID != "" {
 			runID = newMsg.RunID
 		}
-		_, err := s.db.Exec(
+		_, err := s.exec(
 			`INSERT INTO messages (id, conversation_id, role, content, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, runID, newMsg.CreatedAt.Format(time.RFC3339Nano),
 		)
@@ -220,7 +216,7 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 }
 
 func (s *SQLiteStore) SetRunID(messageID, runID string) error {
-	res, err := s.db.Exec(`UPDATE messages SET run_id = ? WHERE id = ?`, runID, messageID)
+	res, err := s.exec(`UPDATE messages SET run_id = ? WHERE id = ?`, runID, messageID)
 	if err != nil {
 		return err
 	}

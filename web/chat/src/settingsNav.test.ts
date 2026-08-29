@@ -17,6 +17,7 @@ describe('settingsNavItems', () => {
       '/settings/plugins',
       '/settings/webhooks',
       '/settings/inbox',
+      '/settings/storage',
     ])
   })
 })
