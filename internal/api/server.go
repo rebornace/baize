@@ -19,6 +19,7 @@ import (
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
@@ -86,6 +87,10 @@ type Server struct {
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
 	inboxLimiterOnce sync.Once
 	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
+	ConfigPath       string
+	Config           *config.Config
+	Shutdown         func(context.Context) error
+	RestartProcess   func() error
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision
 	// (image attachments are rejected with vision_unsupported).
@@ -218,6 +223,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/settings/inbox-channels", s.handlePutInboxChannels)
 	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/rotate-secret", s.handlePostInboxRotateSecret)
 	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/test", s.handlePostInboxTest)
+	s.mux.HandleFunc("GET /v0/settings/store", s.handleGetStoreSettings)
+	s.mux.HandleFunc("PUT /v0/settings/store", s.handlePutStoreSettings)
+	s.mux.HandleFunc("POST /v0/settings/store/restart", s.handlePostStoreRestart)
 }
 
 type apiError struct {

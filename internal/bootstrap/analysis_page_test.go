@@ -27,7 +27,7 @@ func TestNewAPIServerRegistersAnalysisPageWithSQLite(t *testing.T) {
 	cfg.Skills.BuiltinDir = skillsDir
 	cfg.Skills.UserDir = userDir
 
-	srv, closer, err := newAPIServer(cfg)
+	srv, closer, err := newAPIServer(cfg, "")
 	if err != nil {
 		t.Fatalf("newAPIServer: %v", err)
 	}

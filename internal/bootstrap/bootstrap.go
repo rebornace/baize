@@ -38,7 +38,7 @@ import (
 )
 
 // Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
-func Run(cfg config.Config) error {
+func Run(cfg config.Config, configPath string) error {
 	ticketListen := strings.TrimSpace(cfg.MockTicket.Listen)
 	useMockTicket := true
 	switch strings.ToLower(ticketListen) {
@@ -65,7 +65,7 @@ func Run(cfg config.Config) error {
 		ticketBase = cfg.Connector.BaseURL
 	}
 
-	srv, _, err := newAPIServer(cfg)
+	srv, closer, err := newAPIServer(cfg, configPath)
 	if err != nil {
 		return err
 	}
@@ -78,12 +78,17 @@ func Run(cfg config.Config) error {
 	printCurlHints(runtimeBase, cfg.Agent.ID, ticketBase)
 	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
-	return http.ListenAndServe(listen, srv.Handler())
+	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
+	srv.Shutdown = httpSrv.Shutdown
+	srv.RestartProcess = Reexec
+	err = httpSrv.ListenAndServe()
+	_ = closer.Close()
+	return err
 }
 
 // Serve starts Runtime only (no mock-ticket) and blocks on the API server.
-func Serve(cfg config.Config) error {
-	srv, _, err := newAPIServer(cfg)
+func Serve(cfg config.Config, configPath string) error {
+	srv, closer, err := newAPIServer(cfg, configPath)
 	if err != nil {
 		return err
 	}
@@ -95,7 +100,12 @@ func Serve(cfg config.Config) error {
 	printCurlHints(runtimeBase, cfg.Agent.ID, cfg.Connector.BaseURL)
 	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
-	return http.ListenAndServe(listen, srv.Handler())
+	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
+	srv.Shutdown = httpSrv.Shutdown
+	srv.RestartProcess = Reexec
+	err = httpSrv.ListenAndServe()
+	_ = closer.Close()
+	return err
 }
 
 // StartForTest starts mock-ticket and Runtime on ephemeral ports for integration tests.
@@ -121,7 +131,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 		cfg.Run.MaxSteps = 16
 	}
 
-	apiSrv, storeClose, err := newAPIServer(cfg)
+	apiSrv, storeClose, err := newAPIServer(cfg, "")
 	if err != nil {
 		_ = ticketSrv.Close()
 		t.Fatalf("new api server: %v", err)
@@ -154,7 +164,7 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 	return runtimeURL, ticketURL, shutdown
 }
 
-func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
+func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer, error) {
 	provider, err := newLLM(cfg)
 	if err != nil {
 		return nil, nil, err
@@ -182,7 +192,10 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		TTL:        callbackTTL,
 	}
 
-	st, err := store.Open(cfg.Store.Driver, cfg.Store.SQLitePath)
+	st, err := store.OpenWithOptions(cfg.Store.Driver, store.OpenOptions{
+		SQLitePath: cfg.Store.SQLitePath,
+		DSN:        cfg.Store.DSN,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
@@ -220,11 +233,11 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		log.Printf("persisted connectors restored from store: %v", ids)
 	}
 
-	// Artifact store needs the underlying *store.SQLite; eventbus.Notify wraps st
+	// Artifact store needs the underlying SQL backend; eventbus.Notify wraps st
 	// and would break a direct type assertion below.
-	var sqliteStore *store.SQLite
-	if sqlite, ok := st.(*store.SQLite); ok {
-		sqliteStore = sqlite
+	var sqlBackend store.SQLBackend
+	if sb, ok := st.(store.SQLBackend); ok {
+		sqlBackend = sb
 	}
 
 	hub := eventbus.NewHub()
@@ -260,6 +273,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 		Skills:      skillCat,
 	}
 	srv := api.NewServer(st, reg, engine)
+	cfgCopy := cfg
+	srv.Config = &cfgCopy
+	srv.ConfigPath = configPath
 	srv.Hub = hub
 	srv.Webhook = dispatcher
 	srv.Inbox = inboxReg
@@ -275,9 +291,9 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	srv.CallbackPublicBase = callbackPublicBase
 	srv.CallbackTTL = callbackTTL
 
-	if sqliteStore != nil && strings.TrimSpace(cfg.Store.SQLitePath) != "" {
-		artDir := filepath.Join(filepath.Dir(cfg.Store.SQLitePath), "artifacts")
-		artStore, err := artifact.NewFileStore(artDir, sqliteStore)
+	if sqlBackend != nil {
+		artDir := artifactDataDir(cfg)
+		artStore, err := artifact.NewFileStore(artDir, sqlBackend)
 		if err != nil {
 			_ = closer.Close()
 			return nil, nil, fmt.Errorf("open artifact store: %w", err)
@@ -300,10 +316,29 @@ func newAPIServer(cfg config.Config) (*api.Server, io.Closer, error) {
 	}
 	srv.OperatorToken = op
 	srv.AdminToken = adm
-	if strings.TrimSpace(cfg.Store.SQLitePath) != "" {
-		srv.DataDir = filepath.Dir(cfg.Store.SQLitePath)
+	if dir := dataDir(cfg); dir != "" {
+		srv.DataDir = dir
 	}
 	return srv, closer, nil
+}
+
+func dataDir(cfg config.Config) string {
+	switch strings.ToLower(cfg.Store.Driver) {
+	case "sqlite":
+		if strings.TrimSpace(cfg.Store.SQLitePath) != "" {
+			return filepath.Dir(cfg.Store.SQLitePath)
+		}
+	case "postgres":
+		return "./data"
+	}
+	return ""
+}
+
+func artifactDataDir(cfg config.Config) string {
+	if dir := dataDir(cfg); dir != "" {
+		return filepath.Join(dir, "artifacts")
+	}
+	return "./data/artifacts"
 }
 
 // loadEventsWebhook returns the persisted events webhook config, seeding from
@@ -372,38 +407,34 @@ func seedInboxChannels(cfg config.Config, st store.Store, reg *inbox.Registry) e
 // identity store based on the configured driver.
 //
 //   - memory driver: both stores are in-memory (PersistIdentities is ignored).
-//   - sqlite driver: messages use a SQLite table on the shared *sql.DB;
-//     identities use SQLite when PersistIdentities is nil (default true) or
-//     explicitly true, and fall back to an in-memory store when explicitly
-//     set to false.
+//   - sqlite/postgres: messages and (by default) identities use the shared SQL DB.
 func openConversationAndIdentities(st store.Store, cfg config.Config) (conversation.Store, identity.Store, error) {
 	driver := strings.ToLower(cfg.Store.Driver)
 	if driver == "" {
 		driver = "memory"
 	}
 
-	if driver != "sqlite" {
+	if driver == "memory" {
 		return conversation.NewMemoryStore(), identity.NewMemoryStore(), nil
 	}
 
-	sqlite, ok := st.(*store.SQLite)
+	sqlBackend, ok := st.(store.SQLBackend)
 	if !ok {
-		// Defensive: store.Open("sqlite", ...) always returns *SQLite.
 		return conversation.NewMemoryStore(), identity.NewMemoryStore(), nil
 	}
-	db := sqlite.DB()
+	db := sqlBackend.DB()
+	dialect := sqlBackend.Dialect()
 
-	msgs, err := conversation.OpenSQLite(db)
+	msgs, err := conversation.OpenSQL(db, dialect)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	persist := cfg.Conversation.PersistIdentities
 	if persist != nil && !*persist {
-		identities := identity.NewMemoryStore()
-		return msgs, identities, nil
+		return msgs, identity.NewMemoryStore(), nil
 	}
-	identities, err := identity.OpenSQLite(db)
+	identities, err := identity.OpenSQL(db, dialect)
 	if err != nil {
 		return nil, nil, err
 	}

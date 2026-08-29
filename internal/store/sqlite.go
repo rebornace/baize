@@ -12,8 +12,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rebornace/baize/internal/dbutil"
 	_ "modernc.org/sqlite"
 )
+
+// SQLDialect selects placeholder and DDL behavior for SQLStore.
+type SQLDialect string
+
+const (
+	DialectSQLite   SQLDialect = "sqlite"
+	DialectPostgres SQLDialect = "postgres"
+)
+
+// SQLite is a backward-compatible alias for SQLStore.
+type SQLite = SQLStore
 
 const sqliteSchema = `
 CREATE TABLE IF NOT EXISTS runs (
@@ -90,13 +102,33 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
 `
 
-// SQLite is a file-backed Store implementation.
-type SQLite struct {
+// SQLStore is a SQL-backed Store shared by sqlite and postgres drivers.
+type SQLStore struct {
 	db         *sql.DB
+	dialect    SQLDialect
 	mu         sync.RWMutex
 	agents     map[string]Agent
 	connectors map[string]Connector
 	tools      map[string]Tool
+}
+
+func (s *SQLStore) q(query string) string {
+	if s.dialect == DialectPostgres {
+		return dbutil.RebindPostgres(query)
+	}
+	return query
+}
+
+func (s *SQLStore) exec(query string, args ...any) (sql.Result, error) {
+	return s.db.Exec(s.q(query), args...)
+}
+
+func (s *SQLStore) query(query string, args ...any) (*sql.Rows, error) {
+	return s.db.Query(s.q(query), args...)
+}
+
+func (s *SQLStore) queryRow(query string, args ...any) *sql.Row {
+	return s.db.QueryRow(s.q(query), args...)
 }
 
 // OpenSQLite opens (or creates) a SQLite database at path.
@@ -140,8 +172,9 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate connectors columns: %w", err)
 	}
-	s := &SQLite{
+	s := &SQLStore{
 		db:         db,
+		dialect:    DialectSQLite,
 		agents:     map[string]Agent{},
 		connectors: map[string]Connector{},
 		tools:      map[string]Tool{},
@@ -156,8 +189,8 @@ func OpenSQLite(path string) (*SQLite, error) {
 // loadConnectorsAndTools reads existing connector and tool rows from the DB
 // into the in-memory maps so reads can stay lock-free and consistent with the
 // existing runs/events pattern.
-func (s *SQLite) loadConnectorsAndTools() error {
-	rows, err := s.db.Query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format FROM connectors`)
+func (s *SQLStore) loadConnectorsAndTools() error {
+	rows, err := s.query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format FROM connectors`)
 	if err != nil {
 		return err
 	}
@@ -205,7 +238,7 @@ func (s *SQLite) loadConnectorsAndTools() error {
 		return err
 	}
 
-	trows, err := s.db.Query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id FROM tools`)
+	trows, err := s.query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id FROM tools`)
 	if err != nil {
 		return err
 	}
@@ -286,22 +319,33 @@ func isDuplicateColumnErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "duplicate column")
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists")
 }
 
 // Close closes the underlying database.
-func (s *SQLite) Close() error {
+func (s *SQLStore) Close() error {
 	return s.db.Close()
+}
+
+// SQLBackend exposes the shared SQL database for sibling stores (conversation, identity, artifacts).
+type SQLBackend interface {
+	DB() *sql.DB
+	Dialect() SQLDialect
 }
 
 // DB returns the underlying *sql.DB so sibling stores (conversation / identity)
 // can share the same connection pool and pragmas configured by OpenSQLite.
-// Callers must not Close the returned handle; close the *SQLite instead.
-func (s *SQLite) DB() *sql.DB {
+// Callers must not Close the returned handle; close the SQLStore instead.
+func (s *SQLStore) DB() *sql.DB {
 	return s.db
 }
 
-func (s *SQLite) UpsertAgent(a Agent) {
+func (s *SQLStore) Dialect() SQLDialect {
+	return s.dialect
+}
+
+func (s *SQLStore) UpsertAgent(a Agent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if a.Skills != nil {
@@ -310,7 +354,7 @@ func (s *SQLite) UpsertAgent(a Agent) {
 	s.agents[a.ID] = a
 }
 
-func (s *SQLite) ListAgents() []Agent {
+func (s *SQLStore) ListAgents() []Agent {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ids := make([]string, 0, len(s.agents))
@@ -325,7 +369,7 @@ func (s *SQLite) ListAgents() []Agent {
 	return out
 }
 
-func (s *SQLite) GetAgent(id string) (Agent, error) {
+func (s *SQLStore) GetAgent(id string) (Agent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	a, ok := s.agents[id]
@@ -335,7 +379,7 @@ func (s *SQLite) GetAgent(id string) (Agent, error) {
 	return cloneAgent(a), nil
 }
 
-func (s *SQLite) UpsertConnector(c Connector) {
+func (s *SQLStore) UpsertConnector(c Connector) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.connectors[c.ID] = c
@@ -360,7 +404,7 @@ func (s *SQLite) UpsertConnector(c Connector) {
 			mcp = sql.NullString{String: string(b), Valid: true}
 		}
 	}
-	_, _ = s.db.Exec(
+	_, _ = s.exec(
 		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET type=excluded.type, spec=excluded.spec, base_url=excluded.base_url,
@@ -374,7 +418,7 @@ func (s *SQLite) UpsertConnector(c Connector) {
 	)
 }
 
-func (s *SQLite) GetConnector(id string) (Connector, error) {
+func (s *SQLStore) GetConnector(id string) (Connector, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	c, ok := s.connectors[id]
@@ -384,7 +428,7 @@ func (s *SQLite) GetConnector(id string) (Connector, error) {
 	return c, nil
 }
 
-func (s *SQLite) DeleteConnector(id string) error {
+func (s *SQLStore) DeleteConnector(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -421,7 +465,7 @@ func (s *SQLite) DeleteConnector(id string) error {
 	return nil
 }
 
-func (s *SQLite) ListConnectors() []Connector {
+func (s *SQLStore) ListConnectors() []Connector {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ids := make([]string, 0, len(s.connectors))
@@ -436,7 +480,7 @@ func (s *SQLite) ListConnectors() []Connector {
 	return out
 }
 
-func (s *SQLite) UpsertTool(t Tool) {
+func (s *SQLStore) UpsertTool(t Tool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tools[t.Name] = t
@@ -462,7 +506,7 @@ func (s *SQLite) UpsertTool(t Tool) {
 	if t.DescriptionCustom {
 		descriptionCustom = 1
 	}
-	_, _ = s.db.Exec(
+	_, _ = s.exec(
 		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
@@ -475,7 +519,7 @@ func (s *SQLite) UpsertTool(t Tool) {
 	)
 }
 
-func (s *SQLite) GetTool(name string) (Tool, error) {
+func (s *SQLStore) GetTool(name string) (Tool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.tools[name]
@@ -485,7 +529,7 @@ func (s *SQLite) GetTool(name string) (Tool, error) {
 	return t, nil
 }
 
-func (s *SQLite) ListTools() []Tool {
+func (s *SQLStore) ListTools() []Tool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	names := make([]string, 0, len(s.tools))
@@ -500,7 +544,7 @@ func (s *SQLite) ListTools() []Tool {
 	return out
 }
 
-func (s *SQLite) ListToolsByConnector(id string) []Tool {
+func (s *SQLStore) ListToolsByConnector(id string) []Tool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	names := make([]string, 0, len(s.tools))
@@ -517,18 +561,18 @@ func (s *SQLite) ListToolsByConnector(id string) []Tool {
 	return out
 }
 
-func (s *SQLite) DeleteTool(name string) error {
+func (s *SQLStore) DeleteTool(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.tools[name]; !ok {
 		return fmt.Errorf("tool not found")
 	}
 	delete(s.tools, name)
-	_, _ = s.db.Exec(`DELETE FROM tools WHERE name = ?`, name)
+	_, _ = s.exec(`DELETE FROM tools WHERE name = ?`, name)
 	return nil
 }
 
-func (s *SQLite) ReplaceConnectorTools(connectorID string, tools []Tool) {
+func (s *SQLStore) ReplaceConnectorTools(connectorID string, tools []Tool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for name, t := range s.tools {
@@ -536,7 +580,7 @@ func (s *SQLite) ReplaceConnectorTools(connectorID string, tools []Tool) {
 			delete(s.tools, name)
 		}
 	}
-	_, _ = s.db.Exec(`DELETE FROM tools WHERE connector_id = ?`, connectorID)
+	_, _ = s.exec(`DELETE FROM tools WHERE connector_id = ?`, connectorID)
 	for _, t := range tools {
 		if t.ConnectorID == "" {
 			t.ConnectorID = connectorID
@@ -564,7 +608,7 @@ func (s *SQLite) ReplaceConnectorTools(connectorID string, tools []Tool) {
 		if t.DescriptionCustom {
 			descriptionCustom = 1
 		}
-		_, _ = s.db.Exec(
+		_, _ = s.exec(
 			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
@@ -578,7 +622,7 @@ func (s *SQLite) ReplaceConnectorTools(connectorID string, tools []Tool) {
 	}
 }
 
-func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
+func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 	id := "run_" + uuid.NewString()
 	now := time.Now().UTC()
 	r := &Run{
@@ -607,7 +651,7 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 		}
 		webhookSQL = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(
+	_, err := s.exec(
 		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json)
 		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), r.CreatedAt.Format(time.RFC3339Nano),
@@ -619,11 +663,11 @@ func (s *SQLite) CreateRun(in CreateRunInput) (*Run, error) {
 	return r, nil
 }
 
-func (s *SQLite) GetRun(id string) (*Run, error) {
+func (s *SQLStore) GetRun(id string) (*Run, error) {
 	var r Run
 	var status, createdAt string
 	var conversationID, identityID, passthroughSQL, webhookSQL sql.NullString
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json FROM runs WHERE id = ?`,
 		id,
 	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL, &webhookSQL)
@@ -663,7 +707,7 @@ func (s *SQLite) GetRun(id string) (*Run, error) {
 	return &r, nil
 }
 
-func (s *SQLite) SetPassthroughHeaders(id string, headers map[string]string) error {
+func (s *SQLStore) SetPassthroughHeaders(id string, headers map[string]string) error {
 	var passthroughSQL sql.NullString
 	if len(headers) > 0 {
 		b, err := json.Marshal(headers)
@@ -672,7 +716,7 @@ func (s *SQLite) SetPassthroughHeaders(id string, headers map[string]string) err
 		}
 		passthroughSQL = sql.NullString{String: string(b), Valid: true}
 	}
-	res, err := s.db.Exec(
+	res, err := s.exec(
 		`UPDATE runs SET passthrough_json = ? WHERE id = ?`,
 		passthroughSQL, id,
 	)
@@ -689,8 +733,8 @@ func (s *SQLite) SetPassthroughHeaders(id string, headers map[string]string) err
 	return nil
 }
 
-func (s *SQLite) UpdateRun(id string, status Status, output, errMsg string) error {
-	res, err := s.db.Exec(
+func (s *SQLStore) UpdateRun(id string, status Status, output, errMsg string) error {
+	res, err := s.exec(
 		`UPDATE runs SET status = ?, output = ?, error = ? WHERE id = ?`,
 		string(status), output, errMsg, id,
 	)
@@ -707,7 +751,7 @@ func (s *SQLite) UpdateRun(id string, status Status, output, errMsg string) erro
 	return nil
 }
 
-func (s *SQLite) AppendEvent(runID string, ev Event) error {
+func (s *SQLStore) AppendEvent(runID string, ev Event) error {
 	if _, err := s.GetRun(runID); err != nil {
 		return err
 	}
@@ -716,18 +760,18 @@ func (s *SQLite) AppendEvent(runID string, ev Event) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(
+	_, err = s.exec(
 		`INSERT INTO events (run_id, type, timestamp, data_json) VALUES (?, ?, ?, ?)`,
 		runID, ev.Type, ev.Timestamp.Format(time.RFC3339Nano), string(dataJSON),
 	)
 	return err
 }
 
-func (s *SQLite) ListEvents(runID string) ([]Event, error) {
+func (s *SQLStore) ListEvents(runID string) ([]Event, error) {
 	if _, err := s.GetRun(runID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		`SELECT type, timestamp, data_json FROM events WHERE run_id = ? ORDER BY id ASC`,
 		runID,
 	)
@@ -767,7 +811,7 @@ func (s *SQLite) ListEvents(runID string) ([]Event, error) {
 	return out, nil
 }
 
-func (s *SQLite) SetHITL(runID string, payload *HITLPayload) error {
+func (s *SQLStore) SetHITL(runID string, payload *HITLPayload) error {
 	if _, err := s.GetRun(runID); err != nil {
 		return err
 	}
@@ -779,13 +823,13 @@ func (s *SQLite) SetHITL(runID string, payload *HITLPayload) error {
 		}
 		hitlSQL = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(`UPDATE runs SET hitl_json = ? WHERE id = ?`, hitlSQL, runID)
+	_, err := s.exec(`UPDATE runs SET hitl_json = ? WHERE id = ?`, hitlSQL, runID)
 	return err
 }
 
-func (s *SQLite) GetHITL(runID string) (*HITLPayload, error) {
+func (s *SQLStore) GetHITL(runID string) (*HITLPayload, error) {
 	var hitlSQL sql.NullString
-	err := s.db.QueryRow(`SELECT hitl_json FROM runs WHERE id = ?`, runID).Scan(&hitlSQL)
+	err := s.queryRow(`SELECT hitl_json FROM runs WHERE id = ?`, runID).Scan(&hitlSQL)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("run not found")
 	}
@@ -802,9 +846,9 @@ func (s *SQLite) GetHITL(runID string) (*HITLPayload, error) {
 	return &p, nil
 }
 
-func (s *SQLite) GetSetting(key string) ([]byte, bool, error) {
+func (s *SQLStore) GetSetting(key string) ([]byte, bool, error) {
 	var value sql.NullString
-	err := s.db.QueryRow(`SELECT value_json FROM settings WHERE key = ?`, key).Scan(&value)
+	err := s.queryRow(`SELECT value_json FROM settings WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return nil, false, nil
 	}
@@ -817,8 +861,8 @@ func (s *SQLite) GetSetting(key string) ([]byte, bool, error) {
 	return []byte(value.String), true, nil
 }
 
-func (s *SQLite) UpsertSetting(key string, jsonRaw []byte) error {
-	_, err := s.db.Exec(
+func (s *SQLStore) UpsertSetting(key string, jsonRaw []byte) error {
+	_, err := s.exec(
 		`INSERT INTO settings (key, value_json) VALUES (?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`,
 		key, string(jsonRaw),
@@ -826,12 +870,12 @@ func (s *SQLite) UpsertSetting(key string, jsonRaw []byte) error {
 	return err
 }
 
-func (s *SQLite) HasActiveRun(conversationID string) (bool, error) {
+func (s *SQLStore) HasActiveRun(conversationID string) (bool, error) {
 	if conversationID == "" {
 		return false, nil
 	}
 	var one int
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT 1 FROM runs WHERE conversation_id = ? AND status IN ('queued','running','waiting_human') LIMIT 1`,
 		conversationID,
 	).Scan(&one)
@@ -844,10 +888,10 @@ func (s *SQLite) HasActiveRun(conversationID string) (bool, error) {
 	return true, nil
 }
 
-func (s *SQLite) getInboxDeliveryRaw(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+func (s *SQLStore) getInboxDeliveryRaw(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
 	var d InboxDelivery
 	var createdAt string
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT channel_id, idempotency_key, delivery_id, run_id, body_hash, created_at
 		 FROM inbox_deliveries WHERE channel_id = ? AND idempotency_key = ?`,
 		channelID, idempotencyKey,
@@ -869,7 +913,7 @@ func (s *SQLite) getInboxDeliveryRaw(channelID, idempotencyKey string) (InboxDel
 	return d, true, nil
 }
 
-func (s *SQLite) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+func (s *SQLStore) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
 	d, ok, err := s.getInboxDeliveryRaw(channelID, idempotencyKey)
 	if err != nil || !ok {
 		return d, ok, err
@@ -882,11 +926,11 @@ func (s *SQLite) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelive
 	return d, true, nil
 }
 
-func (s *SQLite) PutInboxDelivery(d InboxDelivery) error {
+func (s *SQLStore) PutInboxDelivery(d InboxDelivery) error {
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = time.Now().UTC()
 	}
-	_, err := s.db.Exec(
+	_, err := s.exec(
 		`INSERT INTO inbox_deliveries (channel_id, idempotency_key, delivery_id, run_id, body_hash, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		d.ChannelID, d.IdempotencyKey, d.DeliveryID, d.RunID, d.BodyHash,
@@ -895,7 +939,8 @@ func (s *SQLite) PutInboxDelivery(d InboxDelivery) error {
 	if err == nil {
 		return nil
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "unique") {
+	if !strings.Contains(strings.ToLower(err.Error()), "unique") &&
+		!strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
 		return err
 	}
 	existing, ok, getErr := s.getInboxDeliveryRaw(d.ChannelID, d.IdempotencyKey)
@@ -906,7 +951,7 @@ func (s *SQLite) PutInboxDelivery(d InboxDelivery) error {
 		return ErrInboxDeliveryExists
 	}
 	// Overwrite expired row for the same (channel_id, idempotency_key).
-	_, err = s.db.Exec(
+	_, err = s.exec(
 		`UPDATE inbox_deliveries
 		 SET delivery_id = ?, run_id = ?, body_hash = ?, created_at = ?
 		 WHERE channel_id = ? AND idempotency_key = ?`,
@@ -916,8 +961,8 @@ func (s *SQLite) PutInboxDelivery(d InboxDelivery) error {
 	return err
 }
 
-func (s *SQLite) UpdateInboxDelivery(channelID, idempotencyKey, runID string) error {
-	res, err := s.db.Exec(
+func (s *SQLStore) UpdateInboxDelivery(channelID, idempotencyKey, runID string) error {
+	res, err := s.exec(
 		`UPDATE inbox_deliveries SET run_id = ? WHERE channel_id = ? AND idempotency_key = ?`,
 		runID, channelID, idempotencyKey,
 	)
@@ -934,9 +979,9 @@ func (s *SQLite) UpdateInboxDelivery(channelID, idempotencyKey, runID string) er
 	return nil
 }
 
-func (s *SQLite) GetInboxThread(channelID, externalID string) (string, bool, error) {
+func (s *SQLStore) GetInboxThread(channelID, externalID string) (string, bool, error) {
 	var conversationID string
-	err := s.db.QueryRow(
+	err := s.queryRow(
 		`SELECT conversation_id FROM inbox_threads WHERE channel_id = ? AND external_id = ?`,
 		channelID, externalID,
 	).Scan(&conversationID)
@@ -949,8 +994,8 @@ func (s *SQLite) GetInboxThread(channelID, externalID string) (string, bool, err
 	return conversationID, true, nil
 }
 
-func (s *SQLite) PutInboxThread(channelID, externalID, conversationID string) error {
-	_, err := s.db.Exec(
+func (s *SQLStore) PutInboxThread(channelID, externalID, conversationID string) error {
+	_, err := s.exec(
 		`INSERT INTO inbox_threads (channel_id, external_id, conversation_id)
 		 VALUES (?, ?, ?)
 		 ON CONFLICT(channel_id, external_id) DO UPDATE SET conversation_id = excluded.conversation_id`,

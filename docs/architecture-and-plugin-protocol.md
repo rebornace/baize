@@ -43,7 +43,7 @@
 
 **MCP 桥（v0 已实现）**：`PUT /v0/connectors/{id}` 注册 `type: mcp` Connector（stdio 子进程或 Streamable HTTP）；`tools/list` 发现工具写入目录 `source=mcp`，Run 内 `tools/call` 执行；与 OpenAPI / HTTP 插件并列，不替代插件协议 v0。
 
-**默认存储：** SQLite（Run / HITL / checkpoint）；可换 PG。短 Run 可开无状态模式。  
+**默认存储：** SQLite（Run / HITL / checkpoint）；**已实现** `store.driver: postgres`（同 DSN 含会话/身份；设置 → 存储）。驱动经 `RegisterDriver` 扩展。短 Run 可开无状态模式。  
 **租户：** Schema 含软 `tenant_id`；开源默认单租户用法。  
 **凭证：** 默认透传调用方 Token；可选本地加密托管，接口可换 KMS。
 
