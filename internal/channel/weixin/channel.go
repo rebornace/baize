@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultCredsDir    = "./data/channels/weixin"
+	defaultCredsDir      = "./data/channels/weixin"
 	defaultEmptyPollWait = time.Second
 )
 
