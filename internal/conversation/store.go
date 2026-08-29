@@ -54,11 +54,14 @@ func (s *MemoryStore) EnsureMeta(m Meta) error {
 	return nil
 }
 
-func (s *MemoryStore) GetMeta(id string) (Meta, bool) {
+func (s *MemoryStore) GetMeta(id string) (Meta, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	m, ok := s.meta[id]
-	return m, ok
+	if !ok {
+		return Meta{}, ErrMetaNotFound
+	}
+	return m, nil
 }
 
 func (s *MemoryStore) ListMeta(filter MetaFilter) ([]Meta, error) {

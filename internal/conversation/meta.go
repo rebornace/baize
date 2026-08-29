@@ -24,7 +24,9 @@ type MetaFilter struct {
 // MetaStore persists conversation ownership metadata.
 type MetaStore interface {
 	EnsureMeta(m Meta) error
-	GetMeta(id string) (Meta, bool)
+	// GetMeta returns the meta row, or ErrMetaNotFound if missing.
+	// Other errors (scan/parse/DB) must not be collapsed into not-found.
+	GetMeta(id string) (Meta, error)
 	ListMeta(filter MetaFilter) ([]Meta, error)
 }
 

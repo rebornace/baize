@@ -254,19 +254,19 @@ func (s *SQLiteStore) EnsureMeta(m Meta) error {
 	return err
 }
 
-func (s *SQLiteStore) GetMeta(id string) (Meta, bool) {
+func (s *SQLiteStore) GetMeta(id string) (Meta, error) {
 	row := s.queryRow(
 		`SELECT id, owner_id, source, title, channel_peer, updated_at
 		 FROM conversation_meta WHERE id = ?`, id,
 	)
 	m, err := scanMeta(row)
 	if err == sql.ErrNoRows {
-		return Meta{}, false
+		return Meta{}, ErrMetaNotFound
 	}
 	if err != nil {
-		return Meta{}, false
+		return Meta{}, err
 	}
-	return m, true
+	return m, nil
 }
 
 func (s *SQLiteStore) ListMeta(filter MetaFilter) ([]Meta, error) {

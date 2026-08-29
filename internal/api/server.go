@@ -204,11 +204,18 @@ func (s *Server) principalFrom(ctx context.Context) controlplane.Principal {
 	}
 }
 
+var errConversationForbidden = errors.New("无权访问该会话")
+
 // requireConversationAccess enforces owner checks when the gate is on.
 // Missing meta is allowed for admin (legacy rows) and denied for operators.
+// Store/DB errors surface as HTTP 500.
 func (s *Server) requireConversationAccess(w http.ResponseWriter, r *http.Request, convID string) bool {
 	if err := s.checkConversationAccess(r.Context(), convID); err != nil {
-		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+		if errors.Is(err, errConversationForbidden) {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return false
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return false
 	}
 	return true
@@ -223,15 +230,18 @@ func (s *Server) checkConversationAccess(ctx context.Context, convID string) err
 		return nil
 	}
 	p := s.principalFrom(ctx)
-	meta, ok := ms.GetMeta(convID)
-	if !ok {
+	meta, err := ms.GetMeta(convID)
+	if errors.Is(err, conversation.ErrMetaNotFound) {
 		if p.Role == controlplane.RoleAdmin {
 			return nil
 		}
-		return errors.New("无权访问该会话")
+		return errConversationForbidden
+	}
+	if err != nil {
+		return err
 	}
 	if !conversation.CanAccess(p, meta) {
-		return errors.New("无权访问该会话")
+		return errConversationForbidden
 	}
 	return nil
 }
@@ -240,7 +250,7 @@ func (s *Server) checkConversationAccess(ctx context.Context, convID string) err
 // Returns false after writing an error response.
 func (s *Server) ensureConversationMeta(w http.ResponseWriter, r *http.Request, convID string) bool {
 	if err := s.prepareConversationMeta(r.Context(), convID); err != nil {
-		if err.Error() == "无权访问该会话" {
+		if errors.Is(err, errConversationForbidden) {
 			writeError(w, http.StatusForbidden, "forbidden", err.Error())
 			return false
 		}
@@ -258,14 +268,18 @@ func (s *Server) prepareConversationMeta(ctx context.Context, convID string) err
 	if ms == nil {
 		return nil
 	}
-	if meta, ok := ms.GetMeta(convID); ok {
+	meta, err := ms.GetMeta(convID)
+	if err == nil {
 		if !s.gateTokens().Enabled() {
 			return nil
 		}
 		if !conversation.CanAccess(s.principalFrom(ctx), meta) {
-			return errors.New("无权访问该会话")
+			return errConversationForbidden
 		}
 		return nil
+	}
+	if !errors.Is(err, conversation.ErrMetaNotFound) {
+		return err
 	}
 	owner := "local-dev"
 	if s.gateTokens().Enabled() {
@@ -1522,6 +1536,9 @@ func (s *Server) handlePostIdentity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
 		return
 	}
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	var body struct {
 		Token         string `json:"token"`
 		Authorization string `json:"authorization"`
@@ -1564,6 +1581,9 @@ func (s *Server) handleSetDefaultIdentity(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
 	}
+	if !s.requireConversationAccess(w, r, r.PathValue("id")) {
+		return
+	}
 	if err := s.Identities.SetDefault(r.PathValue("id"), r.PathValue("iid")); err != nil {
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
@@ -1576,6 +1596,9 @@ func (s *Server) handleDeleteIdentity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
 	}
+	if !s.requireConversationAccess(w, r, r.PathValue("id")) {
+		return
+	}
 	if err := s.Identities.Delete(r.PathValue("id"), r.PathValue("iid")); err != nil {
 		writeError(w, http.StatusNotFound, "identity_not_found", "identity not found")
 		return
@@ -1584,6 +1607,9 @@ func (s *Server) handleDeleteIdentity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConversationAccess(w, r, r.PathValue("id")) {
+		return
+	}
 	if s.Identities != nil {
 		s.Identities.ClearCaptured(r.PathValue("id"))
 	}
@@ -1632,6 +1658,9 @@ func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
 	runRec, err := s.Store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
 		return
 	}
 	if runRec.Status != store.StatusWaitingHuman {
@@ -2005,15 +2034,20 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if s.gateTokens().Enabled() {
-		out = s.filterConversationSummaries(r, out)
+		filtered, err := s.filterConversationSummaries(r, out)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = filtered
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
 }
 
-func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.Summary) []conversation.Summary {
+func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.Summary) ([]conversation.Summary, error) {
 	ms := s.metaStore()
 	if ms == nil {
-		return in
+		return in, nil
 	}
 	p := s.principalFrom(r.Context())
 	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
@@ -2035,7 +2069,7 @@ func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.
 	allowed := map[string]bool{}
 	metas, err := ms.ListMeta(conversation.MetaFilter{OwnerID: filterOwner})
 	if err != nil {
-		return []conversation.Summary{}
+		return nil, err
 	}
 	for _, m := range metas {
 		if filterOwner == "" {
@@ -2057,12 +2091,17 @@ func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.
 			continue
 		}
 		if includeOrphans {
-			if _, ok := ms.GetMeta(sum.ID); !ok {
+			_, gerr := ms.GetMeta(sum.ID)
+			if errors.Is(gerr, conversation.ErrMetaNotFound) {
 				out = append(out, sum)
+				continue
+			}
+			if gerr != nil {
+				return nil, gerr
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
