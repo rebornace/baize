@@ -19,3 +19,27 @@ func TestLoadControlPlaneTokens(t *testing.T) {
 		t.Fatalf("adm=%q", cfg.ControlPlane.AdminToken)
 	}
 }
+
+func TestLoadControlPlaneOperators(t *testing.T) {
+	path := writeConfig(t, `control_plane:
+  admin_token: env:BAIZE_ADMIN_TOKEN
+  operators:
+    - id: alice
+      token: env:BAIZE_OP_ALICE
+    - id: bob
+      token: env:BAIZE_OP_BOB
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ControlPlane.Operators) != 2 {
+		t.Fatalf("operators=%d", len(cfg.ControlPlane.Operators))
+	}
+	if cfg.ControlPlane.Operators[0].ID != "alice" || cfg.ControlPlane.Operators[0].Token != "env:BAIZE_OP_ALICE" {
+		t.Fatalf("alice=%+v", cfg.ControlPlane.Operators[0])
+	}
+	if cfg.ControlPlane.Operators[1].ID != "bob" {
+		t.Fatalf("bob=%+v", cfg.ControlPlane.Operators[1])
+	}
+}

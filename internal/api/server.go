@@ -82,6 +82,7 @@ type Server struct {
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
 	OperatorToken    string
 	AdminToken       string
+	Operators        []controlplane.Operator
 	Webhook          *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
@@ -152,7 +153,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 	if path == "/healthz" || strings.HasPrefix(path, "/ui/") || path == "/ui" {
 		return r, true
 	}
-	tok := controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}
+	tok := s.gateTokens()
 	if !tok.Enabled() {
 		return r, true
 	}
@@ -160,12 +161,12 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 	if min == controlplane.RoleNone {
 		return r, true
 	}
-	role, ok := controlplane.Authenticate(r.Header.Get("Authorization"), tok)
+	principal, ok := controlplane.AuthenticatePrincipal(r.Header.Get("Authorization"), tok)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "需要控制面口令")
 		return nil, false
 	}
-	if !role.AtLeast(min) {
+	if !principal.Role.AtLeast(min) {
 		writeError(w, http.StatusForbidden, "forbidden", "需要管理员口令")
 		return nil, false
 	}
@@ -174,7 +175,19 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 	// passthrough_json（SQLite），进而被机器路径打到下游 API。门关着时
 	// authorize 在上面已提前 return，不会执行到这里，故不影响现有 passthrough。
 	r.Header.Del("Authorization")
-	return r.WithContext(controlplane.WithRole(r.Context(), role)), true
+	ctx := controlplane.WithRole(r.Context(), principal.Role)
+	if principal.OperatorID != "" {
+		ctx = controlplane.WithOperatorID(ctx, principal.OperatorID)
+	}
+	return r.WithContext(ctx), true
+}
+
+func (s *Server) gateTokens() controlplane.Tokens {
+	return controlplane.Tokens{
+		Operator:  s.OperatorToken,
+		Admin:     s.AdminToken,
+		Operators: s.Operators,
+	}
 }
 
 func (s *Server) routes() {
@@ -260,7 +273,7 @@ type uiConfig struct {
 func (s *Server) handleUIConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, uiConfig{
 		AgentID:        s.DefaultAgentID,
-		GateEnabled:    controlplane.Tokens{Operator: s.OperatorToken, Admin: s.AdminToken}.Enabled(),
+		GateEnabled:    s.gateTokens().Enabled(),
 		SupportsVision: s.supportsVision(),
 	})
 }
@@ -276,7 +289,11 @@ func (s *Server) supportsVision() bool {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"role": string(controlplane.RoleFrom(r.Context()))})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"role":         string(controlplane.RoleFrom(r.Context())),
+		"operator_id":  controlplane.OperatorIDFrom(r.Context()),
+		"gate_enabled": s.gateTokens().Enabled(),
+	})
 }
 
 func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {

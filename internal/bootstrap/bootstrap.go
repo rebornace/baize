@@ -314,8 +314,21 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("control_plane.admin_token: %w", err)
 	}
+	var operators []controlplane.Operator
+	for _, entry := range cfg.ControlPlane.Operators {
+		token, err := controlplane.ResolveSecret(entry.Token)
+		if err != nil {
+			_ = closer.Close()
+			return nil, nil, fmt.Errorf("control_plane.operators[%s]: %w", entry.ID, err)
+		}
+		if token == "" {
+			continue
+		}
+		operators = append(operators, controlplane.Operator{ID: entry.ID, Token: token})
+	}
 	srv.OperatorToken = op
 	srv.AdminToken = adm
+	srv.Operators = operators
 	if dir := dataDir(cfg); dir != "" {
 		srv.DataDir = dir
 	}
