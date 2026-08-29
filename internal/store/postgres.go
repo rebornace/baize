@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+CREATE TABLE IF NOT EXISTS conversation_meta (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  title TEXT,
+  channel_peer TEXT,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS identities (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,

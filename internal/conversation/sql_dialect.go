@@ -16,6 +16,20 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if _, err := db.Exec(sqliteMessagesSchema); err != nil {
 			return nil, err
 		}
+	} else if dialect == store.DialectPostgres {
+		// messages table is created by store.OpenPostgres; ensure meta for shared DB.
+		const pgMeta = `
+CREATE TABLE IF NOT EXISTS conversation_meta (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  title TEXT,
+  channel_peer TEXT,
+  updated_at TEXT NOT NULL
+);`
+		if _, err := db.Exec(pgMeta); err != nil {
+			return nil, err
+		}
 	}
 	return &SQLiteStore{db: db, dialect: dialect}, nil
 }

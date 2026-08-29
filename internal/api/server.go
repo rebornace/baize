@@ -190,6 +190,99 @@ func (s *Server) gateTokens() controlplane.Tokens {
 	}
 }
 
+func (s *Server) metaStore() conversation.MetaStore {
+	if ms, ok := s.Messages.(conversation.MetaStore); ok {
+		return ms
+	}
+	return nil
+}
+
+func (s *Server) principalFrom(ctx context.Context) controlplane.Principal {
+	return controlplane.Principal{
+		Role:       controlplane.RoleFrom(ctx),
+		OperatorID: controlplane.OperatorIDFrom(ctx),
+	}
+}
+
+// requireConversationAccess enforces owner checks when the gate is on.
+// Missing meta is allowed for admin (legacy rows) and denied for operators.
+func (s *Server) requireConversationAccess(w http.ResponseWriter, r *http.Request, convID string) bool {
+	if err := s.checkConversationAccess(r.Context(), convID); err != nil {
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+		return false
+	}
+	return true
+}
+
+func (s *Server) checkConversationAccess(ctx context.Context, convID string) error {
+	if !s.gateTokens().Enabled() || convID == "" {
+		return nil
+	}
+	ms := s.metaStore()
+	if ms == nil {
+		return nil
+	}
+	p := s.principalFrom(ctx)
+	meta, ok := ms.GetMeta(convID)
+	if !ok {
+		if p.Role == controlplane.RoleAdmin {
+			return nil
+		}
+		return errors.New("无权访问该会话")
+	}
+	if !conversation.CanAccess(p, meta) {
+		return errors.New("无权访问该会话")
+	}
+	return nil
+}
+
+// ensureConversationMeta creates ownership on first UI use, or checks access if meta exists.
+// Returns false after writing an error response.
+func (s *Server) ensureConversationMeta(w http.ResponseWriter, r *http.Request, convID string) bool {
+	if err := s.prepareConversationMeta(r.Context(), convID); err != nil {
+		if err.Error() == "无权访问该会话" {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return false
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return false
+	}
+	return true
+}
+
+func (s *Server) prepareConversationMeta(ctx context.Context, convID string) error {
+	if convID == "" {
+		return nil
+	}
+	ms := s.metaStore()
+	if ms == nil {
+		return nil
+	}
+	if meta, ok := ms.GetMeta(convID); ok {
+		if !s.gateTokens().Enabled() {
+			return nil
+		}
+		if !conversation.CanAccess(s.principalFrom(ctx), meta) {
+			return errors.New("无权访问该会话")
+		}
+		return nil
+	}
+	owner := "local-dev"
+	if s.gateTokens().Enabled() {
+		if id := controlplane.OperatorIDFrom(ctx); id != "" {
+			owner = id
+		} else if controlplane.RoleFrom(ctx) == controlplane.RoleAdmin {
+			owner = "admin"
+		}
+	}
+	return ms.EnsureMeta(conversation.Meta{
+		ID:        convID,
+		OwnerID:   owner,
+		Source:    "ui",
+		UpdatedAt: time.Now().UTC(),
+	})
+}
+
 func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -1333,6 +1426,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		UserParts:      userParts,
 	})
 	if err != nil {
+		if err.Error() == "无权访问该会话" {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -1907,15 +2004,77 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			out = sum
 		}
 	}
+	if s.gateTokens().Enabled() {
+		out = s.filterConversationSummaries(r, out)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
 }
 
+func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.Summary) []conversation.Summary {
+	ms := s.metaStore()
+	if ms == nil {
+		return in
+	}
+	p := s.principalFrom(r.Context())
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	filterOwner := ""
+	switch p.Role {
+	case controlplane.RoleAdmin:
+		if scope == "mine" {
+			filterOwner = p.OperatorID
+			if filterOwner == "" {
+				filterOwner = "admin"
+			}
+		}
+		// default / scope=all: no owner filter
+	default:
+		// operators always see mine
+		filterOwner = p.OperatorID
+	}
+
+	allowed := map[string]bool{}
+	metas, err := ms.ListMeta(conversation.MetaFilter{OwnerID: filterOwner})
+	if err != nil {
+		return []conversation.Summary{}
+	}
+	for _, m := range metas {
+		if filterOwner == "" {
+			// admin all: still require CanAccess (always true for admin)
+			if conversation.CanAccess(p, m) {
+				allowed[m.ID] = true
+			}
+		} else {
+			allowed[m.ID] = true
+		}
+	}
+	// Admin all also includes meta-less legacy conversations.
+	includeOrphans := p.Role == controlplane.RoleAdmin && scope != "mine"
+
+	out := make([]conversation.Summary, 0, len(in))
+	for _, sum := range in {
+		if allowed[sum.ID] {
+			out = append(out, sum)
+			continue
+		}
+		if includeOrphans {
+			if _, ok := ms.GetMeta(sum.ID); !ok {
+				out = append(out, sum)
+			}
+		}
+	}
+	return out
+}
+
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Messages == nil {
 		writeJSON(w, http.StatusOK, []conversation.Message{})
 		return
 	}
-	msgs := s.Messages.List(r.PathValue("id"))
+	msgs := s.Messages.List(convID)
 	if msgs == nil {
 		msgs = []conversation.Message{}
 	}
@@ -1923,8 +2082,12 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleClearMessages(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Messages != nil {
-		s.Messages.Clear(r.PathValue("id"))
+		s.Messages.Clear(convID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -1934,6 +2097,9 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 	msgID := strings.TrimSpace(r.PathValue("message_id"))
 	if convID == "" || msgID == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation or message id")
+		return
+	}
+	if !s.requireConversationAccess(w, r, convID) {
 		return
 	}
 	if s.Messages == nil {
@@ -2023,6 +2189,9 @@ func (s *Server) handleForkConversation(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
 		return
 	}
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
 	if s.Messages == nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "message store not configured")
 		return
@@ -2057,6 +2226,9 @@ func (s *Server) handleForkConversation(w http.ResponseWriter, r *http.Request) 
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !s.ensureConversationMeta(w, r, newID) {
 		return
 	}
 	msgs := s.Messages.List(newID)
@@ -2111,6 +2283,9 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 	ag, err := s.Store.GetAgent(agentID)
 	if err != nil {
 		return nil, fmt.Errorf("unknown agent")
+	}
+	if err := s.prepareConversationMeta(r.Context(), convID); err != nil {
+		return nil, err
 	}
 	createIn := store.CreateRunInput{
 		AgentID:        agentID,
