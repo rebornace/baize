@@ -387,6 +387,9 @@ func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, mess
 			}()
 			return nil
 		},
+		ResumeHITL: func(ctx context.Context, runID string, approve bool, comment string) error {
+			return engine.ContinueFromHITL(ctx, runID, run.Decision{Approve: approve, Comment: comment})
+		},
 	}
 
 	accountID, token, credErr := weixin.LoadCreds(credsDir)

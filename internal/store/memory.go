@@ -386,6 +386,25 @@ func (s *Memory) HasActiveRun(conversationID string) (bool, error) {
 	return false, nil
 }
 
+func (s *Memory) WaitingHumanRun(conversationID string) (*Run, error) {
+	if conversationID == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var best *Run
+	for _, r := range s.runs {
+		if r.ConversationID != conversationID || r.Status != StatusWaitingHuman {
+			continue
+		}
+		if best == nil || r.CreatedAt.After(best.CreatedAt) {
+			cp := *r
+			best = &cp
+		}
+	}
+	return best, nil
+}
+
 func (s *Memory) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

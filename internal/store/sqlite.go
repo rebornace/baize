@@ -888,6 +888,24 @@ func (s *SQLStore) HasActiveRun(conversationID string) (bool, error) {
 	return true, nil
 }
 
+func (s *SQLStore) WaitingHumanRun(conversationID string) (*Run, error) {
+	if conversationID == "" {
+		return nil, nil
+	}
+	var id string
+	err := s.queryRow(
+		`SELECT id FROM runs WHERE conversation_id = ? AND status = ? ORDER BY created_at DESC LIMIT 1`,
+		conversationID, string(StatusWaitingHuman),
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetRun(id)
+}
+
 func (s *SQLStore) getInboxDeliveryRaw(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
 	var d InboxDelivery
 	var createdAt string

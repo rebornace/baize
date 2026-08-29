@@ -40,6 +40,10 @@ func (f *fakeRuns) HasActiveRun(conversationID string) (bool, error) {
 	return f.active[conversationID], nil
 }
 
+func (f *fakeRuns) WaitingHumanRun(conversationID string) (*store.Run, error) {
+	return nil, nil
+}
+
 func (f *fakeRuns) CreateRun(in store.CreateRunInput) (*store.Run, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

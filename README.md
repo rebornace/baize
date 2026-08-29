@@ -579,7 +579,7 @@ control_plane:
 4. Credentials land in `./data/channels/weixin/` (gitignored); a restart with valid creds resumes long-poll automatically.
 5. Logout clears local creds and stops polling.
 
-New peer DMs get `owner_id = assignee` (default `channel:weixin` if unset — mainly visible to admin). An active Run for the same peer skips a second Run and replies with a busy message on WeChat.
+New peer DMs get `owner_id = assignee` (default `channel:weixin` if unset — mainly visible to admin). A **queued/running** Run for the same peer skips a second Run and replies with a busy message on WeChat. If the Run is **waiting_human**, WeChat receives an approval prompt; reply `批准`/`拒绝` (or approve/reject) to resume, otherwise a short help text is sent.
 
 ### Media, groups, and v0 limits
 
