@@ -58,6 +58,7 @@ func (f *fakeChannel) texts() []sentText {
 type fakeRuns struct {
 	mu      sync.Mutex
 	active  map[string]bool
+	waiting map[string]*store.Run
 	creates []store.CreateRunInput
 	runs    []*store.Run
 }
@@ -66,6 +67,16 @@ func (f *fakeRuns) HasActiveRun(conversationID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.active[conversationID], nil
+}
+
+func (f *fakeRuns) WaitingHumanRun(conversationID string) (*store.Run, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r := f.waiting[conversationID]; r != nil {
+		cp := *r
+		return &cp, nil
+	}
+	return nil, nil
 }
 
 func (f *fakeRuns) CreateRun(in store.CreateRunInput) (*store.Run, error) {
@@ -192,6 +203,64 @@ func TestHandleInboundBusySendsFixedText(t *testing.T) {
 	}
 	if BusyReply != "请稍候，上一轮还在处理" {
 		t.Fatalf("BusyReply drifted: %q", BusyReply)
+	}
+}
+
+func TestHandleInboundWaitingHumanApprove(t *testing.T) {
+	convID := "weixin:acc-1:peer-1"
+	waiting := &store.Run{ID: "run-hitl", ConversationID: convID, Status: store.StatusWaitingHuman}
+	runs := &fakeRuns{
+		active:  map[string]bool{convID: true},
+		waiting: map[string]*store.Run{convID: waiting},
+	}
+	rt, _ := newTestRuntime(t, runs)
+	var resumed struct {
+		runID   string
+		approve bool
+	}
+	rt.ResumeHITL = func(_ context.Context, runID string, approve bool, _ string) error {
+		resumed.runID = runID
+		resumed.approve = approve
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+	if err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "批准",
+		Extras: map[string]string{"account": "acc-1", "context_token": "tok"},
+	}); err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	if resumed.runID != "run-hitl" || !resumed.approve {
+		t.Fatalf("ResumeHITL = %+v", resumed)
+	}
+	if runs.createCount() != 0 {
+		t.Fatal("CreateRun should not run during HITL resume")
+	}
+	sent := ch.texts()
+	if len(sent) != 1 || !strings.Contains(sent[0].text, "已批准") {
+		t.Fatalf("SendText = %+v", sent)
+	}
+}
+
+func TestHandleInboundWaitingHumanHelp(t *testing.T) {
+	convID := "weixin:acc-1:peer-1"
+	runs := &fakeRuns{
+		active:  map[string]bool{convID: true},
+		waiting: map[string]*store.Run{convID: {ID: "run-hitl", Status: store.StatusWaitingHuman}},
+	}
+	rt, _ := newTestRuntime(t, runs)
+	ch := &fakeChannel{name: "fake"}
+	if err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "随便说说",
+		Extras: map[string]string{"account": "acc-1"},
+	}); err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	sent := ch.texts()
+	if len(sent) != 1 || sent[0].text != HITLHelpReply {
+		t.Fatalf("SendText = %+v, want %q", sent, HITLHelpReply)
 	}
 }
 

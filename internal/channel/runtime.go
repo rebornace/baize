@@ -30,6 +30,7 @@ var (
 type RunStore interface {
 	CreateRun(in store.CreateRunInput) (*store.Run, error)
 	HasActiveRun(conversationID string) (bool, error)
+	WaitingHumanRun(conversationID string) (*store.Run, error)
 }
 
 // Runtime turns normalized Channel inbound messages into conversation meta + runs.
@@ -44,6 +45,9 @@ type Runtime struct {
 	SupportsVision bool
 	// AfterCreateRun is an optional hook to start the engine after CreateRun.
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
+	// ResumeHITL continues a waiting_human run (approve/reject). Optional;
+	// when nil, waiting_human inbound only gets HITLHelpReply.
+	ResumeHITL func(ctx context.Context, runID string, approve bool, comment string) error
 
 	tokenMu sync.Mutex
 	tokens  map[string]string // conversation_id -> context_token
@@ -97,11 +101,7 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return fmt.Errorf("channel: has active run: %w", err)
 	}
 	if busy {
-		extras := copyExtras(in.Extras)
-		if err := ch.SendText(ctx, peerID, BusyReply, extras); err != nil {
-			return fmt.Errorf("channel: send busy reply: %w", err)
-		}
-		return nil
+		return r.handleBusyInbound(ctx, ch, convID, peerID, in)
 	}
 
 	agentID := strings.TrimSpace(r.DefaultAgentID)
@@ -135,6 +135,37 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		if err := r.AfterCreateRun(ctx, runRec, userParts); err != nil {
 			return fmt.Errorf("channel: after create run: %w", err)
 		}
+	}
+	return nil
+}
+
+func (r *Runtime) handleBusyInbound(ctx context.Context, ch Channel, convID, peerID string, in Inbound) error {
+	extras := copyExtras(in.Extras)
+	waiting, err := r.Runs.WaitingHumanRun(convID)
+	if err != nil {
+		return fmt.Errorf("channel: waiting human run: %w", err)
+	}
+	if waiting != nil {
+		if approve, ok := ParseHITLDecision(in.Text); ok && r.ResumeHITL != nil {
+			if err := r.ResumeHITL(ctx, waiting.ID, approve, strings.TrimSpace(in.Text)); err != nil {
+				return fmt.Errorf("channel: resume hitl: %w", err)
+			}
+			ack := "已拒绝，运行将结束。"
+			if approve {
+				ack = "已批准，继续处理中…"
+			}
+			if err := ch.SendText(ctx, peerID, ack, extras); err != nil {
+				return fmt.Errorf("channel: send hitl ack: %w", err)
+			}
+			return nil
+		}
+		if err := ch.SendText(ctx, peerID, HITLHelpReply, extras); err != nil {
+			return fmt.Errorf("channel: send hitl help: %w", err)
+		}
+		return nil
+	}
+	if err := ch.SendText(ctx, peerID, BusyReply, extras); err != nil {
+		return fmt.Errorf("channel: send busy reply: %w", err)
 	}
 	return nil
 }

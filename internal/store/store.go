@@ -248,6 +248,9 @@ type Store interface {
 	SetPassthroughHeaders(runID string, headers map[string]string) error
 
 	HasActiveRun(conversationID string) (bool, error)
+	// WaitingHumanRun returns the newest waiting_human run for the conversation,
+	// or (nil, nil) when none.
+	WaitingHumanRun(conversationID string) (*Run, error)
 
 	ListConnectors() []Connector
 	ListTools() []Tool

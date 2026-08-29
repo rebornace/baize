@@ -1011,6 +1011,29 @@ func TestExecuteOutboundUIMetaSkips(t *testing.T) {
 	}
 }
 
+func TestDeliverHITLNotifyWeixin(t *testing.T) {
+	st := store.NewMemory()
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{
+		ID: "weixin:acc:peer-1", Source: "weixin", ChannelPeer: "peer-1",
+	})
+	ch := &outboundFakeChannel{}
+	eng := &Engine{
+		Store: st, Messages: msgStore, Meta: msgStore, Outbound: ch,
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x", ConversationID: "weixin:acc:peer-1"})
+	eng.deliverHITLNotify(r.ID, &store.HITLPayload{ToolName: "create_ticket", Prompt: "开单？"})
+	if len(ch.texts) != 1 {
+		t.Fatalf("outbound = %+v", ch.texts)
+	}
+	if !strings.Contains(ch.texts[0].text, "create_ticket") || !strings.Contains(ch.texts[0].text, "批准") {
+		t.Fatalf("text = %q", ch.texts[0].text)
+	}
+	if ch.texts[0].peer != "peer-1" {
+		t.Fatalf("peer = %q", ch.texts[0].peer)
+	}
+}
+
 type outboundFakeChannel struct {
 	texts []struct {
 		peer, text string

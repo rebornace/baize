@@ -612,7 +612,7 @@ control_plane:
 4. 凭证写入 `./data/channels/weixin/`（`creds.json` 等，已 gitignore）；进程启动若凭证有效会自动恢复长轮询。
 5. 登出：清除本地凭证并停止轮询。
 
-新 peer 首条私信创建会话时：`owner_id = 受理人`；未配置受理人时默认为 `channel:weixin`（仅 admin 默认列表可见）。同 peer 已有进行中的 Run 时不建第二 Run，微信侧回复「请稍候，上一轮还在处理」。
+新 peer 首条私信创建会话时：`owner_id = 受理人`；未配置受理人时默认为 `channel:weixin`（仅 admin 默认列表可见）。同 peer 已有 **queued/running** Run 时不建第二 Run，微信侧回复「请稍候，上一轮还在处理」。若 Run 处于 **waiting_human（工具审批）**，微信会收到审批说明；回复「批准」/「拒绝」（或 approve/reject）可续跑，其它内容会提示如何审批。
 
 ### 媒体、群与已知限制（v0）
 

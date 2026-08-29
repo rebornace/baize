@@ -729,6 +729,7 @@ func (e *Engine) awaitHITLPayload(ctx context.Context, runID, prompt, toolName s
 	})
 	_ = e.Store.UpdateRun(runID, store.StatusWaitingHuman, "", "")
 	_ = e.Store.SetHITL(runID, payload)
+	e.deliverHITLNotify(runID, payload)
 
 	var d Decision
 	select {
@@ -841,6 +842,27 @@ func (e *Engine) deliverOutbound(conversationID, text string) {
 		extras = e.OutboundExtras(conversationID)
 	}
 	channel.DeliverAssistantReply(context.Background(), e.Outbound, meta, text, nil, extras)
+}
+
+// deliverHITLNotify pushes an approval prompt to the weixin peer when a run
+// enters waiting_human. Failures are logged only.
+func (e *Engine) deliverHITLNotify(runID string, payload *store.HITLPayload) {
+	if e.Outbound == nil || e.Meta == nil || runID == "" {
+		return
+	}
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil || runRec == nil || runRec.ConversationID == "" {
+		return
+	}
+	meta, err := e.Meta.GetMeta(runRec.ConversationID)
+	if err != nil {
+		return
+	}
+	var extras map[string]string
+	if e.OutboundExtras != nil {
+		extras = e.OutboundExtras(runRec.ConversationID)
+	}
+	channel.DeliverUserText(context.Background(), e.Outbound, meta, channel.FormatHITLNotify(payload), extras)
 }
 
 func (e *Engine) userTurnStillLinked(runRec *store.Run) bool {
