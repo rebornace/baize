@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,6 +69,38 @@ func parseOptionalTime(raw sql.NullString) (*time.Time, error) {
 	}
 	utc := t.UTC()
 	return &utc, nil
+}
+
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") ||
+		strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "constraint failed")
+}
+
+// migrateMCPExportKeys adds a UNIQUE constraint on key_hash for DBs created before
+// the column-level UNIQUE landed in the CREATE TABLE DDL.
+func migrateMCPExportKeys(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_mcp_export_keys_hash ON mcp_export_keys(key_hash)`); err != nil {
+		if isNoSuchTableErr(err) {
+			return nil
+		}
+		return err
+	}
+	_, _ = db.Exec(`DROP INDEX IF EXISTS idx_mcp_export_keys_hash`)
+	return nil
+}
+
+func isNoSuchTableErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table") ||
+		strings.Contains(msg, "does not exist")
 }
 
 func (s *Memory) UpsertMCPExportIdentity(id MCPExportIdentity) error {
@@ -151,6 +184,11 @@ func (s *Memory) InsertMCPExportKey(k MCPExportKey) error {
 	}
 	if s.mcpExportKeys == nil {
 		s.mcpExportKeys = map[string]MCPExportKey{}
+	}
+	for _, existing := range s.mcpExportKeys {
+		if existing.KeyHash == k.KeyHash {
+			return ErrMCPExportKeyHashExists
+		}
 	}
 	if k.CreatedAt.IsZero() {
 		k.CreatedAt = time.Now().UTC()
@@ -338,7 +376,16 @@ func (s *SQLStore) ListMCPExportIdentities() ([]MCPExportIdentity, error) {
 }
 
 func (s *SQLStore) DeleteMCPExportIdentity(id string) error {
-	res, err := s.exec(`DELETE FROM mcp_export_identities WHERE id = ?`, id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(s.q(`DELETE FROM mcp_export_keys WHERE identity_id = ?`), id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(s.q(`DELETE FROM mcp_export_identities WHERE id = ?`), id)
 	if err != nil {
 		return err
 	}
@@ -349,10 +396,7 @@ func (s *SQLStore) DeleteMCPExportIdentity(id string) error {
 	if n == 0 {
 		return ErrMCPExportIdentityNotFound
 	}
-	if _, err := s.exec(`DELETE FROM mcp_export_keys WHERE identity_id = ?`, id); err != nil {
-		return err
-	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *SQLStore) InsertMCPExportKey(k MCPExportKey) error {
@@ -379,6 +423,9 @@ func (s *SQLStore) InsertMCPExportKey(k MCPExportKey) error {
 		k.ID, k.Name, k.IdentityID, k.KeyHash, k.Prefix,
 		formatOptionalTime(k.RevokedAt), k.CreatedAt.UTC().Format(time.RFC3339Nano),
 	)
+	if err != nil && isUniqueViolation(err) {
+		return ErrMCPExportKeyHashExists
+	}
 	return err
 }
 

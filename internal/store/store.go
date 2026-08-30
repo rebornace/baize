@@ -188,6 +188,9 @@ var ErrMCPExportIdentityNotFound = errors.New("mcp export identity not found")
 // ErrMCPExportKeyNotFound is returned when an MCP export key row is missing.
 var ErrMCPExportKeyNotFound = errors.New("mcp export key not found")
 
+// ErrMCPExportKeyHashExists is returned when InsertMCPExportKey hits a duplicate key_hash.
+var ErrMCPExportKeyHashExists = errors.New("mcp export key hash already exists")
+
 // InboxDelivery records an accepted inbound webhook delivery for idempotency.
 type InboxDelivery struct {
 	ChannelID, IdempotencyKey, DeliveryID, RunID, BodyHash string

@@ -113,12 +113,11 @@ CREATE TABLE IF NOT EXISTS mcp_export_keys (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   identity_id TEXT NOT NULL,
-  key_hash TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
   prefix TEXT NOT NULL,
   revoked_at TEXT,
   created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_hash ON mcp_export_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
 `
 
@@ -191,6 +190,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 	if err := migrateConnectorsColumns(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate connectors columns: %w", err)
+	}
+	if err := migrateMCPExportKeys(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,
