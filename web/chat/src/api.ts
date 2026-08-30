@@ -465,6 +465,8 @@ export function isTerminal(status: RunStatus): boolean {
   return status === 'succeeded' || status === 'failed' || status === 'cancelled'
 }
 
+export type ToolExportMode = 'default' | 'force_allow' | 'force_deny'
+
 export interface ToolInfo {
   name: string
   title?: string
@@ -478,6 +480,8 @@ export interface ToolInfo {
   require_login?: boolean
   enabled?: boolean
   source?: string
+  /** MCP export override; empty omitted means default. */
+  export?: ToolExportMode | ''
   input_schema?: Record<string, unknown>
 }
 
@@ -489,7 +493,13 @@ export async function listTools(): Promise<ToolInfo[]> {
 
 export async function patchTool(
   name: string,
-  body: { enabled?: boolean; require_login?: boolean; title?: string; description?: string },
+  body: {
+    enabled?: boolean
+    require_login?: boolean
+    title?: string
+    description?: string
+    export?: ToolExportMode
+  },
 ): Promise<ToolInfo> {
   const res = await fetch(`/v0/tools/${encodeURIComponent(name)}`, {
     method: 'PATCH',

@@ -1063,14 +1063,23 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		RequireLogin *bool   `json:"require_login"`
 		Title        *string `json:"title"`
 		Description  *string `json:"description"`
+		Export       *string `json:"export"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	if body.Enabled == nil && body.RequireLogin == nil && body.Title == nil && body.Description == nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, title, or description is required")
+	if body.Enabled == nil && body.RequireLogin == nil && body.Title == nil && body.Description == nil && body.Export == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, title, description, or export is required")
 		return
+	}
+	if body.Export != nil {
+		switch strings.TrimSpace(*body.Export) {
+		case "", "default", "force_allow", "force_deny":
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_request", "export must be default, force_allow, or force_deny")
+			return
+		}
 	}
 
 	row, err := s.Store.GetTool(name)
@@ -1085,6 +1094,7 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	// served by Registry.SetRequireLogin so we don't drop the baked-in
 	// RequireApproval flag (RegisterOneFromConnector does not know
 	// RequireApprovalMutating and would otherwise lose mutating HITL).
+	// Export-only patches update the store catalog and never re-register.
 	enabledChanged := body.Enabled != nil && *body.Enabled != row.Enabled
 
 	if body.Enabled != nil {
@@ -1099,6 +1109,17 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	if body.Description != nil {
 		row.Description = *body.Description
 		row.DescriptionCustom = true
+	}
+	if body.Export != nil {
+		export := strings.TrimSpace(*body.Export)
+		if export == "" {
+			export = "default"
+		}
+		if export == "default" {
+			row.Export = ""
+		} else {
+			row.Export = export
+		}
 	}
 	s.Store.UpsertTool(row)
 

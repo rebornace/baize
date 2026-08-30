@@ -8,6 +8,7 @@ import {
   patchTool,
   putConnector,
   type ConnectorInfo,
+  type ToolExportMode,
   type ToolInfo,
 } from '../api'
 import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
@@ -20,6 +21,17 @@ import {
 } from './captureForm'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+const EXPORT_OPTIONS: { value: ToolExportMode; label: string }[] = [
+  { value: 'default', label: '默认' },
+  { value: 'force_allow', label: '强制允许' },
+  { value: 'force_deny', label: '强制拒绝' },
+]
+
+function toolExportMode(t: ToolInfo): ToolExportMode {
+  if (t.export === 'force_allow' || t.export === 'force_deny') return t.export
+  return 'default'
+}
 
 interface AddFormState {
   name: string
@@ -279,6 +291,19 @@ export function ToolsSettings() {
     }
   }
 
+  const onExportChange = async (name: string, exportMode: ToolExportMode) => {
+    setToggling(name)
+    try {
+      const updated = await patchTool(name, { export: exportMode })
+      mergeTools([updated])
+      setError(null)
+    } catch (err) {
+      setError(`${name}：${errorMessage(err)}`)
+    } finally {
+      setToggling(null)
+    }
+  }
+
   const onEnabledChange = async (name: string, enabled: boolean) => {
     setToggling(name)
     try {
@@ -507,6 +532,23 @@ export function ToolsSettings() {
                 }}
               />
               需要登录
+            </label>
+            <label className="settings-login-toggle">
+              MCP 导出
+              <select
+                className="settings-select"
+                value={toolExportMode(t)}
+                disabled={rowBusy}
+                onChange={(e) => {
+                  void onExportChange(t.name, e.target.value as ToolExportMode)
+                }}
+              >
+                {EXPORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </label>
             {canDelete && (
               <button
