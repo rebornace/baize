@@ -83,6 +83,25 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS mcp_export_identities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scheme TEXT,
+  headers_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_export_keys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_hash ON mcp_export_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
