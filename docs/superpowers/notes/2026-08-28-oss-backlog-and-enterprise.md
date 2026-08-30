@@ -11,7 +11,8 @@
 | **本版要开发** | **I1** Inbox → HITL resume；**P4** PostgreSQL 存储驱动；**微信 Channel（iLink）+ 会话归属**（规格已批准） |
 | **本版不开发、改文档** | **P1** SDK 表述；**P2** 工作流=线性流水线表述 |
 | **本版不做** | **P3** OTel；A1 多订阅；B1 SDK 实现；其余 §3/§4 默认否 |
-| **排队（新需求）** | **X1** MCP 导出（规格已批准）；X2 `/ui` 切大模型；X3 中间件多源 |
+| **本分支实现中** | **X1** MCP 导出（规格已批准，`feat/mcp-export-v0`） |
+| **排队（新需求）** | X2 `/ui` 切大模型；X3 中间件多源 |
 | **本版之后** | **F** 生产硬化（含 P1/P2 文档收口） |
 
 ---
@@ -85,7 +86,7 @@
 | **1** | **I1** Inbox → HITL resume | **已交付** |
 | **2** | **P4** PostgreSQL / SQL 驱动 | **已完成** |
 | **2b** | **微信 Channel（iLink）+ 会话归属** | **已交付**（`feat/channel-weixin-v0`；规格 `specs/2026-08-29-channel-weixin-v0-design.md`） |
-| **3** | **X1** MCP 导出（规格 `specs/2026-08-29-mcp-export-v0-design.md`，待计划/实现）→ X2 / X3 | 分里程碑 |
+| **3** | **X1** MCP 导出（规格 `specs/2026-08-29-mcp-export-v0-design.md`）→ X2 / X3 | **本分支实现中**（`feat/mcp-export-v0`） |
 | **4** | P1/P2 文档 + **F** 生产硬化 | 上述之后 |
 
 ---

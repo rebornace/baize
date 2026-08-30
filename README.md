@@ -265,6 +265,36 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
 
 Tool names come from each Server; they must be globally unique across all Connectors.
 
+### MCP export (optional)
+
+The inverse of [MCP connectors](#mcp-connectors-optional): Baize acts as an **MCP Server** (Streamable HTTP) and exposes a **read-only subset** of the tool catalog to personal agents (e.g. Cursor). Agents use their own model; MCP `tools/call` **does not** start a Baize Run or consume Baize LLM quota.
+
+| | MCP connectors (client) | MCP export |
+|--|-------------------------|------------|
+| Direction | Baize → external MCP Server | Personal agent → Baize |
+| Settings | Settings → MCP (admin) | Settings → MCP export (admin) |
+| Auth | `mcp.env` / `mcp.headers` on Connector | Dedicated **export Key** (+ bound export identity) |
+| Control plane | Gate admin/operator token | **Separate** — Gate token ≠ export Key |
+
+1. Open `/ui` → **Settings → MCP export** (admin): create an **export identity** (prefer a read-only service account), then create an export Key (plaintext shown once; must bind an identity).
+2. Tune per-tool export policy under **Settings → Tools** (`default` / force allow / force deny). DB / MCP write tools are never exported.
+3. Point your MCP client at Baize over **HTTPS** in production.
+
+```json
+{
+  "mcpServers": {
+    "baize-export": {
+      "url": "https://<host>/v0/mcp/export",
+      "headers": {
+        "Authorization": "Bearer <mcp_export_key>"
+      }
+    }
+  }
+}
+```
+
+Export Keys and identities live in the runtime store (not git). Revoke compromised Keys immediately. Gate tokens cannot call `/v0/mcp/export`; export Keys cannot access admin APIs or `/ui`.
+
 ### Tool catalog (enable / disable / add REST)
 
 Each Connector owns a **tool catalog** persisted in the store (SQLite by default). `GET /v0/tools` returns catalog rows — including disabled ones — so the Settings page can list and re-enable them; the in-memory Registry only registers `enabled = true` rows, so a disabled tool is invisible to the model and to invoke.

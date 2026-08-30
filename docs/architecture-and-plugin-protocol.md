@@ -41,7 +41,8 @@
    遗留 REST API   侧车 Connector   MCP Server   webhook/gRPC-HTTP
 ```
 
-**MCP 桥（v0 已实现）**：`PUT /v0/connectors/{id}` 注册 `type: mcp` Connector（stdio 子进程或 Streamable HTTP）；`tools/list` 发现工具写入目录 `source=mcp`，Run 内 `tools/call` 执行；与 OpenAPI / HTTP 插件并列，不替代插件协议 v0。
+**MCP 桥（v0 已实现）**：`PUT /v0/connectors/{id}` 注册 `type: mcp` Connector（stdio 子进程或 Streamable HTTP）；`tools/list` 发现工具写入目录 `source=mcp`，Run 内 `tools/call` 执行；与 OpenAPI / HTTP 插件并列，不替代插件协议 v0。  
+**MCP 导出（X1）**：白泽作为 Streamable HTTP MCP Server（`/v0/mcp/export`）对外暴露目录只读子集，专用导出 Key + 导出身份鉴权；不经 Run / 白泽 LLM，与 MCP 桥（客户端）方向相反。
 
 **默认存储：** SQLite（Run / HITL / checkpoint）；**已实现** `store.driver: postgres`（同 DSN 含会话/身份；设置 → 存储）。驱动经 `RegisterDriver` 扩展。短 Run 可开无状态模式。  
 **租户：** Schema 含软 `tenant_id`；开源默认单租户用法。  

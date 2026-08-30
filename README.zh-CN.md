@@ -266,6 +266,36 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
 
 工具名以各 Server 为准，且在所有 Connector 间全局唯一。
 
+### MCP 导出（可选）
+
+与上文 [MCP Connector](#mcp-connector可选) **方向相反**：白泽作为 **MCP Server**（Streamable HTTP），把工具目录中符合策略的**只读子集**暴露给个人 Agent（如 Cursor）。个人 Agent 消耗自有模型；MCP `tools/call` **不**创建白泽 Run、**不**消耗白泽 LLM 额度。
+
+| | MCP Connector（客户端） | MCP 导出 |
+|--|-------------------------|----------|
+| 方向 | 白泽 → 外部 MCP Server | 个人 Agent → 白泽 |
+| 设置 | 设置 → MCP（管理员） | 设置 → MCP 导出（管理员） |
+| 鉴权 | Connector 上 `mcp.env` / `mcp.headers` | 专用 **导出 Key**（须绑定导出身份） |
+| 控制面 | Gate 管理员/操作员口令 | **分离** — Gate 口令 ≠ 导出 Key |
+
+1. 打开 `/ui` → **设置 → MCP 导出**（管理员）：先建 **导出身份**（建议只读服务账号），再创建导出 Key（明文仅创建时展示一次，且必须绑定身份）。
+2. 在 **设置 → Tools** 调整每工具导出策略（`default` / 强制允许 / 强制拒绝）。数据库 / MCP 写类工具永不导出。
+3. 生产环境请用 **HTTPS** 连接白泽。
+
+```json
+{
+  "mcpServers": {
+    "baize-export": {
+      "url": "https://<host>/v0/mcp/export",
+      "headers": {
+        "Authorization": "Bearer <mcp_export_key>"
+      }
+    }
+  }
+}
+```
+
+导出 Key 与身份落在运行时 Store（不进 git）。泄露请立即撤销。Gate 口令不能调用 `/v0/mcp/export`；导出 Key 不能访问管理 API 或 `/ui`。
+
 ### 工具目录（启用 / 停用 / 手加 REST）
 
 每个 Connector 拥有一份**工具目录**，落盘在 Store（默认 SQLite）。`GET /v0/tools` 返回目录行——**包含已停用行**——以便设置页列出并重新启用；内存 Registry 只注册 `enabled = true` 的行，因此停用的工具对模型和 invoke 都不可见。
