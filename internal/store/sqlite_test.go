@@ -392,6 +392,88 @@ func TestSQLiteToolCatalogRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSQLiteToolExportRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tools-export.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.UpsertConnector(store.Connector{ID: "c1", Type: "openapi", BaseURL: "http://x"})
+	s.UpsertTool(store.Tool{
+		ConnectorID: "c1",
+		Name:        "create_ticket",
+		Source:      store.ToolSourceSpec,
+		Enabled:     true,
+		Method:      "POST",
+		Path:        "/tickets",
+		Export:      "force_allow",
+	})
+	if c, ok := s.(io.Closer); ok {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s2, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s2.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	got, err := s2.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Export != "force_allow" {
+		t.Fatalf("export=%q want force_allow", got.Export)
+	}
+}
+
+func TestSQLiteToolExportModeMigratesFromOldSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old-tools-export.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE tools (
+		name TEXT PRIMARY KEY, connector_id TEXT, source TEXT, enabled INTEGER,
+		title TEXT, description TEXT, description_custom INTEGER,
+		method TEXT, path TEXT, input_schema_json TEXT,
+		require_login INTEGER, require_approval INTEGER, operation_id TEXT
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO tools (name, connector_id, source, enabled, description, method, path, require_login, require_approval, operation_id)
+		VALUES ('create_ticket', 'c1', 'spec', 1, 'from spec', 'POST', '/tickets', 0, 0, 'create_ticket')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	got, err := s.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Export != "" {
+		t.Fatalf("migrated export=%q want empty default", got.Export)
+	}
+}
+
 func TestSQLiteToolTitleAndCustomRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tools-title.db")
 	s, err := store.Open("sqlite", path)

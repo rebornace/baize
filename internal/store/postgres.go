@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS tools (
   input_schema_json TEXT,
   require_login INTEGER,
   require_approval INTEGER,
-  operation_id TEXT
+  operation_id TEXT,
+  export_mode TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -82,6 +83,24 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS mcp_export_identities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scheme TEXT,
+  headers_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_export_keys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
@@ -145,6 +164,14 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(postgresSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate postgres schema: %w", err)
+	}
+	if err := migrateToolsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tools columns: %w", err)
+	}
+	if err := migrateMCPExportKeys(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,

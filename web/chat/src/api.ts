@@ -426,6 +426,113 @@ export async function testInboxChannel(
   return parseJSON<{ delivery_id: string; run_id: string }>(res)
 }
 
+export interface MCPExportSettings {
+  enabled: boolean
+  endpoint_path: string
+}
+
+export interface MCPExportIdentity {
+  id: string
+  name: string
+  scheme?: string
+  headers?: Record<string, string>
+  created_at?: string
+  updated_at?: string
+}
+
+export interface MCPExportKey {
+  id: string
+  name: string
+  identity_id: string
+  prefix: string
+  revoked_at?: string | null
+  created_at?: string
+}
+
+export interface MCPExportKeyCreated {
+  id: string
+  name: string
+  identity_id: string
+  token: string
+  prefix: string
+}
+
+export async function getMCPExportSettings(): Promise<MCPExportSettings> {
+  const res = await fetch('/v0/settings/mcp-export', { headers: authInit() })
+  return parseJSON<MCPExportSettings>(res)
+}
+
+export async function listMCPExportIdentities(): Promise<MCPExportIdentity[]> {
+  const res = await fetch('/v0/settings/mcp-export/identities', { headers: authInit() })
+  return parseJSON<MCPExportIdentity[]>(res)
+}
+
+export async function createMCPExportIdentity(body: {
+  id?: string
+  name: string
+  scheme?: string
+  headers?: Record<string, string>
+}): Promise<MCPExportIdentity> {
+  const res = await fetch('/v0/settings/mcp-export/identities', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<MCPExportIdentity>(res)
+}
+
+export async function patchMCPExportIdentity(
+  id: string,
+  body: {
+    name?: string
+    scheme?: string
+    headers?: Record<string, string>
+  },
+): Promise<MCPExportIdentity> {
+  const res = await fetch(`/v0/settings/mcp-export/identities/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<MCPExportIdentity>(res)
+}
+
+export async function deleteMCPExportIdentity(id: string): Promise<void> {
+  const res = await fetch(`/v0/settings/mcp-export/identities/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authInit(),
+  })
+  await parseJSON<{ status: string }>(res)
+}
+
+export async function listMCPExportKeys(identityId?: string): Promise<MCPExportKey[]> {
+  const q = identityId?.trim()
+    ? `?identity_id=${encodeURIComponent(identityId.trim())}`
+    : ''
+  const res = await fetch(`/v0/settings/mcp-export/keys${q}`, { headers: authInit() })
+  return parseJSON<MCPExportKey[]>(res)
+}
+
+export async function createMCPExportKey(body: {
+  name: string
+  identity_id: string
+}): Promise<MCPExportKeyCreated> {
+  const res = await fetch('/v0/settings/mcp-export/keys', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<MCPExportKeyCreated>(res)
+}
+
+export async function revokeMCPExportKey(id: string): Promise<void> {
+  const res = await fetch(`/v0/settings/mcp-export/keys/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authInit(),
+  })
+  await parseJSON<{ status: string }>(res)
+}
+
 export async function getRun(runId: string): Promise<Run> {
   const res = await fetch(`/v0/runs/${encodeURIComponent(runId)}`, {
     headers: authInit(),
@@ -465,6 +572,8 @@ export function isTerminal(status: RunStatus): boolean {
   return status === 'succeeded' || status === 'failed' || status === 'cancelled'
 }
 
+export type ToolExportMode = 'default' | 'force_allow' | 'force_deny'
+
 export interface ToolInfo {
   name: string
   title?: string
@@ -478,6 +587,8 @@ export interface ToolInfo {
   require_login?: boolean
   enabled?: boolean
   source?: string
+  /** MCP export override; empty omitted means default. */
+  export?: ToolExportMode | ''
   input_schema?: Record<string, unknown>
 }
 
@@ -489,7 +600,13 @@ export async function listTools(): Promise<ToolInfo[]> {
 
 export async function patchTool(
   name: string,
-  body: { enabled?: boolean; require_login?: boolean; title?: string; description?: string },
+  body: {
+    enabled?: boolean
+    require_login?: boolean
+    title?: string
+    description?: string
+    export?: ToolExportMode
+  },
 ): Promise<ToolInfo> {
   const res = await fetch(`/v0/tools/${encodeURIComponent(name)}`, {
     method: 'PATCH',

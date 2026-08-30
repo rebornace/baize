@@ -44,12 +44,13 @@ type Connector struct {
 }
 
 type MCPConfig struct {
-	Transport string            `json:"transport"`
-	Command   string            `json:"command,omitempty"`
-	Args      []string          `json:"args,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	URL       string            `json:"url,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
+	Transport        string            `json:"transport"`
+	Command          string            `json:"command,omitempty"`
+	Args             []string          `json:"args,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	URL              string            `json:"url,omitempty"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	ExportDBReadonly bool              `json:"export_db_readonly,omitempty"`
 }
 
 // Tool source constants describing how a tool row entered the catalog.
@@ -75,6 +76,7 @@ type Tool struct {
 	RequireLogin      bool           `json:"require_login"`
 	RequireApproval   bool           `json:"require_approval"`
 	OperationID       string         `json:"operation_id,omitempty"`
+	Export            string         `json:"export,omitempty"`
 }
 
 // ConnectorAuth stores the connector auth configuration shape (mode + references),
@@ -181,6 +183,15 @@ const InboxDeliveryTTL = 24 * time.Hour
 // already occupies the (channel_id, idempotency_key) slot.
 var ErrInboxDeliveryExists = errors.New("inbox delivery already exists")
 
+// ErrMCPExportIdentityNotFound is returned when an MCP export identity row is missing.
+var ErrMCPExportIdentityNotFound = errors.New("mcp export identity not found")
+
+// ErrMCPExportKeyNotFound is returned when an MCP export key row is missing.
+var ErrMCPExportKeyNotFound = errors.New("mcp export key not found")
+
+// ErrMCPExportKeyHashExists is returned when InsertMCPExportKey hits a duplicate key_hash.
+var ErrMCPExportKeyHashExists = errors.New("mcp export key hash already exists")
+
 // InboxDelivery records an accepted inbound webhook delivery for idempotency.
 type InboxDelivery struct {
 	ChannelID, IdempotencyKey, DeliveryID, RunID, BodyHash string
@@ -230,6 +241,27 @@ type HITLPayload struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
+// MCPExportIdentity is a persisted auth profile for MCP export callers.
+type MCPExportIdentity struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Scheme    string            `json:"scheme,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// MCPExportKey is a hashed API key bound to an MCP export identity.
+type MCPExportKey struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	IdentityID string     `json:"identity_id"`
+	KeyHash    string     `json:"-"`
+	Prefix     string     `json:"prefix"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
 // Store persists agents, connectors, runs, events, and HITL payloads.
 type Store interface {
 	UpsertAgent(Agent)
@@ -275,4 +307,14 @@ type Store interface {
 	GetWebhookOutbox(id string) (WebhookOutboxEntry, error)
 	UpdateWebhookOutbox(entry WebhookOutboxEntry) error
 	ResetWebhookOutboxRetry(id string) error
+
+	UpsertMCPExportIdentity(MCPExportIdentity) error
+	GetMCPExportIdentity(id string) (MCPExportIdentity, error)
+	ListMCPExportIdentities() ([]MCPExportIdentity, error)
+	DeleteMCPExportIdentity(id string) error
+	InsertMCPExportKey(MCPExportKey) error
+	GetMCPExportKey(id string) (MCPExportKey, error)
+	ListMCPExportKeys(identityID string) ([]MCPExportKey, error)
+	RevokeMCPExportKey(id string) error
+	LookupMCPExportKeyByHash(hash string) (*MCPExportKey, error)
 }

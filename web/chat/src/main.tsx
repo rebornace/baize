@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useGate } from './gateContext'
 import { ChatPage } from './pages/ChatPage'
+import { McpExportSettings } from './pages/McpExportSettings'
 import { McpSettings } from './pages/McpSettings'
 import { OpenApiSettings } from './pages/OpenApiSettings'
 import { PluginSettings } from './pages/PluginSettings'
@@ -66,6 +67,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <McpSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="mcp-export"
+              element={
+                <AdminOnly>
+                  <McpExportSettings />
                 </AdminOnly>
               }
             />

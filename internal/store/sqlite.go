@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS tools (
   input_schema_json TEXT,
   require_login INTEGER,
   require_approval INTEGER,
-  operation_id TEXT
+  operation_id TEXT,
+  export_mode TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -100,6 +101,24 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS mcp_export_identities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scheme TEXT,
+  headers_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_export_keys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
 `
 
 // SQLStore is a SQL-backed Store shared by sqlite and postgres drivers.
@@ -172,6 +191,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate connectors columns: %w", err)
 	}
+	if err := migrateMCPExportKeys(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
+	}
 	s := &SQLStore{
 		db:         db,
 		dialect:    DialectSQLite,
@@ -238,7 +261,7 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 		return err
 	}
 
-	trows, err := s.query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id FROM tools`)
+	trows, err := s.query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode FROM tools`)
 	if err != nil {
 		return err
 	}
@@ -246,8 +269,8 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 		var t Tool
 		var enabled, requireLogin, requireApproval int
 		var descriptionCustom sql.NullInt64
-		var title, description, method, path, inputSchema, operationID sql.NullString
-		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &title, &description, &descriptionCustom, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID); err != nil {
+		var title, description, method, path, inputSchema, operationID, exportMode sql.NullString
+		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &title, &description, &descriptionCustom, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID, &exportMode); err != nil {
 			trows.Close()
 			return err
 		}
@@ -260,6 +283,7 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 		t.Method = method.String
 		t.Path = path.String
 		t.OperationID = operationID.String
+		t.Export = exportMode.String
 		if inputSchema.Valid && inputSchema.String != "" && inputSchema.String != "null" {
 			if err := json.Unmarshal([]byte(inputSchema.String), &t.InputSchema); err != nil {
 				trows.Close()
@@ -304,6 +328,7 @@ func migrateToolsColumns(db *sql.DB) error {
 	alters := []string{
 		`ALTER TABLE tools ADD COLUMN title TEXT`,
 		`ALTER TABLE tools ADD COLUMN description_custom INTEGER`,
+		`ALTER TABLE tools ADD COLUMN export_mode TEXT`,
 	}
 	for _, q := range alters {
 		_, err := db.Exec(q)
@@ -507,15 +532,15 @@ func (s *SQLStore) UpsertTool(t Tool) {
 		descriptionCustom = 1
 	}
 	_, _ = s.exec(
-		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
 		   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
 		   description_custom=excluded.description_custom, method=excluded.method,
 		   path=excluded.path, input_schema_json=excluded.input_schema_json,
 		   require_login=excluded.require_login, require_approval=excluded.require_approval,
-		   operation_id=excluded.operation_id`,
-		t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
+		   operation_id=excluded.operation_id, export_mode=excluded.export_mode`,
+		t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export,
 	)
 }
 
@@ -609,15 +634,15 @@ func (s *SQLStore) ReplaceConnectorTools(connectorID string, tools []Tool) {
 			descriptionCustom = 1
 		}
 		_, _ = s.exec(
-			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
 			   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
 			   description_custom=excluded.description_custom, method=excluded.method,
 			   path=excluded.path, input_schema_json=excluded.input_schema_json,
 			   require_login=excluded.require_login, require_approval=excluded.require_approval,
-			   operation_id=excluded.operation_id`,
-			t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID,
+			   operation_id=excluded.operation_id, export_mode=excluded.export_mode`,
+			t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export,
 		)
 	}
 }

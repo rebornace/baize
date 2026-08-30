@@ -89,6 +89,8 @@ type Server struct {
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
 	inboxLimiterOnce sync.Once
+	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
+	MCPExportEnabled bool
 	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
 	ConfigPath       string
 	Config           *config.Config
@@ -126,11 +128,12 @@ type Server struct {
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	s := &Server{
-		Store:      st,
-		Registry:   reg,
-		Runner:     runner,
-		Identities: identity.NewMemoryStore(),
-		mux:        http.NewServeMux(),
+		Store:            st,
+		Registry:         reg,
+		Runner:           runner,
+		Identities:       identity.NewMemoryStore(),
+		MCPExportEnabled: true,
+		mux:              http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -363,6 +366,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/channels/weixin/logout", s.handleWeixinLogout)
 	s.mux.HandleFunc("GET /v0/settings/channels/weixin", s.handleGetWeixinSettings)
 	s.mux.HandleFunc("PUT /v0/settings/channels/weixin", s.handlePutWeixinSettings)
+
+	s.mux.Handle("/v0/mcp/export", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mcpExportHTTP().ServeHTTP(w, r)
+	}))
+	s.mux.Handle("/v0/mcp/export/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.StripPrefix("/v0/mcp/export", s.mcpExportHTTP()).ServeHTTP(w, r)
+	}))
+	s.mux.HandleFunc("GET /v0/settings/mcp-export", s.handleGetMCPExportSettings)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/identities", s.handleListMCPExportIdentities)
+	s.mux.HandleFunc("POST /v0/settings/mcp-export/identities", s.handlePostMCPExportIdentity)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/identities/{id}", s.handleGetMCPExportIdentity)
+	s.mux.HandleFunc("PATCH /v0/settings/mcp-export/identities/{id}", s.handlePatchMCPExportIdentity)
+	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/identities/{id}", s.handleDeleteMCPExportIdentity)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/keys", s.handleListMCPExportKeys)
+	s.mux.HandleFunc("POST /v0/settings/mcp-export/keys", s.handlePostMCPExportKey)
+	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/keys/{id}", s.handleDeleteMCPExportKey)
 }
 
 type apiError struct {
@@ -1044,14 +1063,23 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		RequireLogin *bool   `json:"require_login"`
 		Title        *string `json:"title"`
 		Description  *string `json:"description"`
+		Export       *string `json:"export"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	if body.Enabled == nil && body.RequireLogin == nil && body.Title == nil && body.Description == nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, title, or description is required")
+	if body.Enabled == nil && body.RequireLogin == nil && body.Title == nil && body.Description == nil && body.Export == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, title, description, or export is required")
 		return
+	}
+	if body.Export != nil {
+		switch strings.TrimSpace(*body.Export) {
+		case "", "default", "force_allow", "force_deny":
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_request", "export must be default, force_allow, or force_deny")
+			return
+		}
 	}
 
 	row, err := s.Store.GetTool(name)
@@ -1066,6 +1094,7 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	// served by Registry.SetRequireLogin so we don't drop the baked-in
 	// RequireApproval flag (RegisterOneFromConnector does not know
 	// RequireApprovalMutating and would otherwise lose mutating HITL).
+	// Export-only patches update the store catalog and never re-register.
 	enabledChanged := body.Enabled != nil && *body.Enabled != row.Enabled
 
 	if body.Enabled != nil {
@@ -1080,6 +1109,17 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	if body.Description != nil {
 		row.Description = *body.Description
 		row.DescriptionCustom = true
+	}
+	if body.Export != nil {
+		export := strings.TrimSpace(*body.Export)
+		if export == "" {
+			export = "default"
+		}
+		if export == "default" {
+			row.Export = ""
+		} else {
+			row.Export = export
+		}
 	}
 	s.Store.UpsertTool(row)
 

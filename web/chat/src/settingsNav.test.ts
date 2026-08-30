@@ -14,6 +14,7 @@ describe('settingsNavItems', () => {
       '/settings/skills',
       '/settings/identities',
       '/settings/mcp',
+      '/settings/mcp-export',
       '/settings/plugins',
       '/settings/webhooks',
       '/settings/inbox',
@@ -26,6 +27,18 @@ describe('settingsNavItems', () => {
     expect(settingsNavItems('admin').find((x) => x.to === '/settings/channels/weixin')).toEqual({
       to: '/settings/channels/weixin',
       label: '渠道',
+    })
+  })
+
+  it('admin includes MCP 导出 separate from MCP', () => {
+    const items = settingsNavItems('admin')
+    expect(items.find((x) => x.to === '/settings/mcp')).toEqual({
+      to: '/settings/mcp',
+      label: 'MCP',
+    })
+    expect(items.find((x) => x.to === '/settings/mcp-export')).toEqual({
+      to: '/settings/mcp-export',
+      label: 'MCP 导出',
     })
   })
 })

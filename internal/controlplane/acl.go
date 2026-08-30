@@ -56,6 +56,15 @@ var aclRules = []routeRule{
 	{method: "POST", segments: []string{"v0", "settings", "channels", "weixin", "logout"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "settings", "channels", "weixin"}, role: RoleAdmin},
 	{method: "PUT", segments: []string{"v0", "settings", "channels", "weixin"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "mcp-export"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "mcp-export", "identities"}, role: RoleAdmin},
+	{method: "POST", segments: []string{"v0", "settings", "mcp-export", "identities"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "mcp-export", "identities", "{id}"}, role: RoleAdmin},
+	{method: "PATCH", segments: []string{"v0", "settings", "mcp-export", "identities", "{id}"}, role: RoleAdmin},
+	{method: "DELETE", segments: []string{"v0", "settings", "mcp-export", "identities", "{id}"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "mcp-export", "keys"}, role: RoleAdmin},
+	{method: "POST", segments: []string{"v0", "settings", "mcp-export", "keys"}, role: RoleAdmin},
+	{method: "DELETE", segments: []string{"v0", "settings", "mcp-export", "keys", "{id}"}, role: RoleAdmin},
 }
 
 func MinRole(method, path string) Role {
@@ -63,6 +72,9 @@ func MinRole(method, path string) Role {
 	method = strings.ToUpper(method)
 
 	if method == "GET" && path == "/v0/ui-config" {
+		return RoleNone
+	}
+	if path == "/v0/mcp/export" || strings.HasPrefix(path, "/v0/mcp/export/") {
 		return RoleNone
 	}
 	if !strings.HasPrefix(path, "/v0") {

@@ -1802,6 +1802,131 @@ func TestPatchToolRequireLogin(t *testing.T) {
 	}
 }
 
+func TestPatchToolExport(t *testing.T) {
+	spec := writeTicketSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	h := srv.Handler()
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/connectors/ticket",
+		jsonBody(t, map[string]any{
+			"type":     "openapi",
+			"spec":     spec,
+			"base_url": "http://x",
+		}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	beforeNames := map[string]bool{}
+	for _, info := range reg.List() {
+		beforeNames[info.Name] = true
+	}
+
+	patchForce := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"export": "force_allow"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchForce)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH force_allow status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var patched store.Tool
+	if err := json.NewDecoder(rr.Body).Decode(&patched); err != nil {
+		t.Fatal(err)
+	}
+	if patched.Export != "force_allow" {
+		t.Fatalf("export=%q want force_allow", patched.Export)
+	}
+
+	row, err := st.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Export != "force_allow" {
+		t.Fatalf("store export=%q want force_allow", row.Export)
+	}
+
+	afterNames := map[string]bool{}
+	for _, info := range reg.List() {
+		afterNames[info.Name] = true
+	}
+	if len(afterNames) != len(beforeNames) {
+		t.Fatalf("registry size changed: before=%d after=%d (export-only patch must not re-register)", len(beforeNames), len(afterNames))
+	}
+	for name := range beforeNames {
+		if !afterNames[name] {
+			t.Fatalf("registry lost tool %q after export-only patch", name)
+		}
+	}
+
+	patchEmpty := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"export": ""}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchEmpty)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH empty export status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var emptied store.Tool
+	if err := json.NewDecoder(rr.Body).Decode(&emptied); err != nil {
+		t.Fatal(err)
+	}
+	if emptied.Export != "" && emptied.Export != "default" {
+		t.Fatalf("empty export got %q want empty or default", emptied.Export)
+	}
+	row, err = st.GetTool("create_ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Export != "" && row.Export != "default" {
+		t.Fatalf("store after empty export=%q want empty or default", row.Export)
+	}
+
+	patchDefault := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"export": "default"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchDefault)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH default status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	patchDeny := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"export": "force_deny"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchDeny)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH force_deny status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var denied store.Tool
+	if err := json.NewDecoder(rr.Body).Decode(&denied); err != nil {
+		t.Fatal(err)
+	}
+	if denied.Export != "force_deny" {
+		t.Fatalf("export=%q want force_deny", denied.Export)
+	}
+
+	patchBad := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBody(t, map[string]any{"export": "maybe"}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchBad)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid export status=%d want 400", rr.Code)
+	}
+	var wrap400 struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap400); err != nil {
+		t.Fatal(err)
+	}
+	if wrap400.Error.Code != "invalid_request" {
+		t.Fatalf("code=%q want invalid_request", wrap400.Error.Code)
+	}
+}
+
 func TestPutHTTPPluginPreservesCaptureAndUsesIdentity(t *testing.T) {
 	var lastAuth string
 	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
