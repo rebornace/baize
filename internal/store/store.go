@@ -75,6 +75,7 @@ type Tool struct {
 	RequireLogin      bool           `json:"require_login"`
 	RequireApproval   bool           `json:"require_approval"`
 	OperationID       string         `json:"operation_id,omitempty"`
+	Export            string         `json:"export,omitempty"`
 }
 
 // ConnectorAuth stores the connector auth configuration shape (mode + references),
