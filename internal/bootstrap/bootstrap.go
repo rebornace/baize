@@ -283,6 +283,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.Webhook = dispatcher
 	srv.Inbox = inboxReg
 	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+	srv.MCPExportEnabled = cfg.MCPExportEnabled()
 	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages

@@ -89,6 +89,8 @@ type Server struct {
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
 	inboxLimiterOnce sync.Once
+	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
+	MCPExportEnabled bool
 	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
 	ConfigPath       string
 	Config           *config.Config
@@ -126,11 +128,12 @@ type Server struct {
 
 func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 	s := &Server{
-		Store:      st,
-		Registry:   reg,
-		Runner:     runner,
-		Identities: identity.NewMemoryStore(),
-		mux:        http.NewServeMux(),
+		Store:            st,
+		Registry:         reg,
+		Runner:           runner,
+		Identities:       identity.NewMemoryStore(),
+		MCPExportEnabled: true,
+		mux:              http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -363,6 +366,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/channels/weixin/logout", s.handleWeixinLogout)
 	s.mux.HandleFunc("GET /v0/settings/channels/weixin", s.handleGetWeixinSettings)
 	s.mux.HandleFunc("PUT /v0/settings/channels/weixin", s.handlePutWeixinSettings)
+
+	s.mux.Handle("/v0/mcp/export", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mcpExportHTTP().ServeHTTP(w, r)
+	}))
+	s.mux.Handle("/v0/mcp/export/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.StripPrefix("/v0/mcp/export", s.mcpExportHTTP()).ServeHTTP(w, r)
+	}))
+	s.mux.HandleFunc("GET /v0/settings/mcp-export", s.handleGetMCPExportSettings)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/identities", s.handleListMCPExportIdentities)
+	s.mux.HandleFunc("POST /v0/settings/mcp-export/identities", s.handlePostMCPExportIdentity)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/identities/{id}", s.handleGetMCPExportIdentity)
+	s.mux.HandleFunc("PATCH /v0/settings/mcp-export/identities/{id}", s.handlePatchMCPExportIdentity)
+	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/identities/{id}", s.handleDeleteMCPExportIdentity)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/keys", s.handleListMCPExportKeys)
+	s.mux.HandleFunc("POST /v0/settings/mcp-export/keys", s.handlePostMCPExportKey)
+	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/keys/{id}", s.handleDeleteMCPExportKey)
 }
 
 type apiError struct {

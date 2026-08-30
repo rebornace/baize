@@ -97,8 +97,15 @@ type Config struct {
 	// CallbackHMACSecret: HMAC key for short-lived callback tokens; empty =>
 	//   bootstrap generates an ephemeral secret and logs "ephemeral".
 	// CallbackTokenTTLSec: token lifetime; <=0 falls back to DefaultCallbackTokenTTLSec.
-	Runtime RuntimeConfig `yaml:"runtime"`
-	Inbox   InboxConfig   `yaml:"inbox"`
+	Runtime   RuntimeConfig   `yaml:"runtime"`
+	Inbox     InboxConfig     `yaml:"inbox"`
+	MCPExport MCPExportConfig `yaml:"mcp_export"`
+}
+
+// MCPExportConfig toggles the Streamable HTTP MCP export surface.
+type MCPExportConfig struct {
+	// Enabled defaults to true when omitted (*bool distinguishes unset vs false).
+	Enabled *bool `yaml:"enabled"`
 }
 
 // InboxConfig holds bootstrap defaults for inbound webhook channels.
@@ -259,6 +266,18 @@ func applyDefaults(cfg *Config) {
 	if cfg.Runtime.CallbackTokenTTLSec <= 0 {
 		cfg.Runtime.CallbackTokenTTLSec = DefaultCallbackTokenTTLSec
 	}
+	if cfg.MCPExport.Enabled == nil {
+		v := true
+		cfg.MCPExport.Enabled = &v
+	}
+}
+
+// MCPExportEnabled reports whether MCP export is on (default true).
+func (c Config) MCPExportEnabled() bool {
+	if c.MCPExport.Enabled == nil {
+		return true
+	}
+	return *c.MCPExport.Enabled
 }
 
 // SkillBuiltinDirs returns builtin skill scan roots. builtin_dirs wins over builtin_dir when set.
