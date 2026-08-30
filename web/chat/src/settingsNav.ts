@@ -16,6 +16,7 @@ export function settingsNavItems(role: SettingsRole): SettingsNavItem[] {
         { to: '/settings/skills', label: 'Skills' },
         { to: '/settings/identities', label: '账号' },
         { to: '/settings/mcp', label: 'MCP' },
+        { to: '/settings/mcp-export', label: 'MCP 导出' },
         { to: '/settings/plugins', label: '插件' },
         { to: '/settings/webhooks', label: 'Webhook' },
         { to: '/settings/inbox', label: 'Inbox' },
