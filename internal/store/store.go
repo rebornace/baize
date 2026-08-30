@@ -44,12 +44,13 @@ type Connector struct {
 }
 
 type MCPConfig struct {
-	Transport string            `json:"transport"`
-	Command   string            `json:"command,omitempty"`
-	Args      []string          `json:"args,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	URL       string            `json:"url,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
+	Transport        string            `json:"transport"`
+	Command          string            `json:"command,omitempty"`
+	Args             []string          `json:"args,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	URL              string            `json:"url,omitempty"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	ExportDBReadonly bool              `json:"export_db_readonly,omitempty"`
 }
 
 // Tool source constants describing how a tool row entered the catalog.
