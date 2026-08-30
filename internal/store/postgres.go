@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS tools (
   input_schema_json TEXT,
   require_login INTEGER,
   require_approval INTEGER,
-  operation_id TEXT
+  operation_id TEXT,
+  export_mode TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -145,6 +146,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(postgresSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate postgres schema: %w", err)
+	}
+	if err := migrateToolsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tools columns: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,

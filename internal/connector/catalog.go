@@ -14,8 +14,8 @@ type MergeOpts struct {
 
 // MergeCatalog merges the persisted connector tool catalog with the freshly
 // discovered spec/plugin rows. Extra rows are always preserved; spec/plugin
-// rows are kept only when re-discovered, carrying over Enabled (and
-// RequireLogin when RequireLogin is nil) from the prior row.
+// rows are kept only when re-discovered, carrying over Enabled, Export, Title
+// (and RequireLogin when RequireLogin is nil) from the prior row.
 func MergeCatalog(opts MergeOpts) []store.Tool {
 	existingByName := map[string]store.Tool{}
 	for _, t := range opts.Existing {

@@ -109,6 +109,34 @@ func TestMergeCatalogDropsMissingMCP(t *testing.T) {
 	}
 }
 
+func TestMergeCatalogPreservesExport(t *testing.T) {
+	existing := []store.Tool{
+		{
+			Name: "old", ConnectorID: "c", Source: store.ToolSourceSpec,
+			Enabled: true, Export: "force_deny", Method: "GET", Path: "/old",
+		},
+		{
+			Name: "mcp1", ConnectorID: "c", Source: store.ToolSourceMCP,
+			Enabled: true, Export: "force_allow",
+		},
+	}
+	discovered := []store.Tool{
+		{Name: "old", ConnectorID: "c", Source: store.ToolSourceSpec, Method: "POST", Path: "/new"},
+		{Name: "mcp1", ConnectorID: "c", Source: store.ToolSourceMCP, Description: "fresh desc"},
+	}
+	out := MergeCatalog(MergeOpts{Existing: existing, Discovered: discovered})
+	by := map[string]store.Tool{}
+	for _, r := range out {
+		by[r.Name] = r
+	}
+	if by["old"].Export != "force_deny" || by["old"].Path != "/new" {
+		t.Fatalf("old=%+v", by["old"])
+	}
+	if by["mcp1"].Export != "force_allow" {
+		t.Fatalf("mcp1=%+v", by["mcp1"])
+	}
+}
+
 func TestMergeCatalogPreservesTitleAndCustomDescription(t *testing.T) {
 	existing := []store.Tool{
 		{
