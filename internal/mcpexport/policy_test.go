@@ -24,6 +24,7 @@ func TestAllowExportMatrix(t *testing.T) {
 		{"disabled", store.Tool{Enabled: false, Method: "GET", Export: "default"}, false, false},
 		{"approval", store.Tool{Enabled: true, Method: "GET", RequireApproval: true, Export: "default"}, false, false},
 		{"mcp_write_force", store.Tool{Enabled: true, Source: store.ToolSourceMCP, Name: "insert_row", Description: "insert into t", Export: "force_allow"}, true, false},
+		{"mcp_write_force_no_dbro", store.Tool{Enabled: true, Source: store.ToolSourceMCP, Name: "insert_row", Description: "insert into t", Export: "force_allow"}, false, false},
 		{"mcp_query", store.Tool{Enabled: true, Source: store.ToolSourceMCP, Name: "query", Description: "run select", Export: "default"}, true, true},
 	}
 	for _, tc := range cases {

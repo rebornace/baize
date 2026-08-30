@@ -550,6 +550,11 @@ export function ToolsSettings() {
                 ))}
               </select>
             </label>
+            {t.source === 'mcp' && (
+              <span className="settings-muted" title="MCP 写类工具即使强制允许也不会导出">
+                MCP 写类工具即使强制允许也不会导出
+              </span>
+            )}
             {canDelete && (
               <button
                 type="button"

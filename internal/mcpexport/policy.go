@@ -28,10 +28,12 @@ func AllowExport(tool store.Tool, opts PolicyOpts) bool {
 		return false
 	}
 
+	// Spec §3.4: MCP write tools are never exported, even with force_allow.
+	if tool.Source == store.ToolSourceMCP && IsMCPWriteTool(tool.Name, tool.Description) {
+		return false
+	}
+
 	if tool.Source == store.ToolSourceMCP && opts.DBReadonlyConnector {
-		if IsMCPWriteTool(tool.Name, tool.Description) {
-			return false
-		}
 		if export == "force_allow" {
 			return true
 		}
