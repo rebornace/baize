@@ -33,14 +33,14 @@ func TestInvokeContextEnsuresIdentity(t *testing.T) {
 	if got := identity.ConversationIDFrom(ctx); got != conv {
 		t.Fatalf("ConversationIDFrom=%q want %q", got, conv)
 	}
-	if got := identity.ForceIdentityIDFrom(ctx); got != export.ID {
-		t.Fatalf("ForceIdentityIDFrom=%q want %q", got, export.ID)
-	}
 	list := ids.List(conv)
 	if len(list) != 1 {
 		t.Fatalf("List=%+v", list)
 	}
-	if list[0].Label != export.Name || list[0].Scheme != export.Scheme {
+	if got := identity.ForceIdentityIDFrom(ctx); got != list[0].ID {
+		t.Fatalf("ForceIdentityIDFrom=%q store ID=%q", got, list[0].ID)
+	}
+	if list[0].Label != export.Name || list[0].Scheme != "bearer" {
 		t.Fatalf("identity=%+v", list[0])
 	}
 	if list[0].CredentialHeaders["Authorization"] != "Bearer secret-token" {

@@ -2,6 +2,7 @@ package mcpexport
 
 import (
 	"context"
+	"strings"
 
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
@@ -15,28 +16,33 @@ func ConversationIDForIdentity(identityID string) string {
 }
 
 func exportToIdentity(export store.MCPExportIdentity) identity.Identity {
+	scheme := strings.ToLower(strings.TrimSpace(export.Scheme))
+	if scheme == "" {
+		scheme = "bearer"
+	}
 	return identity.Identity{
 		ID:                export.ID,
 		Label:             export.Name,
-		Scheme:            export.Scheme,
+		Scheme:            scheme,
 		CredentialHeaders: export.Headers,
 		Source:            identity.SourceManual,
 		Subject:           export.ID,
 	}
 }
 
-// EnsureExportIdentityInStore upserts export into identity.Store under ConversationIDForIdentity.
-func EnsureExportIdentityInStore(ids identity.Store, export store.MCPExportIdentity) error {
-	_, err := ids.Upsert(ConversationIDForIdentity(export.ID), exportToIdentity(export))
-	return err
+// EnsureExportIdentityInStore upserts export into identity.Store under ConversationIDForIdentity
+// and returns the store-assigned identity id.
+func EnsureExportIdentityInStore(ids identity.Store, export store.MCPExportIdentity) (string, error) {
+	return ids.Upsert(ConversationIDForIdentity(export.ID), exportToIdentity(export))
 }
 
 // InvokeContext prepares identity store state and returns a ctx for require_login tool calls.
 func InvokeContext(parent context.Context, ids identity.Store, export store.MCPExportIdentity) (context.Context, error) {
-	if err := EnsureExportIdentityInStore(ids, export); err != nil {
+	id, err := EnsureExportIdentityInStore(ids, export)
+	if err != nil {
 		return parent, err
 	}
 	ctx := identity.WithConversationID(parent, ConversationIDForIdentity(export.ID))
-	ctx = identity.WithForceIdentityID(ctx, export.ID)
+	ctx = identity.WithForceIdentityID(ctx, id)
 	return ctx, nil
 }
