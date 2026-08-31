@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -69,8 +70,8 @@ func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 }
 
 func (s *Memory) GetModelProfile(id string) (ModelProfile, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	p, ok := s.modelProfiles[id]
 	if !ok {
 		return ModelProfile{}, fmt.Errorf("model profile not found")
@@ -79,12 +80,15 @@ func (s *Memory) GetModelProfile(id string) (ModelProfile, error) {
 }
 
 func (s *Memory) ListModelProfiles() ([]ModelProfile, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]ModelProfile, 0, len(s.modelProfiles))
 	for _, p := range s.modelProfiles {
 		out = append(out, p)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
