@@ -5,6 +5,7 @@ import { useGate } from './gateContext'
 import { ChatPage } from './pages/ChatPage'
 import { McpExportSettings } from './pages/McpExportSettings'
 import { McpSettings } from './pages/McpSettings'
+import { ModelSettings } from './pages/ModelSettings'
 import { OpenApiSettings } from './pages/OpenApiSettings'
 import { PluginSettings } from './pages/PluginSettings'
 import { InboxSettings } from './pages/InboxSettings'
@@ -107,6 +108,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <WeixinChannelSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="models"
+              element={
+                <AdminOnly>
+                  <ModelSettings />
                 </AdminOnly>
               }
             />
