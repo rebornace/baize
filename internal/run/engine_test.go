@@ -1058,3 +1058,31 @@ func (o *outboundFakeChannel) SendText(_ context.Context, peerID, text string, e
 func (o *outboundFakeChannel) SendMedia(context.Context, string, string, string, []byte, map[string]string) error {
 	return nil
 }
+
+// ctxCaptureLLM records the model profile id attached to the Chat context and
+// returns a final assistant message so the run ends in one step.
+type ctxCaptureLLM struct{ gotProfileID string }
+
+func (c *ctxCaptureLLM) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	c.gotProfileID = llm.ModelProfileIDFromContext(ctx)
+	return llm.Message{Role: llm.RoleAssistant, Content: "done"}, nil
+}
+
+func (c *ctxCaptureLLM) SupportsVision() bool { return false }
+
+func TestExecuteInjectsModelProfileID(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a"})
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "hi", ModelProfileID: "mp_42"})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	lm := &ctxCaptureLLM{}
+	eng := &Engine{Store: st, LLM: lm, Tools: tool.NewRegistry(), MaxSteps: 4}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a"}, "hi"); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if lm.gotProfileID != "mp_42" {
+		t.Fatalf("profile id not propagated to LLM ctx: %q", lm.gotProfileID)
+	}
+}

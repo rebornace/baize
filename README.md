@@ -76,6 +76,7 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
 - Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from OpenAPI, Plugins, or MCP settings (with confirmation); Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
+- Settings → Models (admin-only): maintain multiple named model profiles (OpenAI-compatible) and set the default one; operators can read the list for the chat dropdown (see **Multiple model profiles** below)
 - Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
 - Settings → Channels / Weixin (admin-only): iLink QR login for a personal WeChat bot, default Agent, assignee, and allowlist (see **Weixin Channel** below)
@@ -419,6 +420,17 @@ go run ./cmd/baize start
 ```
 
 For the trial stack, use `go run ./cmd/baize demo` (mock LLM, no key).
+
+### Multiple model profiles
+
+Once a production Runtime is up, maintain multiple **named model profiles** under **Settings → Models** (`/settings/models`, admin-only) — no YAML edits, no restart:
+
+- Each profile holds: name, Provider (fixed to `openai_compatible` in this release), Base URL, model name, API Key (or the API Key **environment variable name**), `disable_thinking`, and `supports_vision`; one profile can be set as the **default**.
+- **API Keys are stored in the local store** (SQLite / Postgres — same trust tier as a DSN password). The UI and API responses always echo them **redacted** (first 3 / last 4 chars, middle elided). When editing, leaving the Key blank means **do not change it**; you may also store only the env-var name and let the Runtime read it at call time. The **default profile cannot be deleted** (set another as default first).
+- **Hot switch, no restart**: after adding or editing a profile, the next conversation picks it up automatically; the Runtime resolves/caches the Provider per Run and rebuilds it when the profile changes.
+- **Per-message model picker**: the chat composer has a dropdown to choose a model before sending each message. Its first item is **“Default model”** (empty value — the backend falls back to the default profile); the choice is **not remembered** — after a successful send the dropdown resets to default and nothing is written to `localStorage`. No selection (the default), as well as **unattended entry points** (WeChat channel, Inbox, MCP export, …), all use the default profile.
+- **Permissions**: operators may list models (to populate the chat dropdown); only admins may create / edit / delete / set-default.
+- **First-boot seed**: if the store has no profile yet, the Runtime seeds a “default model” profile from the YAML `llm` section (`provider` / `base_url` / `model` / `api_key_env` / `disable_thinking` / `supports_vision`), **without persisting the raw Key** (only the env-var name is kept). From then on the store is authoritative; UI changes are never written back to YAML. The mock-provider path (`baize demo`) does not use this feature.
 
 ---
 

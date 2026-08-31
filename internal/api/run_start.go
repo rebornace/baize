@@ -19,6 +19,7 @@ type startRunInput struct {
 	Passthrough                                map[string]string
 	UserParts                                  []llm.ContentPart
 	PreEvents                                  []store.Event
+	ModelProfileID                             string
 }
 
 func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, error) {
@@ -39,6 +40,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		IdentityID:         in.IdentityID,
 		PassthroughHeaders: in.Passthrough,
 		WebhookConfig:      in.Webhook,
+		ModelProfileID:     in.ModelProfileID,
 	}
 
 	runRec, err := s.Store.CreateRun(createIn)

@@ -168,7 +168,10 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 }
 
 func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer, error) {
-	provider, err := newLLM(cfg)
+	// newLLM validates the YAML llm section at startup and provides the
+	// provider for the mock/demo path. Real deployments replace it with the
+	// hot-reloadable Switch once the store (and its model profiles) is open.
+	baseProvider, err := newLLM(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -203,6 +206,24 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
 	closer := &storeAndMCPCloser{inner: storeCloser(st)}
+
+	// Resolve the active LLM provider. The mock/demo path (provider unset or
+	// "mock", matching newLLM) keeps the YAML-built provider and neither seeds
+	// profiles nor builds a Switch. Real deployments seed a default profile
+	// from the YAML llm section on first boot and route through the Switch,
+	// which resolves providers from stored profiles and hot-reloads on edit.
+	provider := baseProvider
+	switch strings.ToLower(cfg.LLM.Provider) {
+	case "", "mock":
+		// demo/test path: keep baseProvider as-is.
+	default:
+		if err := seedModelProfile(st, cfg); err != nil {
+			_ = closer.Close()
+			return nil, nil, err
+		}
+		provider = llm.NewSwitch(&llm.StoreProfileSource{Store: st})
+	}
+
 	reg := tool.NewRegistry()
 
 	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir)
@@ -655,6 +676,37 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			log.Printf("loadStoredConnectors: %s: %v", c.ID, err)
 		}
 	}
+}
+
+// seedModelProfile ensures at least one profile exists, seeding a default from
+// the YAML llm section on first boot. The API key is resolved from the
+// environment (api_key_env) at call time and is never stored; the profile
+// keeps api_key_env so the Switch can resolve the key per request.
+func seedModelProfile(st store.Store, cfg config.Config) error {
+	list, err := st.ListModelProfiles()
+	if err != nil {
+		return err
+	}
+	if len(list) > 0 {
+		return nil
+	}
+	env := cfg.LLM.APIKeyEnv
+	if env == "" {
+		env = "BAIZE_API_KEY"
+	}
+	if _, err := st.UpsertModelProfile(store.ModelProfile{
+		Name:            "默认模型",
+		Provider:        "openai_compatible",
+		BaseURL:         cfg.LLM.BaseURL,
+		Model:           cfg.LLM.Model,
+		APIKeyEnv:       env,
+		DisableThinking: cfg.LLM.DisableThinking,
+		SupportsVision:  cfg.LLM.SupportsVision,
+		IsDefault:       true,
+	}); err != nil {
+		return fmt.Errorf("seed model profile: %w", err)
+	}
+	return nil
 }
 
 func newLLM(cfg config.Config) (llm.Provider, error) {

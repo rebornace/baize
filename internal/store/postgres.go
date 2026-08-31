@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
   output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
   conversation_id TEXT, identity_id TEXT,
-  passthrough_json TEXT, webhook_json TEXT
+  passthrough_json TEXT, webhook_json TEXT, model_profile_id TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY,
@@ -101,6 +101,20 @@ CREATE TABLE IF NOT EXISTS mcp_export_keys (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
+CREATE TABLE IF NOT EXISTS model_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  provider TEXT,
+  base_url TEXT,
+  model TEXT,
+  api_key TEXT,
+  api_key_env TEXT,
+  disable_thinking BOOLEAN,
+  supports_vision BOOLEAN,
+  is_default BOOLEAN,
+  created_at TEXT,
+  updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
@@ -164,6 +178,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(postgresSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate postgres schema: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_profile_id TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs model_profile_id: %w", err)
 	}
 	if err := migrateToolsColumns(db); err != nil {
 		_ = db.Close()
