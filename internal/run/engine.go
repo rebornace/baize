@@ -414,7 +414,11 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			return context.Canceled
 		}
 		specs := e.specsForRun(runID)
-		msg, err := e.LLM.Chat(ctx, messages, specs)
+		chatCtx := ctx
+		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil && rec.ModelProfileID != "" {
+			chatCtx = llm.WithModelProfileID(ctx, rec.ModelProfileID)
+		}
+		msg, err := e.LLM.Chat(chatCtx, messages, specs)
 		if err != nil {
 			if ctx.Err() != nil || e.isCancelled(runID) {
 				return context.Canceled
