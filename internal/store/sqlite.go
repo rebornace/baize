@@ -119,6 +119,20 @@ CREATE TABLE IF NOT EXISTS mcp_export_keys (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
+CREATE TABLE IF NOT EXISTS model_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  provider TEXT,
+  base_url TEXT,
+  model TEXT,
+  api_key TEXT,
+  api_key_env TEXT,
+  disable_thinking INTEGER,
+  supports_vision INTEGER,
+  is_default INTEGER,
+  created_at TEXT,
+  updated_at TEXT
+);
 `
 
 // SQLStore is a SQL-backed Store shared by sqlite and postgres drivers.
@@ -299,7 +313,7 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
 // existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
@@ -658,6 +672,7 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		CreatedAt:          now,
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
+		ModelProfileID:     in.ModelProfileID,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
 	}
@@ -677,10 +692,10 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		webhookSQL = sql.NullString{String: string(b), Valid: true}
 	}
 	_, err := s.exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), r.CreatedAt.Format(time.RFC3339Nano),
-		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL,
+		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID,
 	)
 	if err != nil {
 		return nil, err
@@ -691,11 +706,11 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 func (s *SQLStore) GetRun(id string) (*Run, error) {
 	var r Run
 	var status, createdAt string
-	var conversationID, identityID, passthroughSQL, webhookSQL sql.NullString
+	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID sql.NullString
 	err := s.queryRow(
-		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json FROM runs WHERE id = ?`,
+		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id FROM runs WHERE id = ?`,
 		id,
-	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL, &webhookSQL)
+	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("run not found")
 	}
@@ -708,6 +723,9 @@ func (s *SQLStore) GetRun(id string) (*Run, error) {
 	}
 	if identityID.Valid {
 		r.IdentityID = identityID.String
+	}
+	if modelProfileID.Valid {
+		r.ModelProfileID = modelProfileID.String
 	}
 	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
 		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {

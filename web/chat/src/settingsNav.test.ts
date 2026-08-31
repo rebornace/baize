@@ -19,8 +19,20 @@ describe('settingsNavItems', () => {
       '/settings/webhooks',
       '/settings/inbox',
       '/settings/channels/weixin',
+      '/settings/models',
       '/settings/storage',
     ])
+  })
+
+  it('admin includes 模型 label', () => {
+    expect(settingsNavItems('admin').find((x) => x.to === '/settings/models')).toEqual({
+      to: '/settings/models',
+      label: '模型',
+    })
+  })
+
+  it('operator does not see 模型', () => {
+    expect(settingsNavItems('operator').some((x) => x.to === '/settings/models')).toBe(false)
   })
 
   it('admin includes 渠道 label', () => {

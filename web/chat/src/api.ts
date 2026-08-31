@@ -235,6 +235,7 @@ export interface CreateRunOptions {
   webhookHeaders?: Record<string, string>
   skills?: string[]
   attachments?: Attachment[]
+  modelProfileId?: string
 }
 
 export async function createRun(
@@ -260,6 +261,7 @@ export async function createRun(
   if (options?.attachments && options.attachments.length > 0) {
     body.attachments = options.attachments
   }
+  if (options?.modelProfileId) body.model_profile_id = options.modelProfileId
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: authInit({ 'Content-Type': 'application/json' }),
@@ -528,6 +530,82 @@ export async function createMCPExportKey(body: {
 export async function revokeMCPExportKey(id: string): Promise<void> {
   const res = await fetch(`/v0/settings/mcp-export/keys/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    headers: authInit(),
+  })
+  await parseJSON<{ status: string }>(res)
+}
+
+export interface ModelProfile {
+  id: string
+  name: string
+  provider: string
+  base_url: string
+  model: string
+  /** Redacted mask in list/detail responses; never sent verbatim by the server. */
+  api_key?: string
+  api_key_env?: string
+  disable_thinking: boolean
+  supports_vision: boolean
+  is_default: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+/** Editable fields of a model profile. Booleans omitted on PATCH are kept. */
+export type ModelProfileInput = Partial<
+  Pick<
+    ModelProfile,
+    | 'name'
+    | 'provider'
+    | 'base_url'
+    | 'model'
+    | 'api_key'
+    | 'api_key_env'
+    | 'disable_thinking'
+    | 'supports_vision'
+  >
+> & { is_default?: boolean }
+
+export async function listModelProfiles(): Promise<ModelProfile[]> {
+  const res = await fetch('/v0/settings/models', { headers: authInit() })
+  const body = await parseJSON<{ profiles: ModelProfile[] }>(res)
+  return body.profiles ?? []
+}
+
+export async function createModelProfile(p: ModelProfileInput): Promise<ModelProfile> {
+  const res = await fetch('/v0/settings/models', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(p),
+  })
+  const body = await parseJSON<{ profile: ModelProfile }>(res)
+  return body.profile
+}
+
+export async function updateModelProfile(
+  id: string,
+  p: Partial<ModelProfile>,
+): Promise<ModelProfile> {
+  const res = await fetch(`/v0/settings/models/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(p),
+  })
+  const body = await parseJSON<{ profile: ModelProfile }>(res)
+  return body.profile
+}
+
+export async function deleteModelProfile(id: string): Promise<void> {
+  const res = await fetch(`/v0/settings/models/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authInit(),
+  })
+  await parseJSON<{ status: string }>(res)
+}
+
+export async function setDefaultModelProfile(id: string): Promise<void> {
+  const res = await fetch(`/v0/settings/models/${encodeURIComponent(id)}/default`, {
+    method: 'POST',
     headers: authInit(),
   })
   await parseJSON<{ status: string }>(res)

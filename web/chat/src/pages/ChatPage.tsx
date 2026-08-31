@@ -13,6 +13,7 @@ import {
   listConversations,
   listEvents,
   listMessages,
+  listModelProfiles,
   listSkills,
   openRunStream,
   rollbackMessages,
@@ -21,6 +22,7 @@ import {
   type ConversationScope,
   type ConversationSummary,
   type Event,
+  type ModelProfile,
   type RunStatus,
   type SkillSummary,
 } from '../api'
@@ -28,6 +30,7 @@ import { extractAnalysisPagesFromEvents } from '../analysisPage'
 import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
 import { MarkdownText } from '../components/MarkdownText'
+import { ModelSelect } from '../components/ModelSelect'
 import { ToolCard } from '../components/ToolCard'
 import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
@@ -36,7 +39,9 @@ import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
 import { useGate } from '../gateContext'
+import { buildRunOptions } from '../modelSelect'
 import { useStickToBottom } from '../useStickToBottom'
+
 
 const CONV_KEY = 'baize.conversation_id'
 const SCOPE_KEY = 'baize.conversation_scope'
@@ -82,6 +87,11 @@ export function ChatPage() {
   const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [supportsVision, setSupportsVision] = useState(true)
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
+  // Per-message model choice; "" means the server default. The selection is
+  // intentionally NOT persisted: it resets to "" after each send and never
+  // touches localStorage.
+  const [selectedModelId, setSelectedModelId] = useState('')
   /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
   const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
 
@@ -275,6 +285,12 @@ export function ChatPage() {
     void listSkills()
       .then((res) => setSkills(res.skills ?? []))
       .catch(() => setSkills([]))
+    // Model profiles feed the per-message model picker. GET /v0/settings/models
+    // is operator readable; a failure (or an empty list) just hides the picker
+    // and falls back to the default model without blocking chat.
+    void listModelProfiles()
+      .then((list) => setModelProfiles(Array.isArray(list) ? list : []))
+      .catch(() => setModelProfiles([]))
   }, [])
 
   useEffect(() => {
@@ -464,11 +480,14 @@ export function ChatPage() {
     try {
       const webhookUrl = runWebhookUrl.trim()
       const token = sessionToken.trim()
-      const created = await createRun(agentId, text, sentConversationId, {
+      const runOptions = buildRunOptions(selectedModelId, {
         webhookUrl: webhookUrl || undefined,
         sessionToken: token || undefined,
         attachments,
       })
+      const created = await createRun(agentId, text, sentConversationId, runOptions)
+      // Per-message model choice: do not remember it for the next message.
+      setSelectedModelId('')
       await refreshConversations()
       if (conversationIdRef.current !== sentConversationId) return
       setStatus(statusLabel(created.status))
@@ -821,6 +840,15 @@ export function ChatPage() {
               />
             </label>
           </details>
+
+          {modelProfiles.length > 0 && (
+            <ModelSelect
+              profiles={modelProfiles}
+              value={selectedModelId}
+              onChange={setSelectedModelId}
+              disabled={composerDisabled}
+            />
+          )}
 
           <Composer
             disabled={composerDisabled}

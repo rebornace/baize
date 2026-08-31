@@ -216,6 +216,7 @@ type Run struct {
 	CreatedAt      time.Time `json:"created_at"`
 	ConversationID string    `json:"conversation_id,omitempty"`
 	IdentityID     string    `json:"identity_id,omitempty"`
+	ModelProfileID string    `json:"model_profile_id,omitempty"`
 	// PassthroughHeaders carries per-run passthrough auth headers. They are
 	// never serialized to JSON (json:"-") so they cannot leak via GET /runs/{id}
 	// or events. SQLite persists them in a dedicated passthrough_json column.
@@ -231,6 +232,7 @@ type CreateRunInput struct {
 	Input              string
 	ConversationID     string
 	IdentityID         string
+	ModelProfileID     string
 	PassthroughHeaders map[string]string
 	WebhookConfig      *WebhookConfig
 }
@@ -249,6 +251,24 @@ type MCPExportIdentity struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// ModelProfile is a named, selectable LLM configuration. APIKey is stored in
+// plaintext locally (same trust tier as a Postgres DSN password) and is never
+// returned verbatim by the API (see RedactAPIKey).
+type ModelProfile struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Provider        string    `json:"provider"`
+	BaseURL         string    `json:"base_url"`
+	Model           string    `json:"model"`
+	APIKey          string    `json:"api_key,omitempty"`
+	APIKeyEnv       string    `json:"api_key_env,omitempty"`
+	DisableThinking bool      `json:"disable_thinking"`
+	SupportsVision  bool      `json:"supports_vision"`
+	IsDefault       bool      `json:"is_default"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // MCPExportKey is a hashed API key bound to an MCP export identity.
@@ -317,4 +337,10 @@ type Store interface {
 	ListMCPExportKeys(identityID string) ([]MCPExportKey, error)
 	RevokeMCPExportKey(id string) error
 	LookupMCPExportKeyByHash(hash string) (*MCPExportKey, error)
+
+	UpsertModelProfile(p ModelProfile) (ModelProfile, error)
+	GetModelProfile(id string) (ModelProfile, error)
+	ListModelProfiles() ([]ModelProfile, error)
+	DeleteModelProfile(id string) error
+	SetDefaultModelProfile(id string) error
 }

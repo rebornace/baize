@@ -382,6 +382,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/mcp-export/keys", s.handleListMCPExportKeys)
 	s.mux.HandleFunc("POST /v0/settings/mcp-export/keys", s.handlePostMCPExportKey)
 	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/keys/{id}", s.handleDeleteMCPExportKey)
+	s.mux.HandleFunc("GET /v0/settings/models", s.handleListModelProfiles)
+	s.mux.HandleFunc("POST /v0/settings/models", s.handlePostModelProfile)
+	s.mux.HandleFunc("PATCH /v0/settings/models/{id}", s.handlePatchModelProfile)
+	s.mux.HandleFunc("DELETE /v0/settings/models/{id}", s.handleDeleteModelProfile)
+	s.mux.HandleFunc("POST /v0/settings/models/{id}/default", s.handleSetDefaultModelProfile)
 }
 
 type apiError struct {
@@ -1368,6 +1373,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		WebhookHeaders map[string]string     `json:"webhook_headers"`
 		Skills         []string              `json:"skills"`
 		Attachments    []attach.AttachmentIn `json:"attachments"`
+		ModelProfileID string                `json:"model_profile_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -1495,6 +1501,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Webhook:        webhookCfg,
 		Passthrough:    passthrough,
 		UserParts:      userParts,
+		ModelProfileID: strings.TrimSpace(body.ModelProfileID),
 	})
 	if err != nil {
 		if err.Error() == "无权访问该会话" {

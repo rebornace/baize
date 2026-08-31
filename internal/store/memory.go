@@ -24,6 +24,7 @@ type Memory struct {
 	webhookOutbox   map[string]WebhookOutboxEntry
 	mcpExportIDs    map[string]MCPExportIdentity
 	mcpExportKeys   map[string]MCPExportKey
+	modelProfiles   map[string]ModelProfile
 }
 
 // NewMemory creates an empty in-memory Store.
@@ -41,6 +42,7 @@ func NewMemory() *Memory {
 		webhookOutbox:   map[string]WebhookOutboxEntry{},
 		mcpExportIDs:    map[string]MCPExportIdentity{},
 		mcpExportKeys:   map[string]MCPExportKey{},
+		modelProfiles:   map[string]ModelProfile{},
 	}
 }
 
@@ -215,6 +217,7 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 		CreatedAt:          time.Now().UTC(),
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
+		ModelProfileID:     in.ModelProfileID,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
 	}
