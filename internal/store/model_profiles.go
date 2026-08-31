@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -8,6 +9,9 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// ErrModelProfileNotFound is returned when a model profile row is missing.
+var ErrModelProfileNotFound = errors.New("model profile not found")
 
 // RedactAPIKey masks a secret for API responses: keeps first 3 and last 4
 // characters. Empty input returns "". Callers must never persist the redacted
@@ -51,7 +55,7 @@ func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 	} else {
 		ex, ok := s.modelProfiles[p.ID]
 		if !ok {
-			return ModelProfile{}, fmt.Errorf("model profile not found")
+			return ModelProfile{}, ErrModelProfileNotFound
 		}
 		if p.APIKey == "" || IsRedactedAPIKey(p.APIKey) {
 			p.APIKey = ex.APIKey
@@ -74,7 +78,7 @@ func (s *Memory) GetModelProfile(id string) (ModelProfile, error) {
 	defer s.mu.RUnlock()
 	p, ok := s.modelProfiles[id]
 	if !ok {
-		return ModelProfile{}, fmt.Errorf("model profile not found")
+		return ModelProfile{}, ErrModelProfileNotFound
 	}
 	return p, nil
 }
@@ -97,7 +101,7 @@ func (s *Memory) DeleteModelProfile(id string) error {
 	defer s.mu.Unlock()
 	p, ok := s.modelProfiles[id]
 	if !ok {
-		return fmt.Errorf("model profile not found")
+		return ErrModelProfileNotFound
 	}
 	if p.IsDefault {
 		return fmt.Errorf("cannot delete the default model profile; set another as default first")
@@ -110,7 +114,7 @@ func (s *Memory) SetDefaultModelProfile(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.modelProfiles[id]; !ok {
-		return fmt.Errorf("model profile not found")
+		return ErrModelProfileNotFound
 	}
 	for k, p := range s.modelProfiles {
 		p.IsDefault = (k == id)

@@ -52,7 +52,7 @@ func (s *SQLStore) GetModelProfile(id string) (ModelProfile, error) {
 	row := s.queryRow(`SELECT id, `+upsertModelProfileColumns+` FROM model_profiles WHERE id = ?`, id)
 	p, err := scanModelProfile(row)
 	if err == sql.ErrNoRows {
-		return ModelProfile{}, fmt.Errorf("model profile not found")
+		return ModelProfile{}, ErrModelProfileNotFound
 	}
 	return p, err
 }
