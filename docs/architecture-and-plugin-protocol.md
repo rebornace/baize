@@ -44,6 +44,8 @@
 **MCP 桥（v0 已实现）**：`PUT /v0/connectors/{id}` 注册 `type: mcp` Connector（stdio 子进程或 Streamable HTTP）；`tools/list` 发现工具写入目录 `source=mcp`，Run 内 `tools/call` 执行；与 OpenAPI / HTTP 插件并列，不替代插件协议 v0。  
 **MCP 导出（X1）**：白泽作为 Streamable HTTP MCP Server（`/v0/mcp/export`）对外暴露目录只读子集，专用导出 Key + 导出身份鉴权；不经 Run / 白泽 LLM，与 MCP 桥（客户端）方向相反。
 
+**多模型 profile（X2）**：LLM 配置不再只来自 YAML `llm` 段——管理员维护的命名模型 profile（表 `model_profiles`，三驱动）落库，管理面为 **设置 → 模型**（`/v0/settings/models`，admin 写 / operator 只读）。引擎侧注入一个 `llm.Switch`（实现 `llm.Provider`）：按 Run 的 `model_profile_id`（ctx 携带）解析 / 缓存 Provider，缺省或 profile 缺失回退**默认 profile**，profile 更新后按 `UpdatedAt` 热重建——**热切换、不重启**。API Key 原文存本地库（与 DSN 密码同级信任），界面 / API 一律脱敏回显；首次启动且库中无 profile 时用 YAML `llm` 段种子一个默认 profile（只记 `api_key_env`，不入库 Key 原文），此后以库为准、不回写 YAML；mock provider（demo）路径不启用。
+
 **默认存储：** SQLite（Run / HITL / checkpoint）；**已实现** `store.driver: postgres`（同 DSN 含会话/身份；设置 → 存储）。驱动经 `RegisterDriver` 扩展。短 Run 可开无状态模式。  
 **租户：** Schema 含软 `tenant_id`；开源默认单租户用法。  
 **凭证：** 默认透传调用方 Token；可选本地加密托管，接口可换 KMS。

@@ -1591,15 +1591,16 @@ git commit -m "feat(ui): 模型设置页（profile 增删改、设默认）"
 - [ ] **步骤 1：行为**
 
 - 组件挂载时（admin/operator 均可）调用 `listModelProfiles()`，存入 state。
-- 输入区附近渲染 `<select>`：选项为 profiles，值为 id；默认选中 `is_default` 的 profile；本地 state `selectedModelId` 在本次会话内保持，刷新后回到默认。
-- 发送时 `createRun(agentId, text, sentConversationId, { ..., modelProfileId: selectedModelId || undefined })`。
+- 输入区附近渲染 `<select>`：**首项为「默认模型」（value=空，后端回退默认 profile）**，其余为具名 profile（值为 id）。初始 `selectedModelId = ''`（即默认模型，而不是默认选中 `is_default` 的 id）。
+- **每条消息独立选择、不记忆**：发送成功后把 `selectedModelId` 重置回 `''`（默认）；不写 `localStorage`、不在会话内保持。
+- 发送时 `createRun(agentId, text, sentConversationId, { ..., modelProfileId: selectedModelId || undefined })`——`selectedModelId` 为空则不带 `model_profile_id`，由后端回退默认 profile。
 - profiles 加载失败或为空时不显示下拉（回落默认模型），不阻断发送。
 
 - [ ] **步骤 2：测试（vitest）**
 
 mock `listModelProfiles` 返回两个 profile（一个 is_default）；渲染 ChatPage；断言：
-- 下拉存在且默认选中 default profile 的 id；
-- 切换下拉后触发发送，断言 `createRun` 被调用时 options 含 `modelProfileId` 为所选 id。
+- 下拉存在且首项为「默认模型」(value=空)，初始 `selectedModelId=''`；
+- 选择某个具名 profile 后触发发送，断言 `createRun` 被调用时 options 含 `modelProfileId` 为所选 id；使用默认项发送时不带该字段；发送成功后选择重置为空。
 
 若 ChatPage 现有测试因依赖较多难以挂载，可将下拉抽为一个小组件 `<ModelSelect profiles value onChange />` 放 `web/chat/src/components/ModelSelect.tsx` 并单测其回调，ChatPage 只负责取数与传参。
 
