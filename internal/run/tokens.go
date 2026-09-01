@@ -2,6 +2,7 @@ package run
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/rebornace/baize/internal/llm"
 )
@@ -24,12 +25,11 @@ func EstimateTextTokens(s string) int {
 			tokens++
 		}
 	}
-	// Non-CJK bytes: total runes minus CJK runes is a rough proxy; use byte
-	// length for the ASCII remainder to stay simple and conservative.
+	// 扣除 CJK 字符所占字节后，剩余字节按每 4 字节 1 token 计，向上取整以保守高估。
 	cjkBytes := 0
 	for _, r := range s {
 		if isCJK(r) {
-			cjkBytes += utf8RuneLen(r)
+			cjkBytes += utf8.RuneLen(r)
 		}
 	}
 	other := len(s) - cjkBytes
@@ -44,19 +44,6 @@ func isCJK(r rune) bool {
 	return unicode.Is(unicode.Han, r) ||
 		(r >= 0x3040 && r <= 0x30FF) || // hiragana/katakana
 		(r >= 0xAC00 && r <= 0xD7AF) // hangul
-}
-
-func utf8RuneLen(r rune) int {
-	switch {
-	case r < 0x80:
-		return 1
-	case r < 0x800:
-		return 2
-	case r < 0x10000:
-		return 3
-	default:
-		return 4
-	}
 }
 
 // EstimateMessagesTokens sums content tokens across messages plus per-message
