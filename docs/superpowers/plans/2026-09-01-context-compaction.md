@@ -39,7 +39,7 @@
 - 修改：`internal/conversation/store.go`（接口 + MemoryStore + Clear）
 - 测试：`internal/conversation/summary_rolling_test.go`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 创建 `internal/conversation/summary_rolling_test.go`：
 
@@ -97,12 +97,12 @@ func TestMemoryRollingSummaryForkDoesNotCopy(t *testing.T) {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/conversation/ -run RollingSummary -count=1`
 预期：FAIL，编译报错 `GetRollingSummary undefined` 等。
 
-- [ ] **步骤 3：实现类型与 Memory**
+- [x] **步骤 3：实现类型与 Memory**
 
 创建 `internal/conversation/summary_rolling.go`：
 
@@ -189,7 +189,7 @@ func (s *MemoryStore) Clear(conversationID string) {
 }
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`go test ./internal/conversation/ -count=1`
 预期：PASS（Memory；SQLite 此时因接口未实现会编译失败——见任务 2，本任务先给 SQLite 加临时桩或直接在任务 2 实现。为保持包可编译，本任务在 `sqlite.go` 临时加三个返回零值的桩方法，任务 2 替换为真实实现）。
@@ -202,7 +202,7 @@ func (s *SQLiteStore) UpsertRollingSummary(sum RollingSummary) error            
 func (s *SQLiteStore) ClearRollingSummary(conversationID string)                        {}
 ```
 
-- [ ] **步骤 5：gofmt 与提交**
+- [x] **步骤 5：gofmt 与提交**
 
 运行：`gofmt -l internal/conversation`（应无输出；gofmt 在 `C:\Users\Administrator\.local\go1.25.0\bin\gofmt.exe`）。
 
@@ -220,7 +220,7 @@ git commit -m "feat(conversation): RollingSummary 类型、接口与 Memory 实�
 - 修改：`internal/conversation/sql_dialect.go`（postgres 建表）
 - 测试：`internal/conversation/summary_rolling_test.go`（追加 SQLite 用例）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 追加到 `internal/conversation/summary_rolling_test.go`：
 
@@ -284,12 +284,12 @@ func TestSQLiteTruncateClearsSummary(t *testing.T) {
 
 注意：`newSQLiteConv` 若与 `sqlite_test.go` 里既有 helper 重名则改名（如 `newRSQLite`）；`modernc.org/sqlite` 的驱动名以既有测试文件 import 为准。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/conversation/ -run "RollingSummary|TruncateClears" -count=1`
 预期：FAIL（桩永远返回空/不持久化，round-trip 断言失败）。
 
-- [ ] **步骤 3：建表**
+- [x] **步骤 3：建表**
 
 在 `internal/conversation/sqlite.go` 的 `sqliteMessagesSchema` 常量末尾（`conversation_meta` 建表之后）加：
 
@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 并在 postgres 分支 `db.Exec(pgMeta)` 后再 `db.Exec(pgSummaries)`。
 
-- [ ] **步骤 4：用真实 CRUD 替换桩**
+- [x] **步骤 4：用真实 CRUD 替换桩**
 
 删除任务 1 的三个桩方法，在 `sqlite.go` 实现：
 
@@ -365,7 +365,7 @@ func (s *SQLiteStore) ClearRollingSummary(conversationID string) {
 
 注意：postgres 不支持 SQLite 的 `ON CONFLICT ... DO UPDATE` 同一语法？——实际上 postgres 也支持 `INSERT ... ON CONFLICT ... DO UPDATE`（语法相同，占位符经 `s.q()` 重绑定）。确认 `s.exec` 已对 postgres 重绑定 `?`→`$n`（sql_dialect.go 已做）。若 postgres 表主键名一致，该语句两驱动通用。
 
-- [ ] **步骤 5：TruncateFrom 与 Clear 联动**
+- [x] **步骤 5：TruncateFrom 与 Clear 联动**
 
 找到 `sqlite.go` 的 `TruncateFrom`（SQL 实现），在成功删除消息后、return 前加：
 
@@ -375,12 +375,12 @@ func (s *SQLiteStore) ClearRollingSummary(conversationID string) {
 
 SQLite 的 `Clear(conversationID)`（若有删 messages 的实现）同样在删除后加 `s.ClearRollingSummary(conversationID)`。
 
-- [ ] **步骤 6：运行测试验证通过**
+- [x] **步骤 6：运行测试验证通过**
 
 运行：`go test ./internal/conversation/ -count=1`
 预期：PASS（Memory + SQLite 全绿）。
 
-- [ ] **步骤 7：gofmt 与提交**
+- [x] **步骤 7：gofmt 与提交**
 
 `gofmt -l internal/conversation` 无输出。
 
@@ -402,7 +402,7 @@ git commit -m "feat(conversation): conversation_summaries 表与滚动摘要 SQL
 - 创建：`internal/run/tokens.go`
 - 测试：`internal/run/tokens_test.go`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 创建 `internal/run/tokens_test.go`：
 
@@ -460,12 +460,12 @@ func TestEstimateToolsTokens(t *testing.T) {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/run/ -run "Estimate" -count=1`
 预期：FAIL，`undefined: EstimateTextTokens`。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 创建 `internal/run/tokens.go`：
 
@@ -561,12 +561,12 @@ func EstimateToolsTokens(tools []llm.ToolSpec) int {
 }
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`go test ./internal/run/ -run "Estimate" -count=1`
 预期：PASS。
 
-- [ ] **步骤 5：gofmt 与提交**
+- [x] **步骤 5：gofmt 与提交**
 
 `gofmt -l internal/run` 无输出。
 
@@ -588,7 +588,7 @@ git commit -m "feat(run): 轻量 token 估算（CJK/ASCII 保守口径）"
 - 修改：`internal/bootstrap/bootstrap.go`（种子 profile 设 `ContextTokens`）
 - 测试：`internal/store/model_profiles_test.go`（追加 round-trip 断言）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 追加到 `internal/store/model_profiles_test.go` 的 SQLite round-trip 测试（或新增 `TestSQLiteModelProfileContextTokens`）：
 
@@ -615,12 +615,12 @@ func TestSQLiteModelProfileContextTokens(t *testing.T) {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/store/ -run ContextTokens -count=1`
 预期：FAIL（`ContextTokens undefined` 或恒为 0）。
 
-- [ ] **步骤 3：struct 与视图**
+- [x] **步骤 3：struct 与视图**
 
 `internal/store/store.go` 的 `ModelProfile` 在 `SupportsVision` 后加：
 
@@ -640,7 +640,7 @@ func TestSQLiteModelProfileContextTokens(t *testing.T) {
 		ContextTokens:  p.ContextTokens,
 ```
 
-- [ ] **步骤 4：DDL 与迁移**
+- [x] **步骤 4：DDL 与迁移**
 
 `internal/store/sqlite.go` 的 `model_profiles` 建表（约 130 行 `supports_vision INTEGER,` 附近）加列：
 
@@ -658,7 +658,7 @@ func TestSQLiteModelProfileContextTokens(t *testing.T) {
 
 postgres 旧库同样幂等 `ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`（照 X2 给 runs 加列的 `ADD COLUMN IF NOT EXISTS` 方式）。
 
-- [ ] **步骤 5：SQL CRUD**
+- [x] **步骤 5：SQL CRUD**
 
 在 `internal/store/model_profiles_sql.go` 中，**完全照 `supports_vision` 的穿线方式**加 `context_tokens`：
 
@@ -668,7 +668,7 @@ postgres 旧库同样幂等 `ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS
 - UPDATE 的 `SET ...` 子句加 `context_tokens=?` 与参数。
 - Memory 实现（`model_profiles.go`）存的是结构体本身，无需改；但确保 Upsert 新建分支不会把 ContextTokens 清零（结构体整体存入，天然保留）。
 
-- [ ] **步骤 6：种子默认值**
+- [x] **步骤 6：种子默认值**
 
 `internal/bootstrap/bootstrap.go` 的 `seedModelProfile` 里构造的 `store.ModelProfile` 加：
 
@@ -676,12 +676,12 @@ postgres 旧库同样幂等 `ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS
 		ContextTokens: 128000,
 ```
 
-- [ ] **步骤 7：运行测试验证通过**
+- [x] **步骤 7：运行测试验证通过**
 
 运行：`go build ./... && go test ./internal/store/ ./internal/llm/ ./internal/bootstrap/ -count=1`
 预期：PASS。`gofmt -l internal/store internal/llm internal/bootstrap` 无输出。
 
-- [ ] **步骤 8：提交**
+- [x] **步骤 8：提交**
 
 ```bash
 git add internal/store/store.go internal/store/sqlite.go internal/store/postgres.go internal/store/model_profiles_sql.go internal/store/model_profiles_test.go internal/llm/switch.go internal/llm/profile_source.go internal/bootstrap/bootstrap.go
@@ -698,7 +698,7 @@ git commit -m "feat(store): model profile 增加 context_tokens 上下文字段"
 
 本任务只实现纯逻辑与对 `conversation.Store`/`llm.ProfileSource` 的交互；引擎接入在任务 6。
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 创建 `internal/run/compact_test.go`。测试用 fake LLM 与 `conversation.NewMemoryStore()`：
 
@@ -781,12 +781,12 @@ func TestMaybeCompactUnderThresholdSkips(t *testing.T) {
 
 注意：`ContextTokens <= 0` 的 profile 会被归一为默认 128000（仍正常压缩，只是阈值宽松）；真正「禁用」压缩的情形是 ProfileSource 拿不到任何 profile（`view.ID==""`，mock/demo 路径）或全局 `compact_enabled: false`（bootstrap 不构造 Compactor）。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/run/ -run MaybeCompact -count=1`
 预期：FAIL，`undefined: Compactor`。
 
-- [ ] **步骤 3：把失败测试改成最终签名并补触发/折叠用例**
+- [x] **步骤 3：把失败测试改成最终签名并补触发/折叠用例**
 
 把上面两个测试里的 `MaybeCompact` 调用统一为最终签名：
 
@@ -851,12 +851,12 @@ func TestMaybeCompactIncrementalExtendsCursor(t *testing.T) {
 }
 ```
 
-- [ ] **步骤 4：运行测试验证失败**
+- [x] **步骤 4：运行测试验证失败**
 
 运行：`go test ./internal/run/ -run MaybeCompact -count=1`
 预期：FAIL，`undefined: Compactor`。
 
-- [ ] **步骤 5：实现 Compactor**
+- [x] **步骤 5：实现 Compactor**
 
 创建 `internal/run/compact.go`：
 
@@ -1044,12 +1044,12 @@ func toLLMMessages(msgs []conversation.Message) []llm.Message {
 
 注意：`llm.Role(m.Role)` —— `conversation.Role` 与 `llm.Role` 底层都是 string 常量且取值一致（`"user"`/`"assistant"`/`"system"`），可直接转换。
 
-- [ ] **步骤 6：运行测试验证通过**
+- [x] **步骤 6：运行测试验证通过**
 
 运行：`go test ./internal/run/ -run "MaybeCompact|Estimate" -count=1`
 预期：PASS。若 `TestMaybeCompactTriggersAndFolds` 的 cursor 断言不符（31），以 `len(full)-KeepRecent-1 = 40-8-1 = 31` 为准核对。
 
-- [ ] **步骤 7：gofmt 与提交**
+- [x] **步骤 7：gofmt 与提交**
 
 `gofmt -l internal/run` 无输出。
 
@@ -1066,7 +1066,7 @@ git commit -m "feat(run): Compactor 滚动摘要压缩（阈值触发/增量折�
 - 修改：`internal/run/engine.go`（常量、`Engine.Compactor` 字段、`ExecuteWithOpts`、`buildMessages`）
 - 测试：`internal/run/compact_engine_test.go`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 创建 `internal/run/compact_engine_test.go`，验证 buildMessages 在有摘要时注入摘要块、无摘要时行为不变：
 
@@ -1127,12 +1127,12 @@ func TestBuildMessagesNoSummaryUnchanged(t *testing.T) {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/run/ -run BuildMessages -count=1`
 预期：FAIL（摘要未注入）。
 
-- [ ] **步骤 3：加事件常量与 Engine 字段**
+- [x] **步骤 3：加事件常量与 Engine 字段**
 
 `internal/run/engine.go` 事件常量区（`EventWorkflowPrefix` 附近）加：
 
@@ -1150,7 +1150,7 @@ func TestBuildMessagesNoSummaryUnchanged(t *testing.T) {
 	Compactor *Compactor
 ```
 
-- [ ] **步骤 4：ExecuteWithOpts 里在 buildMessages 前触发压缩**
+- [x] **步骤 4：ExecuteWithOpts 里在 buildMessages 前触发压缩**
 
 在 `ExecuteWithOpts` 中，`messages := e.buildMessages(...)` **之前**插入：
 
@@ -1176,7 +1176,7 @@ func TestBuildMessagesNoSummaryUnchanged(t *testing.T) {
 
 注意：`runRec.ModelProfileID` 已在该函数作用域内（`runRec` 来自 `e.Store.GetRun(runID)`）。`ctx` 用于取消传播；Compactor 内部摘要调用用独立 `context.Background()` + 超时（见 compact.go），不受 run 取消影响而中断已开始的摘要。
 
-- [ ] **步骤 5：buildMessages 注入摘要块**
+- [x] **步骤 5：buildMessages 注入摘要块**
 
 修改 `buildMessages`，在 system 消息之后、窗口历史循环之前插入摘要块。把函数开头改为：
 
@@ -1198,12 +1198,12 @@ func TestBuildMessagesNoSummaryUnchanged(t *testing.T) {
 
 确保 `engine.go` 已 import `strings`（若未 import 则加）。摘要块用 `RoleUser`：它是一条上下文指令；紧接着的真实历史/当前输入照常追加。当前输入去重逻辑（`last.Content == input`）不受影响，因为摘要内容不等于 input。
 
-- [ ] **步骤 6：运行测试验证通过**
+- [x] **步骤 6：运行测试验证通过**
 
 运行：`go test ./internal/run/ -count=1`
 预期：PASS（含任务 3/5 的全部用例）。
 
-- [ ] **步骤 7：gofmt 与提交**
+- [x] **步骤 7：gofmt 与提交**
 
 `gofmt -l internal/run` 无输出。
 
@@ -1221,7 +1221,7 @@ git commit -m "feat(run): 引擎接入滚动摘要压缩并在 prompt 注入摘�
 - 修改：`internal/config/conversation_test.go`（默认值测试）
 - 修改：`internal/bootstrap/bootstrap.go`（构造 Compactor 并注入 Engine）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 追加到 `internal/config/conversation_test.go`：
 
@@ -1265,12 +1265,12 @@ func TestLoadConversationCompactExplicit(t *testing.T) {
 
 注意：`writeConfig`/`Load` 以该测试文件既有写法为准。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/config/ -run Compact -count=1`
 预期：FAIL（字段 undefined 或恒为零值）。
 
-- [ ] **步骤 3：加配置字段**
+- [x] **步骤 3：加配置字段**
 
 `internal/config/config.go` 的 `Conversation` 结构（`MaxMessages` 后）加：
 
@@ -1323,12 +1323,12 @@ func (c Config) CompactEnabled() bool {
 }
 ```
 
-- [ ] **步骤 4：运行配置测试验证通过**
+- [x] **步骤 4：运行配置测试验证通过**
 
 运行：`go test ./internal/config/ -count=1`
 预期：PASS。
 
-- [ ] **步骤 5：bootstrap 构造并注入 Compactor**
+- [x] **步骤 5：bootstrap 构造并注入 Compactor**
 
 `internal/bootstrap/bootstrap.go`：`provider` 在真实路径已被赋值为 `llm.NewSwitch(...)`（约 224 行）。在 `engine := &run.Engine{...}`（约 288 行）**之前**构造 Compactor：
 
@@ -1354,12 +1354,12 @@ func (c Config) CompactEnabled() bool {
 
 说明：mock/demo 路径下 `Profiles`（StoreProfileSource）查不到 profile 时 `MaybeCompact` 直接返回 `(false, nil)`，压缩自动禁用，不影响演示。真实路径 provider 是 Switch，摘要调用在 bare context 上解析到默认 profile（与设计一致）。
 
-- [ ] **步骤 6：全量构建验证**
+- [x] **步骤 6：全量构建验证**
 
 运行：`go build ./... && go test ./internal/config/ ./internal/bootstrap/ -count=1`
 预期：PASS。`gofmt -l internal/config internal/bootstrap` 无输出。
 
-- [ ] **步骤 7：提交**
+- [x] **步骤 7：提交**
 
 ```bash
 git add internal/config/config.go internal/config/conversation_test.go internal/bootstrap/bootstrap.go
@@ -1374,7 +1374,7 @@ git commit -m "feat(config): conversation 压缩配置并在 bootstrap 注入 Co
 - 修改：`internal/api/server_models.go`（payload + POST + PATCH）
 - 测试：`internal/api/server_models_test.go`（追加断言；若文件名不同则找 `model_profile` 相关 api 测试）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 在模型 profile 的 API 测试文件中追加（照该文件既有的建 server / 发请求 helper 写法）：
 
@@ -1423,12 +1423,12 @@ func TestModelProfileContextTokensRoundTrip(t *testing.T) {
 
 注意：helper 名（`newModelProfileTestServer`/`postJSON`/`patchJSON`/`decodeJSON`）以测试文件里既有的为准；不要新造重复 helper。核心是断言 create 回显、PATCH 合并且不丢其它字段。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`go test ./internal/api/ -run ContextTokens -count=1`
 预期：FAIL（`context_tokens` 恒为 0）。
 
-- [ ] **步骤 3：payload 加字段**
+- [x] **步骤 3：payload 加字段**
 
 `modelProfilePayload`（约 16-26 行）在 `SupportsVision` 后加：
 
@@ -1436,7 +1436,7 @@ func TestModelProfileContextTokensRoundTrip(t *testing.T) {
 	ContextTokens   *int    `json:"context_tokens"`
 ```
 
-- [ ] **步骤 4：POST 创建分支**
+- [x] **步骤 4：POST 创建分支**
 
 在 `handlePostModelProfile` 构造 `prof`（约 86-95 行）处加：
 
@@ -1452,7 +1452,7 @@ func TestModelProfileContextTokensRoundTrip(t *testing.T) {
 
 （`ContextTokens` 为 nil 或 <=0 时落库默认 128000，由 DB DEFAULT 保证。）
 
-- [ ] **步骤 5：PATCH 合并分支**
+- [x] **步骤 5：PATCH 合并分支**
 
 在 `handlePatchModelProfile` 的字段合并区（约 156-159 行 `if p.SupportsVision != nil {...}` 附近）加：
 
@@ -1464,12 +1464,12 @@ func TestModelProfileContextTokensRoundTrip(t *testing.T) {
 
 `updated` 来自 `existing`（字段级合并），不传 `context_tokens` 时保持原值。
 
-- [ ] **步骤 6：运行测试验证通过**
+- [x] **步骤 6：运行测试验证通过**
 
 运行：`go build ./... && go test ./internal/api/ -run ModelProfile -count=1`
 预期：PASS。`gofmt -l internal/api` 无输出。
 
-- [ ] **步骤 7：提交**
+- [x] **步骤 7：提交**
 
 ```bash
 git add internal/api/server_models.go internal/api/server_models_test.go
@@ -1485,7 +1485,7 @@ git commit -m "feat(api): 模型 profile API 支持 context_tokens 字段"
 - 修改：`web/chat/src/pages/ModelSettings.tsx`（表单状态、payload、输入框）
 - 测试：`web/chat/src/pages/ModelSettings.test.tsx`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 在 `ModelSettings.test.tsx` 追加（照既有 `buildCreatePayload`/`buildPatchPayload` 单测写法）：
 
@@ -1515,12 +1515,12 @@ it('buildPatchPayload sends context_tokens only when changed', () => {
 
 注意：测试里的 `profile(...)` factory（该文件约 22 行）需补 `context_tokens: 128000` 默认字段（否则 TS 报缺字段）。`ChatPageModelSelect.test.tsx` 与其他用到 `ModelProfile` 的 factory（约 8 行、`api.ts` 相关）同样补 `context_tokens: 128000`。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`cd web/chat && npx vitest run src/pages/ModelSettings.test.tsx`（或仓库既有 `npm test` 脚本）
 预期：FAIL（`context_tokens` / `contextTokens` 不存在）。
 
-- [ ] **步骤 3：api.ts 类型**
+- [x] **步骤 3：api.ts 类型**
 
 `web/chat/src/api.ts` 的 `ModelProfile`（约 538-548 行）在 `supports_vision` 后加：
 
@@ -1530,7 +1530,7 @@ it('buildPatchPayload sends context_tokens only when changed', () => {
 
 `ModelProfileInput`（`Partial<Omit<ModelProfile, ...>>`）会自动包含 `context_tokens`，无需额外改；确认 omit 列表没有把它排除。
 
-- [ ] **步骤 4：表单状态与 payload**
+- [x] **步骤 4：表单状态与 payload**
 
 `ModelSettings.tsx`：
 
@@ -1573,7 +1573,7 @@ it('buildPatchPayload sends context_tokens only when changed', () => {
   }
 ```
 
-- [ ] **步骤 5：表单输入框**
+- [x] **步骤 5：表单输入框**
 
 在 `ModelProfileForm` 的 JSX 里（`supports_vision`/`disable_thinking` 复选框附近）加一个数字输入：
 
@@ -1592,12 +1592,12 @@ it('buildPatchPayload sends context_tokens only when changed', () => {
 
 （`setForm`/`form` 以该组件既有的状态变量名为准；className 沿用同表单其它字段。）
 
-- [ ] **步骤 6：运行前端测试与构建**
+- [x] **步骤 6：运行前端测试与构建**
 
 运行：`cd web/chat && npx vitest run && npm run build`
 预期：测试 PASS，构建成功。
 
-- [ ] **步骤 7：提交**
+- [x] **步骤 7：提交**
 
 后端 `internal/ui/dist` 由嵌入前端构建产物更新（照 X2 的做法，前端构建产物在 `internal/ui/dist`）。构建后一并提交：
 
@@ -1615,7 +1615,7 @@ git commit -m "feat(web): 模型设置支持配置上下文长度 context_tokens
 - 修改：`docs/superpowers/notes/2026-08-28-oss-backlog-and-enterprise.md`（X4 标记已交付）
 - 视项目惯例更新 README/配置示例（`configs/` 下示例 yaml 注释 `conversation.compact_*`）
 
-- [ ] **步骤 1：后端全量验证**
+- [x] **步骤 1：后端全量验证**
 
 PowerShell（先设 go 环境，见文档头部）：
 
@@ -1628,7 +1628,7 @@ gofmt -l .
 
 预期：构建通过；全部测试 PASS；`gofmt -l .` 无输出（有输出则 `gofmt -w <file>` 后重测）。
 
-- [ ] **步骤 2：前端全量验证**
+- [x] **步骤 2：前端全量验证**
 
 ```powershell
 cd web/chat; npx vitest run; npm run build
@@ -1636,15 +1636,15 @@ cd web/chat; npx vitest run; npm run build
 
 预期：PASS + 构建成功；`internal/ui/dist` 产物更新并已在任务 9 提交（若有残留变更在此一并提交）。
 
-- [ ] **步骤 3：手工冒烟（可选但建议）**
+- [x] **步骤 3：手工冒烟（可选但建议）**
 
 以 mock provider 启动，连续发送 >KeepRecent 条消息确认不报错；再配一个真实/小 `context_tokens`（如 4000）的 profile，发足够长对话，确认 run 事件流出现 `context.compacted`，且后续回复仍正常、长对话记忆通过摘要保留。
 
-- [ ] **步骤 4：更新 backlog 与计划勾选**
+- [x] **步骤 4：更新 backlog 与计划勾选**
 
 把 backlog 文档里 X4（对话历史摘要/滚动摘要）条目标记为「已交付」，附简短说明（滚动摘要 + token 触发 + 持久化 + 可配置窗口）。勾选本计划所有步骤复选框。
 
-- [ ] **步骤 5：提交文档**
+- [x] **步骤 5：提交文档**
 
 commit message 用 UTF-8（Windows PowerShell 用 `[System.IO.File]::WriteAllText` 或 `git commit -F` 文件方式，避免中文乱码，照 X2 收尾经验）：
 

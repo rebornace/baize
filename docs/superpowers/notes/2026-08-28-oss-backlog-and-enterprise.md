@@ -13,6 +13,7 @@
 | **本版不做** | **P3** OTel；A1 多订阅；B1 SDK 实现；其余 §3/§4 默认否 |
 | **已交付** | **X1** MCP 导出（`/v0/mcp/export`；规格 `2026-08-29-mcp-export-v0-design.md`） |
 | **已交付** | **X2** 多模型配置 / `/ui` 模型设置页 / 对话按消息选模型（profile 存库、`llm.Switch` 热切换；规格 `2026-08-30-multi-model-profiles-design.md`） |
+| **已交付** | **X4** 对话历史压缩 / 滚动摘要（token 估算触发、旧消息折叠为持久化滚动摘要、游标保留近期原文；规格 `2026-09-01-context-compaction-design.md`） |
 | **排队（新需求）** | X3 中间件多源 |
 | **本版之后** | **F** 生产硬化（含 P1/P2 文档收口） |
 
@@ -87,7 +88,7 @@
 | **1** | **I1** Inbox → HITL resume | **已交付** |
 | **2** | **P4** PostgreSQL / SQL 驱动 | **已完成** |
 | **2b** | **微信 Channel（iLink）+ 会话归属** | **已交付**（`feat/channel-weixin-v0`；规格 `specs/2026-08-29-channel-weixin-v0-design.md`） |
-| **3** | **X1** MCP 导出 → **已交付**（`mcp-export-v0`）；**X2** 多模型配置 / 对话选模型 → **已交付**（`feat/multi-model-profiles-v0`）；X3 排队 | 分里程碑 |
+| **3** | **X1** MCP 导出 → **已交付**（`mcp-export-v0`）；**X2** 多模型配置 / 对话选模型 → **已交付**（`feat/multi-model-profiles-v0`）；**X4** 对话历史压缩 / 滚动摘要 → **已交付**（`feat/context-compaction-v0`）；X3 排队 | 分里程碑 |
 | **4** | P1/P2 文档 + **F** 生产硬化 | 上述之后 |
 
 ---
