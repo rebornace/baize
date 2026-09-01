@@ -41,6 +41,9 @@ func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 	if strings.TrimSpace(p.Provider) == "" {
 		p.Provider = "openai_compatible"
 	}
+	if p.ContextTokens <= 0 {
+		p.ContextTokens = DefaultContextTokens // spec §6.1: never persist 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
