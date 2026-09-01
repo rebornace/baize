@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -34,16 +35,24 @@ func TestBuildMessagesInjectsRollingSummary(t *testing.T) {
 	}
 	found := false
 	for _, m := range msgs {
-		if m.Role == "user" && strings.Contains(m.Content, "此前对话：用户在做报销系统") {
+		if m.Role == llm.RoleSystem && strings.Contains(m.Content, "此前对话：用户在做报销系统") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("rolling summary block not injected; got %d messages", len(msgs))
+		t.Fatalf("rolling summary block not injected as a system message; got %d messages: %+v", len(msgs), msgs)
 	}
-	// 摘要块必须在历史消息之前（紧跟 system 提示）
-	if !strings.Contains(msgs[1].Content, "此前对话：用户在做报销系统") {
-		t.Fatalf("summary block must directly follow the system prompt; msgs[1]=%+v", msgs[1])
+	// 摘要块必须是 system 消息且在历史消息之前（紧跟初始 system 提示）
+	if msgs[1].Role != llm.RoleSystem || !strings.Contains(msgs[1].Content, "此前对话：用户在做报销系统") {
+		t.Fatalf("summary block must be a system message directly following the system prompt; msgs[1]=%+v", msgs[1])
+	}
+	if !strings.HasPrefix(msgs[1].Content, "以下是较早对话的滚动摘要（供参考，不要向用户提及这是摘要）：") {
+		t.Fatalf("summary note must use the spec wording; msgs[1]=%+v", msgs[1])
+	}
+	// 游标 CoversThroughOrder=1：6 条历史中只有游标之后的 4 条以原文出现，
+	// 折叠区间 [0..1] 不得重复发送（system + 摘要 + 4 条原文 + 当前输入 = 7）。
+	if len(msgs) != 7 {
+		t.Fatalf("folded messages must be excluded verbatim: got %d messages, want 7: %+v", len(msgs), msgs)
 	}
 	// 最后一条必须是当前输入
 	if msgs[len(msgs)-1].Content != "现在的问题" {
@@ -110,11 +119,25 @@ func newCompactEngine(t *testing.T, sumLLM llm.Provider, profiles llm.ProfileSou
 }
 
 // promptSawSummary reports whether the captured main-LLM prompt contains a
-// rolling-summary block carrying the given text.
+// rolling-summary block (a system message following the initial system prompt)
+// carrying the given text.
 func promptSawSummary(mainLLM *recordingLLM, text string) bool {
 	for _, p := range mainLLM.prompts {
+		for i, m := range p {
+			if i > 0 && m.Role == llm.RoleSystem && strings.Contains(m.Content, text) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// promptContainsText reports whether the captured main-LLM prompt carries the
+// given verbatim text in any message content.
+func promptContainsText(mainLLM *recordingLLM, text string) bool {
+	for _, p := range mainLLM.prompts {
 		for _, m := range p {
-			if m.Role == llm.RoleUser && strings.Contains(m.Content, text) {
+			if strings.Contains(m.Content, text) {
 				return true
 			}
 		}
@@ -144,11 +167,31 @@ func containsType(types []string, want string) bool {
 // summary is injected into the prompt the main LLM receives.
 var errCompactBoom = errors.New("boom")
 
+// seedConvWithRecentMarkers seeds nOld foldable messages (repeated filler,
+// same as seedConv) followed by nRecent messages with distinct marker content,
+// so post-compaction prompts can distinguish folded text from kept-recent text.
+func seedConvWithRecentMarkers(t *testing.T, ms conversation.Store, convID string, nOld, nRecent int) {
+	t.Helper()
+	seedConv(t, ms, convID, nOld)
+	for i := 0; i < nRecent; i++ {
+		role := conversation.RoleUser
+		if i%2 == 1 {
+			role = conversation.RoleAssistant
+		}
+		ms.Append(convID, conversation.Message{
+			Role:    role,
+			Content: fmt.Sprintf("RECENT-MARKER-%d 近期消息独特内容", i),
+		})
+	}
+}
+
 func TestExecuteCompactionEmitsCompactedEvent(t *testing.T) {
 	sumLLM := &fakeCompactLLM{reply: "这是滚动摘要"}
 	profiles := fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 4000}}
 	eng, st, ms, mainLLM := newCompactEngine(t, sumLLM, profiles)
-	seedConv(t, ms, "conv1", 40) // long history + tiny context => compaction fires
+	// 32 条可折叠填充消息 + 8 条近期标记消息；KeepRecent=8 => 折叠 [0..31]，
+	// 近期窗口 [32..39] 必须以原文保留。
+	seedConvWithRecentMarkers(t, ms, "conv1", 32, 8)
 
 	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "本轮问题", ConversationID: "conv1"})
 	if err != nil {
@@ -169,9 +212,20 @@ func TestExecuteCompactionEmitsCompactedEvent(t *testing.T) {
 	if !ok || sum.Summary != "这是滚动摘要" {
 		t.Fatalf("summary not persisted: %+v ok=%v", sum, ok)
 	}
-	// The persisted summary must be injected into the prompt the MAIN llm saw.
+	// The persisted summary must be injected as a system message into the
+	// prompt the MAIN llm saw.
 	if !promptSawSummary(mainLLM, "这是滚动摘要") {
 		t.Fatalf("main LLM prompt did not include the rolling summary block: %+v", mainLLM.prompts)
+	}
+	// Folded messages (repeated filler) must NOT be sent verbatim anymore —
+	// they are delivered only via the summary.
+	foldedText := strings.Repeat("内容", 100)
+	if promptContainsText(mainLLM, foldedText) {
+		t.Fatalf("folded message text must not appear verbatim in the main LLM prompt: %+v", mainLLM.prompts)
+	}
+	// Recent messages (within KeepRecent) must still be present verbatim.
+	if !promptContainsText(mainLLM, "RECENT-MARKER-7 近期消息独特内容") {
+		t.Fatalf("recent (kept) message text missing from the main LLM prompt: %+v", mainLLM.prompts)
 	}
 }
 

@@ -220,10 +220,14 @@ func (e *Engine) toolTimeout() time.Duration {
 }
 
 // buildMessages assembles the LLM prompt: system + (when a rolling summary
-// exists) a summary context block + windowed conversation history + current
-// user input. When the most recent history entry is already a user message with
-// the same content as input (the API appends the user message before calling
-// Execute), the current input is not appended again to avoid a duplicate turn.
+// exists) a summary system message + verbatim conversation history + current
+// user input. When a summary exists, the verbatim history starts AFTER the
+// summary cursor (CoversThroughOrder): folded messages are delivered only via
+// the summary and must never be repeated verbatim. Without a summary the hard
+// sliding window (ListWindow) is used unchanged. When the most recent history
+// entry is already a user message with the same content as input (the API
+// appends the user message before calling Execute), the current input is not
+// appended again to avoid a duplicate turn.
 //
 // When userParts is non-empty, the trailing persisted user message (which carries
 // only the display text, without attachment content or image bytes) is replaced
@@ -233,14 +237,29 @@ func (e *Engine) toolTimeout() time.Duration {
 func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 	if e.Messages != nil && conversationID != "" {
-		if sum, ok := e.Messages.GetRollingSummary(conversationID); ok && strings.TrimSpace(sum.Summary) != "" {
+		hist := e.Messages.ListWindow(conversationID, e.MaxMessages)
+		var sum conversation.RollingSummary
+		hasSummary := false
+		if s, ok := e.Messages.GetRollingSummary(conversationID); ok && strings.TrimSpace(s.Summary) != "" {
+			sum = s
+			hasSummary = true
+			full := e.Messages.List(conversationID)
+			start := sum.CoversThroughOrder + 1
+			if start < 0 {
+				start = 0
+			}
+			if start > len(full) {
+				start = len(full)
+			}
+			hist = full[start:]
+		}
+		if hasSummary {
 			messages = append(messages, llm.Message{
-				Role: llm.RoleUser,
-				Content: "以下是此前对话的滚动摘要，供你理解上下文（更早的完整对话已被压缩）：\n\n" +
-					sum.Summary,
+				Role:    llm.RoleSystem,
+				Content: "以下是较早对话的滚动摘要（供参考，不要向用户提及这是摘要）：\n\n" + sum.Summary,
 			})
 		}
-		for _, m := range e.Messages.ListWindow(conversationID, e.MaxMessages) {
+		for _, m := range hist {
 			switch m.Role {
 			case conversation.RoleUser:
 				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: m.Content})
