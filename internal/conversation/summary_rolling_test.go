@@ -62,3 +62,10 @@ func TestMemoryTruncateClearsSummary(t *testing.T) {
 		t.Fatal("truncate must clear rolling summary")
 	}
 }
+
+func TestMemoryUpsertRollingSummaryRequiresConversationID(t *testing.T) {
+	s := NewMemoryStore()
+	if err := s.UpsertRollingSummary(RollingSummary{Summary: "x"}); err == nil {
+		t.Fatal("empty ConversationID must return an error")
+	}
+}

@@ -384,6 +384,9 @@ func (s *SQLiteStore) GetRollingSummary(conversationID string) (RollingSummary, 
 }
 
 func (s *SQLiteStore) UpsertRollingSummary(sum RollingSummary) error {
+	if sum.ConversationID == "" {
+		return fmt.Errorf("conversation id required")
+	}
 	if sum.UpdatedAt.IsZero() {
 		sum.UpdatedAt = time.Now().UTC()
 	}

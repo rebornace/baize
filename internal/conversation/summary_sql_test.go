@@ -33,6 +33,9 @@ func TestSQLiteRollingSummaryRoundTrip(t *testing.T) {
 	if !ok || got.Summary != "旧对话摘要" || got.CoversThroughOrder != 4 || got.CoversThroughMessageID != "msg_5" {
 		t.Fatalf("round trip failed: %+v ok=%v", got, ok)
 	}
+	if got.UpdatedAt.IsZero() {
+		t.Fatal("UpdatedAt should be auto-populated (UTC now) and round-tripped")
+	}
 
 	// Incremental update (same conversation overwrites the row).
 	if err := s.UpsertRollingSummary(conversation.RollingSummary{
@@ -91,5 +94,12 @@ func TestSQLiteClearClearsSummary(t *testing.T) {
 	s.Clear("c1")
 	if _, ok := s.GetRollingSummary("c1"); ok {
 		t.Fatal("clear must clear rolling summary")
+	}
+}
+
+func TestSQLiteUpsertRollingSummaryRequiresConversationID(t *testing.T) {
+	s := newRollingSummaryStore(t)
+	if err := s.UpsertRollingSummary(conversation.RollingSummary{Summary: "x"}); err == nil {
+		t.Fatal("empty ConversationID must return an error")
 	}
 }

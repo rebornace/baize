@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -151,6 +152,9 @@ func (s *MemoryStore) GetRollingSummary(conversationID string) (RollingSummary, 
 func (s *MemoryStore) UpsertRollingSummary(sum RollingSummary) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if sum.ConversationID == "" {
+		return fmt.Errorf("conversation id required")
+	}
 	if s.summaries == nil {
 		s.summaries = map[string]RollingSummary{}
 	}
