@@ -745,15 +745,20 @@ func seedConv(t *testing.T, ms conversation.Store, convID string, n int) {
 	}
 }
 
-func TestMaybeCompactNoContextLimitSkips(t *testing.T) {
+func TestMaybeCompactNoProfileSkips(t *testing.T) {
 	ms := conversation.NewMemoryStore()
 	seedConv(t, ms, "c", 50)
+	// ProfileSource returns an empty view (ID==""): mock/demo path with no
+	// configured profile -> compaction disabled entirely.
 	c := &Compactor{Messages: ms, LLM: &fakeCompactLLM{reply: "摘要"},
-		Profiles:      fakeProfiles{def: llm.ModelProfileView{ID: "p"}}, // ContextTokens:0
-		Threshold:     0.7, ReserveTokens: 4000, KeepRecent: 8}
+		Profiles:      fakeProfiles{def: llm.ModelProfileView{}},
+		Threshold:     0.8, ReserveTokens: 8000, KeepRecent: 8}
 	changed, err := c.MaybeCompact(context.Background(), "c", nil, "p")
 	if err != nil || changed {
-		t.Fatalf("contextLimit=0 must skip: changed=%v err=%v", changed, err)
+		t.Fatalf("no profile must skip: changed=%v err=%v", changed, err)
+	}
+	if _, ok := ms.GetRollingSummary("c"); ok {
+		t.Fatal("no summary when profile missing")
 	}
 }
 
@@ -762,8 +767,8 @@ func TestMaybeCompactUnderThresholdSkips(t *testing.T) {
 	seedConv(t, ms, "c", 4)
 	c := &Compactor{Messages: ms, LLM: &fakeCompactLLM{reply: "摘要"},
 		Profiles:      fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 100000}},
-		Threshold:     0.7, ReserveTokens: 4000, KeepRecent: 8}
-	// budget = 100000*0.7-4000 = 66000；4 条消息（约 800 token）远低于此
+		Threshold:     0.8, ReserveTokens: 8000, KeepRecent: 8}
+	// budget = 100000*0.8-8000 = 72000；4 条消息（约 800 token）远低于此
 	changed, err := c.MaybeCompact(context.Background(), "c", nil, "p")
 	if err != nil || changed {
 		t.Fatalf("under threshold must skip: changed=%v err=%v", changed, err)
@@ -774,7 +779,7 @@ func TestMaybeCompactUnderThresholdSkips(t *testing.T) {
 }
 ```
 
-注意：`TestMaybeCompactNoContextLimitSkips` 里的 def 是 `ContextTokens:0`（`llm.ModelProfileView{ID:"p"}`），调用也统一为最终签名 `c.MaybeCompact(context.Background(), "c", nil, "p")`，断言「未触发且无摘要」。
+注意：`ContextTokens <= 0` 的 profile 会被归一为默认 128000（仍正常压缩，只是阈值宽松）；真正「禁用」压缩的情形是 ProfileSource 拿不到任何 profile（`view.ID==""`，mock/demo 路径）或全局 `compact_enabled: false`（bootstrap 不构造 Compactor）。
 
 - [ ] **步骤 2：运行测试验证失败**
 
@@ -869,10 +874,11 @@ import (
 )
 
 const (
-	defaultCompactThreshold    = 0.7
-	defaultCompactReserve      = 4000
+	defaultCompactThreshold    = 0.8
+	defaultCompactReserve      = 8000
 	defaultCompactKeepRecent   = 8
 	defaultCompactSummaryWait  = 60 * time.Second
+	defaultContextTokens       = 128000
 	compactSummarySystemPrompt = `你是对话摘要助手。请把给定的多轮对话压缩成简洁的中文摘要，保留：用户的目标与偏好、已做出的关键决定、待办与未决事项、关键事实（文件名、ID、数据、结论）。不要编造对话中没有的信息。
 若提供了「已有摘要」，请在其基础上增量整合新对话，输出一份完整、自洽的最新摘要（不要罗列「新增/旧摘要」的边界）。`
 )
@@ -921,11 +927,11 @@ func (c *Compactor) MaybeCompact(ctx context.Context, convID string, tools []llm
 	c.normalize()
 
 	view, err := c.resolveView(profileID)
-	if err != nil {
-		return false, nil // no usable profile -> compaction disabled
+	if err != nil || view.ID == "" {
+		return false, nil // no usable profile -> compaction disabled (mock/demo path)
 	}
 	if view.ContextTokens <= 0 {
-		return false, nil // model has no declared context limit -> hard window only
+		view.ContextTokens = defaultContextTokens // normalize unconfigured profile
 	}
 	budget := int(float64(view.ContextTokens)*c.Threshold) - c.ReserveTokens
 	if budget < 1000 {
@@ -1226,26 +1232,32 @@ func TestLoadConversationCompactDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Conversation.CompactThreshold != 0.7 {
-		t.Fatalf("CompactThreshold=%v want 0.7", cfg.Conversation.CompactThreshold)
+	if !cfg.CompactEnabled() {
+		t.Fatal("CompactEnabled should default to true")
 	}
-	if cfg.Conversation.CompactReserveTokens != 4000 {
-		t.Fatalf("CompactReserveTokens=%d want 4000", cfg.Conversation.CompactReserveTokens)
+	if cfg.Conversation.CompactThreshold != 0.8 {
+		t.Fatalf("CompactThreshold=%v want 0.8", cfg.Conversation.CompactThreshold)
 	}
-	if cfg.Conversation.CompactKeepRecent != 8 {
-		t.Fatalf("CompactKeepRecent=%d want 8", cfg.Conversation.CompactKeepRecent)
+	if cfg.Conversation.CompactReserveOutput != 8000 {
+		t.Fatalf("CompactReserveOutput=%d want 8000", cfg.Conversation.CompactReserveOutput)
+	}
+	if cfg.Conversation.CompactRecentMessages != 8 {
+		t.Fatalf("CompactRecentMessages=%d want 8", cfg.Conversation.CompactRecentMessages)
 	}
 }
 
 func TestLoadConversationCompactExplicit(t *testing.T) {
-	path := writeConfig(t, "store:\n  driver: memory\nconversation:\n  compact_threshold: 0.5\n  compact_reserve_tokens: 2000\n  compact_keep_recent: 6\n")
+	path := writeConfig(t, "store:\n  driver: memory\nconversation:\n  compact_enabled: false\n  compact_threshold: 0.5\n  compact_reserve_output: 2000\n  compact_recent_messages: 6\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.CompactEnabled() {
+		t.Fatal("compact_enabled:false must disable compaction")
+	}
 	if cfg.Conversation.CompactThreshold != 0.5 ||
-		cfg.Conversation.CompactReserveTokens != 2000 ||
-		cfg.Conversation.CompactKeepRecent != 6 {
+		cfg.Conversation.CompactReserveOutput != 2000 ||
+		cfg.Conversation.CompactRecentMessages != 6 {
 		t.Fatalf("explicit compact config not parsed: %+v", cfg.Conversation)
 	}
 }
@@ -1266,14 +1278,16 @@ func TestLoadConversationCompactExplicit(t *testing.T) {
 	Conversation struct {
 		MaxMessages       int     `yaml:"max_messages"`
 		PersistIdentities *bool   `yaml:"persist_identities"`
-		// Compaction (rolling summary). Threshold is the fraction of the
-		// model context that may be used before older history is folded into
-		// a rolling summary; ReserveTokens reserves headroom for the answer +
-		// tools + current turn; KeepRecent is the number of newest messages
-		// always kept verbatim. Zero/negative => defaults below.
-		CompactThreshold     float64 `yaml:"compact_threshold"`
-		CompactReserveTokens int     `yaml:"compact_reserve_tokens"`
-		CompactKeepRecent    int     `yaml:"compact_keep_recent"`
+		// Context compaction (rolling summary). CompactEnabled defaults to
+		// true (use *bool to distinguish unset from explicit false). Threshold
+		// is the fraction of the model context that may be used before older
+		// history is folded into a rolling summary (out-of-range => 0.8);
+		// ReserveOutput reserves headroom for the answer; RecentMessages is the
+		// number of newest messages always kept verbatim.
+		CompactEnabled        *bool   `yaml:"compact_enabled"`
+		CompactThreshold      float64 `yaml:"compact_threshold"`
+		CompactReserveOutput  int     `yaml:"compact_reserve_output"`
+		CompactRecentMessages int     `yaml:"compact_recent_messages"`
 	} `yaml:"conversation"`
 ```
 
@@ -1282,15 +1296,31 @@ func TestLoadConversationCompactExplicit(t *testing.T) {
 默认归一：在 `config.go` 约 260 行 `if cfg.Conversation.MaxMessages <= 0 { ... = 40 }` 之后加：
 
 ```go
-	if cfg.Conversation.CompactThreshold <= 0 {
-		cfg.Conversation.CompactThreshold = 0.7
+	if cfg.Conversation.CompactEnabled == nil {
+		v := true
+		cfg.Conversation.CompactEnabled = &v
 	}
-	if cfg.Conversation.CompactReserveTokens <= 0 {
-		cfg.Conversation.CompactReserveTokens = 4000
+	if cfg.Conversation.CompactThreshold <= 0 || cfg.Conversation.CompactThreshold >= 1 {
+		cfg.Conversation.CompactThreshold = 0.8
 	}
-	if cfg.Conversation.CompactKeepRecent <= 0 {
-		cfg.Conversation.CompactKeepRecent = 8
+	if cfg.Conversation.CompactReserveOutput <= 0 {
+		cfg.Conversation.CompactReserveOutput = 8000
 	}
+	if cfg.Conversation.CompactRecentMessages <= 0 {
+		cfg.Conversation.CompactRecentMessages = 8
+	}
+```
+
+并加便捷方法（照 `MCPExportEnabled` 的既有写法）：
+
+```go
+// CompactEnabled reports whether context compaction is on (default true).
+func (c Config) CompactEnabled() bool {
+	if c.Conversation.CompactEnabled == nil {
+		return true
+	}
+	return *c.Conversation.CompactEnabled
+}
 ```
 
 - [ ] **步骤 4：运行配置测试验证通过**
@@ -1304,14 +1334,14 @@ func TestLoadConversationCompactExplicit(t *testing.T) {
 
 ```go
 	var compactor *run.Compactor
-	if messages != nil && provider != nil {
+	if cfg.CompactEnabled() && messages != nil && provider != nil {
 		compactor = &run.Compactor{
 			Messages:       messages,
 			LLM:            provider,
 			Profiles:       &llm.StoreProfileSource{Store: st},
 			Threshold:      cfg.Conversation.CompactThreshold,
-			ReserveTokens:  cfg.Conversation.CompactReserveTokens,
-			KeepRecent:     cfg.Conversation.CompactKeepRecent,
+			ReserveTokens:  cfg.Conversation.CompactReserveOutput,
+			KeepRecent:     cfg.Conversation.CompactRecentMessages,
 		}
 	}
 ```
