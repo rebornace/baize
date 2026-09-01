@@ -357,3 +357,12 @@ func scanMessage(scanner interface {
 	m.CreatedAt = ts
 	return m, nil
 }
+
+// Temporary stubs for the rolling-summary Store methods. Task 2 replaces these
+// with real SQL persistence; they exist so the package compiles after the
+// Store interface gains the rolling-summary methods.
+func (s *SQLiteStore) GetRollingSummary(conversationID string) (RollingSummary, bool) {
+	return RollingSummary{}, false
+}
+func (s *SQLiteStore) UpsertRollingSummary(sum RollingSummary) error { return nil }
+func (s *SQLiteStore) ClearRollingSummary(conversationID string)     {}
