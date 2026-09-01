@@ -207,6 +207,74 @@ func TestModelProfilesPatchFieldLevelMerge(t *testing.T) {
 	}
 }
 
+func TestModelProfileContextTokensRoundTrip(t *testing.T) {
+	srv := modelProfilesServer(t)
+	h := srv.Handler()
+
+	// Create with an explicit context_tokens; it must be echoed back.
+	createBody := `{"name":"ctx-model","base_url":"https://x/v1","model":"m1","api_key":"sk-env-key-9999","context_tokens":200000}`
+	req := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models", strings.NewReader(createBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created struct {
+		Profile store.ModelProfile `json:"profile"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created.Profile.ID
+	if created.Profile.ContextTokens != 200000 {
+		t.Fatalf("context_tokens not echoed on create: got %d want 200000", created.Profile.ContextTokens)
+	}
+
+	// Partial PATCH of context_tokens must update it while preserving an
+	// unrelated field (model) via field-level merge.
+	patchBody := `{"context_tokens":32000}`
+	patchReq := withAdmin(httptest.NewRequest(http.MethodPatch, "/v0/settings/models/"+id, strings.NewReader(patchBody)))
+	patchReq.Header.Set("Content-Type", "application/json")
+	patchRR := httptest.NewRecorder()
+	h.ServeHTTP(patchRR, patchReq)
+	if patchRR.Code != http.StatusOK {
+		t.Fatalf("patch: code=%d body=%s", patchRR.Code, patchRR.Body.String())
+	}
+	var patched struct {
+		Profile store.ModelProfile `json:"profile"`
+	}
+	if err := json.Unmarshal(patchRR.Body.Bytes(), &patched); err != nil {
+		t.Fatal(err)
+	}
+	if patched.Profile.ContextTokens != 32000 {
+		t.Fatalf("patch context_tokens failed: got %d want 32000", patched.Profile.ContextTokens)
+	}
+	if patched.Profile.Model != "m1" {
+		t.Fatalf("field-level merge lost model: got %q want %q", patched.Profile.Model, "m1")
+	}
+
+	// Spec §6.1: 0/缺省由后端归一为默认 128000 — a profile created without
+	// context_tokens must read back as 128000, never 0.
+	defBody := `{"name":"ctx-default","base_url":"https://x/v1","model":"m1","api_key":"sk-env-key-9999"}`
+	defReq := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models", strings.NewReader(defBody)))
+	defReq.Header.Set("Content-Type", "application/json")
+	defRR := httptest.NewRecorder()
+	h.ServeHTTP(defRR, defReq)
+	if defRR.Code != http.StatusCreated {
+		t.Fatalf("create default: code=%d body=%s", defRR.Code, defRR.Body.String())
+	}
+	var defCreated struct {
+		Profile store.ModelProfile `json:"profile"`
+	}
+	if err := json.Unmarshal(defRR.Body.Bytes(), &defCreated); err != nil {
+		t.Fatal(err)
+	}
+	if defCreated.Profile.ContextTokens != 128000 {
+		t.Fatalf("unset context_tokens must normalize to 128000, got %d", defCreated.Profile.ContextTokens)
+	}
+}
+
 func TestModelProfilesNotFoundReturns404(t *testing.T) {
 	srv := modelProfilesServer(t)
 	h := srv.Handler()

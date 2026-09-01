@@ -144,6 +144,46 @@ func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSQLiteModelProfileContextTokens(t *testing.T) {
+	s := newSQLiteProfileStore(t)
+	got, err := s.UpsertModelProfile(ModelProfile{
+		Name: "ctx", Provider: "openai_compatible", BaseURL: "http://x", Model: "m",
+		APIKey: "sk-abcdefgh1234", ContextTokens: 200000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ContextTokens != 200000 {
+		t.Fatalf("ContextTokens not persisted: %d", got.ContextTokens)
+	}
+	again, err := s.GetModelProfile(got.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ContextTokens != 200000 {
+		t.Fatalf("ContextTokens round trip failed: %d", again.ContextTokens)
+	}
+
+	// UPDATE path must persist a changed value.
+	updated, err := s.UpsertModelProfile(ModelProfile{
+		ID: got.ID, Name: "ctx", Provider: "openai_compatible", BaseURL: "http://x",
+		Model: "m", APIKey: RedactAPIKey("sk-abcdefgh1234"), ContextTokens: 64000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ContextTokens != 64000 {
+		t.Fatalf("ContextTokens not updated: %d", updated.ContextTokens)
+	}
+	again2, err := s.GetModelProfile(got.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again2.ContextTokens != 64000 {
+		t.Fatalf("ContextTokens update round trip failed: %d", again2.ContextTokens)
+	}
+}
+
 func TestSQLiteRunPersistsModelProfileID(t *testing.T) {
 	s := newSQLiteProfileStore(t)
 	s.UpsertAgent(Agent{ID: "a"})

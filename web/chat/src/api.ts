@@ -546,6 +546,7 @@ export interface ModelProfile {
   api_key_env?: string
   disable_thinking: boolean
   supports_vision: boolean
+  context_tokens: number
   is_default: boolean
   created_at?: string
   updated_at?: string
@@ -563,6 +564,7 @@ export type ModelProfileInput = Partial<
     | 'api_key_env'
     | 'disable_thinking'
     | 'supports_vision'
+    | 'context_tokens'
   >
 > & { is_default?: boolean }
 

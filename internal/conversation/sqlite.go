@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS conversation_meta (
   channel_peer TEXT,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+  conversation_id TEXT PRIMARY KEY,
+  summary TEXT NOT NULL,
+  covers_through_message_id TEXT NOT NULL,
+  covers_through_order INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `
 
 // SQLiteStore persists conversation messages in SQLite.
@@ -141,6 +148,7 @@ func (s *SQLiteStore) ListSummaries() []Summary {
 
 func (s *SQLiteStore) Clear(conversationID string) {
 	_, _ = s.exec(`DELETE FROM messages WHERE conversation_id = ?`, conversationID)
+	s.ClearRollingSummary(conversationID)
 }
 
 func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error) {
@@ -162,6 +170,7 @@ func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error
 	if err != nil {
 		return 0, err
 	}
+	s.ClearRollingSummary(conversationID)
 	n, _ := res.RowsAffected()
 	return int(n), nil
 }
@@ -356,4 +365,46 @@ func scanMessage(scanner interface {
 	}
 	m.CreatedAt = ts
 	return m, nil
+}
+
+func (s *SQLiteStore) GetRollingSummary(conversationID string) (RollingSummary, bool) {
+	var rs RollingSummary
+	var updated string
+	err := s.queryRow(
+		`SELECT conversation_id, summary, covers_through_message_id, covers_through_order, updated_at
+		 FROM conversation_summaries WHERE conversation_id = ?`, conversationID,
+	).Scan(&rs.ConversationID, &rs.Summary, &rs.CoversThroughMessageID, &rs.CoversThroughOrder, &updated)
+	if err != nil {
+		return RollingSummary{}, false
+	}
+	if t, perr := time.Parse(time.RFC3339Nano, updated); perr == nil {
+		rs.UpdatedAt = t
+	}
+	return rs, true
+}
+
+func (s *SQLiteStore) UpsertRollingSummary(sum RollingSummary) error {
+	if sum.ConversationID == "" {
+		return fmt.Errorf("conversation id required")
+	}
+	if sum.UpdatedAt.IsZero() {
+		sum.UpdatedAt = time.Now().UTC()
+	}
+	_, err := s.exec(
+		`INSERT INTO conversation_summaries
+		   (conversation_id, summary, covers_through_message_id, covers_through_order, updated_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(conversation_id) DO UPDATE SET
+		   summary = excluded.summary,
+		   covers_through_message_id = excluded.covers_through_message_id,
+		   covers_through_order = excluded.covers_through_order,
+		   updated_at = excluded.updated_at`,
+		sum.ConversationID, sum.Summary, sum.CoversThroughMessageID, sum.CoversThroughOrder,
+		sum.UpdatedAt.Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+func (s *SQLiteStore) ClearRollingSummary(conversationID string) {
+	_, _ = s.exec(`DELETE FROM conversation_summaries WHERE conversation_id = ?`, conversationID)
 }

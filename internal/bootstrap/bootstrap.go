@@ -284,6 +284,22 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		return nil, nil, fmt.Errorf("seed inbox channels: %w", err)
 	}
 
+	// Context compaction folds older history into a rolling summary before a
+	// run when the prompt approaches the model context limit. On the
+	// mock/demo path StoreProfileSource resolves no profile, so MaybeCompact
+	// self-disables (returns false, nil) — no extra guard needed.
+	var compactor *run.Compactor
+	if cfg.CompactEnabled() && messages != nil && provider != nil {
+		compactor = &run.Compactor{
+			Messages:      messages,
+			LLM:           provider,
+			Profiles:      &llm.StoreProfileSource{Store: st},
+			Threshold:     cfg.Conversation.CompactThreshold,
+			ReserveTokens: cfg.Conversation.CompactReserveOutput,
+			KeepRecent:    cfg.Conversation.CompactRecentMessages,
+		}
+	}
+
 	engine := &run.Engine{
 		Store:       st,
 		LLM:         provider,
@@ -293,6 +309,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		ToolTimeout: time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
+		Compactor:   compactor,
 		Identities:  identities,
 		Skills:      skillCat,
 	}
@@ -702,6 +719,7 @@ func seedModelProfile(st store.Store, cfg config.Config) error {
 		APIKeyEnv:       env,
 		DisableThinking: cfg.LLM.DisableThinking,
 		SupportsVision:  cfg.LLM.SupportsVision,
+		ContextTokens:   128000,
 		IsDefault:       true,
 	}); err != nil {
 		return fmt.Errorf("seed model profile: %w", err)

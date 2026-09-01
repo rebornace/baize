@@ -22,6 +22,7 @@ type modelProfilePayload struct {
 	APIKeyEnv       *string `json:"api_key_env"`
 	DisableThinking *bool   `json:"disable_thinking"`
 	SupportsVision  *bool   `json:"supports_vision"`
+	ContextTokens   *int    `json:"context_tokens"`
 	IsDefault       bool    `json:"is_default"`
 }
 
@@ -93,6 +94,9 @@ func (s *Server) handlePostModelProfile(w http.ResponseWriter, r *http.Request) 
 		DisableThinking: p.DisableThinking != nil && *p.DisableThinking,
 		SupportsVision:  p.SupportsVision != nil && *p.SupportsVision,
 	}
+	if p.ContextTokens != nil && *p.ContextTokens > 0 {
+		prof.ContextTokens = *p.ContextTokens
+	}
 	saved, err := s.Store.UpsertModelProfile(prof)
 	if err != nil {
 		writeUpsertError(w, err)
@@ -155,6 +159,9 @@ func (s *Server) handlePatchModelProfile(w http.ResponseWriter, r *http.Request)
 	}
 	if p.SupportsVision != nil {
 		updated.SupportsVision = *p.SupportsVision
+	}
+	if p.ContextTokens != nil && *p.ContextTokens > 0 {
+		updated.ContextTokens = *p.ContextTokens
 	}
 	updated.Provider = supportedModelProvider
 

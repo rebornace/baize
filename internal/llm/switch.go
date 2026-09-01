@@ -19,6 +19,7 @@ type ModelProfileView struct {
 	APIKeyEnv       string
 	DisableThinking bool
 	SupportsVision  bool
+	ContextTokens   int
 	UpdatedAt       time.Time
 }
 

@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -19,20 +20,26 @@ type Store interface {
 	Fork(srcConversationID, throughMessageID string) (newConversationID string, copied int, err error)
 	// SetRunID rebinds a persisted user turn to a new run (regenerate without duplicating the user row).
 	SetRunID(messageID, runID string) error
+	// Rolling summary (context compaction). Derived from messages; safe to drop.
+	GetRollingSummary(conversationID string) (RollingSummary, bool)
+	UpsertRollingSummary(s RollingSummary) error
+	ClearRollingSummary(conversationID string)
 }
 
 // MemoryStore is an in-memory Store implementation.
 type MemoryStore struct {
-	mu   sync.RWMutex
-	msgs map[string][]Message
-	meta map[string]Meta
+	mu        sync.RWMutex
+	msgs      map[string][]Message
+	meta      map[string]Meta
+	summaries map[string]RollingSummary
 }
 
 // NewMemoryStore creates an empty in-memory Store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		msgs: map[string][]Message{},
-		meta: map[string]Meta{},
+		msgs:      map[string][]Message{},
+		meta:      map[string]Meta{},
+		summaries: map[string]RollingSummary{},
 	}
 }
 
@@ -132,6 +139,36 @@ func (s *MemoryStore) Clear(conversationID string) {
 	defer s.mu.Unlock()
 
 	delete(s.msgs, conversationID)
+	delete(s.summaries, conversationID)
+}
+
+func (s *MemoryStore) GetRollingSummary(conversationID string) (RollingSummary, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.summaries[conversationID]
+	return v, ok
+}
+
+func (s *MemoryStore) UpsertRollingSummary(sum RollingSummary) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sum.ConversationID == "" {
+		return fmt.Errorf("conversation id required")
+	}
+	if s.summaries == nil {
+		s.summaries = map[string]RollingSummary{}
+	}
+	if sum.UpdatedAt.IsZero() {
+		sum.UpdatedAt = time.Now().UTC()
+	}
+	s.summaries[sum.ConversationID] = sum
+	return nil
+}
+
+func (s *MemoryStore) ClearRollingSummary(conversationID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.summaries, conversationID)
 }
 
 func (s *MemoryStore) TruncateFrom(conversationID, messageID string) (int, error) {
@@ -151,6 +188,7 @@ func (s *MemoryStore) TruncateFrom(conversationID, messageID string) (int, error
 	}
 	deleted := len(msgs) - anchorIdx
 	s.msgs[conversationID] = msgs[:anchorIdx]
+	delete(s.summaries, conversationID)
 	return deleted, nil
 }
 
