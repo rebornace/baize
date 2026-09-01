@@ -16,6 +16,7 @@ export interface ProfileFormState {
   apiKeyEnv: string
   supportsVision: boolean
   disableThinking: boolean
+  contextTokens: number
   isDefault: boolean
 }
 
@@ -27,6 +28,7 @@ export const EMPTY_PROFILE_FORM: ProfileFormState = {
   apiKeyEnv: '',
   supportsVision: false,
   disableThinking: false,
+  contextTokens: 128000,
   isDefault: false,
 }
 
@@ -38,6 +40,7 @@ export interface ModelProfilePayload {
   api_key_env?: string
   supports_vision?: boolean
   disable_thinking?: boolean
+  context_tokens?: number
   is_default?: boolean
 }
 
@@ -52,6 +55,7 @@ export function profileToForm(p: ModelProfile): ProfileFormState {
     apiKeyEnv: p.api_key_env ?? '',
     supportsVision: p.supports_vision,
     disableThinking: p.disable_thinking,
+    contextTokens: p.context_tokens > 0 ? p.context_tokens : 128000,
     isDefault: p.is_default,
   }
 }
@@ -80,6 +84,7 @@ export function buildCreatePayload(form: ProfileFormState):
       ...(apiKeyEnv ? { api_key_env: apiKeyEnv } : {}),
       supports_vision: form.supportsVision,
       disable_thinking: form.disableThinking,
+      context_tokens: form.contextTokens > 0 ? form.contextTokens : 128000,
       is_default: form.isDefault,
     },
   }
@@ -108,6 +113,10 @@ export function buildPatchPayload(
   }
   if (form.disableThinking !== original.disable_thinking) {
     payload.disable_thinking = form.disableThinking
+  }
+  const contextTokens = Math.floor(Number(form.contextTokens))
+  if (contextTokens > 0 && contextTokens !== original.context_tokens) {
+    payload.context_tokens = contextTokens
   }
   return payload
 }
@@ -205,6 +214,18 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
         />
         禁用思考（disable_thinking）
       </label>
+      <label className="settings-field">
+        <span className="settings-field-label">上下文长度（tokens，留空/0 用默认 128000）</span>
+        <input
+          className="settings-input"
+          type="number"
+          min={1024}
+          step={1000}
+          value={form.contextTokens}
+          onChange={(e) => setForm((f) => ({ ...f, contextTokens: Number(e.target.value) }))}
+          disabled={busy}
+        />
+      </label>
       {!isEdit && (
         <label className="settings-checkbox">
           <input
@@ -252,6 +273,7 @@ export function ModelProfileList({
             {credentialHint(p)}
             {p.supports_vision ? ' · 视觉' : ''}
             {p.disable_thinking ? ' · 禁用思考' : ''}
+            {p.context_tokens > 0 ? ` · ${p.context_tokens} ctx` : ''}
           </p>
           <div className="settings-toolbar">
             <button
