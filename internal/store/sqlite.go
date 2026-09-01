@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   api_key_env TEXT,
   disable_thinking INTEGER,
   supports_vision INTEGER,
+  context_tokens INTEGER NOT NULL DEFAULT 128000,
   is_default INTEGER,
   created_at TEXT,
   updated_at TEXT
@@ -208,6 +209,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 	if err := migrateMCPExportKeys(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
+	}
+	if err := migrateModelProfilesColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles columns: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,
@@ -352,6 +357,14 @@ func migrateToolsColumns(db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func migrateModelProfilesColumns(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 128000`)
+	if err == nil || isDuplicateColumnErr(err) {
+		return nil
+	}
+	return err
 }
 
 func isDuplicateColumnErr(err error) bool {

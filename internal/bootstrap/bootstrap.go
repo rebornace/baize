@@ -702,6 +702,7 @@ func seedModelProfile(st store.Store, cfg config.Config) error {
 		APIKeyEnv:       env,
 		DisableThinking: cfg.LLM.DisableThinking,
 		SupportsVision:  cfg.LLM.SupportsVision,
+		ContextTokens:   128000,
 		IsDefault:       true,
 	}); err != nil {
 		return fmt.Errorf("seed model profile: %w", err)

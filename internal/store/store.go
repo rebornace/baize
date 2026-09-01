@@ -266,6 +266,7 @@ type ModelProfile struct {
 	APIKeyEnv       string    `json:"api_key_env,omitempty"`
 	DisableThinking bool      `json:"disable_thinking"`
 	SupportsVision  bool      `json:"supports_vision"`
+	ContextTokens   int       `json:"context_tokens"`
 	IsDefault       bool      `json:"is_default"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
