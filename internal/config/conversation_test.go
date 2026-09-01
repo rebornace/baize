@@ -50,6 +50,42 @@ func TestLoadConversationPersistIdentitiesNilByDefault(t *testing.T) {
 	}
 }
 
+func TestLoadConversationCompactDefaults(t *testing.T) {
+	path := writeConfig(t, "store:\n  driver: memory\n")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.CompactEnabled() {
+		t.Fatal("CompactEnabled should default to true")
+	}
+	if cfg.Conversation.CompactThreshold != 0.8 {
+		t.Fatalf("CompactThreshold=%v want 0.8", cfg.Conversation.CompactThreshold)
+	}
+	if cfg.Conversation.CompactReserveOutput != 8000 {
+		t.Fatalf("CompactReserveOutput=%d want 8000", cfg.Conversation.CompactReserveOutput)
+	}
+	if cfg.Conversation.CompactRecentMessages != 8 {
+		t.Fatalf("CompactRecentMessages=%d want 8", cfg.Conversation.CompactRecentMessages)
+	}
+}
+
+func TestLoadConversationCompactExplicit(t *testing.T) {
+	path := writeConfig(t, "store:\n  driver: memory\nconversation:\n  compact_enabled: false\n  compact_threshold: 0.5\n  compact_reserve_output: 2000\n  compact_recent_messages: 6\n")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CompactEnabled() {
+		t.Fatal("compact_enabled:false must disable compaction")
+	}
+	if cfg.Conversation.CompactThreshold != 0.5 ||
+		cfg.Conversation.CompactReserveOutput != 2000 ||
+		cfg.Conversation.CompactRecentMessages != 6 {
+		t.Fatalf("explicit compact config not parsed: %+v", cfg.Conversation)
+	}
+}
+
 func TestLoadConversationPersistIdentitiesExplicit(t *testing.T) {
 	cases := []struct {
 		name string

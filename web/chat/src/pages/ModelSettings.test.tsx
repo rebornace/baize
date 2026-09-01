@@ -25,6 +25,7 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   model: 'gpt-4o',
   disable_thinking: false,
   supports_vision: false,
+  context_tokens: 128000,
   is_default: false,
   ...over,
 })
@@ -121,6 +122,7 @@ describe('buildCreatePayload', () => {
     apiKeyEnv: '',
     supportsVision: true,
     disableThinking: false,
+    contextTokens: 128000,
     isDefault: true,
   }
 
@@ -157,9 +159,22 @@ describe('buildCreatePayload', () => {
         api_key_env: 'OPENAI_API_KEY',
         supports_vision: true,
         disable_thinking: false,
+        context_tokens: 128000,
         is_default: true,
       },
     })
+  })
+
+  it('includes context_tokens from the form', () => {
+    const r = buildCreatePayload({ ...valid, contextTokens: 200000 })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.payload.context_tokens).toBe(200000)
+  })
+
+  it('falls back to the default context length when the value is 0', () => {
+    const r = buildCreatePayload({ ...valid, contextTokens: 0 })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.payload.context_tokens).toBe(128000)
   })
 })
 
@@ -205,6 +220,24 @@ describe('buildPatchPayload', () => {
     const form = profileToForm(original)
     form.apiKey = 'sk-new-key'
     expect(buildPatchPayload(form, original)).toEqual({ api_key: 'sk-new-key' })
+  })
+
+  it('omits context_tokens when unchanged', () => {
+    const form = profileToForm(original)
+    expect(form.contextTokens).toBe(128000)
+    expect(buildPatchPayload(form, original)).toEqual({})
+  })
+
+  it('sends context_tokens only when changed', () => {
+    const form = profileToForm(original)
+    form.contextTokens = 32000
+    expect(buildPatchPayload(form, original)).toEqual({ context_tokens: 32000 })
+  })
+
+  it('omits context_tokens when set to 0', () => {
+    const form = profileToForm(original)
+    form.contextTokens = 0
+    expect(buildPatchPayload(form, original)).toEqual({})
   })
 })
 

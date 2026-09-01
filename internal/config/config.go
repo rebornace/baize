@@ -76,6 +76,16 @@ type Config struct {
 	Conversation struct {
 		MaxMessages       int   `yaml:"max_messages"`
 		PersistIdentities *bool `yaml:"persist_identities"`
+		// Context compaction (rolling summary). CompactEnabled defaults to
+		// true (use *bool to distinguish unset from explicit false). Threshold
+		// is the fraction of the model context that may be used before older
+		// history is folded into a rolling summary (out-of-range => 0.8);
+		// ReserveOutput reserves headroom for the answer; RecentMessages is the
+		// number of newest messages always kept verbatim.
+		CompactEnabled        *bool   `yaml:"compact_enabled"`
+		CompactThreshold      float64 `yaml:"compact_threshold"`
+		CompactReserveOutput  int     `yaml:"compact_reserve_output"`
+		CompactRecentMessages int     `yaml:"compact_recent_messages"`
 	} `yaml:"conversation"`
 	MockTicket struct {
 		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
@@ -260,6 +270,19 @@ func applyDefaults(cfg *Config) {
 	if cfg.Conversation.MaxMessages <= 0 {
 		cfg.Conversation.MaxMessages = 40
 	}
+	if cfg.Conversation.CompactEnabled == nil {
+		v := true
+		cfg.Conversation.CompactEnabled = &v
+	}
+	if cfg.Conversation.CompactThreshold <= 0 || cfg.Conversation.CompactThreshold >= 1 {
+		cfg.Conversation.CompactThreshold = 0.8
+	}
+	if cfg.Conversation.CompactReserveOutput <= 0 {
+		cfg.Conversation.CompactReserveOutput = 8000
+	}
+	if cfg.Conversation.CompactRecentMessages <= 0 {
+		cfg.Conversation.CompactRecentMessages = 8
+	}
 	if cfg.Skills.UserDir == "" {
 		cfg.Skills.UserDir = "./data/skills"
 	}
@@ -278,6 +301,14 @@ func (c Config) MCPExportEnabled() bool {
 		return true
 	}
 	return *c.MCPExport.Enabled
+}
+
+// CompactEnabled reports whether context compaction is on (default true).
+func (c Config) CompactEnabled() bool {
+	if c.Conversation.CompactEnabled == nil {
+		return true
+	}
+	return *c.Conversation.CompactEnabled
 }
 
 // SkillBuiltinDirs returns builtin skill scan roots. builtin_dirs wins over builtin_dir when set.

@@ -253,6 +253,10 @@ type MCPExportIdentity struct {
 	UpdatedAt time.Time         `json:"updated_at"`
 }
 
+// DefaultContextTokens is the canonical context window applied when a profile
+// leaves context_tokens unset or non-positive (spec §6.1: never store 0).
+const DefaultContextTokens = 128000
+
 // ModelProfile is a named, selectable LLM configuration. APIKey is stored in
 // plaintext locally (same trust tier as a Postgres DSN password) and is never
 // returned verbatim by the API (see RedactAPIKey).
@@ -266,6 +270,7 @@ type ModelProfile struct {
 	APIKeyEnv       string    `json:"api_key_env,omitempty"`
 	DisableThinking bool      `json:"disable_thinking"`
 	SupportsVision  bool      `json:"supports_vision"`
+	ContextTokens   int       `json:"context_tokens"`
 	IsDefault       bool      `json:"is_default"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`

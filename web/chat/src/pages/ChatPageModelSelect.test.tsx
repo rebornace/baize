@@ -11,6 +11,7 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   model: 'gpt-4o',
   disable_thinking: false,
   supports_vision: false,
+  context_tokens: 128000,
   is_default: false,
   ...over,
 })

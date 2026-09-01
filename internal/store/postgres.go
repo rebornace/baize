@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   api_key_env TEXT,
   disable_thinking BOOLEAN,
   supports_vision BOOLEAN,
+  context_tokens INTEGER NOT NULL DEFAULT 128000,
   is_default BOOLEAN,
   created_at TEXT,
   updated_at TEXT
@@ -182,6 +183,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_profile_id TEXT`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs model_profile_id: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles context_tokens: %w", err)
 	}
 	if err := migrateToolsColumns(db); err != nil {
 		_ = db.Close()

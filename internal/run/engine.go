@@ -22,18 +22,20 @@ import (
 )
 
 const (
-	EventInboxReceived  = "inbox.received"
-	EventInboxResumed   = "inbox.resumed"
-	EventRunStarted     = "run.started"
-	EventLLMToolCall    = "llm.tool_call"
-	EventToolResult     = "tool.result"
-	EventLLMMessage     = "llm.message"
-	EventLLMError       = "llm.error"
-	EventHITLWaiting    = "hitl.waiting"
-	EventHITLResumed    = "hitl.resumed"
-	EventHITLRejected   = "hitl.rejected"
-	EventRunCancelled   = "run.cancelled"
-	EventWorkflowPrefix = "workflow."
+	EventInboxReceived = "inbox.received"
+	EventInboxResumed  = "inbox.resumed"
+	EventRunStarted    = "run.started"
+	EventLLMToolCall   = "llm.tool_call"
+	EventToolResult    = "tool.result"
+	EventLLMMessage    = "llm.message"
+	EventLLMError      = "llm.error"
+	EventHITLWaiting   = "hitl.waiting"
+	EventHITLResumed   = "hitl.resumed"
+	EventHITLRejected  = "hitl.rejected"
+	EventRunCancelled  = "run.cancelled"
+	// EventContextCompacted records a rolling-summary compaction before a run.
+	EventContextCompacted = "context.compacted"
+	EventWorkflowPrefix   = "workflow."
 
 	DefaultToolTimeout = 60 * time.Second
 )
@@ -55,6 +57,10 @@ type Engine struct {
 	// records terminal assistant / system_note messages on succeeded / failed.
 	Messages    conversation.Store
 	MaxMessages int // conversation window size; config Load defaults <=0 to 40
+	// Compactor optionally folds older history into a rolling summary before a
+	// run when the prompt approaches the model's context limit. nil = disabled
+	// (hard sliding window only).
+	Compactor *Compactor
 	// Identities is optional. When non-nil, tools with RequireLogin are gated
 	// before HITL / Invoke when the run has a conversation_id.
 	Identities identity.Store
@@ -121,6 +127,22 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 	e.beginRunSkills(runID, skills, ag.System, beginRunInput(input))
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)
+	if e.Compactor != nil && runRec.ConversationID != "" {
+		changed, cerr := e.Compactor.MaybeCompact(ctx, runRec.ConversationID, e.specsForRun(runID), runRec.ModelProfileID)
+		if cerr != nil {
+			// Compaction is best-effort: record an error event and continue
+			// with the hard window. Never block the reply.
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventLLMError,
+				Data: map[string]any{"error": "context compaction skipped: " + cerr.Error()},
+			})
+		} else if changed {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventContextCompacted,
+				Data: map[string]any{"note": "older history folded into rolling summary"},
+			})
+		}
+	}
 	messages := e.buildMessages(sys, runRec.ConversationID, input, opts.UserParts)
 	err = e.runLoop(ctx, runID, messages)
 	if errors.Is(err, context.Canceled) {
@@ -197,11 +219,15 @@ func (e *Engine) toolTimeout() time.Duration {
 	return DefaultToolTimeout
 }
 
-// buildMessages assembles the LLM prompt: system + windowed conversation
-// history + current user input. When the most recent history entry is already a
-// user message with the same content as input (the API appends the user message
-// before calling Execute), the current input is not appended again to avoid a
-// duplicate turn.
+// buildMessages assembles the LLM prompt: system + (when a rolling summary
+// exists) a summary system message + verbatim conversation history + current
+// user input. When a summary exists, the verbatim history starts AFTER the
+// summary cursor (CoversThroughOrder): folded messages are delivered only via
+// the summary and must never be repeated verbatim. Without a summary the hard
+// sliding window (ListWindow) is used unchanged. When the most recent history
+// entry is already a user message with the same content as input (the API
+// appends the user message before calling Execute), the current input is not
+// appended again to avoid a duplicate turn.
 //
 // When userParts is non-empty, the trailing persisted user message (which carries
 // only the display text, without attachment content or image bytes) is replaced
@@ -211,7 +237,29 @@ func (e *Engine) toolTimeout() time.Duration {
 func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 	if e.Messages != nil && conversationID != "" {
-		for _, m := range e.Messages.ListWindow(conversationID, e.MaxMessages) {
+		hist := e.Messages.ListWindow(conversationID, e.MaxMessages)
+		var sum conversation.RollingSummary
+		hasSummary := false
+		if s, ok := e.Messages.GetRollingSummary(conversationID); ok && strings.TrimSpace(s.Summary) != "" {
+			sum = s
+			hasSummary = true
+			full := e.Messages.List(conversationID)
+			start := sum.CoversThroughOrder + 1
+			if start < 0 {
+				start = 0
+			}
+			if start > len(full) {
+				start = len(full)
+			}
+			hist = full[start:]
+		}
+		if hasSummary {
+			messages = append(messages, llm.Message{
+				Role:    llm.RoleSystem,
+				Content: "以下是较早对话的滚动摘要（供参考，不要向用户提及这是摘要）：\n\n" + sum.Summary,
+			})
+		}
+		for _, m := range hist {
 			switch m.Role {
 			case conversation.RoleUser:
 				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: m.Content})
