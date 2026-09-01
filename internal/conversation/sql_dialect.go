@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS conversation_meta (
 		if _, err := db.Exec(pgMeta); err != nil {
 			return nil, err
 		}
+		const pgSummaries = `
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+  conversation_id TEXT PRIMARY KEY,
+  summary TEXT NOT NULL,
+  covers_through_message_id TEXT NOT NULL,
+  covers_through_order INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);`
+		if _, err := db.Exec(pgSummaries); err != nil {
+			return nil, err
+		}
 	}
 	return &SQLiteStore{db: db, dialect: dialect}, nil
 }

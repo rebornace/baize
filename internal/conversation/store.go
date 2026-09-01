@@ -184,6 +184,7 @@ func (s *MemoryStore) TruncateFrom(conversationID, messageID string) (int, error
 	}
 	deleted := len(msgs) - anchorIdx
 	s.msgs[conversationID] = msgs[:anchorIdx]
+	delete(s.summaries, conversationID)
 	return deleted, nil
 }
 

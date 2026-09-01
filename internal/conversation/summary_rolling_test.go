@@ -49,3 +49,16 @@ func TestMemoryRollingSummaryForkDoesNotCopy(t *testing.T) {
 		t.Fatal("forked conversation must not inherit rolling summary")
 	}
 }
+
+func TestMemoryTruncateClearsSummary(t *testing.T) {
+	s := NewMemoryStore()
+	m1, _ := s.Append("c1", Message{Role: RoleUser, Content: "a"})
+	s.Append("c1", Message{Role: RoleUser, Content: "b"})
+	s.UpsertRollingSummary(RollingSummary{ConversationID: "c1", Summary: "S", CoversThroughMessageID: m1.ID, CoversThroughOrder: 0})
+	if _, err := s.TruncateFrom("c1", m1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.GetRollingSummary("c1"); ok {
+		t.Fatal("truncate must clear rolling summary")
+	}
+}
