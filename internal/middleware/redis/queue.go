@@ -1,0 +1,103 @@
+package redis
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/rebornace/baize/internal/middleware"
+	goredis "github.com/redis/go-redis/v9"
+)
+
+// queue implements middleware.JobQueue on Redis Streams + consumer groups.
+//
+// XAUTOCLAIM (PEL reclaim) is intentionally not implemented in v0: the DB
+// reconciler is the authoritative lease/requeue path. Pending entries left in
+// the consumer-group PEL after a crash are recovered when reconciler re-enqueues
+// the run; a future revision may add periodic XAUTOCLAIM as a secondary safety net.
+type queue struct {
+	client   *goredis.Client
+	stream   string
+	group    string
+	consumer string
+}
+
+func newQueue(c *goredis.Client, stream, group, consumer string) *queue {
+	return &queue{client: c, stream: stream, group: group, consumer: consumer}
+}
+
+func (q *queue) ensureGroup(ctx context.Context) error {
+	err := q.client.XGroupCreateMkStream(ctx, q.stream, q.group, "$").Err()
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "BUSYGROUP") {
+		return nil
+	}
+	return fmt.Errorf("redis queue: create group: %w", err)
+}
+
+// Enqueue serializes job and XADDs it. Redis ops use a detached short-timeout
+// context so a cancelled request ctx cannot turn a successful XADD into an
+// Enqueue error (which would trigger Dispatch local fallback + worker double-run).
+func (q *queue) Enqueue(ctx context.Context, job middleware.Job) error {
+	if job.EnqueuedAt.IsZero() {
+		job.EnqueuedAt = time.Now().UTC()
+	}
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("redis queue: marshal job: %w", err)
+	}
+	opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return q.client.XAdd(opCtx, &goredis.XAddArgs{
+		Stream: q.stream,
+		Values: map[string]any{"job": string(payload)},
+	}).Err()
+}
+
+func (q *queue) Consume(ctx context.Context) (middleware.Job, func(), bool) {
+	res, err := q.client.XReadGroup(ctx, &goredis.XReadGroupArgs{
+		Group:    q.group,
+		Consumer: q.consumer,
+		Streams:  []string{q.stream, ">"},
+		Count:    1,
+		Block:    5 * time.Second,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, goredis.Nil) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return middleware.Job{}, nil, false
+		}
+		// Block timeout / transient errors: worker loop retries.
+		return middleware.Job{}, nil, false
+	}
+	if len(res) == 0 || len(res[0].Messages) == 0 {
+		return middleware.Job{}, nil, false
+	}
+	msg := res[0].Messages[0]
+	raw, _ := msg.Values["job"].(string)
+	var job middleware.Job
+	if err := json.Unmarshal([]byte(raw), &job); err != nil {
+		// Poison message: ack to avoid infinite redelivery; drop.
+		ack := q.makeAck(msg.ID)
+		ack()
+		return middleware.Job{}, nil, false
+	}
+	return job, q.makeAck(msg.ID), true
+}
+
+// makeAck returns a panic-safe XACK closure so network/client panics cannot
+// take down the worker process (task 5 ledger).
+func (q *queue) makeAck(msgID string) func() {
+	return func() {
+		defer func() { _ = recover() }()
+		ackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = q.client.XAck(ackCtx, q.stream, q.group, msgID).Err()
+	}
+}
+
+func (q *queue) Close() error { return nil }

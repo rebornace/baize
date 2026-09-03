@@ -12,6 +12,8 @@ import (
 
 	// Register weixin Channel factory (Start/Runtime wiring in Task 6).
 	_ "github.com/rebornace/baize/internal/channel/weixin"
+	// Register redis middleware driver (Streams / PubSub / Lua limiter).
+	_ "github.com/rebornace/baize/internal/middleware/redis"
 )
 
 func main() {
