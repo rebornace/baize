@@ -49,16 +49,19 @@ func newLimiter(c *goredis.Client) *limiter {
 }
 
 func (l *limiter) Allow(key string) bool {
-	return l.AllowBudget(key, l.limit, l.window)
+	// Allow uses the driver default budget with the baize:rl: key prefix.
+	return l.AllowBudget(keyPrefix+key, l.limit, l.window)
 }
 
 // AllowBudget evaluates a sliding-window budget for key (used by task 10 wrappers).
+// Callers pass the full Redis key (e.g. "baize:rl:inbox:"+channelID). Fails open
+// (returns true) on Redis errors.
 func (l *limiter) AllowBudget(key string, limit int, window time.Duration) bool {
 	nowMs := time.Now().UnixMilli()
 	member := strconv.FormatInt(nowMs, 10) + ":" + strconv.FormatInt(memberSeq.Add(1), 10)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	n, err := allowScript.Run(ctx, l.client, []string{keyPrefix + key},
+	n, err := allowScript.Run(ctx, l.client, []string{key},
 		nowMs, window.Milliseconds(), limit, member,
 	).Int()
 	if err != nil {

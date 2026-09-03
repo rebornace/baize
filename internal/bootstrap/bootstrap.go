@@ -414,6 +414,20 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.Queue = mw.Queue
 	srv.LeaseTTL = time.Duration(cfg.Middleware.LeaseTTLSec) * time.Second
 
+	// redis 驱动下用分布式 BudgetLimiter 覆盖 inbox/callback 入站限流；
+	// memory 驱动不设 Gate，继续走进程内 InboxLimiter/CallbackLimiter。
+	// 内存默认限流器仍保留（gate 优先），既有测试可依赖字段非 nil。
+	if driver == "redis" {
+		if bl, ok := mw.Limiter.(middleware.BudgetLimiter); ok {
+			srv.InboxGate = func(channelID string) bool {
+				return bl.AllowBudget("baize:rl:inbox:"+channelID, inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+			}
+			srv.CallbackGate = func(runID string) bool {
+				return bl.AllowBudget("baize:rl:cb:"+runID, plugincallback.DefaultBudget, plugincallback.DefaultWindow)
+			}
+		}
+	}
+
 	// 事件总线桥接：redis 驱动（任务 9）实现 BridgeToHub/Start，把跨副本
 	// nudge 注入本地 Hub 并启动 Pub/Sub 订阅；memory 驱动的 bus 不实现该
 	// 接口，类型断言失败即安全跳过（SSE/webhook 直接走进程内 Hub）。

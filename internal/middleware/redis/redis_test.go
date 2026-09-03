@@ -144,6 +144,52 @@ func TestRedisLimiterFailOpen(t *testing.T) {
 	}
 }
 
+func TestRedisLimiterSharedBudgetAcrossInstances(t *testing.T) {
+	mr := miniredis.RunT(t)
+	open := func(name string) *middleware.Middleware {
+		t.Helper()
+		mw, err := mwredis.Open(context.Background(), mwredis.Config{
+			Addr: mr.Addr(), Stream: "baize:runs", ConsumerGroup: "baize-workers",
+			EventsChannel: "baize:run-events", ConsumerName: name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = mw.Close() })
+		return mw
+	}
+	a := open("shared-a")
+	b := open("shared-b")
+	blA, ok := a.Limiter.(middleware.BudgetLimiter)
+	if !ok {
+		t.Fatal("limiter A does not implement BudgetLimiter")
+	}
+	blB, ok := b.Limiter.(middleware.BudgetLimiter)
+	if !ok {
+		t.Fatal("limiter B does not implement BudgetLimiter")
+	}
+
+	const limit = 5
+	key := "baize:rl:inbox:shared-channel"
+	allowed := 0
+	for i := 0; i < limit; i++ {
+		if blA.AllowBudget(key, limit, time.Minute) {
+			allowed++
+		}
+	}
+	for i := 0; i < limit; i++ {
+		if blB.AllowBudget(key, limit, time.Minute) {
+			allowed++
+		}
+	}
+	if allowed != limit {
+		t.Fatalf("shared budget allowed=%d want %d (two instances must share quota)", allowed, limit)
+	}
+	if blA.AllowBudget(key, limit, time.Minute) {
+		t.Fatal("budget exhausted: further AllowBudget should be false")
+	}
+}
+
 func TestRedisConsumeSurvivesIdleThenGetsJob(t *testing.T) {
 	mr := miniredis.RunT(t)
 	mw, err := mwredis.Open(context.Background(), mwredis.Config{

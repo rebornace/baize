@@ -95,6 +95,8 @@ type Server struct {
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
 	inboxLimiterOnce sync.Once
+	// InboxGate 可选；非 nil 时 inbox 入站限流走它（key=channelID）。nil 时回退 InboxLimiter。
+	InboxGate func(channelID string) bool
 	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
 	MCPExportEnabled bool
 	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
@@ -113,6 +115,8 @@ type Server struct {
 	// CallbackLimiter caps per-run callback throughput. nil => no limiting
 	// (bootstrap always sets one).
 	CallbackLimiter *plugincallback.Limiter
+	// CallbackGate 可选；非 nil 时 sidecar callback 限流走它（key=runID）。nil 时回退 CallbackLimiter。
+	CallbackGate func(runID string) bool
 	// CallbackSigner / CallbackPublicBase / CallbackTTL configure
 	// callback_urls.event injection into sidecar invoke context. When any
 	// piece is missing the URL is omitted (fail-open). Set by bootstrap.
@@ -1952,7 +1956,12 @@ func (s *Server) handlePluginCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
 		return
 	}
-	if s.CallbackLimiter != nil && !s.CallbackLimiter.Allow(runID, time.Now()) {
+	if s.CallbackGate != nil {
+		if !s.CallbackGate(runID) {
+			writeError(w, http.StatusTooManyRequests, "rate_limited", "callback budget exhausted for this run")
+			return
+		}
+	} else if s.CallbackLimiter != nil && !s.CallbackLimiter.Allow(runID, time.Now()) {
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "callback budget exhausted for this run")
 		return
 	}

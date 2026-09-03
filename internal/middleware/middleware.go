@@ -35,6 +35,11 @@ type Limiter interface {
 	Allow(key string) bool
 }
 
+// BudgetLimiter is implemented by limiters that support an explicit quota/window.
+type BudgetLimiter interface {
+	AllowBudget(key string, limit int, window time.Duration) bool
+}
+
 // Options configures a driver. Redis fields are ignored by the memory driver.
 type Options struct {
 	WorkerConcurrency int
