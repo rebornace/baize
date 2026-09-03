@@ -16,10 +16,11 @@ const defaultConsumeBlock = 5 * time.Second
 
 // queue implements middleware.JobQueue on Redis Streams + consumer groups.
 //
-// XAUTOCLAIM (PEL reclaim) is intentionally not implemented in v0: the DB
-// reconciler is the authoritative lease/requeue path. Pending entries left in
-// the consumer-group PEL after a crash are recovered when reconciler re-enqueues
-// the run; a future revision may add periodic XAUTOCLAIM as a secondary safety net.
+// XAUTOCLAIM is intentionally not implemented in v0. Crash recovery relies on
+// the DB reconciler re-claiming expired leases and re-XADDing the run; the
+// consumer-group PEL may accumulate stale entries after worker crashes.
+// Operators may XTRIM the stream or periodically clean the PEL. A future
+// revision may add periodic XAUTOCLAIM as a secondary safety net.
 type queue struct {
 	client   *goredis.Client
 	stream   string

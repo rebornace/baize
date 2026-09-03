@@ -9,6 +9,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/middleware"
 	mwredis "github.com/rebornace/baize/internal/middleware/redis"
+	"github.com/rebornace/baize/internal/store"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -297,4 +298,81 @@ func TestRedisConsumeSkipsPoisonKeepsGoing(t *testing.T) {
 		t.Fatalf("expected good job after poison, ok=%v job=%+v", ok, got)
 	}
 	ack()
+}
+
+// TestNotifyAppendEventPublishesRunEventAcrossReplicas mirrors bootstrap wiring:
+// replica A Notify+OnEvent→PublishRunEvent; replica B BridgeToHub receives
+// PublishExternal after AppendEvent on A.
+func TestNotifyAppendEventPublishesRunEventAcrossReplicas(t *testing.T) {
+	mr := miniredis.RunT(t)
+	open := func(name string) *middleware.Middleware {
+		t.Helper()
+		mw, err := mwredis.Open(context.Background(), mwredis.Config{
+			Addr: mr.Addr(), Stream: "baize:runs-xrep", ConsumerGroup: "baize-workers",
+			EventsChannel: "baize:run-events-xrep", ConsumerName: name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = mw.Close() })
+		return mw
+	}
+	a := open("replica-a")
+	b := open("replica-b")
+
+	hubA := eventbus.NewHub()
+	hubB := eventbus.NewHub()
+	st := eventbus.Notify(store.NewMemory(), hubA)
+
+	// Same wiring as bootstrap: OnEvent → Bus.PublishRunEvent (skip nudge loop).
+	hubA.OnEvent(func(runID string, ev eventbus.IndexedEvent) {
+		if ev.Event.Type == "external.nudge" {
+			return
+		}
+		if err := a.Bus.PublishRunEvent(context.Background(), runID, int64(ev.Index)); err != nil {
+			t.Errorf("PublishRunEvent: %v", err)
+		}
+	})
+
+	type hubBridge interface {
+		BridgeToHub(hub *eventbus.Hub)
+		Start(ctx context.Context)
+	}
+	bb, ok := b.Bus.(hubBridge)
+	if !ok {
+		t.Fatal("replica B bus missing BridgeToHub/Start")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	bb.BridgeToHub(hubB)
+	bb.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	sub := hubB.Subscribe("run_xrep")
+	t.Cleanup(sub.Cancel)
+
+	run, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Subscribe before Append using fixed ID so we know the key; recreate sub on run.ID.
+	sub.Cancel()
+	sub = hubB.Subscribe(run.ID)
+	t.Cleanup(sub.Cancel)
+
+	if err := st.AppendEvent(run.ID, store.Event{Type: "llm.message", Data: map[string]any{"content": "cross"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case ev := <-sub.Events:
+		if ev.Event.Type != "external.nudge" {
+			t.Fatalf("type=%q want external.nudge", ev.Event.Type)
+		}
+		if ev.Index != 0 {
+			t.Fatalf("Index=%d want 0", ev.Index)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("replica B hub did not receive cross-replica PublishExternal")
+	}
 }

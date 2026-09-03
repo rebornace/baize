@@ -2172,9 +2172,14 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Events and Ended may both be ready; drain events first so the
-			// final AppendEvent is not lost when select picks Ended.
+			// final AppendEvent is not lost when select picks Ended. Then
+			// catch up from store: channel may only hold external.nudge
+			// placeholders while real events live in the store.
 			lastSent, drainErr = drainSubEvents(w, rc, sub, lastSent)
 			if drainErr != nil {
+				return
+			}
+			if _, _, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
 				return
 			}
 			_ = writeSSEEnded(w, rc, stt)

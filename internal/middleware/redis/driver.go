@@ -33,11 +33,7 @@ func Open(ctx context.Context, cfg Config) (*middleware.Middleware, error) {
 		cfg.EventsChannel = "baize:run-events"
 	}
 	if cfg.ConsumerName == "" {
-		name, _ := os.Hostname()
-		if name == "" {
-			name = "baize-worker"
-		}
-		cfg.ConsumerName = name
+		cfg.ConsumerName = defaultConsumerName()
 	}
 
 	client := goredis.NewClient(&goredis.Options{
@@ -64,13 +60,23 @@ func Open(ctx context.Context, cfg Config) (*middleware.Middleware, error) {
 	return mw, nil
 }
 
+// defaultConsumerName returns hostname-pid (or baize-pid when hostname is empty)
+// so multiple processes on one host do not share a single Streams consumer identity.
+func defaultConsumerName() string {
+	name, _ := os.Hostname()
+	if name == "" {
+		name = "baize"
+	}
+	return fmt.Sprintf("%s-%d", name, os.Getpid())
+}
+
 func init() {
 	middleware.RegisterDriver("redis", func(ctx context.Context, o middleware.Options) (*middleware.Middleware, error) {
-		name, _ := os.Hostname()
+		// ConsumerName left empty so Open applies hostname-pid default.
 		cfg := Config{
 			Addr: o.Redis.Addr, DB: o.Redis.DB, Username: o.Redis.Username, Password: o.Redis.Password,
 			Stream: o.Redis.Stream, ConsumerGroup: o.Redis.ConsumerGroup,
-			EventsChannel: o.Redis.EventsChannel, ConsumerName: name,
+			EventsChannel: o.Redis.EventsChannel,
 		}
 		return Open(ctx, cfg)
 	})

@@ -72,6 +72,7 @@ conversation:
 #   #   stream: baize:runs
 #   #   consumer_group: baize-workers
 #   #   events_channel: baize:run-events
+#   # 不做 XAUTOCLAIM；崩溃恢复靠 DB reconciler 再 XADD。PEL 可能堆积，运维可 XTRIM/定期清理。
 mock_ticket:
   listen: ":18080"
 inbox:

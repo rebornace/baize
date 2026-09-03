@@ -428,6 +428,18 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		}
 	}
 
+	// 跨副本发布：本地 AppendEvent 经 Notify → Hub.Publish 后，再经 Bus
+	// 发出 RunEventNudge。跳过 external.nudge，避免 BridgeToHub 回环。
+	// memory bus 的 PublishRunEvent 只写本地 channel，语义无接受。
+	hub.OnEvent(func(runID string, ev eventbus.IndexedEvent) {
+		if ev.Event.Type == "external.nudge" {
+			return
+		}
+		if err := mw.Bus.PublishRunEvent(context.Background(), runID, int64(ev.Index)); err != nil {
+			log.Printf("middleware: publish run event nudge: %v", err)
+		}
+	})
+
 	// 事件总线桥接：redis 驱动（任务 9）实现 BridgeToHub/Start，把跨副本
 	// nudge 注入本地 Hub 并启动 Pub/Sub 订阅；memory 驱动的 bus 不实现该
 	// 接口，类型断言失败即安全跳过（SSE/webhook 直接走进程内 Hub）。
