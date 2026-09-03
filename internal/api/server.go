@@ -34,6 +34,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
@@ -73,6 +74,11 @@ type Server struct {
 	Messages       conversation.Store // optional; nil = no message persistence
 	Hub            *eventbus.Hub      // optional; nil = SSE replay only (no live fan-out)
 	DefaultAgentID string
+	// Queue optionally dispatches runs to competing workers. nil = in-process
+	// goroutine execution (legacy single-instance behavior).
+	Queue middleware.JobQueue
+	// LeaseTTL is the worker lease duration for executed runs (default 60s).
+	LeaseTTL time.Duration
 	// AuthMode is the active connector's normalized auth mode. Only "passthrough"
 	// changes POST /runs and POST /runs/{id}/resume behavior to pick headers.
 	AuthMode string
@@ -1528,6 +1534,132 @@ func (s *Server) runExecute(ctx context.Context, runID string, def agent.Def, in
 	return s.Runner.Execute(ctx, runID, def, input)
 }
 
+// ExecuteJob runs a queued run under a worker lease with idempotency gating.
+// It implements middleware.Executor: queue workers and the local fallback
+// goroutine both funnel through it. Terminal or HITL-waiting runs are
+// ack-skipped (resume is a separate entry point); a live lease held by
+// another worker is also ack-skipped.
+func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
+	if job.RunID == "" {
+		return nil
+	}
+	cur, err := s.Store.GetRun(job.RunID)
+	if err != nil || cur == nil {
+		return err
+	}
+	switch cur.Status {
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusWaitingHuman:
+		return nil
+	}
+
+	ttl := s.LeaseTTL
+	if ttl <= 0 {
+		ttl = 60 * time.Second
+	}
+	acquired, err := s.Store.LeaseRun(job.RunID, ttl)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return nil // another worker holds the lease
+	}
+	defer func() { _ = s.Store.ClearRunLease(job.RunID) }()
+
+	hbCtx, stopHB := context.WithCancel(ctx)
+	defer stopHB()
+	go s.leaseHeartbeat(hbCtx, job.RunID, ttl)
+
+	def, input, opts, err := s.resolveJob(job, cur)
+	if err != nil {
+		s.finalizeRunError(job.RunID, cur.ConversationID, err)
+		return nil
+	}
+	if err := s.runExecute(ctx, job.RunID, def, input, opts); err != nil {
+		s.finalizeRunError(job.RunID, cur.ConversationID, err)
+		return err
+	}
+	return nil
+}
+
+// leaseHeartbeat renews the worker lease roughly every ttl/3 until ctx ends.
+func (s *Server) leaseHeartbeat(ctx context.Context, runID string, ttl time.Duration) {
+	t := time.NewTicker(ttl / 3)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_, _ = s.Store.HeartbeatRun(runID, ttl)
+		}
+	}
+}
+
+// resolveJob rebuilds the agent def, input, and run options for a queued job,
+// falling back to the persisted run row when the job omits a field.
+func (s *Server) resolveJob(job middleware.Job, cur *store.Run) (agent.Def, string, run.RunOptions, error) {
+	agentID := strings.TrimSpace(job.AgentID)
+	if agentID == "" {
+		agentID = cur.AgentID
+	}
+	ag, err := s.Store.GetAgent(agentID)
+	if err != nil {
+		return agent.Def{}, "", run.RunOptions{}, err
+	}
+	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+	input := job.Input
+	if strings.TrimSpace(input) == "" {
+		input = cur.Input
+	}
+	opts := run.RunOptions{Skills: job.Skills, UserParts: partsFromMiddleware(job.UserParts)}
+	return def, input, opts, nil
+}
+
+// finalizeRunError mirrors the legacy background-goroutine failure handling:
+// re-read the run, and only when it is still queued/running mark it failed,
+// append an LLM error event, and leave a system note in the conversation.
+func (s *Server) finalizeRunError(runID, convID string, runErr error) {
+	cur, _ := s.Store.GetRun(runID)
+	if cur == nil {
+		return
+	}
+	if cur.Status != store.StatusRunning && cur.Status != store.StatusQueued {
+		return
+	}
+	_ = s.Store.UpdateRun(runID, store.StatusFailed, "", runErr.Error())
+	_ = s.Store.AppendEvent(runID, store.Event{
+		Type: run.EventLLMError,
+		Data: map[string]any{"error": runErr.Error()},
+	})
+	if s.Messages != nil && convID != "" {
+		note := strings.TrimSpace(runErr.Error())
+		if note == "" {
+			note = "运行失败"
+		} else {
+			note = "运行失败：" + note
+		}
+		_, _ = s.Messages.Append(convID, conversation.Message{
+			Role:    conversation.RoleSystemNote,
+			Content: note,
+			RunID:   runID,
+		})
+	}
+}
+
+// Dispatch enqueues a job when a Queue is configured, falling back to a local
+// goroutine (legacy behavior) on nil queue or enqueue failure.
+func (s *Server) Dispatch(ctx context.Context, job middleware.Job) {
+	if job.EnqueuedAt.IsZero() {
+		job.EnqueuedAt = time.Now().UTC()
+	}
+	if s.Queue != nil {
+		if err := s.Queue.Enqueue(ctx, job); err == nil {
+			return
+		}
+	}
+	go func() { _ = s.ExecuteJob(context.Background(), job) }()
+}
+
 // writeAttachmentError maps an attach.Process error to the spec's API error
 // codes. Unsupported MIME, size/count limits, and empty-PDF each get a distinct
 // code; everything else (e.g. bad base64) is reported as invalid_attachment.
@@ -2437,22 +2569,13 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 	}
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	go func(runID, in string, def agent.Def, ro run.RunOptions) {
-		err := s.runExecute(context.Background(), runID, def, in, ro)
-		if err == nil {
-			return
-		}
-		cur, getErr := s.Store.GetRun(runID)
-		if getErr != nil || cur == nil {
-			return
-		}
-		if s.Messages != nil && cur.ConversationID != "" {
-			_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
-				Role:    conversation.RoleSystemNote,
-				Content: "运行失败：" + err.Error(),
-				RunID:   runID,
-			})
-		}
-	}(runRec.ID, input, def, opts.runOpts)
+	s.Dispatch(r.Context(), middleware.Job{
+		RunID:     runRec.ID,
+		Kind:      middleware.KindRun,
+		AgentID:   def.ID,
+		Input:     input,
+		Skills:    opts.runOpts.Skills,
+		UserParts: PartsToMiddleware(opts.runOpts.UserParts),
+	})
 	return runRec, nil
 }

@@ -23,10 +23,11 @@ type Job struct {
 	EnqueuedAt time.Time `json:"enqueued_at"`
 }
 
-// Part is a serializable multimodal content part (text or image URL/data).
-// It mirrors llm.ContentPart for transport across drivers.
+// Part is a serializable multimodal content part (text or image data URI).
+// It mirrors llm.ContentPart for transport across drivers; images ride as
+// pre-built data: URIs so the payload stays queue-serializable.
 type Part struct {
-	Type     string `json:"type"` // "text" | "image"
-	Text     string `json:"text,omitempty"`
-	ImageURL string `json:"image_url,omitempty"`
+	Type    string `json:"type"` // "text" | "image"
+	Text    string `json:"text,omitempty"`
+	DataURL string `json:"data_url,omitempty"` // Type == "image": data: URI
 }

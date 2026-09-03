@@ -8,6 +8,7 @@ import (
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -64,37 +65,14 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	go func(runID, input string, def agent.Def, opts run.RunOptions) {
-		err := s.runExecute(context.Background(), runID, def, input, opts)
-		if err == nil {
-			return
-		}
-		cur, getErr := s.Store.GetRun(runID)
-		if getErr != nil || cur == nil {
-			return
-		}
-		switch cur.Status {
-		case store.StatusRunning, store.StatusQueued:
-			_ = s.Store.UpdateRun(runID, store.StatusFailed, "", err.Error())
-			_ = s.Store.AppendEvent(runID, store.Event{
-				Type: run.EventLLMError,
-				Data: map[string]any{"error": err.Error()},
-			})
-			if s.Messages != nil && cur.ConversationID != "" {
-				note := strings.TrimSpace(err.Error())
-				if note == "" {
-					note = "运行失败"
-				} else {
-					note = "运行失败：" + note
-				}
-				_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
-					Role:    conversation.RoleSystemNote,
-					Content: note,
-					RunID:   runID,
-				})
-			}
-		}
-	}(runRec.ID, in.Input, def, runOpts)
+	s.Dispatch(ctx, middleware.Job{
+		RunID:     runRec.ID,
+		Kind:      middleware.KindRun,
+		AgentID:   def.ID,
+		Input:     in.Input,
+		Skills:    runOpts.Skills,
+		UserParts: PartsToMiddleware(runOpts.UserParts),
+	})
 
 	return s.Store.GetRun(runRec.ID)
 }

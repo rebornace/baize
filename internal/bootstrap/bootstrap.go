@@ -16,7 +16,6 @@ import (
 	"time"
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
-	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/analysis"
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/artifact"
@@ -32,6 +31,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
@@ -415,15 +415,13 @@ func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, mess
 		DefaultAgentID: agentID,
 		SupportsVision: supportsVision,
 		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
-			ag, err := st.GetAgent(runRec.AgentID)
-			if err != nil {
-				return err
-			}
-			def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
-			opts := run.RunOptions{UserParts: userParts}
-			go func() {
-				_ = engine.ExecuteWithOpts(context.Background(), runRec.ID, def, runRec.Input, opts)
-			}()
+			srv.Dispatch(context.Background(), middleware.Job{
+				RunID:     runRec.ID,
+				Kind:      middleware.KindRun,
+				AgentID:   runRec.AgentID,
+				Input:     runRec.Input,
+				UserParts: api.PartsToMiddleware(userParts),
+			})
 			return nil
 		},
 		ResumeHITL: func(ctx context.Context, runID string, approve bool, comment string) error {
