@@ -73,7 +73,13 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Rate limit only after a valid signature so unsigned traffic cannot burn quota.
-	if !s.inboxLimiter().Allow(channelID) {
+	allowed := false
+	if s.InboxGate != nil {
+		allowed = s.InboxGate(channelID)
+	} else {
+		allowed = s.inboxLimiter().Allow(channelID)
+	}
+	if !allowed {
 		w.Header().Set("Retry-After", inboxRetryAfter)
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "channel rate limit exceeded")
 		return

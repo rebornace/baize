@@ -34,6 +34,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
@@ -73,6 +74,11 @@ type Server struct {
 	Messages       conversation.Store // optional; nil = no message persistence
 	Hub            *eventbus.Hub      // optional; nil = SSE replay only (no live fan-out)
 	DefaultAgentID string
+	// Queue optionally dispatches runs to competing workers. nil = in-process
+	// goroutine execution (legacy single-instance behavior).
+	Queue middleware.JobQueue
+	// LeaseTTL is the worker lease duration for executed runs (default 60s).
+	LeaseTTL time.Duration
 	// AuthMode is the active connector's normalized auth mode. Only "passthrough"
 	// changes POST /runs and POST /runs/{id}/resume behavior to pick headers.
 	AuthMode string
@@ -89,6 +95,8 @@ type Server struct {
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
 	inboxLimiterOnce sync.Once
+	// InboxGate 可选；非 nil 时 inbox 入站限流走它（key=channelID）。nil 时回退 InboxLimiter。
+	InboxGate func(channelID string) bool
 	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
 	MCPExportEnabled bool
 	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
@@ -107,6 +115,8 @@ type Server struct {
 	// CallbackLimiter caps per-run callback throughput. nil => no limiting
 	// (bootstrap always sets one).
 	CallbackLimiter *plugincallback.Limiter
+	// CallbackGate 可选；非 nil 时 sidecar callback 限流走它（key=runID）。nil 时回退 CallbackLimiter。
+	CallbackGate func(runID string) bool
 	// CallbackSigner / CallbackPublicBase / CallbackTTL configure
 	// callback_urls.event injection into sidecar invoke context. When any
 	// piece is missing the URL is omitted (fail-open). Set by bootstrap.
@@ -1528,6 +1538,132 @@ func (s *Server) runExecute(ctx context.Context, runID string, def agent.Def, in
 	return s.Runner.Execute(ctx, runID, def, input)
 }
 
+// ExecuteJob runs a queued run under a worker lease with idempotency gating.
+// It implements middleware.Executor: queue workers and the local fallback
+// goroutine both funnel through it. Terminal or HITL-waiting runs are
+// ack-skipped (resume is a separate entry point); a live lease held by
+// another worker is also ack-skipped.
+func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
+	if job.RunID == "" {
+		return nil
+	}
+	cur, err := s.Store.GetRun(job.RunID)
+	if err != nil || cur == nil {
+		return err
+	}
+	switch cur.Status {
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusWaitingHuman:
+		return nil
+	}
+
+	ttl := s.LeaseTTL
+	if ttl <= 0 {
+		ttl = 60 * time.Second
+	}
+	acquired, err := s.Store.LeaseRun(job.RunID, ttl)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return nil // another worker holds the lease
+	}
+	defer func() { _ = s.Store.ClearRunLease(job.RunID) }()
+
+	hbCtx, stopHB := context.WithCancel(ctx)
+	defer stopHB()
+	go s.leaseHeartbeat(hbCtx, job.RunID, ttl)
+
+	def, input, opts, err := s.resolveJob(job, cur)
+	if err != nil {
+		s.finalizeRunError(job.RunID, cur.ConversationID, err)
+		return nil
+	}
+	if err := s.runExecute(ctx, job.RunID, def, input, opts); err != nil {
+		s.finalizeRunError(job.RunID, cur.ConversationID, err)
+		return err
+	}
+	return nil
+}
+
+// leaseHeartbeat renews the worker lease roughly every ttl/3 until ctx ends.
+func (s *Server) leaseHeartbeat(ctx context.Context, runID string, ttl time.Duration) {
+	t := time.NewTicker(ttl / 3)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_, _ = s.Store.HeartbeatRun(runID, ttl)
+		}
+	}
+}
+
+// resolveJob rebuilds the agent def, input, and run options for a queued job,
+// falling back to the persisted run row when the job omits a field.
+func (s *Server) resolveJob(job middleware.Job, cur *store.Run) (agent.Def, string, run.RunOptions, error) {
+	agentID := strings.TrimSpace(job.AgentID)
+	if agentID == "" {
+		agentID = cur.AgentID
+	}
+	ag, err := s.Store.GetAgent(agentID)
+	if err != nil {
+		return agent.Def{}, "", run.RunOptions{}, err
+	}
+	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+	input := job.Input
+	if strings.TrimSpace(input) == "" {
+		input = cur.Input
+	}
+	opts := run.RunOptions{Skills: job.Skills, UserParts: partsFromMiddleware(job.UserParts)}
+	return def, input, opts, nil
+}
+
+// finalizeRunError mirrors the legacy background-goroutine failure handling:
+// re-read the run, and only when it is still queued/running mark it failed,
+// append an LLM error event, and leave a system note in the conversation.
+func (s *Server) finalizeRunError(runID, convID string, runErr error) {
+	cur, _ := s.Store.GetRun(runID)
+	if cur == nil {
+		return
+	}
+	if cur.Status != store.StatusRunning && cur.Status != store.StatusQueued {
+		return
+	}
+	_ = s.Store.UpdateRun(runID, store.StatusFailed, "", runErr.Error())
+	_ = s.Store.AppendEvent(runID, store.Event{
+		Type: run.EventLLMError,
+		Data: map[string]any{"error": runErr.Error()},
+	})
+	if s.Messages != nil && convID != "" {
+		note := strings.TrimSpace(runErr.Error())
+		if note == "" {
+			note = "运行失败"
+		} else {
+			note = "运行失败：" + note
+		}
+		_, _ = s.Messages.Append(convID, conversation.Message{
+			Role:    conversation.RoleSystemNote,
+			Content: note,
+			RunID:   runID,
+		})
+	}
+}
+
+// Dispatch enqueues a job when a Queue is configured, falling back to a local
+// goroutine (legacy behavior) on nil queue or enqueue failure.
+func (s *Server) Dispatch(ctx context.Context, job middleware.Job) {
+	if job.EnqueuedAt.IsZero() {
+		job.EnqueuedAt = time.Now().UTC()
+	}
+	if s.Queue != nil {
+		if err := s.Queue.Enqueue(ctx, job); err == nil {
+			return
+		}
+	}
+	go func() { _ = s.ExecuteJob(context.Background(), job) }()
+}
+
 // writeAttachmentError maps an attach.Process error to the spec's API error
 // codes. Unsupported MIME, size/count limits, and empty-PDF each get a distinct
 // code; everything else (e.g. bad base64) is reported as invalid_attachment.
@@ -1820,7 +1956,12 @@ func (s *Server) handlePluginCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
 		return
 	}
-	if s.CallbackLimiter != nil && !s.CallbackLimiter.Allow(runID, time.Now()) {
+	if s.CallbackGate != nil {
+		if !s.CallbackGate(runID) {
+			writeError(w, http.StatusTooManyRequests, "rate_limited", "callback budget exhausted for this run")
+			return
+		}
+	} else if s.CallbackLimiter != nil && !s.CallbackLimiter.Allow(runID, time.Now()) {
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "callback budget exhausted for this run")
 		return
 	}
@@ -1918,6 +2059,10 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, evs)
 }
 
+// ssePollInterval is the SSE fallback poll period when Hub nudges are missing
+// (e.g. cross-replica AppendEvent). Tests may shorten it via t.Cleanup restore.
+var ssePollInterval = 3 * time.Second
+
 func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	runRec, err := s.Store.GetRun(id)
@@ -1984,6 +2129,8 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
+	poll := time.NewTicker(ssePollInterval)
+	defer poll.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
@@ -1993,9 +2140,25 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			_ = rc.Flush()
+		case <-poll.C:
+			if catchUpTerminal, status, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
+				return
+			} else if catchUpTerminal {
+				_ = writeSSEEnded(w, rc, status)
+				return
+			}
 		case ev, ok := <-sub.Events:
 			if !ok {
 				return
+			}
+			if ev.Event.Type == "external.nudge" {
+				if catchUpTerminal, status, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
+					return
+				} else if catchUpTerminal {
+					_ = writeSSEEnded(w, rc, status)
+					return
+				}
+				continue
 			}
 			if ev.Index <= lastSent {
 				continue
@@ -2009,9 +2172,14 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Events and Ended may both be ready; drain events first so the
-			// final AppendEvent is not lost when select picks Ended.
+			// final AppendEvent is not lost when select picks Ended. Then
+			// catch up from store: channel may only hold external.nudge
+			// placeholders while real events live in the store.
 			lastSent, drainErr = drainSubEvents(w, rc, sub, lastSent)
 			if drainErr != nil {
+				return
+			}
+			if _, _, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
 				return
 			}
 			_ = writeSSEEnded(w, rc, stt)
@@ -2021,12 +2189,17 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // drainSubEvents non-blocking writes any buffered subscription events with index > lastSent.
+// external.nudge placeholders are skipped (no write / no lastSent advance); callers
+// catch up from the store via catchUpRunStream.
 func drainSubEvents(w http.ResponseWriter, rc *http.ResponseController, sub *eventbus.Subscription, lastSent int) (int, error) {
 	for {
 		select {
 		case ev, ok := <-sub.Events:
 			if !ok {
 				return lastSent, nil
+			}
+			if ev.Event.Type == "external.nudge" {
+				continue
 			}
 			if ev.Index <= lastSent {
 				continue
@@ -2437,22 +2610,13 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 	}
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	go func(runID, in string, def agent.Def, ro run.RunOptions) {
-		err := s.runExecute(context.Background(), runID, def, in, ro)
-		if err == nil {
-			return
-		}
-		cur, getErr := s.Store.GetRun(runID)
-		if getErr != nil || cur == nil {
-			return
-		}
-		if s.Messages != nil && cur.ConversationID != "" {
-			_, _ = s.Messages.Append(cur.ConversationID, conversation.Message{
-				Role:    conversation.RoleSystemNote,
-				Content: "运行失败：" + err.Error(),
-				RunID:   runID,
-			})
-		}
-	}(runRec.ID, input, def, opts.runOpts)
+	s.Dispatch(r.Context(), middleware.Job{
+		RunID:     runRec.ID,
+		Kind:      middleware.KindRun,
+		AgentID:   def.ID,
+		Input:     input,
+		Skills:    opts.runOpts.Skills,
+		UserParts: PartsToMiddleware(opts.runOpts.UserParts),
+	})
 	return runRec, nil
 }

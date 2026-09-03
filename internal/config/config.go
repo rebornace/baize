@@ -87,6 +87,21 @@ type Config struct {
 		CompactReserveOutput  int     `yaml:"compact_reserve_output"`
 		CompactRecentMessages int     `yaml:"compact_recent_messages"`
 	} `yaml:"conversation"`
+	Middleware struct {
+		Driver               string `yaml:"driver"` // memory（默认） | redis
+		WorkerConcurrency    int    `yaml:"worker_concurrency"`
+		LeaseTTLSec          int    `yaml:"lease_ttl_sec"`
+		ReconcileIntervalSec int    `yaml:"reconcile_interval_sec"`
+		Redis                struct {
+			Addr          string `yaml:"addr"`
+			DB            int    `yaml:"db"`
+			Username      string `yaml:"username"`
+			PasswordEnv   string `yaml:"password_env"`
+			Stream        string `yaml:"stream"`
+			ConsumerGroup string `yaml:"consumer_group"`
+			EventsChannel string `yaml:"events_channel"`
+		} `yaml:"redis"`
+	} `yaml:"middleware"`
 	MockTicket struct {
 		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
 	} `yaml:"mock_ticket"`
@@ -282,6 +297,27 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Conversation.CompactRecentMessages <= 0 {
 		cfg.Conversation.CompactRecentMessages = 8
+	}
+	if strings.TrimSpace(cfg.Middleware.Driver) == "" {
+		cfg.Middleware.Driver = "memory"
+	}
+	if cfg.Middleware.WorkerConcurrency <= 0 {
+		cfg.Middleware.WorkerConcurrency = 8
+	}
+	if cfg.Middleware.LeaseTTLSec <= 0 {
+		cfg.Middleware.LeaseTTLSec = 60
+	}
+	if cfg.Middleware.ReconcileIntervalSec <= 0 {
+		cfg.Middleware.ReconcileIntervalSec = 15
+	}
+	if cfg.Middleware.Redis.Stream == "" {
+		cfg.Middleware.Redis.Stream = "baize:runs"
+	}
+	if cfg.Middleware.Redis.ConsumerGroup == "" {
+		cfg.Middleware.Redis.ConsumerGroup = "baize-workers"
+	}
+	if cfg.Middleware.Redis.EventsChannel == "" {
+		cfg.Middleware.Redis.EventsChannel = "baize:run-events"
 	}
 	if cfg.Skills.UserDir == "" {
 		cfg.Skills.UserDir = "./data/skills"

@@ -60,6 +60,19 @@ conversation:
   # compact_threshold: 0.8        # 估算 prompt 达到上下文长度的该比例时触发折叠
   # compact_reserve_output: 8000  # 为回答/工具调用预留的 tokens
   # compact_recent_messages: 8    # 始终保留原文、不折叠的最近消息条数
+# middleware:
+#   driver: memory          # memory（默认，零依赖，单机）| redis（多副本横向扩展/崩溃恢复）
+#   worker_concurrency: 8   # 每进程并发消费 worker 数
+#   lease_ttl_sec: 60       # run 认领租约 TTL
+#   reconcile_interval_sec: 15
+#   # driver=redis 时配置：
+#   # redis:
+#   #   addr: "127.0.0.1:6379"
+#   #   password_env: REDIS_PASSWORD
+#   #   stream: baize:runs
+#   #   consumer_group: baize-workers
+#   #   events_channel: baize:run-events
+#   # 不做 XAUTOCLAIM；崩溃恢复靠 DB reconciler 再 XADD。PEL 可能堆积，运维可 XTRIM/定期清理。
 mock_ticket:
   listen: ":18080"
 inbox:

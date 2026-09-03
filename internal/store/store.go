@@ -224,7 +224,15 @@ type Run struct {
 	// WebhookConfig carries per-run webhook URL/header overrides for outbound
 	// event delivery. Never serialized to JSON (json:"-").
 	WebhookConfig *WebhookConfig `json:"-"`
+	// LeaseUntil is the worker lease deadline for an in-flight run. nil = no
+	// lease. Never serialized to JSON (json:"-"). Used by queue reconciliation.
+	LeaseUntil *time.Time `json:"-"`
 }
+
+// reconcileGrace is how long a queued/running run may go without a lease
+// before crash reconciliation considers it orphaned. New runs are not
+// reconciled until their created_at is older than this window.
+const reconcileGrace = 30 * time.Second
 
 // CreateRunInput is the input for creating a new run.
 type CreateRunInput struct {
@@ -298,6 +306,17 @@ type Store interface {
 	CreateRun(in CreateRunInput) (*Run, error)
 	GetRun(id string) (*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
+	// LeaseRun atomically acquires a worker lease for a queued/running run whose
+	// lease is absent or expired. Returns acquired=false when another worker
+	// holds a live lease or the run is terminal.
+	LeaseRun(id string, ttl time.Duration) (acquired bool, err error)
+	// HeartbeatRun extends the lease of a run the caller is executing.
+	HeartbeatRun(id string, ttl time.Duration) (ok bool, err error)
+	// ClearRunLease releases the lease after a run reaches a terminal state.
+	ClearRunLease(id string) error
+	// ListRunsForReconcile returns queued/running runs whose lease is expired or
+	// whose lease was never set past the startup grace window (oldest first).
+	ListRunsForReconcile(limit int) ([]*Run, error)
 	AppendEvent(runID string, ev Event) error
 	ListEvents(runID string) ([]Event, error)
 	SetHITL(runID string, payload *HITLPayload) error

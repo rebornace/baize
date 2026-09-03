@@ -16,6 +16,7 @@ type Memory struct {
 	connectors      map[string]Connector
 	tools           map[string]Tool
 	runs            map[string]*Run
+	leaseUntil      map[string]time.Time
 	events          map[string][]Event
 	hitl            map[string]*HITLPayload
 	settings        map[string][]byte
@@ -34,6 +35,7 @@ func NewMemory() *Memory {
 		connectors:      map[string]Connector{},
 		tools:           map[string]Tool{},
 		runs:            map[string]*Run{},
+		leaseUntil:      map[string]time.Time{},
 		events:          map[string][]Event{},
 		hitl:            map[string]*HITLPayload{},
 		settings:        map[string][]byte{},
@@ -236,6 +238,10 @@ func (s *Memory) GetRun(id string) (*Run, error) {
 	cp := *r
 	cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
 	cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+	if until, held := s.leaseUntil[id]; held {
+		lease := until
+		cp.LeaseUntil = &lease
+	}
 	return &cp, nil
 }
 
@@ -309,6 +315,72 @@ func (s *Memory) UpdateRun(id string, status Status, output, errMsg string) erro
 	r.Output = output
 	r.Error = errMsg
 	return nil
+}
+
+func (s *Memory) LeaseRun(id string, ttl time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.runs[id]
+	if !ok {
+		return false, fmt.Errorf("run not found")
+	}
+	if r.Status != StatusQueued && r.Status != StatusRunning {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	if until, held := s.leaseUntil[id]; held && until.After(now) {
+		return false, nil
+	}
+	s.leaseUntil[id] = now.Add(ttl)
+	return true, nil
+}
+
+func (s *Memory) HeartbeatRun(id string, ttl time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.runs[id]; !ok {
+		return false, nil
+	}
+	s.leaseUntil[id] = time.Now().UTC().Add(ttl)
+	return true, nil
+}
+
+func (s *Memory) ClearRunLease(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.leaseUntil, id)
+	return nil
+}
+
+func (s *Memory) ListRunsForReconcile(limit int) ([]*Run, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	now := time.Now().UTC()
+	grace := now.Add(-reconcileGrace)
+	var out []*Run
+	for _, r := range s.runs {
+		if r.Status != StatusQueued && r.Status != StatusRunning {
+			continue
+		}
+		until, held := s.leaseUntil[r.ID]
+		expired := held && !until.After(now)
+		neverLeasedOld := !held && r.CreatedAt.Before(grace)
+		if expired || neverLeasedOld {
+			cp := *r
+			cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
+			cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+			if held {
+				lease := until
+				cp.LeaseUntil = &lease
+			}
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (s *Memory) AppendEvent(runID string, ev Event) error {

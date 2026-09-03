@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
   output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
   conversation_id TEXT, identity_id TEXT,
-  passthrough_json TEXT, webhook_json TEXT, model_profile_id TEXT
+  passthrough_json TEXT, webhook_json TEXT, model_profile_id TEXT,
+  lease_until TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY,
@@ -183,6 +184,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_profile_id TEXT`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs model_profile_id: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs lease_until: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
 		_ = db.Close()
