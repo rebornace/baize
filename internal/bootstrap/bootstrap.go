@@ -32,6 +32,10 @@ import (
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/middleware"
+	// 内置默认 middleware 驱动（memory）随 bootstrap 一起注册：它是零配置
+	// 默认驱动，且 bootstrap 包自身的测试/StartForTest 集成测试不经 main。
+	// 后续 redis 等驱动同样以 blank import 方式注册（任务 9）。
+	_ "github.com/rebornace/baize/internal/middleware/memory"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
@@ -378,7 +382,71 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("wire weixin channel: %w", err)
 	}
+
+	// 装配 middleware 驱动（队列/事件总线/限流）。此后三个入队点（HTTP
+	// Dispatch、run_start、weixin AfterCreateRun）走驱动队列 + worker 池竞争
+	// 消费，不再走 nil 队列的本地 goroutine；崩溃调和器周期性把租约过期的
+	// 孤儿 run 重新入队。memory 为默认驱动；redis 驱动在任务 9 接入。
+	// driver 名在此再归一一次：config.Normalize 已保证默认 memory，但测试
+	// 可能直接构造 config.Config 而不经过 Normalize。
+	driver := strings.ToLower(strings.TrimSpace(cfg.Middleware.Driver))
+	if driver == "" {
+		driver = "memory"
+	}
+	mw, err := middleware.Open(context.Background(), driver, middleware.Options{
+		WorkerConcurrency: cfg.Middleware.WorkerConcurrency,
+		LeaseTTL:          time.Duration(cfg.Middleware.LeaseTTLSec) * time.Second,
+		ReconcileInterval: time.Duration(cfg.Middleware.ReconcileIntervalSec) * time.Second,
+		Redis: middleware.RedisOptions{
+			Addr:          cfg.Middleware.Redis.Addr,
+			DB:            cfg.Middleware.Redis.DB,
+			Username:      cfg.Middleware.Redis.Username,
+			Password:      redisPasswordFromEnv(cfg.Middleware.Redis.PasswordEnv),
+			Stream:        cfg.Middleware.Redis.Stream,
+			ConsumerGroup: cfg.Middleware.Redis.ConsumerGroup,
+			EventsChannel: cfg.Middleware.Redis.EventsChannel,
+		},
+	})
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open middleware driver %q: %w", driver, err)
+	}
+	srv.Queue = mw.Queue
+	srv.LeaseTTL = time.Duration(cfg.Middleware.LeaseTTLSec) * time.Second
+
+	// 事件总线桥接：redis 驱动（任务 9）实现 BridgeToHub/Start，把跨副本
+	// nudge 注入本地 Hub 并启动 Pub/Sub 订阅；memory 驱动的 bus 不实现该
+	// 接口，类型断言失败即安全跳过（SSE/webhook 直接走进程内 Hub）。
+	type hubBridge interface {
+		BridgeToHub(hub *eventbus.Hub)
+		Start(ctx context.Context)
+	}
+	mwCtx, mwCancel := context.WithCancel(context.Background())
+	if b, ok := mw.Bus.(hubBridge); ok {
+		b.BridgeToHub(hub)
+		b.Start(mwCtx)
+	}
+	stopWorkers := mw.StartWorkers(mwCtx, srv)
+	stopReconciler := mw.StartReconciler(mwCtx, st, time.Duration(cfg.Middleware.ReconcileIntervalSec)*time.Second)
+	// closer.stops 逆序执行：本闭包最后追加、最先运行——先取消总线订阅并
+	// 停 worker/调和器（等待在飞 job 收尾），再关队列；随后才轮到 weixin、
+	// webhook worker 与 store 的关闭，保证关停期间不再有新 job 入队/执行。
+	closer.stops = append(closer.stops, func() {
+		mwCancel()
+		stopWorkers()
+		stopReconciler()
+		_ = mw.Close()
+	})
 	return srv, closer, nil
+}
+
+// redisPasswordFromEnv resolves the redis password from the named environment
+// variable. An empty env name means no password.
+func redisPasswordFromEnv(env string) string {
+	if env == "" {
+		return ""
+	}
+	return os.Getenv(env)
 }
 
 func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, messages conversation.Store, provider llm.Provider, closer *storeAndMCPCloser) error {
