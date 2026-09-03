@@ -31,7 +31,8 @@ const sqliteSchema = `
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
   output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
-  conversation_id TEXT, identity_id TEXT
+  conversation_id TEXT, identity_id TEXT,
+  lease_until TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,6 +164,84 @@ func (s *SQLStore) query(query string, args ...any) (*sql.Rows, error) {
 
 func (s *SQLStore) queryRow(query string, args ...any) *sql.Row {
 	return s.db.QueryRow(s.q(query), args...)
+}
+
+// runSelectColumns is the canonical runs column order scanned by scanRunRow;
+// GetRun and ListRunsForReconcile must select exactly these columns in order.
+const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until`
+
+// timeArg binds a timestamp for the active dialect. Postgres columns are real
+// TIMESTAMPTZ (native time.Time); SQLite stores them as RFC3339 text.
+func (s *SQLStore) timeArg(t time.Time) any {
+	if s.dialect == DialectPostgres {
+		return t
+	}
+	return t.Format(time.RFC3339Nano)
+}
+
+// scanRunRow decodes one runs row selected via runSelectColumns.
+func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
+	var r Run
+	var status, createdAt string
+	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID sql.NullString
+	var leaseUntil sql.NullTime
+	if err := sc.Scan(
+		&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt,
+		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil,
+	); err != nil {
+		return nil, err
+	}
+	r.Status = Status(status)
+	if conversationID.Valid {
+		r.ConversationID = conversationID.String
+	}
+	if identityID.Valid {
+		r.IdentityID = identityID.String
+	}
+	if modelProfileID.Valid {
+		r.ModelProfileID = modelProfileID.String
+	}
+	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
+		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
+			return nil, fmt.Errorf("parse passthrough_json: %w", err)
+		}
+	}
+	if webhookSQL.Valid && webhookSQL.String != "" && webhookSQL.String != "null" {
+		var wc WebhookConfig
+		if err := json.Unmarshal([]byte(webhookSQL.String), &wc); err != nil {
+			return nil, fmt.Errorf("parse webhook_json: %w", err)
+		}
+		r.WebhookConfig = &wc
+	}
+	ts, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		ts, err = time.Parse(time.RFC3339, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse created_at: %w", err)
+		}
+	}
+	r.CreatedAt = ts
+	if leaseUntil.Valid {
+		t := leaseUntil.Time.UTC()
+		r.LeaseUntil = &t
+	}
+	return &r, nil
+}
+
+func scanRuns(rows *sql.Rows) ([]*Run, error) {
+	defer rows.Close()
+	var out []*Run
+	for rows.Next() {
+		r, err := scanRunRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // OpenSQLite opens (or creates) a SQLite database at path.
@@ -323,6 +402,9 @@ func migrateRunsColumns(db *sql.DB) error {
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
 		}
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN lease_until TIMESTAMP`); err != nil && !isDuplicateColumnErr(err) {
 		return err
 	}
 	return nil
@@ -717,50 +799,16 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 }
 
 func (s *SQLStore) GetRun(id string) (*Run, error) {
-	var r Run
-	var status, createdAt string
-	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID sql.NullString
-	err := s.queryRow(
-		`SELECT id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id FROM runs WHERE id = ?`,
-		id,
-	).Scan(&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt, &conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID)
+	r, err := scanRunRow(s.queryRow(
+		`SELECT `+runSelectColumns+` FROM runs WHERE id = ?`, id,
+	))
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("run not found")
 	}
 	if err != nil {
 		return nil, err
 	}
-	r.Status = Status(status)
-	if conversationID.Valid {
-		r.ConversationID = conversationID.String
-	}
-	if identityID.Valid {
-		r.IdentityID = identityID.String
-	}
-	if modelProfileID.Valid {
-		r.ModelProfileID = modelProfileID.String
-	}
-	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
-		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
-			return nil, fmt.Errorf("parse passthrough_json: %w", err)
-		}
-	}
-	if webhookSQL.Valid && webhookSQL.String != "" && webhookSQL.String != "null" {
-		var wc WebhookConfig
-		if err := json.Unmarshal([]byte(webhookSQL.String), &wc); err != nil {
-			return nil, fmt.Errorf("parse webhook_json: %w", err)
-		}
-		r.WebhookConfig = &wc
-	}
-	ts, err := time.Parse(time.RFC3339Nano, createdAt)
-	if err != nil {
-		ts, err = time.Parse(time.RFC3339, createdAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse created_at: %w", err)
-		}
-	}
-	r.CreatedAt = ts
-	return &r, nil
+	return r, nil
 }
 
 func (s *SQLStore) SetPassthroughHeaders(id string, headers map[string]string) error {
@@ -805,6 +853,65 @@ func (s *SQLStore) UpdateRun(id string, status Status, output, errMsg string) er
 		return fmt.Errorf("run not found")
 	}
 	return nil
+}
+
+func (s *SQLStore) LeaseRun(id string, ttl time.Duration) (bool, error) {
+	now := time.Now().UTC()
+	res, err := s.exec(
+		`UPDATE runs SET lease_until = ?
+		 WHERE id = ? AND status IN ('queued','running')
+		   AND (lease_until IS NULL OR lease_until < ?)`,
+		s.timeArg(now.Add(ttl)), id, s.timeArg(now),
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *SQLStore) HeartbeatRun(id string, ttl time.Duration) (bool, error) {
+	res, err := s.exec(
+		`UPDATE runs SET lease_until = ? WHERE id = ?`,
+		s.timeArg(time.Now().UTC().Add(ttl)), id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *SQLStore) ClearRunLease(id string) error {
+	_, err := s.exec(`UPDATE runs SET lease_until = NULL WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLStore) ListRunsForReconcile(limit int) ([]*Run, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	now := time.Now().UTC()
+	// created_at is TEXT on both dialects, so the grace cutoff is an RFC3339
+	// string; lease_until is TIMESTAMPTZ on postgres and uses the dialect arg.
+	rows, err := s.query(
+		`SELECT `+runSelectColumns+`
+		 FROM runs
+		 WHERE status IN ('queued','running')
+		   AND (lease_until < ? OR (lease_until IS NULL AND created_at < ?))
+		 ORDER BY created_at ASC LIMIT ?`,
+		s.timeArg(now), now.Add(-reconcileGrace).Format(time.RFC3339Nano), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanRuns(rows)
 }
 
 func (s *SQLStore) AppendEvent(runID string, ev Event) error {
