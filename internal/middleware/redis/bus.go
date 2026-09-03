@@ -16,10 +16,10 @@ type bus struct {
 	client  *goredis.Client
 	channel string
 
-	mu     sync.Mutex
-	sub    *goredis.PubSub
-	out    chan middleware.RunEventNudge
-	hub    *eventbus.Hub
+	mu      sync.Mutex
+	sub     *goredis.PubSub
+	out     chan middleware.RunEventNudge
+	hub     *eventbus.Hub
 	started bool
 }
 

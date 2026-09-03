@@ -59,7 +59,7 @@
 - 修改：`internal/store/postgres.go` / `internal/store/sql_dialect.go`（Postgres DDL/迁移，方式同 sqlite）
 - 测试：`internal/store/lease_test.go`（新建）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/store/lease_test.go`。测试用 sqlite 内存库（照该包既有 `newSQLite`/建库 helper；若无则用 `OpenWithOptions("sqlite", OpenOptions{SQLitePath: ":memory:"})` 并跑 schema 初始化，照现有测试写法）：
 
@@ -187,12 +187,12 @@ func contains(xs []string, x string) bool {
 
 注意：`ListRunsForReconcile` 对「无租约但刚创建」的 run 要有宽限期（见步骤 3 的 grace），因此上面 `orphan` 用「过期租约」而非「无租约」来触发；held 用未过期租约；done 为终态。若你的实现让新建 run 的 `created_at` 为 now，无租约新 run 不应出现在结果里（grace 30s）。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/store/ -run 'Lease|Reconcile' -count=1`
 预期：FAIL（`st.LeaseRun undefined` 等编译错误）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/store/store.go`：`Run` 结构加字段（不序列化、不暴露给 API）：
 
@@ -359,12 +359,12 @@ func (s *SQLStore) ListRunsForReconcile(limit int) ([]*Run, error) {
 
 `internal/store/postgres.go` / `sql_dialect.go`：runs DDL 加 `lease_until TIMESTAMPTZ`；迁移用 `ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ`；SQL 占位符用 Postgres 的 `$1,$2,...`（照该包既有 rebind 方式），时间参数传 `time.Time`（不必 Format）。其余方法同 sqlite。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/store/ -count=1`
 预期：PASS（含新测试与既有全部 store 测试）。再跑 `& $go build ./...` 确认接口新增方法后 memory/sqlite/postgres 都已实现（否则编译报「missing method」）。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/store/
@@ -379,7 +379,7 @@ git commit -m "feat(store): runs 增加 worker 租约列与崩溃调和查询"
 - 修改：`internal/config/config.go`（`Middleware` 结构 + 默认归一）
 - 测试：`internal/config/middleware_test.go`（新建）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/config/middleware_test.go`（照该包既有 `config_test` 外部包 + `writeConfig`/`config.Load` 写法）：
 
@@ -428,12 +428,12 @@ func TestLoadMiddlewareRedisExplicit(t *testing.T) {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/config/ -run Middleware -count=1`
 预期：FAIL（`cfg.Middleware undefined`）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/config/config.go`：在 `Config` 结构里（`Conversation` 段之后）加：
 
@@ -483,12 +483,12 @@ func TestLoadMiddlewareRedisExplicit(t *testing.T) {
 
 （`strings` 已在 config.go 使用；若无则 import。）
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/config/ -count=1`
 预期：PASS。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/config/
@@ -505,7 +505,7 @@ git commit -m "feat(config): 新增 middleware 驱动配置段（memory/redis）
 - 创建：`internal/middleware/registry.go`
 - 测试：`internal/middleware/registry_test.go`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/middleware/registry_test.go`：
 
@@ -551,12 +551,12 @@ func TestListDriversIncludesMemory(t *testing.T) {
 
 注意：此测试 blank import memory 驱动，但 memory 驱动在任务 4 才实现。本任务先让测试因 `Open("memory")` 失败而红；任务 4 完成后转绿。步骤 3 先只建接口/注册表（不含 memory 工厂），因此本任务结束时该测试中 `TestOpenUnknownDriverErrors` 与 `TestListDriversIncludesMemory` 可先不强依赖 memory——实现顺序见步骤 3。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/middleware/... -count=1`
 预期：FAIL（包不存在 / `middleware.Open undefined`）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/middleware/job.go`：
 
@@ -732,7 +732,7 @@ func ListDrivers() []string {
 }
 ```
 
-- [ ] **步骤 4：运行测试**
+- [x] **步骤 4：运行测试**
 
 本任务结束时 `TestOpenUnknownDriverErrors` 可通过（unknown 报错）；依赖 memory 的两个测试在任务 4 转绿。为保证本任务可独立验证，先运行：`& $go build ./internal/middleware/...`（此时无 memory 包，`registry_test.go` 的 blank import 会失败——故将 `registry_test.go` 里 blank import memory 的那行与两个 memory 测试放到**任务 4** 再加入；本任务只保留 `TestOpenUnknownDriverErrors`，且不 blank import memory）。
 
@@ -757,7 +757,7 @@ func TestOpenUnknownDriverErrors(t *testing.T) {
 
 运行：`& $go test ./internal/middleware/ -count=1` 预期 PASS。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/middleware/
@@ -772,7 +772,7 @@ git commit -m "feat(middleware): 队列/事件总线/限流接口与驱动注册
 - 创建：`internal/middleware/memory/queue.go`、`bus.go`、`limiter.go`、`driver.go`
 - 测试：`internal/middleware/memory/memory_test.go`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/middleware/memory/memory_test.go`：
 
@@ -857,12 +857,12 @@ func TestMemoryLimiterWindow(t *testing.T) {
 var _ = eventbus.NewHub
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/middleware/memory/ -count=1`
 预期：FAIL（memory 包不存在）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/middleware/memory/queue.go`：
 
@@ -1032,7 +1032,7 @@ func init() {
 func nowUTC() time.Time { return time.Now().UTC() }
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/middleware/... -count=1`
 预期：PASS（含任务 3 的 registry 测试，此时 memory 已注册；把任务 3 里暂缓的 `TestRegisterAndOpen`/`TestListDriversIncludesMemory` 现在补回 `internal/middleware/registry_test.go`）。
@@ -1065,7 +1065,7 @@ func TestListDriversIncludesMemory(t *testing.T) {
 
 并在 registry_test.go 顶部 blank import：`_ "github.com/rebornace/baize/internal/middleware/memory"`。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/middleware/
@@ -1082,7 +1082,7 @@ git commit -m "feat(middleware): memory 驱动（channel 队列/进程总线/内
 
 `Executor` 是 worker 回调的接口，由 `api.Server` 实现（任务 6），本任务先用 fake 测试。
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/middleware/worker_test.go`：
 
@@ -1147,12 +1147,12 @@ func TestStartWorkersNilSafe(t *testing.T) {
 
 说明：reconciler 的 DB 调和逻辑在任务 6/7 与真实 store 接线后端到端测（`TestReconcileRequeuesOrphanRuns` 放任务 7 的 bootstrap/集成测试）。本任务聚焦 worker 池消费循环。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/middleware/ -run Worker -count=1`
 预期：FAIL（`mw.StartWorkers undefined`）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/middleware/middleware.go` 的 `Middleware` 结构加字段与方法签名（`StartWorkers` 放 worker.go）：
 
@@ -1229,12 +1229,12 @@ func (mw *Middleware) StartWorkers(ctx context.Context, ex Executor) func() {
 
 驱动工厂（memory/driver.go 与 redis/driver.go）构造后设置 `mw.concurrency = opts.WorkerConcurrency`。StartWorkers 方法用 `mw.concurrency`（≤0 → 8）。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/middleware/... -count=1`
 预期：PASS。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/middleware/
@@ -1252,7 +1252,7 @@ git commit -m "feat(middleware): 竞争消费 worker 池"
 - 修改：`internal/bootstrap/bootstrap.go`（~424 微信 AfterCreateRun 裸协程改 dispatch）
 - 测试：`internal/api/server_job_test.go`（新建）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/api/server_job_test.go`（照该包既有建 server / fake runner / memory store 的 helper；用 `NewServer` + 注入 fake `Runner`）：
 
@@ -1324,12 +1324,12 @@ func TestDispatchEnqueuesWhenQueuePresent(t *testing.T) {
 
 `newJobTestServer` 照该包现有测试构造（memory store + `NewServer` + 默认 agent "a"）；若已有等价 helper 直接复用，不要新造重复 helper。`srv` 需实现 `middleware.Executor`（即 `ExecuteJob(context.Context, middleware.Job) error`）。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/api/ -run 'Job|Dispatch' -count=1`
 预期：FAIL（`srv.ExecuteJob undefined`、`srv.Queue undefined`、`srv.Dispatch undefined`）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/api/server.go`：`Server` 结构加字段（`Hub` 字段附近）：
 
@@ -1525,12 +1525,12 @@ func partsFromMiddleware(parts []middleware.Part) []llm.ContentPart {
 ```
 bootstrap 不能 import api 的私有 parts 助手；在 bootstrap 内联一个等价的 `[]llm.ContentPart → []middleware.Part` 转换（或导出 api 的助手）。返回值仍为 `nil`（Dispatch 异步）。**注意**：确保 `srv.Queue` 在 channel `Start` 之前已赋值（任务 7 接线顺序）。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/api/ -count=1` 与 `& $go test ./internal/bootstrap/ -count=1`、`& $go build ./...`
 预期：PASS（既有 api/bootstrap 测试不回归；新测试通过）。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/api/ internal/bootstrap/
@@ -1546,7 +1546,7 @@ git commit -m "feat(api): run 执行收敛为 ExecuteJob 并经队列/本地分�
 - 修改：`internal/bootstrap/bootstrap.go`（`middleware.Open`、接线、启动 worker/reconciler、优雅退出）
 - 测试：`internal/middleware/reconciler_test.go`（新建）、`internal/bootstrap/` 集成（现有测试套不回归）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建 `internal/middleware/reconciler_test.go`，用 memory 队列 + fake executor + fake store 调和：
 
@@ -1608,12 +1608,12 @@ func (f executorFunc) ExecuteJob(ctx context.Context, j middleware.Job) error { 
 
 （`Reconcile` 依赖一个最小接口，见步骤 3；`reconcileStore` 只实现它需要的方法，故接口要窄。）
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/middleware/ -run Reconcile -count=1`
 预期：FAIL（`mw.Reconcile undefined`）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/middleware/reconciler.go`：
 
@@ -1729,12 +1729,12 @@ type ReconcileStore interface {
 - 优雅退出：在 `newAPIServer` 返回的 `io.Closer`/shutdown 链里追加 `stopWorkers()`、`stopReconciler()`、`mw.Close()`（照现有 closer 聚合方式）。
 - memory 驱动下：`srv.Queue` 非空 → 三个入队点走 memory channel，worker 池消费；行为等价今天但有界。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/middleware/... ./internal/bootstrap/ -count=1` 与 `& $go build ./...`
 预期：PASS。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/middleware/ internal/bootstrap/
@@ -1750,7 +1750,7 @@ git commit -m "feat(bootstrap): 装配 middleware 驱动并启动 worker 池与�
 - 修改：`internal/api/server.go`（SSE handler 加低频轮询 ticker）
 - 测试：`internal/eventbus/hub_test.go`（或现有事件测试文件追加）、`internal/api/server_sse_poll_test.go`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 eventbus 侧（照该包既有测试风格）：
 
@@ -1773,12 +1773,12 @@ func TestPublishExternalNotifiesSubscribers(t *testing.T) {
 
 SSE 兜底轮询侧：模拟「无 Hub nudge、但 DB 有新事件」，断言 SSE 在 ~轮询周期内送出事件。照该包现有 SSE 测试（`httptest` + 读 event-stream）写一个：run 已在回放后追加新事件但不触发 Hub（可直接操作 store.AppendEvent 而不经 Notify 装饰器，或用 replay-only `Hub=nil` 场景），断言连接在轮询周期内收到该事件。若该包已有 SSE 测试 helper，复用。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/eventbus/ ./internal/api/ -run 'External|Poll|SSE' -count=1`
 预期：FAIL（`PublishExternal undefined`；SSE 无轮询时超时）。
 
-- [ ] **步骤 3：实现**
+- [x] **步骤 3：实现**
 
 `internal/eventbus/hub.go` 加方法（跨副本 nudge 注入点；构造一个 `IndexedEvent`，Event 体可为最小占位，SSE 靠 index 触发回放）：
 
@@ -1831,12 +1831,12 @@ func (h *Hub) PublishExternal(runID string, seq int64) {
 
 注意把轮询逻辑与既有 `drainSubEvents`/`catchUpRunStream` 风格对齐，避免重复代码；终态判断复用现有 helper。memory 驱动下该轮询也无害（多一次轻量 ListEvents）。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/eventbus/ ./internal/api/ -count=1`
 预期：PASS，既有 SSE 测试不回归。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/eventbus/ internal/api/
@@ -1854,7 +1854,7 @@ git commit -m "feat(eventbus): 支持跨副本 nudge 注入并为 SSE 增加兜�
 
 **依赖：** `go get github.com/redis/go-redis/v9`；测试 `go get github.com/alicebob/miniredis/v2`。用 `$env:GOPROXY='https://goproxy.cn,direct'` 拉取。
 
-- [ ] **步骤 1：编写失败的测试（miniredis）**
+- [x] **步骤 1：编写失败的测试（miniredis）**
 
 新建 `internal/middleware/redis/redis_test.go`：
 
@@ -1937,12 +1937,12 @@ func TestRedisLimiterBudget(t *testing.T) {
 
 `job(runID)` 助手构造 `middleware.Job{RunID: runID, Kind: middleware.KindRun, Input: "x", EnqueuedAt: time.Now()}`；`mwredis.Bundle` 暴露 `Queue/Bus/Limiter/Close`（或让 `Open` 返回 `*middleware.Middleware`——二选一，保持与 `middleware.Open` 一致：推荐 redis 包提供 `Open(ctx, Config) (*middleware.Middleware, error)` 并在内部把 `BridgeToHub` 也挂上）。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/middleware/redis/ -count=1`
 预期：FAIL（包不存在）。
 
-- [ ] **步骤 3：实现 driver.go**
+- [x] **步骤 3：实现 driver.go**
 
 ```go
 package redis
@@ -2002,7 +2002,7 @@ func init() {
 
 （`Middleware.SetCloser`：若任务 3 的 `Middleware.Close` 是函数字段，则直接赋值 `mw.Close = func()error{...}`；沿用任务 3 的定义，不必新增 Setter。）
 
-- [ ] **步骤 4：实现 queue.go（Streams 消费组）**
+- [x] **步骤 4：实现 queue.go（Streams 消费组）**
 
 要点：
 - `ensureGroup`：`XGroupCreateMkStream(ctx, stream, group, "$")`（组已存在则忽略 `BUSYGROUP` 错误）。
@@ -2011,7 +2011,7 @@ func init() {
 - 无消息（Block 超时）返回 `ok=false`，让 worker 循环重试。
 - PEL 认领（`XAUTOCLAIM`）作为额外安全网可在本任务做一个轻量版本：Consume 在 `>` 读不到时，周期性 `XAutoClaim` 空闲超过 lease 的 pending 消息重投；DB 调和已兜底，此项可最小实现或留注释说明由 DB 调和覆盖。**v0 以 DB 调和为准**，XAUTOCLAIM 可只留 TODO 级最小实现不阻塞。
 
-- [ ] **步骤 5：实现 bus.go（Pub/Sub + Hub 桥接）**
+- [x] **步骤 5：实现 bus.go（Pub/Sub + Hub 桥接）**
 
 ```go
 type bus struct {
@@ -2065,11 +2065,11 @@ func (b *bus) Close() error { if b.sub != nil { return b.sub.Close() }; return n
 
 注意：bootstrap 在拿到 `mw.Bus` 后调 `BridgeToHub(hub)` 并**启动订阅**（`SubscribeRunEvents` 触发订阅协程；即使没人消费 `out` channel，nudge 也会注入 hub）。driver/Open 里不自动启动订阅，由 bootstrap 显式调一次 `SubscribeRunEvents(context.Background())` 并丢弃返回 channel（或提供 `Start(ctx)`）。在 bus 加 `Start(ctx)` 内部调 SubscribeRunEvents 并忽略 out，bootstrap 调它。
 
-- [ ] **步骤 6：实现 limiter.go（Lua 滑动窗口）**
+- [x] **步骤 6：实现 limiter.go（Lua 滑动窗口）**
 
 用 Redis Lua 做固定/滑动窗口（sorted set 时间戳），key 前缀 `baize:rl:`，默认预算由调用方场景决定。为满足 `middleware.Limiter.Allow(key)` 单方法，limiter 内置默认预算（如 1000/min），inbox/callback 场景在任务 10 用带配额的包装。Lua 脚本（ZREMRANGEBYSCORE 清旧 + ZCARD 判额 + ZADD + EXPIRE）；Redis 出错时 `Allow` 返回 `true`（fail-open）并记日志。
 
-- [ ] **步骤 7：blank import 与验证**
+- [x] **步骤 7：blank import 与验证**
 
 `cmd/baize/main.go` import 块加：
 ```go
@@ -2078,7 +2078,7 @@ func (b *bus) Close() error { if b.sub != nil { return b.sub.Close() }; return n
 
 运行：`& $go build ./...`；`& $go test ./internal/middleware/... -count=1`（memory + redis/miniredis 全绿）；`& $go vet ./...`。
 
-- [ ] **步骤 8：Commit**
+- [x] **步骤 8：Commit**
 
 ```bash
 git add internal/middleware/ cmd/baize/ go.mod go.sum
@@ -2097,16 +2097,16 @@ git commit -m "feat(middleware): redis 驱动（Streams 队列/PubSub 总线/Lua
 
 **设计要点**：现有两处限流配额/窗口不同（inbox 120/min/channel；callback 100/hour/run）。`middleware.Limiter.Allow(key)` 单方法不带配额。为不改变语义，引入一个「配额感知」的适配：redis limiter 提供 `AllowBudget(key string, limit int, window time.Duration) bool`（Lua 按 key+window 判额），`middleware.Limiter` 的 `Allow(key)` 用驱动默认预算。bootstrap 按场景构造带配额的 key/包装器。
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 新建测试：用 miniredis + redis 驱动构造 limiter，断言「同一逻辑 key 在 N 副本共享配额」：两个 limiter 实例指向同一 miniredis，合计放行数不超过预算（区别于内存限流器各算各的）。并断言 Redis「故障」（关闭 miniredis）时 `Allow` 返回 true（fail-open）。照任务 9 的 miniredis helper。
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`& $go test ./internal/middleware/redis/ -run Limit -count=1`
 预期：FAIL（`AllowBudget` 不存在 / 行为不符）。
 
-- [ ] **步骤 3：实现配额感知限流**
+- [x] **步骤 3：实现配额感知限流**
 
 `internal/middleware/redis/limiter.go` 加：
 
@@ -2135,12 +2135,12 @@ bootstrap 接线：
 
 注意：若把两个具体限流器都改成接口会牵动较多测试；采用「Server 增加可选 `inboxGate func(string) bool` / `callbackGate func(string) bool`，为 nil 时回退现有具体限流器」的最小侵入做法。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`& $go test ./internal/middleware/... ./internal/api/ ./internal/bootstrap/ -count=1` 与 `& $go build ./...`
 预期：PASS，既有限流测试不回归。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add internal/middleware/ internal/api/ internal/bootstrap/
@@ -2156,7 +2156,7 @@ git commit -m "feat(middleware): redis 驱动下接入分布式全局限流（in
 - 修改：`docs/superpowers/notes/2026-08-28-oss-backlog-and-enterprise.md`（X3 标记已交付）
 - 修改：`docs/superpowers/plans/2026-09-03-middleware-multi-source.md`（勾选完成项）
 
-- [ ] **步骤 1：后端全量验证**
+- [x] **步骤 1：后端全量验证**
 
 ```powershell
 $env:GOPROXY='https://goproxy.cn,direct'; $env:GOTOOLCHAIN='auto'
@@ -2168,7 +2168,7 @@ $go='C:\Users\Administrator\go-sdk\go\bin\go.exe'
 ```
 预期：构建通过；全部测试 PASS（含 miniredis redis 驱动测试）；vet 干净；fmt 无改动。
 
-- [ ] **步骤 2：配置示例**
+- [x] **步骤 2：配置示例**
 
 在 `configs/demo.yaml` 加注释段（默认不启用 redis，保持 memory）：
 
@@ -2189,12 +2189,12 @@ middleware:
 
 `configs/minimal.yaml` 可不加（memory 默认即可）。
 
-- [ ] **步骤 3：backlog 与计划勾选**
+- [x] **步骤 3：backlog 与计划勾选**
 
 - backlog 文档把 X3「中间件多源」标记为**已交付**（在交付表加一行，执行顺序表更新），简述：可替换任务队列/事件总线/限流，memory 默认零依赖，redis 驱动支持多副本 + 崩溃恢复 + 跨副本 SSE。
 - 勾选本计划所有已完成步骤复选框（合并/双仓推送那一步在推送完成后再勾）。
 
-- [ ] **步骤 4：提交文档**
+- [x] **步骤 4：提交文档**
 
 ```bash
 git add configs/ docs/superpowers/
@@ -2207,7 +2207,7 @@ git commit -m "docs: X3 中间件多源收尾，标记 backlog 已交付"
 - memory 驱动（默认）：`baize demo` 启动，连续发消息确认 run 正常、SSE 实时输出、重启后行为与旧版一致。
 - redis 驱动（可选，需本地 redis 或 docker）：`driver: redis` 配好 addr，起两个实例，发消息确认其中一个 worker 消费；kill 掉正在执行的实例，确认调和把 run 重新入队由另一实例续跑；SSE 连在 A、run 跑在 B 时确认实时事件可达。
 
-- [ ] **步骤 6：合并与双仓推送（按用户确认）**
+- [ ] **步骤 6：合并与双仓推送（待最终审查后）**
 
 合并 feature 分支到 `main`，推 `real`，再用 `scripts/export-public.ps1` 同步 `public`（照 X1/X2/X4 收尾；public 推送需 `all` 权限，网络超时重试）。**注意**：public 导出是否包含 redis 驱动源码——`internal/middleware/redis` 属开源范围（go-redis 是开源依赖），应随 public 发布；`docs/superpowers/` 仍排除。
 

@@ -147,7 +147,7 @@ func (f executorFunc) ExecuteJob(ctx context.Context, job middleware.Job) error 
 
 // TestWorkerJobCtxNotCanceledOnStop 断言关停语义：作业执行 ctx 脱离 worker
 // 的消费/关停生命周期——stop() 返回后，在飞作业持有的 ctx 仍未被取消
-//（否则 HITL 等待中的 run 会被引擎 markCancelled，重开后无法 cold resume）。
+// （否则 HITL 等待中的 run 会被引擎 markCancelled，重开后无法 cold resume）。
 func TestWorkerJobCtxNotCanceledOnStop(t *testing.T) {
 	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{WorkerConcurrency: 1})
 	if err != nil {
