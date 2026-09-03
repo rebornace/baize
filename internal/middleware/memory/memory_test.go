@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -31,6 +32,86 @@ func TestMemoryQueueEnqueueConsumeAck(t *testing.T) {
 		t.Fatalf("got run %q", got.RunID)
 	}
 	ack()
+}
+
+func TestMemoryQueueEnqueueFillsEnqueuedAt(t *testing.T) {
+	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mw.Close()
+
+	job := middleware.Job{RunID: "run_ts", Kind: middleware.KindRun, Input: "hi"}
+	if err := mw.Queue.Enqueue(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	got, _, ok := mw.Queue.Consume(ctx)
+	if !ok {
+		t.Fatal("expected to consume a job")
+	}
+	if got.EnqueuedAt.IsZero() {
+		t.Fatal("zero EnqueuedAt must be backfilled")
+	}
+}
+
+func TestMemoryQueueCloseIdempotentAndEnqueueErrors(t *testing.T) {
+	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mw.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("repeat close must be idempotent: %v", err)
+	}
+
+	// Enqueue after close must return an error, not panic.
+	if err := mw.Queue.Enqueue(context.Background(), middleware.Job{RunID: "run_dead", Kind: middleware.KindRun}); err == nil {
+		t.Fatal("enqueue after close must error")
+	}
+
+	// Consume after close must return ok=false immediately.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, _, ok := mw.Queue.Consume(ctx); ok {
+		t.Fatal("consume after close must return ok=false")
+	}
+}
+
+func TestMemoryQueueEnqueueRespectsContext(t *testing.T) {
+	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mw.Close()
+
+	// A single consumer drains nothing: fill the 1024-buffer so Enqueue blocks.
+	ctxFill, cancelFill := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFill()
+	for i := 0; i < 1024; i++ {
+		if err := mw.Queue.Enqueue(ctxFill, middleware.Job{RunID: "run_fill", Kind: middleware.KindRun}); err != nil {
+			t.Fatalf("fill %d: %v", i, err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- mw.Queue.Enqueue(ctx, middleware.Job{RunID: "run_blocked", Kind: middleware.KindRun})
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Enqueue did not return after ctx cancel")
+	}
 }
 
 func TestMemoryBusLocalNudge(t *testing.T) {
