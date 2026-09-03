@@ -1653,7 +1653,7 @@ git add docs/superpowers/plans/2026-09-01-context-compaction.md docs/superpowers
 git commit -m "docs: X4 上下文压缩收尾，标记 backlog 已交付"
 ```
 
-- [ ] **步骤 6：合并与双仓推送（按 finishing-a-development-branch / 用户惯例）**
+- [x] **步骤 6：合并与双仓推送（按 finishing-a-development-branch / 用户惯例）**
 
 合并 `feat/context-compaction-v0` 到 `main`，推 `real`，再用 `scripts/export-public.ps1` 同步 `public`（照 X1/X2 收尾；public 推送需 `all` 权限绕过沙箱，网络超时则重试）。
 
