@@ -9,6 +9,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/middleware"
 	mwredis "github.com/rebornace/baize/internal/middleware/redis"
+	goredis "github.com/redis/go-redis/v9"
 )
 
 func job(runID string) middleware.Job {
@@ -141,4 +142,113 @@ func TestRedisLimiterFailOpen(t *testing.T) {
 	if !mw.Limiter.Allow("fail-open-key") {
 		t.Fatal("Allow should fail-open (return true) when Redis is down")
 	}
+}
+
+func TestRedisConsumeSurvivesIdleThenGetsJob(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mw, err := mwredis.Open(context.Background(), mwredis.Config{
+		Addr: mr.Addr(), Stream: "baize:runs", ConsumerGroup: "baize-workers",
+		EventsChannel: "baize:run-events", ConsumerName: "idle-consumer",
+		ConsumeBlock: 50 * time.Millisecond, // short so idle Nil happens quickly
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mw.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	type result struct {
+		job middleware.Job
+		ok  bool
+	}
+	ch := make(chan result, 1)
+	go func() {
+		got, ack, ok := mw.Queue.Consume(ctx)
+		if ok && ack != nil {
+			ack()
+		}
+		ch <- result{job: got, ok: ok}
+	}()
+
+	// Wait long enough for at least one empty XReadGroup BLOCK timeout.
+	time.Sleep(150 * time.Millisecond)
+	if err := mw.Queue.Enqueue(ctx, job("run_after_idle")); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case r := <-ch:
+		if !r.ok || r.job.RunID != "run_after_idle" {
+			t.Fatalf("after idle: ok=%v job=%+v", r.ok, r.job)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Consume did not return job after idle (worker loop likely exited on empty read)")
+	}
+}
+
+func TestRedisConsumeCancelReturnsFalse(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mw, err := mwredis.Open(context.Background(), mwredis.Config{
+		Addr: mr.Addr(), Stream: "baize:runs", ConsumerGroup: "baize-workers",
+		EventsChannel: "baize:run-events", ConsumerName: "cancel-consumer",
+		// miniredis does not abort XReadGroup on ctx cancel mid-block; short
+		// Block lets Consume notice cancel on the next loop iteration promptly.
+		ConsumeBlock: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mw.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	start := time.Now()
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	_, _, ok := mw.Queue.Consume(ctx)
+	elapsed := time.Since(start)
+	if ok {
+		t.Fatal("Consume should return ok=false after ctx cancel")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Consume took %v after cancel; want prompt shutdown", elapsed)
+	}
+}
+
+func TestRedisConsumeSkipsPoisonKeepsGoing(t *testing.T) {
+	mr := miniredis.RunT(t)
+	const stream = "baize:runs"
+	const group = "baize-workers"
+	mw, err := mwredis.Open(context.Background(), mwredis.Config{
+		Addr: mr.Addr(), Stream: stream, ConsumerGroup: group,
+		EventsChannel: "baize:run-events", ConsumerName: "poison-consumer",
+		ConsumeBlock: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mw.Close() })
+
+	rc := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rc.Close() })
+	if err := rc.XAdd(context.Background(), &goredis.XAddArgs{
+		Stream: stream,
+		Values: map[string]any{"job": "{not-json"},
+	}).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Queue.Enqueue(context.Background(), job("run_good")); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	got, ack, ok := mw.Queue.Consume(ctx)
+	if !ok || got.RunID != "run_good" {
+		t.Fatalf("expected good job after poison, ok=%v job=%+v", ok, got)
+	}
+	ack()
 }

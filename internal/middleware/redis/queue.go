@@ -12,6 +12,8 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
+const defaultConsumeBlock = 5 * time.Second
+
 // queue implements middleware.JobQueue on Redis Streams + consumer groups.
 //
 // XAUTOCLAIM (PEL reclaim) is intentionally not implemented in v0: the DB
@@ -23,10 +25,14 @@ type queue struct {
 	stream   string
 	group    string
 	consumer string
+	block    time.Duration
 }
 
-func newQueue(c *goredis.Client, stream, group, consumer string) *queue {
-	return &queue{client: c, stream: stream, group: group, consumer: consumer}
+func newQueue(c *goredis.Client, stream, group, consumer string, block time.Duration) *queue {
+	if block <= 0 {
+		block = defaultConsumeBlock
+	}
+	return &queue{client: c, stream: stream, group: group, consumer: consumer, block: block}
 }
 
 func (q *queue) ensureGroup(ctx context.Context) error {
@@ -59,34 +65,51 @@ func (q *queue) Enqueue(ctx context.Context, job middleware.Job) error {
 	}).Err()
 }
 
+// Consume blocks until a valid job is available or ctx ends.
+// ok=false only means shutdown (ctx cancelled/deadline) — matching the memory
+// queue contract so workers that treat !ok as permanent exit stay alive across
+// idle XReadGroup timeouts, recoverable Redis errors, and poison messages.
 func (q *queue) Consume(ctx context.Context) (middleware.Job, func(), bool) {
-	res, err := q.client.XReadGroup(ctx, &goredis.XReadGroupArgs{
-		Group:    q.group,
-		Consumer: q.consumer,
-		Streams:  []string{q.stream, ">"},
-		Count:    1,
-		Block:    5 * time.Second,
-	}).Result()
-	if err != nil {
-		if errors.Is(err, goredis.Nil) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	for {
+		if ctx.Err() != nil {
 			return middleware.Job{}, nil, false
 		}
-		// Block timeout / transient errors: worker loop retries.
-		return middleware.Job{}, nil, false
+		res, err := q.client.XReadGroup(ctx, &goredis.XReadGroupArgs{
+			Group:    q.group,
+			Consumer: q.consumer,
+			Streams:  []string{q.stream, ">"},
+			Count:    1,
+			Block:    q.block,
+		}).Result()
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+				return middleware.Job{}, nil, false
+			}
+			if errors.Is(err, goredis.Nil) {
+				// Idle block timeout: keep waiting (do not signal worker exit).
+				continue
+			}
+			// Recoverable Redis/network error: brief backoff, still watch ctx.
+			select {
+			case <-ctx.Done():
+				return middleware.Job{}, nil, false
+			case <-time.After(100 * time.Millisecond):
+			}
+			continue
+		}
+		if len(res) == 0 || len(res[0].Messages) == 0 {
+			continue
+		}
+		msg := res[0].Messages[0]
+		raw, _ := msg.Values["job"].(string)
+		var job middleware.Job
+		if err := json.Unmarshal([]byte(raw), &job); err != nil {
+			// Poison message: ack to avoid infinite redelivery, then keep consuming.
+			q.makeAck(msg.ID)()
+			continue
+		}
+		return job, q.makeAck(msg.ID), true
 	}
-	if len(res) == 0 || len(res[0].Messages) == 0 {
-		return middleware.Job{}, nil, false
-	}
-	msg := res[0].Messages[0]
-	raw, _ := msg.Values["job"].(string)
-	var job middleware.Job
-	if err := json.Unmarshal([]byte(raw), &job); err != nil {
-		// Poison message: ack to avoid infinite redelivery; drop.
-		ack := q.makeAck(msg.ID)
-		ack()
-		return middleware.Job{}, nil, false
-	}
-	return job, q.makeAck(msg.ID), true
 }
 
 // makeAck returns a panic-safe XACK closure so network/client panics cannot

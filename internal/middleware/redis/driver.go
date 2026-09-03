@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/rebornace/baize/internal/middleware"
 	goredis "github.com/redis/go-redis/v9"
@@ -13,6 +14,8 @@ import (
 type Config struct {
 	Addr, Username, Password, Stream, ConsumerGroup, EventsChannel, ConsumerName string
 	DB                                                                           int
+	// ConsumeBlock is the XReadGroup BLOCK duration; zero means 5s.
+	ConsumeBlock time.Duration
 }
 
 // Open builds a redis-backed Middleware.
@@ -44,7 +47,7 @@ func Open(ctx context.Context, cfg Config) (*middleware.Middleware, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("redis middleware: connect: %w", err)
 	}
-	q := newQueue(client, cfg.Stream, cfg.ConsumerGroup, cfg.ConsumerName)
+	q := newQueue(client, cfg.Stream, cfg.ConsumerGroup, cfg.ConsumerName, cfg.ConsumeBlock)
 	if err := q.ensureGroup(ctx); err != nil {
 		_ = client.Close()
 		return nil, err
