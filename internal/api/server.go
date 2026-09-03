@@ -2142,6 +2142,15 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			if ev.Event.Type == "external.nudge" {
+				if catchUpTerminal, status, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
+					return
+				} else if catchUpTerminal {
+					_ = writeSSEEnded(w, rc, status)
+					return
+				}
+				continue
+			}
 			if ev.Index <= lastSent {
 				continue
 			}
@@ -2166,12 +2175,17 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // drainSubEvents non-blocking writes any buffered subscription events with index > lastSent.
+// external.nudge placeholders are skipped (no write / no lastSent advance); callers
+// catch up from the store via catchUpRunStream.
 func drainSubEvents(w http.ResponseWriter, rc *http.ResponseController, sub *eventbus.Subscription, lastSent int) (int, error) {
 	for {
 		select {
 		case ev, ok := <-sub.Events:
 			if !ok {
 				return lastSent, nil
+			}
+			if ev.Event.Type == "external.nudge" {
+				continue
 			}
 			if ev.Index <= lastSent {
 				continue

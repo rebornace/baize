@@ -18,6 +18,9 @@ func TestPublishExternalNotifiesSubscribers(t *testing.T) {
 		if ev.Index != 3 {
 			t.Fatalf("index=%d want 3", ev.Index)
 		}
+		if ev.Event.Type != "external.nudge" {
+			t.Fatalf("type=%q want external.nudge", ev.Event.Type)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("subscriber did not receive external nudge")
 	}
