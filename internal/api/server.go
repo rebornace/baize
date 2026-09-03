@@ -2050,6 +2050,10 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, evs)
 }
 
+// ssePollInterval is the SSE fallback poll period when Hub nudges are missing
+// (e.g. cross-replica AppendEvent). Tests may shorten it via t.Cleanup restore.
+var ssePollInterval = 3 * time.Second
+
 func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	runRec, err := s.Store.GetRun(id)
@@ -2116,6 +2120,8 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
+	poll := time.NewTicker(ssePollInterval)
+	defer poll.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
@@ -2125,6 +2131,13 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			_ = rc.Flush()
+		case <-poll.C:
+			if catchUpTerminal, status, err := catchUpRunStream(w, rc, s.Store, id, &lastSent); err != nil {
+				return
+			} else if catchUpTerminal {
+				_ = writeSSEEnded(w, rc, status)
+				return
+			}
 		case ev, ok := <-sub.Events:
 			if !ok {
 				return

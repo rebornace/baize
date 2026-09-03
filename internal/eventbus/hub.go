@@ -97,6 +97,13 @@ func (h *Hub) OnEnd(fn func(runID string, status store.Status)) {
 	h.mu.Unlock()
 }
 
+// PublishExternal injects a cross-replica nudge: subscribers of runID are told
+// "new events exist up to index seq". The SSE handler re-reads the store, so the
+// Event payload need not carry content; observers (webhook) also fire.
+func (h *Hub) PublishExternal(runID string, seq int64) {
+	h.Publish(runID, IndexedEvent{Index: int(seq), Event: store.Event{Type: "external.nudge"}})
+}
+
 // Publish delivers an indexed event to all subscribers of runID (non-blocking per sub).
 func (h *Hub) Publish(runID string, ev IndexedEvent) {
 	h.mu.Lock()
