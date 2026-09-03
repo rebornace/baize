@@ -170,13 +170,26 @@ func (s *SQLStore) queryRow(query string, args ...any) *sql.Row {
 // GetRun and ListRunsForReconcile must select exactly these columns in order.
 const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until`
 
+// sqliteTimeLayout is a fixed-width (9 fractional digits) RFC3339 layout. SQLite
+// compares TEXT timestamps byte-wise, so variable-length fractions (RFC3339Nano
+// trims trailing zeros) invert order within the same whole second: e.g.
+// ".25Z" < ".2Z" even though 0.250s > 0.200s. Fixed width keeps lexicographic
+// order identical to chronological order and still parses back to time.Time.
+const sqliteTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// formatSQLiteTime renders t as a fixed-width RFC3339 string for TEXT/TIMESTAMP
+// columns compared lexicographically on SQLite.
+func formatSQLiteTime(t time.Time) string {
+	return t.UTC().Format(sqliteTimeLayout)
+}
+
 // timeArg binds a timestamp for the active dialect. Postgres columns are real
-// TIMESTAMPTZ (native time.Time); SQLite stores them as RFC3339 text.
+// TIMESTAMPTZ (native time.Time); SQLite stores them as fixed-width RFC3339 text.
 func (s *SQLStore) timeArg(t time.Time) any {
 	if s.dialect == DialectPostgres {
 		return t
 	}
-	return t.Format(time.RFC3339Nano)
+	return formatSQLiteTime(t)
 }
 
 // scanRunRow decodes one runs row selected via runSelectColumns.
@@ -789,7 +802,7 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 	_, err := s.exec(
 		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id)
 		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?)`,
-		r.ID, r.AgentID, r.Input, string(r.Status), r.CreatedAt.Format(time.RFC3339Nano),
+		r.ID, r.AgentID, r.Input, string(r.Status), formatSQLiteTime(r.CreatedAt),
 		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID,
 	)
 	if err != nil {
@@ -898,15 +911,16 @@ func (s *SQLStore) ListRunsForReconcile(limit int) ([]*Run, error) {
 		limit = 100
 	}
 	now := time.Now().UTC()
-	// created_at is TEXT on both dialects, so the grace cutoff is an RFC3339
-	// string; lease_until is TIMESTAMPTZ on postgres and uses the dialect arg.
+	// Both columns are compared as TEXT on SQLite (fixed-width format above);
+	// on postgres lease_until is native TIMESTAMPTZ while created_at stays TEXT,
+	// so the grace cutoff is bound as an RFC3339 string either way.
 	rows, err := s.query(
 		`SELECT `+runSelectColumns+`
 		 FROM runs
 		 WHERE status IN ('queued','running')
 		   AND (lease_until < ? OR (lease_until IS NULL AND created_at < ?))
 		 ORDER BY created_at ASC LIMIT ?`,
-		s.timeArg(now), now.Add(-reconcileGrace).Format(time.RFC3339Nano), limit,
+		s.timeArg(now), formatSQLiteTime(now.Add(-reconcileGrace)), limit,
 	)
 	if err != nil {
 		return nil, err

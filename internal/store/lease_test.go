@@ -1,11 +1,17 @@
 package store_test
 
 import (
+	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rebornace/baize/internal/store"
 )
+
+// sqliteTestTimeLayout mirrors the store's fixed-width (9 fractional digits)
+// RFC3339 layout used for TEXT/TIMESTAMP columns on SQLite.
+const sqliteTestTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
 
 func TestLeaseRunAtomic(t *testing.T) {
 	st := newLeaseStore(t)
@@ -101,6 +107,106 @@ func TestListRunsForReconcile(t *testing.T) {
 	}
 }
 
+// TestReconcileGraceWindowSQL covers the never-leased grace branches: a freshly
+// created run is protected by the 30s grace window, while a never-leased run
+// older than the window is listed for reconciliation.
+func TestReconcileGraceWindowSQL(t *testing.T) {
+	st := newLeaseStore(t)
+	db := rawDB(t, st)
+
+	fresh := mustCreateRun(t, st) // created_at = now, never leased → inside grace
+
+	staleID := "run_stale_never_leased"
+	if _, err := db.Exec(
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, lease_until)
+		 VALUES (?, 'a', 'x', 'running', '', '', ?, NULL)`,
+		staleID, time.Now().Add(-time.Hour).UTC().Format(sqliteTestTimeLayout),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.ListRunsForReconcile(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, r := range got {
+		ids = append(ids, r.ID)
+	}
+	if !contains(ids, staleID) {
+		t.Fatalf("stale never-leased run (older than grace) must be listed, got %v", ids)
+	}
+	if contains(ids, fresh.ID) {
+		t.Fatalf("fresh never-leased run (within grace) must not be listed, got %v", ids)
+	}
+}
+
+// TestLeaseComparisonFixedWidthSameSecond locks down the SQLite lexicographic
+// comparison: lease_until is TEXT-compared byte-wise, so timestamps must use a
+// fixed-width fractional layout. Variable-length RFC3339Nano trims trailing
+// zeros and inverts order within one whole second (".25Z" < ".2Z"), which
+// would treat a live lease as expired and let a second worker steal the run.
+func TestLeaseComparisonFixedWidthSameSecond(t *testing.T) {
+	st := newLeaseStore(t)
+	db := rawDB(t, st)
+
+	// Production must persist lease_until as fixed-width RFC3339 (9 digits).
+	run := mustCreateRun(t, st)
+	if _, err := st.LeaseRun(run.ID, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := db.QueryRow(
+		`SELECT CAST(lease_until AS TEXT) FROM runs WHERE id = ?`, run.ID,
+	).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !isFixedWidthTimestamp(stored) {
+		t.Fatalf("lease_until must be fixed-width RFC3339 (9 fractional digits), got %q", stored)
+	}
+
+	// Two leases in the same whole second, differing only in fraction. At
+	// now=.200 the later lease (.250) must still be held (not reclaimable);
+	// at now=.250 the earlier lease (.200) must be expired (reclaimable).
+	base := "2026-09-03T12:00:00"
+	created := base + ".000000000Z"
+	liveLease := base + ".250000000Z"
+	earlyLease := base + ".200000000Z"
+	liveID, earlyID := "run_live_fmt", "run_early_fmt"
+	for _, c := range []struct{ id, lease string }{
+		{liveID, liveLease},
+		{earlyID, earlyLease},
+	} {
+		if _, err := db.Exec(
+			`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, lease_until)
+			 VALUES (?, 'a', 'x', 'running', '', '', ?, ?)`,
+			c.id, created, c.lease,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reclaimable := func(id, nowArg string) int {
+		var n int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM runs
+			 WHERE id = ? AND status IN ('queued','running')
+			   AND (lease_until IS NULL OR lease_until < ?)`,
+			id, nowArg,
+		).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	// now = .200: later lease .250 must NOT be stale (".250..." < ".200..." is false).
+	if got := reclaimable(liveID, base+".200000000Z"); got != 0 {
+		t.Fatalf("later lease .250 must stay held at now .200 (lexicographic order inverted), reclaimable=%d", got)
+	}
+	// now = .250: earlier lease .200 is expired and must be reclaimable.
+	if got := reclaimable(earlyID, base+".250000000Z"); got != 1 {
+		t.Fatalf("earlier lease .200 must be stale at now .250, reclaimable=%d", got)
+	}
+}
+
 func newLeaseStore(t *testing.T) store.Store {
 	t.Helper()
 	st, err := store.OpenWithOptions("sqlite", store.OpenOptions{SQLitePath: ":memory:"})
@@ -115,14 +221,44 @@ func newLeaseStore(t *testing.T) store.Store {
 	return st
 }
 
+// rawDB returns the underlying *sql.DB of a SQLStore for direct-row test setup.
+func rawDB(t *testing.T, st store.Store) *sql.DB {
+	t.Helper()
+	b, ok := st.(interface{ DB() *sql.DB })
+	if !ok {
+		t.Fatalf("store %T does not expose DB()", st)
+	}
+	return b.DB()
+}
+
 func mustCreateRun(t *testing.T, st store.Store) *store.Run {
 	t.Helper()
 	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 让 created_at 落在调和宽限期之外：无租约的新 run 默认为不应被立即调和。
+	// created_at = now：无租约的新 run 落在调和宽限期内，不应被立即调和。
 	return r
+}
+
+func isFixedWidthTimestamp(s string) bool {
+	if !strings.HasSuffix(s, "Z") {
+		return false
+	}
+	dot := strings.IndexByte(s, '.')
+	if dot < 0 {
+		return false
+	}
+	frac := s[dot+1 : len(s)-1]
+	if len(frac) != 9 {
+		return false
+	}
+	for _, c := range frac {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func contains(xs []string, x string) bool {
