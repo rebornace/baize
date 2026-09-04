@@ -2,6 +2,8 @@ package artifact_test
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,8 +51,70 @@ func TestStorePutGetRoundTrip(t *testing.T) {
 
 func TestGetNotFound(t *testing.T) {
 	as := newTestStore(t, t.TempDir())
-	if _, _, err := as.Get(context.Background(), "art_missing"); err == nil {
-		t.Fatalf("want error for missing artifact")
+	_, _, err := as.Get(context.Background(), "art_missing")
+	if !errors.Is(err, artifact.ErrNotFound) {
+		t.Fatalf("want artifact.ErrNotFound for missing metadata row, got %v", err)
+	}
+}
+
+// 元数据行存在但 blob 对象缺失（如手工删过对象、或 S3 对象过期/丢失）：
+// blob 驱动返回 blob.ErrNotFound，artifact 层应映射为 artifact.ErrNotFound。
+func TestGetBlobMissingMapsToNotFound(t *testing.T) {
+	dir := t.TempDir()
+	as := newTestStore(t, dir)
+	id, err := as.PutHTML(context.Background(), "run_1", "<html>x</html>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 删掉 blob 文件，保留 SQL 元数据行。
+	if err := os.Remove(filepath.Join(dir, "artifacts", id+".html")); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = as.Get(context.Background(), id)
+	if !errors.Is(err, artifact.ErrNotFound) {
+		t.Fatalf("want artifact.ErrNotFound when blob object is missing, got %v", err)
+	}
+}
+
+// 注入一个对 Get 总是返回普通错误的 blob.Store：该错误既不是
+// blob.ErrNotFound 也不是 SQL 无行，必须原样上抛、不得映射为 ErrNotFound。
+// Put/Delete 委托给底层 memory 存储，保证 PutHTML 能正常落库。
+type failingGetBlobStore struct {
+	blob.Store
+}
+
+func (f *failingGetBlobStore) Get(_ context.Context, _ string) ([]byte, error) {
+	return nil, errors.New("s3 upstream: 503 Service Unavailable")
+}
+
+func TestGetBlobUpstreamErrorIsNotNotFound(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.OpenSQLite(filepath.Join(dir, "b.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	mem, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	as, err := artifact.NewStore(&failingGetBlobStore{Store: mem}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := as.PutHTML(context.Background(), "run_1", "<html>x</html>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = as.Get(context.Background(), id)
+	if err == nil {
+		t.Fatalf("want upstream error")
+	}
+	if errors.Is(err, artifact.ErrNotFound) {
+		t.Fatalf("upstream error must not map to ErrNotFound, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "get artifact blob") {
+		t.Fatalf("want error wrapped with context, got %v", err)
 	}
 }
 

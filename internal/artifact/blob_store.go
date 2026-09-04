@@ -98,16 +98,16 @@ func (s *BlobStore) PutHTML(ctx context.Context, runID string, html string) (str
 func (s *BlobStore) Get(ctx context.Context, id string) (string, string, error) {
 	var runID string
 	err := s.db.QueryRowContext(ctx, s.q(`SELECT run_id FROM artifacts WHERE id = ?`), id).Scan(&runID)
-	if err == sql.ErrNoRows {
-		return "", "", fmt.Errorf("artifact not found")
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", fmt.Errorf("artifact %s: %w", id, ErrNotFound)
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("query artifact metadata: %w", err)
 	}
 	data, err := s.blobs.Get(ctx, s.key(id))
 	if err != nil {
 		if errors.Is(err, blob.ErrNotFound) {
-			return "", "", fmt.Errorf("artifact not found")
+			return "", "", fmt.Errorf("artifact %s: %w", id, ErrNotFound)
 		}
 		return "", "", fmt.Errorf("get artifact blob: %w", err)
 	}
