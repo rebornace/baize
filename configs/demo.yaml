@@ -73,6 +73,22 @@ conversation:
 #   #   consumer_group: baize-workers
 #   #   events_channel: baize:run-events
 #   # 不做 XAUTOCLAIM；崩溃恢复靠 DB reconciler 再 XADD。PEL 可能堆积，运维可 XTRIM/定期清理。
+# 对象存储：分析报告产物 HTML 字节存放位置。
+# driver: file（默认，本地磁盘 <dataDir>/artifacts）| s3（AWS S3/MinIO/OSS/COS 兼容）
+# storage:
+#   driver: file
+#   file:
+#     root_dir: ""          # 留空则用 dataDir
+#   s3:
+#     endpoint: "minio.local:9000"
+#     region: ""
+#     bucket: "baize"
+#     prefix: "baize"
+#     access_key_env: S3_ACCESS_KEY   # 密钥仅从环境变量读取
+#     secret_key_env: S3_SECRET_KEY
+#     use_ssl: false
+#     path_style: true                # MinIO/自建设 true；AWS 设 false
+#     auto_create_bucket: false
 mock_ticket:
   listen: ":18080"
 inbox:

@@ -340,13 +340,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackTTL = callbackTTL
 
 	if sqlBackend != nil {
-		root := dataDir(cfg)
-		if root == "" {
-			root = "./data"
-		}
-		blobStore, err := blob.Open(context.Background(), "file", blob.Options{
-			File: blob.FileOptions{RootDir: root},
-		})
+		blobStore, err := openBlobStore(context.Background(), cfg)
 		if err != nil {
 			_ = closer.Close()
 			return nil, nil, fmt.Errorf("open blob store: %w", err)
@@ -481,6 +475,45 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 // redisPasswordFromEnv resolves the redis password from the named environment
 // variable. An empty env name means no password.
 func redisPasswordFromEnv(env string) string {
+	if env == "" {
+		return ""
+	}
+	return os.Getenv(env)
+}
+
+// openBlobStore builds the configured object-storage driver. The file driver
+// roots under dataDir when storage.file.root_dir is unset, preserving the
+// historical <dataDir>/artifacts layout.
+func openBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
+	driver := strings.ToLower(strings.TrimSpace(cfg.Storage.Driver))
+	if driver == "" {
+		driver = "file"
+	}
+	opts := blob.Options{
+		File: blob.FileOptions{RootDir: cfg.Storage.File.RootDir},
+		S3: blob.S3Options{
+			Endpoint:   cfg.Storage.S3.Endpoint,
+			Region:     cfg.Storage.S3.Region,
+			Bucket:     cfg.Storage.S3.Bucket,
+			Prefix:     cfg.Storage.S3.Prefix,
+			AccessKey:  s3CredFromEnv(cfg.Storage.S3.AccessKeyEnv),
+			SecretKey:  s3CredFromEnv(cfg.Storage.S3.SecretKeyEnv),
+			UseSSL:     cfg.StorageUseSSL(),
+			PathStyle:  cfg.Storage.S3.PathStyle,
+			AutoCreate: cfg.Storage.S3.AutoCreateBucket,
+		},
+	}
+	if driver == "file" && opts.File.RootDir == "" {
+		opts.File.RootDir = dataDir(cfg)
+		if opts.File.RootDir == "" {
+			opts.File.RootDir = "./data"
+		}
+	}
+	return blob.Open(ctx, driver, opts)
+}
+
+// s3CredFromEnv resolves an S3 credential from the named environment variable.
+func s3CredFromEnv(env string) string {
 	if env == "" {
 		return ""
 	}
