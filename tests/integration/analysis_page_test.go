@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"github.com/rebornace/baize/internal/analysis"
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/artifact"
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -44,7 +47,11 @@ func TestAnalysisPageE2E(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	artStore, err := artifact.NewFileStore(filepath.Join(dir, "artifacts"), st)
+	blobs, err := blob.Open(context.Background(), "file", blob.Options{File: blob.FileOptions{RootDir: dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artStore, err := artifact.NewStore(blobs, st)
 	if err != nil {
 		t.Fatal(err)
 	}

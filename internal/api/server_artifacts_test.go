@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/artifact"
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -16,17 +19,20 @@ import (
 func testArtifactStore(t *testing.T) artifact.Store {
 	t.Helper()
 	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "b.db")
-	st, err := store.OpenSQLite(dbPath)
+	st, err := store.OpenSQLite(filepath.Join(dir, "b.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	fs, err := artifact.NewFileStore(filepath.Join(dir, "artifacts"), st)
+	blobs, err := blob.Open(context.Background(), "file", blob.Options{File: blob.FileOptions{RootDir: dir}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fs
+	as, err := artifact.NewStore(blobs, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return as
 }
 
 func TestGetArtifactOK(t *testing.T) {
@@ -44,7 +50,7 @@ func TestGetArtifactOK(t *testing.T) {
 	runID := run.ID
 
 	html := "<html><body><h1>Analysis</h1></body></html>"
-	artID, err := srv.Artifacts.PutHTML(runID, html)
+	artID, err := srv.Artifacts.PutHTML(context.Background(), runID, html)
 	if err != nil {
 		t.Fatal(err)
 	}

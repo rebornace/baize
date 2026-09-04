@@ -2023,7 +2023,7 @@ func (s *Server) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	html, runID, err := s.Artifacts.Get(id)
+	html, runID, err := s.Artifacts.Get(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "artifact_not_found", "artifact not found")
 		return

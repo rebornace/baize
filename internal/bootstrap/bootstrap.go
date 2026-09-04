@@ -20,6 +20,8 @@ import (
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
@@ -338,8 +340,18 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackTTL = callbackTTL
 
 	if sqlBackend != nil {
-		artDir := artifactDataDir(cfg)
-		artStore, err := artifact.NewFileStore(artDir, sqlBackend)
+		root := dataDir(cfg)
+		if root == "" {
+			root = "./data"
+		}
+		blobStore, err := blob.Open(context.Background(), "file", blob.Options{
+			File: blob.FileOptions{RootDir: root},
+		})
+		if err != nil {
+			_ = closer.Close()
+			return nil, nil, fmt.Errorf("open blob store: %w", err)
+		}
+		artStore, err := artifact.NewStore(blobStore, sqlBackend)
 		if err != nil {
 			_ = closer.Close()
 			return nil, nil, fmt.Errorf("open artifact store: %w", err)
@@ -569,13 +581,6 @@ func dataDir(cfg config.Config) string {
 		return "./data"
 	}
 	return ""
-}
-
-func artifactDataDir(cfg config.Config) string {
-	if dir := dataDir(cfg); dir != "" {
-		return filepath.Join(dir, "artifacts")
-	}
-	return "./data/artifacts"
 }
 
 // loadEventsWebhook returns the persisted events webhook config, seeding from
