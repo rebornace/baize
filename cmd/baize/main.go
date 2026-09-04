@@ -14,6 +14,8 @@ import (
 	_ "github.com/rebornace/baize/internal/channel/weixin"
 	// Register redis middleware driver (Streams / PubSub / Lua limiter).
 	_ "github.com/rebornace/baize/internal/middleware/redis"
+	// Register s3 blob driver (S3/MinIO/OSS/COS via minio-go).
+	_ "github.com/rebornace/baize/internal/blob/s3"
 )
 
 func main() {
