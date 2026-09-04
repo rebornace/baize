@@ -86,7 +86,7 @@ func (s *BlobStore) PutHTML(ctx context.Context, runID string, html string) (str
 	if _, err := s.db.ExecContext(ctx,
 		s.q(`INSERT INTO artifacts (id, run_id, created_at) VALUES (?, ?, ?)`),
 		id, runID, time.Now().Unix()); err != nil {
-		if delErr := s.blobs.Delete(ctx, key); delErr != nil {
+		if delErr := s.blobs.Delete(context.WithoutCancel(ctx), key); delErr != nil {
 			log.Printf("artifact: rollback delete %s after metadata failure: %v", key, delErr)
 		}
 		return "", fmt.Errorf("record artifact metadata: %w", err)
