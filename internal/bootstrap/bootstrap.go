@@ -20,6 +20,8 @@ import (
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
@@ -338,8 +340,12 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackTTL = callbackTTL
 
 	if sqlBackend != nil {
-		artDir := artifactDataDir(cfg)
-		artStore, err := artifact.NewFileStore(artDir, sqlBackend)
+		blobStore, err := openBlobStore(context.Background(), cfg)
+		if err != nil {
+			_ = closer.Close()
+			return nil, nil, fmt.Errorf("open blob store: %w", err)
+		}
+		artStore, err := artifact.NewStore(blobStore, sqlBackend)
 		if err != nil {
 			_ = closer.Close()
 			return nil, nil, fmt.Errorf("open artifact store: %w", err)
@@ -475,6 +481,45 @@ func redisPasswordFromEnv(env string) string {
 	return os.Getenv(env)
 }
 
+// openBlobStore builds the configured object-storage driver. The file driver
+// roots under dataDir when storage.file.root_dir is unset, preserving the
+// historical <dataDir>/artifacts layout.
+func openBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
+	driver := strings.ToLower(strings.TrimSpace(cfg.Storage.Driver))
+	if driver == "" {
+		driver = "file"
+	}
+	opts := blob.Options{
+		File: blob.FileOptions{RootDir: cfg.Storage.File.RootDir},
+		S3: blob.S3Options{
+			Endpoint:   cfg.Storage.S3.Endpoint,
+			Region:     cfg.Storage.S3.Region,
+			Bucket:     cfg.Storage.S3.Bucket,
+			Prefix:     cfg.Storage.S3.Prefix,
+			AccessKey:  s3CredFromEnv(cfg.Storage.S3.AccessKeyEnv),
+			SecretKey:  s3CredFromEnv(cfg.Storage.S3.SecretKeyEnv),
+			UseSSL:     cfg.StorageUseSSL(),
+			PathStyle:  cfg.Storage.S3.PathStyle,
+			AutoCreate: cfg.Storage.S3.AutoCreateBucket,
+		},
+	}
+	if driver == "file" && opts.File.RootDir == "" {
+		opts.File.RootDir = dataDir(cfg)
+		if opts.File.RootDir == "" {
+			opts.File.RootDir = "./data"
+		}
+	}
+	return blob.Open(ctx, driver, opts)
+}
+
+// s3CredFromEnv resolves an S3 credential from the named environment variable.
+func s3CredFromEnv(env string) string {
+	if env == "" {
+		return ""
+	}
+	return os.Getenv(env)
+}
+
 func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, messages conversation.Store, provider llm.Provider, closer *storeAndMCPCloser) error {
 	credsDir := api.DefaultWeixinCredsDir
 	settings, err := api.LoadWeixinChannelSettings(credsDir)
@@ -569,13 +614,6 @@ func dataDir(cfg config.Config) string {
 		return "./data"
 	}
 	return ""
-}
-
-func artifactDataDir(cfg config.Config) string {
-	if dir := dataDir(cfg); dir != "" {
-		return filepath.Join(dir, "artifacts")
-	}
-	return "./data/artifacts"
 }
 
 // loadEventsWebhook returns the persisted events webhook config, seeding from

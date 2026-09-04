@@ -102,6 +102,23 @@ type Config struct {
 			EventsChannel string `yaml:"events_channel"`
 		} `yaml:"redis"`
 	} `yaml:"middleware"`
+	Storage struct {
+		Driver string `yaml:"driver"` // file（默认）| s3
+		File   struct {
+			RootDir string `yaml:"root_dir"` // 空则用 dataDir
+		} `yaml:"file"`
+		S3 struct {
+			Endpoint         string `yaml:"endpoint"`
+			Region           string `yaml:"region"`
+			Bucket           string `yaml:"bucket"`
+			Prefix           string `yaml:"prefix"`
+			AccessKeyEnv     string `yaml:"access_key_env"`
+			SecretKeyEnv     string `yaml:"secret_key_env"`
+			UseSSL           *bool  `yaml:"use_ssl"`
+			PathStyle        bool   `yaml:"path_style"`
+			AutoCreateBucket bool   `yaml:"auto_create_bucket"`
+		} `yaml:"s3"`
+	} `yaml:"storage"`
 	MockTicket struct {
 		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
 	} `yaml:"mock_ticket"`
@@ -319,6 +336,22 @@ func applyDefaults(cfg *Config) {
 	if cfg.Middleware.Redis.EventsChannel == "" {
 		cfg.Middleware.Redis.EventsChannel = "baize:run-events"
 	}
+	if strings.TrimSpace(cfg.Storage.Driver) == "" {
+		cfg.Storage.Driver = "file"
+	}
+	if cfg.Storage.S3.Prefix == "" {
+		cfg.Storage.S3.Prefix = "baize"
+	}
+	if cfg.Storage.S3.AccessKeyEnv == "" {
+		cfg.Storage.S3.AccessKeyEnv = "S3_ACCESS_KEY"
+	}
+	if cfg.Storage.S3.SecretKeyEnv == "" {
+		cfg.Storage.S3.SecretKeyEnv = "S3_SECRET_KEY"
+	}
+	if cfg.Storage.S3.UseSSL == nil {
+		v := true
+		cfg.Storage.S3.UseSSL = &v
+	}
 	if cfg.Skills.UserDir == "" {
 		cfg.Skills.UserDir = "./data/skills"
 	}
@@ -345,6 +378,14 @@ func (c Config) CompactEnabled() bool {
 		return true
 	}
 	return *c.Conversation.CompactEnabled
+}
+
+// StorageUseSSL reports whether the S3 driver should use TLS (default true).
+func (c Config) StorageUseSSL() bool {
+	if c.Storage.S3.UseSSL == nil {
+		return true
+	}
+	return *c.Storage.S3.UseSSL
 }
 
 // SkillBuiltinDirs returns builtin skill scan roots. builtin_dirs wins over builtin_dir when set.

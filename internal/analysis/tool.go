@@ -95,7 +95,7 @@ func Invoker(art artifact.Store) tool.Invoker {
 		}
 
 		runID := identity.RunIDFrom(ctx)
-		id, err := art.PutHTML(runID, html)
+		id, err := art.PutHTML(ctx, runID, html)
 		if err != nil {
 			return nil, false, fmt.Errorf("store artifact: %w", err)
 		}

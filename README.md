@@ -702,6 +702,32 @@ docker run --rm -p 8080:8080 \
 
 Override module proxy at build time if needed: `docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
 
+### Artifact storage (file / S3-compatible)
+
+Analysis-report HTML artifacts are stored through a pluggable blob store. The default `storage.driver: file` writes bytes under `<dataDir>/artifacts` (i.e. next to the SQLite DB; no migration needed). For shared or multi-replica deployments, point it at any S3-compatible object store (AWS S3 / MinIO / Alibaba OSS / Tencent COS). Note `storage.s3.endpoint` is **required for every S3-compatible backend** (the driver rejects an empty endpoint); set `use_ssl`/`path_style` to match:
+
+```yaml
+storage:
+  driver: s3
+  s3:
+    # Required for all backends:
+    #   AWS S3:        "s3.amazonaws.com" (or "s3.<region>.amazonaws.com"), use_ssl: true,  path_style: false
+    #   MinIO/self:    "minio.local:9000",                       use_ssl: false, path_style: true
+    #   Alibaba OSS:   "oss-<region>.aliyuncs.com",              use_ssl: true,  path_style: true
+    #   Tencent COS:   "cos.<region>.myqcloud.com",              use_ssl: true,  path_style: true
+    endpoint: "minio.local:9000"
+    region: "us-east-1"
+    bucket: "baize"
+    prefix: "baize"
+    access_key_env: S3_ACCESS_KEY   # credentials are read from env only
+    secret_key_env: S3_SECRET_KEY
+    use_ssl: false
+    path_style: true               # true for MinIO/self-hosted/OSS/COS; false for AWS
+    auto_create_bucket: false
+```
+
+Inject credentials via `S3_ACCESS_KEY` / `S3_SECRET_KEY` environment variables (never put secrets in YAML). Artifact metadata stays in the SQL store; only the HTML bytes move to object storage.
+
 ---
 
 ## Chat UI build (optional)

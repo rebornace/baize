@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -2023,9 +2024,14 @@ func (s *Server) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	html, runID, err := s.Artifacts.Get(id)
+	html, runID, err := s.Artifacts.Get(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "artifact_not_found", "artifact not found")
+		if errors.Is(err, artifact.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "artifact_not_found", "artifact not found")
+			return
+		}
+		log.Printf("artifact: get %s failed: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "get artifact failed")
 		return
 	}
 	if _, err := s.Store.GetRun(runID); err != nil {
