@@ -9,9 +9,10 @@ import (
 	"errors"
 )
 
-// ErrNotFound is returned by Get/Delete when an object does not exist. Drivers
-// map their underlying "not found" error to this sentinel (wrap with fmt.Errorf
-// "...: %w", blob.ErrNotFound).
+// ErrNotFound is returned by Get when an object does not exist. Drivers map
+// their underlying "not found" error to this sentinel (wrap with fmt.Errorf
+// "...: %w", blob.ErrNotFound). Delete treats a missing object as a no-op
+// success and does not return ErrNotFound.
 var ErrNotFound = errors.New("blob: object not found")
 
 // Store is a key/value binary object store. Keys are driver-relative and use "/"
