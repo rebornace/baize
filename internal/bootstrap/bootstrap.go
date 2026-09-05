@@ -44,6 +44,7 @@ import (
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/webhook"
+	"github.com/rebornace/baize/internal/workspace"
 )
 
 // Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
@@ -352,6 +353,22 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		}
 		reg.RegisterSpec(analysis.ToolSpec(), analysis.Invoker(artStore))
 		srv.Artifacts = artStore
+
+		// Per-conversation file workspace reuses the same blob.Store
+		// (artifacts use the "artifacts/" prefix; workspace uses
+		// "workspaces/"). Register the 5 built-in file tools (no approval
+		// gate) and wire both the API (attachment persistence) and the
+		// engine (cold-resume image rebuild).
+		ws := workspace.New(blobStore, workspace.WithVision(func() bool {
+			return provider != nil && provider.SupportsVision()
+		}))
+		for _, tm := range workspace.Tools(ws) {
+			reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+		}
+		srv.Workspace = ws
+		engine.ImagePartResolver = func(convID, wsPath string) (llm.ContentPart, bool) {
+			return ws.ResolveImagePart(context.Background(), convID, wsPath)
+		}
 	}
 	srv.AuthMode = authcred.NormalizeMode(cfg.Connector.Auth.Mode)
 	srv.AuthWhitelist = cfg.Connector.Auth.Passthrough.Headers
