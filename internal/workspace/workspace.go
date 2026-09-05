@@ -92,12 +92,6 @@ func (s *Service) key(convID, rel string) string {
 	return path.Join(rootPrefix, convID, rel)
 }
 
-// rel maps a blob key back to a logical path within the conversation.
-func (s *Service) rel(convID, key string) string {
-	prefix := path.Join(rootPrefix, convID) + "/"
-	return strings.TrimPrefix(key, prefix)
-}
-
 // SaveUpload persists an extracted text upload under uploads/ and returns its
 // logical path (e.g. "uploads/report.pdf").
 func (s *Service) SaveUpload(ctx context.Context, convID, filename, text string) (string, error) {
