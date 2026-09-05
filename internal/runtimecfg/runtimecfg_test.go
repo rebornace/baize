@@ -1,10 +1,13 @@
 package runtimecfg
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/rebornace/baize/internal/controlplane"
+	"github.com/rebornace/baize/internal/store"
 )
 
 func baseSnapshot() Snapshot {
@@ -83,3 +86,145 @@ func TestMergeAppendsRuntimeOperators(t *testing.T) {
 		t.Fatalf("want base+runtime = 2 operators, got %+v", snap.Creds.Operators)
 	}
 }
+
+func TestApplyKnobsPatchValidates(t *testing.T) {
+	h := New(baseSnapshot())
+	cases := []struct {
+		name string
+		p    KnobsPatch
+		ok   bool
+	}{
+		{"steps high", KnobsPatch{MaxSteps: ptr(101)}, false},
+		{"steps low", KnobsPatch{MaxSteps: ptr(0)}, false},
+		{"messages high", KnobsPatch{MaxMessages: ptr(501)}, false},
+		{"timeout high", KnobsPatch{ToolTimeoutSeconds: ptr(601)}, false},
+		{"threshold high", KnobsPatch{CompactThreshold: ptr(0.96)}, false},
+		{"threshold low", KnobsPatch{CompactThreshold: ptr(0.09)}, false},
+		{"reserve low", KnobsPatch{CompactReserveTokens: ptr(200)}, false},
+		{"keeprecent high", KnobsPatch{KeepRecent: ptr(101)}, false},
+		{"valid steps", KnobsPatch{MaxSteps: ptr(32)}, true},
+		{"valid threshold", KnobsPatch{CompactThreshold: ptr(0.7)}, true},
+		{"compaction off", KnobsPatch{CompactionEnabled: ptr(false)}, true},
+		{"empty patch", KnobsPatch{}, true},
+	}
+	for _, tc := range cases {
+		err := h.ValidateKnobs(tc.p)
+		if tc.ok && err != nil {
+			t.Errorf("%s: unexpected err %v", tc.name, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: expected validation error", tc.name)
+		}
+	}
+}
+
+func TestApplyKnobsPatchOverlaysAndReports(t *testing.T) {
+	h := New(baseSnapshot())
+	off := false
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{MaxSteps: ptr(32), CompactionEnabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	k := h.Knobs()
+	if k.MaxSteps != 32 || k.CompactionEnabled {
+		t.Fatalf("overlay not applied: %+v", k)
+	}
+	if k.MaxMessages != 40 {
+		t.Fatalf("unset field must keep baseline: %d", k.MaxMessages)
+	}
+	ov := h.KnobsOverride()
+	if ov.MaxSteps == nil || *ov.MaxSteps != 32 || ov.CompactionEnabled == nil || *ov.CompactionEnabled {
+		t.Fatalf("override state wrong: %+v", ov)
+	}
+}
+
+func TestApplyCredsPatchRotateAndOperators(t *testing.T) {
+	h := New(baseSnapshot())
+	ctx := context.Background()
+	// rotate admin
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{AdminToken: "new-adm"}); err != nil {
+		t.Fatal(err)
+	}
+	if h.Credentials().AdminToken != "new-adm" {
+		t.Fatal("admin token not rotated")
+	}
+	// add operator bob
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{AddOperators: []OperatorInput{{ID: "bob", Token: "tb"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Credentials().Operators) != 2 {
+		t.Fatalf("want 2 operators, got %d", len(h.Credentials().Operators))
+	}
+	// duplicate id -> conflict
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{AddOperators: []OperatorInput{{ID: "bob", Token: "x"}}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate operator id must be ErrConflict, got %v", err)
+	}
+	// cannot remove a config-baseline operator
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{RemoveOperators: []string{"alice"}}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("removing config operator must be ErrBadRequest, got %v", err)
+	}
+	// removing a non-existent runtime operator -> bad request
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{RemoveOperators: []string{"nobody"}}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("removing unknown operator must be ErrBadRequest, got %v", err)
+	}
+	// remove runtime operator bob ok
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{RemoveOperators: []string{"bob"}}); err != nil {
+		t.Fatalf("remove runtime operator: %v", err)
+	}
+	if len(h.Credentials().Operators) != 1 {
+		t.Fatalf("want 1 operator after remove, got %d", len(h.Credentials().Operators))
+	}
+}
+
+func TestApplyCredsResetRestoresBaseline(t *testing.T) {
+	h := New(baseSnapshot())
+	ctx := context.Background()
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{AdminToken: "new-adm"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{Reset: true}); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if h.Credentials().AdminToken != "base-adm" {
+		t.Fatalf("reset must restore baseline, got %q", h.Credentials().AdminToken)
+	}
+	// reset together with another field -> bad request
+	if err := h.ApplyCreds(ctx, nil, CredsPatch{Reset: true, AdminToken: "x"}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("reset with other fields must be ErrBadRequest, got %v", err)
+	}
+	// Note: with merge semantics an empty override slot always keeps the config
+	// baseline, so a PATCH can never empty a configured gate (break-glass holds);
+	// the lockout guard in ApplyCreds is defense-in-depth and is structurally
+	// unreachable via the API.
+}
+
+func TestLoadFromStoreAppliesOverride(t *testing.T) {
+	st := store.NewMemory()
+	raw := []byte(`{"knobs":{"max_steps":24},"creds":{"admin_token":"kv-adm"}}`)
+	if err := st.UpsertSetting(store.SettingKeyRuntimeSettings, raw); err != nil {
+		t.Fatal(err)
+	}
+	h := New(baseSnapshot())
+	if err := h.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if h.Knobs().MaxSteps != 24 || h.Credentials().AdminToken != "kv-adm" {
+		t.Fatalf("KV override not loaded: knobs=%+v", h.Knobs())
+	}
+	if h.Knobs().MaxMessages != 40 {
+		t.Fatalf("unset knob must keep baseline: %d", h.Knobs().MaxMessages)
+	}
+}
+
+func TestLoadCorruptJSONFallsBack(t *testing.T) {
+	st := store.NewMemory()
+	_ = st.UpsertSetting(store.SettingKeyRuntimeSettings, []byte(`{not json`))
+	h := New(baseSnapshot())
+	if err := h.Load(context.Background(), st); err != nil {
+		t.Fatalf("corrupt JSON must not error: %v", err)
+	}
+	if h.Knobs().MaxSteps != 16 {
+		t.Fatalf("corrupt KV must fall back to baseline: %d", h.Knobs().MaxSteps)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

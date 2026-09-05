@@ -128,6 +128,10 @@ const SettingKeyEventsWebhook = "events_webhook"
 // SettingKeyInboxChannels is the settings KV key for inbox channel configuration.
 const SettingKeyInboxChannels = "inbox_channels"
 
+// SettingKeyRuntimeSettings is the settings KV key for hot-reloadable runtime
+// settings (engine knobs + control-plane credential overrides).
+const SettingKeyRuntimeSettings = "runtime_settings"
+
 // WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.
 const WebhookOutboxMaxAttempts = 5
 
