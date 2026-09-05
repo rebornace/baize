@@ -434,6 +434,46 @@ Once a production Runtime is up, maintain multiple **named model profiles** unde
 
 ---
 
+## Runtime hot-reload settings (no restart)
+
+A set of settings that previously required YAML edits + a restart can now be changed via API/UI and take effect on the next request. Overrides persist in the DB settings KV (`runtime_settings`), survive restarts, and propagate to all replicas within ~20s (background re-read TTL).
+
+| Endpoint | Method / permission | Purpose |
+|----------|--------------------|---------|
+| `/v0/settings/runtime` | GET — operator; PATCH — admin | Engine knobs |
+| `/v0/settings/credentials` | GET / PATCH — admin | Control-plane tokens & named operators |
+| `/v0/settings/channels/weixin` | PUT — admin | Weixin channel enable / disable |
+
+**Engine knobs** — `PATCH /v0/settings/runtime` is a partial update: send only the fields to change; out-of-range values return `400`.
+
+| Field | Range | Default | Meaning |
+|-------|-------|---------|---------|
+| `max_messages` | 1–500 | 40 | History window fed back to the LLM |
+| `max_steps` | 1–100 | 16 | Max tool steps per Run |
+| `tool_timeout_seconds` | 1–600 | 60 | Per-tool invocation timeout |
+| `compaction_enabled` | bool | true | Context compaction switch |
+| `compact_threshold` | 0.1–0.95 | 0.8 | Context-usage ratio that triggers compaction |
+| `compact_reserve_tokens` | 256–100000 | 8000 | Tokens reserved when compacting |
+| `compact_keep_recent` | 0–100 | 8 | Recent messages always kept verbatim |
+
+`GET /v0/settings/runtime` (operator-readable) returns each knob’s `effective` value plus an `overridden` flag (vs the YAML baseline).
+
+**Control-plane credentials** — `GET /v0/settings/credentials` **never returns plaintext tokens**: only `source` (`config`/`override`), `operator_set` / `admin_set` booleans, and an `operators` list where each item carries just `id` + `source` (`config`/`runtime`). `PATCH` supports: `operator_token` / `admin_token` (rotate the main tokens — effective on the next request), `add_operators: [{id, token}]` (duplicate id → `409`), `remove_operators: [id]` (only runtime-added operators; removing a config-baseline one → `400`), and `reset: true` (clear all hot-updated credentials and fall back to the YAML/env baseline; cannot be combined with other fields). YAML/env tokens are a permanent break-glass baseline; hot updates overlay them.
+
+**Lockout recovery**: if a rotated admin token is lost, run on the server host (bypasses the HTTP gate):
+
+```bash
+baize reset-credentials -config <config-path>
+```
+
+This clears credential overrides only (engine knobs are untouched); after a restart or TTL expiry the YAML/env baseline tokens apply again.
+
+**Weixin enable/disable** — `PUT /v0/settings/channels/weixin` with `{"enabled": true}` starts long-polling immediately when login credentials exist, or returns `running:false, reason:"login_required"` when not logged in; `{"enabled": false}` stops polling but **keeps the login credentials** — re-enabling needs no re-scan (unlike logout). Responses now include a `running` field.
+
+Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths, Weixin allowlist inbound enforcement (a later feature), and KV credential encryption (credentials are stored plaintext, same trust tier as a model `api_key`). Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md).
+
+---
+
 ## Approvals and identities
 
 Mutating tools can require human approval via `require_approval` before the real invoke (see the demo flow under “Try it in 30 seconds” above).
@@ -749,6 +789,7 @@ npm run build
 | `baize start` | Production default: `minimal.yaml`; Runtime only; **requires** `BAIZE_API_KEY`; no demo Connector |
 | `baize demo` | Trial: `demo.yaml`; Runtime + bundled demo HTTP; mock LLM, no key |
 | `baize serve -config <path>` | Runtime only with explicit config (no API key check) |
+| `baize reset-credentials -config <path>` | Clear hot-updated control-plane tokens; fall back to YAML/env baseline (lockout recovery; see **Runtime hot-reload settings**) |
 
 ---
 

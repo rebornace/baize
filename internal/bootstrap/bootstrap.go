@@ -296,7 +296,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	// mock/demo path StoreProfileSource resolves no profile, so MaybeCompact
 	// self-disables (returns false, nil) — no extra guard needed.
 	var compactor *run.Compactor
-	if cfg.CompactEnabled() && messages != nil && provider != nil {
+	// Build the compactor whenever deps exist; the on/off switch is the hot
+	// knob (baseline = cfg.CompactEnabled()), evaluated per-run in MaybeCompact.
+	if messages != nil && provider != nil {
 		compactor = &run.Compactor{
 			Messages:      messages,
 			LLM:           provider,
@@ -398,6 +400,21 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.OperatorToken = op
 	srv.AdminToken = adm
 	srv.Operators = operators
+
+	// Hot-reloadable runtime settings: build from config baseline + persisted KV
+	// overrides, inject into engine/compactor/server, and start a TTL refresh so
+	// cross-replica PATCHes converge. nil holder never happens here (always
+	// built), but consumers still nil-guard for tests.
+	runtimeHolder := buildRuntimeHolder(cfg, st, op, adm, operators)
+	engine.Settings = runtimeHolder
+	srv.Settings = runtimeHolder
+	if compactor != nil {
+		compactor.Settings = runtimeHolder
+	}
+	refreshCtx, refreshCancel := context.WithCancel(context.Background())
+	closer.stops = append(closer.stops, refreshCancel)
+	go runtimeHolder.StartRefresh(refreshCtx, st, runtimeRefreshInterval)
+
 	if dir := dataDir(cfg); dir != "" {
 		srv.DataDir = dir
 	}

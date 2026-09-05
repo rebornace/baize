@@ -445,6 +445,46 @@ go run ./cmd/baize start
 
 ---
 
+## 运行时热更新设置（不重启）
+
+一批原先只能改 YAML + 重启的设置，现在可经 API / UI 修改，下一次请求即刻生效。覆盖值落库到设置 KV（`runtime_settings`），重启不丢，多副本间约 20s 内同步（后台 TTL 重读）。
+
+| 端点 | 方法 / 权限 | 用途 |
+|------|------------|------|
+| `/v0/settings/runtime` | GET — 操作员；PATCH — 管理员 | 引擎参数旋钮 |
+| `/v0/settings/credentials` | GET / PATCH — 管理员 | 控制面口令与具名操作员 |
+| `/v0/settings/channels/weixin` | PUT — 管理员 | 微信渠道启停 |
+
+**引擎参数** — `PATCH /v0/settings/runtime` 为部分更新：只传要改的字段；越界值返回 `400`。
+
+| 字段 | 取值范围 | 默认 | 含义 |
+|------|----------|------|------|
+| `max_messages` | 1–500 | 40 | 回喂 LLM 的历史窗口 |
+| `max_steps` | 1–100 | 16 | 单次 Run 最大工具步数 |
+| `tool_timeout_seconds` | 1–600 | 60 | 单次工具调用超时 |
+| `compaction_enabled` | 布尔 | true | 上下文压缩开关 |
+| `compact_threshold` | 0.1–0.95 | 0.8 | 触发压缩的上下文占用比例 |
+| `compact_reserve_tokens` | 256–100000 | 8000 | 压缩时预留的 token 数 |
+| `compact_keep_recent` | 0–100 | 8 | 始终保留原文的最近消息数 |
+
+`GET /v0/settings/runtime`（操作员可读）返回每个旋钮的生效值 `effective` 与是否已自定义的 `overridden`（相对 YAML 基线）。
+
+**控制面凭据** — `GET /v0/settings/credentials` **绝不返回明文口令**：只回 `source`（`config`/`override`）、`operator_set` / `admin_set` 布尔，以及 `operators` 列表（每项仅含 `id` 与 `source`（`config`/`runtime`））。`PATCH` 支持：`operator_token` / `admin_token`（轮换主口令，下一个请求即刻生效）、`add_operators: [{id, token}]`（id 重复返回 `409`）、`remove_operators: [id]`（只能删运行时新增的；删 config 基线的返回 `400`）、`reset: true`（清空全部热更新凭据，回落到 YAML/env 基线口令；不能与其它字段同用）。YAML/env 配置的口令是永久 break-glass 基线，热更新为叠加覆盖。
+
+**锁死恢复**：轮换后若丢失新的 admin 口令，在服务器本地执行（不走 HTTP 门禁）：
+
+```bash
+baize reset-credentials -config <配置路径>
+```
+
+仅清空凭据覆盖、引擎参数不受影响；重启或等 TTL 过期后即回落 YAML/env 基线口令。
+
+**微信启停** — `PUT /v0/settings/channels/weixin` 带 `{"enabled": true}`：有登录凭证时立即启动长轮询，未登录则返回 `running:false, reason:"login_required"`；`{"enabled": false}` 停止轮询但**保留登录凭证**——重新启用无需重新扫码（区别于 logout）。响应新增 `running` 字段。
+
+非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径、微信白名单入站强制（后续特性）、凭据 KV 加密（凭据明文落库，与模型 `api_key` 同级信任）。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。
+
+---
+
 ## 写操作与身份
 
 变更类工具可通过 `require_approval` 先走人工审批，再真正调用（演示流程见上文「30 秒跑通」）。
@@ -756,6 +796,7 @@ npm run build
 | `baize start` | 生产默认：`minimal.yaml`；仅 Runtime；**须** `BAIZE_API_KEY`；无演示 Connector |
 | `baize demo` | 试用：`demo.yaml`；Runtime + 内嵌演示 HTTP；mock LLM，无需 Key |
 | `baize serve -config <path>` | 仅 Runtime，显式指定配置（不校验 API Key） |
+| `baize reset-credentials -config <path>` | 清空热更新控制面口令，回落 YAML/env 基线（锁死恢复；见「运行时热更新设置」） |
 
 ---
 

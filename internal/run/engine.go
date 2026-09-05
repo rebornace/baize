@@ -77,6 +77,9 @@ type Engine struct {
 	// ImagePartResolver rebuilds image parts for persisted image_refs on cold
 	// resume. nil (or ok=false) degrades that tool result to a text note.
 	ImagePartResolver func(conversationID, workspacePath string) (llm.ContentPart, bool)
+	// Settings optionally supplies hot-reloadable engine knobs. nil = use the
+	// struct fields above (YAML defaults); non-nil overrides per-field.
+	Settings KnobReader
 
 	runMu sync.Mutex
 	runs  map[string]*runSkillState
@@ -216,6 +219,11 @@ func (e *Engine) markCancelled(runID string) {
 }
 
 func (e *Engine) toolTimeout() time.Duration {
+	if e.Settings != nil {
+		if d := e.Settings.Knobs().ToolTimeout; d > 0 {
+			return d
+		}
+	}
 	if e.ToolTimeout > 0 {
 		return e.ToolTimeout
 	}
@@ -240,7 +248,7 @@ func (e *Engine) toolTimeout() time.Duration {
 func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 	if e.Messages != nil && conversationID != "" {
-		hist := e.Messages.ListWindow(conversationID, e.MaxMessages)
+		hist := e.Messages.ListWindow(conversationID, e.effectiveMaxMessages())
 		var sum conversation.RollingSummary
 		hasSummary := false
 		if s, ok := e.Messages.GetRollingSummary(conversationID); ok && strings.TrimSpace(s.Summary) != "" {
@@ -530,10 +538,9 @@ func (e *Engine) isCancelled(runID string) bool {
 }
 
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
-	maxSteps := e.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = 16
-	}
+	// Read once at loop start so the step bound is stable for the whole run
+	// even if an operator hot-patches knobs mid-run.
+	maxSteps := e.effectiveMaxSteps()
 
 	for step := 0; step < maxSteps; step++ {
 		if err := ctx.Err(); err != nil {

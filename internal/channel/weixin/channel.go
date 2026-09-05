@@ -84,6 +84,13 @@ func (c *Channel) IsStarted() bool {
 	return c.started
 }
 
+// HasCredentials reports whether account/token are set in memory.
+func (c *Channel) HasCredentials() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return strings.TrimSpace(c.token) != "" && strings.TrimSpace(c.accountID) != ""
+}
+
 func openFromConfig(cfg channel.Config) (channel.Channel, error) {
 	dir := strings.TrimSpace(cfg["creds_dir"])
 	if dir == "" {

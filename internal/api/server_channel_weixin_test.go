@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -111,6 +112,75 @@ func TestWeixinLoginStatusSuccessSavesCredsAndStarts(t *testing.T) {
 	})
 }
 
+func TestWeixinLoginWhileDisabledDoesNotStart(t *testing.T) {
+	srv, _, _ := weixinTestServer(t)
+	t.Cleanup(func() { _ = srv.WeixinChannel.Stop(context.Background()) })
+
+	// Admin disables the channel BEFORE the QR login completes.
+	disable := jsonBody(t, map[string]any{"enabled": false})
+	putReq := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", disable)
+	putReq.Header.Set("Authorization", "Bearer adm")
+	putReq.Header.Set("Content-Type", "application/json")
+	putRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRR, putReq)
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("disable put status=%d body=%s", putRR.Code, putRR.Body.String())
+	}
+	if srv.WeixinChannel.IsStarted() {
+		t.Fatal("setup: channel must not be running while disabled")
+	}
+
+	// login/start -> ticket
+	startReq := httptest.NewRequest(http.MethodPost, "/v0/settings/channels/weixin/login/start", nil)
+	startReq.Header.Set("Authorization", "Bearer adm")
+	startRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(startRR, startReq)
+	if startRR.Code != http.StatusOK {
+		t.Fatalf("login start status=%d body=%s", startRR.Code, startRR.Body.String())
+	}
+	var startResp struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(startRR.Body).Decode(&startResp); err != nil {
+		t.Fatal(err)
+	}
+	if startResp.Ticket == "" {
+		t.Fatal("empty ticket")
+	}
+
+	// Poll until success (fake sequence is [Pending, Success]).
+	poll := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/v0/settings/channels/weixin/login/status?ticket="+startResp.Ticket, nil)
+		req.Header.Set("Authorization", "Bearer adm")
+		rr := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("login status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		var resp struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Status
+	}
+	if got := poll(); got != weixin.LoginStatusPending {
+		t.Fatalf("first poll status=%q want %q", got, weixin.LoginStatusPending)
+	}
+	if got := poll(); got != weixin.LoginStatusSuccess {
+		t.Fatalf("second poll status=%q want %q", got, weixin.LoginStatusSuccess)
+	}
+
+	// Credentials must be saved, but the poll loop must NOT auto-start while disabled.
+	if srv.WeixinChannel.IsStarted() {
+		t.Fatal("channel must NOT auto-start after login while disabled")
+	}
+	if !srv.WeixinChannel.HasCredentials() {
+		t.Fatal("credentials must be saved even when channel is disabled")
+	}
+}
+
 func TestWeixinLogoutClearsCredsAndStops(t *testing.T) {
 	srv, fake, dir := weixinTestServer(t)
 	fake.LoginSequence = []string{weixin.LoginStatusSuccess}
@@ -186,5 +256,105 @@ func TestWeixinSettingsGetPut(t *testing.T) {
 	}
 	if srv.WeixinRuntime.Assignee != "bob" || srv.WeixinRuntime.DefaultAgentID != "agent-wx" {
 		t.Fatalf("runtime not updated: assignee=%q agent=%q", srv.WeixinRuntime.Assignee, srv.WeixinRuntime.DefaultAgentID)
+	}
+}
+
+func TestWeixinEnabledStartWithCreds(t *testing.T) {
+	srv, _, _ := weixinTestServer(t)
+	t.Cleanup(func() { _ = srv.WeixinChannel.Stop(context.Background()) })
+	// simulate a logged-in channel (creds present in memory)
+	srv.WeixinChannel.SetCredentials("acct-1", "tok-1")
+
+	putBody := jsonBody(t, map[string]any{"enabled": true, "assignee": "bob"})
+	req := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", putBody)
+	req.Header.Set("Authorization", "Bearer adm")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Enabled bool   `json:"enabled"`
+		Running bool   `json:"running"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Enabled || !resp.Running || resp.Reason != "" {
+		t.Fatalf("expected enabled+running, got %+v", resp)
+	}
+	if !srv.WeixinChannel.IsStarted() {
+		t.Fatal("channel should be started after enable with creds")
+	}
+}
+
+func TestWeixinEnabledNoCredsReportsLoginRequired(t *testing.T) {
+	srv, _, _ := weixinTestServer(t) // channel has no creds
+
+	putBody := jsonBody(t, map[string]any{"enabled": true})
+	req := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", putBody)
+	req.Header.Set("Authorization", "Bearer adm")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Running bool   `json:"running"`
+		Reason  string `json:"reason"`
+	}
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if resp.Running || resp.Reason != "login_required" {
+		t.Fatalf("expected running:false login_required, got %+v", resp)
+	}
+	if srv.WeixinChannel.IsStarted() {
+		t.Fatal("channel must not start without creds")
+	}
+}
+
+func TestWeixinDisableStopsButKeepsCreds(t *testing.T) {
+	srv, _, _ := weixinTestServer(t)
+	t.Cleanup(func() { _ = srv.WeixinChannel.Stop(context.Background()) })
+	srv.WeixinChannel.SetCredentials("acct-1", "tok-1")
+	// enable first -> running
+	enable := jsonBody(t, map[string]any{"enabled": true})
+	r1 := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", enable)
+	r1.Header.Set("Authorization", "Bearer adm")
+	r1.Header.Set("Content-Type", "application/json")
+	rr1 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr1, r1)
+	if !srv.WeixinChannel.IsStarted() {
+		t.Fatal("setup: channel should be running")
+	}
+
+	// disable -> stopped, but creds retained
+	disable := jsonBody(t, map[string]any{"enabled": false})
+	r2 := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", disable)
+	r2.Header.Set("Authorization", "Bearer adm")
+	r2.Header.Set("Content-Type", "application/json")
+	rr2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr2, r2)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("disable status=%d %s", rr2.Code, rr2.Body.String())
+	}
+	if srv.WeixinChannel.IsStarted() {
+		t.Fatal("channel should be stopped after disable")
+	}
+	if !srv.WeixinChannel.HasCredentials() {
+		t.Fatal("disable must NOT clear credentials (only logout does)")
+	}
+
+	// re-enable -> starts again directly (creds still present)
+	// (fresh body: the r1 reader was already consumed)
+	r3 := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", jsonBody(t, map[string]any{"enabled": true}))
+	r3.Header.Set("Authorization", "Bearer adm")
+	r3.Header.Set("Content-Type", "application/json")
+	rr3 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr3, r3)
+	if !srv.WeixinChannel.IsStarted() {
+		t.Fatal("re-enable should restart using retained creds")
 	}
 }
