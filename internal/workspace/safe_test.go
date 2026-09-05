@@ -22,7 +22,18 @@ func TestSafeRelPath(t *testing.T) {
 		}
 	}
 
-	bad := []string{"", ".", "/abs/path", "../x", "..", "a/../../b", "C:/x", "c:\\x", "uploads/../../../etc"}
+	bad := []string{
+		"", ".", "/abs/path", "../x", "..", "a/../../b", "C:/x", "c:\\x", "uploads/../../../etc",
+		// Backslash traversal and UNC/drive paths must be rejected on every OS
+		// (backslash is unconditionally normalized to "/" before cleaning).
+		"..\\..\\x",
+		"a\\..\\..\\b",
+		"\\\\server\\share",
+		"./..",
+		"foo/../..",
+		"//server/share",
+		"C:",
+	}
 	for _, in := range bad {
 		if _, err := safeRelPath(in); err == nil {
 			t.Fatalf("safeRelPath(%q) should error", in)
@@ -38,6 +49,9 @@ func TestSanitizeName(t *testing.T) {
 		"my report (1).md": "my report (1).md",
 		"bad\x00name.txt":  "badname.txt",
 		"..":               "file",
+		"":                 "file",
+		".":                "file",
+		"/":                "file",
 	}
 	for in, want := range cases {
 		if got := sanitizeName(in); got != want {

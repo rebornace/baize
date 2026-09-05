@@ -6,7 +6,6 @@ package workspace
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -16,7 +15,9 @@ import (
 // root: absolute paths, drive letters, empty paths, and any ".." traversal
 // after cleaning are rejected.
 func safeRelPath(p string) (string, error) {
-	p = filepath.ToSlash(p)
+	// Unconditionally normalize backslashes so behavior is identical on
+	// Windows and POSIX (filepath.ToSlash is a no-op on Linux/macOS).
+	p = strings.ReplaceAll(p, "\\", "/")
 	p = path.Clean(p)
 	if p == "" || p == "." {
 		return "", fmt.Errorf("path must not be empty")
@@ -37,7 +38,9 @@ func safeRelPath(p string) (string, error) {
 // sanitizeName reduces an upload filename to a safe base name (no directory
 // components, no control characters, no traversal). It never returns empty.
 func sanitizeName(name string) string {
-	name = filepath.Base(filepath.ToSlash(name))
+	// Normalize backslashes, then take the OS-independent base name via
+	// path.Base (filepath.Base only splits on "/" on POSIX).
+	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
 	var b strings.Builder
 	for _, r := range name {
 		if unicode.IsControl(r) || r == '/' || r == '\\' {
