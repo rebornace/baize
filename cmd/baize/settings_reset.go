@@ -25,8 +25,10 @@ func resetCredentialsInStore(ctx context.Context, st store.Store) error {
 	}{}
 	if ok && len(raw) > 0 {
 		if err := json.Unmarshal(raw, &persisted); err != nil {
-			// Corrupt blob: overwrite wholesale with empty creds.
-			persisted.Knobs = nil
+			// Corrupt blob: the runtime holder already ignores it wholesale
+			// (falls back to the YAML baseline, so break-glass tokens are in
+			// effect). Refuse to overwrite it — knobs overrides could be lost.
+			return fmt.Errorf("runtime_settings KV is corrupt; refusing to overwrite (engine-knob overrides would be lost); inspect or repair the setting manually: %w", err)
 		}
 	}
 	out := map[string]any{"creds": map[string]any{}}

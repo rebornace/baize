@@ -112,6 +112,75 @@ func TestWeixinLoginStatusSuccessSavesCredsAndStarts(t *testing.T) {
 	})
 }
 
+func TestWeixinLoginWhileDisabledDoesNotStart(t *testing.T) {
+	srv, _, _ := weixinTestServer(t)
+	t.Cleanup(func() { _ = srv.WeixinChannel.Stop(context.Background()) })
+
+	// Admin disables the channel BEFORE the QR login completes.
+	disable := jsonBody(t, map[string]any{"enabled": false})
+	putReq := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", disable)
+	putReq.Header.Set("Authorization", "Bearer adm")
+	putReq.Header.Set("Content-Type", "application/json")
+	putRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRR, putReq)
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("disable put status=%d body=%s", putRR.Code, putRR.Body.String())
+	}
+	if srv.WeixinChannel.IsStarted() {
+		t.Fatal("setup: channel must not be running while disabled")
+	}
+
+	// login/start -> ticket
+	startReq := httptest.NewRequest(http.MethodPost, "/v0/settings/channels/weixin/login/start", nil)
+	startReq.Header.Set("Authorization", "Bearer adm")
+	startRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(startRR, startReq)
+	if startRR.Code != http.StatusOK {
+		t.Fatalf("login start status=%d body=%s", startRR.Code, startRR.Body.String())
+	}
+	var startResp struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(startRR.Body).Decode(&startResp); err != nil {
+		t.Fatal(err)
+	}
+	if startResp.Ticket == "" {
+		t.Fatal("empty ticket")
+	}
+
+	// Poll until success (fake sequence is [Pending, Success]).
+	poll := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/v0/settings/channels/weixin/login/status?ticket="+startResp.Ticket, nil)
+		req.Header.Set("Authorization", "Bearer adm")
+		rr := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("login status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		var resp struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Status
+	}
+	if got := poll(); got != weixin.LoginStatusPending {
+		t.Fatalf("first poll status=%q want %q", got, weixin.LoginStatusPending)
+	}
+	if got := poll(); got != weixin.LoginStatusSuccess {
+		t.Fatalf("second poll status=%q want %q", got, weixin.LoginStatusSuccess)
+	}
+
+	// Credentials must be saved, but the poll loop must NOT auto-start while disabled.
+	if srv.WeixinChannel.IsStarted() {
+		t.Fatal("channel must NOT auto-start after login while disabled")
+	}
+	if !srv.WeixinChannel.HasCredentials() {
+		t.Fatal("credentials must be saved even when channel is disabled")
+	}
+}
+
 func TestWeixinLogoutClearsCredsAndStops(t *testing.T) {
 	srv, fake, dir := weixinTestServer(t)
 	fake.LoginSequence = []string{weixin.LoginStatusSuccess}

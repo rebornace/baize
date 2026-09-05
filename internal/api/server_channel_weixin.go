@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -93,6 +94,19 @@ func (s *Server) applyWeixinLoginSuccess(accountID, token string) error {
 	}
 	s.WeixinChannel.SetCredentials(accountID, token)
 	if s.WeixinChannel.IsStarted() {
+		return nil
+	}
+	// Respect the persisted enabled state: an admin who disabled the channel
+	// must not have the poll loop auto-started by a QR login. Credentials stay
+	// saved so a later PUT enabled:true (via applyWeixinSettings) can Start.
+	settings, err := loadWeixinSettings(dir)
+	if err != nil {
+		// Don't regress the login experience on a settings read failure:
+		// treat the channel as enabled and log a warning.
+		log.Printf("weixin: cannot read persisted settings after login; starting channel as enabled: %v", err)
+		return s.WeixinChannel.Start(s.weixinRunCtx())
+	}
+	if !settings.Enabled {
 		return nil
 	}
 	return s.WeixinChannel.Start(s.weixinRunCtx())

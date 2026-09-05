@@ -37,3 +37,28 @@ func TestResetCredentialsOverrideClearsCredsKeepsKnobs(t *testing.T) {
 		t.Fatalf("knob override must survive reset, got %d", h2.Knobs().MaxSteps)
 	}
 }
+
+func TestResetCredentialsCorruptKVRefusesToOverwrite(t *testing.T) {
+	st := store.NewMemory()
+	corrupt := []byte("{bad json")
+	if err := st.UpsertSetting(store.SettingKeyRuntimeSettings, corrupt); err != nil {
+		t.Fatal(err)
+	}
+
+	err := resetCredentialsInStore(context.Background(), st)
+	if err == nil {
+		t.Fatal("expected error for corrupt runtime_settings KV, got nil")
+	}
+
+	// The corrupt blob must be left untouched (non-destructive).
+	got, ok, err := st.GetSetting(store.SettingKeyRuntimeSettings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("runtime_settings KV must still exist after refused reset")
+	}
+	if string(got) != string(corrupt) {
+		t.Fatalf("corrupt KV must be left untouched, got %q", string(got))
+	}
+}
