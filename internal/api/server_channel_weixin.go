@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/channel/weixin"
 )
@@ -142,22 +143,56 @@ func (s *Server) handlePutWeixinSettings(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "write_failed", err.Error())
 		return
 	}
-	s.applyWeixinSettings(body)
-	writeJSON(w, http.StatusOK, body)
+	running, reason := s.applyWeixinSettings(body)
+	writeJSON(w, http.StatusOK, weixinPutResponse{
+		WeixinChannelSettings: body,
+		Running:               running,
+		Reason:                reason,
+	})
 }
 
-func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) {
+// weixinPutResponse is the saved settings plus the reconciled runtime state.
+type weixinPutResponse struct {
+	WeixinChannelSettings
+	Running bool   `json:"running"`
+	Reason  string `json:"reason,omitempty"` // "login_required" | "start_failed"
+}
+
+func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bool, reason string) {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
-	if s.WeixinRuntime == nil {
-		return
+	if s.WeixinRuntime != nil {
+		if id := strings.TrimSpace(settings.Assignee); id != "" {
+			s.WeixinRuntime.Assignee = id
+		}
+		if id := strings.TrimSpace(settings.AgentID); id != "" {
+			s.WeixinRuntime.DefaultAgentID = id
+		}
 	}
-	if id := strings.TrimSpace(settings.Assignee); id != "" {
-		s.WeixinRuntime.Assignee = id
+	ch := s.WeixinChannel
+	if ch == nil {
+		return false, ""
 	}
-	if id := strings.TrimSpace(settings.AgentID); id != "" {
-		s.WeixinRuntime.DefaultAgentID = id
+	if settings.Enabled {
+		if ch.IsStarted() {
+			return true, ""
+		}
+		if !ch.HasCredentials() {
+			return false, "login_required" // login success auto-starts when Enabled
+		}
+		if err := ch.Start(s.weixinRunCtx()); err != nil {
+			return false, "start_failed"
+		}
+		return ch.IsStarted(), ""
 	}
+	// Disabled: stop the poll loop but KEEP credentials (unlike logout), so a
+	// re-enable can Start directly without a new QR login.
+	if ch.IsStarted() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = ch.Stop(stopCtx)
+	}
+	return false, ""
 }
 
 func (s *Server) weixinRunCtx() context.Context {
