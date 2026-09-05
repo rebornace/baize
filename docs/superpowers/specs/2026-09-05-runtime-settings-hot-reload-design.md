@@ -277,7 +277,7 @@ Assignee/AgentID」扩展为**按 `Enabled` 调和实际运行态**（仍在 `we
 | `GET /v0/settings/credentials` | **admin** | 仅脱敏：source / 各槽位是否设置 / operators 的 id+source（§3.4） |
 | `PATCH /v0/settings/credentials` | **admin** | 轮换/增删/reset（§3.3） |
 
-微信设置沿用现有 `PUT /v0/channels/weixin/settings`（不并入新端点）。
+微信设置沿用现有 `GET/PUT /v0/settings/channels/weixin`（已注册于 `server.go:390-391`，不并入新端点）。
 
 ### 4.4 错误处理
 
