@@ -5,6 +5,8 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/rebornace/baize/internal/blob"
@@ -49,4 +51,17 @@ func (s *store) Delete(_ context.Context, key string) error {
 	defer s.mu.Unlock()
 	delete(s.m, key)
 	return nil
+}
+
+func (s *store) List(_ context.Context, prefix string) ([]blob.ListEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]blob.ListEntry, 0)
+	for k, v := range s.m {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, blob.ListEntry{Key: k, Size: int64(len(v))})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out, nil
 }
