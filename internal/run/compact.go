@@ -35,21 +35,44 @@ type Compactor struct {
 	ReserveTokens  int           // headroom reserved for answer + tools + current turn
 	KeepRecent     int           // number of newest messages always kept verbatim
 	SummaryTimeout time.Duration // cap on the summarization call
+	// Settings optionally supplies hot-reloadable knobs (compaction switch +
+	// thresholds). nil = use the struct fields (YAML defaults). Read inside
+	// MaybeCompact rather than mutating shared fields, to avoid races across
+	// concurrent runs.
+	Settings KnobReader
 }
 
-func (c *Compactor) normalize() {
-	if c.Threshold <= 0 {
-		c.Threshold = defaultCompactThreshold
+// effectiveCompaction resolves the hot-reloadable compaction switch and
+// thresholds, layering snapshot overrides over struct fields over code
+// defaults. enabled=false means compaction is turned off for this run.
+func (c *Compactor) effectiveCompaction() (enabled bool, threshold float64, reserve, keep int) {
+	threshold, reserve, keep = c.Threshold, c.ReserveTokens, c.KeepRecent
+	enabled = true
+	if c.Settings != nil {
+		k := c.Settings.Knobs()
+		if !k.CompactionEnabled {
+			enabled = false
+		}
+		if k.CompactThreshold > 0 {
+			threshold = k.CompactThreshold
+		}
+		if k.CompactReserveTokens > 0 {
+			reserve = k.CompactReserveTokens
+		}
+		if k.CompactKeepRecent > 0 {
+			keep = k.CompactKeepRecent
+		}
 	}
-	if c.ReserveTokens <= 0 {
-		c.ReserveTokens = defaultCompactReserve
+	if threshold <= 0 {
+		threshold = defaultCompactThreshold
 	}
-	if c.KeepRecent <= 0 {
-		c.KeepRecent = defaultCompactKeepRecent
+	if reserve <= 0 {
+		reserve = defaultCompactReserve
 	}
-	if c.SummaryTimeout <= 0 {
-		c.SummaryTimeout = defaultCompactSummaryWait
+	if keep <= 0 {
+		keep = defaultCompactKeepRecent
 	}
+	return enabled, threshold, reserve, keep
 }
 
 // MaybeCompact folds older messages into a rolling summary when the projected
@@ -61,7 +84,14 @@ func (c *Compactor) MaybeCompact(ctx context.Context, convID string, tools []llm
 	if c == nil || c.Messages == nil || c.LLM == nil || c.Profiles == nil || convID == "" {
 		return false, nil
 	}
-	c.normalize()
+	enabled, threshold, reserve, keep := c.effectiveCompaction()
+	if !enabled {
+		return false, nil // compaction switched off at runtime
+	}
+	summaryTimeout := c.SummaryTimeout
+	if summaryTimeout <= 0 {
+		summaryTimeout = defaultCompactSummaryWait
+	}
 
 	view, err := c.resolveView(profileID)
 	if err != nil || view.ID == "" {
@@ -70,7 +100,7 @@ func (c *Compactor) MaybeCompact(ctx context.Context, convID string, tools []llm
 	if view.ContextTokens <= 0 {
 		view.ContextTokens = defaultContextTokens // normalize unconfigured profile
 	}
-	budget := int(float64(view.ContextTokens)*c.Threshold) - c.ReserveTokens
+	budget := int(float64(view.ContextTokens)*threshold) - reserve
 	if budget < 1000 {
 		budget = 1000
 	}
@@ -86,7 +116,7 @@ func (c *Compactor) MaybeCompact(ctx context.Context, convID string, tools []llm
 		return false, nil
 	}
 
-	keepStart := len(full) - c.KeepRecent
+	keepStart := len(full) - keep
 	if keepStart <= 0 {
 		return false, nil // everything is "recent"; nothing foldable
 	}
@@ -99,7 +129,7 @@ func (c *Compactor) MaybeCompact(ctx context.Context, convID string, tools []llm
 	}
 	newFold := full[covered:keepStart]
 
-	newSummary, err := c.summarize(ctx, existing.Summary, newFold)
+	newSummary, err := c.summarize(ctx, summaryTimeout, existing.Summary, newFold)
 	if err != nil {
 		return false, err
 	}
@@ -129,7 +159,7 @@ func (c *Compactor) resolveView(profileID string) (llm.ModelProfileView, error) 
 	return v, nil
 }
 
-func (c *Compactor) summarize(ctx context.Context, prior string, fold []conversation.Message) (string, error) {
+func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, prior string, fold []conversation.Message) (string, error) {
 	msgs := []llm.Message{{Role: llm.RoleSystem, Content: compactSummarySystemPrompt}}
 	var b strings.Builder
 	if prior != "" {
@@ -143,7 +173,7 @@ func (c *Compactor) summarize(ctx context.Context, prior string, fold []conversa
 	msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: b.String()})
 
 	// Bare context: no per-run profile id => Switch uses the DEFAULT model.
-	sumCtx, cancel := context.WithTimeout(context.Background(), c.SummaryTimeout)
+	sumCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	out, err := c.LLM.Chat(sumCtx, msgs, nil)
 	if err != nil {
