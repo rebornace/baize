@@ -151,6 +151,97 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride) Snapshot {
 	return s
 }
 
+// KnobsFieldFlags reports which knobs are overridden in the KV. Field tags
+// are the wire keys consumed by the HTTP layer (task 6).
+type KnobsFieldFlags struct {
+	MaxMessages          bool `json:"max_messages"`
+	MaxSteps             bool `json:"max_steps"`
+	ToolTimeout          bool `json:"tool_timeout_seconds"`
+	CompactionEnabled    bool `json:"compaction_enabled"`
+	CompactThreshold     bool `json:"compact_threshold"`
+	CompactReserveTokens bool `json:"compact_reserve_tokens"`
+	CompactKeepRecent    bool `json:"compact_keep_recent"`
+}
+
+// KnobsView is the GET /settings/runtime body: effective values + override flags.
+type KnobsView struct {
+	Effective  Knobs           `json:"effective"`
+	Overridden KnobsFieldFlags `json:"overridden"`
+}
+
+// KnobsView returns the effective engine knobs alongside per-field override
+// flags (true when the value comes from a KV override rather than the config
+// baseline). Safe on a nil receiver.
+func (h *Holder) KnobsView() KnobsView {
+	if h == nil {
+		return KnobsView{}
+	}
+	ko := h.KnobsOverride()
+	return KnobsView{
+		Effective: h.Knobs(),
+		Overridden: KnobsFieldFlags{
+			MaxMessages:          ko.MaxMessages != nil,
+			MaxSteps:             ko.MaxSteps != nil,
+			ToolTimeout:          ko.ToolTimeoutSeconds != nil,
+			CompactionEnabled:    ko.CompactionEnabled != nil,
+			CompactThreshold:     ko.CompactThreshold != nil,
+			CompactReserveTokens: ko.CompactReserveTokens != nil,
+			CompactKeepRecent:    ko.CompactKeepRecent != nil,
+		},
+	}
+}
+
+// OperatorView is a masked operator entry (id + source, never the token).
+type OperatorView struct {
+	ID     string `json:"id"`
+	Source string `json:"source"` // "config" | "runtime"
+}
+
+// CredsView is the GET /settings/credentials body (no tokens, ever).
+type CredsView struct {
+	Source      string         `json:"source"` // "config" | "override"
+	OperatorSet bool           `json:"operator_set"`
+	AdminSet    bool           `json:"admin_set"`
+	Operators   []OperatorView `json:"operators"`
+}
+
+// CredentialsView returns a token-free view of the effective credentials:
+// which credential slots are set, whether any runtime override exists, and
+// each operator's origin ("config" for baseline, "runtime" for KV-added).
+// It never contains token material. Safe on a nil receiver.
+func (h *Holder) CredentialsView() CredsView {
+	if h == nil {
+		return CredsView{Source: "config", Operators: []OperatorView{}}
+	}
+	c := h.Credentials()
+	h.mu.Lock()
+	hasOverride := h.co.OperatorToken != "" || h.co.AdminToken != "" || len(h.co.Operators) > 0
+	runtimeOps := map[string]bool{}
+	for _, e := range h.co.Operators {
+		runtimeOps[e.ID] = true
+	}
+	h.mu.Unlock()
+
+	ops := make([]OperatorView, 0, len(c.Operators))
+	for _, op := range c.Operators {
+		src := "config"
+		if runtimeOps[op.ID] {
+			src = "runtime"
+		}
+		ops = append(ops, OperatorView{ID: op.ID, Source: src})
+	}
+	source := "config"
+	if hasOverride {
+		source = "override"
+	}
+	return CredsView{
+		Source:      source,
+		OperatorSet: c.OperatorToken != "",
+		AdminSet:    c.AdminToken != "",
+		Operators:   ops,
+	}
+}
+
 func credentialsConfigured(c Credentials) bool {
 	if c.OperatorToken != "" || c.AdminToken != "" {
 		return true

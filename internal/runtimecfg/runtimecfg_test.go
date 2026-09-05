@@ -2,7 +2,9 @@ package runtimecfg
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -224,6 +226,48 @@ func TestLoadCorruptJSONFallsBack(t *testing.T) {
 	}
 	if h.Knobs().MaxSteps != 16 {
 		t.Fatalf("corrupt KV must fall back to baseline: %d", h.Knobs().MaxSteps)
+	}
+}
+
+func TestCredentialsViewMasksTokens(t *testing.T) {
+	h := New(baseSnapshot())
+	if err := h.ApplyCreds(context.Background(), nil, CredsPatch{
+		AdminToken:   "rotated-adm",
+		AddOperators: []OperatorInput{{ID: "bob", Token: "tb"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	v := h.CredentialsView()
+	if v.Source != "override" {
+		t.Fatalf("source=%s want override", v.Source)
+	}
+	if !v.OperatorSet || !v.AdminSet {
+		t.Fatalf("slots should be set: %+v", v)
+	}
+	// alice from config (baseline), bob from runtime
+	src := map[string]string{}
+	for _, op := range v.Operators {
+		src[op.ID] = op.Source
+	}
+	if src["alice"] != "config" || src["bob"] != "runtime" {
+		t.Fatalf("operator sources wrong: %+v", v.Operators)
+	}
+	// the view must never carry a token: marshal and assert no secret substring
+	b, _ := json.Marshal(v)
+	if strings.Contains(string(b), "rotated-adm") || strings.Contains(string(b), "tb") || strings.Contains(string(b), "ta") {
+		t.Fatalf("credentials view leaked a token: %s", b)
+	}
+}
+
+func TestKnobsViewMarksOverridden(t *testing.T) {
+	h := New(baseSnapshot())
+	_ = h.ApplyKnobs(context.Background(), nil, KnobsPatch{MaxSteps: ptr(32)})
+	v := h.KnobsView()
+	if v.Effective.MaxSteps != 32 || !v.Overridden.MaxSteps {
+		t.Fatalf("maxsteps should be effective+overridden: %+v", v)
+	}
+	if v.Overridden.MaxMessages || v.Effective.MaxMessages != 40 {
+		t.Fatalf("maxmessages should be baseline not overridden: %+v", v)
 	}
 }
 
