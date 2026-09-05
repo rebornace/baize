@@ -66,3 +66,59 @@ func TestFileDeleteIdempotent(t *testing.T) {
 		t.Fatalf("want ErrNotFound after delete, got %v", err)
 	}
 }
+
+func TestFileListByPrefix(t *testing.T) {
+	dir := t.TempDir()
+	s, err := blob.Open(context.Background(), "file", blob.Options{File: blob.FileOptions{RootDir: dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	must := func(key string, data []byte) {
+		t.Helper()
+		if err := s.Put(ctx, key, data, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must("workspaces/c1/uploads/a.txt", []byte("hello"))
+	must("workspaces/c1/uploads/nested/b.txt", []byte("world!"))
+	must("workspaces/c1/notes.md", []byte("note"))
+	must("workspaces/c2/other.txt", []byte("x"))
+
+	got, err := s.List(ctx, "workspaces/c1/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{
+		"workspaces/c1/uploads/a.txt":        5,
+		"workspaces/c1/uploads/nested/b.txt": 6,
+		"workspaces/c1/notes.md":             4,
+	}
+	have := map[string]int64{}
+	for _, e := range got {
+		have[e.Key] = e.Size
+	}
+	if len(have) != len(want) {
+		t.Fatalf("list count=%d want %d (%v)", len(have), len(want), have)
+	}
+	for k, sz := range want {
+		if have[k] != sz {
+			t.Fatalf("key %s size=%d want %d", k, have[k], sz)
+		}
+	}
+}
+
+func TestFileListMissingPrefixEmpty(t *testing.T) {
+	dir := t.TempDir()
+	s, err := blob.Open(context.Background(), "file", blob.Options{File: blob.FileOptions{RootDir: dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.List(context.Background(), "workspaces/nope/")
+	if err != nil {
+		t.Fatalf("missing prefix must not error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("want empty, got %v", got)
+	}
+}

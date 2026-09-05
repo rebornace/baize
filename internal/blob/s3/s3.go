@@ -110,6 +110,25 @@ func (s *store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+func (s *store) List(ctx context.Context, prefix string) ([]blob.ListEntry, error) {
+	fullPrefix := s.object(prefix)
+	out := make([]blob.ListEntry, 0)
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix:    fullPrefix,
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("s3 list %s: %w", prefix, obj.Err)
+		}
+		key := obj.Key
+		if s.prefix != "" {
+			key = strings.TrimPrefix(key, s.prefix+"/")
+		}
+		out = append(out, blob.ListEntry{Key: key, Size: obj.Size})
+	}
+	return out, nil
+}
+
 func isNotFound(err error) bool {
 	if err == nil {
 		return false

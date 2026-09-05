@@ -65,10 +65,22 @@ type RunCanceller interface {
 	Cancel(runID string) error
 }
 
+// UploadSaver persists chat attachments into the per-conversation file
+// workspace. SaveUpload stores extracted text; SaveUploadBytes stores image
+// bytes. Both return the workspace-relative logical path. Failures are
+// non-fatal: callers log and continue (the turn still proceeds inline).
+type UploadSaver interface {
+	SaveUpload(ctx context.Context, conversationID, filename, text string) (string, error)
+	SaveUploadBytes(ctx context.Context, conversationID, filename string, data []byte, mime string) (string, error)
+}
+
 type Server struct {
-	Store          store.Store
-	Registry       *tool.Registry
-	Artifacts      artifact.Store // optional; nil = artifact routes unavailable
+	Store     store.Store
+	Registry  *tool.Registry
+	Artifacts artifact.Store // optional; nil = artifact routes unavailable
+	// Workspace optionally persists chat attachments to the per-conversation
+	// file workspace. nil = attachments are not persisted (in-turn only).
+	Workspace      UploadSaver
 	Runner         Runner
 	SkillCatalog   *skill.Catalog
 	Identities     identity.Store
@@ -1431,6 +1443,29 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist attachments to the per-conversation workspace (best-effort:
+	// failures are logged and never block the turn). Saved logical paths are
+	// listed so the model knows the files are available to read later. This
+	// only applies to chat turns that carry a conversation id; the machine
+	// path (empty conv) skips persistence entirely.
+	var savedWorkspaceFiles []string
+	if s.Workspace != nil && conv != "" {
+		for _, t := range textExts {
+			if p, perr := s.Workspace.SaveUpload(r.Context(), conv, t.Filename, t.Text); perr != nil {
+				log.Printf("workspace: save text upload %q: %v", t.Filename, perr)
+			} else {
+				savedWorkspaceFiles = append(savedWorkspaceFiles, p)
+			}
+		}
+		for _, im := range imageExts {
+			if p, perr := s.Workspace.SaveUploadBytes(r.Context(), conv, im.Filename, im.ImageBytes, im.ImageMIME); perr != nil {
+				log.Printf("workspace: save image upload %q: %v", im.Filename, perr)
+			} else {
+				savedWorkspaceFiles = append(savedWorkspaceFiles, p)
+			}
+		}
+	}
+
 	// Skill mentions (@id / /id) are stripped from the user text and merged
 	// with body.skills. Omitting skills with no mentions keeps agent defaults;
 	// any explicit input (non-nil body.skills or a mention) overrides for this
@@ -1477,6 +1512,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				ImageMIME:  img.ImageMIME,
 				ImageBytes: img.ImageBytes,
 			})
+		}
+	}
+	// When attachments were persisted to the workspace, append the saved file
+	// list to the LLM-bound content only (never to displayText, so the
+	// persisted bubble shows just the user text + filenames).
+	if len(savedWorkspaceFiles) > 0 {
+		llmText = strings.TrimRight(llmText, "\n") +
+			"\n\n[工作区] 以下文件已保存到本会话工作区，后续轮次可用 read_file（文本）或 read_image（图片）按需读取：" +
+			strings.Join(savedWorkspaceFiles, ", ")
+		if len(userParts) > 0 {
+			userParts[0] = llm.ContentPart{Type: "text", Text: llmText}
 		}
 	}
 	displayText := cleanedInput

@@ -15,6 +15,12 @@ import (
 // success and does not return ErrNotFound.
 var ErrNotFound = errors.New("blob: object not found")
 
+// ListEntry is metadata for one object returned by Store.List.
+type ListEntry struct {
+	Key  string // full key relative to the store root, "/"-separated
+	Size int64
+}
+
 // Store is a key/value binary object store. Keys are driver-relative and use "/"
 // separators (e.g. "artifacts/art_xxx.html"). There is no directory notion;
 // drivers create parent paths as needed.
@@ -27,6 +33,12 @@ type Store interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 	// Delete removes the object. Deleting a missing object is a no-op success.
 	Delete(ctx context.Context, key string) error
+	// List enumerates objects whose key starts with prefix (empty prefix =
+	// all objects). A prefix with no objects returns an empty slice and nil
+	// error (it is not an error). Keys are driver-relative, "/"-separated,
+	// and include any configured driver prefix semantics already stripped
+	// (i.e. the same key space used by Put/Get/Delete).
+	List(ctx context.Context, prefix string) ([]ListEntry, error)
 }
 
 // Options configures a blob driver. Only the section for the selected driver is

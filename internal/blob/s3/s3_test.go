@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,6 +85,31 @@ func (f *fakeS3) handler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/xml")
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprintf(w, `<?xml version="1.0"?><Error><Code>NoSuchBucket</Code><Message>missing</Message><BucketName>%s</BucketName></Error>`, bucket)
+			return
+		}
+		if object == "" && r.URL.Query().Get("list-type") == "2" {
+			pfx := r.URL.Query().Get("prefix")
+			f.mu.Lock()
+			type kv struct {
+				key  string
+				size int64
+			}
+			var matched []kv
+			for k, v := range f.objects {
+				if strings.HasPrefix(k, pfx) {
+					matched = append(matched, kv{k, int64(len(v))})
+				}
+			}
+			f.mu.Unlock()
+			sort.Slice(matched, func(i, j int) bool { return matched[i].key < matched[j].key })
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">`)
+			for _, m := range matched {
+				fmt.Fprintf(w, `<Contents><Key>%s</Key><Size>%d</Size></Contents>`,
+					xmlEscape(m.key), m.size)
+			}
+			_, _ = io.WriteString(w, `</ListBucketResult>`)
 			return
 		}
 		f.mu.Lock()
@@ -222,6 +248,41 @@ func TestS3RequiresCredentials(t *testing.T) {
 	}}); err == nil {
 		t.Fatalf("want error when credentials missing")
 	}
+}
+
+func TestS3ListByPrefix(t *testing.T) {
+	fake := newFakeS3()
+	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
+	defer srv.Close()
+	s, err := openAgainst(t, srv, "baize", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	_ = s.Put(ctx, "workspaces/c1/a.txt", []byte("ab"), "")
+	_ = s.Put(ctx, "workspaces/c1/n/b.txt", []byte("cde"), "")
+	_ = s.Put(ctx, "workspaces/c2/z.txt", []byte("z"), "")
+	got, err := s.List(ctx, "workspaces/c1/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 entries, got %v", got)
+	}
+	// key 应已剥离驱动 prefix（"baize/"），与 Put 用的 key 空间一致。
+	want := map[string]int64{"workspaces/c1/a.txt": 2, "workspaces/c1/n/b.txt": 3}
+	for _, e := range got {
+		if want[e.Key] != e.Size {
+			t.Fatalf("unexpected entry %+v (want map %v)", e, want)
+		}
+	}
+}
+
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
 }
 
 func mapKeys(f *fakeS3) []string {

@@ -3,6 +3,7 @@ package memory_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/rebornace/baize/internal/blob"
@@ -30,5 +31,28 @@ func TestMemoryPutGetDelete(t *testing.T) {
 	}
 	if err := s.Delete(ctx, "k1"); err != nil { // 幂等
 		t.Fatalf("delete missing should be nil, got %v", err)
+	}
+}
+
+func TestMemoryListFiltersByPrefix(t *testing.T) {
+	s, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	_ = s.Put(ctx, "workspaces/c1/a.txt", []byte("ab"), "")
+	_ = s.Put(ctx, "workspaces/c1/b.txt", []byte("cde"), "")
+	_ = s.Put(ctx, "workspaces/c2/z.txt", []byte("z"), "")
+	got, err := s.List(ctx, "workspaces/c1/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2, got %v", got)
+	}
+	for _, e := range got {
+		if !strings.HasPrefix(e.Key, "workspaces/c1/") {
+			t.Fatalf("key leaked across prefix: %s", e.Key)
+		}
 	}
 }
