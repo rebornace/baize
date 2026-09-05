@@ -62,6 +62,10 @@ func main() {
 		if err := bootstrap.Serve(cfg, *cfgPath); err != nil {
 			log.Fatal(err)
 		}
+	case "reset-credentials":
+		if err := runResetCredentials(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
 	default:
 		printUsage()
 		os.Exit(2)
@@ -69,10 +73,11 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("usage: baize <start|demo|serve>")
-	fmt.Println("  start  clean Runtime (configs/minimal.yaml); requires BAIZE_API_KEY")
-	fmt.Println("  demo   trial stack (configs/demo.yaml + optional default.local.yaml / demo.local.yaml)")
-	fmt.Println("  serve  Runtime only with explicit -config")
+	fmt.Println("usage: baize <start|demo|serve|reset-credentials>")
+	fmt.Println("  start              clean Runtime (configs/minimal.yaml); requires BAIZE_API_KEY")
+	fmt.Println("  demo               trial stack (configs/demo.yaml + optional default.local.yaml / demo.local.yaml)")
+	fmt.Println("  serve              Runtime only with explicit -config")
+	fmt.Println("  reset-credentials  clear hot-updated control-plane tokens (fall back to YAML break-glass)")
 }
 
 func startConfigPath() string {
