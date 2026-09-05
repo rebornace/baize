@@ -11,6 +11,7 @@ import (
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -272,5 +273,47 @@ func TestGateSSEOperatorOK(t *testing.T) {
 	}
 	if !strings.Contains(rr.Header().Get("Content-Type"), "text/event-stream") {
 		t.Fatalf("ct=%s", rr.Header().Get("Content-Type"))
+	}
+}
+
+func TestGateTokensUsesRuntimeHolder(t *testing.T) {
+	st, err := store.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
+	srv.OperatorToken = "op"
+	srv.AdminToken = "adm"
+
+	// baseline from struct fields
+	tok := srv.GateTokensForTest()
+	if tok.Admin != "adm" || tok.Operator != "op" {
+		t.Fatalf("baseline tokens wrong: %+v", tok)
+	}
+
+	// attach a holder with an overridden admin token -> gate uses it immediately
+	base := runtimecfg.Snapshot{Creds: runtimecfg.Credentials{
+		OperatorToken: "op", AdminToken: "adm",
+		Operators: []controlplane.Operator{{ID: "alice", Token: "ta"}},
+	}}
+	h := runtimecfg.New(base)
+	if err := h.ApplyCreds(context.Background(), nil, runtimecfg.CredsPatch{AdminToken: "rotated"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Settings = h
+	tok = srv.GateTokensForTest()
+	if tok.Admin != "rotated" {
+		t.Fatalf("rotated admin not used: %q", tok.Admin)
+	}
+	if tok.Operator != "op" || len(tok.Operators) != 1 {
+		t.Fatalf("operator/operators must come from snapshot: %+v", tok)
+	}
+
+	// reset -> back to baseline
+	if err := h.ApplyCreds(context.Background(), nil, runtimecfg.CredsPatch{Reset: true}); err != nil {
+		t.Fatal(err)
+	}
+	if srv.GateTokensForTest().Admin != "adm" {
+		t.Fatalf("reset must restore baseline admin")
 	}
 }

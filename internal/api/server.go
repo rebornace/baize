@@ -38,6 +38,7 @@ import (
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
@@ -101,9 +102,13 @@ type Server struct {
 	// OperatorToken / AdminToken configure the control-plane gate. When both
 	// are empty the gate is off and all routes behave as before. When at least
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
-	OperatorToken    string
-	AdminToken       string
-	Operators        []controlplane.Operator
+	OperatorToken string
+	AdminToken    string
+	Operators     []controlplane.Operator
+	// Settings optionally supplies hot-reloadable engine knobs and control-plane
+	// credentials. nil = use the static OperatorToken/AdminToken/Operators
+	// fields above (legacy behavior; existing tests leave it nil).
+	Settings         *runtimecfg.Holder
 	Webhook          *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()
@@ -221,12 +226,23 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 }
 
 func (s *Server) gateTokens() controlplane.Tokens {
+	if s.Settings != nil {
+		c := s.Settings.Credentials()
+		return controlplane.Tokens{
+			Operator:  c.OperatorToken,
+			Admin:     c.AdminToken,
+			Operators: c.Operators,
+		}
+	}
 	return controlplane.Tokens{
 		Operator:  s.OperatorToken,
 		Admin:     s.AdminToken,
 		Operators: s.Operators,
 	}
 }
+
+// GateTokensForTest exposes the effective gate tokens for tests.
+func (s *Server) GateTokensForTest() controlplane.Tokens { return s.gateTokens() }
 
 func (s *Server) metaStore() conversation.MetaStore {
 	if ms, ok := s.Messages.(conversation.MetaStore); ok {
@@ -389,6 +405,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/channels/weixin/logout", s.handleWeixinLogout)
 	s.mux.HandleFunc("GET /v0/settings/channels/weixin", s.handleGetWeixinSettings)
 	s.mux.HandleFunc("PUT /v0/settings/channels/weixin", s.handlePutWeixinSettings)
+	s.mux.HandleFunc("GET /v0/settings/runtime", s.handleGetRuntimeSettings)
+	s.mux.HandleFunc("PATCH /v0/settings/runtime", s.handlePatchRuntimeSettings)
+	s.mux.HandleFunc("GET /v0/settings/credentials", s.handleGetCredentials)
+	s.mux.HandleFunc("PATCH /v0/settings/credentials", s.handlePatchCredentials)
 
 	s.mux.Handle("/v0/mcp/export", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mcpExportHTTP().ServeHTTP(w, r)
