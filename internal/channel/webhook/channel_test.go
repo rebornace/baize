@@ -37,8 +37,16 @@ func TestOpenFromConfigBuildsChannel(t *testing.T) {
 }
 
 func TestSendTextPostsSignedOutbound(t *testing.T) {
-	var got OutboundMessage
-	srv := newCaptureServer(&got)
+	var (
+		got OutboundMessage
+		hdr http.Header
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		hdr = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
 	defer srv.Close()
 	ch, _ := openFromConfig("feishu", map[string]string{
 		"source": "feishu", "account": "acc-1", "secret": "s",
@@ -59,12 +67,59 @@ func TestSendTextPostsSignedOutbound(t *testing.T) {
 	if got.ContextToken != "tok123" {
 		t.Fatalf("context token not propagated: %+v", got)
 	}
+	// Default kind is assistant; no run id -> no run-id header.
+	if got.Kind != "assistant" {
+		t.Fatalf("default kind=%q want assistant", got.Kind)
+	}
+	if got.RunID != "" || hdr.Get(HeaderRunID) != "" {
+		t.Fatalf("run id should be empty when not provided: body=%q hdr=%q", got.RunID, hdr.Get(HeaderRunID))
+	}
 }
 
-func newCaptureServer(got *OutboundMessage) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestSendTextPropagatesKindAndRunID(t *testing.T) {
+	var (
+		got OutboundMessage
+		hdr http.Header
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, got)
+		_ = json.Unmarshal(body, &got)
+		hdr = r.Header.Clone()
 		w.WriteHeader(http.StatusOK)
 	}))
+	defer srv.Close()
+	ch, _ := openFromConfig("feishu", map[string]string{
+		"source": "feishu", "account": "acc-1", "secret": "s",
+		"outbound_url": srv.URL, "assignee": "u-admin",
+	})
+	extras := map[string]string{
+		"kind":          "notify",
+		"run_id":        "run-77",
+		"context_token": "tok",
+	}
+	if err := ch.SendText(context.Background(), "p", "审批？", extras); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	if got.Kind != "notify" {
+		t.Fatalf("kind=%q want notify", got.Kind)
+	}
+	if got.RunID != "run-77" {
+		t.Fatalf("body run_id=%q want run-77", got.RunID)
+	}
+	if hdr.Get(HeaderRunID) != "run-77" {
+		t.Fatalf("X-Baize-Run-Id header=%q want run-77", hdr.Get(HeaderRunID))
+	}
+}
+
+func TestOpenFromConfigRejectsUnsafeInstanceName(t *testing.T) {
+	base := map[string]string{"secret": "s", "outbound_url": "http://x/o", "assignee": "a"}
+	for _, bad := range []string{"a/b", "a b", "a?b", "a#b", "中文"} {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		if _, err := openFromConfig(bad, m); err == nil {
+			t.Fatalf("expected error for unsafe instance name %q", bad)
+		}
+	}
 }

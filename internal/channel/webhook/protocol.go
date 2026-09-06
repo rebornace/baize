@@ -25,7 +25,12 @@ type Attachment struct {
 
 // InboundMessage is the adapter -> baize request body.
 type InboundMessage struct {
-	Event          string       `json:"event"` // "message"
+	Event string `json:"event"` // "message"
+	// Account is informational only in 2A: one webhook instance serves exactly
+	// one IM account, so the conversation account is always the instance's
+	// configured account (config.account / instance name) and this field is
+	// ignored. It is accepted for forward compatibility with a future
+	// multi-account management plane.
 	Account        string       `json:"account"`
 	Peer           Peer         `json:"peer"`
 	Text           string       `json:"text"`

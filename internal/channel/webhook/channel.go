@@ -39,6 +39,9 @@ func openFromConfig(name string, m map[string]string) (*Channel, error) {
 	if name == "" {
 		return nil, fmt.Errorf("webhook: instance name is required (use channels[].name)")
 	}
+	if !safeInstanceName(name) {
+		return nil, fmt.Errorf("webhook: instance name %q must be a single URL-safe segment (letters, digits, '-', '_', '.'); no '/' or spaces", name)
+	}
 	cfg, err := parseConfig(name, m)
 	if err != nil {
 		return nil, err
@@ -94,6 +97,7 @@ func firstNonEmpty(vals ...string) string {
 func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[string]string) error {
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
+		RunID:          runIDFromExtras(extras),
 		ConversationID: channel.ConvID(c.cfg.Source, c.cfg.Account, peerID),
 		Account:        c.cfg.Account,
 		Peer:           Peer{ID: peerID},
@@ -107,6 +111,7 @@ func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[
 func (c *Channel) SendMedia(ctx context.Context, peerID, filename, mime string, data []byte, extras map[string]string) error {
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
+		RunID:          runIDFromExtras(extras),
 		ConversationID: channel.ConvID(c.cfg.Source, c.cfg.Account, peerID),
 		Account:        c.cfg.Account,
 		Peer:           Peer{ID: peerID},
@@ -122,11 +127,39 @@ func (c *Channel) SendMedia(ctx context.Context, peerID, filename, mime string, 
 
 func kindFromExtras(extras map[string]string) string {
 	if extras != nil {
-		if k := strings.TrimSpace(extras["kind"]); k != "" {
+		if k := strings.TrimSpace(extras[channel.ExtraKind]); k != "" {
 			return k
 		}
 	}
-	return "assistant"
+	return channel.OutboundKindAssistant
+}
+
+func runIDFromExtras(extras map[string]string) string {
+	if extras != nil {
+		return strings.TrimSpace(extras[channel.ExtraRunID])
+	}
+	return ""
+}
+
+// safeInstanceName reports whether name is a single URL path segment made only
+// of unreserved, path-safe characters. It guards the self-registered inbound
+// route "POST /v0/channels/<name>/inbound" against names that would add path
+// segments ('/'), spaces, or otherwise break ServeMux pattern matching.
+func safeInstanceName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			// ok
+		case r == '-' || r == '_' || r == '.':
+			// ok
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 var (

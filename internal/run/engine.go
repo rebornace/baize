@@ -931,7 +931,7 @@ func (e *Engine) recordTerminalMessage(runID string) {
 			Content: runRec.Output,
 			RunID:   runID,
 		})
-		e.deliverOutbound(runRec.ConversationID, runRec.Output)
+		e.deliverOutbound(runID, runRec.ConversationID, runRec.Output)
 	case store.StatusFailed:
 		note := strings.TrimSpace(runRec.Error)
 		if note == "" {
@@ -956,7 +956,7 @@ func (e *Engine) recordTerminalMessage(runID string) {
 // deliverOutbound mirrors succeeded assistant text to a channel peer when the
 // conversation meta is weixin-backed. Failures are logged inside Deliver; they
 // must not change the run's succeeded status.
-func (e *Engine) deliverOutbound(conversationID, text string) {
+func (e *Engine) deliverOutbound(runID, conversationID, text string) {
 	if e.Outbound == nil || e.Meta == nil || conversationID == "" {
 		return
 	}
@@ -968,6 +968,7 @@ func (e *Engine) deliverOutbound(conversationID, text string) {
 	if e.OutboundExtras != nil {
 		extras = e.OutboundExtras(conversationID)
 	}
+	extras = channel.WithOutboundMeta(extras, channel.OutboundKindAssistant, runID)
 	channel.DeliverAssistantReply(context.Background(), e.Outbound, meta, text, nil, extras)
 }
 
@@ -989,6 +990,7 @@ func (e *Engine) deliverHITLNotify(runID string, payload *store.HITLPayload) {
 	if e.OutboundExtras != nil {
 		extras = e.OutboundExtras(runRec.ConversationID)
 	}
+	extras = channel.WithOutboundMeta(extras, channel.OutboundKindNotify, runID)
 	channel.DeliverUserText(context.Background(), e.Outbound, meta, channel.FormatHITLNotify(payload), extras)
 }
 

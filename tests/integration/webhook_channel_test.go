@@ -133,11 +133,22 @@ func TestWebhookChannelBidirectionalE2E(t *testing.T) {
 	if conv, _ := first["conversation_id"].(string); conv == "" {
 		t.Fatalf("outbound missing conversation_id: %+v", first)
 	}
-	// The outbound hop must itself be signed over the exact bytes delivered.
+	// The engine assistant reply must be tagged kind=assistant and carry run_id
+	// in both body and header (design §5.2 message classification / run link).
+	if kind, _ := first["kind"].(string); kind != "assistant" {
+		t.Fatalf("outbound kind=%q want assistant", kind)
+	}
+	runID, _ := first["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("outbound missing run_id: %+v", first)
+	}
 	outTS := headers[0].Get("X-Baize-Channel-Timestamp")
 	outSig := headers[0].Get("X-Baize-Channel-Signature")
 	if outTS == "" || outSig == "" {
 		t.Fatalf("outbound missing signature headers: %+v", headers[0])
+	}
+	if hdrRun := headers[0].Get("X-Baize-Run-Id"); hdrRun != runID {
+		t.Fatalf("X-Baize-Run-Id header=%q want %q", hdrRun, runID)
 	}
 	if err := webhooksig.Verify(secret, outTS, bodies[0], outSig, time.Now(), 5*time.Minute); err != nil {
 		t.Fatalf("outbound signature verification failed: %v", err)

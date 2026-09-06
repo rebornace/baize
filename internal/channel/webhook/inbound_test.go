@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -278,5 +279,56 @@ func TestResolveAttachmentsFetchesURLBytes(t *testing.T) {
 	}
 	if len(files) != 1 || !bytes.Equal(files[0].Data, png) {
 		t.Fatalf("expected fetched bytes to match attachment, got %+v", files)
+	}
+}
+
+func TestResolveAttachmentsRejectsNonHTTPScheme(t *testing.T) {
+	ch, err := openFromConfig("feishu", baseCfg("http://x/o"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"file:///etc/passwd", "gopher://x:70/1", "ftp://x/a", "://nohost", "http://"} {
+		_, err := ch.resolveAttachments(context.Background(), http.DefaultClient,
+			[]Attachment{{Name: "a.bin", MIME: "application/octet-stream", URL: bad}})
+		if err == nil {
+			t.Fatalf("attachment URL %q must be rejected", bad)
+		}
+	}
+}
+
+func TestIsBlockedIP(t *testing.T) {
+	blocked := []string{
+		"127.0.0.1",        // loopback
+		"::1",              // loopback v6
+		"10.0.0.5",         // private
+		"172.16.0.1",       // private
+		"192.168.1.1",      // private
+		"169.254.169.254",  // cloud metadata / link-local
+		"fe80::1",          // link-local v6
+		"0.0.0.0",          // unspecified
+		"::",               // unspecified v6
+		"100.64.0.1",       // CGNAT
+		"100.127.255.254",  // CGNAT upper bound
+		"198.18.0.1",       // benchmarking
+		"198.19.255.255",   // benchmarking
+		"224.0.0.1",        // multicast
+		"::ffff:127.0.0.1", // IPv4-mapped loopback
+	}
+	for _, s := range blocked {
+		if !isBlockedIP(net.ParseIP(s)) {
+			t.Errorf("expected %s to be blocked", s)
+		}
+	}
+	allowed := []string{
+		"8.8.8.8",     // public
+		"1.1.1.1",     // public
+		"100.63.0.1",  // just below CGNAT
+		"100.128.0.1", // just above CGNAT
+		"203.0.113.9", // TEST-NET (doc range; public-unicast-ish, not internal)
+	}
+	for _, s := range allowed {
+		if isBlockedIP(net.ParseIP(s)) {
+			t.Errorf("expected %s to be allowed", s)
+		}
 	}
 }

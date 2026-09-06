@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	urlpkg "net/url"
 	"sync"
 	"time"
 
@@ -112,6 +113,12 @@ func (c *Channel) resolveAttachments(ctx context.Context, hc *http.Client, atts 
 			}
 			data = b
 		case a.URL != "":
+			// Only http/https are fetched; this fails early on file://,
+			// gopher://, etc. (http.Client would reject them anyway, but an
+			// explicit check gives a clear, dial-free error).
+			if u, err := urlpkg.Parse(a.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return nil, fmt.Errorf("webhook: attachment URL %q must be an http(s) URL", a.URL)
+			}
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
 			if err != nil {
 				return nil, err
@@ -165,8 +172,8 @@ func newFetchClient() *http.Client {
 }
 
 // isBlockedIP reports whether ip is an address adapter-supplied attachment
-// URLs must never be allowed to reach: loopback, private, link-local, or the
-// unspecified address.
+// URLs must never be allowed to reach: loopback, private, link-local, the
+// unspecified address, shared/CGNAT space, benchmarking range, or multicast.
 func isBlockedIP(ip net.IP) bool {
 	switch {
 	case ip == nil:
@@ -180,11 +187,30 @@ func isBlockedIP(ip net.IP) bool {
 	case ip.IsLinkLocalUnicast():
 		// 169.254.0.0/16 (incl. cloud metadata 169.254.169.254), fe80::/10
 		return true
+	case ip.IsLinkLocalMulticast(), ip.IsMulticast():
+		// 224.0.0.0/24 link-local multicast, 224.0.0.0/4 multicast, ff00::/8
+		return true
 	case ip.IsUnspecified():
 		// 0.0.0.0, ::
 		return true
+	case isCGNAT(ip), isBenchmarking(ip):
+		// 100.64.0.0/10 (carrier-grade/shared), 198.18.0.0/15 (benchmarking)
+		return true
 	}
 	return false
+}
+
+// isCGNAT reports whether ip is in 100.64.0.0/10 (RFC 6598 shared address
+// space), often reachable inside carrier/container networks.
+func isCGNAT(ip net.IP) bool {
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
+}
+
+// isBenchmarking reports whether ip is in 198.18.0.0/15 (RFC 2544).
+func isBenchmarking(ip net.IP) bool {
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
