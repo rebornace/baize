@@ -43,15 +43,15 @@ Baize 已具备多种"不改核心源码即可扩展"的机制，但**消息渠�
 ## 3. 目标架构（三阶段）
 
 ```
-阶段一（internal 内解耦）         阶段二（进程外渠道）             阶段三（公共 SDK）
+阶段一（internal 内解耦）         阶段二（进程外渠道）             阶段三（公共 SDK）——暂缓
 渠道注册表驱动装配               出站 webhook 渠道适配器         最小公共契约 module
-  -> in-tree 新渠道不碰             -> 飞书/钉钉/Slack 独立进程      -> 第三方写 Go 渠道/存储插件
-     bootstrap/outbound                不改核心、任意语言             （可选，最后做）
+  -> in-tree 新渠道不碰             -> 飞书/钉钉/Slack 独立进程      -> 第三方写 Go 插件的类型安全
+     bootstrap/outbound                不改核心、任意语言             （非必需，YAGNI，按需再做）
 ```
 
-- 阶段一是二、三的前置（理顺接缝），风险最低、收益直接。
-- 阶段二是"渠道插件独立开发"主交付：不依赖 Go SDK，任意语言、独立部署。
-- 阶段三仅在确有第三方要写编译期类型安全 Go 插件时才做，属较大重构。
+- 阶段一是二的前置（理顺接缝），风险最低、收益直接。
+- 阶段二是"渠道插件独立开发"主交付：不依赖 Go SDK，任意语言、独立部署。**阶段一 + 阶段二完成即达成完整的插件解耦目标。**
+- 阶段三非必需：仅 DX 优化（Go 编译期类型），没有真实外部 Go 插件需求前不做，属较大重构。
 
 ---
 
@@ -196,17 +196,32 @@ type ChannelConfig struct {
 | 出站（baize→适配器） | 适配器提供 `POST /outbound`（HMAC 头 `X-Baize-Protocol:v0`） | `{conversation_id, peer, text, media?, run_id, kind:"assistant"|"operator"}` |
 | 回执（适配器→baize，可选） | 复用 plugin-callback 或 webhook 投递状态 | 投递成功/失败 |
 
-**文件（阶段二，in-tree 部分很小）：**
-- 创建：`internal/channel/webhookout/channel.go`（实现 `channel.Channel`，出站走签名 HTTP；`init()` 注册为渠道类型 `webhook`）
-- 修改：`internal/inbox/model.go`（渠道增加 `OutboundWebhookURL`/`OutboundSecret` 字段）、`internal/api/server_inbox.go`（透传配置、入站 meta.Source 标记）
-- 修改：阶段一的 `wireChannels` 能为启用了出站 URL 的 inbox 渠道装配一个 webhookout 渠道进 Router
-- 文档：`docs/` 新增适配器契约说明；`examples/` 可加一个 `im-adapter/` 范本（Node/Go，只依赖标准库风格）
+### 入站附件（与微信功能对等的必需项）
 
-**验收：** 用一个示例适配器（examples）端到端：适配器收消息→POST inbox→baize 建 run→回复经出站 webhook 回到适配器→适配器打印/转发；适配器进程独立、可用任意语言、不 import baize。
+现状 `inbox.Payload` 只有文本（`Input string`，上限 8192 字符，`model.go:35`），**不支持图片/文件入站**；而 in-process 微信支持媒体入站（下载→附件/多模态）。阶段二要做到功能对等，必须顺带做这个**通用契约增补**（非为某 IM 写死）：
+
+- `inbox.Payload` 增加 `attachments []Attachment`，`Attachment{ name, mime, content_base64?, url? }`（二选一：内联 base64，或给可下载 URL 由 baize 拉取）；大小上限与现有插件回调一致（body ≤1MiB 级别，超大文件走 URL）。
+- 入站 handler 把 attachments 转成与微信一致的 `llm.ContentPart` / 附件记录（复用 `buildInboundContent` 同款路径），vision 开启时图片多模态。
+- 出站侧无缺口：`webhookout` 实现 `SendMedia` 时把媒体作为 multipart 或 base64 POST 给适配器即可。
+
+**文件（阶段二，in-tree 部分很小）：**
+- 创建：`internal/channel/webhookout/channel.go`（实现 `channel.Channel`，出站 `SendText/SendMedia` 走签名 HTTP；`init()` 注册为渠道类型 `webhook`）
+- 修改：`internal/inbox/model.go`（`Channel` 增加 `OutboundWebhookURL`/`OutboundSecret`；`Payload` 增加 `Attachments`）、`internal/api/server_inbox.go`（透传出站配置、入站附件转 ContentPart、入站 meta.Source 标记）
+- 修改：阶段一的 `wireChannels` 能为启用了出站 URL 的 inbox 渠道装配一个 webhookout 渠道进 Router
+- 文档：`docs/` 新增适配器契约说明；`examples/` 可加一个 `im-adapter/` 范本（Node/Go，只依赖标准库风格，含文本+图片双向）
+
+**验收：** 用一个示例适配器（examples）端到端：适配器收**文本和图片**→POST inbox（含 attachments）→baize 建 run（图片进多模态/附件）→回复（文本/媒体）经出站 webhook 回到适配器→适配器打印/转发；适配器进程独立、可用任意语言、不 import baize。
 
 ---
 
-## 阶段三：最小公共契约 module（可选，第三方 Go 插件）
+## 阶段三：最小公共契约 module（**非必需，YAGNI 暂缓**）
+
+> **必要性结论：阶段三不是功能缺口，只是 Go 开发者的 DX 优化。完成阶段一 + 阶段二即拥有完整的插件解耦能力。**
+>
+> - 所有扩展面（工具/渠道/技能/复用）阶段一、二后都能走"进程外 + HTTP/JSON 或标准 MCP"，任意语言、独立进程、独立发版，不 import 任何 baize 包。进程间解耦比进程内 Go 插件更彻底（不共享进程、不耦合 Go 版本/内部 ABI）。
+> - 阶段三仅带来"用 Go 写插件时有编译期类型、不用手写 JSON"。`examples/http-plugin` 已证明手写 JSON 完全可行；且 Go 无稳定 `.so` 热加载故事——即便有 SDK，第三方渠道仍推荐走进程外（否则要编译进核心，又变成给核心提 PR，不算解耦）。
+> - 成本是真实的长期负担：维护一个带向后兼容承诺的公开 module、`internal` 反向 re-export、版本治理。
+> - **触发条件：** 出现真实的外部 Go 插件贡献者明确要求类型安全时再启动。届时第一优先做 `sdk/httpplugin`（sidecar 工具插件最常见）；`sdk/channel` 反而不急——渠道本就该走阶段二的 HTTP 契约。
 
 **目标：** 第三方可用 Go 写编译期类型安全的渠道/（未来）存储插件。仅在确有外部 Go 插件需求时做。
 
@@ -233,8 +248,9 @@ type ChannelConfig struct {
 ## 5. 建议落地顺序
 
 1. **阶段一**（P1.1→P1.5）纯重构 + 注册表化，风险可控，先合并；产出"新增 in-tree 渠道零改动装配"。
-2. **阶段二** webhookout 渠道 + 一个 `examples/im-adapter` 范本，打通"独立进程 IM 渠道"。
-3. **阶段三** 按需抽取 sdk，配合阶段二契约提供类型安全。
+2. **阶段二** webhookout 渠道 + 入站附件增补 + 一个 `examples/im-adapter` 范本（文本+图片双向），打通"独立进程 IM 渠道"。
+   - **阶段一 + 阶段二完成后，插件解耦的功能目标即完整**：工具/渠道/技能/能力复用全部可独立开发、独立部署、不改核心。
+3. **阶段三（暂缓，非必需）**：仅当出现真实外部 Go 插件贡献者要求类型安全时，才抽取 sdk；先做 `sdk/httpplugin`，渠道仍走进程外契约。在此之前不投入、不承诺向后兼容。
 
 > 详细 TDD 任务拆解（每任务的测试/实现/提交步骤）在进入某一阶段时，按 writing-plans 规范另出 `docs/superpowers/plans/` 计划文档；本文件是架构决策与边界。
 
