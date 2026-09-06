@@ -466,6 +466,7 @@ go run ./cmd/baize start
 | `compact_threshold` | 0.1–0.95 | 0.8 | 触发压缩的上下文占用比例 |
 | `compact_reserve_tokens` | 256–100000 | 8000 | 压缩时预留的 token 数 |
 | `compact_keep_recent` | 0–100 | 8 | 始终保留原文的最近消息数 |
+| `compact_summary_timeout_seconds` | 1–600 | 60 | 压缩摘要 LLM 调用的超时上限 |
 
 `GET /v0/settings/runtime`（操作员可读）返回每个旋钮的生效值 `effective` 与是否已自定义的 `overridden`（相对 YAML 基线）。
 
@@ -479,9 +480,11 @@ baize reset-credentials -config <配置路径>
 
 仅清空凭据覆盖、引擎参数不受影响；重启或等 TTL 过期后即回落 YAML/env 基线口令。
 
-**微信启停** — `PUT /v0/settings/channels/weixin` 带 `{"enabled": true}`：有登录凭证时立即启动长轮询，未登录则返回 `running:false, reason:"login_required"`；`{"enabled": false}` 停止轮询但**保留登录凭证**——重新启用无需重新扫码（区别于 logout）。响应新增 `running` 字段。
+**微信启停** — `PUT /v0/settings/channels/weixin` 带 `{"enabled": true}`：有登录凭证时立即启动长轮询，未登录则返回 `running:false, reason:"login_required"`；`{"enabled": false}` 停止轮询但**保留登录凭证**——重新启用无需重新扫码（区别于 logout）。`GET` 与 `PUT` 响应均包含 `running` 与 `reason`（`login_required` / `start_failed`），界面首屏即可看到当前运行状态。
 
-非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径、微信白名单入站强制（后续特性）、凭据 KV 加密（凭据明文落库，与模型 `api_key` 同级信任）。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。
+**微信私信白名单** — `allowlist` 为 peer（`from_user_id`）id 列表。非空时，渠道会在下载媒体 / 创建会话之前**丢弃名单外 peer 的私信**，且不自动回复（避免被探测 / 节省出站成本）；空列表（默认）表示不限制私信。保存即热生效、启动时也会重新应用；群消息始终忽略。
+
+非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径、凭据 KV 加密（凭据明文落库，与模型 `api_key` 同级信任）。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。
 
 ---
 
@@ -701,7 +704,7 @@ control_plane:
 - **媒体：** 私信文本、图片与常见文件可入站为附件并进 Run（vision 开启则图片多模态，否则文本说明）；助手文本可出站回 peer。**CDN AES 解密尚未实现**——依赖加密 CDN 的媒体可能下载后无法使用。
 - **出站展示：** `/ui` 操作员发言与助手回复均以 Bot 气泡到达微信，分别带 `【客服】` / `【助手】` 前缀以便区分；客服出站后短暂等待再发助手回复，降低乱序概率。
 - **出站 `context_token`：** 仅缓存在进程内存；服务重启后需该 peer 再发一条微信消息，之后才能从 `/ui` 可靠出站（本版不落盘）。
-- **allowlist：** 设置页可保存；**v0 未做入站过滤**（字段已落盘，不据此拒收私信）。
+- **allowlist：** 设置页可保存并**已做入站强制**——非名单内 peer 的私信在下载媒体 / 建会话前被静默丢弃、不自动回复；留空表示不限制（默认开放私信）。
 - **群聊：** 普通微信群默认不支持（iLink bot 通常不推群）。
 - **验收：** 假 iLink 单测覆盖登录 / 归属等；**真机扫码与私信往返需手工验收**，仓库未做自动化真机测。
 - **部署：** 本版按**单实例**使用同一 bot 凭证；勿多副本抢同一账号。

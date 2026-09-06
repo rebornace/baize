@@ -455,6 +455,7 @@ A set of settings that previously required YAML edits + a restart can now be cha
 | `compact_threshold` | 0.1–0.95 | 0.8 | Context-usage ratio that triggers compaction |
 | `compact_reserve_tokens` | 256–100000 | 8000 | Tokens reserved when compacting |
 | `compact_keep_recent` | 0–100 | 8 | Recent messages always kept verbatim |
+| `compact_summary_timeout_seconds` | 1–600 | 60 | Cap on the compaction summary LLM call |
 
 `GET /v0/settings/runtime` (operator-readable) returns each knob’s `effective` value plus an `overridden` flag (vs the YAML baseline).
 
@@ -468,9 +469,11 @@ baize reset-credentials -config <config-path>
 
 This clears credential overrides only (engine knobs are untouched); after a restart or TTL expiry the YAML/env baseline tokens apply again.
 
-**Weixin enable/disable** — `PUT /v0/settings/channels/weixin` with `{"enabled": true}` starts long-polling immediately when login credentials exist, or returns `running:false, reason:"login_required"` when not logged in; `{"enabled": false}` stops polling but **keeps the login credentials** — re-enabling needs no re-scan (unlike logout). Responses now include a `running` field.
+**Weixin enable/disable** — `PUT /v0/settings/channels/weixin` with `{"enabled": true}` starts long-polling immediately when login credentials exist, or returns `running:false, reason:"login_required"` when not logged in; `{"enabled": false}` stops polling but **keeps the login credentials** — re-enabling needs no re-scan (unlike logout). Both `GET` and `PUT` responses include `running` plus a `reason` (`login_required` / `start_failed`), so the UI shows current state on first load.
 
-Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths, Weixin allowlist inbound enforcement (a later feature), and KV credential encryption (credentials are stored plaintext, same trust tier as a model `api_key`). Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md).
+**Weixin DM allowlist** — `allowlist` is a list of peer (`from_user_id`) ids. A non-empty list makes the channel drop direct messages from any peer not on it — before media download or run creation, with no auto-reply (prevents probing / outbound cost). An empty list (the default) means open DMs. It hot-applies on save and is re-applied at startup; group messages are always ignored.
+
+Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths, and KV credential encryption (credentials are stored plaintext, same trust tier as a model `api_key`). Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md).
 
 ---
 
@@ -668,7 +671,7 @@ New peer DMs get `owner_id = assignee` (default `channel:weixin` if unset — ma
 - **Media:** DM text, images, and common files can enter Runs as attachments; assistant text can sync back. **CDN AES decryption is not implemented** — encrypted CDN media may be unusable after download.
 - **Outbound display:** Operator turns from `/ui` and assistant replies both arrive as Bot bubbles; they are prefixed with `【客服】` / `【助手】`. A short settle delay follows the operator mirror so WeChat is less likely to reorder it after the assistant reply.
 - **Outbound `context_token`:** Cached in-process only; after a restart the peer must send another WeChat message before `/ui` outbound sync is reliable (not persisted in v0).
-- **Allowlist:** Persisted in settings; **inbound filtering is not enforced in v0**.
+- **Allowlist:** Persisted in settings and **inbound-enforced** — DMs from peers not on a non-empty list are silently dropped before media download / run creation, with no auto-reply; an empty list means open DMs (default).
 - **Groups:** Ordinary WeChat groups are unsupported (iLink bots typically do not deliver them).
 - **Verification:** Fake iLink unit tests cover login / ownership; **real-device QR and DM round-trips are manual** — not automated in CI.
 - **Deploy:** Single-instance for one bot account in this milestone.
