@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -26,7 +28,7 @@ func (c *Channel) inboundHandler() http.Handler {
 		mu      sync.Mutex
 		seenKey = map[string]bool{}
 	)
-	fetch := &http.Client{Timeout: 15 * time.Second}
+	fetch := newFetchClient()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxInboundBody))
 		if err != nil {
@@ -59,13 +61,14 @@ func (c *Channel) inboundHandler() http.Handler {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 			return
 		}
-		// Best-effort idempotency (at-least-once delivery).
-		if key := msg.IdempotencyKey; key != "" {
+		// Best-effort idempotency (at-least-once delivery). The key is only
+		// marked seen AFTER successful handling: a failed attempt (bad
+		// attachment, HandleInbound error) must not consume the key, or a
+		// legitimate retry would be acked as duplicate and silently dropped.
+		key := msg.IdempotencyKey
+		if key != "" {
 			mu.Lock()
 			dup := seenKey[key]
-			if !dup {
-				seenKey[key] = true
-			}
 			mu.Unlock()
 			if dup {
 				writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
@@ -87,6 +90,11 @@ func (c *Channel) inboundHandler() http.Handler {
 			log.Printf("webhook %s: handle inbound: %v", c.cfg.Name, err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "handle"})
 			return
+		}
+		if key != "" {
+			mu.Lock()
+			seenKey[key] = true
+			mu.Unlock()
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -112,6 +120,10 @@ func (c *Channel) resolveAttachments(ctx context.Context, hc *http.Client, atts 
 			if err != nil {
 				return nil, err
 			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				_ = resp.Body.Close()
+				return nil, fmt.Errorf("webhook: fetch %q returned status %d", a.URL, resp.StatusCode)
+			}
 			b, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchBody))
 			_ = resp.Body.Close()
 			if err != nil {
@@ -124,6 +136,55 @@ func (c *Channel) resolveAttachments(ctx context.Context, hc *http.Client, atts 
 		files = append(files, channel.InboundFile{Name: a.Name, MIME: a.MIME, Data: data})
 	}
 	return files, nil
+}
+
+// newFetchClient builds the http.Client used to download attachment URLs. Its
+// DialContext rejects connections to loopback/private/link-local/unspecified
+// IPs (SSRF protection). The check runs on the post-DNS TCP peer address
+// (conn.RemoteAddr), so a public hostname that resolves to an internal IP is
+// blocked too; wrapping the Transport dialer also covers every redirect hop.
+func newFetchClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+			if !ok || isBlockedIP(tcpAddr.IP) {
+				_ = conn.Close()
+				return nil, fmt.Errorf("webhook: attachment URL target %s is not allowed", address)
+			}
+			return conn, nil
+		},
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+	}
+	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
+}
+
+// isBlockedIP reports whether ip is an address adapter-supplied attachment
+// URLs must never be allowed to reach: loopback, private, link-local, or the
+// unspecified address.
+func isBlockedIP(ip net.IP) bool {
+	switch {
+	case ip == nil:
+		return true
+	case ip.IsLoopback():
+		// 127.0.0.0/8, ::1
+		return true
+	case ip.IsPrivate():
+		// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7
+		return true
+	case ip.IsLinkLocalUnicast():
+		// 169.254.0.0/16 (incl. cloud metadata 169.254.169.254), fe80::/10
+		return true
+	case ip.IsUnspecified():
+		// 0.0.0.0, ::
+		return true
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

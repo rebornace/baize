@@ -187,3 +187,96 @@ func TestInboundInlineImageBecomesPart(t *testing.T) {
 		t.Fatalf("expected an image part, got %+v", gotParts)
 	}
 }
+
+func TestInboundIdempotencyKeyNotConsumedOnFailure(t *testing.T) {
+	runs := &fakeRuns{}
+	ch, handler := bootChannel(t, baseCfg("http://x/o"), runs, nil)
+
+	// First attempt with the same idempotency_key fails: its attachment has
+	// undecodable base64. The failure must not consume the key.
+	bad := InboundMessage{Event: "message", Peer: Peer{ID: "p"}, Text: "x", IdempotencyKey: "retry-k",
+		Attachments: []Attachment{{Name: "a.bin", MIME: "application/octet-stream", ContentBase64: "%%%not-base64%%%"}}}
+	body, ts, sig := signedBody(t, ch.cfg.Secret, bad)
+	if rec := post(handler, body, ts, sig); rec.Code < 400 {
+		t.Fatalf("failing attempt should be 4xx/5xx, got %d", rec.Code)
+	}
+	if len(runs.created) != 0 {
+		t.Fatalf("failed attempt must not create run, got %v", runs.created)
+	}
+
+	// Retry with the SAME key but a valid message must now succeed.
+	good := InboundMessage{Event: "message", Peer: Peer{ID: "p"}, Text: "x", IdempotencyKey: "retry-k"}
+	body, ts, sig = signedBody(t, ch.cfg.Secret, good)
+	if rec := post(handler, body, ts, sig); rec.Code >= 300 {
+		t.Fatalf("retry should succeed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(runs.created) != 1 {
+		t.Fatalf("retry after failure should create 1 run, got %v", runs.created)
+	}
+}
+
+func TestInboundAttachmentURLBlocksLoopback(t *testing.T) {
+	hit := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+	}))
+	defer srv.Close()
+
+	runs := &fakeRuns{}
+	ch, handler := bootChannel(t, baseCfg("http://x/o"), runs, nil)
+	msg := InboundMessage{Event: "message", Peer: Peer{ID: "p"}, Text: "x",
+		Attachments: []Attachment{{Name: "a.bin", MIME: "application/octet-stream", URL: srv.URL + "/x"}}}
+	body, ts, sig := signedBody(t, ch.cfg.Secret, msg)
+	rec := post(handler, body, ts, sig)
+	if rec.Code < 400 {
+		t.Fatalf("loopback attachment URL must be rejected, got %d", rec.Code)
+	}
+	if len(runs.created) != 0 {
+		t.Fatalf("blocked SSRF fetch must not create run, got %v", runs.created)
+	}
+	if hit {
+		t.Fatal("loopback target must never be reached")
+	}
+}
+
+func TestResolveAttachmentsRejectsNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	ch, err := openFromConfig("feishu", baseCfg("http://x/o"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Use a plain client (no SSRF dial guard) to isolate the status-code check:
+	// the guarded handler client would block 127.0.0.1 before any response.
+	_, err = ch.resolveAttachments(context.Background(), http.DefaultClient,
+		[]Attachment{{Name: "a.bin", MIME: "application/octet-stream", URL: srv.URL + "/missing"}})
+	if err == nil {
+		t.Fatal("404 fetch must return an error, not be accepted as attachment content")
+	}
+}
+
+func TestResolveAttachmentsFetchesURLBytes(t *testing.T) {
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEUlEQVR4nGJiYGBgAAQAAP//AA8AA/6P688AAAAASUVORK5CYII=")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(png)
+	}))
+	defer srv.Close()
+
+	ch, err := openFromConfig("feishu", baseCfg("http://x/o"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := ch.resolveAttachments(context.Background(), http.DefaultClient,
+		[]Attachment{{Name: "a.png", MIME: "image/png", URL: srv.URL + "/a.png"}})
+	if err != nil {
+		t.Fatalf("200 fetch should succeed: %v", err)
+	}
+	if len(files) != 1 || !bytes.Equal(files[0].Data, png) {
+		t.Fatalf("expected fetched bytes to match attachment, got %+v", files)
+	}
+}
