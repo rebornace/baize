@@ -33,21 +33,38 @@ type startedReporter interface {
 	IsStarted() bool
 }
 
-func weixinPeer(ch Channel, meta conversation.Meta) (peer string, ok bool) {
+// resolveOutbound picks the channel + peer for a conversation. When ch is a
+// *Router it selects the child matching meta.Source; otherwise ch is used
+// directly (back-compat for tests/nil). Returns false for ui-only / unknown.
+func resolveOutbound(ch Channel, meta conversation.Meta) (Channel, string, bool) {
 	if ch == nil {
-		return "", false
+		return nil, "", false
+	}
+	if r, ok := ch.(*Router); ok {
+		c, ok := r.For(strings.TrimSpace(meta.Source))
+		if !ok {
+			return nil, "", false
+		}
+		ch = c
+	} else {
+		// 非 Router：保持原语义——只有渠道自报 source 与 meta.Source 一致才投递；
+		// 无 Source() 的旧渠道（如测试夹具）默认按 weixin 语义处理。
+		if ss, ok := ch.(SourceSourced); ok {
+			if strings.TrimSpace(meta.Source) != ss.Source() {
+				return nil, "", false
+			}
+		} else if strings.TrimSpace(meta.Source) != "weixin" {
+			return nil, "", false
+		}
 	}
 	if sr, ok := ch.(startedReporter); ok && !sr.IsStarted() {
-		return "", false
+		return nil, "", false
 	}
-	if strings.TrimSpace(meta.Source) != "weixin" {
-		return "", false
-	}
-	peer = strings.TrimSpace(meta.ChannelPeer)
+	peer := strings.TrimSpace(meta.ChannelPeer)
 	if peer == "" {
-		return "", false
+		return nil, "", false
 	}
-	return peer, true
+	return ch, peer, true
 }
 
 // FormatOperatorOutbound prefixes a /ui operator turn for WeChat display.
@@ -77,7 +94,7 @@ func FormatAssistantOutbound(text string) string {
 // DeliverUserText mirrors a /ui (or API) user turn to the weixin peer so the
 // phone chat shows what the operator typed. Failures are logged only.
 func DeliverUserText(ctx context.Context, ch Channel, meta conversation.Meta, text string, extras map[string]string) {
-	peer, ok := weixinPeer(ch, meta)
+	target, peer, ok := resolveOutbound(ch, meta)
 	if !ok {
 		return
 	}
@@ -85,7 +102,7 @@ func DeliverUserText(ctx context.Context, ch Channel, meta conversation.Meta, te
 	if text == "" {
 		return
 	}
-	if err := ch.SendText(ctx, peer, text, copyExtras(extras)); err != nil {
+	if err := target.SendText(ctx, peer, text, copyExtras(extras)); err != nil {
 		log.Printf("channel outbound user: SendText peer=%s: %v", peer, err)
 		return
 	}
@@ -102,7 +119,7 @@ func DeliverUserText(ctx context.Context, ch Channel, meta conversation.Meta, te
 // when meta identifies a weixin conversation. Failures are logged only; callers
 // must not treat errors as run failures. Nil channel is a no-op.
 func DeliverAssistantReply(ctx context.Context, ch Channel, meta conversation.Meta, text string, media []OutboundMedia, extras map[string]string) {
-	peer, ok := weixinPeer(ch, meta)
+	target, peer, ok := resolveOutbound(ch, meta)
 	if !ok {
 		return
 	}
@@ -113,7 +130,7 @@ func DeliverAssistantReply(ctx context.Context, ch Channel, meta conversation.Me
 
 	ex := copyExtras(extras)
 	if text != "" {
-		if err := ch.SendText(ctx, peer, text, ex); err != nil {
+		if err := target.SendText(ctx, peer, text, ex); err != nil {
 			log.Printf("channel outbound: SendText peer=%s: %v", peer, err)
 		}
 	}
@@ -121,7 +138,7 @@ func DeliverAssistantReply(ctx context.Context, ch Channel, meta conversation.Me
 		if len(m.Data) == 0 && strings.TrimSpace(m.Filename) == "" {
 			continue
 		}
-		if err := ch.SendMedia(ctx, peer, m.Filename, m.MIME, m.Data, ex); err != nil {
+		if err := target.SendMedia(ctx, peer, m.Filename, m.MIME, m.Data, ex); err != nil {
 			log.Printf("channel outbound: SendMedia peer=%s file=%s: %v", peer, m.Filename, err)
 		}
 	}
