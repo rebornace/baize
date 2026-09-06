@@ -16,6 +16,7 @@
 | **已交付** | **X4** 对话历史压缩 / 滚动摘要（token 估算触发、旧消息折叠为持久化滚动摘要、游标保留近期原文；规格 `2026-09-01-context-compaction-design.md`） |
 | **已交付** | **X3** 中间件多源（可替换任务队列/事件总线/限流；memory 默认零依赖，redis 驱动支持多副本 + 崩溃恢复 + 跨副本 SSE；规格 `2026-09-03-middleware-multi-source-design.md`） |
 | **已交付** | **BlobStore 对象存储多源**（分析报告产物可换 file/s3（AWS S3/MinIO/OSS/COS）；通用 `blob.Store` + 驱动注册表，代理读；规格 `2026-09-04-blob-object-storage-design.md`） |
+| **已交付** | **Agent 会话文件工作区**（附件文本/图片持久化到 blob、`list_files`/`read_file`/`write_file`/`delete_file`/`read_image` 五工具、多模态工具结果通道、按会话隔离路径安全；规格 `2026-09-04-agent-workspace-files-design.md`） |
 | **本版之后** | **F** 生产硬化（含 P1/P2 文档收口） |
 
 ---
