@@ -141,7 +141,12 @@ func (s *Server) handleGetWeixinSettings(w http.ResponseWriter, r *http.Request)
 	if settings.Allowlist == nil {
 		settings.Allowlist = []string{}
 	}
-	writeJSON(w, http.StatusOK, settings)
+	running, reason := s.weixinRuntimeState(settings)
+	writeJSON(w, http.StatusOK, weixinSettingsResponse{
+		WeixinChannelSettings: settings,
+		Running:               running,
+		Reason:                reason,
+	})
 }
 
 func (s *Server) handlePutWeixinSettings(w http.ResponseWriter, r *http.Request) {
@@ -158,18 +163,40 @@ func (s *Server) handlePutWeixinSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	running, reason := s.applyWeixinSettings(body)
-	writeJSON(w, http.StatusOK, weixinPutResponse{
+	writeJSON(w, http.StatusOK, weixinSettingsResponse{
 		WeixinChannelSettings: body,
 		Running:               running,
 		Reason:                reason,
 	})
 }
 
-// weixinPutResponse is the saved settings plus the reconciled runtime state.
-type weixinPutResponse struct {
+// weixinSettingsResponse is the persisted settings plus the reconciled runtime
+// state. Returned by both GET (current state) and PUT (state just applied).
+type weixinSettingsResponse struct {
 	WeixinChannelSettings
 	Running bool   `json:"running"`
 	Reason  string `json:"reason,omitempty"` // "login_required" | "start_failed"
+}
+
+// weixinRuntimeState reports the channel's current running/reason without
+// changing it, so GET can show status on first load (not only after a PUT).
+func (s *Server) weixinRuntimeState(settings WeixinChannelSettings) (running bool, reason string) {
+	s.weixinMu.Lock()
+	defer s.weixinMu.Unlock()
+	ch := s.WeixinChannel
+	if ch == nil {
+		return false, ""
+	}
+	if ch.IsStarted() {
+		return true, ""
+	}
+	if !settings.Enabled {
+		return false, "" // intentionally stopped
+	}
+	if !ch.HasCredentials() {
+		return false, "login_required"
+	}
+	return false, "start_failed"
 }
 
 func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bool, reason string) {
@@ -187,6 +214,7 @@ func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bo
 	if ch == nil {
 		return false, ""
 	}
+	ch.SetAllowlist(settings.Allowlist)
 	if settings.Enabled {
 		if ch.IsStarted() {
 			return true, ""

@@ -609,6 +609,7 @@ func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, mess
 	ilink := weixin.NewClient("", nil)
 	ch := weixin.New(ilink, rt, accountID, token)
 	ch.SetCredsDir(credsDir)
+	ch.SetAllowlist(settings.Allowlist)
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	closer.stops = append(closer.stops, func() {

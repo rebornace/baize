@@ -75,6 +75,20 @@ func (c *Compactor) effectiveCompaction() (enabled bool, threshold float64, rese
 	return enabled, threshold, reserve, keep
 }
 
+// effectiveSummaryTimeout resolves the cap on the summarization LLM call:
+// hot-reloadable knob > struct field > code default.
+func (c *Compactor) effectiveSummaryTimeout() time.Duration {
+	if c.Settings != nil {
+		if d := c.Settings.Knobs().CompactSummaryTimeout; d > 0 {
+			return d
+		}
+	}
+	if c.SummaryTimeout > 0 {
+		return c.SummaryTimeout
+	}
+	return defaultCompactSummaryWait
+}
+
 // MaybeCompact folds older messages into a rolling summary when the projected
 // prompt (tools + existing summary + full history) exceeds the budget derived
 // from the run's model context limit. It returns changed=true when a new
@@ -88,10 +102,7 @@ func (c *Compactor) MaybeCompact(ctx context.Context, convID string, tools []llm
 	if !enabled {
 		return false, nil // compaction switched off at runtime
 	}
-	summaryTimeout := c.SummaryTimeout
-	if summaryTimeout <= 0 {
-		summaryTimeout = defaultCompactSummaryWait
-	}
+	summaryTimeout := c.effectiveSummaryTimeout()
 
 	view, err := c.resolveView(profileID)
 	if err != nil || view.ID == "" {

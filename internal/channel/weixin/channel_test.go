@@ -275,6 +275,55 @@ func TestChannelIgnoresGroupPeers(t *testing.T) {
 	}
 }
 
+func TestChannelAllowlistFiltersPeers(t *testing.T) {
+	fake := NewFake()
+	fake.Updates = []Update{
+		{PeerID: "peer-allowed", Text: "hi-allow", ContextToken: "ctx-a"},
+		{PeerID: "peer-blocked", Text: "hi-block", ContextToken: "ctx-b"},
+	}
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, meta := newTestRuntime(t, runs)
+	ch := New(fake, rt, "acc-1", "tok-1")
+	ch.emptyPollWait = 5 * time.Millisecond
+	ch.SetAllowlist([]string{"peer-allowed", "  ", ""}) // blanks ignored
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := ch.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = ch.Stop(stopCtx)
+	}()
+
+	waitUntil(t, 2*time.Second, func() bool { return runs.createCount() >= 1 })
+	time.Sleep(50 * time.Millisecond) // give the blocked peer a chance to (not) create a run
+
+	if runs.createCount() != 1 {
+		t.Fatalf("CreateRun=%d want 1 (only allowlisted peer)", runs.createCount())
+	}
+	if _, err := meta.GetMeta("weixin:acc-1:peer-allowed"); err != nil {
+		t.Fatalf("allowed peer meta missing: %v", err)
+	}
+	if _, err := meta.GetMeta("weixin:acc-1:peer-blocked"); err == nil {
+		t.Fatal("blocked peer must not get meta")
+	}
+}
+
+func TestChannelAllowlistEmptyAllowsAll(t *testing.T) {
+	ch := New(NewFake(), nil, "acc", "tok")
+	ch.SetAllowlist(nil)
+	if !ch.peerAllowed("anyone") {
+		t.Fatal("empty allowlist must allow all peers")
+	}
+	ch.SetAllowlist([]string{"alice"})
+	if ch.peerAllowed("alice") != true || ch.peerAllowed("bob") != false {
+		t.Fatal("non-empty allowlist must restrict to listed peers")
+	}
+}
+
 func TestChannelSendTextUsesContextToken(t *testing.T) {
 	fake := NewFake()
 	ch := New(fake, nil, "acc", "tok")

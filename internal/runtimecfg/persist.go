@@ -13,13 +13,14 @@ import (
 
 // KnobsPatch is a partial engine-knob update (nil fields = leave unchanged).
 type KnobsPatch struct {
-	MaxMessages          *int     `json:"max_messages,omitempty"`
-	MaxSteps             *int     `json:"max_steps,omitempty"`
-	ToolTimeoutSeconds   *int     `json:"tool_timeout_seconds,omitempty"`
-	CompactionEnabled    *bool    `json:"compaction_enabled,omitempty"`
-	CompactThreshold     *float64 `json:"compact_threshold,omitempty"`
-	CompactReserveTokens *int     `json:"compact_reserve_tokens,omitempty"`
-	KeepRecent           *int     `json:"compact_keep_recent,omitempty"`
+	MaxMessages                  *int     `json:"max_messages,omitempty"`
+	MaxSteps                     *int     `json:"max_steps,omitempty"`
+	ToolTimeoutSeconds           *int     `json:"tool_timeout_seconds,omitempty"`
+	CompactionEnabled            *bool    `json:"compaction_enabled,omitempty"`
+	CompactThreshold             *float64 `json:"compact_threshold,omitempty"`
+	CompactReserveTokens         *int     `json:"compact_reserve_tokens,omitempty"`
+	KeepRecent                   *int     `json:"compact_keep_recent,omitempty"`
+	CompactSummaryTimeoutSeconds *int     `json:"compact_summary_timeout_seconds,omitempty"`
 }
 
 // OperatorInput is one add_operator entry {id, token}.
@@ -83,6 +84,10 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 	if p.KeepRecent != nil && (*p.KeepRecent < 0 || *p.KeepRecent > 100) {
 		return fmt.Errorf("%w: compact_keep_recent must be 0-100", ErrBadRange)
 	}
+	if p.CompactSummaryTimeoutSeconds != nil &&
+		(*p.CompactSummaryTimeoutSeconds < 1 || *p.CompactSummaryTimeoutSeconds > 600) {
+		return fmt.Errorf("%w: compact_summary_timeout_seconds must be 1-600", ErrBadRange)
+	}
 	return nil
 }
 
@@ -121,6 +126,9 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.KeepRecent != nil {
 		next.CompactKeepRecent = p.KeepRecent
+	}
+	if p.CompactSummaryTimeoutSeconds != nil {
+		next.CompactSummaryTimeoutSec = p.CompactSummaryTimeoutSeconds
 	}
 	if err := h.persistLocked(ctx, st, next, h.co); err != nil {
 		return err

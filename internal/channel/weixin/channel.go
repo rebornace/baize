@@ -34,6 +34,38 @@ type Channel struct {
 	started       bool
 	cursor        string
 	emptyPollWait time.Duration
+
+	allowlistMu sync.RWMutex
+	allowlist   map[string]struct{} // empty == allow all DMs
+}
+
+// SetAllowlist replaces the DM peer allowlist. An empty (or all-blank) list
+// means "allow all direct messages". Hot-applied without restarting polling.
+func (c *Channel) SetAllowlist(ids []string) {
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if v := strings.TrimSpace(id); v != "" {
+			set[v] = struct{}{}
+		}
+	}
+	c.allowlistMu.Lock()
+	if len(set) == 0 {
+		c.allowlist = nil
+	} else {
+		c.allowlist = set
+	}
+	c.allowlistMu.Unlock()
+}
+
+// peerAllowed reports whether a peer may be processed. Empty allowlist = open.
+func (c *Channel) peerAllowed(peer string) bool {
+	c.allowlistMu.RLock()
+	defer c.allowlistMu.RUnlock()
+	if len(c.allowlist) == 0 {
+		return true
+	}
+	_, ok := c.allowlist[peer]
+	return ok
 }
 
 // New constructs a Channel with injected ILink and Runtime (tests / Task 6 wiring).
@@ -212,6 +244,11 @@ func (c *Channel) pollLoop(ctx context.Context, emptyWait time.Duration) {
 func (c *Channel) handleUpdate(ctx context.Context, u Update) error {
 	peer := strings.TrimSpace(u.PeerID)
 	if peer == "" || isGroupPeer(peer) {
+		return nil
+	}
+	if !c.peerAllowed(peer) {
+		// Peer not on the DM allowlist: drop before any media download or
+		// run creation (no reply, to avoid probing / outbound cost).
 		return nil
 	}
 	files := make([]channel.InboundFile, 0, len(u.Media))

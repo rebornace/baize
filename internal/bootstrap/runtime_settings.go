@@ -30,6 +30,9 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			CompactThreshold:     cfg.Conversation.CompactThreshold,
 			CompactReserveTokens: cfg.Conversation.CompactReserveOutput,
 			CompactKeepRecent:    cfg.Conversation.CompactRecentMessages,
+			// Not exposed in config; mirrors run.defaultCompactSummaryWait. Kept
+			// non-zero so GET reports the real effective default (60s).
+			CompactSummaryTimeout: 60 * time.Second,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: operatorToken,

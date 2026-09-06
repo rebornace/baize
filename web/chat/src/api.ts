@@ -163,6 +163,7 @@ export interface RuntimeKnobs {
   compact_threshold: number
   compact_reserve_tokens: number
   compact_keep_recent: number
+  compact_summary_timeout_seconds: number
 }
 
 /** Per-field flags: true when the value is overridden from the YAML baseline. */
@@ -182,6 +183,7 @@ export type RuntimeKnobsPatch = Partial<{
   compact_threshold: number
   compact_reserve_tokens: number
   compact_keep_recent: number
+  compact_summary_timeout_seconds: number
 }>
 
 export async function getRuntimeSettings(): Promise<RuntimeKnobsView> {
