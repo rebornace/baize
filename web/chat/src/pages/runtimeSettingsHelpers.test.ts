@@ -16,6 +16,7 @@ const baseKnobs: RuntimeKnobs = {
   compact_threshold: 0.8,
   compact_reserve_tokens: 8000,
   compact_keep_recent: 8,
+  compact_summary_timeout_seconds: 60,
 }
 
 describe('knobsToForm', () => {
@@ -65,6 +66,11 @@ describe('buildKnobsPatch', () => {
   it('includes compaction toggle', () => {
     const form: KnobsForm = { ...knobsToForm(baseKnobs), compaction_enabled: false }
     expect(buildKnobsPatch(form, baseKnobs)).toEqual({ compaction_enabled: false })
+  })
+
+  it('includes summary timeout change', () => {
+    const form: KnobsForm = { ...knobsToForm(baseKnobs), compact_summary_timeout_seconds: '120' }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ compact_summary_timeout_seconds: 120 })
   })
 
   it('bundles multiple changes', () => {

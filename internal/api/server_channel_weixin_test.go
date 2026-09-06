@@ -259,6 +259,44 @@ func TestWeixinSettingsGetPut(t *testing.T) {
 	}
 }
 
+func TestWeixinGetReturnsRuntimeState(t *testing.T) {
+	srv, _, _ := weixinTestServer(t)
+
+	// Enabled but no credentials => not running, login_required; GET must
+	// surface this on first load (not only after PUT).
+	putBody := jsonBody(t, map[string]any{"enabled": true, "assignee": "bob"})
+	putReq := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", putBody)
+	putReq.Header.Set("Authorization", "Bearer adm")
+	putReq.Header.Set("Content-Type", "application/json")
+	putRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRR, putReq)
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("put status=%d body=%s", putRR.Code, putRR.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v0/settings/channels/weixin", nil)
+	getReq.Header.Set("Authorization", "Bearer adm")
+	getRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRR, getReq)
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", getRR.Code, getRR.Body.String())
+	}
+	var resp struct {
+		Enabled bool   `json:"enabled"`
+		Running bool   `json:"running"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.NewDecoder(getRR.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Enabled {
+		t.Fatal("enabled should be true")
+	}
+	if resp.Running || resp.Reason != "login_required" {
+		t.Fatalf("want running=false reason=login_required, got running=%v reason=%q", resp.Running, resp.Reason)
+	}
+}
+
 func TestWeixinEnabledStartWithCreds(t *testing.T) {
 	srv, _, _ := weixinTestServer(t)
 	t.Cleanup(func() { _ = srv.WeixinChannel.Stop(context.Background()) })

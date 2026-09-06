@@ -9,24 +9,26 @@ import (
 
 // runtimeKnobsJSON is the wire shape for engine knobs (duration as seconds).
 type runtimeKnobsJSON struct {
-	MaxMessages          int     `json:"max_messages"`
-	MaxSteps             int     `json:"max_steps"`
-	ToolTimeoutSeconds   int     `json:"tool_timeout_seconds"`
-	CompactionEnabled    bool    `json:"compaction_enabled"`
-	CompactThreshold     float64 `json:"compact_threshold"`
-	CompactReserveTokens int     `json:"compact_reserve_tokens"`
-	CompactKeepRecent    int     `json:"compact_keep_recent"`
+	MaxMessages                  int     `json:"max_messages"`
+	MaxSteps                     int     `json:"max_steps"`
+	ToolTimeoutSeconds           int     `json:"tool_timeout_seconds"`
+	CompactionEnabled            bool    `json:"compaction_enabled"`
+	CompactThreshold             float64 `json:"compact_threshold"`
+	CompactReserveTokens         int     `json:"compact_reserve_tokens"`
+	CompactKeepRecent            int     `json:"compact_keep_recent"`
+	CompactSummaryTimeoutSeconds int     `json:"compact_summary_timeout_seconds"`
 }
 
 func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 	return runtimeKnobsJSON{
-		MaxMessages:          k.MaxMessages,
-		MaxSteps:             k.MaxSteps,
-		ToolTimeoutSeconds:   int(k.ToolTimeout.Seconds()),
-		CompactionEnabled:    k.CompactionEnabled,
-		CompactThreshold:     k.CompactThreshold,
-		CompactReserveTokens: k.CompactReserveTokens,
-		CompactKeepRecent:    k.CompactKeepRecent,
+		MaxMessages:                  k.MaxMessages,
+		MaxSteps:                     k.MaxSteps,
+		ToolTimeoutSeconds:           int(k.ToolTimeout.Seconds()),
+		CompactionEnabled:            k.CompactionEnabled,
+		CompactThreshold:             k.CompactThreshold,
+		CompactReserveTokens:         k.CompactReserveTokens,
+		CompactKeepRecent:            k.CompactKeepRecent,
+		CompactSummaryTimeoutSeconds: int(k.CompactSummaryTimeout.Seconds()),
 	}
 }
 

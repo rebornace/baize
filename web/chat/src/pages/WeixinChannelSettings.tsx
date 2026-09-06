@@ -93,7 +93,7 @@ export function WeixinChannelSettings() {
     setAssignee(s.assignee ?? '')
     setAllowlistText(formatAllowlistText(s.allowlist))
     setEnabled(Boolean(s.enabled))
-    // running/reason are only present on the PUT (save) response.
+    // running/reason come from both GET (current state) and PUT (just applied).
     if (typeof s.running === 'boolean') {
       setRunning(s.running)
       setRunReason(s.reason ?? null)

@@ -104,6 +104,9 @@ func TestApplyKnobsPatchValidates(t *testing.T) {
 		{"threshold low", KnobsPatch{CompactThreshold: ptr(0.09)}, false},
 		{"reserve low", KnobsPatch{CompactReserveTokens: ptr(200)}, false},
 		{"keeprecent high", KnobsPatch{KeepRecent: ptr(101)}, false},
+		{"summary timeout high", KnobsPatch{CompactSummaryTimeoutSeconds: ptr(601)}, false},
+		{"summary timeout low", KnobsPatch{CompactSummaryTimeoutSeconds: ptr(0)}, false},
+		{"valid summary timeout", KnobsPatch{CompactSummaryTimeoutSeconds: ptr(120)}, true},
 		{"valid steps", KnobsPatch{MaxSteps: ptr(32)}, true},
 		{"valid threshold", KnobsPatch{CompactThreshold: ptr(0.7)}, true},
 		{"compaction off", KnobsPatch{CompactionEnabled: ptr(false)}, true},
@@ -123,12 +126,17 @@ func TestApplyKnobsPatchValidates(t *testing.T) {
 func TestApplyKnobsPatchOverlaysAndReports(t *testing.T) {
 	h := New(baseSnapshot())
 	off := false
-	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{MaxSteps: ptr(32), CompactionEnabled: &off}); err != nil {
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{
+		MaxSteps: ptr(32), CompactionEnabled: &off, CompactSummaryTimeoutSeconds: ptr(120),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	k := h.Knobs()
 	if k.MaxSteps != 32 || k.CompactionEnabled {
 		t.Fatalf("overlay not applied: %+v", k)
+	}
+	if k.CompactSummaryTimeout != 120*time.Second {
+		t.Fatalf("summary timeout overlay wrong: %v", k.CompactSummaryTimeout)
 	}
 	if k.MaxMessages != 40 {
 		t.Fatalf("unset field must keep baseline: %d", k.MaxMessages)

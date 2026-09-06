@@ -9,6 +9,7 @@ export interface KnobsForm {
   compact_threshold: string
   compact_reserve_tokens: string
   compact_keep_recent: string
+  compact_summary_timeout_seconds: string
 }
 
 /** Field metadata for rendering + validation. */
@@ -28,6 +29,7 @@ export const KNOB_FIELDS: KnobFieldSpec[] = [
   { key: 'compact_threshold', label: '压缩触发比例（compact_threshold）', hint: '0.1-0.95，默认 0.8', min: 0.1, max: 0.95, integer: false },
   { key: 'compact_reserve_tokens', label: '压缩预留 token（compact_reserve_tokens）', hint: '256-100000，默认 8000', min: 256, max: 100000, integer: true },
   { key: 'compact_keep_recent', label: '保留原文最近消息数（compact_keep_recent）', hint: '0-100，默认 8', min: 0, max: 100, integer: true },
+  { key: 'compact_summary_timeout_seconds', label: '压缩摘要 LLM 超时秒数（compact_summary_timeout_seconds）', hint: '1-600，默认 60', min: 1, max: 600, integer: true },
 ]
 
 export function knobsToForm(k: RuntimeKnobs): KnobsForm {
@@ -39,6 +41,7 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     compact_threshold: String(k.compact_threshold),
     compact_reserve_tokens: String(k.compact_reserve_tokens),
     compact_keep_recent: String(k.compact_keep_recent),
+    compact_summary_timeout_seconds: String(k.compact_summary_timeout_seconds),
   }
 }
 
@@ -89,6 +92,10 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   const keep = int(form.compact_keep_recent)
   if (keep !== null && keep !== effective.compact_keep_recent) {
     patch.compact_keep_recent = keep
+  }
+  const summaryTimeout = int(form.compact_summary_timeout_seconds)
+  if (summaryTimeout !== null && summaryTimeout !== effective.compact_summary_timeout_seconds) {
+    patch.compact_summary_timeout_seconds = summaryTimeout
   }
   return patch
 }

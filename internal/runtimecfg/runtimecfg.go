@@ -16,13 +16,14 @@ import (
 
 // Knobs is the effective engine-tuning snapshot.
 type Knobs struct {
-	MaxMessages          int
-	MaxSteps             int
-	ToolTimeout          time.Duration
-	CompactionEnabled    bool
-	CompactThreshold     float64
-	CompactReserveTokens int
-	CompactKeepRecent    int
+	MaxMessages           int
+	MaxSteps              int
+	ToolTimeout           time.Duration
+	CompactionEnabled     bool
+	CompactThreshold      float64
+	CompactReserveTokens  int
+	CompactKeepRecent     int
+	CompactSummaryTimeout time.Duration
 }
 
 // Credentials is the effective control-plane credential set.
@@ -48,13 +49,14 @@ type operatorEntry struct {
 // are nil when "not overridden" (keep baseline); a non-nil pointer (even to 0
 // for compaction off) is an explicit override.
 type knobsOverride struct {
-	MaxMessages          *int     `json:"max_messages,omitempty"`
-	MaxSteps             *int     `json:"max_steps,omitempty"`
-	ToolTimeoutSeconds   *int     `json:"tool_timeout_seconds,omitempty"`
-	CompactionEnabled    *bool    `json:"compaction_enabled,omitempty"`
-	CompactThreshold     *float64 `json:"compact_threshold,omitempty"`
-	CompactReserveTokens *int     `json:"compact_reserve_tokens,omitempty"`
-	CompactKeepRecent    *int     `json:"compact_keep_recent,omitempty"`
+	MaxMessages              *int     `json:"max_messages,omitempty"`
+	MaxSteps                 *int     `json:"max_steps,omitempty"`
+	ToolTimeoutSeconds       *int     `json:"tool_timeout_seconds,omitempty"`
+	CompactionEnabled        *bool    `json:"compaction_enabled,omitempty"`
+	CompactThreshold         *float64 `json:"compact_threshold,omitempty"`
+	CompactReserveTokens     *int     `json:"compact_reserve_tokens,omitempty"`
+	CompactKeepRecent        *int     `json:"compact_keep_recent,omitempty"`
+	CompactSummaryTimeoutSec *int     `json:"compact_summary_timeout_seconds,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -132,6 +134,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride) Snapshot {
 	if ko.CompactKeepRecent != nil {
 		k.CompactKeepRecent = *ko.CompactKeepRecent
 	}
+	if ko.CompactSummaryTimeoutSec != nil {
+		k.CompactSummaryTimeout = time.Duration(*ko.CompactSummaryTimeoutSec) * time.Second
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -154,13 +159,14 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride) Snapshot {
 // KnobsFieldFlags reports which knobs are overridden in the KV. Field tags
 // are the wire keys consumed by the HTTP layer (task 6).
 type KnobsFieldFlags struct {
-	MaxMessages          bool `json:"max_messages"`
-	MaxSteps             bool `json:"max_steps"`
-	ToolTimeout          bool `json:"tool_timeout_seconds"`
-	CompactionEnabled    bool `json:"compaction_enabled"`
-	CompactThreshold     bool `json:"compact_threshold"`
-	CompactReserveTokens bool `json:"compact_reserve_tokens"`
-	CompactKeepRecent    bool `json:"compact_keep_recent"`
+	MaxMessages           bool `json:"max_messages"`
+	MaxSteps              bool `json:"max_steps"`
+	ToolTimeout           bool `json:"tool_timeout_seconds"`
+	CompactionEnabled     bool `json:"compaction_enabled"`
+	CompactThreshold      bool `json:"compact_threshold"`
+	CompactReserveTokens  bool `json:"compact_reserve_tokens"`
+	CompactKeepRecent     bool `json:"compact_keep_recent"`
+	CompactSummaryTimeout bool `json:"compact_summary_timeout_seconds"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -180,13 +186,14 @@ func (h *Holder) KnobsView() KnobsView {
 	return KnobsView{
 		Effective: h.Knobs(),
 		Overridden: KnobsFieldFlags{
-			MaxMessages:          ko.MaxMessages != nil,
-			MaxSteps:             ko.MaxSteps != nil,
-			ToolTimeout:          ko.ToolTimeoutSeconds != nil,
-			CompactionEnabled:    ko.CompactionEnabled != nil,
-			CompactThreshold:     ko.CompactThreshold != nil,
-			CompactReserveTokens: ko.CompactReserveTokens != nil,
-			CompactKeepRecent:    ko.CompactKeepRecent != nil,
+			MaxMessages:           ko.MaxMessages != nil,
+			MaxSteps:              ko.MaxSteps != nil,
+			ToolTimeout:           ko.ToolTimeoutSeconds != nil,
+			CompactionEnabled:     ko.CompactionEnabled != nil,
+			CompactThreshold:      ko.CompactThreshold != nil,
+			CompactReserveTokens:  ko.CompactReserveTokens != nil,
+			CompactKeepRecent:     ko.CompactKeepRecent != nil,
+			CompactSummaryTimeout: ko.CompactSummaryTimeoutSec != nil,
 		},
 	}
 }
