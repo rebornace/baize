@@ -20,6 +20,12 @@ type Descriptor struct {
 	Build func(Config) (Channel, error)
 	// DefaultCredsDir is the per-channel settings/creds directory basename.
 	DefaultCredsDir string
+	// EnabledByDefault marks a built-in channel that must stay wired even when
+	// a declarative config channels: section is present but does not list it.
+	// This keeps partial declarative configs backward compatible (the default
+	// channel is never silently disabled); an explicit enabled:false still
+	// wins. Optional/additional channels leave this false.
+	EnabledByDefault bool
 }
 
 var (

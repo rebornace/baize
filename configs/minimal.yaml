@@ -58,3 +58,12 @@ mock_ticket:
   listen: off
 inbox:
   channels: []
+# 渠道声明式启用（可选）。整段省略时装配全部已注册渠道（含内置默认 weixin），
+# 与历史默认部署完全等价。列出后：仅 enabled:true 的渠道被装配；未列出的内置
+# 默认渠道（weixin）仍装配以保持兼容；显式 enabled:false 始终生效（可关闭默认渠道）。
+# channels:
+#   - type: weixin
+#     enabled: true
+#     config:
+#       creds_dir: ./data/channels/weixin   # 覆盖默认凭据/设置目录
+#       # base_url: http://127.0.0.1:9002    # 渠道特定不透明配置

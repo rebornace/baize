@@ -20,9 +20,10 @@ const SourceName = "weixin"
 
 func init() {
 	channel.Register(channel.Descriptor{
-		Name:            SourceName,
-		Build:           openFromConfig,
-		DefaultCredsDir: DefaultCredsDir,
+		Name:             SourceName,
+		Build:            openFromConfig,
+		DefaultCredsDir:  DefaultCredsDir,
+		EnabledByDefault: true,
 	})
 }
 

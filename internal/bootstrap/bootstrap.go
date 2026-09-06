@@ -434,6 +434,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		defaultAgentID: srv.DefaultAgentID,
 		runCtx:         runCtx,
 		closer:         closer,
+		cfg:            cfg,
 	}); err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("wire channels: %w", err)
@@ -582,6 +583,7 @@ type channelDeps struct {
 	defaultAgentID string
 	runCtx         context.Context
 	closer         *storeAndMCPCloser
+	cfg            config.Config
 }
 
 // wireChannels iterates every registered channel Descriptor, builds the
@@ -590,12 +592,44 @@ type channelDeps struct {
 // outbound router, and conditionally start their inbound loop. The router is
 // wired as the single Outbound/OutboundExtras for both the api server and the
 // run engine; non-Bootstrapper channels are registered for future use only.
+//
+// When cfg.Channels is empty (section omitted), every registered channel is
+// wired — identical to the pre-declarative-config behavior. When cfg.Channels
+// lists entries, a channel is wired only if explicitly enabled:true, or if it
+// is not listed but is a built-in default (Descriptor.EnabledByDefault, e.g.
+// weixin) — this keeps partial declarative configs backward compatible. An
+// explicit enabled:false always wins. Per-entry config.creds_dir overrides the
+// descriptor DefaultCredsDir; other opaque config keys are passed through.
 func wireChannels(d channelDeps) (*channel.Router, error) {
 	meta, ok := d.messages.(conversation.MetaStore)
 	if !ok {
 		return nil, fmt.Errorf("conversation store does not support meta")
 	}
 	supportsVision := d.provider != nil && d.provider.SupportsVision()
+
+	enabled := map[string]bool{}
+	overrides := map[string]map[string]string{}
+	declarative := len(d.cfg.Channels) > 0
+	for _, cc := range d.cfg.Channels {
+		name := strings.TrimSpace(cc.Type)
+		if name == "" {
+			continue
+		}
+		enabled[name] = cc.Enabled
+		if len(cc.Config) > 0 {
+			overrides[name] = cc.Config
+		}
+	}
+	channelEnabled := func(desc channel.Descriptor) bool {
+		if !declarative {
+			return true
+		}
+		if on, listed := enabled[desc.Name]; listed {
+			return on
+		}
+		// Not listed: keep built-in defaults wired (back-compat).
+		return desc.EnabledByDefault
+	}
 
 	router := channel.NewRouter()
 	deps := channel.BuildDeps{
@@ -620,14 +654,24 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 	}
 
 	for _, desc := range channel.Descriptors() {
-		ch, err := desc.Build(channel.Config{"creds_dir": desc.DefaultCredsDir})
+		if !channelEnabled(desc) {
+			log.Printf("%s channel: disabled by config; skipped", desc.Name)
+			continue
+		}
+		// Merge descriptor default creds dir with declarative override;
+		// other opaque config keys (base_url...) pass through verbatim.
+		chCfg := channel.Config{"creds_dir": desc.DefaultCredsDir}
+		for k, v := range overrides[desc.Name] {
+			chCfg[k] = v
+		}
+		ch, err := desc.Build(chCfg)
 		if err != nil {
 			return nil, fmt.Errorf("open channel %s: %w", desc.Name, err)
 		}
 		handle := &api.ChannelHandle{
 			Name:     desc.Name,
 			Channel:  ch,
-			CredsDir: desc.DefaultCredsDir,
+			CredsDir: chCfg["creds_dir"],
 			RunCtx:   d.runCtx,
 		}
 
