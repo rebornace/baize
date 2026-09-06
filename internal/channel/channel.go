@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"strings"
 )
 
 // Channel is a messaging channel plugin (weixin, etc.).
@@ -27,4 +28,23 @@ type InboundFile struct {
 	Name string
 	MIME string
 	Data []byte
+}
+
+// SourceSourced is implemented by channels whose conversations carry a distinct
+// meta.Source / conv-id prefix (weixin today; feishu/dingtalk tomorrow).
+type SourceSourced interface {
+	Source() string // meta.Source value, e.g. "weixin"
+}
+
+// ConvID builds a channel conversation id "<source>:<account>:<peer>".
+func ConvID(source, account, peer string) string {
+	return source + ":" + account + ":" + peer
+}
+
+// SourceFromConvID returns the prefix before the first ":" (the channel source).
+func SourceFromConvID(convID string) string {
+	if i := strings.IndexByte(convID, ':'); i >= 0 {
+		return convID[:i]
+	}
+	return convID
 }

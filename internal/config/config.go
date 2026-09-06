@@ -142,6 +142,17 @@ type Config struct {
 	Runtime   RuntimeConfig   `yaml:"runtime"`
 	Inbox     InboxConfig     `yaml:"inbox"`
 	MCPExport MCPExportConfig `yaml:"mcp_export"`
+	// Channels declaratively enables/configures registered channels. Empty
+	// (section omitted) means bootstrap wires every registered channel
+	// (back-compat with the pre-registry default deployment).
+	Channels []ChannelConfig `yaml:"channels"`
+}
+
+// ChannelConfig declaratively enables/configures a registered channel.
+type ChannelConfig struct {
+	Type    string            `yaml:"type"`    // channel type key, e.g. "weixin"
+	Enabled bool              `yaml:"enabled"` // default: wired when registered
+	Config  map[string]string `yaml:"config"`  // opaque overrides (creds_dir, base_url...)
 }
 
 // MCPExportConfig toggles the Streamable HTTP MCP export surface.

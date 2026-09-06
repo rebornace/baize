@@ -1212,6 +1212,26 @@ git commit -m "feat(config): channels 声明式启用配置（可选），阶段
 - 历史会话 ID 兼容：`Runtime.Source` 空值默认 `"weixin"`，不改既有 `weixin:...` 会话 ID。
 - 无占位符：所有代码块为可直接落地的最小实现；涉及"逐处替换"处给出了明确的 before/after 字段映射。
 
+## 阶段一已完成（SDD，2026-09-06）
+
+分支 `feat/phase1-channel-registry`，6 个 TDD 任务全部通过任务级审查 + 整分支最终审查（结论：可合并）。`go test ./...`（含 `tests/integration`）全绿、`gofmt`/`go vet` 干净、微信行为逐字节不变。
+
+实现与计划的两处**经裁定的偏差**（均为更优/保行为）：
+- 微信登录 handler 未接线时保留**原有** `503 / not_configured / "weixin channel not configured"`（计划 787 行示例的 `channel_unavailable` 与"微信行为不变"铁律冲突，否决示例）。
+- weixin 的 blank import 放在 `internal/bootstrap/bootstrap.go`（非 `cmd/baize/main.go`）：`StartForTest`/集成测试只 import bootstrap，放 main 会导致测试/生产分叉；`wireChannels` 本身零 weixin 引用。
+- 新增 `Descriptor.EnabledByDefault`（weixin init 置 true）：替代在 bootstrap 写死 "weixin" 实现"config 未列默认渠道仍启用"，装配判定零硬编码。
+
+### 阶段二 backlog（最终审查 Minor，不阻塞阶段一）
+
+1. **渠道 HTTP 设置面自注册**：`internal/api/server.go` 仍硬编码 5 条 weixin 路由注册。给 `Descriptor` 加可选 `RegisterRoutes(mux, handle)` 钩子，让带 login/settings 端点的渠道也能零改 `server.go`。（进程外渠道用不上，属 DX 打磨。）
+2. `internal/channel/outbound.go:56` 裸渠道（无 `Source()`）回退分支仅测试夹具可达——加注释点明，或改为不校验 source。
+3. `internal/channel/weixin/channel.go`：`openFromConfig` 与 `Bootstrap` 各 `LoadCreds` 一次（幂等冗余磁盘读）——统一由 Bootstrap 加载。
+4. `cmd/baize/main.go:13` 冗余 weixin blank import（bootstrap 已注册）可删；`registry.go` Register 注释 "blank import in cmd/baize" 更新为 "bootstrap/main package"。
+5. `internal/channel/outbound.go:94/118` 注释仍写 "weixin peer"，改为 "channel peer"。
+6. `internal/api/channels.go` `RegisterChannel` 守卫只判 `Name==""`，改 `strings.TrimSpace`。
+7. config 边角：`channels: []` 与省略段不可区分（都全装配）；重复 `type` 条目静默覆盖；`ChannelConfig.Enabled` 注释易误读（声明式下列出但不写 `enabled:true` 不装配）——阶段二可用 `*bool` 区分 unset/false、对未知/重复 type 打日志。
+8. Linux CI 补一次 `go test -race`（Windows 无 cgo 未跑；新增共享状态均走既有 mutex，锁顺序已核对无环）。
+
 
 
 

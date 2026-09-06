@@ -21,7 +21,6 @@ import (
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/channel"
-	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -142,14 +141,22 @@ type Server struct {
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
 
-	// Weixin channel settings API (login / logout / settings). Optional;
-	// nil ILink means routes return 503. Set by bootstrap or tests (Fake).
-	WeixinILink    weixin.ILink
-	WeixinChannel  *weixin.Channel
-	WeixinRuntime  *channel.Runtime
-	WeixinCredsDir string          // default ./data/channels/weixin
-	WeixinRunCtx   context.Context // long-lived ctx for Channel.Start; nil => Background
-	weixinMu       sync.Mutex
+	// Outbound is the channel used to deliver mirrored UI/API user turns and
+	// succeeded assistant replies to channel peers. It may be a concrete
+	// *weixin.Channel (single-channel deployments/tests) or a *channel.Router
+	// that dispatches by conversation meta.Source. nil = no mirroring.
+	Outbound       channel.Channel
+	OutboundExtras func(conversationID string) map[string]string
+
+	// channels is the per-channel runtime handle table, keyed by channel name
+	// (e.g. "weixin"). Channel-specific handlers look their handle up by name
+	// and type-assert the concrete channel. Guarded by channelsMu; only map
+	// reads/writes happen under the lock (never network/long operations).
+	channelsMu sync.RWMutex
+	channels   map[string]*ChannelHandle
+
+	// weixinMu serializes weixin login/logout/settings reconciliation.
+	weixinMu sync.Mutex
 
 	mux *http.ServeMux
 }

@@ -23,7 +23,10 @@ import (
 	"github.com/rebornace/baize/internal/blob"
 	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/channel"
-	"github.com/rebornace/baize/internal/channel/weixin"
+	// Built-in default channel: registers its Descriptor via init() so
+	// wireChannels discovers it generically. Additional in-tree channels add
+	// their own blank import in cmd/baize/main.go without touching bootstrap.
+	_ "github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -418,9 +421,23 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	if dir := dataDir(cfg); dir != "" {
 		srv.DataDir = dir
 	}
-	if err := wireWeixinChannel(srv, st, engine, messages, provider, closer); err != nil {
+	// Long-lived context for channel inbound loops; cancelled first on
+	// shutdown (per-channel Stop closures run after and drain their loops).
+	runCtx, runCancel := context.WithCancel(context.Background())
+	closer.stops = append(closer.stops, runCancel)
+	if _, err := wireChannels(channelDeps{
+		srv:            srv,
+		st:             st,
+		messages:       messages,
+		engine:         engine,
+		provider:       provider,
+		defaultAgentID: srv.DefaultAgentID,
+		runCtx:         runCtx,
+		closer:         closer,
+		cfg:            cfg,
+	}); err != nil {
 		_ = closer.Close()
-		return nil, nil, fmt.Errorf("wire weixin channel: %w", err)
+		return nil, nil, fmt.Errorf("wire channels: %w", err)
 	}
 
 	// 装配 middleware 驱动（队列/事件总线/限流）。此后三个入队点（HTTP
@@ -554,41 +571,75 @@ func s3CredFromEnv(env string) string {
 	return os.Getenv(env)
 }
 
-func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, messages conversation.Store, provider llm.Provider, closer *storeAndMCPCloser) error {
-	credsDir := api.DefaultWeixinCredsDir
-	settings, err := api.LoadWeixinChannelSettings(credsDir)
-	if err != nil {
-		return err
-	}
+// channelDeps carries the shared assembly dependencies into the generic
+// channel wiring loop. Each Bootstrapper channel builds its own Runtime from
+// these via channel.BuildDeps.
+type channelDeps struct {
+	srv            *api.Server
+	st             store.Store
+	messages       conversation.Store
+	engine         *run.Engine
+	provider       llm.Provider
+	defaultAgentID string
+	runCtx         context.Context
+	closer         *storeAndMCPCloser
+	cfg            config.Config
+}
 
-	assignee := strings.TrimSpace(settings.Assignee)
-	if assignee == "" {
-		assignee = "channel:weixin"
-	}
-	agentID := strings.TrimSpace(settings.AgentID)
-	if agentID == "" {
-		agentID = srv.DefaultAgentID
-	}
-
-	meta, ok := messages.(conversation.MetaStore)
+// wireChannels iterates every registered channel Descriptor, builds the
+// channel, and assembles it: channels implementing channel.Bootstrapper build
+// their own Runtime (from persisted per-channel settings), are added to the
+// outbound router, and conditionally start their inbound loop. The router is
+// wired as the single Outbound/OutboundExtras for both the api server and the
+// run engine; non-Bootstrapper channels are registered for future use only.
+//
+// When cfg.Channels is empty (section omitted), every registered channel is
+// wired — identical to the pre-declarative-config behavior. When cfg.Channels
+// lists entries, a channel is wired only if explicitly enabled:true, or if it
+// is not listed but is a built-in default (Descriptor.EnabledByDefault, e.g.
+// weixin) — this keeps partial declarative configs backward compatible. An
+// explicit enabled:false always wins. Per-entry config.creds_dir overrides the
+// descriptor DefaultCredsDir; other opaque config keys are passed through.
+func wireChannels(d channelDeps) (*channel.Router, error) {
+	meta, ok := d.messages.(conversation.MetaStore)
 	if !ok {
-		return fmt.Errorf("conversation store does not support meta")
+		return nil, fmt.Errorf("conversation store does not support meta")
+	}
+	supportsVision := d.provider != nil && d.provider.SupportsVision()
+
+	enabled := map[string]bool{}
+	overrides := map[string]map[string]string{}
+	declarative := len(d.cfg.Channels) > 0
+	for _, cc := range d.cfg.Channels {
+		name := strings.TrimSpace(cc.Type)
+		if name == "" {
+			continue
+		}
+		enabled[name] = cc.Enabled
+		if len(cc.Config) > 0 {
+			overrides[name] = cc.Config
+		}
+	}
+	channelEnabled := func(desc channel.Descriptor) bool {
+		if !declarative {
+			return true
+		}
+		if on, listed := enabled[desc.Name]; listed {
+			return on
+		}
+		// Not listed: keep built-in defaults wired (back-compat).
+		return desc.EnabledByDefault
 	}
 
-	supportsVision := false
-	if provider != nil {
-		supportsVision = provider.SupportsVision()
-	}
-
-	rt := &channel.Runtime{
-		Runs:           st,
+	router := channel.NewRouter()
+	deps := channel.BuildDeps{
+		Store:          d.st,
 		Meta:           meta,
-		Messages:       messages,
-		Assignee:       assignee,
-		DefaultAgentID: agentID,
+		Messages:       d.messages,
+		DefaultAgentID: d.defaultAgentID,
 		SupportsVision: supportsVision,
 		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
-			srv.Dispatch(context.Background(), middleware.Job{
+			d.srv.Dispatch(context.Background(), middleware.Job{
 				RunID:     runRec.ID,
 				Kind:      middleware.KindRun,
 				AgentID:   runRec.AgentID,
@@ -598,45 +649,69 @@ func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, mess
 			return nil
 		},
 		ResumeHITL: func(ctx context.Context, runID string, approve bool, comment string) error {
-			return engine.ContinueFromHITL(ctx, runID, run.Decision{Approve: approve, Comment: comment})
+			return d.engine.ContinueFromHITL(ctx, runID, run.Decision{Approve: approve, Comment: comment})
 		},
 	}
 
-	accountID, token, credErr := weixin.LoadCreds(credsDir)
-	if credErr != nil {
-		accountID, token = "", ""
-	}
-	ilink := weixin.NewClient("", nil)
-	ch := weixin.New(ilink, rt, accountID, token)
-	ch.SetCredsDir(credsDir)
-	ch.SetAllowlist(settings.Allowlist)
-
-	runCtx, cancel := context.WithCancel(context.Background())
-	closer.stops = append(closer.stops, func() {
-		cancel()
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer stopCancel()
-		_ = ch.Stop(stopCtx)
-	})
-
-	srv.WeixinILink = ilink
-	srv.WeixinChannel = ch
-	srv.WeixinRuntime = rt
-	srv.WeixinCredsDir = credsDir
-	srv.WeixinRunCtx = runCtx
-
-	engine.Meta = meta
-	engine.Outbound = ch
-	engine.OutboundExtras = rt.OutboundExtras
-
-	if credErr == nil && settings.Enabled {
-		if err := ch.Start(runCtx); err != nil {
-			log.Printf("weixin channel: start skipped: %v", err)
-		} else {
-			log.Printf("weixin channel: started (creds_dir=%s)", credsDir)
+	for _, desc := range channel.Descriptors() {
+		if !channelEnabled(desc) {
+			log.Printf("%s channel: disabled by config; skipped", desc.Name)
+			continue
 		}
+		// Merge descriptor default creds dir with declarative override;
+		// other opaque config keys (base_url...) pass through verbatim.
+		chCfg := channel.Config{"creds_dir": desc.DefaultCredsDir}
+		for k, v := range overrides[desc.Name] {
+			chCfg[k] = v
+		}
+		ch, err := desc.Build(chCfg)
+		if err != nil {
+			return nil, fmt.Errorf("open channel %s: %w", desc.Name, err)
+		}
+		handle := &api.ChannelHandle{
+			Name:     desc.Name,
+			Channel:  ch,
+			CredsDir: chCfg["creds_dir"],
+			RunCtx:   d.runCtx,
+		}
+
+		bs, isBoot := ch.(channel.Bootstrapper)
+		if isBoot {
+			rt, dir, start, err := bs.Bootstrap(deps)
+			if err != nil {
+				return nil, fmt.Errorf("bootstrap channel %s: %w", desc.Name, err)
+			}
+			handle.Runtime = rt
+			handle.CredsDir = dir
+			router.Add(ch)
+			router.BindRuntime(rt)
+
+			// Shutdown: Stop closures run in reverse registration order.
+			stopCh := ch
+			d.closer.stops = append(d.closer.stops, func() {
+				stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = stopCh.Stop(stopCtx)
+			})
+
+			if start {
+				if err := ch.Start(d.runCtx); err != nil {
+					log.Printf("%s channel: start skipped: %v", desc.Name, err)
+				} else {
+					log.Printf("%s channel: started (creds_dir=%s)", desc.Name, dir)
+				}
+			}
+		}
+
+		d.srv.RegisterChannel(handle)
 	}
-	return nil
+
+	d.srv.Outbound = router
+	d.srv.OutboundExtras = router.Extras
+	d.engine.Meta = meta
+	d.engine.Outbound = router
+	d.engine.OutboundExtras = router.Extras
+	return router, nil
 }
 
 func dataDir(cfg config.Config) string {

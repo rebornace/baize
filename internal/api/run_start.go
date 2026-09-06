@@ -55,7 +55,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 			Content: in.Input,
 			RunID:   runRec.ID,
 		})
-		s.deliverWeixinUserOutbound(ctx, conv, in.Input)
+		s.deliverUserOutbound(ctx, conv, in.Input)
 	}
 
 	for _, ev := range in.PreEvents {
@@ -77,10 +77,12 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	return s.Store.GetRun(runRec.ID)
 }
 
-// deliverWeixinUserOutbound mirrors a UI/API user turn to the weixin peer when
-// the conversation is channel-backed. No-op for ui-only conversations.
-func (s *Server) deliverWeixinUserOutbound(ctx context.Context, convID, text string) {
-	if s == nil || s.WeixinChannel == nil || strings.TrimSpace(text) == "" || strings.TrimSpace(convID) == "" {
+// deliverUserOutbound mirrors a UI/API user turn to the channel peer when the
+// conversation is channel-backed. Outbound may be a concrete channel (single
+// channel deployment) or a *channel.Router; channel.DeliverUserText resolves
+// the child channel by meta.Source. No-op for ui-only conversations.
+func (s *Server) deliverUserOutbound(ctx context.Context, convID, text string) {
+	if s == nil || s.Outbound == nil || strings.TrimSpace(text) == "" || strings.TrimSpace(convID) == "" {
 		return
 	}
 	ms := s.metaStore()
@@ -92,8 +94,8 @@ func (s *Server) deliverWeixinUserOutbound(ctx context.Context, convID, text str
 		return
 	}
 	var extras map[string]string
-	if s.WeixinRuntime != nil {
-		extras = s.WeixinRuntime.OutboundExtras(convID)
+	if s.OutboundExtras != nil {
+		extras = s.OutboundExtras(convID)
 	}
-	channel.DeliverUserText(ctx, s.WeixinChannel, meta, text, extras)
+	channel.DeliverUserText(ctx, s.Outbound, meta, text, extras)
 }
