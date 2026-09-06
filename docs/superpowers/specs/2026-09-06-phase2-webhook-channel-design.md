@@ -1,18 +1,26 @@
-# 阶段二设计：进程外 webhook 渠道（IM 插件，任意语言、独立部署）
+# 阶段二设计：进程外 webhook 渠道（统一渠道机制，微信也迁至适配器）
 
 > 状态：设计稿（仅私有仓 docs/superpowers，不导出公开仓）
 > 日期：2026-09-06
 > 前置：阶段一「渠道注册表化」已合并（Descriptor 注册表 / 出站 Router / api 渠道句柄表 / bootstrap 通用 `wireChannels` / config 声明式启用）。
 > 关联：`docs/superpowers/specs/2026-09-06-plugin-decoupling-architecture.md` 阶段二；`docs/superpowers/plans/2026-09-06-phase1-channel-registry.md`。
 
-## 0. 最高约束（铁律）
+## 0. 终态与最高约束（铁律）
 
-**微信（weixin）现有功能与行为零丢失、零回归。** 本阶段所有装配/配置改动必须保证：
+**终态：只有一套渠道机制。** 所有 IM 渠道（含微信）都是"通用 webhook 渠道实例 + 独立适配器进程"。阶段二结束后 baize 核心**不再保留进程内 weixin 渠道这个特例**——`internal/channel/weixin/` 的 ilink 私有协议实现迁移到同仓适配器 `cmd/weixin-adapter`，核心内删除进程内 weixin 渠道（复用的纯逻辑除外）。飞书/钉钉/Slack 与微信在机制上完全平权，只是各自的适配器进程不同。
 
-- 省略 `channels:` 配置段时，装配结果与阶段一完全一致（装配全部已注册且 `EnabledByDefault=true` 的渠道 = weixin）。
-- 微信的登录 / 启停 / 白名单入站强制 / `running`/`reason` 回显 / 出站【客服】【助手】前缀 / HITL 审批续跑 / UI 操作员镜像 / context_token 出站 / convID 格式 `weixin:<account>:<peer>` / meta.Source `"weixin"`，全部由既有测试锁定且全绿。
-- 微信的 HTTP 设置面（`server.go` 里 5 条 weixin 路由）**本阶段不迁移**到新的路由钩子，保持原样（避免行为变更）；钩子是**可选接口**，weixin 不实现即不受影响。
-- `wireChannels` 改造为"按实例遍历"时，单渠道/省略配置路径必须逐字节等价；以 `tests/integration` + `api/server_channel_weixin_test.go` + `channel/weixin/*_test.go` 全绿为门槛。
+**微信功能零丢失、零回归（贯穿整个迁移，最高优先级）。** 迁移必须逐项保持现有能力与运营体验：
+
+- 扫码登录（运营在 baize 管理页发起 → 显示二维码/票据 → 适配器轮询登录态 → 成功落凭据）、登出、凭据本地持久化、登录态 `running`/`reason`/`login_required` 回显。
+- 长轮询收消息、白名单入站强制（非白名单 peer 丢弃）、allowlist 热更新。
+- 出站：`【客服】`/`【助手】` 前缀、HITL 审批通知与续跑（IM 内回复"同意/拒绝"）、UI 操作员消息镜像、context_token 会话上下文透传。
+- 入站媒体（图片/文件下载 → 多模态/附件）；出站媒体投递。
+- convID 格式 `weixin:<account>:<peer>` 与历史会话 ID 兼容；meta.Source `"weixin"` 不变（历史会话不失联）。
+- 以 `tests/integration` + `api/server_channel_weixin_test.go` + `channel/weixin/*_test.go`（迁移为适配器契约测试）全绿为门槛；每一步迁移都有对等测试覆盖，不允许"迁完发现功能没了"。
+
+**分两步连续交付（都在阶段二内）：**
+- **2A 通用 webhook 渠道**：通用渠道类型 + 双向消息协议 + 渠道管理面协议 + 路由自注册 + 多实例 + 媒体 + 示例适配器 `examples/im-adapter`。此时进程内 weixin 仍在、行为不变（系统同时存在旧 weixin 与新 webhook，互不影响）。
+- **2B 微信迁移**：把 ilink 实现搬入 `cmd/weixin-adapter`（实现消息 + 管理面协议），baize 核心删除进程内 weixin 渠道、改为装配一个 webhook 实例对接它；可选子进程托管让默认部署"装 baize 即用微信"。终态只剩一套机制。
 
 ## 1. 目标与非目标
 
@@ -22,9 +30,11 @@
 - 不做公共 Go SDK（阶段三，暂缓）。
 - 不做出站长轮询 pull 传输（本阶段定 push：baize 直推适配器）。
 - 不做持久化 outbox / 跨重启可靠投递（v1 用同步 + 有限重试；outbox 列后续增强）。
-- 不迁移微信路由到新钩子、不改微信任何行为。
-- 不实现真实飞书/钉钉/Slack API 对接——`examples/im-adapter` 只模拟与演示，真实 IM 适配是适配器作者的事。
+- 不实现真实飞书/钉钉/Slack API 对接——`examples/im-adapter` 只模拟与演示，真实第三方 IM 适配是适配器作者的事（微信适配器除外，微信由本仓 2B 提供）。
 - 不动 inbox（系统告警 / HITL 审批回调继续走 `POST /v0/inbox/{id}`，职责不变）。
+- 不做适配器市场/动态加载/远程安装等运营化能力；适配器通过配置声明接入。
+
+**2A 阶段约束：** 2A 交付时进程内 weixin 渠道**保持原样、行为不变**（此时系统并存旧 weixin 与新 webhook，两者不互相影响）；微信的迁移与旧包删除发生在 2B。
 
 ## 2. 总体架构
 
@@ -81,6 +91,10 @@ type ChannelConfig struct {
 | `assignee` | 是 | 会话 owner（操作员/用户 ID） |
 | `agent_id` | 否 | 默认 agent；缺省用系统默认 |
 | `supports_vision` | 否 | `"true"` 时入站图片转多模态 ContentPart |
+| `allowlist` | 否 | 逗号分隔的允许 peer.id 列表；非空时仅白名单入站（通用白名单，2B 微信白名单上移到此） |
+| `admin_url` | 否 | 适配器管理端点基址（如 `http://127.0.0.1:8090`）；存在则 baize 渠道设置页代理 `/admin/*`（2B 微信需要） |
+| `adapter_command` | 否 | 适配器可执行文件/命令行；配 `adapter_autostart: "true"` 时 baize 自动拉起子进程（2B） |
+| `adapter_autostart` | 否 | `"true"` 时 baize 托管适配器子进程生命周期（2B） |
 | 其余键 | 否 | 不透明，保留（可透传/未来扩展） |
 
 > **account（IM 账号/机器人标识，convID 第二段）不来自 config，而来自入站 payload 的 `account` 字段**（适配器最清楚消息属于哪个机器人；一个适配器甚至可承载多个机器人账号）。入站 `account` 必填，用于拼 `ConvID(source, account, peer)`。这与微信 accountID 来自登录态同理。
@@ -192,6 +206,28 @@ baize 对 `outbound_url` 发签名 POST。
 - 适配器返回 2xx 表示已接收；baize `SendText/SendMedia` 同步 POST，超时 10s，失败重试 3 次（指数退避，如 1s/2s/4s）；最终失败返回 error（引擎侧现有逻辑记日志，不中断 run）。
 - 适配器侧职责：验签 → 按 `peer.id` / `context_token` 调对应 IM API 发文本/上传媒体 → 返回 2xx。
 
+### 5.3 渠道管理面协议（适配器管理 API；2B 微信运营能力需要）
+
+微信的扫码登录/登出/启停/登录态回显目前是 baize 进程内逻辑。外迁后这些由适配器承担，baize 渠道设置页**通用代理**到适配器，运营体验与 URL 不变。
+
+适配器暴露管理端点（baize → 适配器，同样 HMAC 签名头；适配器本地监听，仅 baize 可达）：
+
+| 端点 | 作用 | 微信 ilink 对应 |
+|---|---|---|
+| `GET  /admin/status` | 登录/运行态：`{running, reason, login_required, has_credentials, account_id?}` | HasCredentials / 轮询态 |
+| `POST /admin/login/start` | 发起登录，返回 `{ticket, qr_url, qr_image?}` | apply 二维码票据 |
+| `GET  /admin/login/status?ticket=` | 轮询登录进度 `{status: waiting/scanned/confirmed/logged_in/failed}` | 轮询二维码状态 |
+| `POST /admin/logout` | 清凭据、停轮询 | 登出/清 creds |
+| `POST /admin/start` / `POST /admin/stop` | 启用/停用渠道轮询 | 渠道启停 |
+
+凭据由适配器持久化在自己的 creds 目录（迁移时把现有 `data/channels/weixin` 凭据带到适配器可读位置）。
+
+**职责划分：**
+- baize 侧（通用，不针对微信）：`assignee`、`agent_id`、`supports_vision`、`allowlist`（白名单入站强制在 baize 入站 handler 通用执行，见 §6）、会话/路由。
+- 适配器侧（IM 专有）：登录/凭据/二维码、长轮询收消息、调 IM API 发消息/传媒体、IM 账号标识。
+
+**baize 通用渠道管理代理：** api 层提供控制面鉴权下的通用渠道管理路由 ` /v0/settings/channels/{name}/...`，按 `{name}` 找到渠道句柄；若该渠道实现管理接口（webhook 渠道实现，转发到适配器 `/admin/*`），则代理请求并回传响应。**微信默认实例名取 `weixin`、source `weixin`**，使现有管理 URL `/v0/settings/channels/weixin/*` 与前端页面**完全不变**，微信专用 handler 被通用代理取代后响应 JSON 字段保持一致（`enabled/running/reason/credentials/allowlist/login_url/polling/login_required`）。2A 阶段 webhook 渠道可先不实现管理面（示例适配器不需要登录）；管理面协议在 2B 随微信迁移落地并被微信设置页测试锁定。
+
 ## 6. 媒体全量双向（文本 + 图片 + 任意文件）
 
 与微信能力对等（微信入站支持图片/文件下载→多模态/附件；出站 SendMedia 微信当前是占位，webhook 渠道实现真实投递）。
@@ -233,24 +269,66 @@ baize 对 `outbound_url` 发签名 POST。
   - 声明式 config 配 2 个 webhook 实例 → 装配 2 个渠道、Router 按 source 各自路由、各自入站路由经 `RegisterRoute` 挂载（httptest 打通入站→引擎）。
   - **微信回归**：省略 channels 段 → 仅装配 weixin 且行为不变；声明式段含 `type: weixin` → 仍正确装配。
 - **端到端**：`tests/integration` 用 `examples/im-adapter` 契约（或等价 httptest 适配器）跑文本+图片双向闭环：适配器推入站 → baize 建 run（图片进多模态）→ 回复经出站回到适配器。
-- **全量门槛**：`go build ./...`、`go test ./...`（含 integration）、`gofmt -l internal/`、`go vet ./internal/...` 全绿；微信既有测试零修改通过。
+- **全量门槛**：`go build ./...`、`go test ./...`（含 integration）、`gofmt -l internal/`、`go vet ./internal/...` 全绿；2A 阶段微信既有测试零修改通过；2B 阶段微信测试改为针对适配器契约的对等测试。
+
+## 9b. 2B：微信适配器迁移与子进程托管
+
+**目标：** 微信从进程内渠道变为"webhook 实例 + `cmd/weixin-adapter` 进程"，核心删除进程内 weixin 渠道，终态一套机制。
+
+**适配器 `cmd/weixin-adapter`（同仓独立二进制，可复用 ilink 代码，不重写）：**
+- 复用现有 `internal/channel/weixin/` 的 ilink 客户端、长轮询、二维码登录、CDN 媒体下载、凭据/settings 读写逻辑——把这些从"渠道实现"重构为"适配器内部库"（包可保留为库，但不再 `channel.Register`、不再被核心装配）。
+- 长轮询收到消息 → 组装入站 payload（文本 + 媒体；媒体下载后 base64 或给本地 URL）→ 签名 POST baize `/v0/channels/weixin/inbound`。
+- 暴露 `/outbound`（收 baize 出站 → ilink SendMessage/传媒体，带 context_token）与 `/admin/*`（扫码登录/状态/登出/启停）。
+- 凭据持久化在适配器可读的 creds 目录；**迁移时复用现有 `data/channels/weixin` 凭据，无需重新扫码**。
+
+**白名单职责调整：** 白名单入站强制从 weixin 进程内逻辑**上移为 baize webhook 入站 handler 的通用能力**（按实例 `allowlist` 配置过滤 `peer.id`）；适配器不做白名单、全量转发，由 baize 丢弃非白名单。allowlist 仍由 baize 渠道设置页管理（通用渠道设置）。
+
+**子进程托管（可选，默认部署"装 baize 即用微信"）：**
+- webhook 实例 config 支持 `adapter_command`（如 `cmd/weixin-adapter` 的路径/参数）与 `adapter_autostart: true`。
+- baize 在装配/Start 该实例时 `exec` 拉起适配器子进程，等待其 `/healthz` 就绪；Stop/关停时终止子进程（纳入现有 closer LIFO）。适配器监听本地回环端口，`outbound_url` 指向它；适配器入站 POST 到 baize（同机即 `http://127.0.0.1:<port>`）。
+- 适配器也可独立部署（`adapter_autostart: false`，手工指定 `outbound_url`），与未来第三方 IM 适配器同等待遇。
+
+**核心侧删除/替换（2B 收尾）：**
+- `internal/channel/weixin/` 不再注册渠道（移除 `init()` 的 `channel.Register` 与 `Bootstrap`）；ilink 等逻辑仅供 `cmd/weixin-adapter` 使用（或移动到 `cmd/weixin-adapter/internal/`）。
+- `api/server_channel_weixin.go` 微信专用 handler 删除，由 §5.3 通用渠道管理代理取代（URL/JSON 字段不变）。
+- `configs/minimal.yaml` 默认渠道改为"webhook 类型的 weixin 实例 + autostart 适配器"，保持默认部署行为等价。
+
+**微信功能对等回归清单（2B 必须逐项有测试）：** 扫码登录全流程（start→ticket/qr→轮询→logged_in 落凭据）、登录态 `running/reason/login_required`、登出、启停、白名单非白名单丢弃 + allowlist 热更新、出站【客服】【助手】前缀、HITL 审批通知 + IM 内回复续跑、UI 操作员镜像、context_token 透传、入站图片多模态/附件、出站媒体、历史会话 ID `weixin:...` 与 meta.Source 兼容。
 
 ## 10. 涉及文件（预估）
 
-- 新建 `internal/channel/webhook/`：`channel.go`（Channel/Bootstrapper/Source/注册）、`config.go`（实例配置解析）、`protocol.go`（DTO + 签名，复用/对齐 inbox verify）、`inbound.go`（入站 handler、验签、幂等、URL 下载）、`outbound.go`（出站 HTTP 客户端、重试）、`*_test.go`。
-- 修改 `internal/channel/bootstrap.go`：`BuildDeps` 加 `Routes RouteRegistrar`；`channel.go` 或新文件加 `RouteRegistrar` 接口。
-- 修改 `internal/api/server.go`：实现 `RegisterRoute`（转发 mux）。
+**2A（通用 webhook 渠道）：**
+- 新建 `internal/channel/webhook/`：`channel.go`（Channel/Bootstrapper/Source/注册）、`config.go`（实例配置解析）、`protocol.go`（消息 DTO + 签名）、`inbound.go`（入站 handler、验签、幂等、URL 下载、通用白名单过滤）、`outbound.go`（出站 HTTP 客户端、重试）、`admin.go`（管理面代理客户端，2B 用，2A 可先留接口）、`*_test.go`。
+- 新建共享签名小包（如 `internal/webhooksig/`）：从 `internal/inbox/verify.go` 抽出 HMAC 签名/验签/时间窗，inbox 与 webhook 共用。
+- 修改 `internal/channel/bootstrap.go`：`BuildDeps` 加 `Routes RouteRegistrar`；`channel.go` 加 `RouteRegistrar` 接口。
+- 修改 `internal/api/server.go`：实现 `RegisterRoute`（转发 mux）；入站端点豁免控制面 token（渠道 HMAC 鉴权）。
+- 修改 `internal/api/`：通用渠道管理代理路由 `/v0/settings/channels/{name}/...`（2A 可先落地路由与代理框架，webhook 渠道 2B 接上适配器 admin）。
 - 修改 `internal/config/config.go`：`ChannelConfig` 加 `Name` 字段 + 测试。
 - 修改 `internal/bootstrap/bootstrap.go`：`wireChannels` 声明式模式改为按实例遍历（`channel.Open(type, cfg)` 建实例）；省略段路径保持不变；传 `Routes` 进 BuildDeps。
 - 新建 `examples/im-adapter/`：`main.go`、`handler.go`、`hmac.go`、`README.md`。
-- 新建集成测试 `tests/integration/webhook_channel_test.go`（或等价）。
-- 文档：公开契约文档放 `docs/`（开源可见），本设计文档留 `docs/superpowers/specs/`（私有）。
+- 新建集成测试 `tests/integration/webhook_channel_test.go`。
+
+**2B（微信迁移）：**
+- 新建 `cmd/weixin-adapter/`：独立 main，复用/迁入 ilink 客户端、长轮询、扫码登录、媒体下载、凭据读写；实现 `/outbound`、`/admin/*`、入站 POST 到 baize、`/healthz`。
+- 把 `internal/channel/weixin/` 的 ilink 逻辑重构为适配器可复用的库（移除 `channel.Register`/`Bootstrapper`，不再被核心装配）。
+- webhook 渠道接管子进程托管（`adapter_command`/`adapter_autostart`，`exec` + 健康检查 + closer 关停）。
+- 删除 `api/server_channel_weixin.go` 微信专用 handler（由通用管理代理取代）；删除核心对进程内 weixin 渠道的装配。
+- `configs/minimal.yaml`：默认渠道改为 webhook 类型的 `weixin` 实例 + autostart。
+- 微信测试迁移为适配器契约对等测试（功能对等回归清单逐项覆盖）。
+
+**文档：** 公开适配器契约文档放 `docs/`（开源可见）；本设计文档留 `docs/superpowers/specs/`（私有）。
 
 ## 11. 验收标准
 
-1. 新增一个 IM 无需改 baize 核心：部署适配器 + 加一段 `channels:` 配置即可，`wireChannels`/`outbound`/`runtime`/`server.go` 通用路径零改动（server.go 仅新增通用 `RegisterRoute` 方法，无 webhook 专用逻辑）。
-2. 多实例：配 2 个 webhook 实例，文本/图片双向互不串话，会话按 source 隔离。
-3. 能力对等微信：入站文本/图片/文件 → 多模态/附件；HITL 审批在 IM 内可续跑；助手回复/客服镜像/通知经出站到达；context_token 透传。
+**2A：**
+1. 新增一个 IM 无需改 baize 核心：部署适配器 + 加一段 `channels:` 配置即可；`wireChannels`/`outbound`/`runtime` 通用路径零 webhook 专用逻辑（`server.go` 仅新增通用 `RegisterRoute` 与通用渠道管理代理框架）。
+2. 多实例：配 2 个 webhook 实例，文本/图片/文件双向互不串话，会话按 source 隔离。
+3. 能力对等：入站文本/图片/文件 → 多模态/附件；HITL 审批在 IM 内可续跑；助手回复/客服镜像/通知经出站到达；context_token 透传；通用白名单入站过滤生效。
 4. `examples/im-adapter` 独立进程、仅标准库、不 import baize，端到端跑通文本+图片双向。
-5. **微信零回归**：省略配置与显式配置 weixin 两路径下，微信登录/启停/白名单/running/reason/前缀/HITL/UI 镜像/convID 全部由既有测试锁定且全绿。
-6. `go test ./...` 全绿、gofmt/vet 干净。
+5. 2A 阶段微信（仍为进程内）零回归：既有微信测试全绿、行为不变。
+
+**2B：**
+6. 微信运行在适配器上：`cmd/weixin-adapter` 经 webhook 渠道接入，扫码登录/登出/启停/登录态回显/白名单/收发消息/媒体/context_token/HITL/UI 镜像**逐项功能对等**（回归清单全绿）。
+7. baize 核心无进程内 weixin 渠道特例：`internal/channel/weixin` 不再注册/装配，`server_channel_weixin.go` 删除，通用管理代理接管且管理 URL/JSON 字段与前端页面不变；默认部署（autostart）行为等价、现有凭据无需重新扫码。
+8. 终态只有一套渠道机制：所有 IM（含微信）都是 webhook 实例 + 适配器。
+9. `go test ./...`（含 integration）全绿、gofmt/vet 干净。
