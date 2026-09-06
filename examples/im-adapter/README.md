@@ -39,4 +39,6 @@ baize 进程外 webhook 渠道的最小参考实现（Go 标准库，无第三�
   `X-Baize-Channel-Timestamp`（unix 秒）、`X-Baize-Channel-Signature`
   （`v1=` + HMAC-SHA256(secret, timestamp+"."+body)）。
 - 出站（baize→适配器）：`POST outbound_url`，同样的签名头；适配器必须验签。
+- 适配器验签时必须同时校验时间戳新鲜度（±300s）：出站方向 baize 是发送方，
+  重放防护只能靠适配器自己，时间戳解析失败或偏差超过 300 秒的请求应拒绝（401）。
 - 时间窗 ±300s；重放/过期请求被拒。

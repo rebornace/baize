@@ -27,6 +27,11 @@ const (
 	hTimestamp = "X-Baize-Channel-Timestamp"
 	hSignature = "X-Baize-Channel-Signature"
 	hProtocol  = "X-Baize-Protocol"
+
+	// maxSkew is the allowed clock difference between baize and the adapter.
+	// Requests whose timestamp is older or newer than this are rejected to
+	// prevent replay of captured outbound requests.
+	maxSkew = 300 * time.Second
 )
 
 func sign(secret, timestamp string, body []byte) string {
@@ -49,7 +54,17 @@ func main() {
 
 	http.HandleFunc("/outbound", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 10<<20))
-		if !verify(*secret, r.Header.Get(hTimestamp), body, r.Header.Get(hSignature)) {
+		tsStr := r.Header.Get(hTimestamp)
+		ts, err := strconv.ParseInt(tsStr, 10, 64)
+		if err != nil {
+			http.Error(w, "bad timestamp", http.StatusUnauthorized)
+			return
+		}
+		if skew := time.Since(time.Unix(ts, 0)); skew > maxSkew || skew < -maxSkew {
+			http.Error(w, "stale timestamp", http.StatusUnauthorized)
+			return
+		}
+		if !verify(*secret, tsStr, body, r.Header.Get(hSignature)) {
 			http.Error(w, "bad signature", http.StatusUnauthorized)
 			return
 		}
