@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	defaultCredsDir      = "./data/channels/weixin"
 	defaultEmptyPollWait = time.Second
 )
 
@@ -23,7 +22,7 @@ func init() {
 	channel.Register(channel.Descriptor{
 		Name:            SourceName,
 		Build:           openFromConfig,
-		DefaultCredsDir: defaultCredsDir,
+		DefaultCredsDir: DefaultCredsDir,
 	})
 }
 
@@ -143,10 +142,57 @@ func (c *Channel) HasCredentials() bool {
 // channel is retrieved generically from the channel handle table).
 func (c *Channel) ILink() ILink { return c.ilink }
 
+// Bootstrap builds the weixin Runtime from persisted settings, applies the
+// allowlist, loads credentials, and reports whether polling should start. It
+// is the channel-side half of the generic registry-driven assembly: the
+// bootstrap layer only supplies shared deps; all weixin-specific wiring lives
+// here. credsDir falls back to the package default when unset (tests).
+func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, bool, error) {
+	c.mu.Lock()
+	dir := strings.TrimSpace(c.credsDir)
+	c.mu.Unlock()
+	if dir == "" {
+		dir = DefaultCredsDir
+	}
+
+	settings, err := LoadSettings(dir)
+	if err != nil {
+		return nil, "", false, err
+	}
+	assignee := strings.TrimSpace(settings.Assignee)
+	if assignee == "" {
+		assignee = "channel:weixin"
+	}
+	agentID := strings.TrimSpace(settings.AgentID)
+	if agentID == "" {
+		agentID = deps.DefaultAgentID
+	}
+
+	rt := &channel.Runtime{
+		Runs:           deps.Store,
+		Meta:           deps.Meta,
+		Messages:       deps.Messages,
+		Assignee:       assignee,
+		DefaultAgentID: agentID,
+		SupportsVision: deps.SupportsVision,
+		AfterCreateRun: deps.AfterCreateRun,
+		ResumeHITL:     deps.ResumeHITL,
+	}
+	c.SetRuntime(rt) // pins rt.Source to SourceName
+	c.SetAllowlist(settings.Allowlist)
+
+	accountID, token, credErr := LoadCreds(dir)
+	if credErr == nil {
+		c.SetCredentials(accountID, token)
+	}
+	start := credErr == nil && settings.Enabled
+	return rt, dir, start, nil
+}
+
 func openFromConfig(cfg channel.Config) (channel.Channel, error) {
 	dir := strings.TrimSpace(cfg["creds_dir"])
 	if dir == "" {
-		dir = defaultCredsDir
+		dir = DefaultCredsDir
 	}
 	baseURL := strings.TrimSpace(cfg["base_url"])
 	ilink := NewClient(baseURL, nil)

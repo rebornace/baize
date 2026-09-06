@@ -325,8 +325,8 @@ func TestHandleInboundAttachmentUserParts(t *testing.T) {
 }
 
 func TestRegisterOpenList(t *testing.T) {
-	resetRegistryForTest()
-	t.Cleanup(resetRegistryForTest)
+	ResetForTest()
+	t.Cleanup(ResetForTest)
 
 	RegisterChannel("fake", func(cfg Config) (Channel, error) {
 		return &fakeChannel{name: "fake"}, nil

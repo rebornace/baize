@@ -5,27 +5,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/rebornace/baize/internal/channel/weixin"
 )
-
-const (
-	weixinSettingsFileName = "settings.json"
-	// DefaultWeixinCredsDir is the default on-disk location for weixin creds + settings.
-	DefaultWeixinCredsDir = "./data/channels/weixin"
-)
-
-// WeixinChannelSettings is persisted next to weixin creds (settings.json).
-type WeixinChannelSettings struct {
-	AgentID   string   `json:"agent_id"`
-	Allowlist []string `json:"allowlist"`
-	Assignee  string   `json:"assignee"`
-	Enabled   bool     `json:"enabled"`
-}
 
 type weixinLoginStartResponse struct {
 	Ticket string `json:"ticket"`
@@ -52,14 +36,14 @@ func (s *Server) weixinHandle() (*ChannelHandle, *weixin.Channel, bool) {
 }
 
 // credsDir returns the on-disk creds/settings dir for the handle, falling back
-// to the package default when unset.
+// to the weixin package default when unset.
 func (h *ChannelHandle) credsDir() string {
 	if h == nil {
-		return DefaultWeixinCredsDir
+		return weixin.DefaultCredsDir
 	}
 	dir := strings.TrimSpace(h.CredsDir)
 	if dir == "" {
-		return DefaultWeixinCredsDir
+		return weixin.DefaultCredsDir
 	}
 	return dir
 }
@@ -131,7 +115,7 @@ func (s *Server) applyWeixinLoginSuccess(accountID, token string) error {
 	// Respect the persisted enabled state: an admin who disabled the channel
 	// must not have the poll loop auto-started by a QR login. Credentials stay
 	// saved so a later PUT enabled:true (via applyWeixinSettings) can Start.
-	settings, err := loadWeixinSettings(dir)
+	settings, err := weixin.LoadSettings(dir)
 	if err != nil {
 		// Don't regress the login experience on a settings read failure:
 		// treat the channel as enabled and log a warning.
@@ -150,7 +134,7 @@ func (s *Server) handleWeixinLogout(w http.ResponseWriter, r *http.Request) {
 
 	// Preserve legacy behavior: even when the channel is not wired we still
 	// clear creds from the (default) dir and report logged_out.
-	dir := DefaultWeixinCredsDir
+	dir := weixin.DefaultCredsDir
 	if h, ch, ok := s.weixinHandle(); ok {
 		dir = h.credsDir()
 		if ch.IsStarted() {
@@ -169,11 +153,11 @@ func (s *Server) handleWeixinLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetWeixinSettings(w http.ResponseWriter, r *http.Request) {
-	dir := DefaultWeixinCredsDir
+	dir := weixin.DefaultCredsDir
 	if h, _, ok := s.weixinHandle(); ok {
 		dir = h.credsDir()
 	}
-	settings, err := loadWeixinSettings(dir)
+	settings, err := weixin.LoadSettings(dir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "read_failed", err.Error())
 		return
@@ -183,14 +167,14 @@ func (s *Server) handleGetWeixinSettings(w http.ResponseWriter, r *http.Request)
 	}
 	running, reason := s.weixinRuntimeState(settings)
 	writeJSON(w, http.StatusOK, weixinSettingsResponse{
-		WeixinChannelSettings: settings,
-		Running:               running,
-		Reason:                reason,
+		Settings: settings,
+		Running:  running,
+		Reason:   reason,
 	})
 }
 
 func (s *Server) handlePutWeixinSettings(w http.ResponseWriter, r *http.Request) {
-	var body WeixinChannelSettings
+	var body weixin.Settings
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
@@ -198,33 +182,33 @@ func (s *Server) handlePutWeixinSettings(w http.ResponseWriter, r *http.Request)
 	if body.Allowlist == nil {
 		body.Allowlist = []string{}
 	}
-	dir := DefaultWeixinCredsDir
+	dir := weixin.DefaultCredsDir
 	if h, _, ok := s.weixinHandle(); ok {
 		dir = h.credsDir()
 	}
-	if err := saveWeixinSettings(dir, body); err != nil {
+	if err := weixin.SaveSettings(dir, body); err != nil {
 		writeError(w, http.StatusInternalServerError, "write_failed", err.Error())
 		return
 	}
 	running, reason := s.applyWeixinSettings(body)
 	writeJSON(w, http.StatusOK, weixinSettingsResponse{
-		WeixinChannelSettings: body,
-		Running:               running,
-		Reason:                reason,
+		Settings: body,
+		Running:  running,
+		Reason:   reason,
 	})
 }
 
 // weixinSettingsResponse is the persisted settings plus the reconciled runtime
 // state. Returned by both GET (current state) and PUT (state just applied).
 type weixinSettingsResponse struct {
-	WeixinChannelSettings
+	weixin.Settings
 	Running bool   `json:"running"`
 	Reason  string `json:"reason,omitempty"` // "login_required" | "start_failed"
 }
 
 // weixinRuntimeState reports the channel's current running/reason without
 // changing it, so GET can show status on first load (not only after a PUT).
-func (s *Server) weixinRuntimeState(settings WeixinChannelSettings) (running bool, reason string) {
+func (s *Server) weixinRuntimeState(settings weixin.Settings) (running bool, reason string) {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
 	_, ch, ok := s.weixinHandle()
@@ -243,7 +227,7 @@ func (s *Server) weixinRuntimeState(settings WeixinChannelSettings) (running boo
 	return false, "start_failed"
 }
 
-func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bool, reason string) {
+func (s *Server) applyWeixinSettings(settings weixin.Settings) (running bool, reason string) {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
 	h, ch, ok := s.weixinHandle()
@@ -279,48 +263,4 @@ func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bo
 		_ = ch.Stop(stopCtx)
 	}
 	return false, ""
-}
-
-func loadWeixinSettings(dir string) (WeixinChannelSettings, error) {
-	path := filepath.Join(dir, weixinSettingsFileName)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return WeixinChannelSettings{Allowlist: []string{}, Enabled: true}, nil
-		}
-		return WeixinChannelSettings{}, err
-	}
-	var out WeixinChannelSettings
-	if err := json.Unmarshal(data, &out); err != nil {
-		return WeixinChannelSettings{}, err
-	}
-	if out.Allowlist == nil {
-		out.Allowlist = []string{}
-	}
-	return out, nil
-}
-
-// LoadWeixinChannelSettings reads settings.json from dir (defaults when missing).
-func LoadWeixinChannelSettings(dir string) (WeixinChannelSettings, error) {
-	return loadWeixinSettings(dir)
-}
-
-func saveWeixinSettings(dir string, settings WeixinChannelSettings) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, weixinSettingsFileName)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
 }

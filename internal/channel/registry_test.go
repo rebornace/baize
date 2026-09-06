@@ -25,8 +25,8 @@ func (s *stubChannel) SendMedia(context.Context, string, string, string, []byte,
 }
 
 func TestRegisterAndDescribe(t *testing.T) {
-	resetRegistryForTest()
-	t.Cleanup(resetRegistryForTest)
+	ResetForTest()
+	t.Cleanup(ResetForTest)
 
 	Register(Descriptor{
 		Name:            "stub",
@@ -56,8 +56,8 @@ func TestRegisterAndDescribe(t *testing.T) {
 }
 
 func TestRegisterChannelBackCompat(t *testing.T) {
-	resetRegistryForTest()
-	t.Cleanup(resetRegistryForTest)
+	ResetForTest()
+	t.Cleanup(ResetForTest)
 
 	RegisterChannel("legacy", func(Config) (Channel, error) { return &stubChannel{name: "legacy"}, nil })
 	if _, ok := Describe("legacy"); !ok {

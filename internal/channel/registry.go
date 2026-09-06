@@ -89,7 +89,9 @@ func Open(name string, cfg Config) (Channel, error) {
 	return d.Build(cfg)
 }
 
-func resetRegistryForTest() {
+// ResetForTest clears the registry. It is intended for tests that need a
+// deterministic descriptor table (e.g. the bootstrap package's wiring tests).
+func ResetForTest() {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	descs = map[string]Descriptor{}
