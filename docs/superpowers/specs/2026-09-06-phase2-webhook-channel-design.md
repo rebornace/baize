@@ -85,6 +85,7 @@ type ChannelConfig struct {
 | 键 | 必填 | 说明 |
 |---|---|---|
 | `source` | 是（缺省取实例 name） | convID 前缀 / meta.Source，如 `feishu`；同进程内唯一 |
+| `account` | 否（缺省取实例 name） | 本实例服务的 IM 账号/机器人标识（convID 第二段）。**一个 webhook 实例 = 一个 IM 账号**；多账号 = 多实例。出站 `SendText` 签名不携带 account，故 account 由实例配置提供，入站拼 convID 与出站 body 都用它 |
 | `secret` | 是 | 入站验签 HMAC 密钥（适配器→baize） |
 | `outbound_url` | 是 | 适配器出站端点（baize→适配器），如 `http://feishu-adapter:8080/outbound` |
 | `outbound_secret` | 否 | 出站签名密钥；缺省用 `secret` |
