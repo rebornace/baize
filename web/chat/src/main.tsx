@@ -8,6 +8,7 @@ import { McpSettings } from './pages/McpSettings'
 import { ModelSettings } from './pages/ModelSettings'
 import { OpenApiSettings } from './pages/OpenApiSettings'
 import { PluginSettings } from './pages/PluginSettings'
+import { RuntimeSettings } from './pages/RuntimeSettings'
 import { InboxSettings } from './pages/InboxSettings'
 import { WebhookSettings } from './pages/WebhookSettings'
 import { GateRoot } from './pages/GateRoot'
@@ -124,6 +125,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <StorageSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="runtime"
+              element={
+                <AdminOnly>
+                  <RuntimeSettings />
                 </AdminOnly>
               }
             />

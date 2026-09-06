@@ -48,6 +48,8 @@ export function WeixinChannelSettings() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
+  const [running, setRunning] = useState<boolean | null>(null)
+  const [runReason, setRunReason] = useState<string | null>(null)
 
   const [ticket, setTicket] = useState<string | null>(null)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
@@ -91,6 +93,11 @@ export function WeixinChannelSettings() {
     setAssignee(s.assignee ?? '')
     setAllowlistText(formatAllowlistText(s.allowlist))
     setEnabled(Boolean(s.enabled))
+    // running/reason are only present on the PUT (save) response.
+    if (typeof s.running === 'boolean') {
+      setRunning(s.running)
+      setRunReason(s.reason ?? null)
+    }
   }, [])
 
   const load = useCallback(async () => {
@@ -209,6 +216,18 @@ export function WeixinChannelSettings() {
       {loading && <p className="settings-muted">加载中…</p>}
       {error && <p className="settings-error">{error}</p>}
       {status && <p className="settings-muted">{status}</p>}
+      {running !== null && (
+        <p className="settings-muted">
+          运行状态：
+          {running ? (
+            <span className="settings-badge">轮询中</span>
+          ) : (
+            <span className="settings-badge">已停止</span>
+          )}
+          {runReason === 'login_required' && '（未登录：启用前请先扫码登录）'}
+          {runReason === 'start_failed' && '（启动失败，请检查日志）'}
+        </p>
+      )}
 
       <section className="weixin-login-block">
         <h2 className="settings-subheading">登录</h2>

@@ -21,7 +21,19 @@ describe('settingsNavItems', () => {
       '/settings/channels/weixin',
       '/settings/models',
       '/settings/storage',
+      '/settings/runtime',
     ])
+  })
+
+  it('admin includes 运行时 label', () => {
+    expect(settingsNavItems('admin').find((x) => x.to === '/settings/runtime')).toEqual({
+      to: '/settings/runtime',
+      label: '运行时',
+    })
+  })
+
+  it('operator does not see 运行时', () => {
+    expect(settingsNavItems('operator').some((x) => x.to === '/settings/runtime')).toBe(false)
   })
 
   it('admin includes 模型 label', () => {

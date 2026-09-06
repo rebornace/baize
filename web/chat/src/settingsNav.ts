@@ -23,6 +23,7 @@ export function settingsNavItems(role: SettingsRole): SettingsNavItem[] {
         { to: '/settings/channels/weixin', label: '渠道' },
         { to: '/settings/models', label: '模型' },
         { to: '/settings/storage', label: '存储' },
+        { to: '/settings/runtime', label: '运行时' },
       ]
     default: {
       const _exhaustive: never = role
