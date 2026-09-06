@@ -26,6 +26,7 @@ import (
 	// Built-in default channel: registers its Descriptor via init() so
 	// wireChannels discovers it generically. Additional in-tree channels add
 	// their own blank import in cmd/baize/main.go without touching bootstrap.
+	_ "github.com/rebornace/baize/internal/channel/webhook"
 	_ "github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
@@ -594,12 +595,18 @@ type channelDeps struct {
 // run engine; non-Bootstrapper channels are registered for future use only.
 //
 // When cfg.Channels is empty (section omitted), every registered channel is
-// wired — identical to the pre-declarative-config behavior. When cfg.Channels
-// lists entries, a channel is wired only if explicitly enabled:true, or if it
-// is not listed but is a built-in default (Descriptor.EnabledByDefault, e.g.
-// weixin) — this keeps partial declarative configs backward compatible. An
-// explicit enabled:false always wins. Per-entry config.creds_dir overrides the
-// descriptor DefaultCredsDir; other opaque config keys are passed through.
+// auto-wired once by its type name — identical to the pre-declarative-config
+// behavior — except Descriptor.DeclarativeOnly types (e.g. webhook), which
+// require per-instance opaque config and support multiple instances, so they
+// are never auto-wired on the legacy path. When cfg.Channels lists entries,
+// each entry wires one named instance (the entry name, defaulting to the
+// type); a type is wired only when its entry is enabled:true, while a
+// built-in default not listed at all (Descriptor.EnabledByDefault, e.g.
+// weixin) stays wired — this keeps partial declarative configs backward
+// compatible. An explicit enabled:false always wins. Duplicate instance
+// names, duplicate instance sources, or unknown channel types fail fast.
+// Per-entry config.creds_dir overrides the descriptor DefaultCredsDir; other
+// opaque config keys (including "name" and "source") are passed through.
 func wireChannels(d channelDeps) (*channel.Router, error) {
 	meta, ok := d.messages.(conversation.MetaStore)
 	if !ok {
@@ -607,29 +614,7 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 	}
 	supportsVision := d.provider != nil && d.provider.SupportsVision()
 
-	enabled := map[string]bool{}
-	overrides := map[string]map[string]string{}
 	declarative := len(d.cfg.Channels) > 0
-	for _, cc := range d.cfg.Channels {
-		name := strings.TrimSpace(cc.Type)
-		if name == "" {
-			continue
-		}
-		enabled[name] = cc.Enabled
-		if len(cc.Config) > 0 {
-			overrides[name] = cc.Config
-		}
-	}
-	channelEnabled := func(desc channel.Descriptor) bool {
-		if !declarative {
-			return true
-		}
-		if on, listed := enabled[desc.Name]; listed {
-			return on
-		}
-		// Not listed: keep built-in defaults wired (back-compat).
-		return desc.EnabledByDefault
-	}
 
 	router := channel.NewRouter()
 	deps := channel.BuildDeps{
@@ -651,38 +636,54 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		ResumeHITL: func(ctx context.Context, runID string, approve bool, comment string) error {
 			return d.engine.ContinueFromHITL(ctx, runID, run.Decision{Approve: approve, Comment: comment})
 		},
+		// api.Server implements channel.RouteRegistrar: channels such as the
+		// webhook channel mount their own inbound HTTP routes during Bootstrap.
+		Routes: d.srv,
 	}
 
-	for _, desc := range channel.Descriptors() {
-		if !channelEnabled(desc) {
-			log.Printf("%s channel: disabled by config; skipped", desc.Name)
-			continue
-		}
-		// Merge descriptor default creds dir with declarative override;
-		// other opaque config keys (base_url...) pass through verbatim.
-		chCfg := channel.Config{"creds_dir": desc.DefaultCredsDir}
-		for k, v := range overrides[desc.Name] {
+	// seenSource tracks the SourceSourced.Source() each successfully built
+	// instance registered under. The source-keyed router silently overwrites
+	// duplicate sources, so fail fast instead of hiding one instance.
+	seenSource := map[string]string{}
+
+	// assemble builds and wires one instance. instName is the api handle key
+	// (descriptor type name for the legacy path; configured instance name for
+	// declarative). overrides carries the instance's opaque config keys; chCfg
+	// seeds "name" (per-instance name read by multi-instance factories such as
+	// webhook) and the descriptor default creds dir.
+	assemble := func(desc channel.Descriptor, instName string, overrides map[string]string) error {
+		chCfg := channel.Config{"name": instName, "creds_dir": desc.DefaultCredsDir}
+		for k, v := range overrides {
 			chCfg[k] = v
 		}
 		ch, err := desc.Build(chCfg)
 		if err != nil {
-			return nil, fmt.Errorf("open channel %s: %w", desc.Name, err)
+			return fmt.Errorf("open channel %s: %w", instName, err)
+		}
+		if ss, ok := ch.(channel.SourceSourced); ok {
+			src := strings.TrimSpace(ss.Source())
+			if src != "" {
+				if prior, dup := seenSource[src]; dup {
+					return fmt.Errorf("duplicate channel source %q (instances %q and %q)", src, prior, instName)
+				}
+				seenSource[src] = instName
+			}
 		}
 		handle := &api.ChannelHandle{
-			Name:     desc.Name,
+			Name:     instName,
 			Channel:  ch,
 			CredsDir: chCfg["creds_dir"],
 			RunCtx:   d.runCtx,
 		}
-
-		bs, isBoot := ch.(channel.Bootstrapper)
-		if isBoot {
+		if bs, isBoot := ch.(channel.Bootstrapper); isBoot {
 			rt, dir, start, err := bs.Bootstrap(deps)
 			if err != nil {
-				return nil, fmt.Errorf("bootstrap channel %s: %w", desc.Name, err)
+				return fmt.Errorf("bootstrap channel %s: %w", instName, err)
 			}
 			handle.Runtime = rt
-			handle.CredsDir = dir
+			if dir != "" {
+				handle.CredsDir = dir
+			}
 			router.Add(ch)
 			router.BindRuntime(rt)
 
@@ -696,14 +697,69 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 
 			if start {
 				if err := ch.Start(d.runCtx); err != nil {
-					log.Printf("%s channel: start skipped: %v", desc.Name, err)
+					log.Printf("%s channel: start skipped: %v", instName, err)
 				} else {
-					log.Printf("%s channel: started (creds_dir=%s)", desc.Name, dir)
+					log.Printf("%s channel: started (creds_dir=%s)", instName, handle.CredsDir)
 				}
 			}
 		}
-
 		d.srv.RegisterChannel(handle)
+		return nil
+	}
+
+	if !declarative {
+		// Legacy/back-compat: with no channels: section, auto-wire every
+		// registered descriptor once by its type name. DeclarativeOnly types
+		// (webhook) are skipped: they require per-instance opaque config and
+		// support multiple instances, so there is no sensible single instance
+		// to build here.
+		for _, desc := range channel.Descriptors() {
+			if desc.DeclarativeOnly {
+				continue
+			}
+			if err := assemble(desc, desc.Name, nil); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		seenName := map[string]bool{}
+		listedType := map[string]bool{}
+		for _, cc := range d.cfg.Channels {
+			listedType[strings.TrimSpace(cc.Type)] = true
+		}
+		for _, cc := range d.cfg.Channels {
+			typ := strings.TrimSpace(cc.Type)
+			if typ == "" {
+				continue
+			}
+			desc, ok := channel.Describe(typ)
+			if !ok {
+				return nil, fmt.Errorf("unknown channel type %q", typ)
+			}
+			instName := strings.TrimSpace(cc.Name)
+			if instName == "" {
+				instName = typ
+			}
+			if seenName[instName] {
+				return nil, fmt.Errorf("duplicate channel instance name %q", instName)
+			}
+			seenName[instName] = true
+			if !cc.Enabled {
+				log.Printf("%s channel: disabled by config; skipped", instName)
+				continue
+			}
+			if err := assemble(desc, instName, cc.Config); err != nil {
+				return nil, err
+			}
+		}
+		// Built-in defaults not explicitly listed stay wired (back-compat).
+		for _, desc := range channel.Descriptors() {
+			if desc.EnabledByDefault && !listedType[desc.Name] {
+				if err := assemble(desc, desc.Name, nil); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	d.srv.Outbound = router

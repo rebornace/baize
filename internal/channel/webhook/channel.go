@@ -18,6 +18,10 @@ func init() {
 		Build:            func(c channel.Config) (channel.Channel, error) { return openFromConfig(c["name"], c) },
 		DefaultCredsDir:  "",
 		EnabledByDefault: false, // opt-in via config channels:; multiple instances allowed
+		// webhook requires per-instance opaque config (secret/outbound_url/
+		// assignee) and supports multiple named instances, so it is never
+		// auto-wired once-per-type on the legacy (no channels:) path.
+		DeclarativeOnly: true,
 	})
 }
 

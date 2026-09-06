@@ -1,15 +1,23 @@
 package bootstrap
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/channel/webhook"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/webhooksig"
 )
 
 // stubBootChannel is a test-only channel that participates in full assembly:
@@ -251,6 +259,127 @@ func TestWireChannelsCredsDirOverride(t *testing.T) {
 	}
 	if h.CredsDir != "./custom/stub" {
 		t.Fatalf("handle CredsDir=%q want ./custom/stub", h.CredsDir)
+	}
+}
+
+// signedInboundRequest builds a POST request to path carrying a valid channel
+// HMAC signature over body, so the webhook inbound handler runs past its own
+// signature check (the control-plane gate leaves channel inbound routes at
+// RoleNone). A body without peer.id then reaches handler logic and yields 400.
+func signedInboundRequest(t *testing.T, path, secret string, body []byte) *http.Request {
+	t.Helper()
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	sig := webhooksig.Sign(secret, ts, body)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	req.Header.Set(webhook.HeaderTimestamp, ts)
+	req.Header.Set(webhook.HeaderSignature, sig)
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+// TestWireChannelsWebhookMultiInstance proves a webhook type configured with
+// two named instances yields two separately-registered handles, two routable
+// sources, and two distinct inbound routes mounted through the gated handler.
+func TestWireChannelsWebhookMultiInstance(t *testing.T) {
+	d := channelDepsForTest(t)
+	d.cfg.Channels = []config.ChannelConfig{
+		{Name: "feishu", Type: "webhook", Enabled: true, Config: map[string]string{
+			"source": "feishu", "account": "feishu-bot", "secret": "s",
+			"outbound_url": "http://x/o", "assignee": "u",
+		}},
+		{Name: "dingtalk", Type: "webhook", Enabled: true, Config: map[string]string{
+			"source": "dingtalk", "account": "dt-bot", "secret": "s2",
+			"outbound_url": "http://y/o", "assignee": "u",
+		}},
+	}
+	router, err := wireChannels(d)
+	if err != nil {
+		t.Fatalf("wireChannels: %v", err)
+	}
+	if _, ok := router.For("feishu"); !ok {
+		t.Fatal("router should route feishu source")
+	}
+	if _, ok := router.For("dingtalk"); !ok {
+		t.Fatal("router should route dingtalk source")
+	}
+	if _, ok := d.srv.Channel("feishu"); !ok {
+		t.Fatal("handle feishu missing")
+	}
+	if _, ok := d.srv.Channel("dingtalk"); !ok {
+		t.Fatal("handle dingtalk missing")
+	}
+	// Inbound routes must be mounted (not 404) and public to the channel HMAC
+	// path (not 401/403 from the control-plane gate). A correctly signed body
+	// with no peer.id reaches the handler and returns 400.
+	for _, c := range []struct{ name, secret string }{
+		{"feishu", "s"}, {"dingtalk", "s2"},
+	} {
+		p := "/v0/channels/" + c.name + "/inbound"
+		req := signedInboundRequest(t, p, c.secret, []byte(`{"event":"message"}`))
+		rec := httptest.NewRecorder()
+		d.srv.Handler().ServeHTTP(rec, req)
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("route %s not mounted", p)
+		}
+		if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+			t.Fatalf("inbound route %s should be public (channel HMAC), got %d", p, rec.Code)
+		}
+	}
+}
+
+// TestWireChannelsWebhookDuplicateInstanceNameErrors proves two instances with
+// the same name fail fast.
+func TestWireChannelsWebhookDuplicateInstanceNameErrors(t *testing.T) {
+	d := channelDepsForTest(t)
+	d.cfg.Channels = []config.ChannelConfig{
+		{Name: "dup", Type: "webhook", Enabled: true, Config: map[string]string{"secret": "s", "outbound_url": "http://x/o", "assignee": "u"}},
+		{Name: "dup", Type: "webhook", Enabled: true, Config: map[string]string{"secret": "s", "outbound_url": "http://y/o", "assignee": "u"}},
+	}
+	if _, err := wireChannels(d); err == nil {
+		t.Fatal("expected error for duplicate instance name")
+	}
+}
+
+// TestWireChannelsWebhookDuplicateSourceErrors proves two instances with
+// distinct names but the same config.source fail fast instead of silently
+// overwriting each other in the source-keyed router.
+func TestWireChannelsWebhookDuplicateSourceErrors(t *testing.T) {
+	d := channelDepsForTest(t)
+	d.cfg.Channels = []config.ChannelConfig{
+		{Name: "alpha", Type: "webhook", Enabled: true, Config: map[string]string{
+			"source": "shared", "secret": "s", "outbound_url": "http://x/o", "assignee": "u",
+		}},
+		{Name: "beta", Type: "webhook", Enabled: true, Config: map[string]string{
+			"source": "shared", "secret": "s2", "outbound_url": "http://y/o", "assignee": "u",
+		}},
+	}
+	_, err := wireChannels(d)
+	if err == nil {
+		t.Fatal("expected error for duplicate channel source")
+	}
+	if !strings.Contains(err.Error(), "duplicate channel source") || !strings.Contains(err.Error(), "shared") {
+		t.Fatalf("error should mention duplicate source %q, got: %v", "shared", err)
+	}
+}
+
+// TestWireChannelsWebhookNotWiredInEmptyConfig is the phase-1 parity anchor:
+// webhook registers via the blank import in bootstrap.go, but with no channels:
+// section it must NOT be auto-wired (DeclarativeOnly), while the built-in
+// default weixin stays wired exactly as before.
+func TestWireChannelsWebhookNotWiredInEmptyConfig(t *testing.T) {
+	d := channelDepsForTest(t) // zero config.Config => Channels == nil
+	if _, err := wireChannels(d); err != nil {
+		t.Fatalf("wireChannels with empty config must not error: %v", err)
+	}
+	if _, ok := d.srv.Channel("webhook"); ok {
+		t.Fatal("webhook must not be auto-wired in the legacy/empty-config path")
+	}
+	h, ok := d.srv.Channel("weixin")
+	if !ok {
+		t.Fatal("built-in default weixin must remain wired in empty config")
+	}
+	if h.Runtime == nil {
+		t.Fatal("weixin runtime must be wired in empty config")
 	}
 }
 
