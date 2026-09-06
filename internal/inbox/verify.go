@@ -1,52 +1,30 @@
 package inbox
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/rebornace/baize/internal/webhooksig"
 )
 
-const signaturePrefix = "v1="
+const signaturePrefix = webhooksig.SignaturePrefix
 
 var (
-	ErrInvalidSignature = errors.New("inbox: invalid signature")
-	ErrTimestampSkew    = errors.New("inbox: timestamp skew")
+	ErrInvalidSignature = webhooksig.ErrInvalidSignature
+	ErrTimestampSkew    = webhooksig.ErrTimestampSkew
 )
 
-// Sign computes the HMAC-SHA256 v1 signature for an inbound request.
+// Sign delegates to the shared webhooksig package.
 func Sign(secret, timestamp string, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(timestamp + "."))
-	mac.Write(body)
-	return signaturePrefix + hex.EncodeToString(mac.Sum(nil))
+	return webhooksig.Sign(secret, timestamp, body)
 }
 
-// Verify checks timestamp skew and compares the header signature to the expected HMAC.
+// Verify delegates to the shared webhooksig package.
 func Verify(secret, timestamp string, body []byte, headerSig string, now time.Time, maxSkew time.Duration) error {
-	ts, err := strconv.ParseInt(timestamp, 10, 64)
-	if err != nil {
-		return ErrInvalidSignature
-	}
-	requestTime := time.Unix(ts, 0)
-	if now.Sub(requestTime) > maxSkew || requestTime.Sub(now) > maxSkew {
-		return ErrTimestampSkew
-	}
-	if !strings.HasPrefix(headerSig, signaturePrefix) {
-		return ErrInvalidSignature
-	}
-	sigHex := strings.TrimPrefix(headerSig, signaturePrefix)
-	expectedSig, err := hex.DecodeString(sigHex)
-	if err != nil {
-		return ErrInvalidSignature
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(timestamp + "."))
-	mac.Write(body)
-	if !hmac.Equal(mac.Sum(nil), expectedSig) {
+	if err := webhooksig.Verify(secret, timestamp, body, headerSig, now, maxSkew); err != nil {
+		if errors.Is(err, webhooksig.ErrTimestampSkew) {
+			return ErrTimestampSkew
+		}
 		return ErrInvalidSignature
 	}
 	return nil
