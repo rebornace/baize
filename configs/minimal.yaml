@@ -67,3 +67,19 @@ inbox:
 #     config:
 #       creds_dir: ./data/channels/weixin   # 覆盖默认凭据/设置目录
 #       # base_url: http://127.0.0.1:9002    # 渠道特定不透明配置
+#
+# 进程外 IM 渠道（webhook 适配器）。一个实例 = 一个 IM 账号；多账号写多条。
+# channels:
+#   - name: feishu            # 实例名（缺省=type）；同 type 多实例时必填且唯一
+#     type: webhook
+#     enabled: true
+#     config:
+#       source: feishu        # convID 前缀/meta.Source；缺省=实例名，需唯一
+#       account: feishu-bot   # IM 账号标识；缺省=实例名
+#       secret: ""            # 入站验签 HMAC 密钥（必填）
+#       outbound_url: ""      # 适配器出站接收地址（必填）
+#       outbound_secret: ""   # 出站签名密钥（缺省=secret）
+#       assignee: ""          # 会话归属操作员（必填）
+#       agent_id: ""          # 指定 agent（缺省用默认 agent）
+#       supports_vision: "false"
+#       allowlist: ""         # 逗号分隔；配置后强制入站白名单

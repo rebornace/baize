@@ -73,3 +73,9 @@ func TestMinRoleTable(t *testing.T) {
 		}
 	}
 }
+
+func TestChannelInboundIsRoleNone(t *testing.T) {
+	if got := MinRole("POST", "/v0/channels/feishu/inbound"); got != RoleNone {
+		t.Fatalf("inbound should be RoleNone (channel HMAC), got %v", got)
+	}
+}

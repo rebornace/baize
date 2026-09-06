@@ -26,6 +26,12 @@ type Descriptor struct {
 	// channel is never silently disabled); an explicit enabled:false still
 	// wins. Optional/additional channels leave this false.
 	EnabledByDefault bool
+	// DeclarativeOnly marks a channel type that can only be instantiated from
+	// explicit declarative config instances (it requires per-instance opaque
+	// config and/or supports multiple instances). It is never auto-wired once
+	// per type in the legacy (no `channels:` section) path. Optional/add-on
+	// channels that are fine to auto-wire leave this false.
+	DeclarativeOnly bool
 }
 
 var (

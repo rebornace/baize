@@ -23,6 +23,9 @@ type BuildDeps struct {
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run after an approve/reject reply.
 	ResumeHITL func(ctx context.Context, runID string, approve bool, comment string) error
+	// Routes, when non-nil, lets a channel mount its own HTTP endpoints during
+	// Bootstrap (e.g. inbound webhook). Nil in tests that do not exercise HTTP.
+	Routes RouteRegistrar
 }
 
 // Bootstrapper is implemented by channels that participate in full assembly:

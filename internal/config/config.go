@@ -150,9 +150,10 @@ type Config struct {
 
 // ChannelConfig declaratively enables/configures a registered channel.
 type ChannelConfig struct {
-	Type    string            `yaml:"type"`    // channel type key, e.g. "weixin"
-	Enabled bool              `yaml:"enabled"` // default: wired when registered
-	Config  map[string]string `yaml:"config"`  // opaque overrides (creds_dir, base_url...)
+	Name    string            `yaml:"name"`    // instance name; defaults to type. Required unique for multiple instances of one type.
+	Type    string            `yaml:"type"`    // channel type key, e.g. "webhook"/"weixin"
+	Enabled bool              `yaml:"enabled"` // wired only when true in declarative mode
+	Config  map[string]string `yaml:"config"`  // opaque overrides (source, secret, outbound_url...)
 }
 
 // MCPExportConfig toggles the Streamable HTTP MCP export surface.

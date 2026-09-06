@@ -2,9 +2,17 @@ package api
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/rebornace/baize/internal/channel"
 )
+
+// RegisterRoute mounts an additional HTTP route on the core mux. Used by
+// channels (via channel.RouteRegistrar) to expose their own endpoints without
+// editing core routing. Must be called before the server starts serving.
+func (s *Server) RegisterRoute(pattern string, h http.Handler) {
+	s.mux.Handle(pattern, h)
+}
 
 // ChannelHandle is the api layer's per-channel runtime handle. Channel-specific
 // handlers (e.g. weixin login) type-assert h.Channel to their concrete type.

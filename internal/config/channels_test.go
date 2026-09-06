@@ -58,3 +58,36 @@ func TestChannelsOmittedByDefault(t *testing.T) {
 		t.Fatalf("channels len=%d want 0 when section omitted", len(cfg.Channels))
 	}
 }
+
+// TestChannelConfigNameParsed verifies the per-instance Name field parses and
+// survives a Load round-trip.
+func TestChannelConfigNameParsed(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.yaml")
+	if err := os.WriteFile(p, []byte(`
+llm:
+  provider: mock
+channels:
+  - name: feishu
+    type: webhook
+    enabled: true
+    config:
+      source: feishu
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Channels) != 1 {
+		t.Fatalf("channels len=%d want 1", len(cfg.Channels))
+	}
+	ch := cfg.Channels[0]
+	if ch.Name != "feishu" || ch.Type != "webhook" || !ch.Enabled {
+		t.Fatalf("unexpected: %+v", ch)
+	}
+	if ch.Config["source"] != "feishu" {
+		t.Fatalf("source=%q", ch.Config["source"])
+	}
+}

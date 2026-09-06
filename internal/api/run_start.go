@@ -55,7 +55,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 			Content: in.Input,
 			RunID:   runRec.ID,
 		})
-		s.deliverUserOutbound(ctx, conv, in.Input)
+		s.deliverUserOutbound(ctx, runRec.ID, conv, in.Input)
 	}
 
 	for _, ev := range in.PreEvents {
@@ -81,7 +81,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 // conversation is channel-backed. Outbound may be a concrete channel (single
 // channel deployment) or a *channel.Router; channel.DeliverUserText resolves
 // the child channel by meta.Source. No-op for ui-only conversations.
-func (s *Server) deliverUserOutbound(ctx context.Context, convID, text string) {
+func (s *Server) deliverUserOutbound(ctx context.Context, runID, convID, text string) {
 	if s == nil || s.Outbound == nil || strings.TrimSpace(text) == "" || strings.TrimSpace(convID) == "" {
 		return
 	}
@@ -97,5 +97,6 @@ func (s *Server) deliverUserOutbound(ctx context.Context, convID, text string) {
 	if s.OutboundExtras != nil {
 		extras = s.OutboundExtras(convID)
 	}
+	extras = channel.WithOutboundMeta(extras, channel.OutboundKindOperator, runID)
 	channel.DeliverUserText(ctx, s.Outbound, meta, text, extras)
 }
