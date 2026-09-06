@@ -20,7 +20,11 @@ const (
 const SourceName = "weixin"
 
 func init() {
-	channel.RegisterChannel(SourceName, openFromConfig)
+	channel.Register(channel.Descriptor{
+		Name:            SourceName,
+		Build:           openFromConfig,
+		DefaultCredsDir: defaultCredsDir,
+	})
 }
 
 // Channel is the weixin messaging plugin (iLink long-poll + outbound).
