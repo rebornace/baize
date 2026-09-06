@@ -367,3 +367,38 @@ func TestHandleInboundMetaUpdatedAt(t *testing.T) {
 		t.Fatalf("UpdatedAt not set: %v", m.UpdatedAt)
 	}
 }
+
+func TestHandleInboundUsesRuntimeSource(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	meta := conversation.NewMemoryStore()
+	rt := &Runtime{
+		Runs: runs, Meta: meta, Messages: meta,
+		Assignee:       "alice",
+		DefaultAgentID: "agent-1",
+		Source:         "feishu", // 非 weixin 前缀
+	}
+	in := Inbound{PeerID: "p1", Text: "hi", Extras: map[string]string{"account": "acc"}}
+	if err := rt.HandleInbound(context.Background(), &fakeChannel{name: "feishu"}, in); err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	m, err := meta.GetMeta("feishu:acc:p1")
+	if err != nil {
+		t.Fatalf("expected conv id feishu:acc:p1, err=%v", err)
+	}
+	if m.Source != "feishu" {
+		t.Fatalf("meta.Source=%q want feishu", m.Source)
+	}
+}
+
+func TestConvIDHelpers(t *testing.T) {
+	id := ConvID("weixin", "acc", "peer")
+	if id != "weixin:acc:peer" {
+		t.Fatalf("ConvID=%q", id)
+	}
+	if src := SourceFromConvID(id); src != "weixin" {
+		t.Fatalf("SourceFromConvID=%q", src)
+	}
+	if src := SourceFromConvID("ui:abc"); src != "ui" {
+		t.Fatalf("ui prefix=%q", src)
+	}
+}

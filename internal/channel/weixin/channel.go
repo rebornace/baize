@@ -15,8 +15,12 @@ const (
 	defaultEmptyPollWait = time.Second
 )
 
+// SourceName is the meta.Source value and conversation-id prefix for weixin
+// conversations (conv ids keep the historical "weixin:<account>:<peer>" form).
+const SourceName = "weixin"
+
 func init() {
-	channel.RegisterChannel("weixin", openFromConfig)
+	channel.RegisterChannel(SourceName, openFromConfig)
 }
 
 // Channel is the weixin messaging plugin (iLink long-poll + outbound).
@@ -69,7 +73,12 @@ func (c *Channel) peerAllowed(peer string) bool {
 }
 
 // New constructs a Channel with injected ILink and Runtime (tests / Task 6 wiring).
+// The runtime's Source is pinned to SourceName so inbound conversation ids keep
+// the historical "weixin:<account>:<peer>" form.
 func New(ilink ILink, rt *channel.Runtime, accountID, token string) *Channel {
+	if rt != nil {
+		rt.Source = SourceName
+	}
 	return &Channel{
 		ilink:         ilink,
 		runtime:       rt,
@@ -81,6 +90,9 @@ func New(ilink ILink, rt *channel.Runtime, accountID, token string) *Channel {
 
 // SetRuntime attaches the inbound Runtime (Task 6 bootstrap).
 func (c *Channel) SetRuntime(rt *channel.Runtime) {
+	if rt != nil {
+		rt.Source = SourceName
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.runtime = rt
@@ -146,7 +158,10 @@ func openFromConfig(cfg channel.Config) (channel.Channel, error) {
 	return ch, nil
 }
 
-func (c *Channel) Name() string { return "weixin" }
+func (c *Channel) Name() string { return SourceName }
+
+// Source returns the meta.Source / conv-id prefix for weixin conversations.
+func (c *Channel) Source() string { return SourceName }
 
 func (c *Channel) Start(ctx context.Context) error {
 	c.mu.Lock()

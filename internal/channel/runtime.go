@@ -48,6 +48,9 @@ type Runtime struct {
 	// ResumeHITL continues a waiting_human run (approve/reject). Optional;
 	// when nil, waiting_human inbound only gets HITLHelpReply.
 	ResumeHITL func(ctx context.Context, runID string, approve bool, comment string) error
+	// Source is the meta.Source / conv-id prefix for this channel (e.g. "weixin").
+	// Empty defaults to "weixin" to preserve historical conversation ids.
+	Source string
 
 	tokenMu sync.Mutex
 	tokens  map[string]string // conversation_id -> context_token
@@ -84,11 +87,15 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return ErrNoAccount
 	}
 
-	convID := "weixin:" + account + ":" + peerID
+	src := strings.TrimSpace(r.Source)
+	if src == "" {
+		src = "weixin"
+	}
+	convID := ConvID(src, account, peerID)
 	if err := r.Meta.EnsureMeta(conversation.Meta{
 		ID:          convID,
 		OwnerID:     assignee,
-		Source:      "weixin",
+		Source:      src,
 		ChannelPeer: peerID,
 		UpdatedAt:   time.Now().UTC(),
 	}); err != nil {
