@@ -36,20 +36,50 @@ type weixinLoginStatusResponse struct {
 	Status string `json:"status"`
 }
 
-func (s *Server) weixinCredsDir() string {
-	dir := strings.TrimSpace(s.WeixinCredsDir)
+// weixinHandle looks up the registered weixin channel handle and asserts its
+// concrete *weixin.Channel type. These handlers are weixin-specific, so the
+// concrete type is asserted directly (future channels get their own handlers).
+func (s *Server) weixinHandle() (*ChannelHandle, *weixin.Channel, bool) {
+	h, ok := s.Channel(weixin.SourceName)
+	if !ok {
+		return nil, nil, false
+	}
+	ch, ok := h.Channel.(*weixin.Channel)
+	if !ok {
+		return nil, nil, false
+	}
+	return h, ch, true
+}
+
+// credsDir returns the on-disk creds/settings dir for the handle, falling back
+// to the package default when unset.
+func (h *ChannelHandle) credsDir() string {
+	if h == nil {
+		return DefaultWeixinCredsDir
+	}
+	dir := strings.TrimSpace(h.CredsDir)
 	if dir == "" {
 		return DefaultWeixinCredsDir
 	}
 	return dir
 }
 
+// runCtx returns the long-lived channel Start context for the handle, falling
+// back to context.Background when unset.
+func (h *ChannelHandle) runCtx() context.Context {
+	if h != nil && h.RunCtx != nil {
+		return h.RunCtx
+	}
+	return context.Background()
+}
+
 func (s *Server) handleWeixinLoginStart(w http.ResponseWriter, r *http.Request) {
-	if s.WeixinILink == nil {
+	_, ch, ok := s.weixinHandle()
+	if !ok || ch.ILink() == nil {
 		writeError(w, http.StatusServiceUnavailable, "not_configured", "weixin channel not configured")
 		return
 	}
-	ticket, qrURL, err := s.WeixinILink.GetQR(r.Context())
+	ticket, qrURL, err := ch.ILink().GetQR(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "ilink_error", err.Error())
 		return
@@ -58,7 +88,8 @@ func (s *Server) handleWeixinLoginStart(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleWeixinLoginStatus(w http.ResponseWriter, r *http.Request) {
-	if s.WeixinILink == nil {
+	_, ch, ok := s.weixinHandle()
+	if !ok || ch.ILink() == nil {
 		writeError(w, http.StatusServiceUnavailable, "not_configured", "weixin channel not configured")
 		return
 	}
@@ -67,7 +98,7 @@ func (s *Server) handleWeixinLoginStatus(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "missing_ticket", "ticket query parameter is required")
 		return
 	}
-	status, accountID, token, err := s.WeixinILink.PollLogin(r.Context(), ticket)
+	status, accountID, token, err := ch.ILink().PollLogin(r.Context(), ticket)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "ilink_error", err.Error())
 		return
@@ -85,15 +116,16 @@ func (s *Server) applyWeixinLoginSuccess(accountID, token string) error {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
 
-	dir := s.weixinCredsDir()
+	h, ch, ok := s.weixinHandle()
+	if !ok {
+		return nil
+	}
+	dir := h.credsDir()
 	if err := weixin.SaveCreds(dir, accountID, token); err != nil {
 		return err
 	}
-	if s.WeixinChannel == nil {
-		return nil
-	}
-	s.WeixinChannel.SetCredentials(accountID, token)
-	if s.WeixinChannel.IsStarted() {
+	ch.SetCredentials(accountID, token)
+	if ch.IsStarted() {
 		return nil
 	}
 	// Respect the persisted enabled state: an admin who disabled the channel
@@ -104,28 +136,32 @@ func (s *Server) applyWeixinLoginSuccess(accountID, token string) error {
 		// Don't regress the login experience on a settings read failure:
 		// treat the channel as enabled and log a warning.
 		log.Printf("weixin: cannot read persisted settings after login; starting channel as enabled: %v", err)
-		return s.WeixinChannel.Start(s.weixinRunCtx())
+		return ch.Start(h.runCtx())
 	}
 	if !settings.Enabled {
 		return nil
 	}
-	return s.WeixinChannel.Start(s.weixinRunCtx())
+	return ch.Start(h.runCtx())
 }
 
 func (s *Server) handleWeixinLogout(w http.ResponseWriter, r *http.Request) {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
 
-	if s.WeixinChannel != nil && s.WeixinChannel.IsStarted() {
-		if err := s.WeixinChannel.Stop(r.Context()); err != nil {
-			writeError(w, http.StatusInternalServerError, "stop_failed", err.Error())
-			return
+	// Preserve legacy behavior: even when the channel is not wired we still
+	// clear creds from the (default) dir and report logged_out.
+	dir := DefaultWeixinCredsDir
+	if h, ch, ok := s.weixinHandle(); ok {
+		dir = h.credsDir()
+		if ch.IsStarted() {
+			if err := ch.Stop(r.Context()); err != nil {
+				writeError(w, http.StatusInternalServerError, "stop_failed", err.Error())
+				return
+			}
 		}
+		ch.ClearCredentials()
 	}
-	if s.WeixinChannel != nil {
-		s.WeixinChannel.ClearCredentials()
-	}
-	if err := weixin.ClearCreds(s.weixinCredsDir()); err != nil {
+	if err := weixin.ClearCreds(dir); err != nil {
 		writeError(w, http.StatusInternalServerError, "clear_creds_failed", err.Error())
 		return
 	}
@@ -133,7 +169,11 @@ func (s *Server) handleWeixinLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetWeixinSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := loadWeixinSettings(s.weixinCredsDir())
+	dir := DefaultWeixinCredsDir
+	if h, _, ok := s.weixinHandle(); ok {
+		dir = h.credsDir()
+	}
+	settings, err := loadWeixinSettings(dir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "read_failed", err.Error())
 		return
@@ -158,7 +198,11 @@ func (s *Server) handlePutWeixinSettings(w http.ResponseWriter, r *http.Request)
 	if body.Allowlist == nil {
 		body.Allowlist = []string{}
 	}
-	if err := saveWeixinSettings(s.weixinCredsDir(), body); err != nil {
+	dir := DefaultWeixinCredsDir
+	if h, _, ok := s.weixinHandle(); ok {
+		dir = h.credsDir()
+	}
+	if err := saveWeixinSettings(dir, body); err != nil {
 		writeError(w, http.StatusInternalServerError, "write_failed", err.Error())
 		return
 	}
@@ -183,8 +227,8 @@ type weixinSettingsResponse struct {
 func (s *Server) weixinRuntimeState(settings WeixinChannelSettings) (running bool, reason string) {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
-	ch := s.WeixinChannel
-	if ch == nil {
+	_, ch, ok := s.weixinHandle()
+	if !ok {
 		return false, ""
 	}
 	if ch.IsStarted() {
@@ -202,17 +246,17 @@ func (s *Server) weixinRuntimeState(settings WeixinChannelSettings) (running boo
 func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bool, reason string) {
 	s.weixinMu.Lock()
 	defer s.weixinMu.Unlock()
-	if s.WeixinRuntime != nil {
+	h, ch, ok := s.weixinHandle()
+	if !ok {
+		return false, ""
+	}
+	if h.Runtime != nil {
 		if id := strings.TrimSpace(settings.Assignee); id != "" {
-			s.WeixinRuntime.Assignee = id
+			h.Runtime.Assignee = id
 		}
 		if id := strings.TrimSpace(settings.AgentID); id != "" {
-			s.WeixinRuntime.DefaultAgentID = id
+			h.Runtime.DefaultAgentID = id
 		}
-	}
-	ch := s.WeixinChannel
-	if ch == nil {
-		return false, ""
 	}
 	ch.SetAllowlist(settings.Allowlist)
 	if settings.Enabled {
@@ -222,7 +266,7 @@ func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bo
 		if !ch.HasCredentials() {
 			return false, "login_required" // login success auto-starts when Enabled
 		}
-		if err := ch.Start(s.weixinRunCtx()); err != nil {
+		if err := ch.Start(h.runCtx()); err != nil {
 			return false, "start_failed"
 		}
 		return ch.IsStarted(), ""
@@ -235,13 +279,6 @@ func (s *Server) applyWeixinSettings(settings WeixinChannelSettings) (running bo
 		_ = ch.Stop(stopCtx)
 	}
 	return false, ""
-}
-
-func (s *Server) weixinRunCtx() context.Context {
-	if s.WeixinRunCtx != nil {
-		return s.WeixinRunCtx
-	}
-	return context.Background()
 }
 
 func loadWeixinSettings(dir string) (WeixinChannelSettings, error) {

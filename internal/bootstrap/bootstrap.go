@@ -619,11 +619,17 @@ func wireWeixinChannel(srv *api.Server, st store.Store, engine *run.Engine, mess
 		_ = ch.Stop(stopCtx)
 	})
 
-	srv.WeixinILink = ilink
-	srv.WeixinChannel = ch
-	srv.WeixinRuntime = rt
-	srv.WeixinCredsDir = credsDir
-	srv.WeixinRunCtx = runCtx
+	// api 层经句柄表取渠道；出站目前仍直接用具体 weixin 渠道（任务 5 改为
+	// 遍历注册表装配 Router 后，Outbound 改为 Router）。
+	srv.RegisterChannel(&api.ChannelHandle{
+		Name:     weixin.SourceName,
+		Channel:  ch,
+		Runtime:  rt,
+		CredsDir: credsDir,
+		RunCtx:   runCtx,
+	})
+	srv.Outbound = ch
+	srv.OutboundExtras = rt.OutboundExtras
 
 	engine.Meta = meta
 	engine.Outbound = ch

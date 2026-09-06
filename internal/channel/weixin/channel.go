@@ -139,6 +139,10 @@ func (c *Channel) HasCredentials() bool {
 	return strings.TrimSpace(c.token) != "" && strings.TrimSpace(c.accountID) != ""
 }
 
+// ILink exposes the iLink client (used by the api login handlers after the
+// channel is retrieved generically from the channel handle table).
+func (c *Channel) ILink() ILink { return c.ilink }
+
 func openFromConfig(cfg channel.Config) (channel.Channel, error) {
 	dir := strings.TrimSpace(cfg["creds_dir"])
 	if dir == "" {
