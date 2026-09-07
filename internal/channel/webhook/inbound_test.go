@@ -144,6 +144,39 @@ func TestInboundIdempotencyDedupes(t *testing.T) {
 	}
 }
 
+func TestInboundIdempotencyKeyExpires(t *testing.T) {
+	// Shrink the TTL so the expiry path is observable without a real wait;
+	// restore the production value when the test finishes.
+	oldTTL := idempotencyTTL
+	idempotencyTTL = 50 * time.Millisecond
+	defer func() { idempotencyTTL = oldTTL }()
+
+	runs := &fakeRuns{}
+	ch, handler := bootChannel(t, baseCfg("http://x/o"), runs, nil)
+	msg := InboundMessage{Event: "message", Peer: Peer{ID: "p"}, Text: "x", IdempotencyKey: "k-ttl"}
+	body, ts, sig := signedBody(t, ch.cfg.Secret, msg)
+
+	if r := post(handler, body, ts, sig); r.Code >= 300 {
+		t.Fatalf("first: %d", r.Code)
+	}
+	// Immediate replay is still a duplicate within the TTL window.
+	if r := post(handler, body, ts, sig); r.Code >= 300 {
+		t.Fatalf("replay within TTL: %d", r.Code)
+	}
+	if len(runs.created) != 1 {
+		t.Fatalf("want 1 run before TTL expiry, got %d", len(runs.created))
+	}
+
+	// After the TTL elapses the same key is treated as unseen again.
+	time.Sleep(120 * time.Millisecond)
+	if r := post(handler, body, ts, sig); r.Code >= 300 {
+		t.Fatalf("replay after TTL: %d", r.Code)
+	}
+	if len(runs.created) != 2 {
+		t.Fatalf("want 2 runs after TTL expiry, got %d", len(runs.created))
+	}
+}
+
 func TestInboundAllowlistBlocksOutsider(t *testing.T) {
 	runs := &fakeRuns{}
 	cfg := baseCfg("http://x/o")

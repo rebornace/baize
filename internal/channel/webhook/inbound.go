@@ -23,11 +23,16 @@ const (
 	signatureSkew  = 300 * time.Second
 )
 
+// idempotencyTTL bounds how long a successfully-handled idempotency key is
+// remembered for duplicate suppression. It is a package-level var (not const)
+// so tests can temporarily shrink it; expired keys are swept lazily.
+var idempotencyTTL = 10 * time.Minute
+
 // inboundHandler returns the http.Handler for POST /v0/channels/{name}/inbound.
 func (c *Channel) inboundHandler() http.Handler {
 	var (
-		mu      sync.Mutex
-		seenKey = map[string]bool{}
+		mu     sync.Mutex
+		seenAt = map[string]time.Time{}
 	)
 	fetch := newFetchClient()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +74,17 @@ func (c *Channel) inboundHandler() http.Handler {
 		key := msg.IdempotencyKey
 		if key != "" {
 			mu.Lock()
-			dup := seenKey[key]
+			now := time.Now()
+			// Lazy expiry sweep: drop entries older than the TTL so the map
+			// cannot grow without bound. The table is small and writes are
+			// infrequent, so an O(n) sweep under the lock is acceptable.
+			for k, t := range seenAt {
+				if now.Sub(t) >= idempotencyTTL {
+					delete(seenAt, k)
+				}
+			}
+			t, seen := seenAt[key]
+			dup := seen && now.Sub(t) < idempotencyTTL
 			mu.Unlock()
 			if dup {
 				writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
@@ -94,7 +109,7 @@ func (c *Channel) inboundHandler() http.Handler {
 		}
 		if key != "" {
 			mu.Lock()
-			seenKey[key] = true
+			seenAt[key] = time.Now()
 			mu.Unlock()
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
