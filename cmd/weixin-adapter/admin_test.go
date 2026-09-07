@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -306,5 +307,52 @@ func TestInboundIdempotencyKeyHasProcessPrefix(t *testing.T) {
 	mu.Unlock()
 	if !idemKeyRe.MatchString(key) {
 		t.Fatalf("idempotency_key=%q does not match %s", key, idemKeyRe.String())
+	}
+}
+
+func TestInboundMediaForwardedAsAttachment(t *testing.T) {
+	var gotBody map[string]any
+	gotCh := make(chan struct{}, 1)
+	baize := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		select {
+		case gotCh <- struct{}{}:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(baize.Close)
+
+	fake := weixinlink.NewFake()
+	fake.MediaBytes = []byte("IMAGE-BYTES")
+	fake.Updates = []weixinlink.Update{{
+		PeerID: "peer@im.wechat",
+		Text:   "看图",
+		Media:  []weixinlink.MediaRef{{FileName: "pic.png", MIME: "image/png"}},
+	}}
+	a := newTestAdapter(t, fake, baize.URL)
+	a.setCredentials(fake.AccountID, fake.Token)
+	if err := a.startPolling(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.stopPolling)
+
+	select {
+	case <-gotCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+	atts, _ := gotBody["attachments"].([]any)
+	if len(atts) != 1 {
+		t.Fatalf("attachments=%v", gotBody["attachments"])
+	}
+	att := atts[0].(map[string]any)
+	if att["name"] != "pic.png" {
+		t.Fatalf("att name=%v", att["name"])
+	}
+	dec, err := base64.StdEncoding.DecodeString(att["content_base64"].(string))
+	if err != nil || string(dec) != "IMAGE-BYTES" {
+		t.Fatalf("att bytes=%v err=%v", att["content_base64"], err)
 	}
 }

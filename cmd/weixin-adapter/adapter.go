@@ -43,7 +43,8 @@ func (a *Adapter) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 // routes returns the adapter's HTTP mux. Every /admin endpoint is mounted
 // behind adminGuard (HMAC verification before any state change or body
-// trust); /outbound lands in Task 7. /healthz is always present.
+// trust); /outbound verifies the same HMAC itself and sends to iLink.
+// /healthz is always present.
 func (a *Adapter) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", a.handleHealthz)
@@ -53,6 +54,7 @@ func (a *Adapter) routes() http.Handler {
 	mux.HandleFunc("GET /admin/status", a.adminGuard(a.handleAdminStatus))
 	mux.HandleFunc("POST /admin/start", a.adminGuard(a.handleAdminStart))
 	mux.HandleFunc("POST /admin/stop", a.adminGuard(a.handleAdminStop))
+	mux.HandleFunc("POST /outbound", a.handleOutbound)
 	return mux
 }
 

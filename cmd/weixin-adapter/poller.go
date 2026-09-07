@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	crand "crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"log"
@@ -101,14 +102,51 @@ func (a *Adapter) pollLoop(ctx context.Context, token string) {
 }
 
 // handleInboundUpdate drops group chats (@chatroom) and messages with no
-// peer, and forwards a DM to baize. Media is attached in Task 7; this task
-// forwards text/account/peer/context_token only (atts == nil).
+// peer, and forwards a DM to baize. Each media ref is downloaded/decrypted
+// via MediaDownloader and attached as an attachment; a media that errors or
+// decrypts to zero bytes is skipped (logged) so ciphertext garbage is never
+// forwarded, while the message text still goes through.
 func (a *Adapter) handleInboundUpdate(ctx context.Context, u weixinlink.Update) error {
 	peer := strings.TrimSpace(u.PeerID)
 	if peer == "" || strings.Contains(peer, "@chatroom") {
 		return nil
 	}
-	return a.forwardInbound(ctx, peer, u.Text, u.ContextToken, nil)
+	atts := []map[string]any{}
+	if md, ok := a.ilink.(weixinlink.MediaDownloader); ok {
+		for _, m := range u.Media {
+			data, _, err := md.DownloadMediaDecrypted(ctx, a.currentToken(), m)
+			if err != nil {
+				log.Printf("weixin-adapter: download media %s: %v", m.FileName, err)
+				continue
+			}
+			if len(data) == 0 {
+				// Key present but undecryptable: skip bytes (do not forward
+				// ciphertext garbage); the message text still goes through.
+				log.Printf("weixin-adapter: media %s undecryptable; skipped", m.FileName)
+				continue
+			}
+			name := strings.TrimSpace(m.FileName)
+			if name == "" {
+				name = "media.bin"
+			}
+			mime := strings.TrimSpace(m.MIME)
+			if mime == "" {
+				mime = "application/octet-stream"
+			}
+			atts = append(atts, map[string]any{
+				"name":           name,
+				"mime":           mime,
+				"content_base64": base64.StdEncoding.EncodeToString(data),
+			})
+		}
+	}
+	return a.forwardInbound(ctx, peer, u.Text, u.ContextToken, atts)
+}
+
+func (a *Adapter) currentToken() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.token
 }
 
 // forwardInbound signs and POSTs one inbound message to baize's webhook.
