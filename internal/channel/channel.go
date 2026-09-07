@@ -48,3 +48,18 @@ func SourceFromConvID(convID string) string {
 	}
 	return convID
 }
+
+// AccountFromConvID returns the middle segment of "<source>:<account>:<peer>"
+// (the account). It returns "" when the id has fewer than two segments.
+func AccountFromConvID(convID string) string {
+	first := strings.IndexByte(convID, ':')
+	if first < 0 {
+		return ""
+	}
+	rest := convID[first+1:]
+	second := strings.IndexByte(rest, ':')
+	if second < 0 {
+		return ""
+	}
+	return rest[:second]
+}

@@ -58,25 +58,38 @@ mock_ticket:
   listen: off
 inbox:
   channels: []
-# 渠道声明式启用（可选）。整段省略时装配全部已注册渠道（含内置默认 weixin），
-# 与历史默认部署完全等价。列出后：仅 enabled:true 的渠道被装配；未列出的内置
-# 默认渠道（weixin）仍装配以保持兼容；显式 enabled:false 始终生效（可关闭默认渠道）。
-# channels:
-#   - type: weixin
-#     enabled: true
-#     config:
-#       creds_dir: ./data/channels/weixin   # 覆盖默认凭据/设置目录
-#       # base_url: http://127.0.0.1:9002    # 渠道特定不透明配置
+# 渠道声明式启用。微信已迁移为「进程外 webhook 适配器」：baize 通过子进程
+# 托管 weixin-adapter（需先构建：go build -o bin/weixin-adapter ./cmd/weixin-adapter，
+# Windows 为 bin/weixin-adapter.exe）。下列块默认启用微信：secret 留空时 baize 自动
+# 生成 HMAC 并经 -secret 注入适配器；适配器监听 127.0.0.1:8090，入站回推 baize:8080。
+channels:
+  - name: weixin
+    type: webhook
+    enabled: true
+    config:
+      source: weixin
+      # secret 留空：adapter_autostart=true 时 baize 生成随机 HMAC 并经 -secret 注入
+      outbound_url: http://127.0.0.1:8090/outbound
+      admin_url: http://127.0.0.1:8090
+      assignee: channel:weixin
+      supports_vision: "true"
+      adapter_autostart: "true"
+      adapter_command: weixin-adapter
+      adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+      adapter_creds_dir: ./data/channels/weixin
+      # allowlist 留空 = 放行全部私信；creds 复用 ./data/channels/weixin/creds.json 免重扫
+      # baize 监听非 :8080 时，显式指定适配器回推入站地址：
+      # adapter_baize_url: http://127.0.0.1:<port>
 #
-# 进程外 IM 渠道（webhook 适配器）。一个实例 = 一个 IM 账号；多账号写多条。
-# channels:
+# 其它 IM（飞书/钉钉等）用同一 webhook 机制独立部署适配器。一个实例 = 一个 IM 账号；
+# 多账号写多条。适配器独立部署（不由 baize 托管）时省略 adapter_*、自行填 secret：
 #   - name: feishu            # 实例名（缺省=type）；同 type 多实例时必填且唯一
 #     type: webhook
 #     enabled: true
 #     config:
 #       source: feishu        # convID 前缀/meta.Source；缺省=实例名，需唯一
 #       account: feishu-bot   # IM 账号标识；缺省=实例名
-#       secret: ""            # 入站验签 HMAC 密钥（必填）
+#       secret: ""            # 入站验签 HMAC 密钥（独立部署必填）
 #       outbound_url: ""      # 适配器出站接收地址（必填）
 #       outbound_secret: ""   # 出站签名密钥（缺省=secret）
 #       assignee: ""          # 会话归属操作员（必填）

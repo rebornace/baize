@@ -1,4 +1,4 @@
-package weixin
+package weixinlink
 
 import "context"
 
@@ -21,6 +21,10 @@ type ILink interface {
 	PollLogin(ctx context.Context, ticket string) (status, accountID, token string, err error)
 	GetUpdates(ctx context.Context, token, cursor string) (updates []Update, nextCursor string, err error)
 	SendMessage(ctx context.Context, token string, msg OutboundMessage) error
+	// SendImage uploads data to the iLink CDN and sends an image message item.
+	SendImage(ctx context.Context, token, toUserID, filename, mime string, data []byte, contextToken string) error
+	// SendFile uploads data to the iLink CDN and sends a file attachment item.
+	SendFile(ctx context.Context, token, toUserID, filename, mime string, data []byte, contextToken string) error
 	DownloadMedia(ctx context.Context, token string, media MediaRef) ([]byte, error)
 }
 

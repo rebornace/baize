@@ -1,4 +1,4 @@
-package weixin
+package weixinlink
 
 import (
 	"context"
@@ -25,7 +25,19 @@ type Fake struct {
 	NextCursor string
 
 	Sent       []OutboundMessage
+	SentImages []FakeMedia
+	SentFiles  []FakeMedia
 	MediaBytes []byte
+}
+
+// FakeMedia records an outbound image/file send captured by the Fake.
+type FakeMedia struct {
+	Token        string
+	ToUserID     string
+	FileName     string
+	MIME         string
+	Data         []byte
+	ContextToken string
 }
 
 // NewFake returns a Fake with sensible defaults.
@@ -86,6 +98,20 @@ func (f *Fake) SendMessage(_ context.Context, _ string, msg OutboundMessage) err
 	return nil
 }
 
+func (f *Fake) SendImage(_ context.Context, token, toUserID, filename, mime string, data []byte, contextToken string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SentImages = append(f.SentImages, FakeMedia{Token: token, ToUserID: toUserID, FileName: filename, MIME: mime, Data: append([]byte(nil), data...), ContextToken: contextToken})
+	return nil
+}
+
+func (f *Fake) SendFile(_ context.Context, token, toUserID, filename, mime string, data []byte, contextToken string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SentFiles = append(f.SentFiles, FakeMedia{Token: token, ToUserID: toUserID, FileName: filename, MIME: mime, Data: append([]byte(nil), data...), ContextToken: contextToken})
+	return nil
+}
+
 func (f *Fake) DownloadMedia(context.Context, string, MediaRef) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -94,4 +120,13 @@ func (f *Fake) DownloadMedia(context.Context, string, MediaRef) ([]byte, error) 
 	return out, nil
 }
 
+func (f *Fake) DownloadMediaDecrypted(context.Context, string, MediaRef) ([]byte, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]byte, len(f.MediaBytes))
+	copy(out, f.MediaBytes)
+	return out, false, nil // fake media is plaintext
+}
+
 var _ ILink = (*Fake)(nil)
+var _ MediaDownloader = (*Fake)(nil)

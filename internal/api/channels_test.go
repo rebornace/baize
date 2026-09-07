@@ -6,7 +6,6 @@ import (
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/channel"
-	"github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -19,16 +18,18 @@ func TestServerRegisterChannel(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	fake := weixin.NewFake()
+	// fakeManaged (defined in server_channel_managed_test.go) is a test
+	// channel implementing channel.Channel + channel.ManagedChannel.
+	fake := &fakeManaged{
+		settings: channel.ChannelSettings{Assignee: "alice", Enabled: true, Allowlist: []string{}},
+	}
 	rt := &channel.Runtime{Runs: store.NewMemory()}
-	ch := weixin.New(fake, rt, "", "")
-	ch.SetCredsDir(dir)
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	srv.RegisterChannel(&api.ChannelHandle{
 		Name:     "weixin",
-		Channel:  ch,
+		Channel:  fake,
 		Runtime:  rt,
 		CredsDir: dir,
 		RunCtx:   runCtx,
@@ -53,17 +54,17 @@ func TestServerRegisterChannel(t *testing.T) {
 	if h.Channel == nil {
 		t.Fatal("handle Channel should not be nil")
 	}
-	gotCh, ok := h.Channel.(*weixin.Channel)
+	gotCh, ok := h.Channel.(*fakeManaged)
 	if !ok || gotCh == nil {
-		t.Fatal("handle Channel should be the registered *weixin.Channel")
+		t.Fatal("handle Channel should be the registered *fakeManaged")
 	}
-	if gotCh.Name() != weixin.SourceName {
-		t.Fatalf("channel Name=%q want %q", gotCh.Name(), weixin.SourceName)
+	if gotCh.Name() != "weixin" {
+		t.Fatalf("channel Name=%q want %q", gotCh.Name(), "weixin")
 	}
 
 	// Nil handle and empty-name handles are ignored (no panic, no entry).
 	srv.RegisterChannel(nil)
-	srv.RegisterChannel(&api.ChannelHandle{Name: "  ", Channel: ch})
+	srv.RegisterChannel(&api.ChannelHandle{Name: "  ", Channel: fake})
 	if _, ok := srv.Channel(""); ok {
 		t.Fatal("empty-name handle should not be registered")
 	}

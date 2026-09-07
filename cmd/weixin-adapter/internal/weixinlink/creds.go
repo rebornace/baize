@@ -1,4 +1,4 @@
-package weixin
+package weixinlink
 
 import (
 	"encoding/json"

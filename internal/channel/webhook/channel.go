@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/rebornace/baize/internal/channel"
 )
@@ -30,6 +32,60 @@ type Channel struct {
 	cfg    instanceConfig
 	sender *sender
 	rt     *channel.Runtime
+
+	// accountMu guards activeAccount, the real IM account learned from the
+	// first inbound message after adapter login (autostart adapters log in as
+	// an account baize does not know statically). Outbound messages use it in
+	// preference to the configured/static account.
+	accountMu     sync.RWMutex
+	activeAccount string
+
+	// settingsDir holds persisted per-instance settings (settings.json);
+	// empty means in-memory only (tests). settings/allowlist are the hot,
+	// mutable state guarded by settingsMu. admin is the out-of-process
+	// adapter management client (nil until task 10 wires the HTTP impl).
+	settingsDir string
+	settings    channel.ChannelSettings
+	settingsMu  sync.RWMutex
+	allowlist   map[string]bool
+	admin       adminClient
+	// sup hosts the out-of-process adapter for autostart instances; nil when
+	// the adapter is deployed independently (admin_url only).
+	sup *supervisor
+}
+
+// bgCtx returns the context for adapter management calls made outside of an
+// inbound request (settings reconcile, status probes).
+func (c *Channel) bgCtx() context.Context { return context.Background() }
+
+// setActiveAccount records the account learned from inbound (e.g. the post-
+// login account reported by the adapter). Empty/whitespace values are ignored.
+func (c *Channel) setActiveAccount(acct string) {
+	acct = strings.TrimSpace(acct)
+	if acct == "" {
+		return
+	}
+	c.accountMu.Lock()
+	c.activeAccount = acct
+	c.accountMu.Unlock()
+}
+
+// activeAccountOr resolves the account to stamp on outbound messages: an
+// explicit extras["account"] wins, then the learned activeAccount, then the
+// statically configured account.
+func (c *Channel) activeAccountOr(extras map[string]string) string {
+	if extras != nil {
+		if a := strings.TrimSpace(extras["account"]); a != "" {
+			return a
+		}
+	}
+	c.accountMu.RLock()
+	a := c.activeAccount
+	c.accountMu.RUnlock()
+	if a != "" {
+		return a
+	}
+	return c.cfg.Account
 }
 
 // openFromConfig builds a webhook instance. name is the instance name; it is
@@ -52,15 +108,37 @@ func openFromConfig(name string, m map[string]string) (*Channel, error) {
 func (c *Channel) Name() string   { return c.cfg.Name }
 func (c *Channel) Source() string { return c.cfg.Source }
 
-// Start/Stop are no-ops: the webhook channel has no polling loop; inbound
-// arrives over HTTP and outbound is request/response.
-func (c *Channel) Start(ctx context.Context) error { return nil }
-func (c *Channel) Stop(ctx context.Context) error  { return nil }
+// Start launches the autostart adapter child process (when configured) and
+// reconciles the adapter's enabled state. Inbound still arrives over HTTP and
+// outbound is request/response; there is no polling loop inside baize.
+func (c *Channel) Start(ctx context.Context) error {
+	if c.sup != nil {
+		if err := c.sup.start(ctx); err != nil {
+			return err
+		}
+	}
+	c.reconcileEnabled(c.GetSettings().Enabled)
+	return nil
+}
 
-// Bootstrap assembles the channel Runtime from generic deps. Persisted
-// per-channel settings are not used for webhook (it is purely config-driven);
-// assignee/agent/vision come from instance config. It registers its inbound
-// HTTP route via deps.Routes when available.
+// Stop asks the adapter to stop its polling and kills any supervised child
+// process. Errors are best-effort: shutdown proceeds regardless.
+func (c *Channel) Stop(ctx context.Context) error {
+	if c.admin != nil {
+		_ = c.admin.Stop(ctx)
+	}
+	if c.sup != nil {
+		_ = c.sup.stop(ctx)
+	}
+	return nil
+}
+
+// Bootstrap assembles the channel Runtime from generic deps. Per-instance
+// settings (assignee/agent/allowlist/enabled) are loaded from
+// <DataDir>/channels/webhook/<name>/settings.json when DataDir is set and
+// overlaid hot on the config baseline; assignee/agent/vision otherwise come
+// from instance config. It registers its inbound HTTP route via deps.Routes
+// when available.
 func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, bool, error) {
 	rt := &channel.Runtime{
 		Runs:           deps.Store,
@@ -74,14 +152,63 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		Source:         c.cfg.Source,
 	}
 	c.rt = rt
+	if dir := strings.TrimSpace(deps.DataDir); dir != "" {
+		c.settingsDir = filepath.Join(dir, "channels", "webhook", c.cfg.Name)
+	}
+	if err := c.loadSettings(); err != nil {
+		return nil, "", false, fmt.Errorf("webhook: load settings: %w", err)
+	}
+	// Management plane client (admin proxy + status). The secret converges for
+	// autostart instances: OutboundSecret == the generated Secret == the
+	// adapter's -secret.
+	if c.cfg.AdminURL != "" {
+		c.admin = newHTTPAdminClient(c.cfg.AdminURL, c.cfg.OutboundSecret)
+	}
+	// Autostart child process supervisor.
+	if c.cfg.AdapterAutostart {
+		// Resolve baize's loopback base for the adapter's -baize inbound URL:
+		// deps.SelfBaseURL (when known) -> config adapter_baize_url -> default.
+		baizeURL := strings.TrimSpace(deps.SelfBaseURL)
+		if baizeURL == "" {
+			baizeURL = strings.TrimSpace(c.cfg.AdapterBaizeURL)
+		}
+		if baizeURL == "" {
+			baizeURL = "http://127.0.0.1:8080"
+		}
+		credsDir := c.cfg.AdapterCredsDir
+		if credsDir == "" {
+			credsDir = "./data/channels/" + c.cfg.Name
+		}
+		// The adapter POSTs inbound messages back to baize's inbound route;
+		// its admin/outbound listeners live at AdminURL.
+		inboundURL := strings.TrimRight(baizeURL, "/") + "/v0/channels/" + c.cfg.Name + "/inbound"
+		args := append([]string(nil), c.cfg.AdapterArgs...)
+		args = append(args,
+			"-baize="+inboundURL,
+			"-secret="+c.cfg.Secret,
+			"-creds="+credsDir,
+		)
+		healthz := strings.TrimRight(c.cfg.AdminURL, "/") + "/healthz"
+		c.sup = &supervisor{
+			command:    c.cfg.AdapterCommand,
+			args:       args,
+			healthzURL: healthz,
+		}
+	}
 	if deps.Routes != nil {
 		deps.Routes.RegisterRoute(
 			"POST /v0/channels/"+c.cfg.Name+"/inbound",
 			c.inboundHandler(),
 		)
 	}
-	// start=true keeps parity with other Bootstrappers; Start is a no-op.
-	return rt, "", true, nil
+	// Independently deployed adapters (no supervised child) are reachable now,
+	// so reconcile enabled state at assembly; autostart children reconcile in
+	// Start() once the process is healthy.
+	if c.sup == nil {
+		c.reconcileEnabled(c.GetSettings().Enabled)
+	}
+	// Only autostart, enabled instances need baize to launch their loop.
+	return rt, "", c.GetSettings().Enabled && c.cfg.AdapterAutostart, nil
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -95,11 +222,12 @@ func firstNonEmpty(vals ...string) string {
 
 // SendText pushes a text message to the adapter for peerID.
 func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[string]string) error {
+	acct := c.activeAccountOr(extras)
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
 		RunID:          runIDFromExtras(extras),
-		ConversationID: channel.ConvID(c.cfg.Source, c.cfg.Account, peerID),
-		Account:        c.cfg.Account,
+		ConversationID: channel.ConvID(c.cfg.Source, acct, peerID),
+		Account:        acct,
 		Peer:           Peer{ID: peerID},
 		Text:           text,
 		ContextToken:   extras["context_token"],
@@ -109,11 +237,12 @@ func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[
 
 // SendMedia pushes a file to the adapter (small files inline base64).
 func (c *Channel) SendMedia(ctx context.Context, peerID, filename, mime string, data []byte, extras map[string]string) error {
+	acct := c.activeAccountOr(extras)
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
 		RunID:          runIDFromExtras(extras),
-		ConversationID: channel.ConvID(c.cfg.Source, c.cfg.Account, peerID),
-		Account:        c.cfg.Account,
+		ConversationID: channel.ConvID(c.cfg.Source, acct, peerID),
+		Account:        acct,
 		Peer:           Peer{ID: peerID},
 		Media: []OutboundMedia{{
 			Name:          filename,
@@ -163,7 +292,8 @@ func safeInstanceName(name string) bool {
 }
 
 var (
-	_ channel.Channel       = (*Channel)(nil)
-	_ channel.SourceSourced = (*Channel)(nil)
-	_ channel.Bootstrapper  = (*Channel)(nil)
+	_ channel.Channel        = (*Channel)(nil)
+	_ channel.SourceSourced  = (*Channel)(nil)
+	_ channel.Bootstrapper   = (*Channel)(nil)
+	_ channel.ManagedChannel = (*Channel)(nil)
 )

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/rebornace/baize/internal/channel"
 )
 
 func TestOpenFromConfigRequiresInstanceName(t *testing.T) {
@@ -121,5 +123,44 @@ func TestOpenFromConfigRejectsUnsafeInstanceName(t *testing.T) {
 		if _, err := openFromConfig(bad, m); err == nil {
 			t.Fatalf("expected error for unsafe instance name %q", bad)
 		}
+	}
+}
+
+func TestDynamicAccountInboundThenOutbound(t *testing.T) {
+	// Inbound carries the post-login account; outbound must use it (not the
+	// static config account/name).
+	got := make(chan OutboundMessage, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m OutboundMessage
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		got <- m
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := openFromConfig("weixin", map[string]string{
+		"source":       "weixin",
+		"secret":       "s",
+		"outbound_url": srv.URL,
+		"assignee":     "channel:weixin",
+		// no static account: defaults to name "weixin" until first inbound.
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// White-box: attach a runtime the way Bootstrap would, then learn the
+	// post-login account from a (simulated) inbound.
+	c.rt = &channel.Runtime{Assignee: "channel:weixin", DefaultAgentID: "ag", Source: "weixin"}
+	c.setActiveAccount("bot@im.bot")
+
+	if err := c.SendText(context.Background(), "peer@im.wechat", "hi", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	m := <-got
+	if m.Account != "bot@im.bot" {
+		t.Fatalf("outbound account = %q want bot@im.bot", m.Account)
+	}
+	if m.ConversationID != "weixin:bot@im.bot:peer@im.wechat" {
+		t.Fatalf("conv id = %q", m.ConversationID)
 	}
 }

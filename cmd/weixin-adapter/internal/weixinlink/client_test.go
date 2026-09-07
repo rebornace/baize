@@ -1,4 +1,4 @@
-package weixin
+package weixinlink
 
 import (
 	"context"
@@ -325,5 +325,60 @@ func TestNewClient_DefaultBase(t *testing.T) {
 	c := NewClient("", nil)
 	if c.BaseURL != DefaultBaseURL {
 		t.Fatalf("BaseURL=%q", c.BaseURL)
+	}
+}
+
+func TestClient_SendMessagePreservesClientID(t *testing.T) {
+	var clientIDs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ilink/bot/sendmessage" {
+			body, _ := io.ReadAll(r.Body)
+			var req map[string]any
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("send body: %v", err)
+			}
+			msg, _ := req["msg"].(map[string]any)
+			clientIDs = append(clientIDs, msg["client_id"].(string))
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, srv.Client())
+
+	// Caller-supplied client_id must be passed through verbatim so webhook
+	// HTTP retries dedupe on the iLink side instead of resending.
+	err := c.SendMessage(context.Background(), "tok", OutboundMessage{
+		ToUserID:     "peer@im.wechat",
+		Text:         "pong",
+		ContextToken: "ctx-1",
+		ClientID:     "fixed-idempotency-key",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage with ClientID: %v", err)
+	}
+	// Empty ClientID falls back to an auto-generated non-empty id.
+	err = c.SendMessage(context.Background(), "tok", OutboundMessage{
+		ToUserID:     "peer@im.wechat",
+		Text:         "pong2",
+		ContextToken: "ctx-2",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage without ClientID: %v", err)
+	}
+
+	if len(clientIDs) != 2 {
+		t.Fatalf("got %d sendmessage calls, want 2: %v", len(clientIDs), clientIDs)
+	}
+	if clientIDs[0] != "fixed-idempotency-key" {
+		t.Fatalf("caller-supplied client_id=%q want %q", clientIDs[0], "fixed-idempotency-key")
+	}
+	if clientIDs[1] == "" {
+		t.Fatalf("auto-generated client_id is empty")
+	}
+	if clientIDs[1] == "fixed-idempotency-key" {
+		t.Fatalf("auto-generated client_id collided with caller id: %q", clientIDs[1])
 	}
 }

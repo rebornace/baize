@@ -23,11 +23,11 @@ import (
 	"github.com/rebornace/baize/internal/blob"
 	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/channel"
-	// Built-in default channel: registers its Descriptor via init() so
-	// wireChannels discovers it generically. Additional in-tree channels add
-	// their own blank import in cmd/baize/main.go without touching bootstrap.
+	// Built-in channel: the generic out-of-process webhook channel registers
+	// its Descriptor via init() so wireChannels discovers it generically.
+	// Additional in-tree channels add their own blank import in
+	// cmd/baize/main.go without touching bootstrap.
 	_ "github.com/rebornace/baize/internal/channel/webhook"
-	_ "github.com/rebornace/baize/internal/channel/weixin"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
@@ -442,7 +442,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 
 	// 装配 middleware 驱动（队列/事件总线/限流）。此后三个入队点（HTTP
-	// Dispatch、run_start、weixin AfterCreateRun）走驱动队列 + worker 池竞争
+	// Dispatch、run_start、渠道 AfterCreateRun）走驱动队列 + worker 池竞争
 	// 消费，不再走 nil 队列的本地 goroutine；崩溃调和器周期性把租约过期的
 	// 孤儿 run 重新入队。memory 为默认驱动；redis 驱动在任务 9 接入。
 	// driver 名在此再归一一次：config.Normalize 已保证默认 memory，但测试
@@ -513,7 +513,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	stopWorkers := mw.StartWorkers(mwCtx, srv)
 	stopReconciler := mw.StartReconciler(mwCtx, st, time.Duration(cfg.Middleware.ReconcileIntervalSec)*time.Second)
 	// closer.stops 逆序执行：本闭包最后追加、最先运行——先取消总线订阅并
-	// 停 worker/调和器（等待在飞 job 收尾），再关队列；随后才轮到 weixin、
+	// 停 worker/调和器（等待在飞 job 收尾），再关队列；随后才轮到 IM 渠道、
 	// webhook worker 与 store 的关闭，保证关停期间不再有新 job 入队/执行。
 	closer.stops = append(closer.stops, func() {
 		mwCancel()
@@ -596,14 +596,16 @@ type channelDeps struct {
 //
 // When cfg.Channels is empty (section omitted), every registered channel is
 // auto-wired once by its type name — identical to the pre-declarative-config
-// behavior — except Descriptor.DeclarativeOnly types (e.g. webhook), which
-// require per-instance opaque config and support multiple instances, so they
-// are never auto-wired on the legacy path. When cfg.Channels lists entries,
-// each entry wires one named instance (the entry name, defaulting to the
-// type); a type is wired only when its entry is enabled:true, while a
-// built-in default not listed at all (Descriptor.EnabledByDefault, e.g.
-// weixin) stays wired — this keeps partial declarative configs backward
-// compatible. An explicit enabled:false always wins. Duplicate instance
+// behavior — except Descriptor.DeclarativeOnly types (the webhook channel),
+// which require per-instance opaque config and support multiple instances, so
+// they are never auto-wired on the legacy path. With no in-process IM channel
+// registered, the legacy path wires zero IM channels; IM accounts are declared
+// explicitly via channels: (webhook instances). When cfg.Channels lists
+// entries, each entry wires one named instance (the entry name, defaulting to
+// the type); a type is wired only when its entry is enabled:true, while a
+// built-in default not listed at all (Descriptor.EnabledByDefault) stays
+// wired — this keeps partial declarative configs backward compatible. An
+// explicit enabled:false always wins. Duplicate instance
 // names, duplicate instance sources, or unknown channel types fail fast.
 // Per-entry config.creds_dir overrides the descriptor DefaultCredsDir; other
 // opaque config keys (including "name" and "source") are passed through.
@@ -638,7 +640,8 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		},
 		// api.Server implements channel.RouteRegistrar: channels such as the
 		// webhook channel mount their own inbound HTTP routes during Bootstrap.
-		Routes: d.srv,
+		Routes:  d.srv,
+		DataDir: dataDir(d.cfg),
 	}
 
 	// seenSource tracks the SourceSourced.Source() each successfully built

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	urlpkg "net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,11 +24,16 @@ const (
 	signatureSkew  = 300 * time.Second
 )
 
+// idempotencyTTL bounds how long a successfully-handled idempotency key is
+// remembered for duplicate suppression. It is a package-level var (not const)
+// so tests can temporarily shrink it; expired keys are swept lazily.
+var idempotencyTTL = 10 * time.Minute
+
 // inboundHandler returns the http.Handler for POST /v0/channels/{name}/inbound.
 func (c *Channel) inboundHandler() http.Handler {
 	var (
-		mu      sync.Mutex
-		seenKey = map[string]bool{}
+		mu     sync.Mutex
+		seenAt = map[string]time.Time{}
 	)
 	fetch := newFetchClient()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -56,8 +62,9 @@ func (c *Channel) inboundHandler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "peer.id required"})
 			return
 		}
-		// Mandatory inbound allowlist (when configured).
-		if len(c.cfg.Allowlist) > 0 && !c.cfg.Allowlist[peer] {
+		// Mandatory inbound allowlist; reads the hot-updatable settings
+		// allowlist (empty = open to all).
+		if !c.peerAllowed(peer) {
 			log.Printf("webhook %s: peer %q not in allowlist; ignored", c.cfg.Name, peer)
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 			return
@@ -69,7 +76,17 @@ func (c *Channel) inboundHandler() http.Handler {
 		key := msg.IdempotencyKey
 		if key != "" {
 			mu.Lock()
-			dup := seenKey[key]
+			now := time.Now()
+			// Lazy expiry sweep: drop entries older than the TTL so the map
+			// cannot grow without bound. The table is small and writes are
+			// infrequent, so an O(n) sweep under the lock is acceptable.
+			for k, t := range seenAt {
+				if now.Sub(t) >= idempotencyTTL {
+					delete(seenAt, k)
+				}
+			}
+			t, seen := seenAt[key]
+			dup := seen && now.Sub(t) < idempotencyTTL
 			mu.Unlock()
 			if dup {
 				writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
@@ -82,7 +99,15 @@ func (c *Channel) inboundHandler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "attachment"})
 			return
 		}
-		extras := map[string]string{"account": c.cfg.Account}
+		// The account stamped on inbound is the adapter's real post-login account
+		// (autostart adapters do not know it at config time). Learn it here so
+		// subsequent outbound messages use it; fall back to the static config.
+		acct := strings.TrimSpace(msg.Account)
+		if acct == "" {
+			acct = c.cfg.Account
+		}
+		c.setActiveAccount(acct)
+		extras := map[string]string{"account": acct}
 		if msg.ContextToken != "" {
 			extras["context_token"] = msg.ContextToken
 		}
@@ -94,7 +119,7 @@ func (c *Channel) inboundHandler() http.Handler {
 		}
 		if key != "" {
 			mu.Lock()
-			seenKey[key] = true
+			seenAt[key] = time.Now()
 			mu.Unlock()
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

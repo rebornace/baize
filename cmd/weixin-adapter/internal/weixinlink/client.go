@@ -1,4 +1,4 @@
-package weixin
+package weixinlink
 
 import (
 	"bytes"
@@ -112,6 +112,8 @@ type wireMediaItem struct {
 	Media    *wireCDNMedia `json:"media,omitempty"`
 	FileName string        `json:"file_name,omitempty"`
 	AESKey   string        `json:"aeskey,omitempty"`
+	MidSize  int64         `json:"mid_size,omitempty"` // outbound image
+	Len      string        `json:"len,omitempty"`      // outbound file
 }
 
 type wireCDNMedia struct {
@@ -245,22 +247,28 @@ func (c *Client) GetUpdates(ctx context.Context, token, cursor string) ([]Update
 }
 
 func (c *Client) SendMessage(ctx context.Context, token string, msg OutboundMessage) error {
-	clientID := msg.ClientID
+	return c.sendItems(ctx, token, msg.ToUserID, msg.ContextToken, msg.ClientID, []wireItem{{
+		Type:     itemTypeText,
+		TextItem: &wireTextItem{Text: msg.Text},
+	}})
+}
+
+// sendItems posts a sendmessage with the given item list, stamping auth,
+// client_id, message type/state, base_info, and context_token. A non-empty
+// clientID is passed through verbatim (caller idempotency key for retries);
+// an empty one gets an auto-generated id.
+func (c *Client) sendItems(ctx context.Context, token, toUserID, contextToken, clientID string, items []wireItem) error {
 	if clientID == "" {
 		clientID = fmt.Sprintf("baize:%d-%d", time.Now().UnixMilli(), rand.Intn(1<<16))
 	}
 	body := sendMessageRequest{
 		Msg: wireOutboundMessage{
-			FromUserID:   "",
-			ToUserID:     msg.ToUserID,
+			ToUserID:     toUserID,
 			ClientID:     clientID,
 			MessageType:  messageTypeBot,
 			MessageState: messageStateFinish,
-			ContextToken: msg.ContextToken,
-			ItemList: []wireItem{{
-				Type:     itemTypeText,
-				TextItem: &wireTextItem{Text: msg.Text},
-			}},
+			ContextToken: contextToken,
+			ItemList:     items,
 		},
 		BaseInfo: baseInfo{ChannelVersion: channelVersion},
 	}
@@ -274,7 +282,8 @@ func (c *Client) SendMessage(ctx context.Context, token string, msg OutboundMess
 	return nil
 }
 
-// DownloadMedia GETs raw media bytes. AES CDN decryption is left as TODO when key/format is unclear.
+// DownloadMedia GETs raw (still encrypted, when keyed) media bytes from the
+// CDN. Decryption is handled separately by DownloadMediaDecrypted.
 func (c *Client) DownloadMedia(ctx context.Context, _ string, media MediaRef) ([]byte, error) {
 	downloadURL := media.URL
 	if downloadURL == "" && media.EncryptQueryParam != "" {
@@ -299,8 +308,6 @@ func (c *Client) DownloadMedia(ctx context.Context, _ string, media MediaRef) ([
 	if err != nil {
 		return nil, fmt.Errorf("weixin download media: read body: %w", err)
 	}
-	// TODO: decrypt AES-ECB when aes_key / encrypt_type encoding is confirmed for this media.
-	_ = media.AESKey
 	return data, nil
 }
 
@@ -330,10 +337,18 @@ func mediaRefFromItem(item wireItem) *MediaRef {
 	if aesOverride != "" {
 		aesKey = aesOverride
 	}
+	mime := ""
+	switch {
+	case item.ImageItem != nil:
+		mime = "image/jpeg" // iLink inbound images are JPEG; filename carries extension
+	case item.FileItem != nil:
+		mime = "application/octet-stream"
+	}
 	return &MediaRef{
 		EncryptQueryParam: media.EncryptQueryParam,
 		AESKey:            aesKey,
 		FileName:          fileName,
+		MIME:              mime,
 	}
 }
 

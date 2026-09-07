@@ -93,3 +93,20 @@ mock_ticket:
   listen: ":18080"
 inbox:
   channels: []
+# 微信已迁移为进程外 webhook 适配器（默认不在 demo 中启用）。需要时先构建
+# 适配器：go build -o bin/weixin-adapter ./cmd/weixin-adapter（Windows 为 .exe），
+# 再取消下方注释（demo 监听 :8080，适配器入站回推默认即 127.0.0.1:8080）：
+# channels:
+#   - name: weixin
+#     type: webhook
+#     enabled: true
+#     config:
+#       source: weixin
+#       outbound_url: http://127.0.0.1:8090/outbound
+#       admin_url: http://127.0.0.1:8090
+#       assignee: channel:weixin
+#       supports_vision: "true"
+#       adapter_autostart: "true"
+#       adapter_command: weixin-adapter
+#       adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+#       adapter_creds_dir: ./data/channels/weixin

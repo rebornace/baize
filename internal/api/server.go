@@ -142,21 +142,18 @@ type Server struct {
 	CallbackTTL        time.Duration
 
 	// Outbound is the channel used to deliver mirrored UI/API user turns and
-	// succeeded assistant replies to channel peers. It may be a concrete
-	// *weixin.Channel (single-channel deployments/tests) or a *channel.Router
-	// that dispatches by conversation meta.Source. nil = no mirroring.
+	// succeeded assistant replies to channel peers. It is normally a
+	// *channel.Router that dispatches by conversation meta.Source (tests may
+	// pass a concrete channel.Channel). nil = no mirroring.
 	Outbound       channel.Channel
 	OutboundExtras func(conversationID string) map[string]string
 
 	// channels is the per-channel runtime handle table, keyed by channel name
-	// (e.g. "weixin"). Channel-specific handlers look their handle up by name
-	// and type-assert the concrete channel. Guarded by channelsMu; only map
+	// (e.g. "weixin"). The generic management plane looks handles up by name
+	// and type-asserts channel.ManagedChannel. Guarded by channelsMu; only map
 	// reads/writes happen under the lock (never network/long operations).
 	channelsMu sync.RWMutex
 	channels   map[string]*ChannelHandle
-
-	// weixinMu serializes weixin login/logout/settings reconciliation.
-	weixinMu sync.Mutex
 
 	mux *http.ServeMux
 }
@@ -407,11 +404,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/store", s.handleGetStoreSettings)
 	s.mux.HandleFunc("PUT /v0/settings/store", s.handlePutStoreSettings)
 	s.mux.HandleFunc("POST /v0/settings/store/restart", s.handlePostStoreRestart)
-	s.mux.HandleFunc("POST /v0/settings/channels/weixin/login/start", s.handleWeixinLoginStart)
-	s.mux.HandleFunc("GET /v0/settings/channels/weixin/login/status", s.handleWeixinLoginStatus)
-	s.mux.HandleFunc("POST /v0/settings/channels/weixin/logout", s.handleWeixinLogout)
-	s.mux.HandleFunc("GET /v0/settings/channels/weixin", s.handleGetWeixinSettings)
-	s.mux.HandleFunc("PUT /v0/settings/channels/weixin", s.handlePutWeixinSettings)
+	s.mux.HandleFunc("POST /v0/settings/channels/{name}/login/start", s.handleChannelLoginStart)
+	s.mux.HandleFunc("GET /v0/settings/channels/{name}/login/status", s.handleChannelLoginStatus)
+	s.mux.HandleFunc("POST /v0/settings/channels/{name}/logout", s.handleChannelLogout)
+	s.mux.HandleFunc("GET /v0/settings/channels/{name}", s.handleGetChannelSettings)
+	s.mux.HandleFunc("PUT /v0/settings/channels/{name}", s.handlePutChannelSettings)
 	s.mux.HandleFunc("GET /v0/settings/runtime", s.handleGetRuntimeSettings)
 	s.mux.HandleFunc("PATCH /v0/settings/runtime", s.handlePatchRuntimeSettings)
 	s.mux.HandleFunc("GET /v0/settings/credentials", s.handleGetCredentials)

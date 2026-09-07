@@ -26,11 +26,11 @@ type Attachment struct {
 // InboundMessage is the adapter -> baize request body.
 type InboundMessage struct {
 	Event string `json:"event"` // "message"
-	// Account is informational only in 2A: one webhook instance serves exactly
-	// one IM account, so the conversation account is always the instance's
-	// configured account (config.account / instance name) and this field is
-	// ignored. It is accepted for forward compatibility with a future
-	// multi-account management plane.
+	// Account is the IM account the adapter is logged in as. Autostart
+	// adapters discover this only after login, so baize uses it to learn the
+	// real account: inbound stamps it on the conversation and caches it for
+	// outbound (see Channel.setActiveAccount). When empty, the instance's
+	// configured account (config.account / instance name) is used.
 	Account        string       `json:"account"`
 	Peer           Peer         `json:"peer"`
 	Text           string       `json:"text"`
