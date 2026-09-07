@@ -54,6 +54,7 @@ type Runtime struct {
 
 	tokenMu sync.Mutex
 	tokens  map[string]string // conversation_id -> context_token
+	accts   map[string]string // conversation_id -> account
 }
 
 // HandleInbound maps a peer message to a conversation, replies busy if needed,
@@ -192,19 +193,23 @@ func (r *Runtime) rememberContextToken(conversationID string, extras map[string]
 	if r == nil || extras == nil {
 		return
 	}
-	tok := strings.TrimSpace(extras["context_token"])
-	if tok == "" {
-		return
-	}
 	r.tokenMu.Lock()
 	defer r.tokenMu.Unlock()
 	if r.tokens == nil {
 		r.tokens = make(map[string]string)
 	}
-	r.tokens[conversationID] = tok
+	if r.accts == nil {
+		r.accts = make(map[string]string)
+	}
+	if tok := strings.TrimSpace(extras["context_token"]); tok != "" {
+		r.tokens[conversationID] = tok
+	}
+	if acct := strings.TrimSpace(extras["account"]); acct != "" {
+		r.accts[conversationID] = acct
+	}
 }
 
-// OutboundExtras returns cached channel extras (e.g. context_token) for a conversation.
+// OutboundExtras returns cached channel extras (e.g. context_token, account) for a conversation.
 func (r *Runtime) OutboundExtras(conversationID string) map[string]string {
 	if r == nil {
 		return nil
@@ -212,10 +217,18 @@ func (r *Runtime) OutboundExtras(conversationID string) map[string]string {
 	r.tokenMu.Lock()
 	defer r.tokenMu.Unlock()
 	tok := r.tokens[conversationID]
-	if tok == "" {
+	acct := r.accts[conversationID]
+	if tok == "" && acct == "" {
 		return nil
 	}
-	return map[string]string{"context_token": tok}
+	out := map[string]string{}
+	if tok != "" {
+		out["context_token"] = tok
+	}
+	if acct != "" {
+		out["account"] = acct
+	}
+	return out
 }
 
 // buildInboundContent mirrors internal/api handlePostRun attachment assembly:

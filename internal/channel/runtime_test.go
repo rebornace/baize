@@ -402,3 +402,48 @@ func TestConvIDHelpers(t *testing.T) {
 		t.Fatalf("ui prefix=%q", src)
 	}
 }
+
+func TestOutboundExtrasIncludesAccountAndContextToken(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	convID := "weixin:acct-1:peer-1"
+	rt.rememberContextToken(convID, map[string]string{
+		"context_token": "tok-abc",
+		"account":       "acct-1",
+	})
+	ex := rt.OutboundExtras(convID)
+	if ex == nil {
+		t.Fatal("OutboundExtras returned nil")
+	}
+	if ex["context_token"] != "tok-abc" {
+		t.Fatalf("context_token = %q, want tok-abc", ex["context_token"])
+	}
+	if ex["account"] != "acct-1" {
+		t.Fatalf("account = %q, want acct-1", ex["account"])
+	}
+	// Only token, no account -> still returns map with context_token.
+	rt.rememberContextToken("weixin:acct-2:peer-2", map[string]string{"context_token": "t2"})
+	if ex2 := rt.OutboundExtras("weixin:acct-2:peer-2"); ex2["context_token"] != "t2" || ex2["account"] != "" {
+		t.Fatalf("ex2 = %+v", ex2)
+	}
+	// Unknown conversation -> nil.
+	if got := rt.OutboundExtras("weixin:nope:x"); got != nil {
+		t.Fatalf("unknown conv = %+v, want nil", got)
+	}
+}
+
+func TestAccountFromConvID(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"weixin:acct-1:peer-1", "acct-1"},
+		{"webhook:bot9:snowflake", "bot9"},
+		{"weixin:acct-1:peer:with:colon", "acct-1"},
+		{"ui:abc", ""},
+		{"no-colon", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := AccountFromConvID(c.in); got != c.want {
+			t.Errorf("AccountFromConvID(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
