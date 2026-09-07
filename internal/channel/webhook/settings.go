@@ -106,12 +106,10 @@ func (c *Channel) applySettings(st channel.ChannelSettings) {
 	c.allowlist = toSet(st.Allowlist)
 	c.settingsMu.Unlock()
 	if c.rt != nil {
-		if id := strings.TrimSpace(st.Assignee); id != "" {
-			c.rt.Assignee = id
-		}
-		if id := strings.TrimSpace(st.AgentID); id != "" {
-			c.rt.DefaultAgentID = id
-		}
+		// Hot update under the Runtime's own routeMu: inbound HTTP goroutines
+		// read these fields via Runtime.routing(), so direct writes here would
+		// race. SetRouting ignores blank values.
+		c.rt.SetRouting(st.Assignee, st.AgentID)
 	}
 }
 

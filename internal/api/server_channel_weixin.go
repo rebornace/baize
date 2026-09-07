@@ -235,12 +235,9 @@ func (s *Server) applyWeixinSettings(settings weixin.Settings) (running bool, re
 		return false, ""
 	}
 	if h.Runtime != nil {
-		if id := strings.TrimSpace(settings.Assignee); id != "" {
-			h.Runtime.Assignee = id
-		}
-		if id := strings.TrimSpace(settings.AgentID); id != "" {
-			h.Runtime.DefaultAgentID = id
-		}
+		// Hot update under the Runtime's routeMu (concurrent with inbound
+		// HandleInbound reads). SetRouting ignores blank/empty values.
+		h.Runtime.SetRouting(settings.Assignee, settings.AgentID)
 	}
 	ch.SetAllowlist(settings.Allowlist)
 	if settings.Enabled {

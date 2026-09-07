@@ -432,6 +432,32 @@ func TestOutboundExtrasIncludesAccountAndContextToken(t *testing.T) {
 	}
 }
 
+func TestSetRoutingHotUpdatesAndIgnoresBlank(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+
+	// Hot update applies both fields.
+	rt.SetRouting("op:alice", "ag-2")
+	assignee, agentID := rt.routing()
+	if assignee != "op:alice" || agentID != "ag-2" {
+		t.Fatalf("routing() = %q, %q; want op:alice, ag-2", assignee, agentID)
+	}
+
+	// Blank/empty values are ignored: a partial update cannot blank a field.
+	rt.SetRouting("  ", "")
+	assignee, agentID = rt.routing()
+	if assignee != "op:alice" || agentID != "ag-2" {
+		t.Fatalf("routing() after blank = %q, %q; want unchanged op:alice, ag-2", assignee, agentID)
+	}
+
+	// A non-blank partial update changes only the supplied field.
+	rt.SetRouting("op:bob", "   ")
+	assignee, agentID = rt.routing()
+	if assignee != "op:bob" || agentID != "ag-2" {
+		t.Fatalf("routing() after partial = %q, %q; want op:bob, ag-2", assignee, agentID)
+	}
+}
+
 func TestAccountFromConvID(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"weixin:acct-1:peer-1", "acct-1"},

@@ -52,9 +52,36 @@ type Runtime struct {
 	// Empty defaults to "weixin" to preserve historical conversation ids.
 	Source string
 
+	// routeMu guards Assignee/DefaultAgentID hot updates (SetRouting) against
+	// concurrent reads in HandleInbound. Construction-time writes before the
+	// Runtime is published to the HTTP server are unsynchronized by design.
+	routeMu sync.RWMutex
+
 	tokenMu sync.Mutex
 	tokens  map[string]string // conversation_id -> context_token
 	accts   map[string]string // conversation_id -> account
+}
+
+// SetRouting hot-updates the assignee and default agent id. Empty/blank
+// values are ignored so a partial update cannot blank a routing field.
+// Safe to call concurrently with HandleInbound.
+func (r *Runtime) SetRouting(assignee, agentID string) {
+	r.routeMu.Lock()
+	defer r.routeMu.Unlock()
+	if id := strings.TrimSpace(assignee); id != "" {
+		r.Assignee = id
+	}
+	if id := strings.TrimSpace(agentID); id != "" {
+		r.DefaultAgentID = id
+	}
+}
+
+// routing returns the current assignee and default agent id as a locked
+// snapshot, safe to read while SetRouting updates them.
+func (r *Runtime) routing() (assignee, agentID string) {
+	r.routeMu.RLock()
+	defer r.routeMu.RUnlock()
+	return r.Assignee, r.DefaultAgentID
 }
 
 // HandleInbound maps a peer message to a conversation, replies busy if needed,
@@ -72,7 +99,10 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 	if r.Meta == nil {
 		return errors.New("channel: meta store is required")
 	}
-	assignee := strings.TrimSpace(r.Assignee)
+	// Locked snapshot: assignee/default agent may be hot-updated concurrently
+	// by SetRouting, so never read the fields directly in this goroutine.
+	assignee, defaultAgent := r.routing()
+	assignee = strings.TrimSpace(assignee)
 	if assignee == "" {
 		return ErrNoAssignee
 	}
@@ -112,7 +142,7 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return r.handleBusyInbound(ctx, ch, convID, peerID, in)
 	}
 
-	agentID := strings.TrimSpace(r.DefaultAgentID)
+	agentID := strings.TrimSpace(defaultAgent)
 	if agentID == "" {
 		return ErrNoAgent
 	}
