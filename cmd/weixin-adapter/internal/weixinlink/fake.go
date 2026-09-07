@@ -25,7 +25,19 @@ type Fake struct {
 	NextCursor string
 
 	Sent       []OutboundMessage
+	SentImages []FakeMedia
+	SentFiles  []FakeMedia
 	MediaBytes []byte
+}
+
+// FakeMedia records an outbound image/file send captured by the Fake.
+type FakeMedia struct {
+	Token        string
+	ToUserID     string
+	FileName     string
+	MIME         string
+	Data         []byte
+	ContextToken string
 }
 
 // NewFake returns a Fake with sensible defaults.
@@ -83,6 +95,20 @@ func (f *Fake) SendMessage(_ context.Context, _ string, msg OutboundMessage) err
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Sent = append(f.Sent, msg)
+	return nil
+}
+
+func (f *Fake) SendImage(_ context.Context, token, toUserID, filename, mime string, data []byte, contextToken string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SentImages = append(f.SentImages, FakeMedia{Token: token, ToUserID: toUserID, FileName: filename, MIME: mime, Data: append([]byte(nil), data...), ContextToken: contextToken})
+	return nil
+}
+
+func (f *Fake) SendFile(_ context.Context, token, toUserID, filename, mime string, data []byte, contextToken string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SentFiles = append(f.SentFiles, FakeMedia{Token: token, ToUserID: toUserID, FileName: filename, MIME: mime, Data: append([]byte(nil), data...), ContextToken: contextToken})
 	return nil
 }
 

@@ -112,6 +112,8 @@ type wireMediaItem struct {
 	Media    *wireCDNMedia `json:"media,omitempty"`
 	FileName string        `json:"file_name,omitempty"`
 	AESKey   string        `json:"aeskey,omitempty"`
+	MidSize  int64         `json:"mid_size,omitempty"` // outbound image
+	Len      string        `json:"len,omitempty"`      // outbound file
 }
 
 type wireCDNMedia struct {
@@ -245,22 +247,23 @@ func (c *Client) GetUpdates(ctx context.Context, token, cursor string) ([]Update
 }
 
 func (c *Client) SendMessage(ctx context.Context, token string, msg OutboundMessage) error {
-	clientID := msg.ClientID
-	if clientID == "" {
-		clientID = fmt.Sprintf("baize:%d-%d", time.Now().UnixMilli(), rand.Intn(1<<16))
-	}
+	return c.sendItems(ctx, token, msg.ToUserID, msg.ContextToken, []wireItem{{
+		Type:     itemTypeText,
+		TextItem: &wireTextItem{Text: msg.Text},
+	}})
+}
+
+// sendItems posts a sendmessage with the given item list, stamping auth,
+// client_id, message type/state, base_info, and context_token.
+func (c *Client) sendItems(ctx context.Context, token, toUserID, contextToken string, items []wireItem) error {
 	body := sendMessageRequest{
 		Msg: wireOutboundMessage{
-			FromUserID:   "",
-			ToUserID:     msg.ToUserID,
-			ClientID:     clientID,
+			ToUserID:     toUserID,
+			ClientID:     fmt.Sprintf("baize:%d-%d", time.Now().UnixMilli(), rand.Intn(1<<16)),
 			MessageType:  messageTypeBot,
 			MessageState: messageStateFinish,
-			ContextToken: msg.ContextToken,
-			ItemList: []wireItem{{
-				Type:     itemTypeText,
-				TextItem: &wireTextItem{Text: msg.Text},
-			}},
+			ContextToken: contextToken,
+			ItemList:     items,
 		},
 		BaseInfo: baseInfo{ChannelVersion: channelVersion},
 	}
