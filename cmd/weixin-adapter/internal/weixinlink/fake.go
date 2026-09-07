@@ -94,4 +94,13 @@ func (f *Fake) DownloadMedia(context.Context, string, MediaRef) ([]byte, error) 
 	return out, nil
 }
 
+func (f *Fake) DownloadMediaDecrypted(context.Context, string, MediaRef) ([]byte, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]byte, len(f.MediaBytes))
+	copy(out, f.MediaBytes)
+	return out, false, nil // fake media is plaintext
+}
+
 var _ ILink = (*Fake)(nil)
+var _ MediaDownloader = (*Fake)(nil)

@@ -330,10 +330,18 @@ func mediaRefFromItem(item wireItem) *MediaRef {
 	if aesOverride != "" {
 		aesKey = aesOverride
 	}
+	mime := ""
+	switch {
+	case item.ImageItem != nil:
+		mime = "image/jpeg" // iLink inbound images are JPEG; filename carries extension
+	case item.FileItem != nil:
+		mime = "application/octet-stream"
+	}
 	return &MediaRef{
 		EncryptQueryParam: media.EncryptQueryParam,
 		AESKey:            aesKey,
 		FileName:          fileName,
+		MIME:              mime,
 	}
 }
 
