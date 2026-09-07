@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -38,7 +39,21 @@ type Channel struct {
 	// preference to the configured/static account.
 	accountMu     sync.RWMutex
 	activeAccount string
+
+	// settingsDir holds persisted per-instance settings (settings.json);
+	// empty means in-memory only (tests). settings/allowlist are the hot,
+	// mutable state guarded by settingsMu. admin is the out-of-process
+	// adapter management client (nil until task 10 wires the HTTP impl).
+	settingsDir string
+	settings    channel.ChannelSettings
+	settingsMu  sync.RWMutex
+	allowlist   map[string]bool
+	admin       adminClient
 }
+
+// bgCtx returns the context for adapter management calls made outside of an
+// inbound request (settings reconcile, status probes).
+func (c *Channel) bgCtx() context.Context { return context.Background() }
 
 // setActiveAccount records the account learned from inbound (e.g. the post-
 // login account reported by the adapter). Empty/whitespace values are ignored.
@@ -95,10 +110,12 @@ func (c *Channel) Source() string { return c.cfg.Source }
 func (c *Channel) Start(ctx context.Context) error { return nil }
 func (c *Channel) Stop(ctx context.Context) error  { return nil }
 
-// Bootstrap assembles the channel Runtime from generic deps. Persisted
-// per-channel settings are not used for webhook (it is purely config-driven);
-// assignee/agent/vision come from instance config. It registers its inbound
-// HTTP route via deps.Routes when available.
+// Bootstrap assembles the channel Runtime from generic deps. Per-instance
+// settings (assignee/agent/allowlist/enabled) are loaded from
+// <DataDir>/channels/webhook/<name>/settings.json when DataDir is set and
+// overlaid hot on the config baseline; assignee/agent/vision otherwise come
+// from instance config. It registers its inbound HTTP route via deps.Routes
+// when available.
 func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, bool, error) {
 	rt := &channel.Runtime{
 		Runs:           deps.Store,
@@ -112,6 +129,13 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		Source:         c.cfg.Source,
 	}
 	c.rt = rt
+	if dir := strings.TrimSpace(deps.DataDir); dir != "" {
+		c.settingsDir = filepath.Join(dir, "channels", "webhook", c.cfg.Name)
+	}
+	if err := c.loadSettings(); err != nil {
+		return nil, "", false, fmt.Errorf("webhook: load settings: %w", err)
+	}
+	c.reconcileEnabled(c.GetSettings().Enabled)
 	if deps.Routes != nil {
 		deps.Routes.RegisterRoute(
 			"POST /v0/channels/"+c.cfg.Name+"/inbound",

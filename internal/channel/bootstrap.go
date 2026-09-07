@@ -26,6 +26,10 @@ type BuildDeps struct {
 	// Routes, when non-nil, lets a channel mount its own HTTP endpoints during
 	// Bootstrap (e.g. inbound webhook). Nil in tests that do not exercise HTTP.
 	Routes RouteRegistrar
+	// DataDir is the baize data directory for persisted per-channel state
+	// (e.g. <dataDir>/channels/webhook/<name>/settings.json). Empty means
+	// in-memory only (tests).
+	DataDir string
 }
 
 // Bootstrapper is implemented by channels that participate in full assembly:

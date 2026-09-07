@@ -62,8 +62,9 @@ func (c *Channel) inboundHandler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "peer.id required"})
 			return
 		}
-		// Mandatory inbound allowlist (when configured).
-		if len(c.cfg.Allowlist) > 0 && !c.cfg.Allowlist[peer] {
+		// Mandatory inbound allowlist; reads the hot-updatable settings
+		// allowlist (empty = open to all).
+		if !c.peerAllowed(peer) {
 			log.Printf("webhook %s: peer %q not in allowlist; ignored", c.cfg.Name, peer)
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 			return

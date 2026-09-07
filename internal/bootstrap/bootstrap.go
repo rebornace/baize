@@ -638,7 +638,8 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		},
 		// api.Server implements channel.RouteRegistrar: channels such as the
 		// webhook channel mount their own inbound HTTP routes during Bootstrap.
-		Routes: d.srv,
+		Routes:  d.srv,
+		DataDir: dataDir(d.cfg),
 	}
 
 	// seenSource tracks the SourceSourced.Source() each successfully built
