@@ -105,4 +105,15 @@ func TestDownloadMediaDecrypted(t *testing.T) {
 	if dec3 || data3 != nil {
 		t.Fatalf("undecryptable: dec=%v data=%v", dec3, data3)
 	}
+
+	// Non-empty but unparseable key: must degrade to nil, NOT forward the raw
+	// ciphertext (which would otherwise be mis-sent as model content).
+	bad, dec4, err := c.DownloadMediaDecrypted(context.Background(), "tok",
+		MediaRef{URL: srv.URL + "/f", AESKey: "not-a-valid-key"})
+	if err != nil {
+		t.Fatalf("malformed key should not error: %v", err)
+	}
+	if dec4 || bad != nil {
+		t.Fatalf("malformed key: dec=%v data=%v (want nil degradation)", dec4, bad)
+	}
 }

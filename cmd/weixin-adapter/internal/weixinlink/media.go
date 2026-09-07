@@ -109,9 +109,15 @@ func (c *Client) DownloadMediaDecrypted(ctx context.Context, _ string, m MediaRe
 	if err != nil {
 		return nil, false, err
 	}
+	// No key at all: the media is plaintext (or an unkeyed CDN), forward as-is.
+	if strings.TrimSpace(m.AESKey) == "" {
+		return raw, false, nil
+	}
 	key, kerr := resolveAESKey(m.AESKey)
 	if kerr != nil {
-		return raw, false, nil // no usable key: forward raw
+		// A key was advertised but is unparseable: degrade (do NOT forward
+		// ciphertext garbage as if it were content). Caller skips the bytes.
+		return nil, false, nil
 	}
 	pt, derr := decryptAES128ECB(key, raw)
 	if derr != nil {

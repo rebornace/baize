@@ -282,7 +282,8 @@ func (c *Client) sendItems(ctx context.Context, token, toUserID, contextToken, c
 	return nil
 }
 
-// DownloadMedia GETs raw media bytes. AES CDN decryption is left as TODO when key/format is unclear.
+// DownloadMedia GETs raw (still encrypted, when keyed) media bytes from the
+// CDN. Decryption is handled separately by DownloadMediaDecrypted.
 func (c *Client) DownloadMedia(ctx context.Context, _ string, media MediaRef) ([]byte, error) {
 	downloadURL := media.URL
 	if downloadURL == "" && media.EncryptQueryParam != "" {
@@ -307,8 +308,6 @@ func (c *Client) DownloadMedia(ctx context.Context, _ string, media MediaRef) ([
 	if err != nil {
 		return nil, fmt.Errorf("weixin download media: read body: %w", err)
 	}
-	// TODO: decrypt AES-ECB when aes_key / encrypt_type encoding is confirmed for this media.
-	_ = media.AESKey
 	return data, nil
 }
 
