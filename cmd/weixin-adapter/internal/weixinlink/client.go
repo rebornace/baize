@@ -247,19 +247,24 @@ func (c *Client) GetUpdates(ctx context.Context, token, cursor string) ([]Update
 }
 
 func (c *Client) SendMessage(ctx context.Context, token string, msg OutboundMessage) error {
-	return c.sendItems(ctx, token, msg.ToUserID, msg.ContextToken, []wireItem{{
+	return c.sendItems(ctx, token, msg.ToUserID, msg.ContextToken, msg.ClientID, []wireItem{{
 		Type:     itemTypeText,
 		TextItem: &wireTextItem{Text: msg.Text},
 	}})
 }
 
 // sendItems posts a sendmessage with the given item list, stamping auth,
-// client_id, message type/state, base_info, and context_token.
-func (c *Client) sendItems(ctx context.Context, token, toUserID, contextToken string, items []wireItem) error {
+// client_id, message type/state, base_info, and context_token. A non-empty
+// clientID is passed through verbatim (caller idempotency key for retries);
+// an empty one gets an auto-generated id.
+func (c *Client) sendItems(ctx context.Context, token, toUserID, contextToken, clientID string, items []wireItem) error {
+	if clientID == "" {
+		clientID = fmt.Sprintf("baize:%d-%d", time.Now().UnixMilli(), rand.Intn(1<<16))
+	}
 	body := sendMessageRequest{
 		Msg: wireOutboundMessage{
 			ToUserID:     toUserID,
-			ClientID:     fmt.Sprintf("baize:%d-%d", time.Now().UnixMilli(), rand.Intn(1<<16)),
+			ClientID:     clientID,
 			MessageType:  messageTypeBot,
 			MessageState: messageStateFinish,
 			ContextToken: contextToken,

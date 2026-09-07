@@ -38,7 +38,7 @@ func (c *Client) SendImage(ctx context.Context, token, toUserID, filename, mime 
 	if err != nil {
 		return fmt.Errorf("weixin upload image: %w", err)
 	}
-	return c.sendItems(ctx, token, toUserID, contextToken, []wireItem{{
+	return c.sendItems(ctx, token, toUserID, contextToken, "", []wireItem{{
 		Type: itemTypeImage,
 		ImageItem: &wireMediaItem{
 			Media:   &wireCDNMedia{EncryptQueryParam: dlParam, AESKey: aesKeyB64, EncryptType: 1},
@@ -57,7 +57,7 @@ func (c *Client) SendFile(ctx context.Context, token, toUserID, filename, mime s
 	if name == "" {
 		name = "file.bin"
 	}
-	return c.sendItems(ctx, token, toUserID, contextToken, []wireItem{{
+	return c.sendItems(ctx, token, toUserID, contextToken, "", []wireItem{{
 		Type: itemTypeFile,
 		FileItem: &wireMediaItem{
 			Media:    &wireCDNMedia{EncryptQueryParam: dlParam, AESKey: aesKeyB64, EncryptType: 1},
