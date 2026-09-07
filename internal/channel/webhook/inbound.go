@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	urlpkg "net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -97,7 +98,15 @@ func (c *Channel) inboundHandler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "attachment"})
 			return
 		}
-		extras := map[string]string{"account": c.cfg.Account}
+		// The account stamped on inbound is the adapter's real post-login account
+		// (autostart adapters do not know it at config time). Learn it here so
+		// subsequent outbound messages use it; fall back to the static config.
+		acct := strings.TrimSpace(msg.Account)
+		if acct == "" {
+			acct = c.cfg.Account
+		}
+		c.setActiveAccount(acct)
+		extras := map[string]string{"account": acct}
 		if msg.ContextToken != "" {
 			extras["context_token"] = msg.ContextToken
 		}

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/rebornace/baize/internal/channel"
 )
@@ -30,6 +31,43 @@ type Channel struct {
 	cfg    instanceConfig
 	sender *sender
 	rt     *channel.Runtime
+
+	// accountMu guards activeAccount, the real IM account learned from the
+	// first inbound message after adapter login (autostart adapters log in as
+	// an account baize does not know statically). Outbound messages use it in
+	// preference to the configured/static account.
+	accountMu     sync.RWMutex
+	activeAccount string
+}
+
+// setActiveAccount records the account learned from inbound (e.g. the post-
+// login account reported by the adapter). Empty/whitespace values are ignored.
+func (c *Channel) setActiveAccount(acct string) {
+	acct = strings.TrimSpace(acct)
+	if acct == "" {
+		return
+	}
+	c.accountMu.Lock()
+	c.activeAccount = acct
+	c.accountMu.Unlock()
+}
+
+// activeAccountOr resolves the account to stamp on outbound messages: an
+// explicit extras["account"] wins, then the learned activeAccount, then the
+// statically configured account.
+func (c *Channel) activeAccountOr(extras map[string]string) string {
+	if extras != nil {
+		if a := strings.TrimSpace(extras["account"]); a != "" {
+			return a
+		}
+	}
+	c.accountMu.RLock()
+	a := c.activeAccount
+	c.accountMu.RUnlock()
+	if a != "" {
+		return a
+	}
+	return c.cfg.Account
 }
 
 // openFromConfig builds a webhook instance. name is the instance name; it is
@@ -95,11 +133,12 @@ func firstNonEmpty(vals ...string) string {
 
 // SendText pushes a text message to the adapter for peerID.
 func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[string]string) error {
+	acct := c.activeAccountOr(extras)
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
 		RunID:          runIDFromExtras(extras),
-		ConversationID: channel.ConvID(c.cfg.Source, c.cfg.Account, peerID),
-		Account:        c.cfg.Account,
+		ConversationID: channel.ConvID(c.cfg.Source, acct, peerID),
+		Account:        acct,
 		Peer:           Peer{ID: peerID},
 		Text:           text,
 		ContextToken:   extras["context_token"],
@@ -109,11 +148,12 @@ func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[
 
 // SendMedia pushes a file to the adapter (small files inline base64).
 func (c *Channel) SendMedia(ctx context.Context, peerID, filename, mime string, data []byte, extras map[string]string) error {
+	acct := c.activeAccountOr(extras)
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
 		RunID:          runIDFromExtras(extras),
-		ConversationID: channel.ConvID(c.cfg.Source, c.cfg.Account, peerID),
-		Account:        c.cfg.Account,
+		ConversationID: channel.ConvID(c.cfg.Source, acct, peerID),
+		Account:        acct,
 		Peer:           Peer{ID: peerID},
 		Media: []OutboundMedia{{
 			Name:          filename,

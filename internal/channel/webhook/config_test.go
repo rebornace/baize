@@ -69,3 +69,50 @@ func TestParseConfigDefaultsAndErrors(t *testing.T) {
 		t.Fatal("expected error for invalid supports_vision")
 	}
 }
+
+func TestParseConfigAutostartAllowsEmptySecret(t *testing.T) {
+	c, err := parseConfig("weixin", map[string]string{
+		"source":            "weixin",
+		"outbound_url":      "http://127.0.0.1:8090/outbound",
+		"assignee":          "channel:weixin",
+		"adapter_autostart": "true",
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !c.AdapterAutostart {
+		t.Fatal("AdapterAutostart not parsed")
+	}
+	if c.Secret == "" {
+		t.Fatal("secret should be generated for autostart")
+	}
+	if c.OutboundSecret != c.Secret {
+		t.Fatal("outbound secret should fall back to generated secret")
+	}
+}
+
+func TestParseConfigAdminAndAdapterFields(t *testing.T) {
+	c, err := parseConfig("bot", map[string]string{
+		"secret":          "s",
+		"outbound_url":    "http://h/o",
+		"assignee":        "a",
+		"admin_url":       "http://127.0.0.1:8090",
+		"adapter_command": "weixin-adapter",
+		"adapter_args":    "-addr=127.0.0.1:8090,-creds=./data/channels/weixin",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdminURL != "http://127.0.0.1:8090" || c.AdapterCommand != "weixin-adapter" {
+		t.Fatalf("admin/cmd = %q %q", c.AdminURL, c.AdapterCommand)
+	}
+	if len(c.AdapterArgs) != 2 || c.AdapterArgs[0] != "-addr=127.0.0.1:8090" {
+		t.Fatalf("adapter args = %v", c.AdapterArgs)
+	}
+}
+
+func TestParseConfigSecretRequiredWithoutAutostart(t *testing.T) {
+	if _, err := parseConfig("x", map[string]string{"outbound_url": "http://h/o", "assignee": "a"}); err == nil {
+		t.Fatal("expected error for missing secret when not autostart")
+	}
+}

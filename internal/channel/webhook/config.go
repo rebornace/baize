@@ -8,16 +8,21 @@ import (
 
 // instanceConfig is a resolved webhook channel instance configuration.
 type instanceConfig struct {
-	Name           string
-	Source         string
-	Account        string
-	Secret         string
-	OutboundSecret string
-	OutboundURL    string
-	Assignee       string
-	AgentID        string
-	SupportsVision bool
-	Allowlist      map[string]bool
+	Name             string
+	Source           string
+	Account          string
+	Secret           string
+	OutboundSecret   string
+	OutboundURL      string
+	Assignee         string
+	AgentID          string
+	SupportsVision   bool
+	Allowlist        map[string]bool
+	AdminURL         string
+	AdapterAutostart bool
+	AdapterCommand   string
+	AdapterArgs      []string
+	AdapterCredsDir  string
 }
 
 // parseConfig resolves an instance from its channel.Config map. name is the
@@ -46,8 +51,40 @@ func parseConfig(name string, m map[string]string) (instanceConfig, error) {
 			}
 		}
 	}
-	if c.Secret == "" {
-		return c, fmt.Errorf("webhook: missing required config %q for instance %q", "secret", name)
+	c.AdminURL = get("admin_url")
+	c.AdapterCommand = get("adapter_command")
+	c.AdapterCredsDir = get("adapter_creds_dir")
+	if v := get("adapter_autostart"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return c, fmt.Errorf("webhook: invalid adapter_autostart %q: %w", v, err)
+		}
+		c.AdapterAutostart = b
+	}
+	if raw := get("adapter_args"); raw != "" {
+		for _, a := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {
+			if a = strings.TrimSpace(a); a != "" {
+				c.AdapterArgs = append(c.AdapterArgs, a)
+			}
+		}
+	}
+	if c.Secret == "" && !c.AdapterAutostart {
+		return c, fmt.Errorf("webhook: missing required config %q for instance %q (or set adapter_autostart=true to generate one)", "secret", name)
+	}
+	// Autostart adapters share an ephemeral HMAC key with baize: when no
+	// secret is configured, generate one here (inside parseConfig, so both
+	// openFromConfig and direct callers/tests observe it). OutboundSecret was
+	// defaulted to the (then empty) secret early in this function; backfill it
+	// so the outbound side falls back to the generated secret.
+	if c.Secret == "" && c.AdapterAutostart {
+		secret, err := generateSecret()
+		if err != nil {
+			return c, fmt.Errorf("webhook: generate adapter secret: %w", err)
+		}
+		c.Secret = secret
+		if c.OutboundSecret == "" {
+			c.OutboundSecret = c.Secret
+		}
 	}
 	if c.OutboundURL == "" {
 		return c, fmt.Errorf("webhook: missing required config %q for instance %q", "outbound_url", name)
