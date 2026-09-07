@@ -152,6 +152,23 @@ export async function putWeixinSettings(
   return parseJSON<WeixinChannelSettings>(res)
 }
 
+/**
+ * Adapter process lifecycle control. These act on the OS process (start / stop
+ * / restart the weixin-adapter), distinct from the enabled toggle which only
+ * starts/stops polling. Each returns the reconciled settings + running state.
+ */
+async function postWeixinProcess(action: 'start' | 'stop' | 'restart'): Promise<WeixinChannelSettings> {
+  const res = await fetch(`/v0/settings/channels/weixin/process/${action}`, {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON<WeixinChannelSettings>(res)
+}
+
+export const startWeixinProcess = () => postWeixinProcess('start')
+export const stopWeixinProcess = () => postWeixinProcess('stop')
+export const restartWeixinProcess = () => postWeixinProcess('restart')
+
 // --- Runtime hot-reload settings (engine knobs + control-plane credentials) ---
 
 /** Effective engine knobs (duration expressed in seconds on the wire). */

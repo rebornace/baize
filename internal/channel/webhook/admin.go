@@ -28,6 +28,8 @@ type adminClient interface {
 	// LoginPoll polls QR login; status is "pending"|"success"|"expired".
 	LoginPoll(ctx context.Context, ticket string) (status string, err error)
 	Logout(ctx context.Context) error
+	// Shutdown asks the adapter process to exit (HMAC-guarded /admin/shutdown).
+	Shutdown(ctx context.Context) error
 }
 
 // httpAdminClient signs every management request with the shared HMAC secret
@@ -113,6 +115,29 @@ func (c *httpAdminClient) Stop(ctx context.Context) error {
 
 func (c *httpAdminClient) Logout(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/admin/logout", nil, nil)
+}
+
+func (c *httpAdminClient) Shutdown(ctx context.Context) error {
+	// The adapter acks then exits, so the connection may be reset; treat a
+	// transport error after the request as success (the process is going down).
+	err := c.do(ctx, http.MethodPost, "/admin/shutdown", nil, nil)
+	if err != nil && !isProcessExitingErr(err) {
+		return err
+	}
+	return nil
+}
+
+// isProcessExitingErr reports whether err looks like the adapter closing the
+// connection while shutting down (vs. a genuine reachability failure).
+func isProcessExitingErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "EOF") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "server closed") ||
+		strings.Contains(s, "connection refused")
 }
 
 func (c *httpAdminClient) LoginStart(ctx context.Context) (string, string, error) {

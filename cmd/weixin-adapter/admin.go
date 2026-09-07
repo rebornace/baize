@@ -124,6 +124,21 @@ func (a *Adapter) handleAdminStop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
+// handleAdminShutdown stops polling, acks, then asks the process to exit. The
+// exit runs in a goroutine AFTER the response is flushed so baize receives the
+// 200 before the process goes away. Used by baize to terminate an adopted
+// orphan (which baize did not spawn and therefore cannot kill by PID).
+func (a *Adapter) handleAdminShutdown(w http.ResponseWriter, r *http.Request) {
+	a.stopPolling()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
+	if a.requestShutdown != nil {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			a.requestShutdown()
+		}()
+	}
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

@@ -30,6 +30,13 @@ type supervisor struct {
 	// adopt decision uses this when available.
 	compatible func(ctx context.Context) bool
 
+	// adopted is true when start() attached to an already-listening adapter
+	// (an orphan) rather than spawning its own process; s.cmd stays nil for an
+	// adopted process, so process-level termination must go through the
+	// adapter's HMAC /admin/shutdown instead of killing a PID baize does not
+	// own.
+	adopted bool
+
 	cmd *exec.Cmd
 }
 
@@ -44,12 +51,20 @@ func (s *supervisor) start(ctx context.Context) error {
 	// listener that fails auth is stale/foreign and must be reclaimed manually.
 	if s.adapterListening(ctx) {
 		if s.compatible == nil || s.compatible(ctx) {
+			s.adopted = true
 			return nil
 		}
 		return fmt.Errorf("webhook supervisor: %s already serves an adapter that fails HMAC auth; stop the stale weixin-adapter process (it holds an old secret) and restart", s.healthzURL)
 	}
+	s.adopted = false
 	resolved := resolveAdapterPath(s.command)
-	cmd := exec.CommandContext(ctx, resolved, s.args...)
+	// Use exec.Command (NOT CommandContext): the child must outlive the
+	// request/start context that triggers a management-plane (re)start. The
+	// process lifecycle is owned explicitly here — killed via Stop()/kill()
+	// on graceful shutdown or process stop/restart; a hard baize crash leaves
+	// an orphan that a later start() detects and adopts/rejects by healthz +
+	// signed check. ctx is still used below only to bound the healthz wait.
+	cmd := exec.Command(resolved, s.args...)
 	cmd.Env = append(os.Environ(), s.env...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -66,6 +81,36 @@ func (s *supervisor) start(ctx context.Context) error {
 		return fmt.Errorf("webhook supervisor: adapter never became healthy: %w", err)
 	}
 	return nil
+}
+
+// ownsProcess reports whether baize spawned (and holds a handle to) the current
+// adapter process. An adopted orphan has no handle here.
+func (s *supervisor) ownsProcess() bool { return s.cmd != nil }
+
+// waitUntilDown polls healthz until the adapter stops responding (process
+// exited) or the deadline passes.
+func (s *supervisor) waitUntilDown(ctx context.Context, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 400 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.healthzURL, nil)
+		if err != nil {
+			return
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return // not listening anymore
+		}
+		resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(150 * time.Millisecond):
+		}
+	}
 }
 
 // adapterListening reports whether something answers the health endpoint (no
@@ -107,6 +152,13 @@ func (s *supervisor) kill() error {
 
 func (s *supervisor) running() bool {
 	return s.cmd != nil && s.cmd.ProcessState == nil
+}
+
+// resetForRespawn clears process state after a stop/shutdown so a subsequent
+// start() spawns a fresh child instead of considering itself adopted.
+func (s *supervisor) resetForRespawn() {
+	s.cmd = nil
+	s.adopted = false
 }
 
 // waitHealthz polls the adapter's health endpoint until it returns 200, the

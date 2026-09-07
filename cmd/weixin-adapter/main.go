@@ -28,6 +28,10 @@ func main() {
 		secret:          cfg.Secret,
 		credsDir:        cfg.CredsDir,
 	}
+	// /admin/shutdown (HMAC-guarded, from baize) exits the process cleanly so
+	// baize can terminate an adapter it adopted but did not spawn (orphan).
+	shutdownCh := make(chan struct{})
+	a.requestShutdown = func() { close(shutdownCh) }
 	// Load any persisted credentials at startup (baize may call /admin/start).
 	if acct, tok, lerr := weixinlink.LoadCreds(cfg.CredsDir); lerr == nil {
 		a.setCredentials(acct, tok)
@@ -43,7 +47,11 @@ func main() {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	select {
+	case <-stop:
+	case <-shutdownCh:
+		log.Printf("weixin-adapter shutting down via /admin/shutdown")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	a.stopPolling()

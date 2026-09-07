@@ -189,6 +189,26 @@ func TestAdminLoginStartStatusAndAutoPoll(t *testing.T) {
 	}
 }
 
+func TestAdminShutdownRequestsExit(t *testing.T) {
+	a := newTestAdapter(t, weixinlink.NewFake(), "")
+	shutdown := make(chan struct{}, 1)
+	a.requestShutdown = func() { shutdown <- struct{}{} }
+
+	rec := httptest.NewRecorder()
+	a.routes().ServeHTTP(rec, signedReq(t, http.MethodPost, "/admin/shutdown", testSecret, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("shutdown status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if a.isPolling() {
+		t.Fatal("polling should be stopped on shutdown")
+	}
+	select {
+	case <-shutdown:
+	case <-time.After(2 * time.Second):
+		t.Fatal("requestShutdown not invoked after /admin/shutdown")
+	}
+}
+
 func TestAdminStartWithoutCredentials(t *testing.T) {
 	a := newTestAdapter(t, weixinlink.NewFake(), "")
 	rec := httptest.NewRecorder()

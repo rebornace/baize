@@ -49,10 +49,18 @@ type Channel struct {
 	settings    channel.ChannelSettings
 	settingsMu  sync.RWMutex
 	allowlist   map[string]bool
-	admin       adminClient
+	// manualStop records that an operator stopped the adapter process via the
+	// process-control plane, so Status() reports "stopped" rather than probing
+	// the dead port and mislabeling it "start_failed". Cleared on start/restart
+	// and by settings updates that re-enable the channel.
+	manualStop bool
+	admin      adminClient
 	// sup hosts the out-of-process adapter for autostart instances; nil when
 	// the adapter is deployed independently (admin_url only).
 	sup *supervisor
+	// procMu serializes process-level control (start/stop/restart) driven by
+	// the management plane so concurrent operators cannot spawn/kill races.
+	procMu sync.Mutex
 }
 
 // bgCtx returns the context for adapter management calls made outside of an

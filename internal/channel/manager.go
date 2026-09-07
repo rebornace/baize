@@ -37,3 +37,21 @@ type ManagedChannel interface {
 	LoginPoll(ctx context.Context, ticket string) (status string, err error)
 	Logout(ctx context.Context) error
 }
+
+// ProcessController is an optional extension for managed channels that own a
+// controllable adapter process (autostart webhook instances). These operate on
+// the OS process lifecycle, distinct from the polling start/stop driven by the
+// enabled setting. Channels whose adapter is deployed independently do not
+// implement it (baize does not own that process).
+type ProcessController interface {
+	// StartProcess launches (or adopts) the adapter process and resumes polling
+	// when the channel is enabled.
+	StartProcess(ctx context.Context) error
+	// StopProcess stops polling and terminates the adapter process owned by
+	// baize. An adopted orphan it did not spawn is left running (baize cannot
+	// safely kill a process it does not own); polling is still stopped.
+	StopProcess(ctx context.Context) error
+	// RestartProcess terminates the owned adapter process and launches a fresh
+	// one, then resumes polling when enabled. Used to recover a wedged adapter.
+	RestartProcess(ctx context.Context) error
+}

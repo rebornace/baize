@@ -93,6 +93,7 @@ type fakeAdmin struct {
 	hasCreds, polling bool
 	err               error
 	started, stopped  bool
+	shutdown          bool
 }
 
 func (f *fakeAdmin) Status(context.Context) (bool, bool, error) { return f.hasCreds, f.polling, f.err }
@@ -104,4 +105,5 @@ func (f *fakeAdmin) LoginStart(context.Context) (string, string, error) {
 func (f *fakeAdmin) LoginPoll(context.Context, string) (string, error) {
 	return "success", f.err
 }
-func (f *fakeAdmin) Logout(context.Context) error { return f.err }
+func (f *fakeAdmin) Logout(context.Context) error   { return f.err }
+func (f *fakeAdmin) Shutdown(context.Context) error { f.shutdown = true; return f.err }

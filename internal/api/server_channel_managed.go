@@ -104,3 +104,62 @@ func (s *Server) handleChannelLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
+
+// processController resolves a managed channel that also exposes the process
+// control plane. Channels with an independently deployed adapter do not.
+func (s *Server) processController(w http.ResponseWriter, name string) (channel.ManagedChannel, channel.ProcessController, bool) {
+	mc, ok := s.managedChannel(w, name)
+	if !ok {
+		return nil, nil, false
+	}
+	pc, ok := mc.(channel.ProcessController)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "not_controllable", "channel adapter process is not managed by baize")
+		return nil, nil, false
+	}
+	return mc, pc, true
+}
+
+// handleChannelProcessStart launches (or adopts) the adapter process.
+func (s *Server) handleChannelProcessStart(w http.ResponseWriter, r *http.Request) {
+	mc, pc, ok := s.processController(w, r.PathValue("name"))
+	if !ok {
+		return
+	}
+	if err := pc.StartProcess(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, "adapter_error", err.Error())
+		return
+	}
+	st := mc.GetSettings()
+	status := mc.Status()
+	writeJSON(w, http.StatusOK, settingsResponse{ChannelSettings: st, Running: status.Running, Reason: status.Reason})
+}
+
+// handleChannelProcessStop terminates the adapter process.
+func (s *Server) handleChannelProcessStop(w http.ResponseWriter, r *http.Request) {
+	mc, pc, ok := s.processController(w, r.PathValue("name"))
+	if !ok {
+		return
+	}
+	if err := pc.StopProcess(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, "adapter_error", err.Error())
+		return
+	}
+	st := mc.GetSettings()
+	writeJSON(w, http.StatusOK, settingsResponse{ChannelSettings: st, Running: false, Reason: "stopped"})
+}
+
+// handleChannelProcessRestart kills and relaunches the adapter process.
+func (s *Server) handleChannelProcessRestart(w http.ResponseWriter, r *http.Request) {
+	mc, pc, ok := s.processController(w, r.PathValue("name"))
+	if !ok {
+		return
+	}
+	if err := pc.RestartProcess(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, "adapter_error", err.Error())
+		return
+	}
+	st := mc.GetSettings()
+	status := mc.Status()
+	writeJSON(w, http.StatusOK, settingsResponse{ChannelSettings: st, Running: status.Running, Reason: status.Reason})
+}

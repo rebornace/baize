@@ -164,9 +164,15 @@ func (c *Channel) UpdateSettings(st channel.ChannelSettings) channel.AdapterStat
 func (c *Channel) Status() channel.AdapterStatus {
 	c.settingsMu.RLock()
 	enabled := c.settings.Enabled
+	manualStop := c.manualStop
 	c.settingsMu.RUnlock()
 	if !enabled {
 		return channel.AdapterStatus{Running: false, Reason: ""}
+	}
+	if manualStop {
+		// Operator explicitly stopped the adapter process; do not probe the
+		// dead port and mislabel it "start_failed".
+		return channel.AdapterStatus{Running: false, Reason: "stopped"}
 	}
 	if c.admin == nil {
 		// No adapter management plane: nothing to probe; report running when

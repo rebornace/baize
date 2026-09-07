@@ -4,7 +4,10 @@ import {
   getWeixinSettings,
   logoutWeixin,
   putWeixinSettings,
+  restartWeixinProcess,
   startWeixinLogin,
+  startWeixinProcess,
+  stopWeixinProcess,
   type WeixinChannelSettings,
 } from '../api'
 import { qrDataUrlFromText } from '../qrDataUrl'
@@ -199,6 +202,33 @@ export function WeixinChannelSettings() {
     }
   }
 
+  /**
+   * Process-level control (start/stop/restart the adapter OS process), as
+   * opposed to the enabled toggle which only starts/stops polling. After the
+   * action we re-apply the returned reconciled settings (running/reason).
+   */
+  const onProcessAction = async (action: 'start' | 'stop' | 'restart') => {
+    const labels = { start: '启动', stop: '停止', restart: '重启' } as const
+    setBusy(true)
+    setError(null)
+    setStatus(null)
+    try {
+      const saved =
+        action === 'start'
+          ? await startWeixinProcess()
+          : action === 'stop'
+            ? await stopWeixinProcess()
+            : await restartWeixinProcess()
+      applySettings(saved)
+      setStatus(`适配器进程已${labels[action]}`)
+      await load() // refresh running/reason after the process settles
+    } catch (err) {
+      setError(apiErrorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
@@ -241,8 +271,42 @@ export function WeixinChannelSettings() {
           )}
           {runReason === 'login_required' && '（未登录：启用前请先扫码登录）'}
           {runReason === 'start_failed' && '（启动失败，请检查日志）'}
+          {runReason === 'stopped' && '（适配器进程已手动停止，点「启动进程」恢复）'}
         </p>
       )}
+
+      <section className="weixin-login-block">
+        <h2 className="settings-subheading">适配器进程</h2>
+        <div className="weixin-login-actions">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy}
+            onClick={() => void onProcessAction('start')}
+          >
+            启动进程
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={busy}
+            onClick={() => void onProcessAction('restart')}
+          >
+            重启进程
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={busy}
+            onClick={() => void onProcessAction('stop')}
+          >
+            停止进程
+          </button>
+        </div>
+        <p className="settings-muted">
+          对 weixin-adapter 子进程进行启动 / 重启 / 停止（进程级，区别于下方「启用」开关——后者只控制收消息轮询）。适配器卡死或启动失败时可点「重启进程」恢复，无需重启 baize。
+        </p>
+      </section>
 
       <section className="weixin-login-block">
         <h2 className="settings-subheading">登录</h2>

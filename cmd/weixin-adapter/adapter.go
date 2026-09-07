@@ -20,6 +20,11 @@ type Adapter struct {
 	emptyWait  time.Duration // backoff between empty poll batches (tests override)
 	httpClient *http.Client  // client used for signed forwards to baize
 
+	// requestShutdown, when set, asks the process to exit after handling
+	// /admin/shutdown (main wires it to a clean process exit; tests leave it
+	// nil so the endpoint just acks).
+	requestShutdown func()
+
 	mu      sync.Mutex
 	account string
 	token   string
@@ -54,6 +59,7 @@ func (a *Adapter) routes() http.Handler {
 	mux.HandleFunc("GET /admin/status", a.adminGuard(a.handleAdminStatus))
 	mux.HandleFunc("POST /admin/start", a.adminGuard(a.handleAdminStart))
 	mux.HandleFunc("POST /admin/stop", a.adminGuard(a.handleAdminStop))
+	mux.HandleFunc("POST /admin/shutdown", a.adminGuard(a.handleAdminShutdown))
 	mux.HandleFunc("POST /outbound", a.handleOutbound)
 	return mux
 }

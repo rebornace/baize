@@ -19,6 +19,11 @@ type fakeManaged struct {
 	settings  channel.ChannelSettings
 	status    channel.AdapterStatus
 	loggedOut bool
+
+	procStarted int
+	procStopped int
+	procRestart int
+	procErr     error
 }
 
 func (f *fakeManaged) Name() string { return "weixin" }
@@ -47,11 +52,55 @@ func (f *fakeManaged) Logout(context.Context) error {
 	f.loggedOut = true
 	return nil
 }
+func (f *fakeManaged) StartProcess(context.Context) error {
+	f.procStarted++
+	return f.procErr
+}
+func (f *fakeManaged) StopProcess(context.Context) error {
+	f.procStopped++
+	return f.procErr
+}
+func (f *fakeManaged) RestartProcess(context.Context) error {
+	f.procRestart++
+	return f.procErr
+}
 
 var (
-	_ channel.Channel        = (*fakeManaged)(nil)
-	_ channel.ManagedChannel = (*fakeManaged)(nil)
+	_ channel.Channel           = (*fakeManaged)(nil)
+	_ channel.ManagedChannel    = (*fakeManaged)(nil)
+	_ channel.ProcessController = (*fakeManaged)(nil)
 )
+
+// fakeManagedNoProcess is managed but does NOT implement ProcessController
+// (independently deployed adapter): process endpoints must return 501.
+type fakeManagedNoProcess struct{}
+
+func (fakeManagedNoProcess) Name() string                { return "weixin" }
+func (fakeManagedNoProcess) Source() string              { return "weixin" }
+func (fakeManagedNoProcess) Start(context.Context) error { return nil }
+func (fakeManagedNoProcess) Stop(context.Context) error  { return nil }
+func (fakeManagedNoProcess) SendText(context.Context, string, string, map[string]string) error {
+	return nil
+}
+func (fakeManagedNoProcess) SendMedia(context.Context, string, string, string, []byte, map[string]string) error {
+	return nil
+}
+func (fakeManagedNoProcess) GetSettings() channel.ChannelSettings {
+	return channel.ChannelSettings{Enabled: true}
+}
+func (fakeManagedNoProcess) UpdateSettings(channel.ChannelSettings) channel.AdapterStatus {
+	return channel.AdapterStatus{Running: true}
+}
+func (fakeManagedNoProcess) Status() channel.AdapterStatus {
+	return channel.AdapterStatus{Running: true}
+}
+func (fakeManagedNoProcess) LoginStart(context.Context) (channel.LoginTicket, error) {
+	return channel.LoginTicket{}, nil
+}
+func (fakeManagedNoProcess) LoginPoll(context.Context, string) (string, error) { return "pending", nil }
+func (fakeManagedNoProcess) Logout(context.Context) error                      { return nil }
+
+var _ channel.ManagedChannel = fakeManagedNoProcess{}
 
 func managedTestServer(t *testing.T) *api.Server {
 	t.Helper()
@@ -115,5 +164,56 @@ func TestManagedLoginLogoutRoutes(t *testing.T) {
 	}
 	if c := hit(http.MethodGet, "/v0/settings/channels/unknown"); c != http.StatusNotFound {
 		t.Fatalf("unknown channel=%d want 404", c)
+	}
+}
+
+func TestManagedProcessControl(t *testing.T) {
+	ch := &fakeManaged{
+		settings: channel.ChannelSettings{Enabled: true},
+		status:   channel.AdapterStatus{Running: true},
+	}
+	srv := api.NewServer(store.NewMemory(), nil, nil)
+	srv.AdminToken = "adm"
+	srv.RegisterChannel(&api.ChannelHandle{Name: "weixin", Channel: ch})
+
+	post := func(path string) int {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, admReq(http.MethodPost, path))
+		return rec.Code
+	}
+	if c := post("/v0/settings/channels/weixin/process/start"); c != http.StatusOK {
+		t.Fatalf("process/start=%d", c)
+	}
+	if c := post("/v0/settings/channels/weixin/process/stop"); c != http.StatusOK {
+		t.Fatalf("process/stop=%d", c)
+	}
+	if c := post("/v0/settings/channels/weixin/process/restart"); c != http.StatusOK {
+		t.Fatalf("process/restart=%d", c)
+	}
+	if ch.procStarted != 1 || ch.procStopped != 1 || ch.procRestart != 1 {
+		t.Fatalf("calls start=%d stop=%d restart=%d want 1/1/1", ch.procStarted, ch.procStopped, ch.procRestart)
+	}
+
+	// Operator token must be forbidden on process control.
+	srv.OperatorToken = "op"
+	opReq := httptest.NewRequest(http.MethodPost, "/v0/settings/channels/weixin/process/restart", nil)
+	opReq.Header.Set("Authorization", "Bearer op")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, opReq)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("operator restart=%d want 403", rec.Code)
+	}
+}
+
+func TestManagedProcessNotControllable(t *testing.T) {
+	srv := api.NewServer(store.NewMemory(), nil, nil)
+	srv.AdminToken = "adm"
+	srv.RegisterChannel(&api.ChannelHandle{Name: "weixin", Channel: fakeManagedNoProcess{}})
+	for _, path := range []string{"start", "stop", "restart"} {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, admReq(http.MethodPost, "/v0/settings/channels/weixin/process/"+path))
+		if rec.Code != http.StatusNotImplemented {
+			t.Fatalf("process/%s=%d want 501 body=%s", path, rec.Code, rec.Body.String())
+		}
 	}
 }
