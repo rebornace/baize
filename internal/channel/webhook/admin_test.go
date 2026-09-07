@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHTTPAdminClientStatusAndActions(t *testing.T) {
@@ -70,5 +71,38 @@ func TestHTTPAdminClientUnreachable(t *testing.T) {
 	ac := newHTTPAdminClient("http://127.0.0.1:1", "s") // closed port
 	if _, _, err := ac.Status(context.Background()); err == nil {
 		t.Fatal("expected error for unreachable adapter")
+	}
+}
+
+// TestHTTPAdminClientLoginPollUsesLongTimeout guards the long-poll contract:
+// iLink's get_qrcode_status holds the adapter's request open until scan/confirm
+// (~30s idle). Fast admin calls must still fail quickly, but login/status must
+// tolerate a slow adapter instead of being cut at the short deadline (the
+// "HTTP 502 context deadline exceeded" regression).
+func TestHTTPAdminClientLoginPollUsesLongTimeout(t *testing.T) {
+	const delay = 120 * time.Millisecond
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(delay)
+		switch r.URL.Path {
+		case "/admin/login/status":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"has_credentials": false, "polling": false})
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	// short deadline < delay (fast calls time out); long deadline > delay (poll survives).
+	ac := newHTTPAdminClientWithTimeouts(srv.URL, "s", 30*time.Millisecond, 5*time.Second)
+
+	if _, _, err := ac.Status(context.Background()); err == nil {
+		t.Fatal("fast Status call should time out at the short deadline")
+	}
+	st, err := ac.LoginPoll(context.Background(), "tk")
+	if err != nil {
+		t.Fatalf("LoginPoll should tolerate the slow adapter under the long deadline: %v", err)
+	}
+	if st != "pending" {
+		t.Fatalf("LoginPoll status=%q want pending", st)
 	}
 }

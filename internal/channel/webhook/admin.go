@@ -37,17 +37,29 @@ type httpAdminClient struct {
 	baseURL string
 	secret  string
 	hc      *http.Client
+	hcLong  *http.Client
 }
 
 func newHTTPAdminClient(baseURL, secret string) *httpAdminClient {
+	return newHTTPAdminClientWithTimeouts(baseURL, secret, 10*time.Second, 45*time.Second)
+}
+
+// newHTTPAdminClientWithTimeouts builds a client with explicit deadlines:
+// short covers fast admin calls, long covers the login-status long poll.
+func newHTTPAdminClientWithTimeouts(baseURL, secret string, short, long time.Duration) *httpAdminClient {
 	return &httpAdminClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		secret:  secret,
-		hc:      &http.Client{Timeout: 10 * time.Second},
+		hc:      &http.Client{Timeout: short},
+		hcLong:  &http.Client{Timeout: long},
 	}
 }
 
 func (c *httpAdminClient) do(ctx context.Context, method, path string, query url.Values, out any) error {
+	return c.doWithClient(ctx, c.hc, method, path, query, out)
+}
+
+func (c *httpAdminClient) doWithClient(ctx context.Context, hc *http.Client, method, path string, query url.Values, out any) error {
 	full := c.baseURL + path
 	if len(query) > 0 {
 		full += "?" + query.Encode()
@@ -63,7 +75,7 @@ func (c *httpAdminClient) do(ctx context.Context, method, path string, query url
 	req.Header.Set(HeaderProtocol, ProtocolVersion)
 	req.Header.Set(HeaderTimestamp, ts)
 	req.Header.Set(HeaderSignature, webhooksig.Sign(c.secret, ts, body))
-	resp, err := c.hc.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
@@ -120,7 +132,9 @@ func (c *httpAdminClient) LoginPoll(ctx context.Context, ticket string) (string,
 	}
 	q := url.Values{}
 	q.Set("ticket", ticket)
-	if err := c.do(ctx, http.MethodGet, "/admin/login/status", q, &out); err != nil {
+	// Long-poll: iLink holds get_qrcode_status until scan/confirm (~30s when
+	// idle); use the long-deadline client so the proxy does not cut it at 10s.
+	if err := c.doWithClient(ctx, c.hcLong, http.MethodGet, "/admin/login/status", q, &out); err != nil {
 		return "", err
 	}
 	return out.Status, nil

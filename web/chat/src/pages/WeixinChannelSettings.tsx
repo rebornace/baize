@@ -57,10 +57,13 @@ export function WeixinChannelSettings() {
   const [qrImgSrc, setQrImgSrc] = useState<string | null>(null)
   const [loginStatus, setLoginStatus] = useState<string | null>(null)
   const pollRef = useRef<number | null>(null)
+  /** Whether a login-status poll loop is active (guards the self-chaining loop). */
+  const pollingActiveRef = useRef(false)
 
   const stopPoll = useCallback(() => {
+    pollingActiveRef.current = false
     if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current)
+      window.clearTimeout(pollRef.current)
       pollRef.current = null
     }
   }, [])
@@ -120,9 +123,18 @@ export function WeixinChannelSettings() {
   const startPolling = useCallback(
     (loginTicket: string) => {
       stopPoll()
+      pollingActiveRef.current = true
+      // Self-chaining loop (NOT setInterval): login/status is a long poll held
+      // open ~30s by iLink until scan/confirm. Firing a fresh request every
+      // POLL_MS would pile up dozens of concurrent in-flight requests and
+      // exhaust the browser's per-origin connection pool, stalling the UI.
+      // Schedule the next tick only after the current one settles, and keep
+      // at most one request in flight.
       const tick = async () => {
+        if (!pollingActiveRef.current) return
         try {
           const res = await getWeixinLoginStatus(loginTicket)
+          if (!pollingActiveRef.current) return
           setLoginStatus(res.status)
           if (res.status === 'success' || res.status === 'expired') {
             stopPoll()
@@ -131,16 +143,19 @@ export function WeixinChannelSettings() {
               setTicket(null)
               setQrUrl(null)
             }
+            return
           }
         } catch (err) {
+          if (!pollingActiveRef.current) return
           stopPoll()
           setError(apiErrorMessage(err))
+          return
+        }
+        if (pollingActiveRef.current) {
+          pollRef.current = window.setTimeout(tick, POLL_MS)
         }
       }
       void tick()
-      pollRef.current = window.setInterval(() => {
-        void tick()
-      }, POLL_MS)
     },
     [stopPoll],
   )
