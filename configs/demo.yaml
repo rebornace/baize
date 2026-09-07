@@ -93,20 +93,22 @@ mock_ticket:
   listen: ":18080"
 inbox:
   channels: []
-# 微信已迁移为进程外 webhook 适配器（默认不在 demo 中启用）。需要时先构建
-# 适配器：go build -o bin/weixin-adapter ./cmd/weixin-adapter（Windows 为 .exe），
-# 再取消下方注释（demo 监听 :8080，适配器入站回推默认即 127.0.0.1:8080）：
-# channels:
-#   - name: weixin
-#     type: webhook
-#     enabled: true
-#     config:
-#       source: weixin
-#       outbound_url: http://127.0.0.1:8090/outbound
-#       admin_url: http://127.0.0.1:8090
-#       assignee: channel:weixin
-#       supports_vision: "true"
-#       adapter_autostart: "true"
-#       adapter_command: weixin-adapter
-#       adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
-#       adapter_creds_dir: ./data/channels/weixin
+# 微信已迁移为进程外 webhook 适配器，demo 默认启用该渠道（与 minimal.yaml 一致）。
+# 适配器二进制缺失时 baize 不会启动失败：渠道仍注册，设置页显示 running=false /
+# start_failed（而非 404），扫码/出站等能力等二进制就绪后可用。需要真实收发时先构建：
+#   go build -o bin/weixin-adapter ./cmd/weixin-adapter  （Windows 为 bin/weixin-adapter.exe）
+# demo 监听 :8080，适配器入站回推默认即 127.0.0.1:8080。
+channels:
+  - name: weixin
+    type: webhook
+    enabled: true
+    config:
+      source: weixin
+      outbound_url: http://127.0.0.1:8090/outbound
+      admin_url: http://127.0.0.1:8090
+      assignee: channel:weixin
+      supports_vision: "true"
+      adapter_autostart: "true"
+      adapter_command: weixin-adapter
+      adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+      adapter_creds_dir: ./data/channels/weixin
