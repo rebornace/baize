@@ -110,6 +110,82 @@ func TestSupervisorEmptyCommand(t *testing.T) {
 	}
 }
 
+// TestSupervisorAdoptsCompatibleOrphan: when an adapter is already answering
+// healthz AND passes the signed compatibility check, start adopts it (no new
+// process spawned).
+func TestSupervisorAdoptsCompatibleOrphan(t *testing.T) {
+	exe := buildFakeAdapter(t)
+	addr := "127.0.0.1:18097"
+	// Pre-launch a "orphan" adapter holding the port.
+	orphan := exec.Command(exe)
+	orphan.Env = append(os.Environ(), "FAKE_ADDR="+addr)
+	if err := orphan.Start(); err != nil {
+		t.Fatalf("start orphan: %v", err)
+	}
+	t.Cleanup(func() { _ = orphan.Process.Kill(); _, _ = orphan.Process.Wait() })
+	// Wait for it to serve.
+	deadline := time.Now().Add(5 * time.Second)
+	cl := &http.Client{Timeout: 300 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		if r, err := cl.Get("http://" + addr + "/healthz"); err == nil {
+			r.Body.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://" + addr + "/healthz",
+		env:        []string{"FAKE_ADDR=127.0.0.1:1"}, // a fresh spawn would fail to bind
+		timeout:    5 * time.Second,
+		compatible: func(ctx context.Context) bool { return true },
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start should adopt the compatible orphan: %v", err)
+	}
+	if sup.running() {
+		t.Fatal("no new child should be spawned when adopting an orphan")
+	}
+}
+
+// TestSupervisorRejectsStaleListener: a listener that fails the signed
+// compatibility check must NOT be adopted (it holds an old/foreign secret).
+func TestSupervisorRejectsStaleListener(t *testing.T) {
+	exe := buildFakeAdapter(t)
+	addr := "127.0.0.1:18096"
+	stale := exec.Command(exe)
+	stale.Env = append(os.Environ(), "FAKE_ADDR="+addr)
+	if err := stale.Start(); err != nil {
+		t.Fatalf("start stale: %v", err)
+	}
+	t.Cleanup(func() { _ = stale.Process.Kill(); _, _ = stale.Process.Wait() })
+	deadline := time.Now().Add(5 * time.Second)
+	cl := &http.Client{Timeout: 300 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		if r, err := cl.Get("http://" + addr + "/healthz"); err == nil {
+			r.Body.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://" + addr + "/healthz",
+		env:        []string{"FAKE_ADDR=127.0.0.1:1"},
+		timeout:    2 * time.Second,
+		compatible: func(ctx context.Context) bool { return false }, // stale secret
+	}
+	err := sup.start(context.Background())
+	if err == nil {
+		t.Fatal("expected error for a listening but incompatible adapter")
+	}
+	if !strings.Contains(err.Error(), "HMAC") {
+		t.Fatalf("error should mention HMAC/auth, got: %v", err)
+	}
+}
+
 func TestResolveAdapterCommand(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		if !strings.HasSuffix(resolveExeName("weixin-adapter"), ".exe") {

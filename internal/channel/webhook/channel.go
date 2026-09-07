@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rebornace/baize/internal/channel"
 )
@@ -158,6 +159,10 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 	if err := c.loadSettings(); err != nil {
 		return nil, "", false, fmt.Errorf("webhook: load settings: %w", err)
 	}
+	// Make an auto-generated autostart secret stable across baize restarts so
+	// a surviving (orphaned) adapter child keeps verifying baize's requests.
+	// Must run before the admin client and supervisor are built (they use it).
+	c.resolveSecret()
 	// Management plane client (admin proxy + status). The secret converges for
 	// autostart instances: OutboundSecret == the generated Secret == the
 	// adapter's -secret.
@@ -189,11 +194,25 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 			"-creds="+credsDir,
 		)
 		healthz := strings.TrimRight(c.cfg.AdminURL, "/") + "/healthz"
-		c.sup = &supervisor{
+		sup := &supervisor{
 			command:    c.cfg.AdapterCommand,
 			args:       args,
 			healthzURL: healthz,
 		}
+		// Signed compatibility check for the adopt-orphan path: a listener that
+		// answers a signed /admin/status shares our secret; one that 401s is a
+		// stale/foreign process holding the port.
+		if c.admin != nil {
+			sup.compatible = func(ctx context.Context) bool {
+				probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+				defer cancel()
+				if _, _, err := c.admin.Status(probeCtx); err != nil {
+					return false
+				}
+				return true
+			}
+		}
+		c.sup = sup
 	}
 	if deps.Routes != nil {
 		deps.Routes.RegisterRoute(

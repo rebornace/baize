@@ -27,6 +27,10 @@ type instanceConfig struct {
 	// adapter child (its -baize inbound URL). Empty falls back to the
 	// BuildDeps.SelfBaseURL, then the loopback default http://127.0.0.1:8080.
 	AdapterBaizeURL string
+	// secretAuto is true when the HMAC secret was auto-generated (no explicit
+	// config secret). Bootstrap then persists/reuses a stable on-disk secret so
+	// an adapter orphaned by a previous baize run still verifies requests.
+	secretAuto bool
 }
 
 // parseConfig resolves an instance from its channel.Config map. name is the
@@ -97,6 +101,7 @@ func parseConfig(name string, m map[string]string) (instanceConfig, error) {
 			return c, fmt.Errorf("webhook: generate adapter secret: %w", err)
 		}
 		c.Secret = secret
+		c.secretAuto = true
 		if c.OutboundSecret == "" {
 			c.OutboundSecret = c.Secret
 		}

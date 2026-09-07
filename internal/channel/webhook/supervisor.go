@@ -24,12 +24,29 @@ type supervisor struct {
 	healthzURL string
 	timeout    time.Duration
 
+	// compatible, when set, reports whether a listening adapter shares baize's
+	// secret (a signed management call succeeds). A bare /healthz cannot tell a
+	// compatible orphan from a stale/foreign process holding the port, so the
+	// adopt decision uses this when available.
+	compatible func(ctx context.Context) bool
+
 	cmd *exec.Cmd
 }
 
 func (s *supervisor) start(ctx context.Context) error {
 	if s.command == "" {
 		return fmt.Errorf("webhook supervisor: empty adapter command")
+	}
+	// Reuse before spawn: an adapter may already be listening (an orphan from a
+	// previous baize run hard-killed before it could stop its child). Adopting
+	// it avoids spawning a second process that fails to bind the port. Only
+	// adopt when it is healthy AND (when checkable) shares our secret; a
+	// listener that fails auth is stale/foreign and must be reclaimed manually.
+	if s.adapterListening(ctx) {
+		if s.compatible == nil || s.compatible(ctx) {
+			return nil
+		}
+		return fmt.Errorf("webhook supervisor: %s already serves an adapter that fails HMAC auth; stop the stale weixin-adapter process (it holds an old secret) and restart", s.healthzURL)
 	}
 	resolved := resolveAdapterPath(s.command)
 	cmd := exec.CommandContext(ctx, resolved, s.args...)
@@ -49,6 +66,23 @@ func (s *supervisor) start(ctx context.Context) error {
 		return fmt.Errorf("webhook supervisor: adapter never became healthy: %w", err)
 	}
 	return nil
+}
+
+// adapterListening reports whether something answers the health endpoint (no
+// auth). Distinguishes "port free" from "a process is already there".
+func (s *supervisor) adapterListening(ctx context.Context) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 600*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, s.healthzURL, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 func (s *supervisor) stop(ctx context.Context) error {
