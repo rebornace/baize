@@ -30,6 +30,12 @@ type BuildDeps struct {
 	// (e.g. <dataDir>/channels/webhook/<name>/settings.json). Empty means
 	// in-memory only (tests).
 	DataDir string
+	// SelfBaseURL is baize's own loopback base URL, passed to autostart
+	// adapter children so they POST inbound messages back to baize. Empty in
+	// tests / when the listen port is not known at assembly time; the webhook
+	// supervisor then falls back to config adapter_baize_url, then the
+	// loopback default http://127.0.0.1:8080.
+	SelfBaseURL string
 }
 
 // Bootstrapper is implemented by channels that participate in full assembly:

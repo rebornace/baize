@@ -1,6 +1,9 @@
 package webhook
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseConfig(t *testing.T) {
 	cfg, err := parseConfig("feishu", map[string]string{
@@ -76,6 +79,8 @@ func TestParseConfigAutostartAllowsEmptySecret(t *testing.T) {
 		"outbound_url":      "http://127.0.0.1:8090/outbound",
 		"assignee":          "channel:weixin",
 		"adapter_autostart": "true",
+		"adapter_command":   "weixin-adapter",
+		"admin_url":         "http://127.0.0.1:8090",
 	})
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -114,5 +119,58 @@ func TestParseConfigAdminAndAdapterFields(t *testing.T) {
 func TestParseConfigSecretRequiredWithoutAutostart(t *testing.T) {
 	if _, err := parseConfig("x", map[string]string{"outbound_url": "http://h/o", "assignee": "a"}); err == nil {
 		t.Fatal("expected error for missing secret when not autostart")
+	}
+}
+
+func TestParseConfigAutostartRequiresCommandAndAdminURL(t *testing.T) {
+	base := map[string]string{
+		"outbound_url":      "http://h/o",
+		"assignee":          "a",
+		"adapter_autostart": "true",
+	}
+	// autostart without adapter_command => error.
+	missCmd := map[string]string{}
+	for k, v := range base {
+		missCmd[k] = v
+	}
+	missCmd["admin_url"] = "http://127.0.0.1:8090"
+	if _, err := parseConfig("wx", missCmd); err == nil {
+		t.Fatal("expected error for autostart without adapter_command")
+	} else if !strings.Contains(err.Error(), "adapter_command") {
+		t.Fatalf("error should mention adapter_command, got: %v", err)
+	}
+	// autostart without admin_url => error.
+	missAdmin := map[string]string{}
+	for k, v := range base {
+		missAdmin[k] = v
+	}
+	missAdmin["adapter_command"] = "weixin-adapter"
+	if _, err := parseConfig("wx", missAdmin); err == nil {
+		t.Fatal("expected error for autostart without admin_url")
+	} else if !strings.Contains(err.Error(), "admin_url") {
+		t.Fatalf("error should mention admin_url, got: %v", err)
+	}
+	// autostart with both present => OK (secret auto-generated).
+	ok := map[string]string{}
+	for k, v := range base {
+		ok[k] = v
+	}
+	ok["adapter_command"] = "weixin-adapter"
+	ok["admin_url"] = "http://127.0.0.1:8090"
+	c, err := parseConfig("wx", ok)
+	if err != nil {
+		t.Fatalf("autostart with command+admin_url should parse: %v", err)
+	}
+	if c.AdapterBaizeURL != "" {
+		t.Fatalf("AdapterBaizeURL should default empty, got %q", c.AdapterBaizeURL)
+	}
+	// adapter_baize_url parses through.
+	ok["adapter_baize_url"] = "http://127.0.0.1:9000"
+	c, err = parseConfig("wx", ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdapterBaizeURL != "http://127.0.0.1:9000" {
+		t.Fatalf("AdapterBaizeURL = %q", c.AdapterBaizeURL)
 	}
 }

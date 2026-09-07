@@ -49,6 +49,9 @@ type Channel struct {
 	settingsMu  sync.RWMutex
 	allowlist   map[string]bool
 	admin       adminClient
+	// sup hosts the out-of-process adapter for autostart instances; nil when
+	// the adapter is deployed independently (admin_url only).
+	sup *supervisor
 }
 
 // bgCtx returns the context for adapter management calls made outside of an
@@ -105,10 +108,30 @@ func openFromConfig(name string, m map[string]string) (*Channel, error) {
 func (c *Channel) Name() string   { return c.cfg.Name }
 func (c *Channel) Source() string { return c.cfg.Source }
 
-// Start/Stop are no-ops: the webhook channel has no polling loop; inbound
-// arrives over HTTP and outbound is request/response.
-func (c *Channel) Start(ctx context.Context) error { return nil }
-func (c *Channel) Stop(ctx context.Context) error  { return nil }
+// Start launches the autostart adapter child process (when configured) and
+// reconciles the adapter's enabled state. Inbound still arrives over HTTP and
+// outbound is request/response; there is no polling loop inside baize.
+func (c *Channel) Start(ctx context.Context) error {
+	if c.sup != nil {
+		if err := c.sup.start(ctx); err != nil {
+			return err
+		}
+	}
+	c.reconcileEnabled(c.GetSettings().Enabled)
+	return nil
+}
+
+// Stop asks the adapter to stop its polling and kills any supervised child
+// process. Errors are best-effort: shutdown proceeds regardless.
+func (c *Channel) Stop(ctx context.Context) error {
+	if c.admin != nil {
+		_ = c.admin.Stop(ctx)
+	}
+	if c.sup != nil {
+		_ = c.sup.stop(ctx)
+	}
+	return nil
+}
 
 // Bootstrap assembles the channel Runtime from generic deps. Per-instance
 // settings (assignee/agent/allowlist/enabled) are loaded from
@@ -135,15 +158,57 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 	if err := c.loadSettings(); err != nil {
 		return nil, "", false, fmt.Errorf("webhook: load settings: %w", err)
 	}
-	c.reconcileEnabled(c.GetSettings().Enabled)
+	// Management plane client (admin proxy + status). The secret converges for
+	// autostart instances: OutboundSecret == the generated Secret == the
+	// adapter's -secret.
+	if c.cfg.AdminURL != "" {
+		c.admin = newHTTPAdminClient(c.cfg.AdminURL, c.cfg.OutboundSecret)
+	}
+	// Autostart child process supervisor.
+	if c.cfg.AdapterAutostart {
+		// Resolve baize's loopback base for the adapter's -baize inbound URL:
+		// deps.SelfBaseURL (when known) -> config adapter_baize_url -> default.
+		baizeURL := strings.TrimSpace(deps.SelfBaseURL)
+		if baizeURL == "" {
+			baizeURL = strings.TrimSpace(c.cfg.AdapterBaizeURL)
+		}
+		if baizeURL == "" {
+			baizeURL = "http://127.0.0.1:8080"
+		}
+		credsDir := c.cfg.AdapterCredsDir
+		if credsDir == "" {
+			credsDir = "./data/channels/" + c.cfg.Name
+		}
+		// The adapter POSTs inbound messages back to baize's inbound route;
+		// its admin/outbound listeners live at AdminURL.
+		inboundURL := strings.TrimRight(baizeURL, "/") + "/v0/channels/" + c.cfg.Name + "/inbound"
+		args := append([]string(nil), c.cfg.AdapterArgs...)
+		args = append(args,
+			"-baize="+inboundURL,
+			"-secret="+c.cfg.Secret,
+			"-creds="+credsDir,
+		)
+		healthz := strings.TrimRight(c.cfg.AdminURL, "/") + "/healthz"
+		c.sup = &supervisor{
+			command:    c.cfg.AdapterCommand,
+			args:       args,
+			healthzURL: healthz,
+		}
+	}
 	if deps.Routes != nil {
 		deps.Routes.RegisterRoute(
 			"POST /v0/channels/"+c.cfg.Name+"/inbound",
 			c.inboundHandler(),
 		)
 	}
-	// start=true keeps parity with other Bootstrappers; Start is a no-op.
-	return rt, "", true, nil
+	// Independently deployed adapters (no supervised child) are reachable now,
+	// so reconcile enabled state at assembly; autostart children reconcile in
+	// Start() once the process is healthy.
+	if c.sup == nil {
+		c.reconcileEnabled(c.GetSettings().Enabled)
+	}
+	// Only autostart, enabled instances need baize to launch their loop.
+	return rt, "", c.GetSettings().Enabled && c.cfg.AdapterAutostart, nil
 }
 
 func firstNonEmpty(vals ...string) string {

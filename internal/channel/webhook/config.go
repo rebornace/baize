@@ -23,6 +23,10 @@ type instanceConfig struct {
 	AdapterCommand   string
 	AdapterArgs      []string
 	AdapterCredsDir  string
+	// AdapterBaizeURL is baize's own loopback base URL passed to an autostart
+	// adapter child (its -baize inbound URL). Empty falls back to the
+	// BuildDeps.SelfBaseURL, then the loopback default http://127.0.0.1:8080.
+	AdapterBaizeURL string
 }
 
 // parseConfig resolves an instance from its channel.Config map. name is the
@@ -54,6 +58,7 @@ func parseConfig(name string, m map[string]string) (instanceConfig, error) {
 	c.AdminURL = get("admin_url")
 	c.AdapterCommand = get("adapter_command")
 	c.AdapterCredsDir = get("adapter_creds_dir")
+	c.AdapterBaizeURL = get("adapter_baize_url")
 	if v := get("adapter_autostart"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -66,6 +71,16 @@ func parseConfig(name string, m map[string]string) (instanceConfig, error) {
 			if a = strings.TrimSpace(a); a != "" {
 				c.AdapterArgs = append(c.AdapterArgs, a)
 			}
+		}
+	}
+	// Autostart instances are launched and health-checked by baize itself, so
+	// the adapter command and its admin/healthz base URL are mandatory.
+	if c.AdapterAutostart {
+		if c.AdapterCommand == "" {
+			return c, fmt.Errorf("webhook: adapter_command required when adapter_autostart=true (instance %q)", name)
+		}
+		if c.AdminURL == "" {
+			return c, fmt.Errorf("webhook: admin_url required when adapter_autostart=true (instance %q)", name)
 		}
 	}
 	if c.Secret == "" && !c.AdapterAutostart {
