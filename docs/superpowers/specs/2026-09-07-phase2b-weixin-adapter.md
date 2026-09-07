@@ -9,7 +9,7 @@
 
 **终态：只有一套渠道机制。** 微信从"进程内渠道"变为"通用 webhook 实例 + 独立适配器进程 `weixin-adapter`"。2B 同一发布内：
 
-- 新增适配器 `cmd/weixin-adapter`（同仓、跨平台 Go 二进制），承载 iLink 私有协议（扫码登录、长轮询、发消息、媒体下载、凭据持久化）。
+- 新增适配器 `cmd/weixin-adapter`（同仓、跨平台 Go 二进制），承载 iLink 私有协议（扫码登录、长轮询、发消息、媒体下载+**AES 解密**、媒体**上传真发图/文件**、凭据持久化；媒体见 §15）。
 - baize 核心**删除进程内 weixin 渠道的注册/装配/专用管理 handler**；微信改为装配一个 `type: webhook`、`source: weixin` 的实例对接适配器。
 - 飞书/钉钉/Slack 与微信机制完全平权，只是适配器进程不同。
 
@@ -29,9 +29,9 @@
 - `go test ./...`（含 integration）全绿、gofmt/vet 干净。
 
 **非目标（YAGNI）：**
-- 不重写 iLink 协议、不改微信侧报文；适配器复用现有 ilink 客户端代码（搬迁而非重写）。
-- 不做 iLink 出站媒体上传（现状即为文本占位，保持对等，不新增能力）。
-- 不做 CDN 媒体 AES 解密（现状是 TODO，保持现状行为，不在 2B 补）。
+- 不重写 iLink 文本/登录/轮询报文；适配器复用现有 ilink 客户端代码（搬迁而非重写）。
+- **媒体升级（用户确认纳入 2B）**：出站真发图/文件、入站 CDN AES 解密（见 §15）；这超出"纯迁移对等"，是适配器侧新增能力。
+- 不做语音/视频消息（iLink media_type 2/5）；本期只做图片（type 2）与文件（type 4）。
 - 不做适配器市场/远程安装/多适配器编排；一个 webhook 实例对接一个适配器进程。
 - 不把适配器拆成独立仓库（同仓 `cmd/weixin-adapter`，复用内部 ilink 库）。
 
@@ -81,6 +81,7 @@
 - 复用文件（原样迁入适配器，含测试）：`ilink.go`（接口+wire 类型+常量）、`client.go`（HTTP 客户端）、`creds.go`（凭据原子读写）、`fake.go`（测试 ILlink）。
 - 适配器新增：`main.go`（HTTP 服务 + 长轮询 goroutine + 信号处理）、`inbound.go`（轮询→入站 payload→签名 POST baize）、`outbound.go`（`/outbound` 验签→ilink SendMessage）、`admin.go`（`/admin/*` 扫码/状态/登出/启停）、`config.go`（适配器自身配置：baize URL、secret、监听端口、creds 目录、base_url）。
 - **包位置取舍：** 采用 **`cmd/weixin-adapter/internal/weixinlink/`**（把 ilink/client/creds/fake 迁入适配器私有 internal 库）。理由：核心不再 import 这些微信专有代码，依赖方向清晰（适配器→自己的 internal 库），核心 `internal/channel/weixin/` 整个删除，终态干净。迁移时保留 `client_test.go`/`fake.go` 作为适配器库测试。
+- **媒体新增（适配器库 `weixinlink`）**：新增 `media.go`——AES-128-ECB/PKCS7 加解密 + `GetUploadURL`/CDN 上传/`SendImage`/`SendFile`（出站真发），并把 `DownloadMedia` 下载后解密（入站，见 §15）；`ilink.go` 接口补 `UploadMedia`/`SendMediaItem` 方法，`fake.go` 同步。
 - **凭据目录兼容：** 适配器默认 creds 目录沿用 `./data/channels/weixin`（与现状同路径），`creds.json` 格式不变（`{account_id, token}`），实现"现有凭据免重新扫码"。适配器由 baize 以相同工作目录拉起时即读到旧凭据。
 - **settings.json 不再由适配器管理**：`agent_id/allowlist/assignee/enabled` 上移到 baize 通用渠道设置（§6）；适配器只持有连接态凭据（creds.json）与运行态（轮询启停、登录态）。适配器 `/admin/start|stop` 对应轮询 goroutine 启停；`enabled` 由 baize 在设置变更时调用。
 
@@ -152,8 +153,8 @@ webhook 实例需要一层可热更新、可持久化的渠道设置（取代微
 8. **HITL 审批**：run 进入 waiting_human → 适配器收到 notify；IM 内回复"同意/拒绝" → 续跑/终止 + ack。
 9. **UI 操作员镜像**：UI 发言 → 适配器收到 operator 出站。
 10. **context_token 透传**：入站 context_token 缓存 → 出站 payload 带回（适配器→iLink SendMessage 的 context_token）。
-11. **入站媒体**：图片（supports_vision）→ 多模态 part；文件 → 附件（display 带文件名）。
-12. **出站媒体**：助手回复带附件 → 适配器收到 media[]（适配器侧 iLink 无上传 API，保持文本/占位对等即可，不断言上传）。
+11. **入站媒体（含解密）**：微信图片（supports_vision）→ 多模态 part；文件 → 附件（display 带文件名）；适配器对 CDN 密文做 AES-128-ECB 解密（§15），下载后可得明文；解密失败的附件退化为文件名占位但不丢消息。
+12. **出站媒体（真发）**：助手回复带图片/文件 → baize 出站 `media[]` → 适配器走 `getuploadurl`+AES 加密+CDN 上传+`sendmessage` 图片/文件项真发到微信（§15）；e2e 用 httptest 假 iLink 断言上传三步与 item 引用；出站媒体失败不中断文本投递。
 13. **历史会话兼容**：convID `weixin:<accountID>:<peer>`、meta.Source `weixin` 不变；同一微信号登录后 accountID 一致，历史会话不失联。
 14. **动态 account**：入站 payload account 用于拼 convID；出站 body account 与入站一致。
 15. **管理面鉴权**：`/v0/settings/channels/weixin/*` 需 admin（operator 403）；入站 `/inbound` 走 HMAC 不需 token。
@@ -212,7 +213,7 @@ channels:
 
 ## 11. 测试策略（TDD）
 
-- **适配器库（`cmd/weixin-adapter/internal/weixinlink/`）**：迁入的 `client_test.go`/`fake.go` 全绿（协议级不变）。
+- **适配器库（`cmd/weixin-adapter/internal/weixinlink/`）**：迁入的 `client_test.go`/`fake.go` 全绿（协议级不变）；新增 `media_test.go`：AES-128-ECB/PKCS7 round-trip、入站下载解密、出站 `getuploadurl`+CDN 上传+`sendmessage` 图片/文件项（httptest 假 iLink/CDN 断言，见 §15）。
 - **适配器 HTTP 面**：用 fake ilink + httptest 测 `/outbound`（验签、调 SendMessage、context_token）、`/admin/login/*`（start→ticket/qr、poll pending/success/expired、落凭据）、`/admin/logout`、`/admin/status`（凭据/轮询态）、`/healthz`；入站组装（fake GetUpdates → 签名 POST baize，断言 payload account/peer/text/媒体）。
 - **baize webhook 渠道增强**：动态 account（入站 payload account 拼 convID；出站从 convID 回填 account）；通用渠道设置持久化 + 热更新（assignee/agent/allowlist/enabled）；管理代理（login/logout/status 转发 fake 适配器，HMAC 头）；`running/reason` 合并推导五态 + `adapter_unreachable`；入站白名单读热更新字段。
 - **子进程托管（跨平台）**：用最小假适配器子程序（HTTP `/healthz`+`/outbound`）测 exec 拉起、健康检查就绪、关停终止；Linux CI 与 Windows 本机都跑。
@@ -222,7 +223,7 @@ channels:
 ## 12. 涉及文件（预估）
 
 **新增：**
-- `cmd/weixin-adapter/main.go`、`config.go`、`inbound.go`、`outbound.go`、`admin.go`、`healthz` + `internal/weixinlink/`（迁入 ilink.go/client.go/creds.go/fake.go + 测试）。
+- `cmd/weixin-adapter/main.go`、`config.go`、`inbound.go`、`outbound.go`、`admin.go`、`healthz` + `internal/weixinlink/`（迁入 ilink.go/client.go/creds.go/fake.go + 测试；**新增 `media.go`：AES-ECB 加解密 + getuploadurl/CDN 上传/发图发文件 + 入站下载解密，见 §15**）。
 - `internal/channel/webhook/settings.go`（通用渠道设置持久化/热更新）、`admin.go`（管理面代理客户端）、`supervisor.go`（子进程托管）+ 对应 `*_test.go`。
 - 适配器 e2e / 子进程托管跨平台测试 / 通用渠道管理 api 测试。
 
@@ -255,4 +256,37 @@ channels:
 - **端口分配**：v1 用固定/配置端口——适配器 `-addr` 默认 `127.0.0.1:8090`，baize config 的 `outbound_url`/`admin_url` 指向它；autostart 时 baize 经 `-addr` 显式传端口。多实例需配不同端口（文档注明）。动态端口发现（`-addr=127.0.0.1:0` + 适配器把实际端口写到 stdout/健康文件）列为后续增强。
 - **子进程崩溃**：v1 不自动重启（管理面状态归为 `start_failed`，日志记录）；自动重启/退避列为后续。
 - **适配器与 baize 同机假设**：autostart 模式下回环；独立部署时适配器可在远端（`outbound_url`/`admin_url` 指向远端，HMAC 保障）。
+
+## 15. iLink 媒体协议（2B 新增：出站真发 + 入站解密）
+
+开源参考：cc-weixin `docs/API-REFERENCE.md`、openclaw-weixin `weixin-bot-api.md`、BotTalk `ilink.sendImage`、ciphertalk `weixinIlinkClient.ts`（同一套 `ilinkai.weixin.qq.com` 协议）。Go 侧仅用标准库 `crypto/aes`+`crypto/cipher`(AES-ECB/PKCS7)+`crypto/md5`+`crypto/rand`+`encoding/base64`/`hex`，无新依赖。
+
+**入站媒体（微信→系统）解密：**
+- iLink 入站图片/文件经 CDN 下发，`item.media` 带 `encrypt_query_param` + `aes_key` + `encrypt_type`；下载字节是 **AES-128-ECB + PKCS7** 密文（密钥即消息项的 `aes_key`，16 字节）。
+- 适配器 `DownloadMedia` 下载后，用该 `aes_key`（按消息项 `aeskey`/`media.aes_key` 归一）做 AES-128-ECB 解密、去 PKCS7，得到明文，再 base64 进入站 payload `attachments[].content_base64`（或本地 URL）。密钥解析需兼容两种形态：`image_item.aeskey`（32 字符 hex）与 `media.aes_key`（base64）。
+- 解密失败（密钥缺失/格式不符）时：该附件退化为"仅文件名占位"（不丢整条消息），日志记录；保持健壮性。
+- 这同时修掉现状 README 承认的"CDN AES 解密未实现、加密媒体下载后不可用"。
+
+**出站媒体（系统→微信）真发（3 步）：**
+1. **生成密钥**：`crypto/rand` 16 字节 AES key；明文 MD5（hex）；AES-128-ECB + PKCS7 加密文件字节，记录 `rawsize`（明文长度）、`filesize`（密文长度）。
+2. **取上传地址**：`POST /ilink/bot/getuploadurl`（Bearer 鉴权头同 sendmessage），body：
+   ```json
+   {"filekey":"<随机 hex>","media_type":1,"to_user_id":"<peer>",
+    "rawsize":<明文>,"rawfilemd5":"<md5 hex>","filesize":<密文>,
+    "no_need_thumb":true,"aeskey":"<AES key hex>","base_info":{"channel_version":"1.0.0"}}
+   ```
+   `media_type`：`1`=图片、`3`=文件（语音 2 / 视频 5 本期不做）。响应取 `upload_param`。
+3. **上传 CDN + 发消息**：`POST {CDNBase}/upload?encrypted_query_param=<upload_param>&filekey=<filekey>`，`Content-Type: application/octet-stream`，body=密文字节；响应头 **`x-encrypted-param`** 为下载句柄。然后 `POST /ilink/bot/sendmessage`，`item_list` 引用：
+   - 图片项：`{"type":2,"image_item":{"media":{"encrypt_query_param":"<x-encrypted-param>","aes_key":"<base64(AES key)>","encrypt_type":1},"mid_size":<密文长度>}}`
+   - 文件项：`{"type":4,"file_item":{"media":{"encrypt_query_param":"<x-encrypted-param>","aes_key":"<base64(AES key)>","encrypt_type":1},"file_name":"<名>","len":"<大小>"}}`
+   - 仍带 `context_token`（出站 payload 透传，来自入站缓存）。
+- webhook 出站 body 的 `media[].content_base64` 由适配器解码后走上述流程；文本与媒体顺序：先发 text 再逐个 media（与 `DeliverAssistantReply` 一致）。
+- 出站媒体在适配器侧失败（上传/发送错误）：记日志、该媒体不中断文本投递（与"出站失败不中断 run"一致）。
+
+**测试（CI 可自动化，真机手验）：**
+- 入站解密：httptest CDN 返回 AES-ECB 密文，断言适配器解出明文并入 `attachments`（多模态/附件）。
+- 出站上传：httptest 假 iLink 断言 `getuploadurl` 请求字段（media_type/rawsize/filesize/md5/aeskey）、CDN 收到密文（可解密回明文验证）、`sendmessage` 的 image_item/file_item 引用 `x-encrypted-param` 与 base64 aes_key。
+- AES round-trip 单测（加密→解密还原；PKCS7 边界）。
+- 真机扫码 + 私信收发图片/文件为手工验收（README 已声明 iLink 无 CI 真机测）。
+
 
