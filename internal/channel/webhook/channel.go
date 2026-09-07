@@ -292,7 +292,8 @@ func safeInstanceName(name string) bool {
 }
 
 var (
-	_ channel.Channel       = (*Channel)(nil)
-	_ channel.SourceSourced = (*Channel)(nil)
-	_ channel.Bootstrapper  = (*Channel)(nil)
+	_ channel.Channel        = (*Channel)(nil)
+	_ channel.SourceSourced  = (*Channel)(nil)
+	_ channel.Bootstrapper   = (*Channel)(nil)
+	_ channel.ManagedChannel = (*Channel)(nil)
 )

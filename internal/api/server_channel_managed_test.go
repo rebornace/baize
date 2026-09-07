@@ -1,0 +1,119 @@
+package api_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/store"
+)
+
+// fakeManaged is a test channel implementing both channel.Channel and
+// channel.ManagedChannel so the generic /v0/settings/channels/{name} plane can
+// drive it without any channel-specific handlers.
+type fakeManaged struct {
+	settings  channel.ChannelSettings
+	status    channel.AdapterStatus
+	loggedOut bool
+}
+
+func (f *fakeManaged) Name() string { return "weixin" }
+func (f *fakeManaged) Source() string {
+	return "weixin"
+}
+func (f *fakeManaged) Start(context.Context) error { return nil }
+func (f *fakeManaged) Stop(context.Context) error  { return nil }
+func (f *fakeManaged) SendText(context.Context, string, string, map[string]string) error {
+	return nil
+}
+func (f *fakeManaged) SendMedia(context.Context, string, string, string, []byte, map[string]string) error {
+	return nil
+}
+func (f *fakeManaged) GetSettings() channel.ChannelSettings { return f.settings }
+func (f *fakeManaged) UpdateSettings(s channel.ChannelSettings) channel.AdapterStatus {
+	f.settings = s
+	return f.status
+}
+func (f *fakeManaged) Status() channel.AdapterStatus { return f.status }
+func (f *fakeManaged) LoginStart(context.Context) (channel.LoginTicket, error) {
+	return channel.LoginTicket{Ticket: "tk", QRURL: "qr"}, nil
+}
+func (f *fakeManaged) LoginPoll(context.Context, string) (string, error) { return "success", nil }
+func (f *fakeManaged) Logout(context.Context) error {
+	f.loggedOut = true
+	return nil
+}
+
+var (
+	_ channel.Channel        = (*fakeManaged)(nil)
+	_ channel.ManagedChannel = (*fakeManaged)(nil)
+)
+
+func managedTestServer(t *testing.T) *api.Server {
+	t.Helper()
+	ch := &fakeManaged{
+		settings: channel.ChannelSettings{Assignee: "alice", AgentID: "ag", Enabled: true, Allowlist: []string{}},
+		status:   channel.AdapterStatus{Running: true},
+	}
+	srv := api.NewServer(store.NewMemory(), nil, nil)
+	srv.AdminToken = "adm"
+	srv.RegisterChannel(&api.ChannelHandle{Name: "weixin", Channel: ch})
+	return srv
+}
+
+func admReq(method, target string) *http.Request {
+	req := httptest.NewRequest(method, target, nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	return req
+}
+
+func TestManagedGetSettings(t *testing.T) {
+	srv := managedTestServer(t)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, admReq(http.MethodGet, "/v0/settings/channels/weixin"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["assignee"] != "alice" || got["enabled"] != true || got["running"] != true {
+		t.Fatalf("body=%v", got)
+	}
+}
+
+func TestManagedOperatorForbidden(t *testing.T) {
+	srv := managedTestServer(t)
+	srv.OperatorToken = "op"
+	req := httptest.NewRequest(http.MethodGet, "/v0/settings/channels/weixin", nil)
+	req.Header.Set("Authorization", "Bearer op")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("operator GET=%d want 403", rec.Code)
+	}
+}
+
+func TestManagedLoginLogoutRoutes(t *testing.T) {
+	srv := managedTestServer(t)
+	hit := func(method, path string) int {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, admReq(method, path))
+		return rec.Code
+	}
+	if c := hit(http.MethodPost, "/v0/settings/channels/weixin/login/start"); c != http.StatusOK {
+		t.Fatalf("login/start=%d", c)
+	}
+	if c := hit(http.MethodGet, "/v0/settings/channels/weixin/login/status?ticket=tk"); c != http.StatusOK {
+		t.Fatalf("login/status=%d", c)
+	}
+	if c := hit(http.MethodPost, "/v0/settings/channels/weixin/logout"); c != http.StatusOK {
+		t.Fatalf("logout=%d", c)
+	}
+	if c := hit(http.MethodGet, "/v0/settings/channels/unknown"); c != http.StatusNotFound {
+		t.Fatalf("unknown channel=%d want 404", c)
+	}
+}

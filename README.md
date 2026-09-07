@@ -469,6 +469,14 @@ baize reset-credentials -config <config-path>
 
 This clears credential overrides only (engine knobs are untouched); after a restart or TTL expiry the YAML/env baseline tokens apply again.
 
+**Weixin adapter (out-of-process)** — Weixin moved from an in-process channel to an out-of-process webhook adapter, `weixin-adapter`. baize can supervise the child process via `adapter_autostart` (the default config does this), or the adapter can be deployed independently. Build the adapter binary first (baize finds it via PATH or `./bin/`):
+
+```bash
+go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-adapter.exe
+```
+
+The adapter and baize exchange HMAC-signed JSON over HTTP (`/outbound` for outbound, `/v0/channels/weixin/inbound` for inbound, `/admin/*` for login/status/start/stop). When `secret` is left empty, baize generates one and passes it to the adapter via `-secret`. Weixin login credentials (`creds.json`) are stored by the adapter under `adapter_creds_dir` (default `./data/channels/weixin`), so restarts need no re-scan.
+
 **Weixin enable/disable** — `PUT /v0/settings/channels/weixin` with `{"enabled": true}` starts long-polling immediately when login credentials exist, or returns `running:false, reason:"login_required"` when not logged in; `{"enabled": false}` stops polling but **keeps the login credentials** — re-enabling needs no re-scan (unlike logout). Both `GET` and `PUT` responses include `running` plus a `reason` (`login_required` / `start_failed`), so the UI shows current state on first load.
 
 **Weixin DM allowlist** — `allowlist` is a list of peer (`from_user_id`) ids. A non-empty list makes the channel drop direct messages from any peer not on it — before media download or run creation, with no auto-reply (prevents probing / outbound cost). An empty list (the default) means open DMs. It hot-applies on save and is re-applied at startup; group messages are always ignored.

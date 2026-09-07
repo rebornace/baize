@@ -480,6 +480,14 @@ baize reset-credentials -config <配置路径>
 
 仅清空凭据覆盖、引擎参数不受影响；重启或等 TTL 过期后即回落 YAML/env 基线口令。
 
+**微信适配器（独立进程）** — 微信已从进程内渠道迁移为进程外 webhook 适配器 `weixin-adapter`。baize 可经 `adapter_autostart` 自动托管该子进程（默认配置即如此），也可独立部署。启用微信前需先构建适配器二进制（baize 经 PATH 或 `./bin/` 查找）：
+
+```bash
+go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-adapter.exe
+```
+
+适配器与 baize 之间用 HMAC 签名的 JSON-over-HTTP 通信（`/outbound` 出站、`/v0/channels/weixin/inbound` 入站、`/admin/*` 登录/状态/启停）；`secret` 留空时 baize 自动生成并经 `-secret` 注入。微信登录凭证（`creds.json`）由适配器保存在 `adapter_creds_dir`（默认 `./data/channels/weixin`），重启免重扫。
+
 **微信启停** — `PUT /v0/settings/channels/weixin` 带 `{"enabled": true}`：有登录凭证时立即启动长轮询，未登录则返回 `running:false, reason:"login_required"`；`{"enabled": false}` 停止轮询但**保留登录凭证**——重新启用无需重新扫码（区别于 logout）。`GET` 与 `PUT` 响应均包含 `running` 与 `reason`（`login_required` / `start_failed`），界面首屏即可看到当前运行状态。
 
 **微信私信白名单** — `allowlist` 为 peer（`from_user_id`）id 列表。非空时，渠道会在下载媒体 / 创建会话之前**丢弃名单外 peer 的私信**，且不自动回复（避免被探测 / 节省出站成本）；空列表（默认）表示不限制私信。保存即热生效、启动时也会重新应用；群消息始终忽略。

@@ -49,16 +49,17 @@ func (s *stubBootChannel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, s
 		DefaultAgentID: "b",
 		Source:         s.name,
 	}
-	// Faithful to the real channel contract (weixin.Bootstrap returns the
-	// resolved creds dir it was built with), so handle.CredsDir reflects it.
+	// Faithful to the real channel contract (a channel's Bootstrap returns
+	// the resolved creds dir it was built with), so handle.CredsDir reflects
+	// it.
 	return rt, s.credsDir, false, nil
 }
 
 var _ channel.Bootstrapper = (*stubBootChannel)(nil)
 
 // withEmptyRegistry replaces the global registry with an empty one for the
-// test and restores the prior descriptors (production channels such as weixin
-// are registered via init()) on cleanup.
+// test and restores the prior descriptors (production channels such as the
+// webhook channel are registered via init()) on cleanup.
 func withEmptyRegistry(t *testing.T) {
 	t.Helper()
 	before := channel.Descriptors()
@@ -97,29 +98,56 @@ func TestWireChannelsPicksUpRegisteredDescriptor(t *testing.T) {
 	if h.Runtime == nil || h.Runtime.Source != "stubch" {
 		t.Fatalf("stubch handle runtime not wired: %+v", h.Runtime)
 	}
-	if _, ok := d.srv.Channel("weixin"); ok {
-		t.Fatal("weixin handle must not be present when its descriptor is unregistered")
+	if _, ok := d.srv.Channel("webhook"); ok {
+		t.Fatal("webhook handle must not be present on the legacy path (DeclarativeOnly)")
 	}
 }
 
-// TestWireChannelsWiresAllRegisteredDescriptors verifies the production case:
-// with the real registry (weixin registered via init), wireChannels assembles
-// weixin, wires the router as the engine/api Outbound, and binds OutboundExtras.
+// registerDefaultStub registers a Bootstrapper test channel with
+// EnabledByDefault=true (mimicking a built-in default) on top of the
+// production registry. The registry snapshot is restored on cleanup.
+func registerDefaultStub(t *testing.T, name string) {
+	t.Helper()
+	before := channel.Descriptors()
+	channel.Register(channel.Descriptor{
+		Name:             name,
+		Build:            func(channel.Config) (channel.Channel, error) { return &stubBootChannel{name: name}, nil },
+		DefaultCredsDir:  "./data/channels/" + name,
+		EnabledByDefault: true,
+	})
+	t.Cleanup(func() {
+		channel.ResetForTest()
+		for _, d := range before {
+			channel.Register(d)
+		}
+	})
+}
+
+// TestWireChannelsWiresAllRegisteredDescriptors verifies the production
+// wiring: with a built-in default descriptor present (EnabledByDefault), the
+// legacy path assembles it, wires the router as the engine/api Outbound, and
+// binds OutboundExtras. The production webhook descriptor is skipped on the
+// legacy path (DeclarativeOnly).
 func TestWireChannelsWiresAllRegisteredDescriptors(t *testing.T) {
+	registerDefaultStub(t, "builtin")
+
 	d := channelDepsForTest(t)
 	router, err := wireChannels(d)
 	if err != nil {
 		t.Fatalf("wireChannels: %v", err)
 	}
-	if _, ok := router.For("weixin"); !ok {
-		t.Fatal("router should route weixin by its Source()")
+	if _, ok := router.For("builtin"); !ok {
+		t.Fatal("router should route builtin by its Source()")
 	}
-	h, ok := d.srv.Channel("weixin")
+	h, ok := d.srv.Channel("builtin")
 	if !ok {
-		t.Fatal("srv should have a weixin channel handle")
+		t.Fatal("srv should have a builtin channel handle")
 	}
-	if h.Runtime == nil || h.Runtime.Source != "weixin" {
-		t.Fatalf("weixin handle runtime not wired: %+v", h.Runtime)
+	if h.Runtime == nil || h.Runtime.Source != "builtin" {
+		t.Fatalf("builtin handle runtime not wired: %+v", h.Runtime)
+	}
+	if _, ok := d.srv.Channel("webhook"); ok {
+		t.Fatal("webhook must not be auto-wired on the legacy path (DeclarativeOnly)")
 	}
 	if d.srv.Outbound != channel.Channel(router) {
 		t.Fatal("srv.Outbound should be the router")
@@ -137,9 +165,8 @@ func TestWireChannelsWiresAllRegisteredDescriptors(t *testing.T) {
 
 // registerStubChannel registers an optional Bootstrapper test channel under
 // name (EnabledByDefault left false, so it behaves like an add-on channel) on
-// top of the production registry (weixin stays registered as the built-in
-// default). The registry snapshot is restored on cleanup. It returns a pointer
-// to the channel.Config captured at Build time.
+// top of the production registry. The registry snapshot is restored on
+// cleanup. It returns a pointer to the channel.Config captured at Build time.
 func registerStubChannel(t *testing.T, name string) *channel.Config {
 	t.Helper()
 	before := channel.Descriptors()
@@ -163,9 +190,11 @@ func registerStubChannel(t *testing.T, name string) *channel.Config {
 	return &got
 }
 
-// TestWireChannelsEmptyConfigWiresAll is the back-compat anchor: with no
-// declarative channels section, every registered channel (the built-in
-// weixin default + an extra optional stub) is wired, exactly as in task 5.
+// TestWireChannelsEmptyConfigWiresAll is the legacy-path anchor: with no
+// declarative channels section, every non-DeclarativeOnly descriptor (an extra
+// optional stub) is wired, while DeclarativeOnly types (the webhook channel)
+// are skipped. With the in-process weixin channel gone, the legacy path wires
+// no IM channel unless test descriptors are registered.
 func TestWireChannelsEmptyConfigWiresAll(t *testing.T) {
 	registerStubChannel(t, "stuball")
 
@@ -173,17 +202,17 @@ func TestWireChannelsEmptyConfigWiresAll(t *testing.T) {
 	if _, err := wireChannels(d); err != nil {
 		t.Fatalf("wireChannels: %v", err)
 	}
-	if _, ok := d.srv.Channel("weixin"); !ok {
-		t.Fatal("empty config must wire built-in default weixin")
+	if _, ok := d.srv.Channel("webhook"); ok {
+		t.Fatal("webhook (DeclarativeOnly) must not be auto-wired on the legacy path")
 	}
 	if _, ok := d.srv.Channel("stuball"); !ok {
-		t.Fatal("empty config must wire every registered channel (stuball)")
+		t.Fatal("empty config must wire every non-DeclarativeOnly channel (stuball)")
 	}
 }
 
 // TestWireChannelsDeclarativeFiltersOptional proves an optional channel is
-// wired only when explicitly enabled, while the unlisted built-in default
-// (weixin) stays wired for back-compat.
+// wired only when explicitly enabled, while DeclarativeOnly types (the webhook
+// channel) stay unwired unless explicitly listed.
 func TestWireChannelsDeclarativeFiltersOptional(t *testing.T) {
 	registerStubChannel(t, "stubon")
 
@@ -195,14 +224,13 @@ func TestWireChannelsDeclarativeFiltersOptional(t *testing.T) {
 	if _, ok := d.srv.Channel("stubon"); !ok {
 		t.Fatal("stubon explicitly enabled must be wired")
 	}
-	if _, ok := d.srv.Channel("weixin"); !ok {
-		t.Fatal("unlisted built-in default weixin must stay wired (back-compat)")
+	if _, ok := d.srv.Channel("webhook"); ok {
+		t.Fatal("webhook must not be wired unless explicitly listed as an instance")
 	}
 }
 
 // TestWireChannelsDeclarativeOmitsDisabledOptional proves an optional channel
-// that is listed enabled:false is not wired, while the built-in default
-// remains.
+// that is listed enabled:false is not wired.
 func TestWireChannelsDeclarativeOmitsDisabledOptional(t *testing.T) {
 	registerStubChannel(t, "stuboff")
 
@@ -214,21 +242,23 @@ func TestWireChannelsDeclarativeOmitsDisabledOptional(t *testing.T) {
 	if _, ok := d.srv.Channel("stuboff"); ok {
 		t.Fatal("stuboff enabled:false must NOT be wired")
 	}
-	if _, ok := d.srv.Channel("weixin"); !ok {
-		t.Fatal("built-in default weixin must remain wired")
+	if _, ok := d.srv.Channel("webhook"); ok {
+		t.Fatal("webhook must not be wired unless explicitly listed as an instance")
 	}
 }
 
 // TestWireChannelsExplicitDisableWins proves enabled:false overrides the
 // built-in default marker (explicit opt-out always wins).
 func TestWireChannelsExplicitDisableWins(t *testing.T) {
+	registerDefaultStub(t, "builtin")
+
 	d := channelDepsForTest(t)
-	d.cfg.Channels = []config.ChannelConfig{{Type: "weixin", Enabled: false}}
+	d.cfg.Channels = []config.ChannelConfig{{Type: "builtin", Enabled: false}}
 	if _, err := wireChannels(d); err != nil {
 		t.Fatalf("wireChannels: %v", err)
 	}
-	if _, ok := d.srv.Channel("weixin"); ok {
-		t.Fatal("weixin enabled:false must NOT be wired even though it is the default")
+	if _, ok := d.srv.Channel("builtin"); ok {
+		t.Fatal("builtin enabled:false must NOT be wired even though it is the default")
 	}
 }
 
@@ -362,10 +392,11 @@ func TestWireChannelsWebhookDuplicateSourceErrors(t *testing.T) {
 	}
 }
 
-// TestWireChannelsWebhookNotWiredInEmptyConfig is the phase-1 parity anchor:
-// webhook registers via the blank import in bootstrap.go, but with no channels:
-// section it must NOT be auto-wired (DeclarativeOnly), while the built-in
-// default weixin stays wired exactly as before.
+// TestWireChannelsWebhookNotWiredInEmptyConfig is the legacy-path anchor: the
+// webhook channel registers via the blank import in bootstrap.go, but with no
+// channels: section it must NOT be auto-wired (DeclarativeOnly). With the
+// in-process weixin channel removed, the legacy path wires no IM channel at
+// all; IM accounts are declared explicitly via channels: webhook instances.
 func TestWireChannelsWebhookNotWiredInEmptyConfig(t *testing.T) {
 	d := channelDepsForTest(t) // zero config.Config => Channels == nil
 	if _, err := wireChannels(d); err != nil {
@@ -374,20 +405,16 @@ func TestWireChannelsWebhookNotWiredInEmptyConfig(t *testing.T) {
 	if _, ok := d.srv.Channel("webhook"); ok {
 		t.Fatal("webhook must not be auto-wired in the legacy/empty-config path")
 	}
-	h, ok := d.srv.Channel("weixin")
-	if !ok {
-		t.Fatal("built-in default weixin must remain wired in empty config")
-	}
-	if h.Runtime == nil {
-		t.Fatal("weixin runtime must be wired in empty config")
+	if _, ok := d.srv.Channel("weixin"); ok {
+		t.Fatal("no in-process weixin channel exists; it must never be wired")
 	}
 }
 
 func channelDepsForTest(t *testing.T) channelDeps {
 	t.Helper()
-	// Hermetic cwd: weixin's DefaultCredsDir is relative ("./data/...");
-	// chdir to a temp dir so a locally logged-in dev environment cannot make
-	// the test start a real poll loop.
+	// Hermetic cwd: channel creds dirs are relative ("./data/..."); chdir to
+	// a temp dir so a locally logged-in dev environment cannot make the test
+	// touch real channel state.
 	t.Chdir(t.TempDir())
 	st := store.NewMemory()
 	messages := conversation.NewMemoryStore()

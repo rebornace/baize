@@ -10,8 +10,6 @@ import (
 	"github.com/rebornace/baize/internal/bootstrap"
 	"github.com/rebornace/baize/internal/config"
 
-	// Register weixin Channel factory (Start/Runtime wiring in Task 6).
-	_ "github.com/rebornace/baize/internal/channel/weixin"
 	// Register redis middleware driver (Streams / PubSub / Lua limiter).
 	_ "github.com/rebornace/baize/internal/middleware/redis"
 	// Register s3 blob driver (S3/MinIO/OSS/COS via minio-go).

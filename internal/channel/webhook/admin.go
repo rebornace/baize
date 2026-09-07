@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/webhooksig"
 )
 
@@ -126,3 +127,39 @@ func (c *httpAdminClient) LoginPoll(ctx context.Context, ticket string) (string,
 }
 
 var _ adminClient = (*httpAdminClient)(nil)
+
+// LoginStart asks the out-of-process adapter to begin a QR login flow. It is
+// part of channel.ManagedChannel; the generic management plane proxies to it.
+// Returns an explicit error when no adapter admin plane is configured.
+func (c *Channel) LoginStart(ctx context.Context) (channel.LoginTicket, error) {
+	if c.admin == nil {
+		return channel.LoginTicket{}, fmt.Errorf("webhook %s: no adapter admin plane configured", c.cfg.Name)
+	}
+	ticket, qr, err := c.admin.LoginStart(ctx)
+	if err != nil {
+		return channel.LoginTicket{}, err
+	}
+	return channel.LoginTicket{Ticket: ticket, QRURL: qr}, nil
+}
+
+// LoginPoll polls a QR login ticket started via LoginStart. The returned
+// status is "pending"|"success"|"expired" (adapter-defined).
+func (c *Channel) LoginPoll(ctx context.Context, ticket string) (string, error) {
+	if c.admin == nil {
+		return "", fmt.Errorf("webhook %s: no adapter admin plane configured", c.cfg.Name)
+	}
+	return c.admin.LoginPoll(ctx, ticket)
+}
+
+// Logout clears the adapter-side credentials. It is best-effort: when no
+// adapter admin plane is configured there is nothing to clear and it succeeds.
+func (c *Channel) Logout(ctx context.Context) error {
+	if c.admin != nil {
+		if err := c.admin.Logout(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var _ channel.ManagedChannel = (*Channel)(nil)

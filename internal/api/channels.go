@@ -14,8 +14,9 @@ func (s *Server) RegisterRoute(pattern string, h http.Handler) {
 	s.mux.Handle(pattern, h)
 }
 
-// ChannelHandle is the api layer's per-channel runtime handle. Channel-specific
-// handlers (e.g. weixin login) type-assert h.Channel to their concrete type.
+// ChannelHandle is the api layer's per-channel runtime handle. The generic
+// management plane (/v0/settings/channels/{name}/...) type-asserts h.Channel
+// to channel.ManagedChannel; channels without that interface are not managed.
 type ChannelHandle struct {
 	Name     string
 	Channel  channel.Channel
