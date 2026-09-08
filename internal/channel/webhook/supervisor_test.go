@@ -405,3 +405,166 @@ func healthzReachable2(url string) bool {
 	r.Body.Close()
 	return r.StatusCode == http.StatusOK
 }
+
+func buildFakeExe(t *testing.T, source, name string) string {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(src, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, name+exeSuffix())
+	if out, err := exec.Command("go", "build", "-o", exe, src).CombinedOutput(); err != nil {
+		t.Fatalf("go build %s: %v\n%s", name, err, out)
+	}
+	return exe
+}
+
+// fakeShutdownSource exits 0 on POST /admin/shutdown after writing a marker
+// (cross-platform graceful path driven by the gracefulShutdown callback).
+const fakeShutdownSource = `package main
+import ("net/http";"os")
+func main() {
+	addr := os.Getenv("FAKE_ADDR"); marker := os.Getenv("MARKER_PATH")
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(200) })
+	http.HandleFunc("/admin/shutdown", func(w http.ResponseWriter, r *http.Request){
+		os.WriteFile(marker, []byte("shutdown"), 0o644)
+		w.WriteHeader(200)
+		go os.Exit(0)
+	})
+	go http.ListenAndServe(addr, nil)
+	select{}
+}
+`
+
+// fakeSignalSource exits 0 on SIGTERM/interrupt after writing a marker
+// (POSIX fallback when no gracefulShutdown callback is wired).
+const fakeSignalSource = `package main
+import ("net/http";"os";"os/signal";"syscall")
+func main() {
+	addr := os.Getenv("FAKE_ADDR"); marker := os.Getenv("MARKER_PATH")
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(200) })
+	go http.ListenAndServe(addr, nil)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGTERM, os.Interrupt)
+	<-c
+	os.WriteFile(marker, []byte("sigterm"), 0o644)
+	os.Exit(0)
+}
+`
+
+// fakeIgnoreSource swallows SIGTERM (relayed to an undrained channel) and has
+// no shutdown endpoint, so terminate must escalate to a force kill.
+const fakeIgnoreSource = `package main
+import ("net/http";"os";"os/signal";"syscall")
+func main() {
+	addr := os.Getenv("FAKE_ADDR")
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(200) })
+	go http.ListenAndServe(addr, nil)
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGTERM, os.Interrupt)
+	select{}
+}
+`
+
+func waitPortDown(t *testing.T, url string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	cl := &http.Client{Timeout: 200 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		r, err := cl.Get(url)
+		if err != nil {
+			return
+		}
+		r.Body.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("healthz still reachable: child not terminated: %s", url)
+}
+
+func TestTerminateGracefulViaShutdownEndpoint(t *testing.T) {
+	exe := buildFakeExe(t, fakeShutdownSource, "fakeshutdown")
+	addr := "127.0.0.1:18086"
+	marker := filepath.Join(t.TempDir(), "graceful.marker")
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://" + addr + "/healthz",
+		env:        []string{"FAKE_ADDR=" + addr, "MARKER_PATH=" + marker},
+		timeout:    5 * time.Second,
+		grace:      3 * time.Second,
+		gracefulShutdown: func(ctx context.Context) error {
+			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/admin/shutdown", nil)
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				resp.Body.Close()
+			}
+			return err
+		},
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := sup.terminate(context.Background()); err != nil {
+		t.Fatalf("terminate: %v", err)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("graceful marker missing: %v", err)
+	}
+	if string(got) != "shutdown" {
+		t.Fatalf("marker = %q, want shutdown (graceful path not taken)", string(got))
+	}
+	waitPortDown(t, sup.healthzURL)
+}
+
+func TestTerminateSigtermFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGTERM fallback is POSIX-only; Windows uses /admin/shutdown")
+	}
+	exe := buildFakeExe(t, fakeSignalSource, "fakesignal")
+	addr := "127.0.0.1:18085"
+	marker := filepath.Join(t.TempDir(), "sigterm.marker")
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://" + addr + "/healthz",
+		env:        []string{"FAKE_ADDR=" + addr, "MARKER_PATH=" + marker},
+		timeout:    5 * time.Second,
+		grace:      3 * time.Second,
+		// gracefulShutdown intentionally nil: exercises SIGTERM fallback.
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := sup.terminate(context.Background()); err != nil {
+		t.Fatalf("terminate: %v", err)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil || string(got) != "sigterm" {
+		t.Fatalf("SIGTERM marker missing/wrong: %v %q", err, string(got))
+	}
+	waitPortDown(t, sup.healthzURL)
+}
+
+func TestTerminateForceKillsIgnoringChild(t *testing.T) {
+	exe := buildFakeExe(t, fakeIgnoreSource, "fakeignore")
+	addr := "127.0.0.1:18084"
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://" + addr + "/healthz",
+		env:        []string{"FAKE_ADDR=" + addr},
+		timeout:    5 * time.Second,
+		grace:      300 * time.Millisecond, // short: escalate to force kill quickly
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := sup.terminate(context.Background()); err != nil {
+		t.Fatalf("terminate: %v", err)
+	}
+	if sup.running() {
+		t.Fatal("supervisor still running after force kill")
+	}
+	waitPortDown(t, sup.healthzURL)
+}

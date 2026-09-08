@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -360,6 +361,56 @@ func (s *supervisor) stop(ctx context.Context) error {
 	defer cancel()
 	if !s.waitReaped(reapCtx) {
 		return fmt.Errorf("webhook supervisor: adapter process not reaped within timeout")
+	}
+	return nil
+}
+
+// terminate stops the supervised child gracefully, escalating to a force kill.
+// Order: (1) HMAC /admin/shutdown via the injected callback (cross-platform),
+// (2) SIGTERM on POSIX, (3) Process.Kill. The watch goroutine owns Wait();
+// terminate only signals and polls waitReaped until the handle is reaped. It
+// announces the intent first (wantRunning=false + close stopCh) exactly like
+// stop(), so a child that exits during escalation is never classified as a
+// crash and respawned. An adopted orphan has no cmd handle here; its graceful
+// shutdown is driven by the channel layer's signed call (wired in task 3).
+func (s *supervisor) terminate(ctx context.Context) error {
+	s.mu.Lock()
+	s.wantRunning = false
+	if s.stopCh != nil {
+		close(s.stopCh)
+		s.stopCh = nil
+	}
+	cmd := s.cmd
+	gs := s.gracefulShutdown
+	grace := s.grace
+	s.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if grace <= 0 {
+		grace = 5 * time.Second
+	}
+	gctx, cancel := context.WithTimeout(ctx, grace)
+	defer cancel()
+	if gs != nil {
+		_ = gs(gctx)
+		if s.waitReaped(gctx) {
+			return nil
+		}
+	}
+	if runtime.GOOS != "windows" {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		if s.waitReaped(gctx) {
+			return nil
+		}
+	}
+	// Graceful/SIGTERM window elapsed with the child still alive: force kill.
+	// Kill only; do NOT Wait here — watch owns the sole Wait on this cmd.
+	_ = cmd.Process.Kill()
+	reapCtx, reapCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer reapCancel()
+	if !s.waitReaped(reapCtx) {
+		return fmt.Errorf("webhook supervisor: adapter process not reaped after force kill")
 	}
 	return nil
 }
