@@ -101,12 +101,18 @@ channels:
 ### Quickstart: Docker Compose
 
 The released image contains both `/app/baize` and `/app/weixin-adapter`.
-`docker-compose.weixin.yml` runs them as two services; compose restarts the
-adapter, and the adapter's credentials persist in a named volume.
+`docker-compose.weixin.yml` runs them as two services; compose restarts both
+services (`restart: unless-stopped`), and the adapter's credentials persist in
+a named volume. The compose file ships a ready-to-use baize config
+(`configs/docker-weixin-standalone.yaml`, mounted into the container) that
+already declares the standalone `weixin` webhook channel — so a single command
+brings the whole stack up end-to-end with no extra config to prepare:
 
 ```bash
 export BAIZE_API_KEY=sk-...
-export WEIXIN_ADAPTER_SECRET='<shared-secret>'   # must match the channel config secret
+# Optional for trying it out locally; REQUIRED (strong random value) for
+# production — it must match the channel config secret.
+export WEIXIN_ADAPTER_SECRET='<shared-secret>'
 docker compose -f docker-compose.weixin.yml up --build
 ```
 
@@ -117,9 +123,21 @@ Conventions used by the compose file:
   (`-creds=/data/channels/weixin`), so a QR login survives container restarts
 - baize reaches the adapter at `http://weixin-adapter:8090`; the adapter
   posts inbound to `http://baize:8080/v0/channels/weixin/inbound`
-- baize uses the image's default config (`configs/docker-minimal.yaml`); mount
-  your own config (containing the standalone channel block above) over
-  `/app/configs/docker-minimal.yaml`
+- baize starts with the bundled standalone config
+  (`configs/docker-weixin-standalone.yaml`), bind-mounted read-only to
+  `/app/configs/docker-weixin-standalone.yaml`; it sets
+  `adapter_autostart: "false"`, `admin_url`/`outbound_url` pointing at the
+  `weixin-adapter` service, and the shared `secret`/`outbound_secret`
+
+**Shared secret (production must-do):** the bundled config and the compose
+file share a development default `dev-standalone-weixin-shared-secret` so the
+stack runs with zero setup for a trial. For production set BOTH sides to the
+same strong random value: (1) `export WEIXIN_ADAPTER_SECRET=<strong-random>`
+(the adapter's `-secret`; compose interpolates it), and (2) put the same value
+in the baize channel config's `secret` and `outbound_secret` — edit
+`configs/docker-weixin-standalone.yaml` in place (it is bind-mounted) or mount
+your own config file over `/app/configs/docker-weixin-standalone.yaml`. Both
+services also carry `restart: unless-stopped`.
 
 ### Quickstart: systemd (bare metal / VM)
 
@@ -163,3 +181,9 @@ journalctl -u weixin-adapter -f                 # logs
   Always back this directory with a persistent volume / disk path.
 - **Single bot account** — run one adapter instance per logged-in WeChat
   account; do not point two adapters at the same credentials directory.
+- **Graceful shutdown** — baize traps SIGINT/SIGTERM (Ctrl-C, `docker stop`,
+  `systemctl stop`): it drains the HTTP server and then runs the closer, which
+  in autostart mode terminates the supervised adapter child gracefully
+  (HMAC `/admin/shutdown` → SIGTERM → force kill) rather than orphaning it.
+  In standalone mode the adapter is stopped/restarted independently by its own
+  service manager.

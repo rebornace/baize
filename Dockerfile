@@ -19,6 +19,7 @@ COPY --from=build /out/mock-ticket /app/mock-ticket
 COPY --from=build /out/weixin-adapter /app/weixin-adapter
 COPY configs/docker-minimal.yaml /app/configs/docker-minimal.yaml
 COPY configs/docker-demo.yaml /app/configs/docker-demo.yaml
+COPY configs/docker-weixin-standalone.yaml /app/configs/docker-weixin-standalone.yaml
 COPY skills /app/skills
 COPY examples/skills /app/examples/skills
 EXPOSE 8080
