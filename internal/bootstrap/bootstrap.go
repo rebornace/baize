@@ -594,10 +594,10 @@ type channelDeps struct {
 	engine         *run.Engine
 	provider       llm.Provider
 	defaultAgentID string
-	channelMedia  *channelmedia.Store
-	runCtx        context.Context
-	closer        *storeAndMCPCloser
-	cfg           config.Config
+	channelMedia   *channelmedia.Store
+	runCtx         context.Context
+	closer         *storeAndMCPCloser
+	cfg            config.Config
 }
 
 // wireChannels iterates every registered channel Descriptor, builds the

@@ -13,10 +13,10 @@ import (
 
 // fakeChannelMedia is a test ChannelMediaOpener.
 type fakeChannelMedia struct {
-	data  []byte
-	mime  string
-	found bool
-	err   error
+	data               []byte
+	mime               string
+	found              bool
+	err                error
 	gotConv, gotObject string
 }
 
