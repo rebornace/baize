@@ -568,3 +568,147 @@ func TestTerminateForceKillsIgnoringChild(t *testing.T) {
 	}
 	waitPortDown(t, sup.healthzURL)
 }
+
+// fakeSpawnHangSource deterministically places respawnLoop INSIDE s.spawn():
+// the FIRST process instance becomes healthy and then crashes; every respawn
+// instance binds a different port and never serves the supervised healthz URL,
+// so the respawn's waitHealthz blocks (parks the watchdog mid-spawn) until its
+// context is cancelled. A short spawn healthz timeout (s.timeout) bounds the
+// worst case, but the fix cancels it promptly on stop. A run-counter marker
+// file lets the child tell which instance it is.
+const fakeSpawnHangSource = `package main
+import (
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func main() {
+	addr := os.Getenv("FAKE_ADDR")
+	marker := os.Getenv("RUN_MARKER")
+	n := 1
+	if b, err := os.ReadFile(marker); err == nil {
+		if v, perr := strconv.Atoi(strings.TrimSpace(string(b))); perr == nil {
+			n = v + 1
+		}
+	}
+	_ = os.WriteFile(marker, []byte(strconv.Itoa(n)), 0o644)
+	if n == 1 {
+		// First instance: serve healthz so start() succeeds, then crash to
+		// drive the watchdog into a respawn.
+		http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+		go http.ListenAndServe(addr, nil)
+		time.Sleep(500 * time.Millisecond)
+		os.Exit(1)
+	}
+	// Respawn instances: serve on a DIFFERENT, unused port so the supervised
+	// healthz URL never answers; waitHealthz blocks until ctx cancellation.
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	go http.ListenAndServe("127.0.0.1:0", nil)
+	select {}
+}
+`
+
+// waitPortStaysDown asserts the healthz port is released AND never rebound for
+// a sustained window (catches a respawn that births a transient child after the
+// supervisor reported down).
+func waitPortStaysDown(t *testing.T, url string, window time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	cl := &http.Client{Timeout: 200 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		r, err := cl.Get(url)
+		if err != nil {
+			break // port closed: child gone
+		}
+		r.Body.Close()
+		time.Sleep(40 * time.Millisecond)
+	}
+	// Sustained check: the port must not come back (no post-stop respawn).
+	end := time.Now().Add(window)
+	for time.Now().Before(end) {
+		r, err := cl.Get(url)
+		if err == nil {
+			r.Body.Close()
+			t.Fatalf("healthz rebecame reachable: transient respawn child born after shutdown: %s", url)
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+}
+
+// TestTerminateCancelsInFlightSpawn: with the watchdog parked mid-respawn
+// (respawnLoop inside s.spawn/waitHealthz), terminate must cancel the in-flight
+// spawn via stopCh, unwind the watchdog (wg quiescent), and leave no transient
+// child — the healthz port must release and never rebound.
+func TestTerminateCancelsInFlightSpawn(t *testing.T) {
+	exe := buildFakeExe(t, fakeSpawnHangSource, "fakespawnhang")
+	addr := "127.0.0.1:18083"
+	marker := filepath.Join(t.TempDir(), "run.counter")
+	lifeCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	sup := &supervisor{
+		command:      exe,
+		healthzURL:   "http://" + addr + "/healthz",
+		env:          []string{"FAKE_ADDR=" + addr, "RUN_MARKER=" + marker},
+		timeout:      4 * time.Second, // bounds the parked respawn's waitHealthz
+		lifecycleCtx: lifeCtx,
+		// SHORT backoff: after the first crash the respawn fires immediately
+		// and parks INSIDE s.spawn()/waitHealthz (the respawn child never
+		// serves the supervised port, so waitHealthz blocks until cancelled).
+		// A long backoff would instead park it in the backoff timer, which the
+		// pre-fix code already handled — we want the in-flight-spawn window.
+		backoff: func(int) time.Duration { return 20 * time.Millisecond },
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// Wait for the first child to crash and the respawn to enter s.spawn()
+	// (restarts>=1). The respawn's waitHealthz then parks on the dead port.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.restartCount() >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if sup.restartCount() < 1 {
+		t.Fatalf("watchdog never entered respawn; restarts=%d", sup.restartCount())
+	}
+	// Give the respawn time to cross the short backoff select and enter
+	// waitHealthz, where it blocks (nothing serves the supervised port).
+	time.Sleep(250 * time.Millisecond)
+
+	// terminate: cmd is nil (crashed) but a spawn is in flight. It must cancel
+	// that spawn via stopCh and wait for the watchdog goroutine to unwind —
+	// PROMPTLY (not after the 4s spawn healthz timeout). A 2.5s bound proves the
+	// in-flight waitHealthz was cancelled rather than allowed to time out.
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { done <- sup.terminate(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("terminate during in-flight spawn: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+			t.Fatalf("terminate took %v: in-flight spawn was not cancelled promptly (waited for spawn timeout)", elapsed)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("terminate deadlocked / did not wait for the in-flight spawn to unwind")
+	}
+	if sup.restarting() {
+		t.Fatal("watchdog still restarting after terminate")
+	}
+	if sup.running() {
+		t.Fatal("supervisor still running after terminate")
+	}
+	// wg must be quiescent (no leaked watchdog goroutine). waitWatchQuiet is
+	// the same primitive terminate used; a fresh call must return immediately.
+	if !sup.waitWatchQuiet(500 * time.Millisecond) {
+		t.Fatal("watchdog goroutine leak: wg did not reach zero after terminate")
+	}
+	// Port must release and never rebound (no transient orphan).
+	waitPortStaysDown(t, sup.healthzURL, 800*time.Millisecond)
+}

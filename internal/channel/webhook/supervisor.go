@@ -63,6 +63,13 @@ type supervisor struct {
 	// grace is the window allowed for a graceful child shutdown before the
 	// force-kill fallback. Reserved for the graceful-shutdown task.
 	grace time.Duration
+	// wg tracks every live watchdog goroutine (watch + its respawnLoop).
+	// stop()/terminate() wait on it (bounded via waitWatchQuiet) so that an
+	// in-flight respawn — a respawnLoop parked in spawn()/waitHealthz — is
+	// cancelled by stopCh and fully unwound before the supervisor reports
+	// quiescent; otherwise that transient spawn could birth an orphan. wg is
+	// zero for an adopted orphan (no watch goroutine at all).
+	wg sync.WaitGroup
 }
 
 // spawn resolves and starts a fresh adapter process, then waits for its
@@ -132,7 +139,14 @@ func (s *supervisor) start(ctx context.Context) error {
 	s.cmd = cmd
 	s.failStreak = 0
 	s.mu.Unlock()
-	go s.watch(cmd)
+	// wg.Add MUST precede `go`; the deferred Done covers watch() and the
+	// respawnLoop it runs synchronously (a successful respawn starts a
+	// separately-counted watch goroutine).
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.watch(cmd)
+	}()
 	return nil
 }
 
@@ -203,7 +217,23 @@ func (s *supervisor) respawnLoop(ctx context.Context, stopCh <-chan struct{}) {
 			return
 		case <-time.After(bo(streak)):
 		}
-		cmd, err := s.spawn(ctx)
+		// Bind this spawn to the stop signal: waitHealthz inside spawn()
+		// otherwise ignores stopCh/lifecycleCtx, so a stop that lands while a
+		// respawn is mid-spawn would not cancel the in-flight healthz wait and
+		// a transient child could be born after the supervisor reported down.
+		// stopCh cancellation makes waitHealthz fail fast; spawn() then kills
+		// and Waits the unhealthy child itself, and the loop's next select
+		// observes stopCh and returns without spawning again.
+		spawnCtx, cancelSpawn := context.WithCancel(ctx)
+		go func() {
+			select {
+			case <-stopCh:
+				cancelSpawn()
+			case <-spawnCtx.Done():
+			}
+		}()
+		cmd, err := s.spawn(spawnCtx)
+		cancelSpawn()
 		if err != nil {
 			s.mu.Lock()
 			s.failStreak++
@@ -228,7 +258,13 @@ func (s *supervisor) respawnLoop(ctx context.Context, stopCh <-chan struct{}) {
 		s.failStreak = 0
 		s.backingOff = false
 		s.mu.Unlock()
-		go s.watch(cmd)
+		// Count the replacement watchdog goroutine before launching it (same
+		// Add-before-go invariant as start()).
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.watch(cmd)
+		}()
 		return
 	}
 }
@@ -362,6 +398,12 @@ func (s *supervisor) stop(ctx context.Context) error {
 	if !s.waitReaped(reapCtx) {
 		return fmt.Errorf("webhook supervisor: adapter process not reaped within timeout")
 	}
+	// Also wait for the watchdog goroutine itself (incl. any in-flight respawn
+	// cancelled by stopCh above) to fully exit, so no transient spawn can be
+	// born after stop returns. Bounded; never blocks shutdown indefinitely.
+	if !s.waitWatchQuiet(3 * time.Second) {
+		return fmt.Errorf("webhook supervisor: watchdog did not stop within timeout")
+	}
 	return nil
 }
 
@@ -384,23 +426,37 @@ func (s *supervisor) terminate(ctx context.Context) error {
 	gs := s.gracefulShutdown
 	grace := s.grace
 	s.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
-		return nil
-	}
 	if grace <= 0 {
 		grace = 5 * time.Second
+	}
+	// No owned handle merges two cases: (a) an adopted orphan — no watch
+	// goroutine, wg already zero, returns immediately; (b) the watchdog is
+	// parked in backoff or mid-respawn inside s.spawn()/waitHealthz. Closing
+	// stopCh cancels that in-flight spawn (see respawnLoop), so wait for the
+	// watchdog goroutine to unwind — otherwise a transient child could be born
+	// after terminate returns (an orphan on process exit, or a brief port
+	// holder on restart). Bounded so a wedged watchdog never blocks shutdown.
+	if cmd == nil || cmd.Process == nil {
+		quiet := grace
+		if quiet <= 0 {
+			quiet = 3 * time.Second
+		}
+		s.waitWatchQuiet(quiet)
+		return nil
 	}
 	gctx, cancel := context.WithTimeout(ctx, grace)
 	defer cancel()
 	if gs != nil {
 		_ = gs(gctx)
 		if s.waitReaped(gctx) {
+			s.waitWatchQuiet(3 * time.Second)
 			return nil
 		}
 	}
 	if runtime.GOOS != "windows" {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 		if s.waitReaped(gctx) {
+			s.waitWatchQuiet(3 * time.Second)
 			return nil
 		}
 	}
@@ -411,6 +467,10 @@ func (s *supervisor) terminate(ctx context.Context) error {
 	defer reapCancel()
 	if !s.waitReaped(reapCtx) {
 		return fmt.Errorf("webhook supervisor: adapter process not reaped after force kill")
+	}
+	// Wait for the watchdog goroutine itself to exit so no respawn follows.
+	if !s.waitWatchQuiet(3 * time.Second) {
+		return fmt.Errorf("webhook supervisor: watchdog did not stop after force kill")
 	}
 	return nil
 }
@@ -437,6 +497,26 @@ func (s *supervisor) waitReaped(ctx context.Context) bool {
 				return true
 			}
 		}
+	}
+}
+
+// waitWatchQuiet blocks until every watchdog goroutine (watch + respawnLoop)
+// has exited, or until timeout. It is bounded so a wedged watchdog can never
+// deadlock shutdown: it returns false on timeout. waitReaped waits for the cmd
+// handle to clear and backingOff to drop; this waits for the goroutine itself
+// to return (wg zero), which also covers a respawnLoop parked inside spawn().
+// It is zero-cost for an adopted orphan (no watch goroutine, wg already zero).
+func (s *supervisor) waitWatchQuiet(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
