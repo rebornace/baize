@@ -110,3 +110,47 @@ func TestMemoryEnsureGetListMeta(t *testing.T) {
 		t.Fatalf("%+v err=%v", list, err)
 	}
 }
+
+func TestMemoryDeleteMeta(t *testing.T) {
+	s := conversation.NewMemoryStore()
+	if err := s.EnsureMeta(conversation.Meta{ID: "c1", OwnerID: "alice", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	// Delete existing.
+	if err := s.DeleteMeta("c1"); err != nil {
+		t.Fatalf("DeleteMeta: %v", err)
+	}
+	if _, err := s.GetMeta("c1"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("after delete want ErrMetaNotFound got %v", err)
+	}
+	if list, _ := s.ListMeta(conversation.MetaFilter{}); len(list) != 0 {
+		t.Fatalf("after delete list len=%d want 0", len(list))
+	}
+	// Deleting a missing id is idempotent.
+	if err := s.DeleteMeta("c1"); err != nil {
+		t.Fatalf("DeleteMeta missing should be no-op, got %v", err)
+	}
+}
+
+func TestSQLiteDeleteMeta(t *testing.T) {
+	db, _ := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureMeta(conversation.Meta{ID: "c1", OwnerID: "alice", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteMeta("c1"); err != nil {
+		t.Fatalf("DeleteMeta: %v", err)
+	}
+	if _, err := s.GetMeta("c1"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("after delete want ErrMetaNotFound got %v", err)
+	}
+	if list, _ := s.ListMeta(conversation.MetaFilter{}); len(list) != 0 {
+		t.Fatalf("after delete list len=%d want 0", len(list))
+	}
+	if err := s.DeleteMeta("never-existed"); err != nil {
+		t.Fatalf("DeleteMeta missing should be no-op, got %v", err)
+	}
+}

@@ -19,6 +19,7 @@ var aclRules = []routeRule{
 	{method: "GET", segments: []string{"v0", "artifacts", "{id}"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "channels", "media", "{conv}", "{object}"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "conversations"}, role: RoleOperator},
+	{method: "DELETE", segments: []string{"v0", "conversations", "{id}"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "conversations", "{id}", "messages"}, role: RoleOperator},
 	{method: "DELETE", segments: []string{"v0", "conversations", "{id}", "messages"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "conversations", "{id}", "identities"}, role: RoleOperator},

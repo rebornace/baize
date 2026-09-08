@@ -28,6 +28,9 @@ type MetaStore interface {
 	// Other errors (scan/parse/DB) must not be collapsed into not-found.
 	GetMeta(id string) (Meta, error)
 	ListMeta(filter MetaFilter) ([]Meta, error)
+	// DeleteMeta removes the meta row for id. Deleting a missing id is not an
+	// error (idempotent); a DB/scan failure is returned.
+	DeleteMeta(id string) error
 }
 
 // CanAccess reports whether principal may read/write the conversation meta.

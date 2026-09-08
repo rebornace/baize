@@ -4,6 +4,7 @@ import {
   ApiError,
   cancelRun,
   createRun,
+  deleteConversation,
   fileToAttachment,
   forkConversation,
   getRun,
@@ -430,6 +431,37 @@ export function ChatPage() {
     setConversationId(id)
   }
 
+  const onDeleteConversation = async (id: string) => {
+    const label = conversationListLabel(id, conversations.find((c) => c.id === id)?.title ?? '')
+    if (!window.confirm(`确定删除对话「${label}」吗？\n将永久清除该对话的消息、归属和捕获身份，且不可恢复。`)) {
+      return
+    }
+    try {
+      await deleteConversation(id)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'conversation_busy') {
+        setError('该对话正在处理中，请先取消当前运行再删除。')
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+      return
+    }
+    // If the deleted conversation is the one open, reset to a fresh chat.
+    if (id === conversationId) {
+      stopStream()
+      stopPoll()
+      setLiveRunId(null)
+      setLiveEvents([])
+      setHistoryPages({})
+      setMessages([])
+      setBusy(false)
+      setStatus('')
+      setComposerDraft(undefined)
+      setConversationId(newConversationId())
+    }
+    await refreshConversations()
+  }
+
   const onSend = async (text: string, files: File[]) => {
     const sentConversationId = conversationId
     setBusy(true)
@@ -659,7 +691,7 @@ export function ChatPage() {
           )}
           <ul className="conversation-list">
             {conversations.map((c) => (
-              <li key={c.id}>
+              <li key={c.id} className="conversation-row">
                 <button
                   type="button"
                   className={
@@ -670,6 +702,18 @@ export function ChatPage() {
                   onClick={() => onSelectConversation(c.id)}
                 >
                   {conversationListLabel(c.id, c.title)}
+                </button>
+                <button
+                  type="button"
+                  className="conversation-delete"
+                  title="删除对话"
+                  aria-label={`删除对话 ${conversationListLabel(c.id, c.title)}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void onDeleteConversation(c.id)
+                  }}
+                >
+                  ✕
                 </button>
               </li>
             ))}

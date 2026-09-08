@@ -17,6 +17,7 @@ func TestMinRoleTable(t *testing.T) {
 		{"GET", "/v0/runs/r1/stream", RoleOperator},
 		{"GET", "/v0/artifacts/art_1", RoleOperator},
 		{"GET", "/v0/conversations", RoleOperator},
+		{"DELETE", "/v0/conversations/c1", RoleOperator},
 		{"GET", "/v0/conversations/c1/messages", RoleOperator},
 		{"DELETE", "/v0/conversations/c1/messages", RoleOperator},
 		{"GET", "/v0/conversations/c1/identities", RoleOperator},

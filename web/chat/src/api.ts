@@ -1090,6 +1090,19 @@ export async function clearMessages(conversationId: string): Promise<void> {
   await parseJSON<{ status: string }>(res)
 }
 
+/**
+ * Permanently delete a conversation: its messages, ownership meta and captured
+ * identities. The server rejects (409 conversation_busy) a conversation with
+ * an active run.
+ */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}`,
+    { method: 'DELETE', headers: authInit() },
+  )
+  await parseJSON<{ status: string }>(res)
+}
+
 export interface RollbackMessagesResult {
   conversation_id: string
   deleted_count: number

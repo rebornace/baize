@@ -400,6 +400,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
 	s.mux.HandleFunc("GET /v0/conversations", s.handleListConversations)
+	s.mux.HandleFunc("DELETE /v0/conversations/{id}", s.handleDeleteConversation)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/messages/{message_id}/rollback", s.handleRollbackMessages)
@@ -2511,6 +2512,49 @@ func (s *Server) handleClearMessages(w http.ResponseWriter, r *http.Request) {
 		s.Messages.Clear(convID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleDeleteConversation permanently removes a conversation: its message
+// history and rolling summary, ownership meta (so it leaves the sidebar list),
+// and any captured session identities. An actively running conversation is
+// rejected (cancel it first) to avoid deleting state a run is writing to.
+func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if convID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	if !s.requireConversationAccess(w, r, convID) {
+		return
+	}
+	if s.Store != nil {
+		if busy, err := s.Store.HasActiveRun(convID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		} else if busy {
+			writeError(w, http.StatusConflict, "conversation_busy",
+				"conversation has an active run; cancel it before deleting")
+			return
+		}
+	}
+	// Messages + rolling summary (a fully-cleared conversation already drops
+	// out of the sidebar summary list).
+	if s.Messages != nil {
+		s.Messages.Clear(convID)
+	}
+	// Ownership meta so it cannot reappear and stays out of the meta-backed
+	// list / ACL scope.
+	if ms := s.metaStore(); ms != nil {
+		if err := ms.DeleteMeta(convID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
+	// Captured session identities for this conversation.
+	if s.Identities != nil {
+		s.Identities.ClearCaptured(convID)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": convID})
 }
 
 func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) {

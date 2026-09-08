@@ -72,9 +72,16 @@ body {
   gap: 0.25rem;
 }
 
+.conversation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .conversation-item {
+  flex: 1 1 auto;
+  min-width: 0;
   display: block;
-  width: 100%;
   text-align: left;
   border: none;
   background: transparent;
@@ -97,6 +104,30 @@ body {
   background: rgba(31, 111, 235, 0.12);
   color: var(--accent);
   font-weight: 600;
+}
+
+.conversation-delete {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.conversation-row:hover .conversation-delete,
+.conversation-delete:focus-visible {
+  opacity: 1;
+}
+
+.conversation-delete:hover {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.1);
 }
 
 .chat-sidebar-bottom {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1105,6 +1106,90 @@ func TestClearMessagesNilStore(t *testing.T) {
 	}
 	if resp["status"] != "ok" {
 		t.Fatalf("resp=%+v", resp)
+	}
+}
+
+func TestDeleteConversation(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	msgStore := conversation.NewMemoryStore()
+	idStore := identity.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "hi"})
+	if err := msgStore.EnsureMeta(conversation.Meta{ID: "conv1", OwnerID: "alice", Source: "ui", UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Messages = msgStore
+	srv.Identities = idStore
+	h := srv.Handler()
+
+	// Delete the conversation.
+	req := httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Messages are gone.
+	if len(msgStore.List("conv1")) != 0 {
+		t.Fatal("expected messages cleared after delete")
+	}
+	// Meta is gone (a new row reports not-found).
+	if _, err := msgStore.GetMeta("conv1"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("meta after delete: want ErrMetaNotFound, got %v", err)
+	}
+	// It no longer appears in the conversation list.
+	listReq := httptest.NewRequest(http.MethodGet, "/v0/conversations", nil)
+	listRR := httptest.NewRecorder()
+	h.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK || strings.Contains(listRR.Body.String(), "conv1") {
+		t.Fatalf("conv1 must be absent from list: status=%d body=%s", listRR.Code, listRR.Body.String())
+	}
+
+	// Deleting again is idempotent (still 200).
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1", nil))
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("second delete status=%d body=%s", rr2.Code, rr2.Body.String())
+	}
+}
+
+func TestDeleteConversationRejectsActiveRun(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "hi"})
+	if err := msgStore.EnsureMeta(conversation.Meta{ID: "conv1", OwnerID: "alice", Source: "ui", UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	// An active (running) run exists for conv1.
+	if _, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv1"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := api.NewServer(st, reg, &fakeRunner{store: st})
+	srv.Messages = msgStore
+	h := srv.Handler()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, "/v0/conversations/conv1", nil))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status=%d want 409 body=%s", rr.Code, rr.Body.String())
+	}
+	var wrap struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&wrap); err != nil {
+		t.Fatal(err)
+	}
+	if wrap.Error.Code != "conversation_busy" {
+		t.Fatalf("code=%q want conversation_busy", wrap.Error.Code)
+	}
+	// Messages must still be present (delete was refused).
+	if len(msgStore.List("conv1")) == 0 {
+		t.Fatal("messages must remain when delete is refused")
 	}
 }
 

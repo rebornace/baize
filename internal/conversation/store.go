@@ -87,6 +87,14 @@ func (s *MemoryStore) ListMeta(filter MetaFilter) ([]Meta, error) {
 	return out, nil
 }
 
+// DeleteMeta removes the meta row. Deleting a missing id is a no-op.
+func (s *MemoryStore) DeleteMeta(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.meta, id)
+	return nil
+}
+
 func (s *MemoryStore) Append(conversationID string, msg Message) (Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

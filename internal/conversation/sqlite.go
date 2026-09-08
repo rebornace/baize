@@ -278,6 +278,12 @@ func (s *SQLiteStore) GetMeta(id string) (Meta, error) {
 	return m, nil
 }
 
+// DeleteMeta removes the meta row. Deleting a missing id is a no-op (0 rows).
+func (s *SQLiteStore) DeleteMeta(id string) error {
+	_, err := s.exec(`DELETE FROM conversation_meta WHERE id = ?`, id)
+	return err
+}
+
 func (s *SQLiteStore) ListMeta(filter MetaFilter) ([]Meta, error) {
 	var (
 		rows *sql.Rows
