@@ -74,10 +74,20 @@ type UploadSaver interface {
 	SaveUploadBytes(ctx context.Context, conversationID, filename string, data []byte, mime string) (string, error)
 }
 
+// ChannelMediaOpener serves a previously persisted inbound channel image.
+// found=false (with nil error) means the image does not exist; it is distinct
+// from a backend failure. Implemented by internal/channelmedia.Store.
+type ChannelMediaOpener interface {
+	OpenImage(ctx context.Context, conversationID, object string) (data []byte, mime string, found bool, err error)
+}
+
 type Server struct {
 	Store     store.Store
 	Registry  *tool.Registry
 	Artifacts artifact.Store // optional; nil = artifact routes unavailable
+	// ChannelMedia optionally serves inbound channel images (e.g. WeChat) for
+	// inline display. nil = the media route returns 404.
+	ChannelMedia ChannelMediaOpener
 	// Workspace optionally persists chat attachments to the per-conversation
 	// file workspace. nil = attachments are not persisted (in-turn only).
 	Workspace      UploadSaver
@@ -382,6 +392,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
 	s.mux.HandleFunc("GET /v0/artifacts/{id}", s.handleGetArtifact)
+	s.mux.HandleFunc("GET /v0/channels/media/{conv}/{object}", s.handleChannelMedia)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities", s.handlePostIdentity)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)

@@ -163,6 +163,7 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		AfterCreateRun: deps.AfterCreateRun,
 		ResumeHITL:     deps.ResumeHITL,
 		Source:         c.cfg.Source,
+		Media:          deps.Media,
 	}
 	c.rt = rt
 	if dir := strings.TrimSpace(deps.DataDir); dir != "" {

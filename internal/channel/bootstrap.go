@@ -8,6 +8,18 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
+// MediaStore persists inbound channel images to a blob-backed namespace and
+// gives back a browser-reachable relative URL, so images from IM channels (e.g.
+// WeChat) render inline in the web UI instead of a bare "（附件：…）" note. It is
+// optional: when nil, channel images are only sent to a vision-capable model
+// and named in text, exactly as before.
+type MediaStore interface {
+	// SaveInboundImage stores an inbound image for convID and returns its
+	// relative GET URL (served with the same conversation ACL). It also
+	// returns the sanitized blob object name used under the namespace.
+	SaveInboundImage(ctx context.Context, convID, filename, mime string, data []byte) (url string, object string, err error)
+}
+
 // BuildDeps are the generic dependencies every wired channel shares. A
 // Bootstrapper channel builds its own Runtime (assignee/agent/source come
 // from its persisted per-channel settings) from these deps.
@@ -16,6 +28,8 @@ type BuildDeps struct {
 	Meta           conversation.MetaStore
 	Messages       conversation.Store
 	DefaultAgentID string
+	// Media optionally persists inbound channel images for inline web display.
+	Media MediaStore
 	// SupportsVision controls whether inbound image attachments become
 	// multimodal LLM parts.
 	SupportsVision bool

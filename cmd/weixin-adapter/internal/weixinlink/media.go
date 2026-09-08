@@ -6,7 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // iLink media uses AES-128-ECB + PKCS7 padding for both inbound CDN downloads
@@ -127,3 +130,74 @@ func (c *Client) DownloadMediaDecrypted(ctx context.Context, _ string, m MediaRe
 }
 
 var _ MediaDownloader = (*Client)(nil)
+
+// NormalizeMedia finalizes the Filename and MIME of an inbound media item from
+// its decrypted bytes. Images (Kind "image") are sniffed via magic bytes
+// (http.DetectContentType) because iLink image items carry no file_name and
+// may be PNG/WEBP/GIF as well as JPEG; when the item had no filename, one is
+// synthesized with the correct extension instead of defaulting to "media.bin".
+// Files keep their extension-derived MIME; only an empty MIME falls back to the
+// sniffed value. It mutates and returns m.
+func NormalizeMedia(m *MediaRef, data []byte) *MediaRef {
+	if m == nil {
+		return nil
+	}
+	sniff := http.DetectContentType(data) // e.g. "image/png", "image/jpeg", "application/zip", "text/plain; charset=utf-8"
+	sniff = strings.TrimSpace(strings.Split(sniff, ";")[0])
+
+	switch m.Kind {
+	case "image":
+		if strings.HasPrefix(sniff, "image/") {
+			m.MIME = sniff
+		} else if m.MIME == "" {
+			m.MIME = "image/jpeg"
+		}
+		if strings.TrimSpace(m.FileName) == "" {
+			m.FileName = "image_" + strconv.FormatInt(time.Now().UnixNano(), 36) + extForMIME(m.MIME)
+		}
+	default:
+		// Files/voice/video: trust the extension-derived MIME; fall back to sniff.
+		if m.MIME == "" || m.MIME == "application/octet-stream" {
+			if sniff != "" && sniff != "application/octet-stream" {
+				m.MIME = sniff
+			} else if m.MIME == "" {
+				m.MIME = "application/octet-stream"
+			}
+		}
+		if strings.TrimSpace(m.FileName) == "" {
+			m.FileName = "file_" + strconv.FormatInt(time.Now().UnixNano(), 36) + extForMIME(m.MIME)
+		}
+	}
+	return m
+}
+
+// extForMIME returns a filename extension (with leading dot) for a MIME type.
+func extForMIME(mime string) string {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "application/pdf":
+		return ".pdf"
+	case "text/plain":
+		return ".txt"
+	case "text/csv":
+		return ".csv"
+	case "text/markdown":
+		return ".md"
+	case "application/zip":
+		return ".zip"
+	case "video/mp4":
+		return ".mp4"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/amr":
+		return ".amr"
+	}
+	return ".bin"
+}

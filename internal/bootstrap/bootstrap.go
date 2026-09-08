@@ -23,6 +23,7 @@ import (
 	"github.com/rebornace/baize/internal/blob"
 	_ "github.com/rebornace/baize/internal/blob/file"
 	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/channelmedia"
 	// Built-in channel: the generic out-of-process webhook channel registers
 	// its Descriptor via init() so wireChannels discovers it generically.
 	// Additional in-tree channels add their own blank import in
@@ -346,6 +347,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackPublicBase = callbackPublicBase
 	srv.CallbackTTL = callbackTTL
 
+	// channelMedia is set when a blob store is available (sqlBackend present)
+	// and feeds both the channel Runtime (persist inbound images) and the API
+	// (serve them back with the conversation ACL).
+	var channelMedia *channelmedia.Store
 	if sqlBackend != nil {
 		blobStore, err := openBlobStore(context.Background(), cfg)
 		if err != nil {
@@ -359,6 +364,12 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		}
 		reg.RegisterSpec(analysis.ToolSpec(), analysis.Invoker(artStore))
 		srv.Artifacts = artStore
+
+		// Inbound channel images (e.g. WeChat) persist to the same blob store
+		// under "channel-media/" so they render inline in the web UI, and are
+		// served back by the API with the owning conversation's ACL.
+		channelMedia = channelmedia.New(blobStore)
+		srv.ChannelMedia = channelMedia
 
 		// Per-conversation file workspace reuses the same blob.Store
 		// (artifacts use the "artifacts/" prefix; workspace uses
@@ -433,6 +444,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		engine:         engine,
 		provider:       provider,
 		defaultAgentID: srv.DefaultAgentID,
+		channelMedia:   channelMedia,
 		runCtx:         runCtx,
 		closer:         closer,
 		cfg:            cfg,
@@ -582,9 +594,10 @@ type channelDeps struct {
 	engine         *run.Engine
 	provider       llm.Provider
 	defaultAgentID string
-	runCtx         context.Context
-	closer         *storeAndMCPCloser
-	cfg            config.Config
+	channelMedia  *channelmedia.Store
+	runCtx        context.Context
+	closer        *storeAndMCPCloser
+	cfg           config.Config
 }
 
 // wireChannels iterates every registered channel Descriptor, builds the
@@ -624,6 +637,7 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		Meta:           meta,
 		Messages:       d.messages,
 		DefaultAgentID: d.defaultAgentID,
+		Media:          d.channelMedia,
 		SupportsVision: supportsVision,
 		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
 			d.srv.Dispatch(context.Background(), middleware.Job{

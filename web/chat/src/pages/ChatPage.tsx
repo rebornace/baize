@@ -32,6 +32,7 @@ import { Composer } from '../components/Composer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelSelect } from '../components/ModelSelect'
 import { ToolCard } from '../components/ToolCard'
+import { UserBubble } from '../components/UserBubble'
 import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
 import { conversationListLabel } from '../conversationLabel'
@@ -717,7 +718,7 @@ export function ChatPage() {
                     {m.role === 'assistant' ? (
                       <MarkdownText text={m.content} />
                     ) : (
-                      <MarkdownText text={m.content} plain />
+                      <UserBubble content={m.content} />
                     )}
                   </div>
                   {pages.length > 0 && (

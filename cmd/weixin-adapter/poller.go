@@ -148,29 +148,25 @@ func (a *Adapter) handleInboundUpdate(ctx context.Context, u weixinlink.Update) 
 	}
 	atts := []map[string]any{}
 	if md, ok := a.ilink.(weixinlink.MediaDownloader); ok {
-		for _, m := range u.Media {
-			data, _, err := md.DownloadMediaDecrypted(ctx, a.currentToken(), m)
+		for _, ref := range u.Media {
+			data, _, err := md.DownloadMediaDecrypted(ctx, a.currentToken(), ref)
 			if err != nil {
-				log.Printf("weixin-adapter: download media %s: %v", m.FileName, err)
+				log.Printf("weixin-adapter: download media %s: %v", ref.FileName, err)
 				continue
 			}
 			if len(data) == 0 {
 				// Key present but undecryptable: skip bytes (do not forward
 				// ciphertext garbage); the message text still goes through.
-				log.Printf("weixin-adapter: media %s undecryptable; skipped", m.FileName)
+				log.Printf("weixin-adapter: media %s undecryptable; skipped", ref.FileName)
 				continue
 			}
-			name := strings.TrimSpace(m.FileName)
-			if name == "" {
-				name = "media.bin"
-			}
-			mime := strings.TrimSpace(m.MIME)
-			if mime == "" {
-				mime = "application/octet-stream"
-			}
+			// Finalize filename/MIME from the decrypted bytes: sniff image
+			// magic bytes and synthesize a proper extension for nameless image
+			// items (otherwise they show up as "media.bin").
+			m := weixinlink.NormalizeMedia(&ref, data)
 			atts = append(atts, map[string]any{
-				"name":           name,
-				"mime":           mime,
+				"name":           strings.TrimSpace(m.FileName),
+				"mime":           strings.TrimSpace(m.MIME),
 				"content_base64": base64.StdEncoding.EncodeToString(data),
 			})
 		}

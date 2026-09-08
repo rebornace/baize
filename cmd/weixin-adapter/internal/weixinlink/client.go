@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -313,22 +314,26 @@ func (c *Client) DownloadMedia(ctx context.Context, _ string, media MediaRef) ([
 
 func mediaRefFromItem(item wireItem) *MediaRef {
 	var media *wireCDNMedia
-	var fileName string
+	var fileName, kind string
 	var aesOverride string
 	switch {
 	case item.ImageItem != nil:
 		media = item.ImageItem.Media
 		fileName = item.ImageItem.FileName
 		aesOverride = item.ImageItem.AESKey
+		kind = "image"
 	case item.FileItem != nil:
 		media = item.FileItem.Media
 		fileName = item.FileItem.FileName
+		kind = "file"
 	case item.VoiceItem != nil:
 		media = item.VoiceItem.Media
 		fileName = item.VoiceItem.FileName
+		kind = "voice"
 	case item.VideoItem != nil:
 		media = item.VideoItem.Media
 		fileName = item.VideoItem.FileName
+		kind = "video"
 	}
 	if media == nil {
 		return nil
@@ -337,19 +342,68 @@ func mediaRefFromItem(item wireItem) *MediaRef {
 	if aesOverride != "" {
 		aesKey = aesOverride
 	}
+	// MIME: images/videos are sniffed from decoded bytes after download
+	// (http.DetectContentType); files are typed by their filename extension
+	// so a .pdf/.docx/.txt is not mislabeled application/octet-stream.
 	mime := ""
-	switch {
-	case item.ImageItem != nil:
-		mime = "image/jpeg" // iLink inbound images are JPEG; filename carries extension
-	case item.FileItem != nil:
-		mime = "application/octet-stream"
+	if kind == "file" {
+		mime = mimeFromFilename(fileName)
 	}
 	return &MediaRef{
 		EncryptQueryParam: media.EncryptQueryParam,
 		AESKey:            aesKey,
 		FileName:          fileName,
 		MIME:              mime,
+		Kind:              kind,
 	}
+}
+
+// mimeFromFilename maps common file extensions to MIME types. Returns "" when
+// unknown (caller treats it as a generic binary attachment).
+func mimeFromFilename(name string) string {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(name)))
+	switch ext {
+	case ".pdf":
+		return "application/pdf"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case ".doc":
+		return "application/msword"
+	case ".xls":
+		return "application/vnd.ms-excel"
+	case ".txt", ".log", ".csv":
+		if ext == ".csv" {
+			return "text/csv"
+		}
+		return "text/plain"
+	case ".md", ".markdown":
+		return "text/markdown"
+	case ".json":
+		return "application/json"
+	case ".html", ".htm":
+		return "text/html"
+	case ".zip":
+		return "application/zip"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".mp4":
+		return "video/mp4"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".amr":
+		return "audio/amr"
+	}
+	return "application/octet-stream"
 }
 
 func (c *Client) newAuthJSONRequest(ctx context.Context, method, rawURL, token string, body any) (*http.Request, error) {

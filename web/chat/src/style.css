@@ -481,6 +481,31 @@ body {
   margin-bottom: 0.5rem;
 }
 
+/* Inbound channel images (e.g. WeChat photos) rendered in user bubbles. */
+.channel-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.channel-image {
+  display: block;
+  max-width: 240px;
+  max-height: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.channel-image-loading,
+.channel-image-failed {
+  display: inline-block;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
 .analysis-page-preview iframe {
   display: block;
   width: 100%;

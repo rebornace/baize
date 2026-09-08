@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,11 @@ type Runtime struct {
 	// Source is the meta.Source / conv-id prefix for this channel (e.g. "weixin").
 	// Empty defaults to "weixin" to preserve historical conversation ids.
 	Source string
+
+	// Media optionally persists inbound channel images so they render inline in
+	// the web UI. nil = images are only sent to a vision-capable model and
+	// named in text (no inline display).
+	Media MediaStore
 
 	// routeMu guards Assignee/DefaultAgentID hot updates (SetRouting) against
 	// concurrent reads in HandleInbound. Construction-time writes before the
@@ -147,7 +153,7 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return ErrNoAgent
 	}
 
-	displayText, userParts, err := buildInboundContent(in.Text, in.Files, r.SupportsVision)
+	displayText, userParts, images, err := buildInboundContent(in.Text, in.Files, r.SupportsVision)
 	if err != nil {
 		return err
 	}
@@ -161,10 +167,26 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return fmt.Errorf("channel: create run: %w", err)
 	}
 
+	// Persist inbound images for inline web display and append an image
+	// reference to the stored user bubble. Best-effort: a blob failure must
+	// not drop the run/reply (the model still received the image via parts
+	// when vision is enabled). The references are NOT added to run.Input
+	// (the LLM gets image bytes via userParts, not a URL).
+	bubbleContent := displayText
 	if r.Messages != nil {
+		if r.Media != nil && len(images) > 0 {
+			for _, img := range images {
+				u, _, serr := r.Media.SaveInboundImage(ctx, convID, img.Filename, img.ImageMIME, img.ImageBytes)
+				if serr != nil {
+					log.Printf("channel: persist inbound image %s: %v", img.Filename, serr)
+					continue
+				}
+				bubbleContent += "\n![图片](" + u + ")"
+			}
+		}
 		_, _ = r.Messages.Append(convID, conversation.Message{
 			Role:    conversation.RoleUser,
-			Content: displayText,
+			Content: bubbleContent,
 			RunID:   runRec.ID,
 		})
 	}
@@ -264,43 +286,79 @@ func (r *Runtime) OutboundExtras(conversationID string) map[string]string {
 // buildInboundContent mirrors internal/api handlePostRun attachment assembly:
 // display text for persistence / CreateRun.Input, and optional multimodal parts
 // for the engine hook.
-func buildInboundContent(text string, files []InboundFile, supportsVision bool) (display string, parts []llm.ContentPart, err error) {
+//
+// Unlike the interactive web upload (which surfaces an error to the operator
+// and asks them to retry), an inbound channel message must never be silently
+// dropped because a file is unsupported: a WeChat user sending a .zip or an
+// oversized file would otherwise get no run and no reply. Unsupported /
+// oversized / undecodable files are therefore recorded by name as a note for
+// the agent (so it can acknowledge them), while supported files are extracted
+// as usual.
+func buildInboundContent(text string, files []InboundFile, supportsVision bool) (display string, parts []llm.ContentPart, images []attach.Extracted, err error) {
 	text = strings.TrimSpace(text)
 	if len(files) == 0 {
-		return text, nil, nil
+		return text, nil, nil, nil
 	}
 
-	atts := make([]attach.AttachmentIn, 0, len(files))
+	opts := attach.DefaultOptions()
+	processable := make([]attach.AttachmentIn, 0, len(files))
+	skipped := make([]string, 0) // display names of files we could not parse
 	for _, f := range files {
-		atts = append(atts, attach.AttachmentIn{
+		dispName := strings.TrimSpace(f.Name)
+		if dispName == "" {
+			dispName = "file"
+		}
+		if int64(len(f.Data)) > int64(opts.MaxTotalBytes) {
+			skipped = append(skipped, dispName)
+			continue
+		}
+		if !attach.SupportsMediaType(f.MIME) {
+			skipped = append(skipped, dispName)
+			continue
+		}
+		processable = append(processable, attach.AttachmentIn{
 			Filename:   f.Name,
 			MediaType:  f.MIME,
 			ContentB64: base64.StdEncoding.EncodeToString(f.Data),
 		})
 	}
-	textExts, imageExts, err := attach.Process(atts, attach.DefaultOptions())
-	if err != nil {
-		return "", nil, fmt.Errorf("channel: process attachments: %w", err)
+
+	var textExts, imageExts []attach.Extracted
+	if len(processable) > 0 {
+		textExts, imageExts, err = attach.Process(processable, opts)
+		if err != nil {
+			// A supported type failed to parse (corrupt docx/pdf, bad image):
+			// degrade to name-only notes rather than aborting the whole message.
+			for _, a := range processable {
+				skipped = append(skipped, a.Filename)
+			}
+			textExts, imageExts = nil, nil
+		}
 	}
 
 	llmText := text
-	if len(textExts) > 0 || len(imageExts) > 0 {
-		var b strings.Builder
-		b.WriteString(text)
-		for _, t := range textExts {
+	var b strings.Builder
+	b.WriteString(text)
+	for _, t := range textExts {
+		b.WriteString("\n\n【附件: ")
+		b.WriteString(t.Filename)
+		b.WriteString("】\n")
+		b.WriteString(t.Text)
+	}
+	if !supportsVision {
+		for _, img := range imageExts {
 			b.WriteString("\n\n【附件: ")
-			b.WriteString(t.Filename)
+			b.WriteString(img.Filename)
 			b.WriteString("】\n")
-			b.WriteString(t.Text)
+			b.WriteString("（图片，当前模型不支持视觉）")
 		}
-		if !supportsVision {
-			for _, img := range imageExts {
-				b.WriteString("\n\n【附件: ")
-				b.WriteString(img.Filename)
-				b.WriteString("】\n")
-				b.WriteString("（图片，当前模型不支持视觉）")
-			}
-		}
+	}
+	for _, name := range skipped {
+		b.WriteString("\n\n【附件: ")
+		b.WriteString(name)
+		b.WriteString("】\n（已收到该文件，但暂不支持解析其内容，无法读取其中的信息。）")
+	}
+	if len(textExts) > 0 || len(imageExts) > 0 || len(skipped) > 0 {
 		llmText = b.String()
 		parts = append(parts, llm.ContentPart{Type: "text", Text: llmText})
 		if supportsVision {
@@ -314,16 +372,20 @@ func buildInboundContent(text string, files []InboundFile, supportsVision bool) 
 		}
 	}
 
+	names := make([]string, 0, len(textExts)+len(imageExts)+len(skipped))
+	for _, e := range textExts {
+		names = append(names, e.Filename)
+	}
+	for _, e := range imageExts {
+		names = append(names, e.Filename)
+	}
+	names = append(names, skipped...)
 	display = text
-	if n := len(textExts) + len(imageExts); n > 0 {
-		names := make([]string, 0, n)
-		for _, e := range textExts {
-			names = append(names, e.Filename)
-		}
-		for _, e := range imageExts {
-			names = append(names, e.Filename)
-		}
+	if len(names) > 0 {
 		display = strings.TrimSpace(text) + "（附件：" + strings.Join(names, ", ") + "）"
 	}
-	return display, parts, nil
+	// imageExts are thumbnail-capped/re-encoded images; returned so the caller
+	// can persist them for inline web display regardless of supportsVision
+	// (displaying to an operator is independent of the model seeing the image).
+	return display, parts, imageExts, nil
 }

@@ -1,9 +1,13 @@
 package channel
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +17,18 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 )
+
+// validPNG builds a small in-memory PNG so attach.processImage can decode it.
+func validPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
+}
 
 type fakeChannel struct {
 	mu        sync.Mutex
@@ -321,6 +337,138 @@ func TestHandleInboundAttachmentUserParts(t *testing.T) {
 	}
 	if !strings.Contains(joined, "hello from file") || !strings.Contains(joined, "【附件: note.txt】") {
 		t.Fatalf("user parts text = %q", joined)
+	}
+}
+
+// TestHandleInboundUnsupportedFileStillReplies guards the "WeChat sends a
+// non-parsable file type and gets no reply" regression: an unsupported MIME
+// (e.g. .zip -> application/octet-stream) must NOT abort CreateRun. The run is
+// still created (so the agent replies) and the filename is recorded as a note.
+func TestHandleInboundUnsupportedFileStillReplies(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	var gotParts []llm.ContentPart
+	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
+		gotParts = parts
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "这个文件帮我看下",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "archive.zip",
+			MIME: "application/octet-stream",
+			Data: []byte{0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0}, // ZIP magic
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound must not fail for unsupported file: %v", err)
+	}
+	if runs.createCount() != 1 {
+		t.Fatalf("CreateRun calls = %d, want 1 (unsupported file must still create a run)", runs.createCount())
+	}
+	in := runs.lastCreate()
+	if !strings.Contains(in.Input, "archive.zip") {
+		t.Fatalf("display input should name the file: %q", in.Input)
+	}
+	if len(gotParts) == 0 {
+		t.Fatal("expected user parts noting the unsupported file")
+	}
+	joined := ""
+	for _, p := range gotParts {
+		joined += p.Text
+	}
+	if !strings.Contains(joined, "archive.zip") || !strings.Contains(joined, "暂不支持解析") {
+		t.Fatalf("user parts should note unsupported file: %q", joined)
+	}
+}
+
+// TestHandleInboundMixedSupportedAndUnsupportedFiles verifies a supported
+// file is extracted while an unsupported sibling is name-noted (neither drops
+// the message).
+func TestHandleInboundMixedSupportedAndUnsupportedFiles(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "两个文件",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{
+			{Name: "note.txt", MIME: "text/plain", Data: []byte("readable text")},
+			{Name: "data.bin", MIME: "application/octet-stream", Data: []byte{0, 1, 2, 3}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	if runs.createCount() != 1 {
+		t.Fatalf("CreateRun calls = %d, want 1", runs.createCount())
+	}
+	in := runs.lastCreate()
+	for _, want := range []string{"note.txt", "data.bin"} {
+		if !strings.Contains(in.Input, want) {
+			t.Fatalf("display input missing %q: %q", want, in.Input)
+		}
+	}
+}
+
+// fakeMediaStore records saved images and returns a fixed URL.
+type fakeMediaStore struct {
+	saved []string // filenames
+}
+
+func (f *fakeMediaStore) SaveInboundImage(_ context.Context, convID, filename, mime string, data []byte) (string, string, error) {
+	f.saved = append(f.saved, filename)
+	return "/v0/channels/media/" + convID + "/obj_" + filename, "obj_" + filename, nil
+}
+
+// TestHandleInboundPersistsImageForInlineDisplay guards the "WeChat image
+// shows as media.bin / no inline image" regression: an inbound image is
+// persisted via the MediaStore and the stored user bubble carries a renderable
+// image reference (while run.Input stays free of the URL).
+func TestHandleInboundPersistsImageForInlineDisplay(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, meta := newTestRuntime(t, runs)
+	media := &fakeMediaStore{}
+	rt.Media = media
+	rt.SupportsVision = true
+
+	// Valid PNG magic + IHDR-ish bytes (attach.processImage decodes real
+	// images; use a small real PNG built by image/png).
+	png := validPNG(t)
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "看这张图",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "photo.png",
+			MIME: "image/png",
+			Data: png,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	if len(media.saved) != 1 {
+		t.Fatalf("expected 1 image persisted, got %d", len(media.saved))
+	}
+	convID := "weixin:acc-1:peer-1"
+	msgs := meta.List(convID)
+	if len(msgs) == 0 {
+		t.Fatal("no user message persisted")
+	}
+	last := msgs[len(msgs)-1]
+	if !strings.Contains(last.Content, "/v0/channels/media/") || !strings.Contains(last.Content, "![图片]") {
+		t.Fatalf("user bubble missing image reference: %q", last.Content)
+	}
+	// run.Input must not carry the URL (LLM gets bytes via parts).
+	in := runs.lastCreate()
+	if strings.Contains(in.Input, "/v0/channels/media/") {
+		t.Fatalf("run.Input must not contain media URL: %q", in.Input)
 	}
 }
 

@@ -192,6 +192,15 @@ func isImageMIME(m string) bool {
 	return false
 }
 
+// SupportsMediaType reports whether Process can extract content from an
+// attachment with the given MIME type. Inbound callers (channel adapters) use
+// it to degrade gracefully — recording an unsupported file's name so the agent
+// still sees and can reply to the message — instead of letting ErrUnsupported
+// abort the whole inbound message (which would silently drop it with no reply).
+func SupportsMediaType(m string) bool {
+	return isTextMIME(m) || isImageMIME(m) || m == mimeDocx || m == mimeXlsx || m == mimePDF
+}
+
 const (
 	mimeDocx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	mimeXlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

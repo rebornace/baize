@@ -51,4 +51,8 @@ type MediaRef struct {
 	AESKey            string
 	FileName          string
 	MIME              string
+	// Kind classifies the media: "image" | "file" | "video" | "voice".
+	// Image messages on iLink carry no file_name, so the adapter synthesizes
+	// an extension from Kind/decoded bytes instead of defaulting to "media.bin".
+	Kind string
 }
