@@ -334,6 +334,67 @@ func TestWatchdogStopsOnLifecycleCancel(t *testing.T) {
 	t.Fatal("watchdog still restarting after lifecycle context cancelled")
 }
 
+// TestWatchdogStopDuringBackoffReapsAndDoesNotRespawn: stopping while the
+// watchdog is parked in a long backoff (crashed child, no live cmd) must not
+// deadlock and must not respawn afterwards. This exercises stop()'s
+// waitReaped path when watch is not blocked on cmd.Wait().
+func TestWatchdogStopDuringBackoffReapsAndDoesNotRespawn(t *testing.T) {
+	exe := buildFakeCrashAdapter(t)
+	addr := "127.0.0.1:18086"
+	lifeCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	sup := &supervisor{
+		command:      exe,
+		healthzURL:   "http://" + addr + "/healthz",
+		env:          []string{"FAKE_ADDR=" + addr},
+		timeout:      5 * time.Second,
+		lifecycleCtx: lifeCtx,
+		backoff:      func(int) time.Duration { return 30 * time.Second }, // long: park in backoff
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// Wait until the first crash parks the watchdog in backoff.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.restarting() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !sup.restarting() {
+		t.Fatal("expected watchdog to enter restarting state after crash")
+	}
+	if sup.ownsProcess() {
+		t.Fatal("expected no live child while parked in backoff")
+	}
+	// stop() must return promptly (watch owns the Wait; nothing to kill).
+	done := make(chan error, 1)
+	go func() { done <- sup.stop(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("stop during backoff: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stop() deadlocked while watchdog was parked in backoff")
+	}
+	if sup.ownsProcess() {
+		t.Fatal("ownsProcess after stop: process handle not cleared")
+	}
+	if sup.running() {
+		t.Fatal("running() after stop: supervisor should be down")
+	}
+	// The backoff must have been cancelled: no respawn even after waiting.
+	time.Sleep(400 * time.Millisecond)
+	if sup.restartCount() < 1 {
+		t.Fatalf("expected at least the initial crash to be counted, got %d", sup.restartCount())
+	}
+	if healthzReachable2(sup.healthzURL) {
+		t.Fatal("healthz reachable after stop: watchdog respawned despite intentional stop")
+	}
+}
+
 // healthzReachable2 is a local probe to avoid importing process_test helpers.
 func healthzReachable2(url string) bool {
 	cl := &http.Client{Timeout: 200 * time.Millisecond}

@@ -71,8 +71,8 @@ func (s *supervisor) spawn(ctx context.Context) (*exec.Cmd, error) {
 	resolved := resolveAdapterPath(s.command)
 	// Use exec.Command (NOT CommandContext): the child must outlive the
 	// request/start context that triggers a management-plane (re)start. The
-	// process lifecycle is owned explicitly here — killed via stop()/kill()
-	// on intentional stop; a hard baize crash leaves an orphan that a later
+	// process lifecycle is owned explicitly here — killed via stop() on an
+	// intentional stop; a hard baize crash leaves an orphan that a later
 	// start() detects and adopts/rejects by healthz + signed check. ctx is
 	// only used to bound the healthz wait (and the watchdog respawn loop).
 	cmd := exec.Command(resolved, s.args...)
@@ -87,8 +87,9 @@ func (s *supervisor) spawn(ctx context.Context) (*exec.Cmd, error) {
 		timeout = 30 * time.Second
 	}
 	if err := waitHealthz(ctx, s.healthzURL, timeout); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		// No watch goroutine exists for this cmd yet, so kill+Wait here is
+		// safe (see killCmd's contract).
+		_ = killCmd(cmd)
 		return nil, fmt.Errorf("adapter never became healthy: %w", err)
 	}
 	return cmd, nil
@@ -149,8 +150,14 @@ func (s *supervisor) watch(cmd *exec.Cmd) {
 	} else {
 		s.lastExit = "exited 0"
 	}
+	// The reaped process is no longer owned regardless of what happens next:
+	// drop the handle so ownsProcess()/running()/stop()'s waitReaped reflect
+	// reality. While the watchdog is parked in backoff there is deliberately
+	// no live cmd; a successful respawn installs the replacement in s.cmd.
+	// (A newer process could only be here after a respawn, in which case
+	// s.cmd != cmd was caught above.)
+	s.cmd = nil
 	if !s.wantRunning {
-		s.cmd = nil
 		s.backingOff = false
 		s.mu.Unlock()
 		return
@@ -167,6 +174,10 @@ func (s *supervisor) watch(cmd *exec.Cmd) {
 		lifeCtx = context.Background()
 	}
 	s.respawnLoop(lifeCtx, stopCh)
+	// respawnLoop has either installed a replacement process (s.cmd points at
+	// it, reaped by a fresh watch goroutine) or aborted on stop/lifecycle-cancel
+	// with no live child (s.cmd already nil); it clears backingOff in both
+	// cases, so nothing further to do here.
 }
 
 // respawnLoop waits out the backoff (bounded by stopCh and the lifecycle
@@ -203,10 +214,13 @@ func (s *supervisor) respawnLoop(ctx context.Context, stopCh <-chan struct{}) {
 		}
 		s.mu.Lock()
 		if !s.wantRunning {
-			s.backingOff = false
 			s.mu.Unlock()
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
+			// No watch goroutine has been started for this fresh cmd yet, so
+			// kill+Wait here is safe (see killCmd's contract). Reap it BEFORE
+			// clearing backingOff so a concurrent stop()'s waitReaped waits
+			// for this transient child to be gone (no post-stop respawn).
+			_ = killCmd(cmd)
+			s.setBackingOff(false)
 			return
 		}
 		s.cmd = cmd
@@ -265,10 +279,15 @@ func (s *supervisor) isAdopted() bool {
 	return s.adopted
 }
 
+// running reports whether a supervised child is currently live. It reads
+// only s.cmd under the mutex: s.cmd is nil for an adopted orphan, after the
+// watch goroutine has reaped the process, and after resetForRespawn. It must
+// not read cmd.ProcessState — that field is written by Wait(), which only
+// the watch goroutine calls, so reading it here would race.
 func (s *supervisor) running() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.cmd != nil && s.cmd.ProcessState == nil
+	return s.cmd != nil
 }
 
 // waitUntilDown polls healthz until the adapter stops responding (process
@@ -317,8 +336,12 @@ func (s *supervisor) adapterListening(ctx context.Context) bool {
 // stop intentionally halts the supervised child. It must declare
 // wantRunning=false (and close stopCh) BEFORE killing: otherwise the watchdog
 // reaping the killed process would classify the exit as a crash and respawn.
-// Today this is force-kill semantics; a graceful /admin/shutdown fallback is
-// introduced by the graceful-shutdown task.
+// It only sends Process.Kill — process reaping (cmd.Wait) belongs exclusively
+// to the watch goroutine (os/exec: Wait may be called at most once per Cmd) —
+// then waits for watch to reap. If the watchdog is parked in backoff (no live
+// cmd, ownsProcess already false) there is nothing to kill. Today this is
+// force-kill semantics; a graceful /admin/shutdown fallback is introduced by
+// the graceful-shutdown task.
 func (s *supervisor) stop(ctx context.Context) error {
 	_ = ctx
 	s.mu.Lock()
@@ -329,15 +352,50 @@ func (s *supervisor) stop(ctx context.Context) error {
 	}
 	cmd := s.cmd
 	s.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
-		return nil
+	if cmd != nil && cmd.Process != nil {
+		// Kill only; do NOT Wait here — watch owns the sole Wait on this cmd.
+		_ = cmd.Process.Kill()
 	}
-	return killCmd(cmd)
+	reapCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if !s.waitReaped(reapCtx) {
+		return fmt.Errorf("webhook supervisor: adapter process not reaped within timeout")
+	}
+	return nil
 }
 
-// killCmd force-terminates and reaps a process. Process.Kill is cross-platform:
-// TerminateProcess on Windows, SIGKILL on POSIX. A second Wait() (the watchdog
-// may already be reaping the same process) just returns the same result.
+// waitReaped polls until the supervised process is fully gone AND the watchdog
+// is quiescent — no live cmd (ownsProcess false; watch has reaped it or the
+// watchdog was parked in backoff) and no backoff/respawn still in flight
+// (restarting false) — or ctx is cancelled/times out. Returns true once
+// quiescent, false on timeout. stop() uses it so that once it returns there is
+// no child left and no possibility of a further respawn.
+func (s *supervisor) waitReaped(ctx context.Context) bool {
+	quiescent := func() bool { return !s.ownsProcess() && !s.restarting() }
+	if quiescent() {
+		return true
+	}
+	ticker := time.NewTicker(40 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+			if quiescent() {
+				return true
+			}
+		}
+	}
+}
+
+// killCmd force-terminates AND reaps a process that has no watch goroutine
+// attached: the healthz-failure cleanup inside spawn(), and the freshly-spawned
+// cmd in respawnLoop when wantRunning turned false before watch was started.
+// It must never be called for the live s.cmd process — that one is waited on
+// exclusively by watch (a second Wait races on ProcessState and, on POSIX,
+// the underlying waitpid is non-idempotent). Process.Kill is cross-platform:
+// TerminateProcess on Windows, SIGKILL on POSIX.
 func killCmd(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
@@ -345,14 +403,6 @@ func killCmd(cmd *exec.Cmd) error {
 	_ = cmd.Process.Kill()
 	_ = cmd.Wait()
 	return nil
-}
-
-// kill force-terminates the current child.
-func (s *supervisor) kill() error {
-	s.mu.Lock()
-	cmd := s.cmd
-	s.mu.Unlock()
-	return killCmd(cmd)
 }
 
 // resetForRespawn clears process state after a stop/shutdown so a subsequent
