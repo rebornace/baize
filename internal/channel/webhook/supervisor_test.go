@@ -201,3 +201,146 @@ func TestResolveAdapterCommand(t *testing.T) {
 		}
 	}
 }
+
+// fakeCrashSource serves healthz briefly then exits non-zero, simulating an
+// adapter that crashes after becoming healthy (drives the watchdog respawn).
+// The ~700ms healthy lifetime keeps the first spawn's waitHealthz (150ms poll
+// cadence + process startup) reliably green before the crash.
+const fakeCrashSource = `package main
+import ("net/http";"os";"time")
+func main() {
+	addr := os.Getenv("FAKE_ADDR")
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(200) })
+	go http.ListenAndServe(addr, nil)
+	time.Sleep(700 * time.Millisecond)
+	os.Exit(1)
+}
+`
+
+func buildFakeCrashAdapter(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(src, []byte(fakeCrashSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "fakecrash"+exeSuffix())
+	build := exec.Command("go", "build", "-o", exe, src)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build fake crash adapter: %v\n%s", err, out)
+	}
+	return exe
+}
+
+func TestWatchdogRestartsCrashedChild(t *testing.T) {
+	exe := buildFakeCrashAdapter(t)
+	addr := "127.0.0.1:18089"
+	lifeCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	sup := &supervisor{
+		command:      exe,
+		healthzURL:   "http://" + addr + "/healthz",
+		env:          []string{"FAKE_ADDR=" + addr},
+		timeout:      5 * time.Second,
+		lifecycleCtx: lifeCtx,
+		backoff:      func(int) time.Duration { return 20 * time.Millisecond },
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// The child crashes every ~700ms; the watchdog must respawn it repeatedly.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.restartCount() >= 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := sup.restartCount(); got < 2 {
+		t.Fatalf("watchdog did not respawn crashed child; restarts=%d", got)
+	}
+	if err := sup.stop(context.Background()); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	// Port must stay down after intentional stop (no further respawn).
+	time.Sleep(400 * time.Millisecond)
+	if healthzReachable2(sup.healthzURL) {
+		t.Fatal("healthz reachable after stop: watchdog respawned despite intentional stop")
+	}
+}
+
+func TestWatchdogNoRestartOnIntentionalStop(t *testing.T) {
+	exe := buildFakeAdapter(t) // long-lived (select{})
+	addr := "127.0.0.1:18088"
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://" + addr + "/healthz",
+		env:        []string{"FAKE_ADDR=" + addr},
+		timeout:    5 * time.Second,
+		backoff:    func(int) time.Duration { return 20 * time.Millisecond },
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := sup.stop(context.Background()); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if got := sup.restartCount(); got != 0 {
+		t.Fatalf("intentional stop must not trigger restart, got restarts=%d", got)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if healthzReachable2(sup.healthzURL) {
+		t.Fatal("healthz reachable after stop: child not gone / respawned")
+	}
+}
+
+func TestWatchdogStopsOnLifecycleCancel(t *testing.T) {
+	exe := buildFakeCrashAdapter(t)
+	addr := "127.0.0.1:18087"
+	lifeCtx, cancel := context.WithCancel(context.Background())
+	sup := &supervisor{
+		command:      exe,
+		healthzURL:   "http://" + addr + "/healthz",
+		env:          []string{"FAKE_ADDR=" + addr},
+		timeout:      5 * time.Second,
+		lifecycleCtx: lifeCtx,
+		backoff:      func(int) time.Duration { return 30 * time.Second }, // long: park in backoff
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// Wait until the first crash parks the watchdog in backoff.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.restarting() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !sup.restarting() {
+		t.Fatal("expected watchdog to enter restarting state after crash")
+	}
+	cancel() // baize shutdown
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !sup.restarting() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("watchdog still restarting after lifecycle context cancelled")
+}
+
+// healthzReachable2 is a local probe to avoid importing process_test helpers.
+func healthzReachable2(url string) bool {
+	cl := &http.Client{Timeout: 200 * time.Millisecond}
+	r, err := cl.Get(url)
+	if err != nil {
+		return false
+	}
+	r.Body.Close()
+	return r.StatusCode == http.StatusOK
+}
