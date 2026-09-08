@@ -1,28 +1,49 @@
 /**
- * Inbound channel images (e.g. WeChat photos) are appended to a persisted user
- * message as markdown image references pointing at the conversation-ACL
- * protected endpoint:
+ * Inbound channel attachments (e.g. WeChat photos / files) are appended to a
+ * persisted user message as references to the conversation-ACL protected
+ * endpoint:
  *
  *   你好（附件：image_xxx.jpg）
- *   ![图片](/v0/channels/media/<conv>/<object>.jpg)
+ *   ![图片](/v0/channels/media/<conv>/<object>.jpg)          // inline image
+ *   [file:黄山三日行程.docx](/v0/channels/media/<conv>/<object>.docx)  // download
  *
- * The chat bubble shows the text (without the raw markdown line, which the
- * plain renderer would otherwise print literally) and renders each image via
- * <ChannelImage>. This splits those references out.
+ * The chat bubble shows the text (without those raw marker lines, which the
+ * plain renderer would otherwise print literally), renders each image inline,
+ * and each non-image file as a download link. This splits the references out.
  */
 
-const IMAGE_RE = /!\[([^\]]*)\]\((\/v0\/channels\/media\/[^)\s]+)\)/g
+const MEDIA_URL = String.raw`/v0/channels/media/[^)\s]+`
+const IMAGE_RE = new RegExp(String.raw`!\[([^\]]*)\]\((${MEDIA_URL})\)`, 'g')
+const FILE_RE = new RegExp(String.raw`\[file:([^\]]+)\]\((${MEDIA_URL})\)`, 'g')
 
-export interface SplitChannelImages {
-  text: string
-  images: string[]
+export interface ChannelAttachment {
+  name: string
+  url: string
 }
 
-export function splitChannelImages(content: string): SplitChannelImages {
+export interface SplitChannelAttachments {
+  text: string
+  images: string[]
+  files: ChannelAttachment[]
+}
+
+export function splitChannelAttachments(content: string): SplitChannelAttachments {
   const images: string[] = []
-  const text = content.replace(IMAGE_RE, (_m, _alt, url: string) => {
-    images.push(url)
-    return ''
-  })
-  return { text: text.replace(/\n{2,}$/g, '').trimEnd(), images }
+  const files: ChannelAttachment[] = []
+
+  const text = content
+    .replace(IMAGE_RE, (_m, _alt, url: string) => {
+      images.push(url)
+      return ''
+    })
+    .replace(FILE_RE, (_m, name: string, url: string) => {
+      files.push({ name, url })
+      return ''
+    })
+
+  return {
+    text: text.replace(/\n{2,}$/g, '').trimEnd(),
+    images,
+    files,
+  }
 }

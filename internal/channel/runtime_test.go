@@ -415,14 +415,20 @@ func TestHandleInboundMixedSupportedAndUnsupportedFiles(t *testing.T) {
 	}
 }
 
-// fakeMediaStore records saved images and returns a fixed URL.
+// fakeMediaStore records saved images/files and returns a fixed URL.
 type fakeMediaStore struct {
-	saved []string // filenames
+	images []string
+	files  []string
 }
 
 func (f *fakeMediaStore) SaveInboundImage(_ context.Context, convID, filename, mime string, data []byte) (string, string, error) {
-	f.saved = append(f.saved, filename)
+	f.images = append(f.images, filename)
 	return "/v0/channels/media/" + convID + "/obj_" + filename, "obj_" + filename, nil
+}
+
+func (f *fakeMediaStore) SaveInboundFile(_ context.Context, convID, filename, mime string, data []byte) (string, string, error) {
+	f.files = append(f.files, filename)
+	return "/v0/channels/media/" + convID + "/dl_" + filename, "dl_" + filename, nil
 }
 
 // TestHandleInboundPersistsImageForInlineDisplay guards the "WeChat image
@@ -453,8 +459,8 @@ func TestHandleInboundPersistsImageForInlineDisplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleInbound: %v", err)
 	}
-	if len(media.saved) != 1 {
-		t.Fatalf("expected 1 image persisted, got %d", len(media.saved))
+	if len(media.images) != 1 {
+		t.Fatalf("expected 1 image persisted, got %d", len(media.images))
 	}
 	convID := "weixin:acc-1:peer-1"
 	msgs := meta.List(convID)
@@ -469,6 +475,44 @@ func TestHandleInboundPersistsImageForInlineDisplay(t *testing.T) {
 	in := runs.lastCreate()
 	if strings.Contains(in.Input, "/v0/channels/media/") {
 		t.Fatalf("run.Input must not contain media URL: %q", in.Input)
+	}
+}
+
+// TestHandleInboundPersistsFileForDownload guards issue #2: a non-image file
+// (docx) is persisted and referenced as a downloadable link in the user bubble,
+// even though its contents are only name-noted for the model.
+func TestHandleInboundPersistsFileForDownload(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, meta := newTestRuntime(t, runs)
+	media := &fakeMediaStore{}
+	rt.Media = media
+
+	docx := []byte{0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0} // OOXML/zip magic
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "行程文件",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "黄山三日行程.docx",
+			MIME: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			Data: docx,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	if len(media.files) != 1 {
+		t.Fatalf("expected 1 file persisted for download, got %d", len(media.files))
+	}
+	if media.files[0] != "黄山三日行程.docx" {
+		t.Fatalf("persisted file name = %q", media.files[0])
+	}
+	convID := "weixin:acc-1:peer-1"
+	msgs := meta.List(convID)
+	last := msgs[len(msgs)-1]
+	if !strings.Contains(last.Content, "[file:黄山三日行程.docx](") {
+		t.Fatalf("user bubble missing downloadable file link: %q", last.Content)
 	}
 }
 

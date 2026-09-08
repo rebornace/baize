@@ -506,6 +506,37 @@ body {
   opacity: 0.7;
 }
 
+/* Downloadable inbound channel files (docx/pdf/zip/…). */
+.channel-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.channel-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+.channel-file-link:hover {
+  border-color: var(--accent, #4a90e2);
+}
+
+.channel-file-hint {
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
 .analysis-page-preview iframe {
   display: block;
   width: 100%;

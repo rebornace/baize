@@ -20,7 +20,7 @@ type fakeChannelMedia struct {
 	gotConv, gotObject string
 }
 
-func (f *fakeChannelMedia) OpenImage(_ context.Context, conv, object string) ([]byte, string, bool, error) {
+func (f *fakeChannelMedia) OpenMedia(_ context.Context, conv, object string) ([]byte, string, bool, error) {
 	f.gotConv, f.gotObject = conv, object
 	return f.data, f.mime, f.found, f.err
 }

@@ -35,7 +35,11 @@ const blobPrefix = "channel-media"
 // upstream by internal/attach, so this is a defense-in-depth bound).
 const MaxImageBytes = 8 << 20 // 8 MiB
 
-// Store persists and serves inbound channel images on a blob.Store.
+// MaxFileBytes caps a single downloadable inbound file (documents, archives,
+// etc. that are not inline images).
+const MaxFileBytes = 25 << 20 // 25 MiB
+
+// Store persists and serves inbound channel media on a blob.Store.
 type Store struct {
 	blobs blob.Store
 }
@@ -48,6 +52,20 @@ func New(blobs blob.Store) *Store {
 // SaveInboundImage stores data for convID and returns the browser-relative GET
 // URL (served with the conversation ACL). It satisfies channel.MediaStore.
 func (s *Store) SaveInboundImage(ctx context.Context, convID, filename, mime string, data []byte) (string, string, error) {
+	return s.save(ctx, convID, imageExt(filename, mime), mime, data)
+}
+
+// SaveInboundFile stores a non-image inbound attachment (docx/pdf/zip/…) and
+// returns its browser-relative download URL. The original filename's extension
+// is preserved on the stored object so the served file has a usable type.
+func (s *Store) SaveInboundFile(ctx context.Context, convID, filename, mime string, data []byte) (string, string, error) {
+	if len(data) > MaxFileBytes {
+		return "", "", fmt.Errorf("channelmedia: file too large: %d > %d", len(data), MaxFileBytes)
+	}
+	return s.save(ctx, convID, fileExt(filename), mime, data)
+}
+
+func (s *Store) save(ctx context.Context, convID, ext, mime string, data []byte) (string, string, error) {
 	if s == nil || s.blobs == nil {
 		return "", "", errors.New("channelmedia: no blob store configured")
 	}
@@ -55,7 +73,7 @@ func (s *Store) SaveInboundImage(ctx context.Context, convID, filename, mime str
 	if seg == "" {
 		return "", "", errors.New("channelmedia: empty conversation id")
 	}
-	obj := uuid.NewString() + extFor(filename, mime)
+	obj := uuid.NewString() + ext
 	key := path.Join(blobPrefix, seg, obj)
 	if err := s.blobs.Put(ctx, key, data, mime); err != nil {
 		return "", "", fmt.Errorf("channelmedia: put %s: %w", key, err)
@@ -65,12 +83,18 @@ func (s *Store) SaveInboundImage(ctx context.Context, convID, filename, mime str
 	return url, obj, nil
 }
 
-// OpenImage reads a previously stored image for convID/object, returning the
-// bytes, detected MIME, and found=false (nil error) when the object does not
-// exist. It satisfies api.ChannelMediaOpener. object must be a bare object name
-// (no path separators); the blob key is rebuilt from the sanitized
-// conversation segment so a crafted object cannot escape the namespace.
-func (s *Store) OpenImage(ctx context.Context, convID, object string) ([]byte, string, bool, error) {
+// OpenMedia reads a previously stored inbound attachment (image or file) for
+// convID/object, returning the bytes, sniffed MIME, and found=false (nil error)
+// when the object does not exist. It satisfies api.ChannelMediaOpener. object
+// must be a bare object name (no path separators); the blob key is rebuilt from
+// the sanitized conversation segment so a crafted object cannot escape the
+// namespace. Images are served inline; other types are served as a download by
+// the API layer.
+func (s *Store) OpenMedia(ctx context.Context, convID, object string) ([]byte, string, bool, error) {
+	return s.open(ctx, convID, object, MaxFileBytes)
+}
+
+func (s *Store) open(ctx context.Context, convID, object string, maxBytes int) ([]byte, string, bool, error) {
 	if s == nil || s.blobs == nil {
 		return nil, "", false, errors.New("channelmedia: no blob store configured")
 	}
@@ -87,13 +111,10 @@ func (s *Store) OpenImage(ctx context.Context, convID, object string) ([]byte, s
 		}
 		return nil, "", false, fmt.Errorf("channelmedia: get %s: %w", key, err)
 	}
-	if len(b) > MaxImageBytes {
-		return nil, "", false, fmt.Errorf("channelmedia: image too large: %d > %d", len(b), MaxImageBytes)
+	if len(b) > maxBytes {
+		return nil, "", false, fmt.Errorf("channelmedia: object too large: %d > %d", len(b), maxBytes)
 	}
 	ct := http.DetectContentType(b)
-	if !strings.HasPrefix(ct, "image/") {
-		return nil, "", false, fmt.Errorf("channelmedia: object %s is not an image (detected %s)", object, ct)
-	}
 	return b, ct, true, nil
 }
 
@@ -115,9 +136,9 @@ func safeConvSegment(convID string) string {
 	return b.String()
 }
 
-// extFor picks a safe image extension from the filename, falling back to the
+// imageExt picks a safe image extension from the filename, falling back to the
 // MIME type, then ".jpg".
-func extFor(filename, mime string) string {
+func imageExt(filename, mime string) string {
 	lower := strings.ToLower(strings.TrimSpace(filename))
 	for _, e := range []string{".png", ".jpg", ".jpeg", ".gif", ".webp"} {
 		if strings.HasSuffix(lower, e) {
@@ -135,4 +156,23 @@ func extFor(filename, mime string) string {
 		return ".jpg"
 	}
 	return ".jpg"
+}
+
+// fileExt preserves the original filename's extension for non-image
+// attachments so the downloaded file keeps a usable type; unknown/empty
+// extensions default to ".bin".
+func fileExt(filename string) string {
+	base := path.Base(strings.ReplaceAll(strings.TrimSpace(filename), "\\", "/"))
+	ext := path.Ext(base)
+	// Only keep a short, alphanumeric extension (no traversal/odd chars).
+	ext = strings.ToLower(ext)
+	if len(ext) < 2 || len(ext) > 10 {
+		return ".bin"
+	}
+	for _, r := range ext[1:] {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			return ".bin"
+		}
+	}
+	return ext
 }

@@ -74,11 +74,12 @@ type UploadSaver interface {
 	SaveUploadBytes(ctx context.Context, conversationID, filename string, data []byte, mime string) (string, error)
 }
 
-// ChannelMediaOpener serves a previously persisted inbound channel image.
-// found=false (with nil error) means the image does not exist; it is distinct
-// from a backend failure. Implemented by internal/channelmedia.Store.
+// ChannelMediaOpener serves a previously persisted inbound channel attachment
+// (an inline image or a downloadable file). found=false (with nil error) means
+// the object does not exist; it is distinct from a backend failure. Implemented
+// by internal/channelmedia.Store.
 type ChannelMediaOpener interface {
-	OpenImage(ctx context.Context, conversationID, object string) (data []byte, mime string, found bool, err error)
+	OpenMedia(ctx context.Context, conversationID, object string) (data []byte, mime string, found bool, err error)
 }
 
 type Server struct {

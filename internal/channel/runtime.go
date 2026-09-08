@@ -167,23 +167,46 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return fmt.Errorf("channel: create run: %w", err)
 	}
 
-	// Persist inbound images for inline web display and append an image
-	// reference to the stored user bubble. Best-effort: a blob failure must
-	// not drop the run/reply (the model still received the image via parts
-	// when vision is enabled). The references are NOT added to run.Input
-	// (the LLM gets image bytes via userParts, not a URL).
+	// Persist inbound attachments for the web UI and append references to the
+	// stored user bubble: images render inline, other files (docx/pdf/zip/…
+	// including types the model cannot parse) are kept for download.
+	// Best-effort: a blob failure must not drop the run/reply (the model still
+	// received extracted text / image bytes via userParts). References are NOT
+	// added to run.Input (the LLM gets content via userParts, not URLs).
 	bubbleContent := displayText
-	if r.Messages != nil {
-		if r.Media != nil && len(images) > 0 {
-			for _, img := range images {
-				u, _, serr := r.Media.SaveInboundImage(ctx, convID, img.Filename, img.ImageMIME, img.ImageBytes)
-				if serr != nil {
-					log.Printf("channel: persist inbound image %s: %v", img.Filename, serr)
-					continue
-				}
-				bubbleContent += "\n![图片](" + u + ")"
+	if r.Messages != nil && r.Media != nil {
+		for _, img := range images {
+			u, _, serr := r.Media.SaveInboundImage(ctx, convID, img.Filename, img.ImageMIME, img.ImageBytes)
+			if serr != nil {
+				log.Printf("channel: persist inbound image %s: %v", img.Filename, serr)
+				continue
 			}
+			bubbleContent += "\n![图片](" + u + ")"
 		}
+		// Persist the original bytes of every non-image attachment so the
+		// operator can open/download it even when its contents were not (or
+		// only partially) extracted for the model.
+		for _, f := range in.Files {
+			if strings.HasPrefix(strings.TrimSpace(f.MIME), "image/") {
+				continue // images handled above (thumbnail-capped)
+			}
+			name := strings.TrimSpace(f.Name)
+			if name == "" {
+				name = "file"
+			}
+			u, _, serr := r.Media.SaveInboundFile(ctx, convID, name, f.MIME, f.Data)
+			if serr != nil {
+				log.Printf("channel: persist inbound file %s: %v", name, serr)
+				continue
+			}
+			bubbleContent += "\n[file:" + name + "](" + u + ")"
+		}
+		_, _ = r.Messages.Append(convID, conversation.Message{
+			Role:    conversation.RoleUser,
+			Content: bubbleContent,
+			RunID:   runRec.ID,
+		})
+	} else if r.Messages != nil {
 		_, _ = r.Messages.Append(convID, conversation.Message{
 			Role:    conversation.RoleUser,
 			Content: bubbleContent,

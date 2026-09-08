@@ -37,9 +37,9 @@ func TestSaveAndOpenImageRoundTrip(t *testing.T) {
 		t.Fatalf("object = %q, want .png extension", obj)
 	}
 
-	got, mime, found, err := s.OpenImage(ctx, conv, obj)
+	got, mime, found, err := s.OpenMedia(ctx, conv, obj)
 	if err != nil || !found {
-		t.Fatalf("OpenImage found=%v err=%v", found, err)
+		t.Fatalf("OpenMedia found=%v err=%v", found, err)
 	}
 	if mime != "image/png" {
 		t.Fatalf("mime = %q, want image/png", mime)
@@ -49,36 +49,55 @@ func TestSaveAndOpenImageRoundTrip(t *testing.T) {
 	}
 }
 
-func TestOpenImageMissing(t *testing.T) {
+func TestOpenMediaMissing(t *testing.T) {
 	s := newTestStore(t)
-	_, _, found, err := s.OpenImage(context.Background(), "c", "doesnotexist.png")
+	_, _, found, err := s.OpenMedia(context.Background(), "c", "doesnotexist.png")
 	if err != nil {
-		t.Fatalf("missing image must not error: %v", err)
+		t.Fatalf("missing object must not error: %v", err)
 	}
 	if found {
 		t.Fatal("found=true for missing object")
 	}
 }
 
-func TestOpenImageRejectsTraversal(t *testing.T) {
+func TestOpenMediaRejectsTraversal(t *testing.T) {
 	s := newTestStore(t)
 	for _, bad := range []string{"../x.png", "a/b.png", "..", ".", "x\\y.png"} {
-		if _, _, _, err := s.OpenImage(context.Background(), "c", bad); err == nil {
+		if _, _, _, err := s.OpenMedia(context.Background(), "c", bad); err == nil {
 			t.Fatalf("object %q must be rejected", bad)
 		}
 	}
 }
 
-func TestOpenImageRejectsNonImage(t *testing.T) {
+func TestSaveAndOpenFileDownload(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	// Save plain text bytes under a .png name; detection must flag it.
-	_, obj, err := s.SaveInboundImage(ctx, "c", "note.png", "image/png", []byte("just plain text, not an image"))
+	docx := []byte{0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0} // ZIP/OOXML magic
+	url, obj, err := s.SaveInboundFile(ctx, "weixin:a:p", "黄山三日行程.docx",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx)
 	if err != nil {
-		t.Fatalf("save: %v", err)
+		t.Fatalf("SaveInboundFile: %v", err)
 	}
-	if _, _, _, err := s.OpenImage(ctx, "c", obj); err == nil {
-		t.Fatal("non-image bytes must be rejected on open")
+	if !strings.HasSuffix(obj, ".docx") {
+		t.Fatalf("object = %q, want .docx extension preserved for download", obj)
+	}
+	if !strings.HasPrefix(url, "/v0/channels/media/") {
+		t.Fatalf("url = %q", url)
+	}
+	got, _, found, err := s.OpenMedia(ctx, "weixin:a:p", obj)
+	if err != nil || !found {
+		t.Fatalf("OpenMedia found=%v err=%v", found, err)
+	}
+	if string(got) != string(docx) {
+		t.Fatal("file bytes mismatch")
+	}
+}
+
+func TestSaveInboundFileRejectsOversize(t *testing.T) {
+	s := newTestStore(t)
+	big := make([]byte, MaxFileBytes+1)
+	if _, _, err := s.SaveInboundFile(context.Background(), "c", "big.bin", "application/octet-stream", big); err == nil {
+		t.Fatal("oversize file must be rejected")
 	}
 }
 

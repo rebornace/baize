@@ -3,14 +3,16 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 )
 
-// handleChannelMedia serves an inbound channel image (e.g. a WeChat photo)
-// for inline display in the web UI. The conversation id is in the path so the
-// existing conversation ACL applies: only an admin or the owning operator may
-// fetch it. Bytes are streamed (the frontend fetches with auth headers and
-// turns them into an object URL, the same pattern as artifact pages), so no
-// token is placed in the URL.
+// handleChannelMedia serves an inbound channel attachment (a WeChat photo, or a
+// file such as a .docx/.pdf/.zip) for inline display or download in the web UI.
+// The conversation id is in the path so the existing conversation ACL applies:
+// only an admin or the owning operator may fetch it. The frontend fetches with
+// auth headers (a plain <img>/<a> cannot send the Bearer token) and turns the
+// bytes into an object URL, so no token is placed in the URL. Images are served
+// inline; any other type is served as an attachment download.
 func (s *Server) handleChannelMedia(w http.ResponseWriter, r *http.Request) {
 	if s.ChannelMedia == nil {
 		writeError(w, http.StatusNotFound, "media_not_found", "channel media is not configured")
@@ -30,17 +32,27 @@ func (s *Server) handleChannelMedia(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	data, mime, found, err := s.ChannelMedia.OpenImage(r.Context(), convID, object)
+	data, mime, found, err := s.ChannelMedia.OpenMedia(r.Context(), convID, object)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "open media failed")
 		return
 	}
 	if !found {
-		writeError(w, http.StatusNotFound, "media_not_found", "image not found")
+		writeError(w, http.StatusNotFound, "media_not_found", "attachment not found")
 		return
 	}
-	w.Header().Set("Content-Type", mime)
+	// object is "<uuid><ext>"; use its base name as a safe download fallback.
+	safeName := object
+	if i := strings.LastIndexByte(object, '/'); i >= 0 {
+		safeName = object[i+1:]
+	}
 	w.Header().Set("Cache-Control", "private, max-age=300")
+	if strings.HasPrefix(mime, "image/") {
+		w.Header().Set("Content-Type", mime)
+	} else {
+		w.Header().Set("Content-Type", mime)
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+safeName+"\"")
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
