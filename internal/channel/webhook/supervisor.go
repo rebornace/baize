@@ -36,8 +36,8 @@ type supervisor struct {
 	compatible func(ctx context.Context) bool
 
 	// gracefulShutdown, when set, asks a baize-owned child to exit gracefully
-	// (HMAC /admin/shutdown) before the force-kill fallback. Reserved for the
-	// graceful-shutdown task; nil today makes stop() force-kill only.
+	// (HMAC /admin/shutdown) before the SIGTERM/force-kill fallbacks. Wired by
+	// channel Bootstrap; nil makes terminate() skip straight to escalation.
 	gracefulShutdown func(ctx context.Context) error
 
 	// lifecycleCtx bounds the watch goroutine and backoff loop; cancelled on
@@ -60,8 +60,9 @@ type supervisor struct {
 	backingOff  bool
 	lastExit    string
 	backoff     func(failStreak int) time.Duration
-	// grace is the window allowed for a graceful child shutdown before the
-	// force-kill fallback. Reserved for the graceful-shutdown task.
+	// grace is the window allowed for a graceful child shutdown (HMAC
+	// /admin/shutdown, then POSIX SIGTERM) before the force-kill fallback.
+	// Zero defaults to 5s in terminate().
 	grace time.Duration
 	// wg tracks every live watchdog goroutine (watch + its respawnLoop).
 	// stop()/terminate() wait on it (bounded via waitWatchQuiet) so that an
@@ -121,6 +122,22 @@ func (s *supervisor) start(ctx context.Context) error {
 			return nil
 		}
 		return fmt.Errorf("webhook supervisor: %s already serves an adapter that fails HMAC auth; stop the stale weixin-adapter process (it holds an old secret) and restart", s.healthzURL)
+	}
+	// Retire the previous watchdog generation before spawning a new one.
+	// StartProcess can land while the old watchdog is parked in a crash
+	// backoff (respawnLoop alive, s.cmd nil, no listener). Overwriting stopCh
+	// here would leak that goroutine: its stopCh never closes, and setting
+	// wantRunning=true suppresses its !wantRunning cleanup branch — both
+	// generations would then race to spawn on the same port, and the old one
+	// becomes unreachable to any future terminate() (a permanent leak). Tear
+	// it down exactly like an intentional stop (close stopCh, kill a live
+	// child, join watch+respawnLoop via waitWatchQuiet). An adopted orphan
+	// never created a stopCh, so this is a no-op for it (and an adopted
+	// orphan is healthy, so it takes the adopt branch above anyway).
+	if s.stopCh != nil {
+		if err := s.terminate(ctx); err != nil {
+			return fmt.Errorf("webhook supervisor: retire previous watchdog: %w", err)
+		}
 	}
 	s.mu.Lock()
 	s.adopted = false
@@ -370,15 +387,16 @@ func (s *supervisor) adapterListening(ctx context.Context) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// stop intentionally halts the supervised child. It must declare
-// wantRunning=false (and close stopCh) BEFORE killing: otherwise the watchdog
-// reaping the killed process would classify the exit as a crash and respawn.
-// It only sends Process.Kill — process reaping (cmd.Wait) belongs exclusively
-// to the watch goroutine (os/exec: Wait may be called at most once per Cmd) —
-// then waits for watch to reap. If the watchdog is parked in backoff (no live
-// cmd, ownsProcess already false) there is nothing to kill. Today this is
-// force-kill semantics; a graceful /admin/shutdown fallback is introduced by
-// the graceful-shutdown task.
+// stop intentionally halts the supervised child with force-kill semantics
+// (no graceful /admin/shutdown). It must declare wantRunning=false (and close
+// stopCh) BEFORE killing: otherwise the watchdog reaping the killed process
+// would classify the exit as a crash and respawn. It only sends Process.Kill —
+// process reaping (cmd.Wait) belongs exclusively to the watch goroutine
+// (os/exec: Wait may be called at most once per Cmd) — then waits for watch
+// to reap. If the watchdog is parked in backoff (no live cmd, ownsProcess
+// already false) there is nothing to kill. Channel.Stop uses terminate()
+// (graceful escalation) instead; stop() remains for callers that want the
+// immediate force-kill path.
 func (s *supervisor) stop(ctx context.Context) error {
 	_ = ctx
 	s.mu.Lock()
@@ -441,7 +459,14 @@ func (s *supervisor) terminate(ctx context.Context) error {
 		if quiet <= 0 {
 			quiet = 3 * time.Second
 		}
-		s.waitWatchQuiet(quiet)
+		// An adopted orphan has no watch goroutine (wg already zero), so this
+		// returns true at once; a parked backoff/in-flight-spawn watchdog must
+		// unwind within the bound. Surface a timeout instead of silently
+		// returning: StopProcess/RestartProcess propagate it, Channel.Stop
+		// ignores errors best-effort.
+		if !s.waitWatchQuiet(quiet) {
+			return fmt.Errorf("webhook supervisor: watchdog did not stop within %s (adapter process/backoff loop not quiescent)", quiet)
+		}
 		return nil
 	}
 	gctx, cancel := context.WithTimeout(ctx, grace)
@@ -449,14 +474,18 @@ func (s *supervisor) terminate(ctx context.Context) error {
 	if gs != nil {
 		_ = gs(gctx)
 		if s.waitReaped(gctx) {
-			s.waitWatchQuiet(3 * time.Second)
+			if !s.waitWatchQuiet(3 * time.Second) {
+				return fmt.Errorf("webhook supervisor: watchdog did not stop after graceful shutdown")
+			}
 			return nil
 		}
 	}
 	if runtime.GOOS != "windows" {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 		if s.waitReaped(gctx) {
-			s.waitWatchQuiet(3 * time.Second)
+			if !s.waitWatchQuiet(3 * time.Second) {
+				return fmt.Errorf("webhook supervisor: watchdog did not stop after SIGTERM")
+			}
 			return nil
 		}
 	}

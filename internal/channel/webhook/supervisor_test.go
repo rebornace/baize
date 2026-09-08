@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -710,5 +711,103 @@ func TestTerminateCancelsInFlightSpawn(t *testing.T) {
 		t.Fatal("watchdog goroutine leak: wg did not reach zero after terminate")
 	}
 	// Port must release and never rebound (no transient orphan).
+	waitPortStaysDown(t, sup.healthzURL, 800*time.Millisecond)
+}
+
+// TestStartDuringBackoffRetiresOldWatchdog: a management-plane StartProcess
+// can land while the previous watchdog generation is parked in a crash
+// backoff (respawnLoop alive, s.cmd nil, no listener). start() must retire
+// that generation — close its stopCh and join the goroutine — BEFORE spawning
+// a fresh child. Otherwise the old respawnLoop leaks (its stopCh never
+// closes), later spawns a second process racing the new child for the port,
+// and becomes unreachable to any future terminate() (waitWatchQuiet never
+// reaches zero). The first backoff is made effectively infinite so the old
+// generation is deterministically parked; later (new-generation) backoffs stay
+// short so its crash-restart cycle remains fast.
+func TestStartDuringBackoffRetiresOldWatchdog(t *testing.T) {
+	exe := buildFakeCrashAdapter(t)
+	addr := "127.0.0.1:18082"
+	lifeCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	var backoffCalls atomic.Int32
+	sup := &supervisor{
+		command:      exe,
+		healthzURL:   "http://" + addr + "/healthz",
+		env:          []string{"FAKE_ADDR=" + addr},
+		timeout:      5 * time.Second,
+		lifecycleCtx: lifeCtx,
+		backoff: func(int) time.Duration {
+			if backoffCalls.Add(1) == 1 {
+				return time.Hour // gen1 parks; the fix must unpark it via stopCh
+			}
+			return 20 * time.Millisecond // gen2 keeps restarting quickly
+		},
+	}
+	if err := sup.start(context.Background()); err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	// Wait for gen1 to crash and park its respawnLoop in the long backoff.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.restarting() && !sup.ownsProcess() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !sup.restarting() || sup.ownsProcess() {
+		t.Fatalf("expected gen1 parked in backoff (restarting=%v owns=%v)", sup.restarting(), sup.ownsProcess())
+	}
+	// Simulate StartProcess while the old watchdog is parked. The fix joins
+	// the old generation first, so this must return promptly — NOT after the
+	// hour-long backoff.
+	done := make(chan error, 1)
+	started := time.Now()
+	go func() { done <- sup.start(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("second start: %v", err)
+		}
+		if elapsed := time.Since(started); elapsed > 15*time.Second {
+			t.Fatalf("second start took %v: old watchdog was not joined (leaked stopCh)", elapsed)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("second start deadlocked: old watchdog generation not retired before spawn")
+	}
+	if !healthzReachable2(sup.healthzURL) {
+		t.Fatal("healthz not reachable after second start")
+	}
+	// The new generation's watchdog must still restart crashed children.
+	first := sup.restartCount()
+	deadline = time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.restartCount() >= first+2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if sup.restartCount() < first+2 {
+		t.Fatalf("new-generation watchdog did not respawn after crashes: restarts=%d (was %d)", sup.restartCount(), first)
+	}
+	// Final terminate must quiesce EVERY watchdog goroutine within the bound.
+	// A leaked old generation (parked on its never-closed stopCh for an hour)
+	// makes waitWatchQuiet time out and terminate return an error.
+	termDone := make(chan error, 1)
+	termStart := time.Now()
+	go func() { termDone <- sup.terminate(context.Background()) }()
+	select {
+	case err := <-termDone:
+		if err != nil {
+			t.Fatalf("terminate after restart: %v", err)
+		}
+		if elapsed := time.Since(termStart); elapsed > 10*time.Second {
+			t.Fatalf("terminate took %v: watchdog goroutine leak (old generation parked on leaked stopCh)", elapsed)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("terminate deadlocked: leaked old watchdog generation never quiesced")
+	}
+	if !sup.waitWatchQuiet(time.Second) {
+		t.Fatal("watchdog goroutine leak after terminate: wg did not reach zero")
+	}
 	waitPortStaysDown(t, sup.healthzURL, 800*time.Millisecond)
 }
