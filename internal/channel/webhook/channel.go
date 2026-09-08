@@ -58,6 +58,10 @@ type Channel struct {
 	// sup hosts the out-of-process adapter for autostart instances; nil when
 	// the adapter is deployed independently (admin_url only).
 	sup *supervisor
+	// lifeCtx/lifeCancel bound the supervisor watchdog to baize's lifetime;
+	// cancelled in Stop() so a parked backoff loop exits without respawning.
+	lifeCtx    context.Context
+	lifeCancel context.CancelFunc
 	// procMu serializes process-level control (start/stop/restart) driven by
 	// the management plane so concurrent operators cannot spawn/kill races.
 	procMu sync.Mutex
@@ -134,14 +138,18 @@ func (c *Channel) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop asks the adapter to stop its polling and kills any supervised child
-// process. Errors are best-effort: shutdown proceeds regardless.
+// Stop asks the adapter to stop its polling and gracefully terminates any
+// supervised child process (HMAC /admin/shutdown -> SIGTERM -> force kill).
+// Errors are best-effort: shutdown proceeds regardless.
 func (c *Channel) Stop(ctx context.Context) error {
 	if c.admin != nil {
 		_ = c.admin.Stop(ctx)
 	}
 	if c.sup != nil {
-		_ = c.sup.stop(ctx)
+		if c.lifeCancel != nil {
+			c.lifeCancel()
+		}
+		_ = c.sup.terminate(ctx)
 	}
 	return nil
 }
@@ -224,6 +232,16 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 					return false
 				}
 				return true
+			}
+		}
+		// Bound the watchdog to baize's lifetime and wire the graceful
+		// shutdown path: terminate() hits the HMAC /admin/shutdown endpoint
+		// before escalating to SIGTERM/force kill.
+		c.lifeCtx, c.lifeCancel = context.WithCancel(context.Background())
+		sup.lifecycleCtx = c.lifeCtx
+		if c.admin != nil {
+			sup.gracefulShutdown = func(ctx context.Context) error {
+				return c.admin.Shutdown(ctx)
 			}
 		}
 		c.sup = sup

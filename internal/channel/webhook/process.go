@@ -57,13 +57,13 @@ func (c *Channel) StopProcess(ctx context.Context) error {
 		return nil
 	}
 	if c.sup.ownsProcess() {
-		err := c.sup.stop(ctx)
+		err := c.sup.terminate(ctx)
 		c.sup.waitUntilDown(ctx, 8*time.Second)
 		c.setManualStop(true)
 		return err
 	}
 	// Adopted orphan: baize has no handle; ask the process to exit itself.
-	if c.admin != nil && c.sup.adopted {
+	if c.admin != nil && c.sup.isAdopted() {
 		if err := c.admin.Shutdown(ctx); err != nil {
 			return fmt.Errorf("webhook %s: shutdown adopted adapter: %w", c.cfg.Name, err)
 		}
@@ -93,8 +93,8 @@ func (c *Channel) RestartProcess(ctx context.Context) error {
 	}
 	switch {
 	case c.sup.ownsProcess():
-		_ = c.sup.stop(ctx)
-	case c.admin != nil && c.sup.adopted:
+		_ = c.sup.terminate(ctx)
+	case c.admin != nil && c.sup.isAdopted():
 		_ = c.admin.Shutdown(ctx)
 	}
 	c.sup.waitUntilDown(ctx, 10*time.Second)

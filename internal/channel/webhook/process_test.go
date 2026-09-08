@@ -115,7 +115,24 @@ func TestChannelStopAdoptedOrphanShutsDown(t *testing.T) {
 	if !adm.shutdown {
 		t.Fatal("expected admin.Shutdown to be called for an adopted orphan")
 	}
-	if c.sup.adopted || c.sup.cmd != nil {
+	if c.sup.isAdopted() || c.sup.cmd != nil {
 		t.Fatal("supervisor state should be reset for respawn after stop")
+	}
+}
+
+// TestStatusReportsRestartingWhileBackingOff: while the watchdog is parked in
+// a crash backoff (no live child), Status() must report {Running:false,
+// Reason:"restarting"} without probing the dead admin port.
+func TestStatusReportsRestartingWhileBackingOff(t *testing.T) {
+	c := &Channel{
+		cfg:      instanceConfig{Name: "weixin"},
+		settings: channel.ChannelSettings{Enabled: true, Allowlist: []string{}},
+		admin:    &fakeAdmin{},
+		sup:      &supervisor{},
+	}
+	c.sup.backingOff = true // watchdog parked in backoff
+	st := c.Status()
+	if st.Running || st.Reason != "restarting" {
+		t.Fatalf("expected {Running:false Reason:restarting}, got %+v", st)
 	}
 }

@@ -174,6 +174,10 @@ func (c *Channel) Status() channel.AdapterStatus {
 		// dead port and mislabel it "start_failed".
 		return channel.AdapterStatus{Running: false, Reason: "stopped"}
 	}
+	if c.sup != nil && c.sup.restarting() {
+		// Watchdog is parked in a backoff/respawn loop after a crash.
+		return channel.AdapterStatus{Running: false, Reason: "restarting"}
+	}
 	if c.admin == nil {
 		// No adapter management plane: nothing to probe; report running when
 		// enabled (third-party adapters manage their own lifecycle).
