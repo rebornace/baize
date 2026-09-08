@@ -111,7 +111,11 @@ func openFromConfig(name string, m map[string]string) (*Channel, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Channel{cfg: cfg, sender: newSender(cfg)}, nil
+	c := &Channel{cfg: cfg}
+	// Sender holds a pointer to the live config so the secret finalized later
+	// in Bootstrap (resolveSecret) is used when signing outbound.
+	c.sender = newSender(&c.cfg)
+	return c, nil
 }
 
 func (c *Channel) Name() string   { return c.cfg.Name }

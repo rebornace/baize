@@ -13,8 +13,8 @@ import (
 	"github.com/rebornace/baize/internal/webhooksig"
 )
 
-func testCfg(url string) instanceConfig {
-	return instanceConfig{Name: "t", Source: "feishu", Account: "acc", Secret: "sec", OutboundSecret: "sec", OutboundURL: url, Assignee: "a"}
+func testCfg(url string) *instanceConfig {
+	return &instanceConfig{Name: "t", Source: "feishu", Account: "acc", Secret: "sec", OutboundSecret: "sec", OutboundURL: url, Assignee: "a"}
 }
 
 func TestOutboundPostSignsAndDelivers(t *testing.T) {
@@ -78,6 +78,41 @@ func TestOutboundNoRetryOn4xx(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("4xx must not retry, got %d calls", calls)
+	}
+}
+
+// TestOutboundUsesSecretAfterResolution guards the regression where the sender
+// held a by-value copy of the config from openFromConfig, so a secret finalized
+// later in Bootstrap (resolveSecret reusing persisted secret.key) was not used
+// for signing and every outbound call 401'd while admin calls succeeded.
+func TestOutboundUsesSecretAfterResolution(t *testing.T) {
+	var gotSig, gotTS string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotSig = r.Header.Get(HeaderSignature)
+		gotTS = r.Header.Get(HeaderTimestamp)
+		_ = webhooksig.Verify("persisted-secret", gotTS, body, gotSig, time.Now(), 300*time.Second)
+		var msg OutboundMessage
+		_ = json.Unmarshal(body, &msg)
+		// Echo whether the signature verifies against the PERSISTED secret.
+		if err := webhooksig.Verify("persisted-secret", gotTS, body, gotSig, time.Now(), 300*time.Second); err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := testCfg(srv.URL)
+	s := newSender(cfg)
+	// Simulate resolveSecret() swapping the generated secret for the persisted
+	// one AFTER the sender was constructed.
+	cfg.Secret = "persisted-secret"
+	cfg.OutboundSecret = "persisted-secret"
+
+	err := s.post(context.Background(), OutboundMessage{Kind: "assistant", Account: "acc", Peer: Peer{ID: "u1"}, Text: "hi"})
+	if err != nil {
+		t.Fatalf("outbound must sign with the resolved secret: %v", err)
 	}
 }
 

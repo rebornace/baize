@@ -39,34 +39,64 @@ var inboundPrefix = func() string {
 var inboundSeq uint64
 
 // startPolling launches the iLink long-poll loop. It returns errLoginRequired
-// when no credentials are present. Idempotent: a no-op when already polling.
+// when no credentials are present. It is idempotent for an unchanged token
+// (a no-op when already polling), but restarts the loop when the credential
+// has changed — e.g. a fresh QR scan while a previous loop is still running
+// with an expired token.
 func (a *Adapter) startPolling() error {
 	a.mu.Lock()
-	if a.polling {
-		a.mu.Unlock()
-		return nil
-	}
 	token := a.token
 	if strings.TrimSpace(token) == "" || strings.TrimSpace(a.account) == "" {
 		a.mu.Unlock()
 		return errLoginRequired
 	}
+	if a.polling && a.pollToken == token {
+		a.mu.Unlock()
+		return nil
+	}
+	// Either idle or polling with a STALE token: capture the old loop's handle
+	// and cancel it under the lock, then join it OUTSIDE the lock (the loop
+	// takes a.mu via currentAccount/currentToken, so waiting under the lock
+	// would deadlock).
+	var oldDone chan struct{}
+	if a.cancel != nil {
+		a.cancel()
+		oldDone = a.pollDone
+		a.cancel = nil
+		a.pollDone = nil
+		a.polling = false
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	a.cancel = cancel
+	a.pollDone = done
 	a.polling = true
-	a.wg.Add(1)
+	a.pollToken = token
 	a.mu.Unlock()
-	go a.pollLoop(ctx, token)
+
+	if oldDone != nil {
+		<-oldDone // let the stale loop exit before the new one starts
+	}
+	go a.runPollLoop(ctx, token, done)
 	return nil
 }
 
+// runPollLoop wraps pollLoop and closes done when it exits.
+func (a *Adapter) runPollLoop(ctx context.Context, token string, done chan struct{}) {
+	defer close(done)
+	a.pollLoop(ctx, token)
+}
+
 func (a *Adapter) pollLoop(ctx context.Context, token string) {
-	defer a.wg.Done()
 	wait := a.emptyWait
 	if wait <= 0 {
 		wait = defaultEmptyPollWait
 	}
 	cursor := ""
+	// Rate-limit GetUpdates error logs: a persistent failure (expired token,
+	// network outage) would otherwise spam the log every backoff tick. We log
+	// the first error and then at most once per 30s, while still retrying.
+	var lastErrLog time.Time
 	for {
 		if ctx.Err() != nil {
 			return
@@ -76,6 +106,10 @@ func (a *Adapter) pollLoop(ctx context.Context, token string) {
 			if ctx.Err() != nil {
 				return
 			}
+			if now := time.Now(); now.Sub(lastErrLog) >= 30*time.Second {
+				log.Printf("weixin-adapter: poll updates failing: %v (retrying; if persistent, re-scan QR login)", err)
+				lastErrLog = now
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -83,6 +117,7 @@ func (a *Adapter) pollLoop(ctx context.Context, token string) {
 			}
 			continue
 		}
+		lastErrLog = time.Time{} // reset after a successful poll
 		if next != "" {
 			cursor = next
 		}

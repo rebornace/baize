@@ -29,8 +29,13 @@ type Adapter struct {
 	account string
 	token   string
 	polling bool
-	cancel  func() // stops the poll loop
-	wg      sync.WaitGroup
+	// pollToken is the credential the running poll loop was started with. The
+	// loop captures its token once at launch; if a re-scan replaces a.token
+	// while polling, startPolling must detect the change and restart the loop,
+	// otherwise the stale token makes GetUpdates fail forever (silently).
+	pollToken string
+	cancel    func()        // stops the current poll loop
+	pollDone  chan struct{} // closed when the current poll loop exits (nil when idle)
 }
 
 func (a *Adapter) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -76,14 +81,23 @@ func (a *Adapter) setCredentials(account, token string) {
 // to exit. It is a safe no-op when nothing is polling. The WaitGroup is
 // awaited OUTSIDE the lock (the poll loop takes a.mu via currentAccount),
 // so cancelling under the lock and waiting afterward cannot deadlock.
+// stopPolling cancels the running poll loop if any and waits for the goroutine
+// to exit. It is a safe no-op when nothing is polling. The loop is joined via
+// its done channel OUTSIDE the lock (the poll loop takes a.mu via
+// currentAccount/currentToken), so cancelling under the lock and waiting
+// afterward cannot deadlock.
 func (a *Adapter) stopPolling() {
 	a.mu.Lock()
 	cancel := a.cancel
+	done := a.pollDone
 	a.cancel = nil
+	a.pollDone = nil
 	a.polling = false
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
-	a.wg.Wait()
+	if done != nil {
+		<-done
+	}
 }

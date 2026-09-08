@@ -19,13 +19,18 @@ const (
 	maxOutboundBody  = 1 << 16 // 64KiB drain cap for error responses
 )
 
-// sender posts signed outbound messages to the adapter.
+// sender posts signed outbound messages to the adapter. It holds a pointer to
+// the channel's live config (not a copy): the HMAC secret is finalized in
+// Bootstrap via resolveSecret() (which may replace a freshly generated secret
+// with the persisted one AFTER openFromConfig built this sender). A by-value
+// copy would keep signing with the stale, pre-resolution secret and every
+// outbound call would 401 while admin calls (built later) succeed.
 type sender struct {
-	cfg instanceConfig
+	cfg *instanceConfig
 	hc  *http.Client
 }
 
-func newSender(cfg instanceConfig) *sender {
+func newSender(cfg *instanceConfig) *sender {
 	return &sender{cfg: cfg, hc: &http.Client{Timeout: outboundTimeout}}
 }
 
