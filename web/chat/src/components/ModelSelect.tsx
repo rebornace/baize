@@ -1,9 +1,9 @@
 import type { ModelProfile } from '../api'
-import { modelOptions } from '../modelSelect'
+import { AUTO_MODEL_ID, modelOptions } from '../modelSelect'
 
 export interface ModelSelectProps {
   profiles: ModelProfile[]
-  /** "" means use the server-side default model. */
+  /** AUTO_MODEL_ID (or "") means smart routing; otherwise a concrete id. */
   value: string
   onChange: (id: string) => void
   disabled?: boolean
@@ -11,24 +11,25 @@ export interface ModelSelectProps {
 
 /**
  * Per-message model picker for the chat composer. Rendered only when profiles
- * are available; the first option ("") always means the default model so an
- * explicit id is sent solely for a deliberate choice.
+ * are available. The first option is "智能路由 (Auto)" (smart routing); every
+ * configured profile is a manual choice that pins that exact model.
  */
 export function ModelSelect({ profiles, value, onChange, disabled }: ModelSelectProps) {
   if (profiles.length === 0) return null
   const options = modelOptions(profiles)
+  const selected = value.trim() === '' ? AUTO_MODEL_ID : value
   return (
     <label className="chat-model-row">
       <span className="chat-model-label">模型</span>
       <select
         className="chat-model-select"
-        value={value}
+        value={selected}
         disabled={disabled}
         aria-label="选择本次消息使用的模型"
         onChange={(e) => onChange(e.target.value)}
       >
         {options.map((o) => (
-          <option key={o.value || 'default'} value={o.value}>
+          <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}

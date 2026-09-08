@@ -40,7 +40,7 @@ import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
 import { useGate } from '../gateContext'
-import { buildRunOptions } from '../modelSelect'
+import { buildRunOptions, visionGate } from '../modelSelect'
 import { useStickToBottom } from '../useStickToBottom'
 
 
@@ -437,16 +437,23 @@ export function ChatPage() {
     setError(null)
     setStatus('发送中…')
 
-    // Build attachments from selected files. Image attachments require a
-    // vision-capable model; when supports_vision is false we reject up-front
-    // (mirrors the server's vision_unsupported check) so no run is created.
+    // Build attachments from selected files. Image attachments are gated by
+    // the active model choice: Auto routes to a vision model when available,
+    // while a manual pick is honored exactly (a text-only manual choice on an
+    // image turn is rejected up-front rather than silently rerouted).
     let attachments: Attachment[] | undefined
     if (files.length > 0) {
       try {
         const built = await Promise.all(files.map((f) => fileToAttachment(f)))
-        if (!supportsVision && built.some((a) => isImageAttachment(a.media_type))) {
+        const gate = visionGate(
+          modelProfiles,
+          selectedModelId,
+          built.some((a) => isImageAttachment(a.media_type)),
+          supportsVision,
+        )
+        if (!gate.allowed) {
           setBusy(false)
-          setError('当前模型不支持图片附件，请移除图片或切换到支持视觉的模型。')
+          setError(gate.message ?? '当前模型不支持图片附件。')
           setStatus('')
           return
         }
@@ -499,7 +506,7 @@ export function ChatPage() {
       setBusy(false)
       setLiveRunId(null)
       if (err instanceof ApiError && err.code === 'vision_unsupported') {
-        setError('当前模型不支持图片附件，请移除图片或切换到支持视觉的模型。')
+        setError('所选模型不支持图片附件。请改用「智能路由（Auto）」或带「视觉」标记的模型，或移除图片。')
       } else {
         setError(err instanceof Error ? err.message : String(err))
       }

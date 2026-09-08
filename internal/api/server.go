@@ -498,6 +498,28 @@ func (s *Server) supportsVision() bool {
 	return s.LLM.SupportsVision()
 }
 
+// routingProfiles returns the current model profiles in the compact form the
+// llm router needs. Read live so adding a vision model in Settings takes
+// effect without a restart.
+func (s *Server) routingProfiles() []llm.RoutingProfile {
+	if s.Store == nil {
+		return nil
+	}
+	list, err := s.Store.ListModelProfiles()
+	if err != nil {
+		return nil
+	}
+	out := make([]llm.RoutingProfile, 0, len(list))
+	for _, p := range list {
+		out = append(out, llm.RoutingProfile{
+			ID:             p.ID,
+			SupportsVision: p.SupportsVision,
+			IsDefault:      p.IsDefault,
+		})
+	}
+	return out
+}
+
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"role":         string(controlplane.RoleFrom(r.Context())),
@@ -1476,11 +1498,25 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		s.writeAttachmentError(w, err)
 		return
 	}
-	if len(imageExts) > 0 && !s.supportsVision() {
+	// Model routing. The per-run choice is either "auto" (smart routing — the
+	// default and the only mode for channel inbound) or a concrete profile id
+	// (manual). Auto routes image turns to a vision model when the default is
+	// text-only; a manual choice is always honored exactly and NEVER silently
+	// rerouted, so a manual text-only model on an image turn is rejected with
+	// guidance to pick Auto / a vision model instead.
+	profiles := s.routingProfiles()
+	sel, visionOK := llm.ResolveProfileForImages(
+		llm.NormalizeProfileChoice(body.ModelProfileID),
+		len(imageExts) > 0,
+		s.supportsVision(),
+		profiles,
+	)
+	if len(imageExts) > 0 && !visionOK {
 		writeError(w, http.StatusBadRequest, "vision_unsupported",
-			"model does not support vision; remove image attachments or switch to a vision-capable model")
+			"the selected model does not support vision; switch to 智能路由 (Auto) or a vision-capable model, or remove image attachments")
 		return
 	}
+	modelProfileID := sel.ProfileID
 
 	// Persist attachments to the per-conversation workspace (best-effort:
 	// failures are logged and never block the turn). Saved logical paths are
@@ -1597,7 +1633,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Webhook:        webhookCfg,
 		Passthrough:    passthrough,
 		UserParts:      userParts,
-		ModelProfileID: strings.TrimSpace(body.ModelProfileID),
+		ModelProfileID: modelProfileID,
 	})
 	if err != nil {
 		if err.Error() == "无权访问该会话" {

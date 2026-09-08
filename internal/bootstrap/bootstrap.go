@@ -631,14 +631,42 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 
 	declarative := len(d.cfg.Channels) > 0
 
+	// visionProfileID resolves a vision-capable model profile for inbound
+	// channel messages that carry an image, when the default model is
+	// text-only. Channel inbound has no manual model picker, so it is always
+	// "Auto" mode. Read live on every inbound message so adding/editing a
+	// vision model in Settings takes effect without restart. Returns "" when
+	// no vision profile exists (images then degrade to a text note). The
+	// selection policy is shared with the interactive web path via
+	// llm.PickVisionProfile.
+	visionProfileID := func() string {
+		if d.st == nil {
+			return ""
+		}
+		list, err := d.st.ListModelProfiles()
+		if err != nil {
+			return ""
+		}
+		rp := make([]llm.RoutingProfile, 0, len(list))
+		for _, p := range list {
+			rp = append(rp, llm.RoutingProfile{
+				ID:             p.ID,
+				SupportsVision: p.SupportsVision,
+				IsDefault:      p.IsDefault,
+			})
+		}
+		return llm.PickVisionProfile(rp)
+	}
+
 	router := channel.NewRouter()
 	deps := channel.BuildDeps{
-		Store:          d.st,
-		Meta:           meta,
-		Messages:       d.messages,
-		DefaultAgentID: d.defaultAgentID,
-		Media:          d.channelMedia,
-		SupportsVision: supportsVision,
+		Store:                d.st,
+		Meta:                 meta,
+		Messages:             d.messages,
+		DefaultAgentID:       d.defaultAgentID,
+		Media:                d.channelMedia,
+		SupportsVision:       supportsVision,
+		VisionModelProfileID: visionProfileID,
 		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
 			d.srv.Dispatch(context.Background(), middleware.Job{
 				RunID:     runRec.ID,

@@ -516,6 +516,163 @@ func TestHandleInboundPersistsFileForDownload(t *testing.T) {
 	}
 }
 
+// hasImagePart reports whether parts carry a multimodal image part.
+func hasImagePart(parts []llm.ContentPart) bool {
+	for _, p := range parts {
+		if p.Type == "image" {
+			return true
+		}
+	}
+	return false
+}
+
+// TestHandleInboundRoutesImageToVisionModel: the default model is text-only
+// (SupportsVision=false) but a vision profile exists. An inbound image must be
+// encoded as a multimodal part AND the run pinned to the vision profile so the
+// Switch resolves a vision-capable model for that run.
+func TestHandleInboundRoutesImageToVisionModel(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	rt.SupportsVision = false // default model cannot see images
+	rt.VisionModelProfileID = func() string { return "mp_vision" }
+	var gotParts []llm.ContentPart
+	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
+		gotParts = parts
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "看这张图",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "photo.png",
+			MIME: "image/png",
+			Data: validPNG(t),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	in := runs.lastCreate()
+	if in.ModelProfileID != "mp_vision" {
+		t.Fatalf("ModelProfileID = %q, want mp_vision (image routed to vision model)", in.ModelProfileID)
+	}
+	if !hasImagePart(gotParts) {
+		t.Fatalf("expected an image part for the vision model, got %+v", gotParts)
+	}
+}
+
+// TestHandleInboundTextFileUsesDefaultModel: a docx/text attachment carries no
+// image part, so the run must NOT be pinned to a vision model — it stays on the
+// default model even when a vision profile is available.
+func TestHandleInboundTextFileUsesDefaultModel(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	rt.SupportsVision = false
+	rt.VisionModelProfileID = func() string { return "mp_vision" }
+	var gotParts []llm.ContentPart
+	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
+		gotParts = parts
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "看下这个文档",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "note.txt",
+			MIME: "text/plain",
+			Data: []byte("just some text, no images here"),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	in := runs.lastCreate()
+	if in.ModelProfileID != "" {
+		t.Fatalf("ModelProfileID = %q, want empty (text-only file stays on default model)", in.ModelProfileID)
+	}
+	if hasImagePart(gotParts) {
+		t.Fatalf("text file must not produce an image part: %+v", gotParts)
+	}
+}
+
+// TestHandleInboundNoVisionModelDegradesImage: the default model is text-only
+// and no vision profile exists. The image must be degraded to a text note (no
+// image part) and the run left on the default model, so the message still gets
+// a reply instead of erroring.
+func TestHandleInboundNoVisionModelDegradesImage(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	rt.SupportsVision = false
+	rt.VisionModelProfileID = func() string { return "" } // no vision model
+	var gotParts []llm.ContentPart
+	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
+		gotParts = parts
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "看这张图",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "photo.png",
+			MIME: "image/png",
+			Data: validPNG(t),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	in := runs.lastCreate()
+	if in.ModelProfileID != "" {
+		t.Fatalf("ModelProfileID = %q, want empty (no vision model configured)", in.ModelProfileID)
+	}
+	if hasImagePart(gotParts) {
+		t.Fatalf("image part must be dropped without a vision model: %+v", gotParts)
+	}
+}
+
+// TestHandleInboundDefaultVisionModelNotOverridden: when the default model is
+// already vision-capable (SupportsVision=true), images are sent as multimodal
+// parts but the run is NOT pinned to a separate vision profile (the default
+// handles it).
+func TestHandleInboundDefaultVisionModelNotOverridden(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	rt.SupportsVision = true
+	rt.VisionModelProfileID = func() string { return "mp_vision" }
+	var gotParts []llm.ContentPart
+	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
+		gotParts = parts
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "看这张图",
+		Extras: map[string]string{"account": "acc-1"},
+		Files: []InboundFile{{
+			Name: "photo.png",
+			MIME: "image/png",
+			Data: validPNG(t),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	in := runs.lastCreate()
+	if in.ModelProfileID != "" {
+		t.Fatalf("ModelProfileID = %q, want empty (default model already supports vision)", in.ModelProfileID)
+	}
+	if !hasImagePart(gotParts) {
+		t.Fatalf("expected an image part for the vision-capable default: %+v", gotParts)
+	}
+}
+
 func TestRegisterOpenList(t *testing.T) {
 	ResetForTest()
 	t.Cleanup(ResetForTest)

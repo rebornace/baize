@@ -202,6 +202,237 @@ func TestPostRunImageWithoutVisionReturns400(t *testing.T) {
 	}
 }
 
+// seedVisionProfile inserts a vision-capable model profile and returns its
+// generated id. When isDefault is true it is flagged the default.
+func seedVisionProfile(t *testing.T, st store.Store, name string, isDefault bool) string {
+	t.Helper()
+	p, err := st.UpsertModelProfile(store.ModelProfile{
+		Name:           name,
+		Provider:       "openai_compatible",
+		BaseURL:        "http://example.test/v1",
+		Model:          "vision-model",
+		APIKey:         "sk-test",
+		SupportsVision: true,
+	})
+	if err != nil {
+		t.Fatalf("seed vision profile %q: %v", name, err)
+	}
+	if isDefault {
+		if err := st.SetDefaultModelProfile(p.ID); err != nil {
+			t.Fatalf("set default profile %q: %v", name, err)
+		}
+	}
+	return p.ID
+}
+
+// postRunID extracts run_id from a successful POST /runs response.
+func postRunID(t *testing.T, rr *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode run response: %v body=%s", err, rr.Body.String())
+	}
+	return resp.RunID
+}
+
+// TestPostRunImageAutoRoutesToVisionProfile: the default provider is text-only
+// but a vision profile exists. An image turn must NOT be rejected; the run is
+// created and pinned to the vision profile (smart routing), with the image
+// delivered as a multimodal part.
+func TestPostRunImageAutoRoutesToVisionProfile(t *testing.T) {
+	_, st, llmMock, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+	vid := seedVisionProfile(t, st, "视觉模型", false)
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "look at this",
+		"conversation_id": "c1",
+		"attachments": []map[string]any{
+			{
+				"filename":       "dot.png",
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
+			},
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	// The run must be pinned to the vision profile.
+	runID := postRunID(t, rr)
+	runRec, err := st.GetRun(runID)
+	if err != nil || runRec == nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if got := runRec.ModelProfileID; got != vid {
+		t.Fatalf("run ModelProfileID = %q, want %q (auto-routed)", got, vid)
+	}
+	// Wait for the async run to execute so the LLM actually receives the part.
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+	if _, sawImage, _ := llmMock.snapshot(); !sawImage {
+		t.Fatal("expected the image part to be delivered to the model")
+	}
+}
+
+// seedTextProfile inserts a text-only model profile and returns its id.
+func seedTextProfile(t *testing.T, st store.Store, name string) string {
+	t.Helper()
+	p, err := st.UpsertModelProfile(store.ModelProfile{
+		Name:           name,
+		Provider:       "openai_compatible",
+		BaseURL:        "http://example.test/v1",
+		Model:          "text-model",
+		APIKey:         "sk-test",
+		SupportsVision: false,
+	})
+	if err != nil {
+		t.Fatalf("seed text profile %q: %v", name, err)
+	}
+	return p.ID
+}
+
+// TestPostRunImageManualTextModelRejected: a manual text-only model selection
+// on an image turn is NEVER silently rerouted to a vision model — even when a
+// vision profile exists. It is rejected with vision_unsupported so the user
+// explicitly chooses Auto or a vision model.
+func TestPostRunImageManualTextModelRejected(t *testing.T) {
+	_, st, llmMock, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+	textID := seedTextProfile(t, st, "纯文本模型")
+	_ = seedVisionProfile(t, st, "视觉模型", false) // a vision model exists but must NOT be auto-used
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":         "a1",
+		"input":            "look",
+		"conversation_id":  "c1",
+		"model_profile_id": textID,
+		"attachments": []map[string]any{
+			{
+				"filename":       "dot.png",
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
+			},
+		},
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", rr.Code, rr.Body.String())
+	}
+	code, _ := decodeError(t, rr.Body.Bytes())
+	if code != "vision_unsupported" {
+		t.Fatalf("code=%q want vision_unsupported", code)
+	}
+	if busy, _ := st.HasActiveRun("c1"); busy {
+		t.Fatal("expected no run created for manual text-only model + image")
+	}
+	if _, sawImage, calls := llmMock.snapshot(); sawImage || calls != 0 {
+		t.Fatalf("LLM must not be called on rejected turn: sawImage=%v calls=%d", sawImage, calls)
+	}
+}
+
+// TestPostRunImageAutoExplicitTokenRoutes: sending model_profile_id="auto"
+// behaves like the default auto mode (routes to the vision model).
+func TestPostRunImageAutoExplicitTokenRoutes(t *testing.T) {
+	_, st, llmMock, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+	vid := seedVisionProfile(t, st, "视觉模型", false)
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":         "a1",
+		"input":            "look",
+		"conversation_id":  "c1",
+		"model_profile_id": "auto",
+		"attachments": []map[string]any{
+			{
+				"filename":       "dot.png",
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
+			},
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	runID := postRunID(t, rr)
+	runRec, err := st.GetRun(runID)
+	if err != nil || runRec == nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if got := runRec.ModelProfileID; got != vid {
+		t.Fatalf("run ModelProfileID = %q, want %q (auto routed)", got, vid)
+	}
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+	if _, sawImage, _ := llmMock.snapshot(); !sawImage {
+		t.Fatal("expected the image part to be delivered to the model")
+	}
+}
+
+// TestPostRunImageExplicitVisionProfile: the user explicitly selects a
+// vision-capable profile; that id wins over auto-routing.
+func TestPostRunImageExplicitVisionProfile(t *testing.T) {
+	_, st, _, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+	pick := seedVisionProfile(t, st, "我选的视觉", false)
+	_ = seedVisionProfile(t, st, "另一个视觉", false)
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":         "a1",
+		"input":            "look",
+		"conversation_id":  "c1",
+		"model_profile_id": pick,
+		"attachments": []map[string]any{
+			{
+				"filename":       "dot.png",
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
+			},
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	runRec, err := st.GetRun(postRunID(t, rr))
+	if err != nil || runRec == nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if got := runRec.ModelProfileID; got != pick {
+		t.Fatalf("run ModelProfileID = %q, want %q (explicit choice)", got, pick)
+	}
+}
+
+// TestPostRunTextFileNoVisionModelNoRouting: a text-only attachment with no
+// vision model present must NOT be rejected (no images => no vision gate) and
+// must not pin any model.
+func TestPostRunTextFileNoVisionModelNoRouting(t *testing.T) {
+	_, st, _, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "read this",
+		"conversation_id": "c1",
+		"attachments": []map[string]any{
+			{
+				"filename":       "note.txt",
+				"media_type":     "text/plain",
+				"content_base64": base64.StdEncoding.EncodeToString([]byte("hello text")),
+			},
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	runRec, err := st.GetRun(postRunID(t, rr))
+	if err != nil || runRec == nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if got := runRec.ModelProfileID; got != "" {
+		t.Fatalf("text file run ModelProfileID = %q, want empty (no routing)", got)
+	}
+}
+
 func TestPostRunMarkdownAttachmentInjected(t *testing.T) {
 	_, _, llmMock, h, _ := attachmentsServer(t, false)
 	putAgent(t, h, "a1")

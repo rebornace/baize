@@ -44,6 +44,15 @@ type Runtime struct {
 	// SupportsVision controls whether image attachments become multimodal parts.
 	// When false, images are only named in the display/LLM text (design §5).
 	SupportsVision bool
+	// VisionModelProfileID optionally resolves the id of a vision-capable model
+	// profile used for inbound messages that actually carry images, when the
+	// default model is text-only (SupportsVision=false). It is read on every
+	// inbound message so adding/editing a vision model takes effect without a
+	// restart. Returning "" means no vision model is available: images then
+	// degrade to a text note (the message still gets a reply). When the default
+	// model already supports vision this is ignored and images go to the
+	// default. Text-only attachments (docx/pdf/…) never trigger routing.
+	VisionModelProfileID func() string
 	// AfterCreateRun is an optional hook to start the engine after CreateRun.
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run (approve/reject). Optional;
@@ -153,15 +162,37 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return ErrNoAgent
 	}
 
-	displayText, userParts, images, err := buildInboundContent(in.Text, in.Files, r.SupportsVision)
+	// Smart model routing: driven by the actual payload. When the default
+	// model is text-only but the message carries an image AND a vision-capable
+	// profile exists, pin this run to that vision profile so the llm.Switch
+	// resolves a model that can see the image, and encode the image as a
+	// multimodal part. Text-only attachments (docx/pdf/…) never route. The
+	// resolver is read live so adding a vision model takes effect without a
+	// restart; when it returns "" the image degrades to a text note so the
+	// message still gets a reply.
+	visionProfileID := ""
+	if r.hasImage(in.Files) && !r.SupportsVision && r.VisionModelProfileID != nil {
+		visionProfileID = strings.TrimSpace(r.VisionModelProfileID())
+	}
+	vision := r.SupportsVision || visionProfileID != ""
+
+	displayText, userParts, images, err := buildInboundContent(in.Text, in.Files, vision)
 	if err != nil {
 		return err
+	}
+	// Pin to the vision profile only when an image part is actually delivered
+	// to the model (a corrupt/oversized image degrades to text and must not
+	// force a vision model). Text-only attachments leave this empty.
+	runModelProfileID := ""
+	if visionProfileID != "" && len(images) > 0 {
+		runModelProfileID = visionProfileID
 	}
 
 	runRec, err := r.Runs.CreateRun(store.CreateRunInput{
 		AgentID:        agentID,
 		Input:          displayText,
 		ConversationID: convID,
+		ModelProfileID: runModelProfileID,
 	})
 	if err != nil {
 		return fmt.Errorf("channel: create run: %w", err)
@@ -304,6 +335,18 @@ func (r *Runtime) OutboundExtras(conversationID string) map[string]string {
 		out["account"] = acct
 	}
 	return out
+}
+
+// hasImage reports whether the inbound files include an image attachment
+// (MIME image/*). Routing to a vision model is driven by the actual payload —
+// a docx/pdf that only extracts text never triggers it.
+func (r *Runtime) hasImage(files []InboundFile) bool {
+	for _, f := range files {
+		if strings.HasPrefix(strings.TrimSpace(f.MIME), "image/") {
+			return true
+		}
+	}
+	return false
 }
 
 // buildInboundContent mirrors internal/api handlePostRun attachment assembly:

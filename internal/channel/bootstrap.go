@@ -38,6 +38,11 @@ type BuildDeps struct {
 	// SupportsVision controls whether inbound image attachments become
 	// multimodal LLM parts.
 	SupportsVision bool
+	// VisionModelProfileID optionally resolves the id of a vision-capable
+	// model profile used for inbound image messages when the default model is
+	// text-only. Read per inbound message (hot reload: adding a vision model
+	// takes effect without restart). Returning "" degrades images to text.
+	VisionModelProfileID func() string
 	// AfterCreateRun enqueues the run after inbound CreateRun (engine wiring).
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run after an approve/reject reply.

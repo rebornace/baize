@@ -3,7 +3,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createRun, listModelProfiles, type ModelProfile } from '../api'
 import { ModelSelect } from '../components/ModelSelect'
-import { buildRunOptions, modelOptions } from '../modelSelect'
+import { AUTO_MODEL_ID, buildRunOptions, isAutoChoice, modelOptions, visionGate } from '../modelSelect'
 
 const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>): ModelProfile => ({
   provider: 'openai_compatible',
@@ -30,48 +30,97 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 describe('modelOptions', () => {
-  it('first option is the server default with value ""', () => {
+  it('first option is the Auto smart-router', () => {
     const opts = modelOptions(profiles)
-    expect(opts[0]).toEqual({ value: '', label: '默认：主力' })
+    expect(opts[0]).toEqual({ value: AUTO_MODEL_ID, label: '智能路由（Auto）' })
   })
 
-  it('labels named profiles as name（model）with the profile id as value', () => {
+  it('lists every profile (including the default) as a manual choice', () => {
     const opts = modelOptions(profiles)
-    expect(opts.slice(1)).toEqual([{ value: 'mp_2', label: '廉价（gpt-4o-mini）' }])
+    expect(opts.slice(1)).toEqual([
+      { value: 'mp_1', label: '主力（gpt-4o） · 默认' },
+      { value: 'mp_2', label: '廉价（gpt-4o-mini）' },
+    ])
   })
 
-  it('falls back to a plain 默认模型 label when no profile is marked default', () => {
-    const opts = modelOptions([profile({ id: 'mp_2', name: '廉价', is_default: false })])
-    expect(opts[0]).toEqual({ value: '', label: '默认模型' })
-    expect(opts).toHaveLength(2)
+  it('tags vision-capable profiles', () => {
+    const opts = modelOptions([
+      profile({ id: 'mp_v', name: '视觉', model: 'gpt-4o', supports_vision: true }),
+    ])
+    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 视觉' })
   })
 
-  it('still yields the default option for an empty list', () => {
-    expect(modelOptions([])).toEqual([{ value: '', label: '默认模型' }])
+  it('still yields only the Auto option for an empty profile list', () => {
+    expect(modelOptions([])).toEqual([{ value: AUTO_MODEL_ID, label: '智能路由（Auto）' }])
+  })
+})
+
+describe('isAutoChoice', () => {
+  it('treats empty, whitespace and "auto" as Auto', () => {
+    expect(isAutoChoice('')).toBe(true)
+    expect(isAutoChoice('   ')).toBe(true)
+    expect(isAutoChoice('auto')).toBe(true)
+    expect(isAutoChoice('AUTO')).toBe(true)
+  })
+  it('treats a concrete id as manual', () => {
+    expect(isAutoChoice('mp_1')).toBe(false)
+  })
+})
+
+describe('visionGate', () => {
+  const withVision = [
+    ...profiles,
+    profile({ id: 'mp_3', name: '看图', model: 'gpt-4o', supports_vision: true }),
+  ]
+
+  it('always allows non-image turns', () => {
+    expect(visionGate(profiles, 'mp_2', false, false).allowed).toBe(true)
+  })
+
+  it('Auto mode allows images when a vision profile exists', () => {
+    expect(visionGate(withVision, AUTO_MODEL_ID, true, false).allowed).toBe(true)
+    expect(visionGate(withVision, '', true, false).allowed).toBe(true)
+  })
+
+  it('Auto mode allows images when the default provider is vision-capable', () => {
+    expect(visionGate(profiles, AUTO_MODEL_ID, true, true).allowed).toBe(true)
+  })
+
+  it('Auto mode blocks images only when no vision model exists at all', () => {
+    const r = visionGate(profiles, AUTO_MODEL_ID, true, false)
+    expect(r.allowed).toBe(false)
+    expect(r.message).toContain('视觉模型')
+  })
+
+  it('manual vision model allows images', () => {
+    expect(visionGate(withVision, 'mp_3', true, false).allowed).toBe(true)
+  })
+
+  it('manual text-only model blocks images even when a vision model exists (no reroute)', () => {
+    const r = visionGate(withVision, 'mp_2', true, false)
+    expect(r.allowed).toBe(false)
+    expect(r.message).toContain('智能路由')
   })
 })
 
 describe('buildRunOptions', () => {
-  it('omits modelProfileId when the selection is empty', () => {
+  it('sends the auto sentinel for an empty/auto selection', () => {
     const opts = buildRunOptions('', { webhookUrl: 'https://h', attachments: [] })
-    expect(opts.modelProfileId).toBeUndefined()
-    expect(opts).not.toHaveProperty('modelProfileId')
+    expect(opts.modelProfileId).toBe(AUTO_MODEL_ID)
     expect(opts.webhookUrl).toBe('https://h')
+    expect(buildRunOptions('   ').modelProfileId).toBe(AUTO_MODEL_ID)
+    expect(buildRunOptions('auto').modelProfileId).toBe(AUTO_MODEL_ID)
   })
 
-  it('adds modelProfileId for a named selection and keeps base options', () => {
+  it('sends the concrete id for a named selection and keeps base options', () => {
     const opts = buildRunOptions('mp_2', { sessionToken: 'tok' })
     expect(opts.modelProfileId).toBe('mp_2')
     expect(opts.sessionToken).toBe('tok')
   })
-
-  it('treats a whitespace-only selection as the default', () => {
-    expect(buildRunOptions('   ')).not.toHaveProperty('modelProfileId')
-  })
 })
 
 describe('ModelSelect', () => {
-  it('renders a select whose first option is the default (value "")', () => {
+  it('renders a select whose first option is Auto (value "auto")', () => {
     const html = renderToStaticMarkup(
       createElement(ModelSelect, {
         profiles,
@@ -80,8 +129,9 @@ describe('ModelSelect', () => {
       }),
     )
     expect(html).toContain('<select')
-    expect(html).toContain('value=""')
-    expect(html).toContain('默认：主力')
+    expect(html).toContain('智能路由（Auto）')
+    expect(html).toContain('value="auto"')
+    expect(html).toContain('主力（gpt-4o） · 默认')
     expect(html).toContain('廉价（gpt-4o-mini）')
     expect(html).toContain('value="mp_2"')
   })
@@ -96,7 +146,7 @@ describe('ModelSelect', () => {
     )
     const selectTag = html.slice(html.indexOf('<select'), html.indexOf('</select>'))
     expect(selectTag).toContain('value="mp_2" selected=""')
-    expect(selectTag).not.toContain('value="" selected=""')
+    expect(selectTag).not.toContain('value="auto" selected=""')
   })
 
   it('renders nothing when no profiles are available', () => {
@@ -130,18 +180,15 @@ describe('chat model fetch wiring', () => {
     expect(list.map((p) => p.id)).toEqual(['mp_1'])
   })
 
-  it('createRun serializes modelProfileId as model_profile_id only when set', async () => {
+  it('createRun serializes model_profile_id for both auto and named choices', async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ run_id: 'r1', status: 'queued' }))
     await createRun('a1', 'hi', 'c1', buildRunOptions('mp_2', { sessionToken: 'tok' }))
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/v0/runs')
-    expect(init.method).toBe('POST')
-    const body = JSON.parse(init.body) as Record<string, unknown>
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body) as Record<string, unknown>
     expect(body.model_profile_id).toBe('mp_2')
     expect(body.session_token).toBe('tok')
 
     await createRun('a1', 'hi', 'c1', buildRunOptions(''))
     const body2 = JSON.parse(fetchMock.mock.calls[1][1].body) as Record<string, unknown>
-    expect(body2).not.toHaveProperty('model_profile_id')
+    expect(body2.model_profile_id).toBe('auto')
   })
 })
