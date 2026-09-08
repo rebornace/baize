@@ -807,6 +807,7 @@ npm run build
 ## Documentation
 
 - [Architecture & plugin protocol (draft)](docs/architecture-and-plugin-protocol.md)
+- [Deployment guide](docs/deployment.md) — autostart vs. standalone adapter deployment.
 
 ---
 

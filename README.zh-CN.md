@@ -814,6 +814,7 @@ npm run build
 ## 文档
 
 - [架构与插件协议草案](docs/architecture-and-plugin-protocol.md)
+- [部署指南](docs/deployment.md) —— 适配器 autostart 托管 vs 独立部署。
 
 ---
 
