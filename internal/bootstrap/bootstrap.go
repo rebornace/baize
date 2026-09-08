@@ -4,14 +4,17 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -96,9 +99,12 @@ func Run(cfg config.Config, configPath string) error {
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
 	srv.Shutdown = httpSrv.Shutdown
 	srv.RestartProcess = Reexec
+	sigCtx, stopSig := newShutdownSignalContext()
+	defer stopSig()
+	shutdownOnSignal(sigCtx, httpSrv)
 	err = httpSrv.ListenAndServe()
 	_ = closer.Close()
-	return err
+	return normalizeShutdownErr(err)
 }
 
 // Serve starts Runtime only (no mock-ticket) and blocks on the API server.
@@ -118,8 +124,51 @@ func Serve(cfg config.Config, configPath string) error {
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
 	srv.Shutdown = httpSrv.Shutdown
 	srv.RestartProcess = Reexec
+	sigCtx, stopSig := newShutdownSignalContext()
+	defer stopSig()
+	shutdownOnSignal(sigCtx, httpSrv)
 	err = httpSrv.ListenAndServe()
 	_ = closer.Close()
+	return normalizeShutdownErr(err)
+}
+
+// shutdownOnSignal wires SIGINT/SIGTERM (docker stop / systemctl stop / Ctrl-C)
+// to a graceful HTTP server shutdown. Without this Go's default action exits
+// the process immediately: ListenAndServe never returns, so the closer (which
+// stops supervised adapter children gracefully) never runs and adapters are
+// orphaned/killed hard. The signal context is cross-platform; production
+// passes a signal.NotifyContext bound to os.Interrupt/SIGTERM, and tests pass
+// a plain cancelable context to exercise the cancel->Shutdown path
+// deterministically (including on Windows, where delivering SIGTERM to a
+// process group is awkward). When ctx is cancelled the HTTP server is shut
+// down with a bounded grace window; ListenAndServe then returns
+// ErrServerClosed and the caller runs its closer (channel Stop -> adapter
+// terminate).
+func shutdownOnSignal(ctx context.Context, srv *http.Server) {
+	go func() {
+		<-ctx.Done()
+		log.Printf("baize received shutdown signal; draining HTTP server gracefully")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("baize graceful shutdown: %v", err)
+		}
+	}()
+}
+
+// newShutdownSignalContext returns a context cancelled on SIGINT/SIGTERM (or
+// Ctrl-C). Callers must invoke the returned stop func to release the signal
+// registration (typically deferred).
+func newShutdownSignalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
+// normalizeShutdownErr maps an intentional, signal-driven shutdown
+// (ErrServerClosed from ListenAndServe after srv.Shutdown) to a clean nil exit.
+func normalizeShutdownErr(err error) error {
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
 	return err
 }
 
