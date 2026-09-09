@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CornerUpLeft, GitBranch, Menu } from 'lucide-react'
 import {
-  ApiError,
   cancelRun,
   createRun,
   deleteConversation,
@@ -55,7 +54,11 @@ import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
 import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
-import { foldToolBlocks, type ToolOrWorkflowBlock } from '../historyBlocks'
+import {
+  foldToolBlocks,
+  isFirstAssistantMessageOfRun,
+  type ToolOrWorkflowBlock,
+} from '../historyBlocks'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { ACTIONS, ADVANCED, CHAT, friendlyError, WELCOME } from '../strings'
@@ -313,8 +316,13 @@ export function ChatPage() {
   )
 
   useEffect(() => {
+    // One cancel flag for every mount-time fetch: under StrictMode dev double
+    // mount, the first effect's stale responses must not fire setState/toasts
+    // (in particular a duplicated model-stale-fallback toast).
+    let cancelled = false
     void getUIConfig()
       .then((cfg) => {
+        if (cancelled) return
         if (cfg.agent_id) setAgentId(cfg.agent_id)
         setSupportsVision(cfg.supports_vision !== false)
       })
@@ -324,13 +332,18 @@ export function ChatPage() {
     // Skills drive the Composer @-completion popup. GET /v0/skills is operator
     // readable; load failures just disable the popup rather than blocking chat.
     void listSkills()
-      .then((res) => setSkills(res.skills ?? []))
-      .catch(() => setSkills([]))
+      .then((res) => {
+        if (!cancelled) setSkills(res.skills ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setSkills([])
+      })
     // Model profiles feed the model chip. GET /v0/settings/models is operator
     // readable; a failure (or an empty list) shows the role-appropriate empty
     // state and falls back to the default model without blocking chat.
     void listModelProfiles()
       .then((list) => {
+        if (cancelled) return
         const profiles = Array.isArray(list) ? list : []
         setModelProfiles(profiles)
         // A persisted concrete choice whose model was deleted falls back to
@@ -342,20 +355,21 @@ export function ChatPage() {
           toast.push({ tone: 'info', title: CHAT.modelStaleFallback })
         }
       })
-      .catch(() => setModelProfiles([]))
+      .catch(() => {
+        if (!cancelled) setModelProfiles([])
+      })
     // Tool catalog powers friendly tool names in cards. Failures degrade
     // silently: cards then show the raw tool technical names.
-    let toolsCancelled = false
     void listTools()
       .then((tools: ToolInfo[]) => {
-        if (toolsCancelled) return
+        if (cancelled) return
         setToolCatalog(
           tools.map((t) => ({ name: t.name, title: t.title, description: t.description })),
         )
       })
       .catch(() => { /* catalog missing is non-blocking */ })
     return () => {
-      toolsCancelled = true
+      cancelled = true
     }
     // toast.push is identity-stable (useCallback); effect runs once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -553,21 +567,26 @@ export function ChatPage() {
     await refreshConversations()
   }
 
-  const onSend = async (text: string, files: File[]) => {
+  // Returns false when the message is rejected up-front (no model / vision
+  // gate / attachment failure) so Composer keeps the draft text and files;
+  // true once the message has been accepted (optimistic row appended), even if
+  // the run creation fails afterwards.
+  const onSend = async (text: string, files: File[]): Promise<boolean> => {
     const sentConversationId = conversationId
 
-    // No model configured: block up-front with friendly guidance (mapped by
-    // friendlyError from the no_model_configured code) instead of letting the
-    // run fail server-side with a cryptic error.
+    // No model configured: block up-front. Guidance is role-specific so an
+    // operator is never pointed at the admin-only model settings page.
     if (modelProfiles.length === 0) {
       setBusy(false)
       setStatus('')
-      reportError(new ApiError(409, 'no_model_configured', 'no model configured'))
-      return
+      toast.push({
+        tone: 'error',
+        title: role === 'admin' ? CHAT.noModelAdmin : CHAT.noModelOperator,
+      })
+      return false
     }
 
     setBusy(true)
-    setComposerDraft(undefined)
     setStatus('发送中…')
 
     // Build attachments from selected files. Image attachments are gated by
@@ -589,17 +608,26 @@ export function ChatPage() {
           setStatus('')
           // Image capability mismatch is shown as a modal, not a toast, so the
           // user keeps their draft/attachments and the message is not rerouted.
-          setVisionWarning(gate.message ?? CHAT.visionWarningFallback)
-          return
+          // Operators without settings access get contact-admin guidance.
+          setVisionWarning(
+            role === 'admin'
+              ? (gate.message ?? CHAT.visionWarningFallback)
+              : CHAT.visionBlockedOperator,
+          )
+          return false
         }
         attachments = built
       } catch (err) {
         setBusy(false)
         setStatus('')
         reportError(err)
-        return
+        return false
       }
     }
+
+    // Gates passed: the message is accepted. Only now drop the rollback draft
+    // source so a rejected send keeps the composer contents.
+    setComposerDraft(undefined)
 
     const displayNames = attachments && attachments.length > 0
       ? `（附件：${attachments.map((a) => a.filename).join(', ')}）`
@@ -631,12 +659,16 @@ export function ChatPage() {
       const created = await createRun(agentId, text, sentConversationId, runOptions)
       // Model choice is persisted via onChooseModel; do not reset after send.
       await refreshConversations()
-      if (conversationIdRef.current !== sentConversationId) return
+      // The conversation switched mid-flight: the message was already accepted,
+      // so report acceptance even though this view no longer tracks the run.
+      if (conversationIdRef.current !== sentConversationId) return true
       setStatus(statusLabel(created.status))
       setLiveRunId(created.run_id)
       startStream(created.run_id, sentConversationId, -1)
     } catch (err) {
-      if (conversationIdRef.current !== sentConversationId) return
+      // Post-acceptance failure (vision_unsupported / 5xx / network): the
+      // Composer still clears; reconcile messages with the server below.
+      if (conversationIdRef.current !== sentConversationId) return true
       setBusy(false)
       setLiveRunId(null)
       // friendlyError maps vision_unsupported / 5xx / network to human titles.
@@ -649,6 +681,7 @@ export function ChatPage() {
         /* keep optimistic row */
       }
     }
+    return true
   }
 
   const onRollbackUser = async (m: ChatMessage) => {
@@ -764,18 +797,19 @@ export function ChatPage() {
     } catch {
       /* fall through to legacy path */
     }
+    const ta = document.createElement('textarea')
     try {
-      const ta = document.createElement('textarea')
       ta.value = text
       ta.style.position = 'fixed'
       ta.style.opacity = '0'
       document.body.appendChild(ta)
       ta.select()
-      const ok = document.execCommand('copy')
-      ta.remove()
-      return ok
+      return document.execCommand('copy')
     } catch {
       return false
+    } finally {
+      // Removed even if select()/execCommand() throws so no hidden node lingers.
+      ta.remove()
     }
   }
 
@@ -950,9 +984,10 @@ export function ChatPage() {
                   ? historyPages[m.run_id] ?? []
                   : []
               const runHistoryBlocks =
-                m.role === 'assistant' && m.run_id && isFirstMessageOfRun(msgIndex, messages)
-                  ? historyBlocks[m.run_id]
-                  : undefined
+                m.role === 'assistant' &&
+                m.run_id &&
+                isFirstAssistantMessageOfRun(msgIndex, messages) &&
+                historyBlocks[m.run_id]
               const canAct = persisted && !busy && !liveRunId && !historyMutating
               return (
                 <div key={m.id} className={`msg-row ${bubbleClass}`}>
@@ -1104,7 +1139,7 @@ export function ChatPage() {
             disabled={composerDisabled}
             draft={composerDraft}
             skills={skills}
-            onSend={(t, f) => void onSend(t, f)}
+            onSend={onSend}
             toolbar={
               modelProfiles.length > 0 ? (
                 <ModelChip
@@ -1151,16 +1186,6 @@ export function ChatPage() {
       <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss} />
     </div>
   )
-}
-
-/**
- * Historical tool/workflow blocks render once, above the FIRST assistant
- * message of each run. Messages without run_id never anchor history blocks.
- */
-function isFirstMessageOfRun(index: number, msgs: ChatMessage[]): boolean {
-  const runId = msgs[index]?.run_id
-  if (!runId) return false
-  return msgs.findIndex((mm) => mm.run_id === runId) === index
 }
 
 function statusLabel(status: string): string {

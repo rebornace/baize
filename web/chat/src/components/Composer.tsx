@@ -7,7 +7,11 @@ const ACCEPT =
 
 export interface ComposerProps {
   disabled?: boolean
-  onSend: (text: string, files: File[]) => void
+  /**
+   * 返回 false（同步或 Promise 解析为 false）表示消息被拒收（如模型/图片
+   * 门控未过），此时保留文字与附件；返回 true/undefined 视为已接受并清空。
+   */
+  onSend: (text: string, files: File[]) => void | boolean | Promise<void | boolean>
   draft?: string
   /** Skills available for @-completion. Omit to disable the popup. */
   skills?: SkillSummary[]
@@ -87,13 +91,16 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
     })
   }
 
-  const submit = () => {
+  const submit = async () => {
     const trimmed = text.trim()
     if ((!trimmed && files.length === 0) || disabled) return
-    onSend(trimmed, files)
-    setText('')
-    setFiles([])
-    setCompletion(null)
+    const result = await onSend(trimmed, files)
+    // false = rejected by the page's gates; keep draft text and attachments.
+    if (result !== false) {
+      setText('')
+      setFiles([])
+      setCompletion(null)
+    }
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

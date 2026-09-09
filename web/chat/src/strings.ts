@@ -66,6 +66,10 @@ export const CHAT = {
   visionWarningTitle: '暂时无法发送图片',
   visionWarningFallback: '当前选择不能处理图片。',
   visionWarningAck: '知道了',
+  visionBlockedOperator: '当前无法处理图片，请联系管理员配置支持图片的模型。',
+  // 空模型拦截（按角色分流，操作者不被导向无权限的设置页）
+  noModelAdmin: '还没有可用的 AI 模型，请到「设置 → AI 模型」添加一个。',
+  noModelOperator: '还没有可用的 AI 模型，请联系管理员配置。',
   // 删除对话确认
   deleteTitle: '删除这个对话？',
   deleteBody: '将永久删除该对话的消息与相关数据，且不可恢复。',
