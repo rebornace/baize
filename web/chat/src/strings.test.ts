@@ -44,6 +44,9 @@ describe('friendlyError', () => {
     expect(friendlyError(new ApiError(400, 'no_model_configured', 'x')).title).toContain('AI 模型')
     expect(friendlyError(new ApiError(400, 'vision_unsupported', 'x')).title).toContain('图片')
     expect(friendlyError(new ApiError(401, 'unauthorized', 'x')).title).toContain('权限')
+    // 403 与非码表 401 code 都必须走通用权限文案，防止码表/分支顺序调整后静默退化。
+    expect(friendlyError(new ApiError(403, 'forbidden', 'x')).title).toContain('权限')
+    expect(friendlyError(new ApiError(401, 'some_other_code', 'x')).title).toContain('权限')
     expect(friendlyError(new ApiError(500, 'internal_error', 'x')).title).toContain('稍后')
     expect(friendlyError(new ApiError(404, 'not_found', 'x')).title).toContain('不存在')
   })
