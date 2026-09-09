@@ -291,16 +291,16 @@ func NormalizeAutoTier(t string) string {
 // plaintext locally (same trust tier as a Postgres DSN password) and is never
 // returned verbatim by the API (see RedactAPIKey).
 type ModelProfile struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Provider        string    `json:"provider"`
-	BaseURL         string    `json:"base_url"`
-	Model           string    `json:"model"`
-	APIKey          string    `json:"api_key,omitempty"`
-	APIKeyEnv       string    `json:"api_key_env,omitempty"`
-	DisableThinking bool      `json:"disable_thinking"`
-	SupportsVision  bool      `json:"supports_vision"`
-	ContextTokens   int       `json:"context_tokens"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Provider        string `json:"provider"`
+	BaseURL         string `json:"base_url"`
+	Model           string `json:"model"`
+	APIKey          string `json:"api_key,omitempty"`
+	APIKeyEnv       string `json:"api_key_env,omitempty"`
+	DisableThinking bool   `json:"disable_thinking"`
+	SupportsVision  bool   `json:"supports_vision"`
+	ContextTokens   int    `json:"context_tokens"`
 	// AutoTier classifies the model for task-aware Auto routing:
 	// "light" (fast/cheap), "standard" (default), "power" (strong reasoning).
 	// Empty/unknown values normalize to "standard".

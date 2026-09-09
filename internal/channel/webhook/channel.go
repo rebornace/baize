@@ -162,9 +162,9 @@ func (c *Channel) Stop(ctx context.Context) error {
 // when available.
 func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, bool, error) {
 	rt := &channel.Runtime{
-		Runs:                 deps.Store,
-		Meta:                 deps.Meta,
-		Messages:             deps.Messages,
+		Runs:           deps.Store,
+		Meta:           deps.Meta,
+		Messages:       deps.Messages,
 		Assignee:       c.cfg.Assignee,
 		DefaultAgentID: firstNonEmpty(c.cfg.AgentID, deps.DefaultAgentID),
 		ResolveModel:   deps.ResolveModel,
