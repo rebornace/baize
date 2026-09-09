@@ -28,6 +28,8 @@
   --warning: #d97706;
   --warning-soft: #fff4e0;
   --danger: #dc2626;
+  --danger-strong: #dc2626;
+  --on-danger: #ffffff;
   --danger-soft: rgba(220, 38, 38, 0.10);
   --info: #2563eb;
   --info-soft: #e8f0ff;
@@ -94,6 +96,9 @@ html[data-theme="dark"] {
   --warning: #f59e0b;
   --warning-soft: rgba(245, 158, 11, 0.16);
   --danger: #f87171;
+  /* 暗色刻意沿用较深红底以保证实心危险按钮上白字对比度 ≥4.5:1；--danger 仍用于文本/soft 点缀 */
+  --danger-strong: #dc2626;
+  --on-danger: #ffffff;
   --danger-soft: rgba(248, 113, 113, 0.16);
   --info: #60a5fa;
   --info-soft: rgba(96, 165, 250, 0.16);

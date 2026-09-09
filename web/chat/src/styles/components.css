@@ -35,8 +35,8 @@
 }
 
 .btn.danger {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger-strong);
+  color: var(--on-danger);
 }
 .btn.ghost {
   background: transparent;

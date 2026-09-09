@@ -29,9 +29,11 @@ export function useTheme() {
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    // 以 choice 状态为事实源，不再重读 localStorage：
+    // 隐私模式下 setItem 抛错后，重读会读不到刚选的值而回退系统、覆盖用户显式选择。
     const apply = () =>
       applyTheme(
-        resolveTheme(readStoredTheme(localStorage), () => systemTheme(mq.matches)),
+        resolveTheme(choice, () => systemTheme(mq.matches)),
         document.documentElement,
       )
     apply()
