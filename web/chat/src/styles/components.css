@@ -159,3 +159,23 @@
   cursor: pointer;
 }
 .toast-close:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+/* ---- Modal ---- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-4);
+}
+.modal-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  width: min(440px, 100%);
+  padding: var(--space-6);
+  outline: none;
+}
+.modal-title { margin: 0 0 var(--space-2); font-size: 17px; color: var(--text); }
+.modal-content { color: var(--text); font-size: 14px; line-height: 1.6; }
+.modal-footer { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
