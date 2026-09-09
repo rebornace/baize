@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Menu } from 'lucide-react'
+import { CornerUpLeft, GitBranch, Menu } from 'lucide-react'
 import {
   ApiError,
   cancelRun,
@@ -17,6 +17,7 @@ import {
   listMessages,
   listModelProfiles,
   listSkills,
+  listTools,
   openRunStream,
   rollbackMessages,
   type Attachment,
@@ -27,23 +28,37 @@ import {
   type ModelProfile,
   type RunStatus,
   type SkillSummary,
+  type ToolInfo,
 } from '../api'
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
 import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
 import { MarkdownText } from '../components/MarkdownText'
-import { ModelSelect } from '../components/ModelSelect'
+import { ModelChip } from '../components/ModelChip'
 import { ToolCard } from '../components/ToolCard'
 import { UserBubble } from '../components/UserBubble'
 import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
-import { ThemeToggle } from '../components/ui'
+import {
+  Button,
+  ConfirmDialog,
+  DropdownMenu,
+  Modal,
+  ThemeToggle,
+  ToastRegion,
+  useToast,
+  type MenuItem,
+} from '../components/ui'
 import { conversationListLabel } from '../conversationLabel'
 import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
+import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
-import { buildRunOptions, visionGate } from '../modelSelect'
+import { foldToolBlocks, type ToolOrWorkflowBlock } from '../historyBlocks'
+import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
+import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
+import { ACTIONS, ADVANCED, CHAT, friendlyError, WELCOME } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { uuid } from '../uuid'
@@ -88,21 +103,27 @@ export function ChatPage() {
   const [busy, setBusy] = useState(false)
   const [historyMutating, setHistoryMutating] = useState(false)
   const [status, setStatus] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [runWebhookUrl, setRunWebhookUrl] = useState('')
   const [sessionToken, setSessionToken] = useState('')
   const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [supportsVision, setSupportsVision] = useState(true)
   const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
-  // Per-message model choice; "" means the server default. The selection is
-  // intentionally NOT persisted: it resets to "" after each send and never
-  // touches localStorage.
-  const [selectedModelId, setSelectedModelId] = useState('')
+  // Persisted model choice (localStorage via modelChoice.ts); "" only until the
+  // lazy initializer runs. Auto is the server-side smart router.
+  const [selectedModelId, setSelectedModelId] = useState(loadModelChoice)
   /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
   const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
+  /** run_id → folded historical tool/workflow blocks (read-only replay). */
+  const [historyBlocks, setHistoryBlocks] = useState<Record<string, ToolOrWorkflowBlock[]>>({})
+  const [toolCatalog, setToolCatalog] = useState<ToolCatalog>([])
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [visionWarning, setVisionWarning] = useState<string | null>(null)
+  const toast = useToast()
 
   const cancelStreamRef = useRef<(() => void) | null>(null)
+  /** runIds whose events have already been fetched once (drives both pages and blocks). */
+  const fetchedRunsRef = useRef<Set<string>>(new Set())
   const pollTimerRef = useRef<number | null>(null)
   const lastEventIndexRef = useRef(-1)
   const conversationIdRef = useRef(conversationId)
@@ -120,7 +141,20 @@ export function ChatPage() {
     liveRunId,
     conversationId,
     historyPages,
+    historyBlocks,
   ])
+
+  // User-initiated actions surface friendly errors via Toast. Background
+  // failures (polling / idle sync / background refetches) stay silent so a
+  // 700ms poll loop cannot spam toasts; their state keeps advancing on retry.
+  const pushToast = toast.push
+  const reportError = useCallback(
+    (e: unknown) => {
+      const f = friendlyError(e)
+      pushToast({ tone: 'error', title: f.title, detail: f.detail })
+    },
+    [pushToast],
+  )
 
   const setConversationId = useCallback((id: string) => {
     setConversationIdState(id)
@@ -149,8 +183,9 @@ export function ChatPage() {
       const scope = role === 'admin' ? conversationScopeRef.current : undefined
       const list = await listConversations(scope)
       setConversations(list)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch {
+      // Background list refresh (also runs on the 2s idle sync): stay silent,
+      // the next tick retries. Never toast here to avoid notification spam.
     }
   }, [role])
 
@@ -189,9 +224,9 @@ export function ChatPage() {
         const msgs = await listMessages(id)
         if (conversationIdRef.current !== id) return
         setMessages(msgs)
-      } catch (err) {
-        if (conversationIdRef.current !== id) return
-        setError(err instanceof Error ? err.message : String(err))
+      } catch {
+        // Background refetch when a live run ends: stay silent; the idle sync
+        // and conversation switch effects will reload messages on retry.
       }
       await refreshConversations()
     },
@@ -219,9 +254,8 @@ export function ChatPage() {
           if (isTerminal(run.status)) {
             await finishLiveRun(forConversationId)
           }
-        } catch (err) {
-          if (conversationIdRef.current !== forConversationId) return
-          setError(err instanceof Error ? err.message : String(err))
+        } catch {
+          // Transient 700ms poll failure: stay silent and retry next tick.
         }
       }
       void tick()
@@ -292,12 +326,39 @@ export function ChatPage() {
     void listSkills()
       .then((res) => setSkills(res.skills ?? []))
       .catch(() => setSkills([]))
-    // Model profiles feed the per-message model picker. GET /v0/settings/models
-    // is operator readable; a failure (or an empty list) just hides the picker
-    // and falls back to the default model without blocking chat.
+    // Model profiles feed the model chip. GET /v0/settings/models is operator
+    // readable; a failure (or an empty list) shows the role-appropriate empty
+    // state and falls back to the default model without blocking chat.
     void listModelProfiles()
-      .then((list) => setModelProfiles(Array.isArray(list) ? list : []))
+      .then((list) => {
+        const profiles = Array.isArray(list) ? list : []
+        setModelProfiles(profiles)
+        // A persisted concrete choice whose model was deleted falls back to
+        // Auto; persist the fallback and tell the user once.
+        const resolved = resolveModelChoice(profiles)
+        if (resolved.stale) {
+          setSelectedModelId(AUTO_MODEL_ID)
+          saveModelChoice(AUTO_MODEL_ID)
+          toast.push({ tone: 'info', title: CHAT.modelStaleFallback })
+        }
+      })
       .catch(() => setModelProfiles([]))
+    // Tool catalog powers friendly tool names in cards. Failures degrade
+    // silently: cards then show the raw tool technical names.
+    let toolsCancelled = false
+    void listTools()
+      .then((tools: ToolInfo[]) => {
+        if (toolsCancelled) return
+        setToolCatalog(
+          tools.map((t) => ({ name: t.name, title: t.title, description: t.description })),
+        )
+      })
+      .catch(() => { /* catalog missing is non-blocking */ })
+    return () => {
+      toolsCancelled = true
+    }
+    // toast.push is identity-stable (useCallback); effect runs once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -311,9 +372,10 @@ export function ChatPage() {
     setLiveRunId(null)
     setLiveEvents([])
     setHistoryPages({})
+    setHistoryBlocks({})
+    fetchedRunsRef.current = new Set()
     lastEventIndexRef.current = -1
     setBusy(false)
-    setError(null)
     setStatus('')
 
     const id = conversationId
@@ -324,9 +386,9 @@ export function ChatPage() {
         setMessages(msgs)
         requestAnimationFrame(() => scrollToBottom('auto'))
         await restoreLiveRun(id, msgs)
-      } catch (err) {
-        if (cancelled || conversationIdRef.current !== id) return
-        setError(err instanceof Error ? err.message : String(err))
+      } catch {
+        // Background conversation load: a transient failure stays silent;
+        // the idle sync retries listMessages every 2s.
       }
     })()
 
@@ -379,7 +441,10 @@ export function ChatPage() {
     }
   }, [conversationId, refreshConversations, restoreLiveRun])
 
-  // Load analysis page previews for completed turns (refresh / reopen conversation).
+  // Load historical artifacts for completed turns (refresh / reopen):
+  // for each not-yet-fetched run we list events ONCE and derive both analysis
+  // page previews and read-only tool/workflow blocks. A run with events but no
+  // analysis page must still produce tool blocks (M2: no early return on pages).
   useEffect(() => {
     const runIds = [
       ...new Set(
@@ -388,12 +453,18 @@ export function ChatPage() {
           .map((m) => m.run_id as string),
       ),
     ]
-    if (runIds.length === 0) return
+    const pending = runIds.filter((runId) => !fetchedRunsRef.current.has(runId))
+    if (pending.length === 0) return
     let cancelled = false
+    // Runs still in flight when the effect re-runs (also covers StrictMode's
+    // mount/cleanup/mount double invoke) must lose their fetched marker so the
+    // next effect run fetches them again; completed runs keep theirs.
+    const inFlight = new Set(pending)
     void (async () => {
       await Promise.all(
-        runIds.map(async (runId) => {
-          if (historyPages[runId]?.length) return
+        pending.map(async (runId) => {
+          // Mark first so concurrent effect re-runs never double-fetch.
+          fetchedRunsRef.current.add(runId)
           try {
             const events = await listEvents(runId)
             if (cancelled) return
@@ -404,17 +475,26 @@ export function ChatPage() {
                 pages.map((p) => p.artifactUrl),
               )
             }
+            const blocks = foldToolBlocks(runId, events)
+            if (blocks.length > 0) {
+              setHistoryBlocks((prev) =>
+                prev[runId] ? prev : { ...prev, [runId]: blocks },
+              )
+            }
+            inFlight.delete(runId)
           } catch {
-            /* ignore missing runs */
+            inFlight.delete(runId)
+            // A run that cannot be listed (deleted, transient error) may become
+            // fetchable later; drop the marker so a future effect retries once.
+            if (!cancelled) fetchedRunsRef.current.delete(runId)
           }
         }),
       )
     })()
     return () => {
       cancelled = true
+      inFlight.forEach((runId) => fetchedRunsRef.current.delete(runId))
     }
-    // historyPages intentionally omitted: we only fetch missing run ids.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, mergeHistoryPages])
 
   const onNewChat = () => {
@@ -423,9 +503,10 @@ export function ChatPage() {
     setLiveRunId(null)
     setLiveEvents([])
     setHistoryPages({})
+    setHistoryBlocks({})
+    fetchedRunsRef.current = new Set()
     setMessages([])
     setBusy(false)
-    setError(null)
     setStatus('')
     setComposerDraft(undefined)
     setConversationId(newConversationId())
@@ -436,21 +517,24 @@ export function ChatPage() {
     setConversationId(id)
   }
 
-  const onDeleteConversation = async (id: string) => {
-    const label = conversationListLabel(id, conversations.find((c) => c.id === id)?.title ?? '')
-    if (!window.confirm(`确定删除对话「${label}」吗？\n将永久清除该对话的消息、归属和捕获身份，且不可恢复。`)) {
-      return
-    }
+  // The sidebar ✕ (and any future entry point) only opens the confirm dialog;
+  // the actual deletion happens in performDelete after explicit confirmation.
+  const onDeleteConversation = (id: string) => {
+    setConfirmDelete(id)
+  }
+
+  const performDelete = async () => {
+    const id = confirmDelete
+    if (!id) return
+    setConfirmDelete(null)
     try {
       await deleteConversation(id)
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'conversation_busy') {
-        setError('该对话正在处理中，请先取消当前运行再删除。')
-      } else {
-        setError(err instanceof Error ? err.message : String(err))
-      }
+    } catch (e) {
+      // friendlyError maps conversation_busy etc. to a human message.
+      reportError(e)
       return
     }
+    toast.push({ tone: 'success', title: CHAT.deleteSuccess })
     // If the deleted conversation is the one open, reset to a fresh chat.
     if (id === conversationId) {
       stopStream()
@@ -458,6 +542,8 @@ export function ChatPage() {
       setLiveRunId(null)
       setLiveEvents([])
       setHistoryPages({})
+      setHistoryBlocks({})
+      fetchedRunsRef.current = new Set()
       setMessages([])
       setBusy(false)
       setStatus('')
@@ -470,18 +556,18 @@ export function ChatPage() {
   const onSend = async (text: string, files: File[]) => {
     const sentConversationId = conversationId
 
-    // No model configured: block up-front with guidance instead of letting the
+    // No model configured: block up-front with friendly guidance (mapped by
+    // friendlyError from the no_model_configured code) instead of letting the
     // run fail server-side with a cryptic error.
     if (modelProfiles.length === 0) {
       setBusy(false)
-      setError('尚未配置任何模型，请先在「设置 → 模型」中添加一个模型。')
       setStatus('')
+      reportError(new ApiError(409, 'no_model_configured', 'no model configured'))
       return
     }
 
     setBusy(true)
     setComposerDraft(undefined)
-    setError(null)
     setStatus('发送中…')
 
     // Build attachments from selected files. Image attachments are gated by
@@ -500,15 +586,17 @@ export function ChatPage() {
         )
         if (!gate.allowed) {
           setBusy(false)
-          setError(gate.message ?? '当前模型不支持图片附件。')
           setStatus('')
+          // Image capability mismatch is shown as a modal, not a toast, so the
+          // user keeps their draft/attachments and the message is not rerouted.
+          setVisionWarning(gate.message ?? CHAT.visionWarningFallback)
           return
         }
         attachments = built
       } catch (err) {
         setBusy(false)
-        setError(err instanceof Error ? err.message : String(err))
         setStatus('')
+        reportError(err)
         return
       }
     }
@@ -541,8 +629,7 @@ export function ChatPage() {
         attachments,
       })
       const created = await createRun(agentId, text, sentConversationId, runOptions)
-      // Per-message model choice: do not remember it for the next message.
-      setSelectedModelId('')
+      // Model choice is persisted via onChooseModel; do not reset after send.
       await refreshConversations()
       if (conversationIdRef.current !== sentConversationId) return
       setStatus(statusLabel(created.status))
@@ -552,11 +639,8 @@ export function ChatPage() {
       if (conversationIdRef.current !== sentConversationId) return
       setBusy(false)
       setLiveRunId(null)
-      if (err instanceof ApiError && err.code === 'vision_unsupported') {
-        setError('所选模型不支持图片附件。请改用「智能路由（Auto）」或带「视觉」标记的模型，或移除图片。')
-      } else {
-        setError(err instanceof Error ? err.message : String(err))
-      }
+      // friendlyError maps vision_unsupported / 5xx / network to human titles.
+      reportError(err)
       setStatus('')
       try {
         const msgs = await listMessages(sentConversationId)
@@ -569,15 +653,14 @@ export function ChatPage() {
 
   const onRollbackUser = async (m: ChatMessage) => {
     if (busy || liveRunId || historyMutating) return
-    setError(null)
     setHistoryMutating(true)
     try {
       const res = await rollbackMessages(conversationId, m.id)
       setMessages(res.messages)
       setComposerDraft(m.content)
       await refreshConversations()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch (e) {
+      reportError(e)
     } finally {
       setHistoryMutating(false)
     }
@@ -585,7 +668,6 @@ export function ChatPage() {
 
   const onRegenerate = async (m: ChatMessage) => {
     if (busy || liveRunId || historyMutating) return
-    setError(null)
     setBusy(true)
     setHistoryMutating(true)
     try {
@@ -606,9 +688,9 @@ export function ChatPage() {
       setLiveEvents([])
       lastEventIndexRef.current = -1
       startStream(runId, conversationId, -1)
-    } catch (err) {
+    } catch (e) {
       setBusy(false)
-      setError(err instanceof Error ? err.message : String(err))
+      reportError(e)
     } finally {
       setHistoryMutating(false)
     }
@@ -616,15 +698,14 @@ export function ChatPage() {
 
   const onRollbackTo = async (m: ChatMessage) => {
     if (busy || liveRunId || historyMutating) return
-    setError(null)
     setHistoryMutating(true)
     try {
       const res = await rollbackMessages(conversationId, m.id)
       setMessages(res.messages)
       setComposerDraft(undefined)
       await refreshConversations()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch (e) {
+      reportError(e)
     } finally {
       setHistoryMutating(false)
     }
@@ -632,7 +713,6 @@ export function ChatPage() {
 
   const onFork = async (m: ChatMessage) => {
     if (busy || liveRunId || historyMutating) return
-    setError(null)
     setHistoryMutating(true)
     try {
       const res = await forkConversation(conversationId, m.id)
@@ -640,8 +720,8 @@ export function ChatPage() {
       setMessages(res.messages)
       setComposerDraft(undefined)
       await refreshConversations()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch (e) {
+      reportError(e)
     } finally {
       setHistoryMutating(false)
     }
@@ -649,14 +729,13 @@ export function ChatPage() {
 
   const onCancelRun = async () => {
     if (!liveRunId) return
-    setError(null)
     setStatus('正在取消…')
     try {
       await cancelRun(liveRunId)
       await finishLiveRun(conversationId)
       setStatus('已取消')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch (e) {
+      reportError(e)
       try {
         await finishLiveRun(conversationId)
       } catch {
@@ -664,6 +743,71 @@ export function ChatPage() {
         setLiveRunId(null)
       }
     }
+  }
+
+  // Model choice persists immediately (localStorage); it survives sends and
+  // reloads, and falls back to Auto when it no longer resolves (see mount effect).
+  const onChooseModel = (id: string) => {
+    setSelectedModelId(id)
+    saveModelChoice(id)
+  }
+
+  // Copy with a legacy fallback for non-secure (HTTP/LAN) contexts without
+  // navigator.clipboard. The hidden textarea is removed synchronously so it
+  // never disturbs page focus.
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch {
+      /* fall through to legacy path */
+    }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      return ok
+    } catch {
+      return false
+    }
+  }
+
+  const onCopyMessage = (m: ChatMessage) => {
+    void copyText(m.content).then((ok) => {
+      toast.push(
+        ok
+          ? { tone: 'success', title: CHAT.copySuccess }
+          : { tone: 'error', title: CHAT.copyFailed },
+      )
+    })
+  }
+
+  // Low-frequency actions live in the "more" menu. system_note additionally
+  // exposes "roll back to here" at the top; it never gets a copy action.
+  const buildMessageMenuItems = (m: ChatMessage): MenuItem[] => {
+    const items: MenuItem[] = []
+    if (m.role === 'system_note') {
+      items.push({
+        id: 'rollback-here',
+        label: ACTIONS.rollbackHere,
+        icon: <CornerUpLeft size={15} aria-hidden />,
+        onSelect: () => void onRollbackTo(m),
+      })
+    }
+    items.push({
+      id: 'fork',
+      label: ACTIONS.forkAsNew,
+      icon: <GitBranch size={15} aria-hidden />,
+      onSelect: () => void onFork(m),
+    })
+    return items
   }
 
   const liveBlocks: ChatBlock[] = liveRunId ? foldEvents(liveRunId, liveEvents) : []
@@ -741,7 +885,7 @@ export function ChatPage() {
                   aria-label={`删除对话 ${conversationListLabel(c.id, c.title)}`}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void onDeleteConversation(c.id)
+                    onDeleteConversation(c.id)
                   }}
                 >
                   ✕
@@ -793,11 +937,11 @@ export function ChatPage() {
           <div className="messages-inner">
             {showWelcome && (
               <div className="welcome">
-                <p className="welcome-title">开始对话</p>
-                <p className="welcome-sub">发送一条消息，或粘贴临时 Token 后直接查询数据。</p>
+                <p className="welcome-title">{WELCOME.title}</p>
+                <p className="welcome-sub">{WELCOME.subtitle}</p>
               </div>
             )}
-            {messages.map((m) => {
+            {messages.map((m, msgIndex) => {
               const bubbleClass =
                 m.role === 'user' ? 'user' : m.role === 'system_note' ? 'system' : 'assistant'
               const persisted = !m.id.startsWith('local_')
@@ -805,8 +949,24 @@ export function ChatPage() {
                 m.role === 'assistant' && m.run_id && m.run_id !== liveRunId
                   ? historyPages[m.run_id] ?? []
                   : []
+              const runHistoryBlocks =
+                m.role === 'assistant' && m.run_id && isFirstMessageOfRun(msgIndex, messages)
+                  ? historyBlocks[m.run_id]
+                  : undefined
+              const canAct = persisted && !busy && !liveRunId && !historyMutating
               return (
                 <div key={m.id} className={`msg-row ${bubbleClass}`}>
+                  {runHistoryBlocks && (
+                    <div className="msg-history-blocks" data-testid="history-blocks">
+                      {runHistoryBlocks.map((b, i) =>
+                        b.kind === 'tool' ? (
+                          <ToolCard key={`h-${i}`} block={b} catalog={toolCatalog} readOnly />
+                        ) : (
+                          <WorkflowCard key={`h-${i}`} block={b} />
+                        ),
+                      )}
+                    </div>
+                  )}
                   <div className={`msg ${bubbleClass}`}>
                     {m.role === 'assistant' ? (
                       <MarkdownText text={m.content} />
@@ -821,26 +981,32 @@ export function ChatPage() {
                       ))}
                     </div>
                   )}
-                  {persisted && !busy && !liveRunId && !historyMutating && (
+                  {canAct && (
                     <div className="msg-actions">
                       {m.role === 'user' && (
-                        <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
-                          编辑并回滚
-                        </button>
+                        <>
+                          <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
+                            {ACTIONS.editAndReanswer}
+                          </button>
+                          <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
+                            {ACTIONS.copy}
+                          </button>
+                        </>
                       )}
                       {m.role === 'assistant' && (
-                        <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
-                          重新生成
-                        </button>
+                        <>
+                          <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
+                            {ACTIONS.regenerate}
+                          </button>
+                          <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
+                            {ACTIONS.copy}
+                          </button>
+                        </>
                       )}
-                      {m.role === 'system_note' && (
-                        <button type="button" className="btn ghost sm" onClick={() => void onRollbackTo(m)}>
-                          回滚到此
-                        </button>
-                      )}
-                      <button type="button" className="btn ghost sm" onClick={() => void onFork(m)}>
-                        Fork
-                      </button>
+                      <DropdownMenu
+                        triggerLabel={ACTIONS.more}
+                        items={buildMessageMenuItems(m)}
+                      />
                     </div>
                   )}
                 </div>
@@ -867,7 +1033,7 @@ export function ChatPage() {
                 case 'tool':
                   return (
                     <div key={`live-t-${i}`} className="msg-row tool">
-                      <ToolCard block={block} />
+                      <ToolCard block={block} catalog={toolCatalog} />
                     </div>
                   )
                 case 'workflow':
@@ -895,9 +1061,9 @@ export function ChatPage() {
         </div>
 
         <div className="chat-footer">
-          {(status || error || showStop) && (
+          {(status || showStop) && (
             <div className="chat-status-row">
-              <p className={`status${error ? ' status-error' : ''}`}>{error ?? status}</p>
+              <p className="status">{status}</p>
               {showStop && (
                 <button type="button" className="btn danger sm" onClick={() => void onCancelRun()}>
                   停止
@@ -907,23 +1073,22 @@ export function ChatPage() {
           )}
 
           <details className="chat-advanced">
-            <summary className="chat-advanced-summary">高级</summary>
+            <summary className="chat-advanced-summary">{ADVANCED.summary}</summary>
             <label className="chat-advanced-field">
-              <span className="chat-advanced-label">
-                临时用户 Token（Bearer 或 JWT，仅本次会话；也可在消息里写 token: …）
-              </span>
+              <span className="chat-advanced-label">{ADVANCED.tokenLabel}</span>
               <input
                 className="chat-advanced-input"
                 type="password"
                 value={sessionToken}
                 onChange={(e) => setSessionToken(e.target.value)}
                 disabled={composerDisabled}
-                placeholder="Bearer eyJ… 或粘贴 accessToken"
+                placeholder={ADVANCED.tokenPlaceholder}
                 autoComplete="off"
               />
+              <span className="chat-advanced-hint">{ADVANCED.tokenHint}</span>
             </label>
             <label className="chat-advanced-field">
-              <span className="chat-advanced-label">本次 Run Webhook URL（留空使用全局配置）</span>
+              <span className="chat-advanced-label">{ADVANCED.webhookLabel}</span>
               <input
                 className="chat-advanced-input"
                 type="url"
@@ -935,25 +1100,67 @@ export function ChatPage() {
             </label>
           </details>
 
-          {modelProfiles.length > 0 && (
-            <ModelSelect
-              profiles={modelProfiles}
-              value={selectedModelId}
-              onChange={setSelectedModelId}
-              disabled={composerDisabled}
-            />
-          )}
-
           <Composer
             disabled={composerDisabled}
             draft={composerDraft}
             skills={skills}
             onSend={(t, f) => void onSend(t, f)}
+            toolbar={
+              modelProfiles.length > 0 ? (
+                <ModelChip
+                  profiles={modelProfiles}
+                  value={selectedModelId}
+                  onChange={onChooseModel}
+                  disabled={composerDisabled}
+                />
+              ) : role === 'admin' ? (
+                <Link to="/settings/models" className="model-chip model-chip-empty">
+                  {CHAT.addModel}
+                </Link>
+              ) : (
+                <span className="model-chip model-chip-empty" aria-disabled="true">
+                  {CHAT.noModelConfigured}
+                </span>
+              )
+            }
           />
         </div>
       </main>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        danger
+        title={CHAT.deleteTitle}
+        body={CHAT.deleteBody}
+        confirmText={CHAT.deleteConfirm}
+        onConfirm={() => void performDelete()}
+        onCancel={() => setConfirmDelete(null)}
+      />
+      <Modal
+        open={visionWarning !== null}
+        title={CHAT.visionWarningTitle}
+        onClose={() => setVisionWarning(null)}
+        footer={
+          <Button variant="primary" onClick={() => setVisionWarning(null)}>
+            {CHAT.visionWarningAck}
+          </Button>
+        }
+      >
+        <p className="vision-warning-body">{visionWarning}</p>
+      </Modal>
+      <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss} />
     </div>
   )
+}
+
+/**
+ * Historical tool/workflow blocks render once, above the FIRST assistant
+ * message of each run. Messages without run_id never anchor history blocks.
+ */
+function isFirstMessageOfRun(index: number, msgs: ChatMessage[]): boolean {
+  const runId = msgs[index]?.run_id
+  if (!runId) return false
+  return msgs.findIndex((mm) => mm.run_id === runId) === index
 }
 
 function statusLabel(status: string): string {

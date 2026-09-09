@@ -55,6 +55,28 @@ export const ADVANCED = {
   tokenLabel: '临时访问凭证（选填）',
   tokenHint: '需要带身份访问时填写，仅本次会话使用。',
   webhookLabel: '本次结果回调地址（选填）',
+  tokenPlaceholder: '选填',
+} as const
+
+// ---- 聊天页反馈/门控/空态（任务 8 新增，集中收纳，组件不裸写新中文）----
+export const CHAT = {
+  // 模型持久化失效回退
+  modelStaleFallback: '之前选择的模型已不可用，已切回智能选择。',
+  // 图片能力门控
+  visionWarningTitle: '暂时无法发送图片',
+  visionWarningFallback: '当前选择不能处理图片。',
+  visionWarningAck: '知道了',
+  // 删除对话确认
+  deleteTitle: '删除这个对话？',
+  deleteBody: '将永久删除该对话的消息与相关数据，且不可恢复。',
+  deleteConfirm: '删除',
+  deleteSuccess: '对话已删除',
+  // 复制消息
+  copySuccess: '已复制',
+  copyFailed: '复制失败，请手动选择文本',
+  // 空模型态
+  addModel: '添加模型',
+  noModelConfigured: '暂未配置模型',
 } as const
 
 export interface FriendlyError {

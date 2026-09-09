@@ -1551,3 +1551,59 @@
   min-height: 32px;
 }
 .model-chip:hover { background: var(--surface-2); color: var(--text); }
+
+/* Empty-model states (task 8): admin gets an add-model link, read-only
+   operators get a disabled hint chip. No hardcoded colors, tokens only. */
+.model-chip-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  justify-content: center;
+  cursor: pointer;
+}
+a.model-chip-empty:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.model-chip-empty[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.7;
+}
+.model-chip-empty[aria-disabled="true"]:hover {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+/* Read-only historical tool/workflow blocks, rendered once above the first
+   assistant message of each run. */
+.msg-history-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Keep the "more" overflow menu aligned with the small ghost action buttons. */
+.msg-actions {
+  align-items: center;
+}
+.msg-actions .dropdown-trigger {
+  min-height: auto;
+  min-width: auto;
+  padding: 5px 10px;
+  font-size: 0.95rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Humanized advanced section hint + vision warning modal body. */
+.chat-advanced-hint {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.vision-warning-body {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
