@@ -722,7 +722,7 @@ export function ToolsSettings() {
                             )}
                             <button
                               type="button"
-                              className="btn sm"
+                              className="btn secondary sm"
                               disabled={callbackSaving === group.connectorId}
                               onClick={() => void saveConnectorSettings(group.connectorId)}
                             >
