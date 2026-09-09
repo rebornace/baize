@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { activeMention, replaceMention } from '../skillMention'
 import type { SkillSummary } from '../api'
 
@@ -11,6 +11,8 @@ export interface ComposerProps {
   draft?: string
   /** Skills available for @-completion. Omit to disable the popup. */
   skills?: SkillSummary[]
+  /** Optional leading slot inside composer-box (before the attach button). */
+  toolbar?: ReactNode
 }
 
 interface Completion {
@@ -21,7 +23,7 @@ interface Completion {
   activeIndex: number
 }
 
-export function Composer({ disabled, onSend, draft, skills }: ComposerProps) {
+export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerProps) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [completion, setCompletion] = useState<Completion | null>(null)
@@ -190,6 +192,7 @@ export function Composer({ disabled, onSend, draft, skills }: ComposerProps) {
           onChange={(e) => addFiles(e.target.files)}
           disabled={disabled}
         />
+        {toolbar && <span className="composer-toolbar">{toolbar}</span>}
         <button
           type="button"
           className="composer-attach"

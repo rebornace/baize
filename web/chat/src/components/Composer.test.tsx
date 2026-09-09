@@ -59,4 +59,22 @@ describe('Composer', () => {
     expect(attachBtn).toBeTruthy()
     expect(attachBtn![0]).toContain('disabled=""')
   })
+
+  it('renders the toolbar slot inside composer-box when provided', () => {
+    const html = renderToStaticMarkup(
+      createElement(Composer, {
+        onSend: () => {},
+        toolbar: createElement('span', { 'data-testid': 'tb' }, '芯片'),
+      }),
+    )
+    expect(html).toContain('composer-toolbar')
+    expect(html).toContain('芯片')
+    // The toolbar must precede the attachment button inside composer-box.
+    expect(html.indexOf('composer-toolbar')).toBeLessThan(html.indexOf('composer-attach'))
+  })
+
+  it('omits the toolbar slot when not provided', () => {
+    const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
+    expect(html).not.toContain('composer-toolbar')
+  })
 })

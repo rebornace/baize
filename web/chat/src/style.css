@@ -1539,3 +1539,15 @@
   word-break: break-all;
   font-size: 0.75rem;
 }
+
+.composer-toolbar { display: inline-flex; align-items: center; margin-right: var(--space-1); }
+.model-chip, .model-chip-inner { display: inline-flex; align-items: center; gap: 4px; }
+.model-chip-inner { font-size: 13px; color: var(--text-muted); }
+.model-chip {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  background: var(--surface);
+  min-height: 32px;
+}
+.model-chip:hover { background: var(--surface-2); color: var(--text); }
