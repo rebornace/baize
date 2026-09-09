@@ -36,6 +36,7 @@ import { ToolCard } from '../components/ToolCard'
 import { UserBubble } from '../components/UserBubble'
 import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
+import { ThemeToggle } from '../components/ui'
 import { conversationListLabel } from '../conversationLabel'
 import { clearControlToken } from '../controlAuth'
 import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
@@ -730,6 +731,7 @@ export function ChatPage() {
           </ul>
         </div>
         <div className="chat-sidebar-bottom">
+          <ThemeToggle />
           <Link
             to={role === 'admin' ? '/settings/tools' : '/settings/identities'}
             className="settings-link"

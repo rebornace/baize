@@ -95,3 +95,29 @@
 .ui-spinner-label { line-height: 1; }
 @keyframes ui-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ui-spinner-dot { animation: none; } }
+
+.ui-theme-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  background: var(--surface-2);
+}
+.ui-theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ui-theme-btn:hover { color: var(--text); }
+.ui-theme-btn[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-1);
+}

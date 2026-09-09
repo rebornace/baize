@@ -1,4 +1,5 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
+import { ThemeToggle } from '../components/ui'
 import { useGate } from '../gateContext'
 import { settingsNavItems } from '../settingsNav'
 
@@ -23,6 +24,7 @@ export function SettingsLayout() {
             </NavLink>
           ))}
         </nav>
+        <ThemeToggle />
         <Link to="/" className="settings-back">
           返回聊天
         </Link>
