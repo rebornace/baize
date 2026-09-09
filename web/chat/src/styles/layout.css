@@ -1,0 +1,35 @@
+/* 移动端：≤768；平板：769–1024；桌面：>1024 */
+.app-drawer-scrim {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --chat-max: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-with-drawer .chat-sidebar,
+  .app-with-drawer .settings-nav {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(82vw, 320px);
+    z-index: var(--z-drawer);
+    transform: translateX(-100%);
+    transition: transform var(--t);
+    box-shadow: var(--shadow-3);
+  }
+  .app-with-drawer.drawer-open .chat-sidebar,
+  .app-with-drawer.drawer-open .settings-nav {
+    transform: translateX(0);
+  }
+  .app-with-drawer.drawer-open .app-drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-drawer) - 1);
+    background: rgba(0, 0, 0, 0.4);
+    border: none;
+  }
+}

@@ -18,6 +18,10 @@ import { SkillsSettings } from './pages/SkillsSettings'
 import { StorageSettings } from './pages/StorageSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
 import { WeixinChannelSettings } from './pages/WeixinChannelSettings'
+import './styles/tokens.css'
+import './styles/base.css'
+import './styles/components.css'
+import './styles/layout.css'
 import './style.css'
 
 function AdminOnly({ children }: { children: ReactNode }) {
