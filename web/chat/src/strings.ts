@@ -40,6 +40,9 @@ export const HITL = {
   rejected: '已拒绝',
 } as const
 
+// ---- 工作流 ----
+export const WORKFLOW_PREPARING = '工作流准备中'
+
 // ---- 欢迎区 ----
 export const WELCOME = {
   title: '有什么可以帮你？',

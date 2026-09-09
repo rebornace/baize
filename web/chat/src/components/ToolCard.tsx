@@ -139,6 +139,7 @@ export function ToolCard({ block, catalog = [], readOnly = false, onResumed }: T
           <button
             type="button"
             className="tool-card-detailbtn"
+            disabled={busy}
             onClick={() => setExpanded((v) => !v)}
           >
             看参数

@@ -1,5 +1,6 @@
 import { Check, Loader2, X } from 'lucide-react'
 import type { ChatBlock, WorkflowStepStatus } from '../foldEvents'
+import { WORKFLOW_PREPARING } from '../strings'
 
 type WorkflowBlock = Extract<ChatBlock, { kind: 'workflow' }>
 
@@ -15,7 +16,9 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
   return (
     <div className="tool-card workflow-card">
       <div className="tool-card-header workflow-card-header">
-        <span className="workflow-progress">第 {Math.max(current, 1)} / 共 {total} 步</span>
+        <span className="workflow-progress">
+          {total === 0 ? WORKFLOW_PREPARING : `第 ${Math.max(current, 1)} / 共 ${total} 步`}
+        </span>
       </div>
       <ol className="workflow-steps">
         {block.steps.map((step, i) => (

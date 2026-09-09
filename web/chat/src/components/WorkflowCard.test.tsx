@@ -27,4 +27,11 @@ describe('WorkflowCard', () => {
     expect(html).toContain('第 2 / 共 3 步')
     expect(html).toContain('步骤 1')
   })
+
+  it('空 steps 时显示「工作流准备中」而非矛盾的第 1/共 0 步', () => {
+    const html = renderToStaticMarkup(<WorkflowCard block={wf([])} />)
+    expect(html).toContain('工作流准备中')
+    expect(html).not.toContain('共 0 步')
+    expect(html).not.toContain('第 1')
+  })
 })
