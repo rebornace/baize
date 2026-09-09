@@ -1,46 +1,46 @@
 import { useEffect, useState } from 'react'
+import { Check, ChevronDown, Loader2, X } from 'lucide-react'
 import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
-import { AnalysisPagePreview } from './AnalysisPagePreview'
+import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
+import { HITL } from '../strings'
+import { AnalysisPagePreview } from './AnalysisPagePreview'
+import { Button } from './ui'
 
 type ToolBlock = Extract<ChatBlock, { kind: 'tool' }>
 
-const STATUS_LABEL: Record<ToolBlock['status'], string> = {
-  running: '执行中',
-  waiting_human: '等待批准',
-  succeeded: '成功',
-  failed: '失败',
-  approved: '已批准',
-  rejected: '已拒绝',
-}
-
 export interface ToolCardProps {
   block: ToolBlock
+  catalog?: ToolCatalog
+  /** 历史回看：只渲染结果态，不出现审批操作。 */
+  readOnly?: boolean
   onResumed?: () => void
 }
 
-export function ToolCard({ block, onResumed }: ToolCardProps) {
-  const [expanded, setExpanded] = useState(block.status === 'waiting_human')
+export function ToolCard({ block, catalog = [], readOnly = false, onResumed }: ToolCardProps) {
+  const waiting = block.status === 'waiting_human' && !readOnly
+  const [expanded, setExpanded] = useState(waiting)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showComment, setShowComment] = useState(false)
+  const [comment, setComment] = useState('')
 
-  const waiting = block.status === 'waiting_human'
   const analysisPage =
     block.result !== undefined ? parseAnalysisPageResult(block.result) : null
+  const label = friendlyToolName(block.name, catalog)
+  const description = catalog.find((t) => t.name === block.name)?.description?.trim() || ''
 
   // running → waiting_human: auto-expand arguments (user may still collapse).
   useEffect(() => {
-    if (block.status === 'waiting_human') {
-      setExpanded(true)
-    }
-  }, [block.status])
+    if (block.status === 'waiting_human' && !readOnly) setExpanded(true)
+  }, [block.status, readOnly])
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(true)
     setError(null)
     try {
-      await resumeRun(block.runId, decision)
+      await resumeRun(block.runId, decision, decision === 'reject' ? comment.trim() : '')
       onResumed?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -49,17 +49,43 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
     }
   }
 
+  const icon =
+    block.status === 'running' || block.status === 'approved' ? (
+      <Loader2 size={15} className="icon-spin" aria-hidden />
+    ) : block.status === 'failed' || block.status === 'rejected' ? (
+      <X size={15} aria-hidden />
+    ) : (
+      <Check size={15} aria-hidden />
+    )
+
   return (
     <div className={`tool-card${waiting ? ' tool-card-waiting' : ''}`}>
-      <button
-        type="button"
-        className="tool-card-header"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-      >
-        <span className="tool-card-name">{block.name}</span>
-        <span className="tool-card-status">{STATUS_LABEL[block.status]}</span>
-      </button>
+      {waiting ? (
+        <div className="hitl-head">
+          <p className="hitl-title">{HITL.title}</p>
+          <p className="hitl-desc">
+            {label}
+            {description ? ` · ${description}` : ''}
+          </p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="tool-card-header"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          <span className="tool-card-phrase">
+            {icon}
+            {toolPhrase(block.name, block.status, catalog)}
+          </span>
+          <ChevronDown
+            size={14}
+            className={`tool-card-chevron${expanded ? ' expanded' : ''}`}
+            aria-hidden
+          />
+        </button>
+      )}
 
       {/* Analysis pages stay visible even when the tool card is collapsed. */}
       {analysisPage && (
@@ -70,6 +96,7 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
 
       {expanded && (
         <div className="tool-card-body">
+          <p className="tool-card-techname">工具：{block.name}</p>
           {block.arguments !== undefined && (
             <pre className="tool-card-json">{formatJSON(block.arguments)}</pre>
           )}
@@ -87,21 +114,34 @@ export function ToolCard({ block, onResumed }: ToolCardProps) {
 
       {waiting && (
         <div className="tool-card-actions">
+          {showComment && (
+            <input
+              className="hitl-comment"
+              type="text"
+              value={comment}
+              disabled={busy}
+              placeholder={HITL.commentPlaceholder}
+              onChange={(e) => setComment(e.target.value)}
+            />
+          )}
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void decide('approve')}>
+            {HITL.approve}
+          </Button>
+          {!showComment ? (
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => setShowComment(true)}>
+              {HITL.reject}
+            </Button>
+          ) : (
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => void decide('reject')}>
+              确认拒绝
+            </Button>
+          )}
           <button
             type="button"
-            className="btn primary sm"
-            disabled={busy}
-            onClick={() => void decide('approve')}
+            className="tool-card-detailbtn"
+            onClick={() => setExpanded((v) => !v)}
           >
-            批准
-          </button>
-          <button
-            type="button"
-            className="btn danger sm"
-            disabled={busy}
-            onClick={() => void decide('reject')}
-          >
-            驳回
+            看参数
           </button>
         </div>
       )}
