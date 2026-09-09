@@ -46,6 +46,7 @@ import { useGate } from '../gateContext'
 import { buildRunOptions, visionGate } from '../modelSelect'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
+import { uuid } from '../uuid'
 
 
 const CONV_KEY = 'baize.conversation_id'
@@ -55,7 +56,7 @@ const IDLE_SYNC_MS = 2000
 const AGENT_FALLBACK = 'ticket-agent'
 
 function newConversationId(): string {
-  return `conv_${crypto.randomUUID()}`
+  return `conv_${uuid()}`
 }
 
 function loadConversationId(): string {

@@ -8,13 +8,14 @@ import {
   type IdentityView,
 } from '../api'
 import { redactSensitive } from '../sensitive'
+import { uuid } from '../uuid'
 
 const CONV_KEY = 'baize.conversation_id'
 
 function loadConversationId(): string {
   const existing = localStorage.getItem(CONV_KEY)?.trim()
   if (existing) return existing
-  const id = `conv_${crypto.randomUUID()}`
+  const id = `conv_${uuid()}`
   localStorage.setItem(CONV_KEY, id)
   return id
 }
