@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTO_MODEL_ID } from './modelSelect'
 import type { ModelProfile } from './api'
 import { loadModelChoice, saveModelChoice, resolveModelChoice, MODEL_CHOICE_KEY } from './modelChoice'
 
 beforeEach(() => localStorage.clear())
+afterEach(() => vi.restoreAllMocks())
 const prof = (id: string): ModelProfile =>
   ({ id, name: id, model: 'm', auto_tier: 'standard', supports_vision: false }) as ModelProfile
 
@@ -41,5 +42,16 @@ describe('modelChoice persistence', () => {
   it('auto is never stale', () => {
     const r = resolveModelChoice([])
     expect(r).toEqual({ choice: AUTO_MODEL_ID, stale: false })
+  })
+  it('falls back to auto when storage throws (privacy mode)', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    expect(loadModelChoice()).toBe(AUTO_MODEL_ID)
+    expect(() => saveModelChoice('mp_1')).not.toThrow()
+    expect(resolveModelChoice([prof('mp_1')]).choice).toBe(AUTO_MODEL_ID)
   })
 })

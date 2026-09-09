@@ -58,4 +58,13 @@ describe('ModelChip', () => {
     render('')
     expect(host.textContent).toContain('智能选择')
   })
+  it('does not open the menu when disabled', () => {
+    act(() => {
+      createRoot(host).render(
+        <ModelChip profiles={profiles} value={AUTO_MODEL_ID} onChange={() => {}} disabled />,
+      )
+    })
+    open()
+    expect(host.querySelectorAll('[role="menuitem"]').length).toBe(0)
+  })
 })

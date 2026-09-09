@@ -192,7 +192,7 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
           onChange={(e) => addFiles(e.target.files)}
           disabled={disabled}
         />
-        {toolbar && <span className="composer-toolbar">{toolbar}</span>}
+        {toolbar != null && <span className="composer-toolbar">{toolbar}</span>}
         <button
           type="button"
           className="composer-attach"
