@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 export interface CardProps {
   title?: ReactNode
@@ -22,11 +22,20 @@ export function Card({
   ...rest
 }: CardProps) {
   const clickable = onClick ? ' ui-card-clickable' : ''
+  const handleKeyDown = onClick
+    ? (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }
+    : undefined
   return (
     <div
       className={`ui-card${clickable} ${className}`.trim()}
       data-testid="ui-card"
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       {...rest}
