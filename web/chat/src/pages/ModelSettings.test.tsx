@@ -276,10 +276,15 @@ describe('ModelProfileList', () => {
 
   it('shows tier + vision badges', () => {
     const html = render()
-    expect(html).toContain('标准')
-    expect(html).toContain('轻量')
-    // The vision profile carries a 视觉 badge in addition to its tier badge.
-    const visionBadges = html.match(/视觉/g)?.length ?? 0
+    const items = html.split('<li').slice(1)
+    expect(items).toHaveLength(2)
+    // 标准模型 carries the 标准 tier badge.
+    expect(items[0]).toContain('<span class="settings-badge">标准</span>')
+    // 轻量模型's name still contains 轻量, so the light tier is asserted via
+    // its 快速 tier badge rather than via the 轻量 substring.
+    expect(items[1]).toContain('<span class="settings-badge">快速</span>')
+    // The vision profile carries a 能看图 badge in addition to its tier badge.
+    const visionBadges = html.match(/能看图/g)?.length ?? 0
     expect(visionBadges).toBeGreaterThanOrEqual(1)
   })
 

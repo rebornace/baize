@@ -1,10 +1,15 @@
 import type { CreateRunOptions, ModelProfile } from './api'
+import { AUTO_LABEL, tierLabel, VISION_LABEL } from './strings'
+
+// 档位文案的单一来源在 ./strings；此处再导出以保持 ModelSettings 既有 import 路径。
+export { tierLabel } from './strings'
 
 /**
- * AUTO_MODEL_ID is the sentinel value for the "smart routing (Auto)" choice.
- * It is not a real model profile: the server picks a concrete model based on
- * the turn's content (e.g. routing image turns to a vision-capable profile).
- * It is the default selection and the only mode for channel (WeChat) inbound.
+ * AUTO_MODEL_ID is the sentinel value for the "智能选择" (smart routing)
+ * choice. It is not a real model profile: the server picks a concrete model
+ * based on the turn's content (e.g. routing image turns to a vision-capable
+ * profile). It is the default selection and the only mode for channel
+ * (WeChat) inbound.
  */
 export const AUTO_MODEL_ID = 'auto'
 
@@ -16,35 +21,22 @@ export interface ModelOption {
 
 /**
  * Build the dropdown options for the chat composer model picker. The first
- * option is always "智能路由 (Auto)". Every configured profile follows as a
- * manual choice. Profiles are tagged with their task-aware Auto tier
- * (轻量 / 标准 / 强力) and 视觉 when the model accepts images. A deliberate
- * manual pick always pins that exact model with no auto rerouting.
+ * option is always "智能选择". Every configured profile follows as a manual
+ * choice. Profiles are tagged with their task-aware Auto tier
+ * (快速 / 标准 / 深度思考) and 能看图 when the model accepts images. A
+ * deliberate manual pick always pins that exact model with no auto rerouting.
  */
 export function modelOptions(profiles: ModelProfile[]): ModelOption[] {
-  const auto: ModelOption = { value: AUTO_MODEL_ID, label: '智能路由（Auto）' }
+  const auto: ModelOption = { value: AUTO_MODEL_ID, label: AUTO_LABEL }
   const rest = profiles.map((p) => {
     const tags = [
       tierLabel(p.auto_tier),
-      p.supports_vision ? '视觉' : '',
+      p.supports_vision ? VISION_LABEL : '',
     ].filter(Boolean)
     const suffix = tags.length ? ` · ${tags.join('·')}` : ''
     return { value: p.id, label: `${p.name}（${p.model}）${suffix}` }
   })
   return [auto, ...rest]
-}
-
-/** Chinese label for a model capability tier; unknown values read as 标准. */
-export function tierLabel(tier?: string): string {
-  switch (tier) {
-    case 'light':
-      return '轻量'
-    case 'power':
-      return '强力'
-    case 'standard':
-    default:
-      return '标准'
-  }
 }
 
 /** A blank or "auto" selection means smart routing. */
@@ -86,14 +78,14 @@ export function visionGate(
     if (canVision) return { allowed: true }
     return {
       allowed: false,
-      message: '当前没有可用的视觉模型，请在「设置 → 模型」中添加支持视觉的模型，或移除图片后再发送。',
+      message: '当前没有可用的「能看图」模型，请到「设置 → AI 模型」添加，或移除图片后再发送。',
     }
   }
   const chosen = profiles.find((p) => p.id === selectedId.trim())
   if (chosen?.supports_vision) return { allowed: true }
   return {
     allowed: false,
-    message: '所选模型不支持图片附件。请改用「智能路由（Auto）」或选择带「视觉」标记的模型，或移除图片。',
+    message: '这个模型看不了图片。请改用「智能选择」或带「能看图」标记的模型，或移除图片。',
   }
 }
 

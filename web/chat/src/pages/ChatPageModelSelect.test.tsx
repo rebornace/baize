@@ -32,14 +32,14 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 describe('modelOptions', () => {
   it('first option is the Auto smart-router', () => {
     const opts = modelOptions(profiles)
-    expect(opts[0]).toEqual({ value: AUTO_MODEL_ID, label: '智能路由（Auto）' })
+    expect(opts[0]).toEqual({ value: AUTO_MODEL_ID, label: '智能选择' })
   })
 
   it('lists every profile as a manual choice tagged with its tier', () => {
     const opts = modelOptions(profiles)
     expect(opts.slice(1)).toEqual([
       { value: 'mp_1', label: '标准（gpt-4o） · 标准' },
-      { value: 'mp_2', label: '轻量（gpt-4o-mini） · 轻量' },
+      { value: 'mp_2', label: '轻量（gpt-4o-mini） · 快速' },
     ])
   })
 
@@ -47,11 +47,11 @@ describe('modelOptions', () => {
     const opts = modelOptions([
       profile({ id: 'mp_v', name: '视觉', model: 'gpt-4o', supports_vision: true }),
     ])
-    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 标准·视觉' })
+    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 标准·能看图' })
   })
 
   it('still yields only the Auto option for an empty profile list', () => {
-    expect(modelOptions([])).toEqual([{ value: AUTO_MODEL_ID, label: '智能路由（Auto）' }])
+    expect(modelOptions([])).toEqual([{ value: AUTO_MODEL_ID, label: '智能选择' }])
   })
 })
 
@@ -89,7 +89,7 @@ describe('visionGate', () => {
   it('Auto mode blocks images only when no vision model exists at all', () => {
     const r = visionGate(profiles, AUTO_MODEL_ID, true, false)
     expect(r.allowed).toBe(false)
-    expect(r.message).toContain('视觉模型')
+    expect(r.message).toContain('能看图')
   })
 
   it('manual vision model allows images', () => {
@@ -99,7 +99,7 @@ describe('visionGate', () => {
   it('manual text-only model blocks images even when a vision model exists (no reroute)', () => {
     const r = visionGate(withVision, 'mp_2', true, false)
     expect(r.allowed).toBe(false)
-    expect(r.message).toContain('智能路由')
+    expect(r.message).toContain('智能选择')
   })
 })
 
@@ -129,10 +129,10 @@ describe('ModelSelect', () => {
       }),
     )
     expect(html).toContain('<select')
-    expect(html).toContain('智能路由（Auto）')
+    expect(html).toContain('智能选择')
     expect(html).toContain('value="auto"')
     expect(html).toContain('标准（gpt-4o） · 标准')
-    expect(html).toContain('轻量（gpt-4o-mini） · 轻量')
+    expect(html).toContain('轻量（gpt-4o-mini） · 快速')
     expect(html).toContain('value="mp_2"')
   })
 

@@ -8,13 +8,14 @@ import {
   type ModelTier,
 } from '../api'
 import { tierLabel } from '../modelSelect'
+import { VISION_LABEL } from '../strings'
 
 // Editable tier options plus "auto" (infer from the model name server-side).
 const TIER_OPTIONS: { value: ModelTier | 'auto'; label: string }[] = [
   { value: 'auto', label: '自动识别（按模型名）' },
-  { value: 'light', label: '轻量（快速/省钱，简单闲聊）' },
-  { value: 'standard', label: '标准（通用）' },
-  { value: 'power', label: '强力（复杂推理/长任务）' },
+  { value: 'light', label: '快速（简单、省钱的日常任务）' },
+  { value: 'standard', label: '标准（适合多数任务）' },
+  { value: 'power', label: '深度思考（复杂推理、长任务）' },
 ]
 
 export interface ProfileFormState {
@@ -215,7 +216,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           onChange={(e) => setForm((f) => ({ ...f, supportsVision: e.target.checked }))}
           disabled={busy}
         />
-        支持视觉（图片附件）
+        能看图（支持图片附件）
       </label>
       <label className="settings-checkbox">
         <input
@@ -255,7 +256,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           ))}
         </select>
         <small className="settings-muted">
-          智能路由（Auto）按对话难度在轻量/标准/强力档位间选模型；图片消息只走勾选了「支持视觉」的模型。
+          智能选择按对话难度在快速/标准/深度思考档位间选模型；图片消息只走勾选了「能看图」的模型。
         </small>
       </label>
     </>
@@ -289,7 +290,7 @@ export function ModelProfileList({
           <span className="settings-tool-line">
             <span className="settings-tool-title">{p.name}</span>
             <span className="settings-badge">{tierLabel(p.auto_tier)}</span>
-            {p.supports_vision && <span className="settings-badge">视觉</span>}
+            {p.supports_vision && <span className="settings-badge">{VISION_LABEL}</span>}
             <span className="settings-muted"> · {p.model}</span>
             <span className="settings-muted"> · {p.base_url}</span>
           </span>
@@ -465,9 +466,9 @@ export function ModelSettings() {
       <h1 className="settings-heading">模型</h1>
       <div className="settings-meta">
         <p>
-          配置多个 OpenAI 兼容模型，并为每个模型选择「Auto 路由档位」（轻量 / 标准 / 强力）。聊天默认走
-          「智能路由（Auto）」：根据每轮对话的实际难度、长度、代码与附件情况，以及是否含图片，自动挑选最合适档位的模型——
-          图片消息只会使用勾选了「支持视觉」的模型。也可在输入框手动指定某条消息固定使用某个模型（此时不自动路由）。
+          配置多个 OpenAI 兼容模型，并为每个模型选择「Auto 路由档位」（快速 / 标准 / 深度思考）。聊天默认走
+          「智能选择」：根据每轮对话的实际难度、长度、代码与附件情况，以及是否含图片，自动挑选最合适档位的模型——
+          图片消息只会使用勾选了「能看图」的模型。也可在输入框手动指定某条消息固定使用某个模型（此时不自动路由）。
           API Key 保存在本地库中，界面仅显示脱敏值；也可只填环境变量名，由进程环境提供密钥。
         </p>
       </div>

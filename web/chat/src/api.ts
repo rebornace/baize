@@ -58,14 +58,17 @@ export interface IdentityView {
 
 async function parseJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let detail = res.statusText
+    let code = 'unknown'
+    let message = res.statusText
     try {
-      const body = (await res.json()) as { error?: { message?: string } }
-      if (body.error?.message) detail = body.error.message
+      const body = (await res.json()) as { error?: { code?: string; message?: string } }
+      if (body.error?.code) code = body.error.code
+      if (body.error?.message) message = body.error.message
     } catch {
       /* ignore */
     }
-    throw new Error(`HTTP ${res.status}: ${detail}`)
+    // 保留 "HTTP <status>:" 前缀，兼容 GateRoot 的 startsWith('HTTP 401:') 判断。
+    throw new ApiError(res.status, code, `HTTP ${res.status}: ${message}`)
   }
   return (await res.json()) as T
 }
