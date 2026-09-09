@@ -984,13 +984,14 @@ export function ChatPage() {
                 m.run_id &&
                 isFirstAssistantMessageOfRun(msgIndex, messages) &&
                 historyBlocks[m.run_id]
-              // 分析页产物源自工具结果：有历史工具块时预览已在 ToolCard 内承载，
-              // 独立 pages 仅作为「无工具块的分析页」兜底，避免重复 iframe。
+              // 分析页产物源自工具结果：该 run 只要有历史工具块（统一在首条
+              // assistant 消息处渲染），所有 assistant 消息都不再独立出预览，
+              // 避免同一 run 多条 assistant 消息时重复 iframe。
               const pages =
                 m.role === 'assistant' &&
                 m.run_id &&
                 m.run_id !== liveRunId &&
-                !runHistoryBlocks
+                !historyBlocks[m.run_id]
                   ? historyPages[m.run_id] ?? []
                   : []
               const canAct = persisted && !busy && !liveRunId && !historyMutating
