@@ -67,6 +67,7 @@
   --t-fast: 120ms ease;
   --t: 180ms ease;
   --z-drawer: 1000;
+  --z-dropdown: 1050;
   --z-modal: 1100;
   --z-toast: 1200;
 }
