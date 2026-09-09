@@ -12,13 +12,13 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   disable_thinking: false,
   supports_vision: false,
   context_tokens: 128000,
-  is_default: false,
+  auto_tier: 'standard',
   ...over,
 })
 
 const profiles = [
-  profile({ id: 'mp_1', name: '主力', model: 'gpt-4o', is_default: true }),
-  profile({ id: 'mp_2', name: '廉价', model: 'gpt-4o-mini' }),
+  profile({ id: 'mp_1', name: '标准', model: 'gpt-4o', auto_tier: 'standard' }),
+  profile({ id: 'mp_2', name: '轻量', model: 'gpt-4o-mini', auto_tier: 'light' }),
 ]
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -35,11 +35,11 @@ describe('modelOptions', () => {
     expect(opts[0]).toEqual({ value: AUTO_MODEL_ID, label: '智能路由（Auto）' })
   })
 
-  it('lists every profile (including the default) as a manual choice', () => {
+  it('lists every profile as a manual choice tagged with its tier', () => {
     const opts = modelOptions(profiles)
     expect(opts.slice(1)).toEqual([
-      { value: 'mp_1', label: '主力（gpt-4o） · 默认' },
-      { value: 'mp_2', label: '廉价（gpt-4o-mini）' },
+      { value: 'mp_1', label: '标准（gpt-4o） · 标准' },
+      { value: 'mp_2', label: '轻量（gpt-4o-mini） · 轻量' },
     ])
   })
 
@@ -47,7 +47,7 @@ describe('modelOptions', () => {
     const opts = modelOptions([
       profile({ id: 'mp_v', name: '视觉', model: 'gpt-4o', supports_vision: true }),
     ])
-    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 视觉' })
+    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 标准·视觉' })
   })
 
   it('still yields only the Auto option for an empty profile list', () => {
@@ -131,8 +131,8 @@ describe('ModelSelect', () => {
     expect(html).toContain('<select')
     expect(html).toContain('智能路由（Auto）')
     expect(html).toContain('value="auto"')
-    expect(html).toContain('主力（gpt-4o） · 默认')
-    expect(html).toContain('廉价（gpt-4o-mini）')
+    expect(html).toContain('标准（gpt-4o） · 标准')
+    expect(html).toContain('轻量（gpt-4o-mini） · 轻量')
     expect(html).toContain('value="mp_2"')
   })
 

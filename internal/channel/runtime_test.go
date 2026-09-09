@@ -136,6 +136,21 @@ func newTestRuntime(t *testing.T, runs *fakeRuns) (*Runtime, *conversation.Memor
 	return rt, meta
 }
 
+// stubResolver returns a BuildDeps-style ResolveModel for channel tests:
+// visionID is the model an image turn is pinned to ("" = no vision model).
+// Non-image turns resolve to "" (Switch primary).
+func stubResolver(visionID string) func(llm.TaskSignals) (string, bool, bool) {
+	return func(sig llm.TaskSignals) (string, bool, bool) {
+		if sig.HasImages {
+			if visionID == "" {
+				return "", false, true
+			}
+			return visionID, true, true
+		}
+		return "", true, true
+	}
+}
+
 func TestHandleInboundCreatesMetaAndRun(t *testing.T) {
 	runs := &fakeRuns{active: map[string]bool{}}
 	rt, meta := newTestRuntime(t, runs)
@@ -440,7 +455,9 @@ func TestHandleInboundPersistsImageForInlineDisplay(t *testing.T) {
 	rt, meta := newTestRuntime(t, runs)
 	media := &fakeMediaStore{}
 	rt.Media = media
-	rt.SupportsVision = true
+	rt.ResolveModel = func(llm.TaskSignals) (string, bool, bool) {
+		return "", true, true // primary model is vision-capable
+	}
 
 	// Valid PNG magic + IHDR-ish bytes (attach.processImage decodes real
 	// images; use a small real PNG built by image/png).
@@ -533,8 +550,7 @@ func hasImagePart(parts []llm.ContentPart) bool {
 func TestHandleInboundRoutesImageToVisionModel(t *testing.T) {
 	runs := &fakeRuns{active: map[string]bool{}}
 	rt, _ := newTestRuntime(t, runs)
-	rt.SupportsVision = false // default model cannot see images
-	rt.VisionModelProfileID = func() string { return "mp_vision" }
+	rt.ResolveModel = stubResolver("mp_vision")
 	var gotParts []llm.ContentPart
 	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
 		gotParts = parts
@@ -569,8 +585,7 @@ func TestHandleInboundRoutesImageToVisionModel(t *testing.T) {
 func TestHandleInboundTextFileUsesDefaultModel(t *testing.T) {
 	runs := &fakeRuns{active: map[string]bool{}}
 	rt, _ := newTestRuntime(t, runs)
-	rt.SupportsVision = false
-	rt.VisionModelProfileID = func() string { return "mp_vision" }
+	rt.ResolveModel = stubResolver("mp_vision")
 	var gotParts []llm.ContentPart
 	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
 		gotParts = parts
@@ -606,8 +621,7 @@ func TestHandleInboundTextFileUsesDefaultModel(t *testing.T) {
 func TestHandleInboundNoVisionModelDegradesImage(t *testing.T) {
 	runs := &fakeRuns{active: map[string]bool{}}
 	rt, _ := newTestRuntime(t, runs)
-	rt.SupportsVision = false
-	rt.VisionModelProfileID = func() string { return "" } // no vision model
+	rt.ResolveModel = stubResolver("") // no vision model
 	var gotParts []llm.ContentPart
 	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
 		gotParts = parts
@@ -636,15 +650,16 @@ func TestHandleInboundNoVisionModelDegradesImage(t *testing.T) {
 	}
 }
 
-// TestHandleInboundDefaultVisionModelNotOverridden: when the default model is
-// already vision-capable (SupportsVision=true), images are sent as multimodal
-// parts but the run is NOT pinned to a separate vision profile (the default
-// handles it).
+// TestHandleInboundDefaultVisionModelNotOverridden: when the primary model is
+// already vision-capable, images are sent as multimodal parts but the run is
+// NOT pinned to a separate vision profile (the resolver reports vision
+// reachable with an empty id, so the Switch uses its primary model).
 func TestHandleInboundDefaultVisionModelNotOverridden(t *testing.T) {
 	runs := &fakeRuns{active: map[string]bool{}}
 	rt, _ := newTestRuntime(t, runs)
-	rt.SupportsVision = true
-	rt.VisionModelProfileID = func() string { return "mp_vision" }
+	rt.ResolveModel = func(llm.TaskSignals) (string, bool, bool) {
+		return "", true, true // primary model handles images; no pin
+	}
 	var gotParts []llm.ContentPart
 	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, parts []llm.ContentPart) error {
 		gotParts = parts

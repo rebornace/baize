@@ -77,7 +77,7 @@ cd baize
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
 - 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
-- 设置 → 模型（仅管理员）：维护多个命名模型 profile（OpenAI 兼容）、设默认；操作员可查看列表用于聊天下拉（详见下文「多模型配置与对话选模型」）
+- 设置 → 模型（仅管理员）：维护多个命名模型 profile（OpenAI 兼容），按档位（light/standard/power）参与任务感知 Auto 智能路由，任意 profile 均可删除；操作员可查看列表用于聊天下拉（详见下文「多模型配置与对话选模型」）
 - 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
 - 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
 - 设置 → 渠道 / 微信（仅管理员）：iLink 扫码登录个人微信 Bot、配置默认 Agent、受理人与 allowlist（见下文「微信 Channel」）
@@ -436,12 +436,12 @@ go run ./cmd/baize start
 
 生产启动后，可在 **设置 → 模型**（`/settings/models`，仅管理员）维护多个**命名模型 profile**，无需改 YAML、无需重启：
 
-- 每个 profile 含：名称、Provider（本版固定 `openai_compatible`）、Base URL、模型名、API Key（或 API Key 环境变量名）、`disable_thinking`、`supports_vision`；可把其中一个**设为默认**。
-- **API Key 存本地库**（SQLite / Postgres，与 DSN 密码同级信任）；界面与 API 响应一律**脱敏**回显（前 3 后 4，中间省略）。编辑时 Key 留空表示**不修改**；也可只填环境变量名、由 Runtime 启动/调用时读取。**默认 profile 不可删除**（先把另一个设为默认）。
+- 每个 profile 含：名称、Provider（本版固定 `openai_compatible`）、Base URL、模型名、API Key（或 API Key 环境变量名）、`disable_thinking`、`supports_vision`、`context_tokens`，以及 **Auto 路由档位**（`light` / `standard` / `power`，可选「auto」按模型名自动识别）。档位告诉任务感知 Auto 路由器该模型的能力级别。
+- **API Key 存本地库**（SQLite / Postgres，与 DSN 密码同级信任）；界面与 API 响应一律**脱敏**回显（前 3 后 4，中间省略）。编辑时 Key 留空表示**不修改**；也可只填环境变量名、由 Runtime 启动/调用时读取。**任何 profile 都可删除，包括最后一个**；当一个模型都没有时，聊天会被拦截并提示先添加模型。
 - **热切换、不重启**：profile 增改后，下一次对话自动生效；底层按 Run 解析 / 缓存 Provider，配置更新即热重建。
-- **聊天按消息选模型**：聊天框每条消息发送前可用下拉选择模型。下拉首项为「默认模型」（value 为空，后端回退默认 profile）；**选择不记忆**——发送成功后下拉重置回默认，不写 `localStorage`。不选（默认）以及**无人值守入口**（微信渠道、Inbox、MCP 导出等）都走默认 profile。
-- **权限**：操作员可查看模型列表（供聊天下拉），仅管理员可增删改 / 设默认。
-- **首次启动种子**：若库里还没有任何 profile，Runtime 用配置文件 YAML 的 `llm` 段（`provider` / `base_url` / `model` / `api_key_env` / `disable_thinking` / `supports_vision`）种子一个「默认模型」profile（**不把 Key 原文入库**，只记环境变量名）。此后以库为准，UI 增改不回写 YAML。`baize demo` 的 mock provider 路径不启用此功能。
+- **智能路由（Auto）**：聊天框模型下拉首项为「智能路由（Auto）」，也是默认与无人值守入口的行为。Auto 并非独立模型，而是一套确定性路由策略：根据每轮对话的**实际内容**（文本长度、推理类关键词、代码块、附件数量）判定难度档位，在该档位里挑选模型（普通文本优先用 `standard`），理想档位没有模型时向相邻档位降级；**带图片的消息只会使用勾选了 `supports_vision` 的模型**。也可在下拉里**手动指定**某条消息固定使用某个具体模型；手动选择会被严格遵守、**不会**自动改道（即便该模型不支持图片，也只会提示而不偷偷换模型）。**选择不记忆**——发送成功后下拉重置回 Auto，不写 `localStorage`。微信渠道、Inbox、MCP 导出等**无人值守入口**始终走 Auto。
+- **权限**：操作员可查看模型列表（供聊天下拉），仅管理员可增删改。
+- **首次启动种子**：若库里还没有任何 profile，Runtime 用配置文件 YAML 的 `llm` 段（`provider` / `base_url` / `model` / `api_key_env` / `disable_thinking` / `supports_vision`，Auto 档位按模型名推断）种子一个以模型名命名的 profile（**不把 Key 原文入库**，只记环境变量名）。此后以库为准，UI 增改不回写 YAML。`baize demo` 的 mock provider 路径不启用此功能。
 
 ---
 

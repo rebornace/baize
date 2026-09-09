@@ -72,8 +72,9 @@ func TestPostRunPersistsImageAttachmentToWorkspace(t *testing.T) {
 	mem.UpsertAgent(store.Agent{ID: "a", System: "s"})
 	reg := tool.NewRegistry()
 	srv := api.NewServer(mem, reg, &fakeRunner{store: mem})
-	// Reuse the vision-capable stub from server_attachments_test.go so the
-	// image attachment passes the supports_vision gate.
+	// Vision capability now comes from a model profile (not the LLM stub); seed
+	// one so the image turn passes task-aware Auto routing.
+	seedVisionProfile(t, mem, "视觉模型")
 	srv.LLM = &captureUserLLM{vision: true}
 
 	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})

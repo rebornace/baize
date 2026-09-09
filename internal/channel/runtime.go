@@ -41,18 +41,10 @@ type Runtime struct {
 	Messages       conversation.Store // optional; nil skips message append
 	Assignee       string
 	DefaultAgentID string
-	// SupportsVision controls whether image attachments become multimodal parts.
-	// When false, images are only named in the display/LLM text (design §5).
-	SupportsVision bool
-	// VisionModelProfileID optionally resolves the id of a vision-capable model
-	// profile used for inbound messages that actually carry images, when the
-	// default model is text-only (SupportsVision=false). It is read on every
-	// inbound message so adding/editing a vision model takes effect without a
-	// restart. Returning "" means no vision model is available: images then
-	// degrade to a text note (the message still gets a reply). When the default
-	// model already supports vision this is ignored and images go to the
-	// default. Text-only attachments (docx/pdf/…) never trigger routing.
-	VisionModelProfileID func() string
+	// ResolveModel performs task-aware Auto routing for an inbound turn. Read
+	// the doc on BuildDeps.ResolveModel. nil means no profile source is wired
+	// (tests / non-LLM paths): images then degrade to text notes.
+	ResolveModel func(sig llm.TaskSignals) (profileID string, visionOK, hasModels bool)
 	// AfterCreateRun is an optional hook to start the engine after CreateRun.
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run (approve/reject). Optional;
@@ -162,30 +154,43 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return ErrNoAgent
 	}
 
-	// Smart model routing: driven by the actual payload. When the default
-	// model is text-only but the message carries an image AND a vision-capable
-	// profile exists, pin this run to that vision profile so the llm.Switch
-	// resolves a model that can see the image, and encode the image as a
-	// multimodal part. Text-only attachments (docx/pdf/…) never route. The
-	// resolver is read live so adding a vision model takes effect without a
-	// restart; when it returns "" the image degrades to a text note so the
-	// message still gets a reply.
-	visionProfileID := ""
-	if r.hasImage(in.Files) && !r.SupportsVision && r.VisionModelProfileID != nil {
-		visionProfileID = strings.TrimSpace(r.VisionModelProfileID())
+	// Task-aware smart model routing. Channel inbound has no manual picker, so
+	// it is always Auto: the resolver classifies the turn (difficulty tier +
+	// image need) and picks a model. We first classify on the raw payload to
+	// learn whether a vision model is reachable — that decides whether images
+	// are encoded as multimodal parts or degraded to text notes. After
+	// extraction we resolve again against the parts actually delivered, so a
+	// turn whose images all fail to parse is treated as text-only (it neither
+	// pins a vision-only model nor needs vision). A nil resolver (tests / no
+	// profile source) degrades images to text.
+	hasImages := r.hasImage(in.Files)
+	sig := llm.TaskSignals{
+		Text:      in.Text,
+		HasImages: hasImages,
+		FileCount: r.countNonImageFiles(in.Files),
+		HasCode:   llm.DetectCode(in.Text),
 	}
-	vision := r.SupportsVision || visionProfileID != ""
+	visionReachable := false
+	if r.ResolveModel != nil {
+		if _, ok, _ := r.ResolveModel(sig); ok {
+			visionReachable = true
+		}
+	}
+	deliverVision := hasImages && visionReachable
 
-	displayText, userParts, images, err := buildInboundContent(in.Text, in.Files, vision)
+	displayText, userParts, images, err := buildInboundContent(in.Text, in.Files, deliverVision)
 	if err != nil {
 		return err
 	}
-	// Pin to the vision profile only when an image part is actually delivered
-	// to the model (a corrupt/oversized image degrades to text and must not
-	// force a vision model). Text-only attachments leave this empty.
 	runModelProfileID := ""
-	if visionProfileID != "" && len(images) > 0 {
-		runModelProfileID = visionProfileID
+	if r.ResolveModel != nil {
+		// Re-resolve against what was actually delivered: when no image part
+		// reaches the model (images degraded / failed to parse), treat the turn
+		// as text-only so it is not pinned to a vision-only model.
+		sig.HasImages = containsImagePart(userParts)
+		if id, _, _ := r.ResolveModel(sig); id != "" {
+			runModelProfileID = strings.TrimSpace(id)
+		}
 	}
 
 	runRec, err := r.Runs.CreateRun(store.CreateRunInput{
@@ -343,6 +348,29 @@ func (r *Runtime) OutboundExtras(conversationID string) map[string]string {
 func (r *Runtime) hasImage(files []InboundFile) bool {
 	for _, f := range files {
 		if strings.HasPrefix(strings.TrimSpace(f.MIME), "image/") {
+			return true
+		}
+	}
+	return false
+}
+
+// countNonImageFiles returns how many attachments are not images (docx/pdf/
+// zip/…). It feeds the task-difficulty classifier (many files -> harder).
+func (r *Runtime) countNonImageFiles(files []InboundFile) int {
+	n := 0
+	for _, f := range files {
+		if !strings.HasPrefix(strings.TrimSpace(f.MIME), "image/") {
+			n++
+		}
+	}
+	return n
+}
+
+// containsImagePart reports whether the assembled LLM payload actually carries
+// an image part.
+func containsImagePart(parts []llm.ContentPart) bool {
+	for _, p := range parts {
+		if p.Type == "image" {
 			return true
 		}
 	}

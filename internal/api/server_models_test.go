@@ -73,18 +73,61 @@ func TestModelProfilesCRUDPermissionsAndRedaction(t *testing.T) {
 		t.Fatalf("list must not contain raw api_key: %s", listRR.Body.String())
 	}
 
-	// set default, then deleting default is rejected
-	defReq := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models/"+created.Profile.ID+"/default", nil))
-	defRR := httptest.NewRecorder()
-	h.ServeHTTP(defRR, defReq)
-	if defRR.Code != http.StatusOK {
-		t.Fatalf("set default: code=%d body=%s", defRR.Code, defRR.Body.String())
-	}
+	// Any model can be deleted — including the only one (no "default" lock).
 	delReq := withAdmin(httptest.NewRequest(http.MethodDelete, "/v0/settings/models/"+created.Profile.ID, nil))
 	delRR := httptest.NewRecorder()
 	h.ServeHTTP(delRR, delReq)
-	if delRR.Code != http.StatusBadRequest {
-		t.Fatalf("deleting default must be 400, got %d body=%s", delRR.Code, delRR.Body.String())
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("deleting the sole model must be allowed, got %d body=%s", delRR.Code, delRR.Body.String())
+	}
+	emptyReq := withAdmin(httptest.NewRequest(http.MethodGet, "/v0/settings/models", nil))
+	emptyRR := httptest.NewRecorder()
+	h.ServeHTTP(emptyRR, emptyReq)
+	if !strings.Contains(emptyRR.Body.String(), `"profiles":[]`) {
+		t.Fatalf("expected empty profile list after delete, got %s", emptyRR.Body.String())
+	}
+}
+
+func TestModelProfilesAutoTierInferAndOverride(t *testing.T) {
+	srv := modelProfilesServer(t)
+	h := srv.Handler()
+
+	create := func(body string) store.ModelProfile {
+		req := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models", strings.NewReader(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("create: code=%d body=%s", rr.Code, rr.Body.String())
+		}
+		var out struct {
+			Profile store.ModelProfile `json:"profile"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.Profile
+	}
+
+	// No tier / "auto" infers from the model name.
+	if got := create(`{"name":"a","base_url":"https://x/v1","model":"gpt-4o-mini","api_key":"k"}`); got.AutoTier != "light" {
+		t.Fatalf("gpt-4o-mini tier = %q, want light", got.AutoTier)
+	}
+	if got := create(`{"name":"b","base_url":"https://x/v1","model":"o3","api_key":"k","auto_tier":"auto"}`); got.AutoTier != "power" {
+		t.Fatalf("o3 tier = %q, want power", got.AutoTier)
+	}
+	// Explicit override wins over the name.
+	if got := create(`{"name":"c","base_url":"https://x/v1","model":"gpt-4o-mini","api_key":"k","auto_tier":"power"}`); got.AutoTier != "power" {
+		t.Fatalf("explicit power tier = %q, want power", got.AutoTier)
+	}
+	// Invalid tier rejected.
+	req := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models",
+		strings.NewReader(`{"name":"d","base_url":"https://x/v1","model":"m","api_key":"k","auto_tier":"turbo"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid tier must be 400, got %d", rr.Code)
 	}
 }
 
@@ -139,14 +182,6 @@ func TestModelProfilesPatchFieldLevelMerge(t *testing.T) {
 	wantRedacted := store.RedactAPIKey("sk-env-key-9999")
 	if created.Profile.APIKey != wantRedacted {
 		t.Fatalf("create redaction mismatch: got %q want %q", created.Profile.APIKey, wantRedacted)
-	}
-
-	// set default (irrelevant to merge but exercises the path)
-	defReq := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models/"+id+"/default", nil))
-	defRR := httptest.NewRecorder()
-	h.ServeHTTP(defRR, defReq)
-	if defRR.Code != http.StatusOK {
-		t.Fatalf("set default: code=%d", defRR.Code)
 	}
 
 	// Partial update: only model changes. Booleans and api_key_env must survive.
@@ -292,12 +327,5 @@ func TestModelProfilesNotFoundReturns404(t *testing.T) {
 	h.ServeHTTP(delRR, delReq)
 	if delRR.Code != http.StatusNotFound {
 		t.Fatalf("delete missing must be 404, got %d", delRR.Code)
-	}
-
-	defReq := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models/mp_missing/default", nil))
-	defRR := httptest.NewRecorder()
-	h.ServeHTTP(defRR, defReq)
-	if defRR.Code != http.StatusNotFound {
-		t.Fatalf("set-default missing must be 404, got %d", defRR.Code)
 	}
 }

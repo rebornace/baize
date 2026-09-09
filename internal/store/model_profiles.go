@@ -44,6 +44,7 @@ func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 	if p.ContextTokens <= 0 {
 		p.ContextTokens = DefaultContextTokens // spec §6.1: never persist 0
 	}
+	p.AutoTier = NormalizeAutoTier(p.AutoTier)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -69,7 +70,6 @@ func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 				return ModelProfile{}, fmt.Errorf("model profile name %q already exists", p.Name)
 			}
 		}
-		p.IsDefault = ex.IsDefault // default only changes via SetDefaultModelProfile
 	}
 	p.UpdatedAt = now
 	s.modelProfiles[p.ID] = p
@@ -102,26 +102,9 @@ func (s *Memory) ListModelProfiles() ([]ModelProfile, error) {
 func (s *Memory) DeleteModelProfile(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, ok := s.modelProfiles[id]
-	if !ok {
-		return ErrModelProfileNotFound
-	}
-	if p.IsDefault {
-		return fmt.Errorf("cannot delete the default model profile; set another as default first")
-	}
-	delete(s.modelProfiles, id)
-	return nil
-}
-
-func (s *Memory) SetDefaultModelProfile(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, ok := s.modelProfiles[id]; !ok {
 		return ErrModelProfileNotFound
 	}
-	for k, p := range s.modelProfiles {
-		p.IsDefault = (k == id)
-		s.modelProfiles[k] = p
-	}
+	delete(s.modelProfiles, id)
 	return nil
 }

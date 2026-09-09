@@ -16,7 +16,6 @@ type instanceConfig struct {
 	OutboundURL      string
 	Assignee         string
 	AgentID          string
-	SupportsVision   bool
 	Allowlist        map[string]bool
 	AdminURL         string
 	AdapterAutostart bool
@@ -45,13 +44,6 @@ func parseConfig(name string, m map[string]string) (instanceConfig, error) {
 	c.OutboundURL = get("outbound_url")
 	c.Assignee = get("assignee")
 	c.AgentID = get("agent_id")
-	if v := get("supports_vision"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return c, fmt.Errorf("webhook: invalid supports_vision %q: %w", v, err)
-		}
-		c.SupportsVision = b
-	}
 	if raw := get("allowlist"); raw != "" {
 		for _, p := range strings.Split(raw, ",") {
 			if p = strings.TrimSpace(p); p != "" {

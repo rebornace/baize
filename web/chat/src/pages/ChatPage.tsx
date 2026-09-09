@@ -464,6 +464,16 @@ export function ChatPage() {
 
   const onSend = async (text: string, files: File[]) => {
     const sentConversationId = conversationId
+
+    // No model configured: block up-front with guidance instead of letting the
+    // run fail server-side with a cryptic error.
+    if (modelProfiles.length === 0) {
+      setBusy(false)
+      setError('尚未配置任何模型，请先在「设置 → 模型」中添加一个模型。')
+      setStatus('')
+      return
+    }
+
     setBusy(true)
     setComposerDraft(undefined)
     setError(null)

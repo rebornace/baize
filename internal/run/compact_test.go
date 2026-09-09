@@ -29,7 +29,12 @@ func (f *fakeCompactLLM) SupportsVision() bool { return false }
 // fakeProfiles is a minimal llm.ProfileSource.
 type fakeProfiles struct{ def llm.ModelProfileView }
 
-func (f fakeProfiles) DefaultModelProfile() (llm.ModelProfileView, error) { return f.def, nil }
+func (f fakeProfiles) ListProfiles() ([]llm.ModelProfileView, error) {
+	if f.def.ID == "" {
+		return nil, nil
+	}
+	return []llm.ModelProfileView{f.def}, nil
+}
 func (f fakeProfiles) ModelProfileByID(id string) (llm.ModelProfileView, error) {
 	return f.def, nil
 }

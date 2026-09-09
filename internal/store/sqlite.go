@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   disable_thinking INTEGER,
   supports_vision INTEGER,
   context_tokens INTEGER NOT NULL DEFAULT 128000,
-  is_default INTEGER,
+  auto_tier TEXT NOT NULL DEFAULT 'standard',
   created_at TEXT,
   updated_at TEXT
 );
@@ -455,11 +455,13 @@ func migrateToolsColumns(db *sql.DB) error {
 }
 
 func migrateModelProfilesColumns(db *sql.DB) error {
-	_, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 128000`)
-	if err == nil || isDuplicateColumnErr(err) {
-		return nil
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil && !isDuplicateColumnErr(err) {
+		return err
 	}
-	return err
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN auto_tier TEXT NOT NULL DEFAULT 'standard'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	return nil
 }
 
 func isDuplicateColumnErr(err error) bool {

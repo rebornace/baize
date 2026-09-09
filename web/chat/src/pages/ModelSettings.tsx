@@ -3,10 +3,19 @@ import {
   createModelProfile,
   deleteModelProfile,
   listModelProfiles,
-  setDefaultModelProfile,
   updateModelProfile,
   type ModelProfile,
+  type ModelTier,
 } from '../api'
+import { tierLabel } from '../modelSelect'
+
+// Editable tier options plus "auto" (infer from the model name server-side).
+const TIER_OPTIONS: { value: ModelTier | 'auto'; label: string }[] = [
+  { value: 'auto', label: '自动识别（按模型名）' },
+  { value: 'light', label: '轻量（快速/省钱，简单闲聊）' },
+  { value: 'standard', label: '标准（通用）' },
+  { value: 'power', label: '强力（复杂推理/长任务）' },
+]
 
 export interface ProfileFormState {
   name: string
@@ -17,7 +26,7 @@ export interface ProfileFormState {
   supportsVision: boolean
   disableThinking: boolean
   contextTokens: number
-  isDefault: boolean
+  tier: ModelTier | 'auto'
 }
 
 export const EMPTY_PROFILE_FORM: ProfileFormState = {
@@ -29,7 +38,7 @@ export const EMPTY_PROFILE_FORM: ProfileFormState = {
   supportsVision: false,
   disableThinking: false,
   contextTokens: 128000,
-  isDefault: false,
+  tier: 'auto',
 }
 
 export interface ModelProfilePayload {
@@ -41,7 +50,7 @@ export interface ModelProfilePayload {
   supports_vision?: boolean
   disable_thinking?: boolean
   context_tokens?: number
-  is_default?: boolean
+  auto_tier?: ModelTier | 'auto'
 }
 
 export function profileToForm(p: ModelProfile): ProfileFormState {
@@ -56,7 +65,7 @@ export function profileToForm(p: ModelProfile): ProfileFormState {
     supportsVision: p.supports_vision,
     disableThinking: p.disable_thinking,
     contextTokens: p.context_tokens > 0 ? p.context_tokens : 128000,
-    isDefault: p.is_default,
+    tier: p.auto_tier ?? 'standard',
   }
 }
 
@@ -85,7 +94,7 @@ export function buildCreatePayload(form: ProfileFormState):
       supports_vision: form.supportsVision,
       disable_thinking: form.disableThinking,
       context_tokens: form.contextTokens > 0 ? form.contextTokens : 128000,
-      is_default: form.isDefault,
+      auto_tier: form.tier,
     },
   }
 }
@@ -118,6 +127,9 @@ export function buildPatchPayload(
   if (contextTokens > 0 && contextTokens !== original.context_tokens) {
     payload.context_tokens = contextTokens
   }
+  if (form.tier !== (original.auto_tier ?? 'standard')) {
+    payload.auto_tier = form.tier
+  }
   return payload
 }
 
@@ -148,7 +160,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           disabled={busy}
-          placeholder="主力模型"
+          placeholder="例如：工作模型 / 视觉模型"
           required
         />
       </label>
@@ -226,17 +238,26 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           disabled={busy}
         />
       </label>
-      {!isEdit && (
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
-            checked={form.isDefault}
-            onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
-            disabled={busy}
-          />
-          创建后设为默认
-        </label>
-      )}
+      <label className="settings-field">
+        <span className="settings-field-label">Auto 路由档位</span>
+        <select
+          className="settings-input"
+          value={form.tier}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, tier: e.target.value as ProfileFormState['tier'] }))
+          }
+          disabled={busy}
+        >
+          {TIER_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <small className="settings-muted">
+          智能路由（Auto）按对话难度在轻量/标准/强力档位间选模型；图片消息只走勾选了「支持视觉」的模型。
+        </small>
+      </label>
     </>
   )
 }
@@ -244,7 +265,6 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
 export interface ModelProfileListProps {
   profiles: ModelProfile[]
   busy: boolean
-  onSetDefault: (p: ModelProfile) => void
   onEdit: (p: ModelProfile) => void
   onDelete: (p: ModelProfile) => void
 }
@@ -252,12 +272,15 @@ export interface ModelProfileListProps {
 export function ModelProfileList({
   profiles,
   busy,
-  onSetDefault,
   onEdit,
   onDelete,
 }: ModelProfileListProps) {
   if (profiles.length === 0) {
-    return <p className="settings-empty">尚未配置模型 profile。</p>
+    return (
+      <p className="settings-empty">
+        尚未配置任何模型。请先在下方「新建模型」添加至少一个模型，否则无法发起对话。
+      </p>
+    )
   }
   return (
     <ul className="settings-list">
@@ -265,25 +288,17 @@ export function ModelProfileList({
         <li key={p.id} className="settings-list-item">
           <span className="settings-tool-line">
             <span className="settings-tool-title">{p.name}</span>
-            {p.is_default && <span className="settings-badge">默认</span>}
+            <span className="settings-badge">{tierLabel(p.auto_tier)}</span>
+            {p.supports_vision && <span className="settings-badge">视觉</span>}
             <span className="settings-muted"> · {p.model}</span>
             <span className="settings-muted"> · {p.base_url}</span>
           </span>
           <p className="settings-muted">
             {credentialHint(p)}
-            {p.supports_vision ? ' · 视觉' : ''}
             {p.disable_thinking ? ' · 禁用思考' : ''}
             {p.context_tokens > 0 ? ` · ${p.context_tokens} ctx` : ''}
           </p>
           <div className="settings-toolbar">
-            <button
-              type="button"
-              className="btn ghost sm"
-              disabled={busy || p.is_default}
-              onClick={() => onSetDefault(p)}
-            >
-              {p.is_default ? '当前默认' : '设为默认'}
-            </button>
             <button
               type="button"
               className="btn ghost sm"
@@ -295,7 +310,7 @@ export function ModelProfileList({
             <button
               type="button"
               className="btn danger sm"
-              disabled={busy || p.is_default}
+              disabled={busy}
               onClick={() => onDelete(p)}
             >
               删除
@@ -425,8 +440,8 @@ export function ModelSettings() {
   }
 
   const onDelete = async (p: ModelProfile) => {
-    if (p.is_default) return
-    if (!window.confirm(`删除模型「${p.name}」？此操作不可恢复。`)) return
+    const suffix = profiles.length === 1 ? '\n\n这是最后一个模型，删除后将无法发起对话，请尽快添加新模型。' : ''
+    if (!window.confirm(`删除模型「${p.name}」？此操作不可恢复。${suffix}`)) return
     setBusy(true)
     setError(null)
     setStatus(null)
@@ -445,28 +460,14 @@ export function ModelSettings() {
     }
   }
 
-  const onSetDefault = async (p: ModelProfile) => {
-    if (p.is_default) return
-    setBusy(true)
-    setError(null)
-    setStatus(null)
-    try {
-      await setDefaultModelProfile(p.id)
-      setStatus(`已将 ${p.name} 设为默认`)
-      await load()
-    } catch (err) {
-      setError(apiErrorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="settings-section settings-models">
       <h1 className="settings-heading">模型</h1>
       <div className="settings-meta">
         <p>
-          配置多个 OpenAI 兼容模型 profile；聊天时可按消息选择，未选择时使用默认模型。
+          配置多个 OpenAI 兼容模型，并为每个模型选择「Auto 路由档位」（轻量 / 标准 / 强力）。聊天默认走
+          「智能路由（Auto）」：根据每轮对话的实际难度、长度、代码与附件情况，以及是否含图片，自动挑选最合适档位的模型——
+          图片消息只会使用勾选了「支持视觉」的模型。也可在输入框手动指定某条消息固定使用某个模型（此时不自动路由）。
           API Key 保存在本地库中，界面仅显示脱敏值；也可只填环境变量名，由进程环境提供密钥。
         </p>
       </div>
@@ -474,6 +475,9 @@ export function ModelSettings() {
       {loading && <p className="settings-muted">加载中…</p>}
       {!loading && error && <p className="settings-error">{error}</p>}
       {!loading && status && <p className="settings-muted">{status}</p>}
+      {!loading && profiles.length === 0 && !error && (
+        <p className="settings-error">当前没有任何可用模型，请先在下方添加一个模型再发起对话。</p>
+      )}
 
       {!loading && editingId && (
         <section className="settings-form">
@@ -499,7 +503,6 @@ export function ModelSettings() {
           <ModelProfileList
             profiles={profiles}
             busy={busy || editingId != null}
-            onSetDefault={(target) => void onSetDefault(target)}
             onEdit={startEdit}
             onDelete={(target) => void onDelete(target)}
           />

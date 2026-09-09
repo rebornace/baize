@@ -35,14 +35,14 @@ type BuildDeps struct {
 	DefaultAgentID string
 	// Media optionally persists inbound channel images for inline web display.
 	Media MediaStore
-	// SupportsVision controls whether inbound image attachments become
-	// multimodal LLM parts.
-	SupportsVision bool
-	// VisionModelProfileID optionally resolves the id of a vision-capable
-	// model profile used for inbound image messages when the default model is
-	// text-only. Read per inbound message (hot reload: adding a vision model
-	// takes effect without restart). Returning "" degrades images to text.
-	VisionModelProfileID func() string
+	// ResolveModel performs task-aware Auto routing for inbound messages. It is
+	// invoked per inbound message (hot reload: adding/editing a model takes
+	// effect without restart) with the turn's content signals and returns the
+	// model profile id to pin the run to ("" = no id, the Switch uses its
+	// primary model), whether an image-carrying turn can actually reach a
+	// vision-capable model, and whether any model is configured at all. Channel
+	// inbound has no manual picker, so it is always Auto.
+	ResolveModel func(sig llm.TaskSignals) (profileID string, visionOK, hasModels bool)
 	// AfterCreateRun enqueues the run after inbound CreateRun (engine wiring).
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run after an approve/reject reply.

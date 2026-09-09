@@ -20,12 +20,13 @@ type ModelProfileView struct {
 	DisableThinking bool
 	SupportsVision  bool
 	ContextTokens   int
+	Tier            string
 	UpdatedAt       time.Time
 }
 
 // ProfileSource resolves model profiles (backed by store.Store in production).
 type ProfileSource interface {
-	DefaultModelProfile() (ModelProfileView, error)
+	ListProfiles() ([]ModelProfileView, error)
 	ModelProfileByID(id string) (ModelProfileView, error)
 }
 
@@ -85,15 +86,21 @@ func (s *Switch) defaultBuild(v ModelProfileView) Provider {
 
 func (s *Switch) providerFor(ctx context.Context) (Provider, error) {
 	id := ModelProfileIDFromContext(ctx)
-	view, err := s.src.ModelProfileByID(id)
-	if err != nil || id == "" || view.ID == "" {
-		view, err = s.src.DefaultModelProfile()
-		if err != nil {
-			return nil, fmt.Errorf("no usable model profile: %w", err)
+	if id != "" {
+		if view, err := s.src.ModelProfileByID(id); err == nil && view.ID != "" {
+			return s.cached(view), nil
 		}
-		if view.ID == "" {
-			return nil, fmt.Errorf("no model profile configured")
-		}
+	}
+	// No/invalid per-run id: use the Auto primary model (earliest standard-tier
+	// profile, else the earliest profile). This is both the Auto fallback for
+	// text and the target for background callers without a pinned run id.
+	list, err := s.src.ListProfiles()
+	if err != nil {
+		return nil, fmt.Errorf("no usable model profile: %w", err)
+	}
+	view, err := PrimaryModelProfile(list)
+	if err != nil {
+		return nil, fmt.Errorf("no usable model profile: %w", err)
 	}
 	return s.cached(view), nil
 }
@@ -117,12 +124,19 @@ func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	return prov.Chat(ctx, messages, tools)
 }
 
-// SupportsVision reflects the DEFAULT profile (used by unattended entry points
-// and attachment gating before a run's profile is known).
+// SupportsVision reports whether ANY configured model can accept image parts.
+// Under task-aware Auto an image turn is routed to a vision-capable model when
+// one exists, so this is the meaningful capability signal for attachment
+// gating (rather than one fixed "default" model's capability).
 func (s *Switch) SupportsVision() bool {
-	view, err := s.src.DefaultModelProfile()
-	if err != nil || view.ID == "" {
+	list, err := s.src.ListProfiles()
+	if err != nil {
 		return false
 	}
-	return s.cached(view).SupportsVision()
+	for _, v := range list {
+		if v.SupportsVision {
+			return true
+		}
+	}
+	return false
 }

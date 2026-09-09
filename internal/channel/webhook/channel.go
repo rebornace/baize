@@ -165,14 +165,13 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		Runs:                 deps.Store,
 		Meta:                 deps.Meta,
 		Messages:             deps.Messages,
-		Assignee:             c.cfg.Assignee,
-		DefaultAgentID:       firstNonEmpty(c.cfg.AgentID, deps.DefaultAgentID),
-		SupportsVision:       deps.SupportsVision || c.cfg.SupportsVision,
-		VisionModelProfileID: deps.VisionModelProfileID,
-		AfterCreateRun:       deps.AfterCreateRun,
-		ResumeHITL:           deps.ResumeHITL,
-		Source:               c.cfg.Source,
-		Media:                deps.Media,
+		Assignee:       c.cfg.Assignee,
+		DefaultAgentID: firstNonEmpty(c.cfg.AgentID, deps.DefaultAgentID),
+		ResolveModel:   deps.ResolveModel,
+		AfterCreateRun: deps.AfterCreateRun,
+		ResumeHITL:     deps.ResumeHITL,
+		Source:         c.cfg.Source,
+		Media:          deps.Media,
 	}
 	c.rt = rt
 	if dir := strings.TrimSpace(deps.DataDir); dir != "" {

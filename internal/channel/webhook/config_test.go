@@ -14,7 +14,6 @@ func TestParseConfig(t *testing.T) {
 		"outbound_url":    "http://adapter:8080/outbound",
 		"assignee":        "u-admin",
 		"agent_id":        "agent-x",
-		"supports_vision": "true",
 		"allowlist":       "u1, u2 ,,u3",
 	})
 	if err != nil {
@@ -28,9 +27,6 @@ func TestParseConfig(t *testing.T) {
 	}
 	if cfg.OutboundURL != "http://adapter:8080/outbound" || cfg.Assignee != "u-admin" || cfg.AgentID != "agent-x" {
 		t.Fatalf("bad wiring fields: %+v", cfg)
-	}
-	if !cfg.SupportsVision {
-		t.Fatal("supports_vision should parse true")
 	}
 	if len(cfg.Allowlist) != 3 || cfg.Allowlist["u1"] == false || cfg.Allowlist["u3"] == false {
 		t.Fatalf("bad allowlist: %+v", cfg.Allowlist)
@@ -61,15 +57,6 @@ func TestParseConfigDefaultsAndErrors(t *testing.T) {
 	// missing assignee => error
 	if _, err := parseConfig("n", map[string]string{"secret": "s", "outbound_url": "http://x/o"}); err == nil {
 		t.Fatal("expected error for missing assignee")
-	}
-	// invalid supports_vision => error
-	if _, err := parseConfig("n", map[string]string{
-		"secret":          "s",
-		"outbound_url":    "http://x/o",
-		"assignee":        "a",
-		"supports_vision": "yes",
-	}); err == nil {
-		t.Fatal("expected error for invalid supports_vision")
 	}
 }
 

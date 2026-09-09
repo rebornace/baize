@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -23,7 +24,9 @@ type modelProfilePayload struct {
 	DisableThinking *bool   `json:"disable_thinking"`
 	SupportsVision  *bool   `json:"supports_vision"`
 	ContextTokens   *int    `json:"context_tokens"`
-	IsDefault       bool    `json:"is_default"`
+	// AutoTier is "light" | "standard" | "power" | "auto". "auto" (or empty on
+	// create) infers the tier from the model name server-side.
+	AutoTier *string `json:"auto_tier"`
 }
 
 func redactedProfile(p store.ModelProfile) store.ModelProfile {
@@ -74,6 +77,31 @@ func (s *Server) handleListModelProfiles(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"profiles": out})
 }
 
+// resolveTier computes the persisted tier from a payload value. "auto" or an
+// empty string means infer from the model/profile name; explicit light/standard
+// /power are honored; anything else is rejected. On create a nil value infers.
+func resolveTier(raw *string, modelName, profileName string) (string, error) {
+	v := ""
+	if raw != nil {
+		v = strings.ToLower(strings.TrimSpace(*raw))
+	}
+	switch v {
+	case "", "auto":
+		return llm.InferTier(firstNonEmptyStr(modelName, profileName)), nil
+	case store.AutoTierLight, store.AutoTierStandard, store.AutoTierPower:
+		return v, nil
+	default:
+		return "", errors.New("invalid auto_tier: want light, standard, power, or auto")
+	}
+}
+
+func firstNonEmptyStr(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
 func (s *Server) handlePostModelProfile(w http.ResponseWriter, r *http.Request) {
 	var p modelProfilePayload
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -81,6 +109,11 @@ func (s *Server) handlePostModelProfile(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := validateModelCreate(p); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_profile", err.Error())
+		return
+	}
+	tier, err := resolveTier(p.AutoTier, strVal(p.Model), strVal(p.Name))
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_profile", err.Error())
 		return
 	}
@@ -93,6 +126,7 @@ func (s *Server) handlePostModelProfile(w http.ResponseWriter, r *http.Request) 
 		APIKeyEnv:       strVal(p.APIKeyEnv),
 		DisableThinking: p.DisableThinking != nil && *p.DisableThinking,
 		SupportsVision:  p.SupportsVision != nil && *p.SupportsVision,
+		AutoTier:        tier,
 	}
 	if p.ContextTokens != nil && *p.ContextTokens > 0 {
 		prof.ContextTokens = *p.ContextTokens
@@ -101,13 +135,6 @@ func (s *Server) handlePostModelProfile(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeUpsertError(w, err)
 		return
-	}
-	if p.IsDefault {
-		if err := s.Store.SetDefaultModelProfile(saved.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, "set_default_failed", err.Error())
-			return
-		}
-		saved.IsDefault = true
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"profile": redactedProfile(saved)})
 }
@@ -163,6 +190,14 @@ func (s *Server) handlePatchModelProfile(w http.ResponseWriter, r *http.Request)
 	if p.ContextTokens != nil && *p.ContextTokens > 0 {
 		updated.ContextTokens = *p.ContextTokens
 	}
+	if p.AutoTier != nil {
+		tier, err := resolveTier(p.AutoTier, updated.Model, updated.Name)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_profile", err.Error())
+			return
+		}
+		updated.AutoTier = tier
+	}
 	updated.Provider = supportedModelProvider
 
 	saved, err := s.Store.UpsertModelProfile(updated)
@@ -179,24 +214,9 @@ func (s *Server) handleDeleteModelProfile(w http.ResponseWriter, r *http.Request
 		switch {
 		case errors.Is(err, store.ErrModelProfileNotFound):
 			writeError(w, http.StatusNotFound, "not_found", "model profile not found")
-		case strings.Contains(err.Error(), "cannot delete"):
-			writeError(w, http.StatusBadRequest, "delete_failed", err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		}
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (s *Server) handleSetDefaultModelProfile(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := s.Store.SetDefaultModelProfile(id); err != nil {
-		if errors.Is(err, store.ErrModelProfileNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "model profile not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "set_default_failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

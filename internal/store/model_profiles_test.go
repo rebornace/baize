@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-func TestMemoryModelProfileCRUDAndDefault(t *testing.T) {
+func TestMemoryModelProfileCRUDAndDeleteAll(t *testing.T) {
 	s := NewMemory()
 
 	p, err := s.UpsertModelProfile(ModelProfile{
-		Name: "主力", Provider: "openai_compatible", BaseURL: "https://x/v1",
-		Model: "m1", APIKey: "sk-secret-1234",
+		Name: "标准", Provider: "openai_compatible", BaseURL: "https://x/v1",
+		Model: "m1", APIKey: "sk-secret-1234", AutoTier: AutoTierStandard,
 	})
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -18,40 +18,49 @@ func TestMemoryModelProfileCRUDAndDefault(t *testing.T) {
 	if p.ID == "" || p.CreatedAt.IsZero() {
 		t.Fatalf("id/createdAt not set: %+v", p)
 	}
-	if err := s.SetDefaultModelProfile(p.ID); err != nil {
-		t.Fatalf("set default: %v", err)
-	}
 	p2, _ := s.UpsertModelProfile(ModelProfile{
 		Name: "廉价", Provider: "openai_compatible", BaseURL: "https://y/v1",
-		Model: "m2", APIKeyEnv: "KEY2",
+		Model: "gpt-4o-mini", APIKeyEnv: "KEY2",
 	})
-	if err := s.SetDefaultModelProfile(p2.ID); err != nil {
-		t.Fatalf("set default 2: %v", err)
-	}
 
-	list, _ := s.ListModelProfiles()
-	defaults := 0
-	for _, m := range list {
-		if m.IsDefault {
-			defaults++
-		}
-	}
-	if defaults != 1 {
-		t.Fatalf("want exactly 1 default, got %d", defaults)
+	// The store normalizes an unset/unknown tier to standard; name-based
+	// inference happens at the API/seed layer, not in the store.
+	if got, _ := s.GetModelProfile(p2.ID); got.AutoTier != AutoTierStandard {
+		t.Fatalf("unset tier should normalize to standard, stored=%q", got.AutoTier)
 	}
 
 	if got, err := s.GetModelProfile(p.ID); err != nil || got.APIKey != "sk-secret-1234" {
 		t.Fatalf("store should keep raw key internally; got %q err=%v", got.APIKey, err)
 	}
 
-	if err := s.DeleteModelProfile(p2.ID); err == nil {
-		t.Fatalf("deleting the default profile must be rejected")
+	// Any profile — including the last remaining one — can be deleted.
+	if err := s.DeleteModelProfile(p2.ID); err != nil {
+		t.Fatalf("delete profile: %v", err)
 	}
 	if err := s.DeleteModelProfile(p.ID); err != nil {
-		t.Fatalf("delete non-default: %v", err)
+		t.Fatalf("delete sole/last profile must be allowed: %v", err)
 	}
 	if _, err := s.GetModelProfile(p.ID); err == nil {
 		t.Fatalf("expected not-found after delete")
+	}
+	list, _ := s.ListModelProfiles()
+	if len(list) != 0 {
+		t.Fatalf("expected empty store after deleting all, got %d", len(list))
+	}
+}
+
+func TestNormalizeAutoTier(t *testing.T) {
+	cases := map[string]string{
+		"":         AutoTierStandard,
+		"light":    AutoTierLight,
+		"power":    AutoTierPower,
+		"standard": AutoTierStandard,
+		"weird":    AutoTierStandard,
+	}
+	for in, want := range cases {
+		if got := NormalizeAutoTier(in); got != want {
+			t.Errorf("NormalizeAutoTier(%q)=%q want %q", in, got, want)
+		}
 	}
 }
 
@@ -106,28 +115,25 @@ func newSQLiteProfileStore(t *testing.T) *SQLStore {
 func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 	s := newSQLiteProfileStore(t)
 	p, err := s.UpsertModelProfile(ModelProfile{
-		Name: "主力", Provider: "openai_compatible", BaseURL: "https://x/v1",
-		Model: "m1", APIKey: "sk-secret-1234", SupportsVision: true,
+		Name: "标准", Provider: "openai_compatible", BaseURL: "https://x/v1",
+		Model: "m1", APIKey: "sk-secret-1234", SupportsVision: true, AutoTier: AutoTierPower,
 	})
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
-	}
-	if err := s.SetDefaultModelProfile(p.ID); err != nil {
-		t.Fatalf("default: %v", err)
 	}
 	got, err := s.GetModelProfile(p.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.APIKey != "sk-secret-1234" || !got.SupportsVision || !got.IsDefault {
+	if got.APIKey != "sk-secret-1234" || !got.SupportsVision || got.AutoTier != AutoTierPower {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 
 	// edit: redacted key must not overwrite; UpdatedAt must advance
 	updated, err := s.UpsertModelProfile(ModelProfile{
-		ID: p.ID, Name: "主力", Provider: "openai_compatible",
+		ID: p.ID, Name: "标准", Provider: "openai_compatible",
 		BaseURL: "https://x/v1", Model: "m1b", APIKey: RedactAPIKey("sk-secret-1234"),
-		SupportsVision: true,
+		SupportsVision: true, AutoTier: AutoTierPower,
 	})
 	if err != nil {
 		t.Fatalf("upsert edit: %v", err)
@@ -139,8 +145,12 @@ func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 		t.Fatalf("model not updated: %q", updated.Model)
 	}
 
-	if err := s.DeleteModelProfile(p.ID); err == nil {
-		t.Fatal("deleting default must be rejected on SQL store")
+	// Deleting the (here, only) profile must succeed.
+	if err := s.DeleteModelProfile(p.ID); err != nil {
+		t.Fatalf("deleting the only profile must be allowed: %v", err)
+	}
+	if _, err := s.GetModelProfile(p.ID); err == nil {
+		t.Fatal("expected not-found after delete")
 	}
 }
 

@@ -51,6 +51,12 @@ func bootChannel(t *testing.T, m map[string]string, runs channel.RunStore, hook 
 		Meta:           conversation.NewMemoryStore(),
 		DefaultAgentID: "ag-default",
 		Routes:         rec,
+		ResolveModel: func(sig llm.TaskSignals) (string, bool, bool) {
+			if sig.HasImages {
+				return "mp_vision", true, true // image turns reach a vision model
+			}
+			return "", true, true
+		},
 		AfterCreateRun: func(ctx context.Context, run *store.Run, parts []llm.ContentPart) error {
 			if hook != nil {
 				hook(run, parts)
@@ -197,7 +203,6 @@ func TestInboundInlineImageBecomesPart(t *testing.T) {
 	runs := &fakeRuns{}
 	var gotParts []llm.ContentPart
 	cfg := baseCfg("http://x/o")
-	cfg["supports_vision"] = "true"
 	ch, handler := bootChannel(t, cfg, runs, func(r *store.Run, p []llm.ContentPart) { gotParts = p })
 
 	// 1x1 transparent PNG

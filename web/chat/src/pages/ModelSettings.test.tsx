@@ -5,7 +5,6 @@ import {
   createModelProfile,
   deleteModelProfile,
   listModelProfiles,
-  setDefaultModelProfile,
   updateModelProfile,
   type ModelProfile,
 } from '../api'
@@ -26,7 +25,7 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   disable_thinking: false,
   supports_vision: false,
   context_tokens: 128000,
-  is_default: false,
+  auto_tier: 'standard',
   ...over,
 })
 
@@ -52,22 +51,22 @@ describe('ModelSettings API client', () => {
 
   it('listModelProfiles GETs /v0/settings/models and unwraps profiles', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse({ profiles: [profile({ id: 'mp_1', name: '主力' })] }),
+      jsonResponse({ profiles: [profile({ id: 'mp_1', name: '标准' })] }),
     )
     const list = await listModelProfiles()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('/v0/settings/models')
     expect(init.method).toBeUndefined()
-    expect(list.map((p) => p.name)).toEqual(['主力'])
+    expect(list.map((p) => p.name)).toEqual(['标准'])
   })
 
   it('createModelProfile POSTs the profile payload', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse({ profile: profile({ id: 'mp_1', name: '主力' }) }, { status: 201 }),
+      jsonResponse({ profile: profile({ id: 'mp_1', name: '标准' }) }, { status: 201 }),
     )
     await createModelProfile({
-      name: '主力',
+      name: '标准',
       base_url: 'https://api.example.com/v1',
       model: 'gpt-4o',
       api_key: 'sk-secret',
@@ -77,20 +76,12 @@ describe('ModelSettings API client', () => {
     expect(url).toBe('/v0/settings/models')
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body)).toMatchObject({
-      name: '主力',
+      name: '标准',
       base_url: 'https://api.example.com/v1',
       model: 'gpt-4o',
       api_key: 'sk-secret',
       supports_vision: true,
     })
-  })
-
-  it('setDefaultModelProfile POSTs to .../default', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ status: 'ok' }))
-    await setDefaultModelProfile('mp_1')
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/v0/settings/models/mp_1/default')
-    expect(init.method).toBe('POST')
   })
 
   it('deleteModelProfile sends DELETE', async () => {
@@ -103,7 +94,7 @@ describe('ModelSettings API client', () => {
 
   it('updateModelProfile PATCHes only the provided fields', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse({ profile: profile({ id: 'mp_1', name: '主力', model: 'gpt-4o-mini' }) }),
+      jsonResponse({ profile: profile({ id: 'mp_1', name: '标准', model: 'gpt-4o-mini' }) }),
     )
     await updateModelProfile('mp_1', { model: 'gpt-4o-mini' })
     const [url, init] = fetchMock.mock.calls[0]
@@ -115,7 +106,7 @@ describe('ModelSettings API client', () => {
 
 describe('buildCreatePayload', () => {
   const valid: ProfileFormState = {
-    name: '主力',
+    name: '标准',
     baseUrl: 'https://api.example.com/v1',
     model: 'gpt-4o',
     apiKey: 'sk-secret',
@@ -123,7 +114,7 @@ describe('buildCreatePayload', () => {
     supportsVision: true,
     disableThinking: false,
     contextTokens: 128000,
-    isDefault: true,
+    tier: 'standard',
   }
 
   it('requires name', () => {
@@ -153,14 +144,14 @@ describe('buildCreatePayload', () => {
     expect(r).toEqual({
       ok: true,
       payload: {
-        name: '主力',
+        name: '标准',
         base_url: 'https://api.example.com/v1',
         model: 'gpt-4o',
         api_key_env: 'OPENAI_API_KEY',
         supports_vision: true,
         disable_thinking: false,
         context_tokens: 128000,
-        is_default: true,
+        auto_tier: 'standard',
       },
     })
   })
@@ -181,13 +172,14 @@ describe('buildCreatePayload', () => {
 describe('buildPatchPayload', () => {
   const original = profile({
     id: 'mp_1',
-    name: '主力',
+    name: '标准',
     base_url: 'https://api.example.com/v1',
     model: 'gpt-4o',
     api_key: 'sk-…1234',
     api_key_env: 'OPENAI_API_KEY',
     supports_vision: false,
     disable_thinking: false,
+    auto_tier: 'standard',
   })
 
   it('returns an empty payload when nothing changed', () => {
@@ -212,14 +204,20 @@ describe('buildPatchPayload', () => {
 
   it('omits api_key when left blank (backend keeps the stored key)', () => {
     const form = profileToForm(original)
-    form.name = '主力-改'
-    expect(buildPatchPayload(form, original)).toEqual({ name: '主力-改' })
+    form.name = '标准-改'
+    expect(buildPatchPayload(form, original)).toEqual({ name: '标准-改' })
   })
 
   it('sends api_key when a new value is typed', () => {
     const form = profileToForm(original)
     form.apiKey = 'sk-new-key'
     expect(buildPatchPayload(form, original)).toEqual({ api_key: 'sk-new-key' })
+  })
+
+  it('sends the tier only when changed', () => {
+    const form = profileToForm(original)
+    form.tier = 'power'
+    expect(buildPatchPayload(form, original)).toEqual({ auto_tier: 'power' })
   })
 
   it('omits context_tokens when unchanged', () => {
@@ -242,24 +240,20 @@ describe('buildPatchPayload', () => {
 })
 
 describe('profileToForm', () => {
-  it('never prefills the api key field', () => {
+  it('never prefills the api key field and maps the tier', () => {
     const form = profileToForm(
-      profile({ id: 'mp_1', name: 'p', api_key: 'sk-…1234', api_key_env: 'K' }),
+      profile({ id: 'mp_1', name: 'p', api_key: 'sk-…1234', api_key_env: 'K', auto_tier: 'power' }),
     )
     expect(form.apiKey).toBe('')
     expect(form.apiKeyEnv).toBe('K')
+    expect(form.tier).toBe('power')
   })
 })
 
 describe('ModelProfileList', () => {
   const profiles = [
-    profile({
-      id: 'mp_1',
-      name: '默认模型',
-      is_default: true,
-      supports_vision: true,
-    }),
-    profile({ id: 'mp_2', name: '廉价模型', model: 'gpt-4o-mini' }),
+    profile({ id: 'mp_1', name: '标准模型', supports_vision: true, auto_tier: 'standard' }),
+    profile({ id: 'mp_2', name: '轻量模型', model: 'gpt-4o-mini', auto_tier: 'light' }),
   ]
 
   const render = () =>
@@ -267,7 +261,6 @@ describe('ModelProfileList', () => {
       createElement(ModelProfileList, {
         profiles,
         busy: false,
-        onSetDefault: () => {},
         onEdit: () => {},
         onDelete: () => {},
       }),
@@ -275,34 +268,48 @@ describe('ModelProfileList', () => {
 
   it('renders every profile with name, model and base url', () => {
     const html = render()
-    expect(html).toContain('默认模型')
-    expect(html).toContain('廉价模型')
+    expect(html).toContain('标准模型')
+    expect(html).toContain('轻量模型')
     expect(html).toContain('gpt-4o-mini')
     expect(html).toContain('https://api.example.com/v1')
   })
 
-  it('shows the 默认 badge only on the default profile', () => {
+  it('shows tier + vision badges', () => {
     const html = render()
-    const badgeCount = html.match(/settings-badge/g)?.length ?? 0
-    expect(badgeCount).toBe(1)
-    expect(html).toContain('默认')
+    expect(html).toContain('标准')
+    expect(html).toContain('轻量')
+    // The vision profile carries a 视觉 badge in addition to its tier badge.
+    const visionBadges = html.match(/视觉/g)?.length ?? 0
+    expect(visionBadges).toBeGreaterThanOrEqual(1)
   })
 
-  it('disables delete and set-default for the default profile', () => {
+  it('offers an enabled delete button for every profile (no default lock)', () => {
     const html = render()
     const items = html.split('<li').slice(1)
-    const defaultItem = items.find((s) => s.includes('默认模型'))!
-    const otherItem = items.find((s) => s.includes('廉价模型'))!
-    // Default row: delete button disabled, set-default shows 当前默认.
-    expect(defaultItem).toContain('当前默认')
-    expect(defaultItem).toContain('disabled=""')
-    // Non-default row offers an active 设为默认 button.
-    expect(otherItem).toContain('设为默认')
+    expect(items).toHaveLength(2)
+    for (const item of items) {
+      expect(item).toContain('删除')
+      // The delete button itself must not carry a disabled attribute.
+      const delBtn = item.slice(item.lastIndexOf('删除') - 200)
+      expect(delBtn).not.toContain('disabled=""')
+    }
+  })
+
+  it('renders an empty-state prompt when no models exist', () => {
+    const html = renderToStaticMarkup(
+      createElement(ModelProfileList, {
+        profiles: [],
+        busy: false,
+        onEdit: () => {},
+        onDelete: () => {},
+      }),
+    )
+    expect(html).toContain('尚未配置任何模型')
   })
 })
 
 describe('ModelProfileForm', () => {
-  it('create form hints that an empty key falls back to the environment', () => {
+  it('create form hints that an empty key falls back to the environment and shows tier selector', () => {
     const html = renderToStaticMarkup(
       createElement(ModelProfileForm, {
         form: EMPTY_PROFILE_FORM,
@@ -315,10 +322,11 @@ describe('ModelProfileForm', () => {
       }),
     )
     expect(html).toContain('留空则使用环境变量')
-    expect(html).toContain('创建后设为默认')
+    expect(html).toContain('Auto 路由档位')
+    expect(html).toContain('自动识别（按模型名）')
   })
 
-  it('edit form hints that an empty key means "keep unchanged" and hides default checkbox', () => {
+  it('edit form hints that an empty key means "keep unchanged"', () => {
     const form: ProfileFormState = {
       ...EMPTY_PROFILE_FORM,
       name: 'p',
@@ -339,6 +347,5 @@ describe('ModelProfileForm', () => {
       }),
     )
     expect(html).toContain('留空则不修改')
-    expect(html).not.toContain('创建后设为默认')
   })
 })

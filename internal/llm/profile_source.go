@@ -28,27 +28,23 @@ func toView(p store.ModelProfile) ModelProfileView {
 		DisableThinking: p.DisableThinking,
 		SupportsVision:  p.SupportsVision,
 		ContextTokens:   p.ContextTokens,
+		Tier:            store.NormalizeAutoTier(p.AutoTier),
 		UpdatedAt:       p.UpdatedAt,
 	}
 }
 
-// DefaultModelProfile returns the profile flagged IsDefault. When none is
-// flagged it falls back to the first profile (stores order by creation time);
-// an empty store is an error because no model is configured.
-func (s *StoreProfileSource) DefaultModelProfile() (ModelProfileView, error) {
+// ListProfiles returns all profiles ordered by creation time (the store
+// already sorts that way).
+func (s *StoreProfileSource) ListProfiles() ([]ModelProfileView, error) {
 	list, err := s.Store.ListModelProfiles()
 	if err != nil {
-		return ModelProfileView{}, err
+		return nil, err
 	}
+	out := make([]ModelProfileView, 0, len(list))
 	for _, p := range list {
-		if p.IsDefault {
-			return toView(p), nil
-		}
+		out = append(out, toView(p))
 	}
-	if len(list) > 0 {
-		return toView(list[0]), nil
-	}
-	return ModelProfileView{}, fmt.Errorf("no model profile configured")
+	return out, nil
 }
 
 // ModelProfileByID resolves a single profile. An empty id yields the store's
@@ -60,4 +56,20 @@ func (s *StoreProfileSource) ModelProfileByID(id string) (ModelProfileView, erro
 		return ModelProfileView{}, err
 	}
 	return toView(p), nil
+}
+
+// PrimaryModelProfile picks the model used when Auto routing returns no
+// explicit id and when background tasks (compaction) need a generic model:
+// prefer the earliest-created standard-tier profile, then the earliest profile
+// overall. An empty list is an error because no model is configured.
+func PrimaryModelProfile(list []ModelProfileView) (ModelProfileView, error) {
+	for _, v := range list {
+		if v.Tier == store.AutoTierStandard {
+			return v, nil
+		}
+	}
+	if len(list) > 0 {
+		return list[0], nil
+	}
+	return ModelProfileView{}, fmt.Errorf("no model profile configured")
 }

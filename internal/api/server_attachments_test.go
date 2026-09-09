@@ -203,8 +203,9 @@ func TestPostRunImageWithoutVisionReturns400(t *testing.T) {
 }
 
 // seedVisionProfile inserts a vision-capable model profile and returns its
-// generated id. When isDefault is true it is flagged the default.
-func seedVisionProfile(t *testing.T, st store.Store, name string, isDefault bool) string {
+// generated id. Image turns are restricted to vision-capable profiles by the
+// router regardless of tier.
+func seedVisionProfile(t *testing.T, st store.Store, name string) string {
 	t.Helper()
 	p, err := st.UpsertModelProfile(store.ModelProfile{
 		Name:           name,
@@ -213,14 +214,10 @@ func seedVisionProfile(t *testing.T, st store.Store, name string, isDefault bool
 		Model:          "vision-model",
 		APIKey:         "sk-test",
 		SupportsVision: true,
+		AutoTier:       store.AutoTierStandard,
 	})
 	if err != nil {
 		t.Fatalf("seed vision profile %q: %v", name, err)
-	}
-	if isDefault {
-		if err := st.SetDefaultModelProfile(p.ID); err != nil {
-			t.Fatalf("set default profile %q: %v", name, err)
-		}
 	}
 	return p.ID
 }
@@ -244,7 +241,7 @@ func postRunID(t *testing.T, rr *httptest.ResponseRecorder) string {
 func TestPostRunImageAutoRoutesToVisionProfile(t *testing.T) {
 	_, st, llmMock, h, _ := attachmentsServer(t, false)
 	putAgent(t, h, "a1")
-	vid := seedVisionProfile(t, st, "视觉模型", false)
+	vid := seedVisionProfile(t, st, "视觉模型")
 
 	rr := postRun(t, h, map[string]any{
 		"agent_id":        "a1",
@@ -302,7 +299,7 @@ func TestPostRunImageManualTextModelRejected(t *testing.T) {
 	_, st, llmMock, h, _ := attachmentsServer(t, false)
 	putAgent(t, h, "a1")
 	textID := seedTextProfile(t, st, "纯文本模型")
-	_ = seedVisionProfile(t, st, "视觉模型", false) // a vision model exists but must NOT be auto-used
+	_ = seedVisionProfile(t, st, "视觉模型") // a vision model exists but must NOT be auto-used
 
 	rr := postRun(t, h, map[string]any{
 		"agent_id":         "a1",
@@ -337,7 +334,7 @@ func TestPostRunImageManualTextModelRejected(t *testing.T) {
 func TestPostRunImageAutoExplicitTokenRoutes(t *testing.T) {
 	_, st, llmMock, h, _ := attachmentsServer(t, false)
 	putAgent(t, h, "a1")
-	vid := seedVisionProfile(t, st, "视觉模型", false)
+	vid := seedVisionProfile(t, st, "视觉模型")
 
 	rr := postRun(t, h, map[string]any{
 		"agent_id":         "a1",
@@ -374,8 +371,8 @@ func TestPostRunImageAutoExplicitTokenRoutes(t *testing.T) {
 func TestPostRunImageExplicitVisionProfile(t *testing.T) {
 	_, st, _, h, _ := attachmentsServer(t, false)
 	putAgent(t, h, "a1")
-	pick := seedVisionProfile(t, st, "我选的视觉", false)
-	_ = seedVisionProfile(t, st, "另一个视觉", false)
+	pick := seedVisionProfile(t, st, "我选的视觉")
+	_ = seedVisionProfile(t, st, "另一个视觉")
 
 	rr := postRun(t, h, map[string]any{
 		"agent_id":         "a1",
@@ -502,8 +499,9 @@ func TestPostRunMarkdownAttachmentInjected(t *testing.T) {
 }
 
 func TestPostRunImageWithVisionSendsImagePart(t *testing.T) {
-	_, _, llmMock, h, _ := attachmentsServer(t, true)
+	_, st, llmMock, h, _ := attachmentsServer(t, true)
 	putAgent(t, h, "a1")
+	seedVisionProfile(t, st, "视觉模型")
 
 	rr := postRun(t, h, map[string]any{
 		"agent_id":        "a1",
@@ -536,7 +534,10 @@ func TestUIConfigReportsSupportsVision(t *testing.T) {
 	for _, vision := range []bool{false, true} {
 		vision := vision
 		t.Run("vision="+map[bool]string{false: "false", true: "true"}[vision], func(t *testing.T) {
-			_, _, _, h, _ := attachmentsServer(t, vision)
+			_, st, _, h, _ := attachmentsServer(t, vision)
+			if vision {
+				seedVisionProfile(t, st, "视觉模型")
+			}
 			req := httptest.NewRequest(http.MethodGet, "/v0/ui-config", nil)
 			rr := httptest.NewRecorder()
 			h.ServeHTTP(rr, req)

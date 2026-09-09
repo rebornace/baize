@@ -163,11 +163,11 @@ func (c *Compactor) resolveView(profileID string) (llm.ModelProfileView, error) 
 			return v, nil
 		}
 	}
-	v, err := c.Profiles.DefaultModelProfile()
+	list, err := c.Profiles.ListProfiles()
 	if err != nil {
 		return llm.ModelProfileView{}, err
 	}
-	return v, nil
+	return llm.PrimaryModelProfile(list)
 }
 
 func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, prior string, fold []conversation.Message) (string, error) {

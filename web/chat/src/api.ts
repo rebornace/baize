@@ -659,26 +659,29 @@ export interface ModelProfile {
   disable_thinking: boolean
   supports_vision: boolean
   context_tokens: number
-  is_default: boolean
+  /** Auto-routing capability tier: "light" | "standard" | "power". */
+  auto_tier: ModelTier
   created_at?: string
   updated_at?: string
 }
 
-/** Editable fields of a model profile. Booleans omitted on PATCH are kept. */
-export type ModelProfileInput = Partial<
-  Pick<
-    ModelProfile,
-    | 'name'
-    | 'provider'
-    | 'base_url'
-    | 'model'
-    | 'api_key'
-    | 'api_key_env'
-    | 'disable_thinking'
-    | 'supports_vision'
-    | 'context_tokens'
-  >
-> & { is_default?: boolean }
+/** Capability tiers understood by the task-aware Auto router. */
+export type ModelTier = 'light' | 'standard' | 'power'
+
+/** Editable fields of a model profile. Booleans omitted on PATCH are kept.
+ * `auto_tier` may also be "auto" on write to request server-side inference. */
+export type ModelProfileInput = Partial<{
+  name: string
+  provider: string
+  base_url: string
+  model: string
+  api_key: string
+  api_key_env: string
+  disable_thinking: boolean
+  supports_vision: boolean
+  context_tokens: number
+  auto_tier: ModelTier | 'auto'
+}>
 
 export async function listModelProfiles(): Promise<ModelProfile[]> {
   const res = await fetch('/v0/settings/models', { headers: authInit() })
@@ -698,7 +701,7 @@ export async function createModelProfile(p: ModelProfileInput): Promise<ModelPro
 
 export async function updateModelProfile(
   id: string,
-  p: Partial<ModelProfile>,
+  p: ModelProfileInput,
 ): Promise<ModelProfile> {
   const res = await fetch(`/v0/settings/models/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -712,14 +715,6 @@ export async function updateModelProfile(
 export async function deleteModelProfile(id: string): Promise<void> {
   const res = await fetch(`/v0/settings/models/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: authInit(),
-  })
-  await parseJSON<{ status: string }>(res)
-}
-
-export async function setDefaultModelProfile(id: string): Promise<void> {
-  const res = await fetch(`/v0/settings/models/${encodeURIComponent(id)}/default`, {
-    method: 'POST',
     headers: authInit(),
   })
   await parseJSON<{ status: string }>(res)

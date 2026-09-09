@@ -676,46 +676,35 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 	if !ok {
 		return nil, fmt.Errorf("conversation store does not support meta")
 	}
-	supportsVision := d.provider != nil && d.provider.SupportsVision()
-
 	declarative := len(d.cfg.Channels) > 0
 
-	// visionProfileID resolves a vision-capable model profile for inbound
-	// channel messages that carry an image, when the default model is
-	// text-only. Channel inbound has no manual model picker, so it is always
-	// "Auto" mode. Read live on every inbound message so adding/editing a
-	// vision model in Settings takes effect without restart. Returns "" when
-	// no vision profile exists (images then degrade to a text note). The
-	// selection policy is shared with the interactive web path via
-	// llm.PickVisionProfile.
-	visionProfileID := func() string {
+	// resolveModel performs task-aware Auto routing for inbound channel
+	// messages (which have no manual model picker). It is read live on every
+	// inbound message so adding/editing a model in Settings takes effect
+	// without restart. Returns the picked profile id ("" = Switch primary),
+	// whether an image turn can reach a vision-capable model, and whether any
+	// model is configured at all. The policy is shared with the interactive web
+	// path via llm.ResolveModel.
+	resolveModel := func(sig llm.TaskSignals) (id string, visionOK, hasModels bool) {
 		if d.st == nil {
-			return ""
+			return "", false, false
 		}
 		list, err := d.st.ListModelProfiles()
-		if err != nil {
-			return ""
+		if err != nil || len(list) == 0 {
+			return "", false, len(list) > 0
 		}
-		rp := make([]llm.RoutingProfile, 0, len(list))
-		for _, p := range list {
-			rp = append(rp, llm.RoutingProfile{
-				ID:             p.ID,
-				SupportsVision: p.SupportsVision,
-				IsDefault:      p.IsDefault,
-			})
-		}
-		return llm.PickVisionProfile(rp)
+		sel, ok := llm.ResolveModel(llm.AutoProfileID, sig, llm.RoutingProfilesFrom(list))
+		return sel.ProfileID, ok, true
 	}
 
 	router := channel.NewRouter()
 	deps := channel.BuildDeps{
-		Store:                d.st,
-		Meta:                 meta,
-		Messages:             d.messages,
-		DefaultAgentID:       d.defaultAgentID,
-		Media:                d.channelMedia,
-		SupportsVision:       supportsVision,
-		VisionModelProfileID: visionProfileID,
+		Store:          d.st,
+		Meta:           meta,
+		Messages:       d.messages,
+		DefaultAgentID: d.defaultAgentID,
+		Media:          d.channelMedia,
+		ResolveModel:   resolveModel,
 		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
 			d.srv.Dispatch(context.Background(), middleware.Job{
 				RunID:     runRec.ID,
@@ -1101,8 +1090,12 @@ func seedModelProfile(st store.Store, cfg config.Config) error {
 	if env == "" {
 		env = "BAIZE_API_KEY"
 	}
+	seedName := cfg.LLM.Model
+	if seedName == "" {
+		seedName = "配置模型"
+	}
 	if _, err := st.UpsertModelProfile(store.ModelProfile{
-		Name:            "默认模型",
+		Name:            seedName,
 		Provider:        "openai_compatible",
 		BaseURL:         cfg.LLM.BaseURL,
 		Model:           cfg.LLM.Model,
@@ -1110,7 +1103,7 @@ func seedModelProfile(st store.Store, cfg config.Config) error {
 		DisableThinking: cfg.LLM.DisableThinking,
 		SupportsVision:  cfg.LLM.SupportsVision,
 		ContextTokens:   128000,
-		IsDefault:       true,
+		AutoTier:        llm.InferTier(cfg.LLM.Model),
 	}); err != nil {
 		return fmt.Errorf("seed model profile: %w", err)
 	}

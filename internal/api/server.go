@@ -449,7 +449,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/models", s.handlePostModelProfile)
 	s.mux.HandleFunc("PATCH /v0/settings/models/{id}", s.handlePatchModelProfile)
 	s.mux.HandleFunc("DELETE /v0/settings/models/{id}", s.handleDeleteModelProfile)
-	s.mux.HandleFunc("POST /v0/settings/models/{id}/default", s.handleSetDefaultModelProfile)
 }
 
 type apiError struct {
@@ -500,7 +499,7 @@ func (s *Server) supportsVision() bool {
 }
 
 // routingProfiles returns the current model profiles in the compact form the
-// llm router needs. Read live so adding a vision model in Settings takes
+// llm router needs. Read live so adding/editing a model in Settings takes
 // effect without a restart.
 func (s *Server) routingProfiles() []llm.RoutingProfile {
 	if s.Store == nil {
@@ -510,15 +509,7 @@ func (s *Server) routingProfiles() []llm.RoutingProfile {
 	if err != nil {
 		return nil
 	}
-	out := make([]llm.RoutingProfile, 0, len(list))
-	for _, p := range list {
-		out = append(out, llm.RoutingProfile{
-			ID:             p.ID,
-			SupportsVision: p.SupportsVision,
-			IsDefault:      p.IsDefault,
-		})
-	}
-	return out
+	return llm.RoutingProfilesFrom(list)
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -1499,20 +1490,25 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		s.writeAttachmentError(w, err)
 		return
 	}
-	// Model routing. The per-run choice is either "auto" (smart routing — the
-	// default and the only mode for channel inbound) or a concrete profile id
-	// (manual). Auto routes image turns to a vision model when the default is
-	// text-only; a manual choice is always honored exactly and NEVER silently
-	// rerouted, so a manual text-only model on an image turn is rejected with
-	// guidance to pick Auto / a vision model instead.
+	// Task-aware model routing. The per-run choice is either "auto" (smart
+	// routing — the default and the only mode for channel inbound) or a
+	// concrete profile id (manual). Auto classifies the turn's difficulty from
+	// the actual content (text length, code, attachments, reasoning cues) and
+	// picks a model in the matching capability tier, with neighbor fallback;
+	// image turns are restricted to vision-capable models. A manual choice is
+	// always honored exactly and NEVER silently rerouted, so a manual
+	// text-only model on an image turn is rejected with guidance to pick Auto /
+	// a vision model instead.
 	profiles := s.routingProfiles()
-	sel, visionOK := llm.ResolveProfileForImages(
-		llm.NormalizeProfileChoice(body.ModelProfileID),
-		len(imageExts) > 0,
-		s.supportsVision(),
-		profiles,
-	)
-	if len(imageExts) > 0 && !visionOK {
+	hasImages := len(imageExts) > 0
+	sig := llm.TaskSignals{
+		Text:      runInput,
+		HasImages: hasImages,
+		FileCount: len(textExts),
+		HasCode:   llm.DetectCode(runInput),
+	}
+	sel, visionOK := llm.ResolveModel(llm.NormalizeProfileChoice(body.ModelProfileID), sig, profiles)
+	if hasImages && !visionOK {
 		writeError(w, http.StatusBadRequest, "vision_unsupported",
 			"the selected model does not support vision; switch to 智能路由 (Auto) or a vision-capable model, or remove image attachments")
 		return
