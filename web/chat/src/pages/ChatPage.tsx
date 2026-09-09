@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Menu } from 'lucide-react'
 import {
   ApiError,
   cancelRun,
@@ -44,6 +45,7 @@ import { foldEvents, type ChatBlock } from '../foldEvents'
 import { useGate } from '../gateContext'
 import { buildRunOptions, visionGate } from '../modelSelect'
 import { useStickToBottom } from '../useStickToBottom'
+import { useDrawer } from '../useDrawer'
 
 
 const CONV_KEY = 'baize.conversation_id'
@@ -72,6 +74,7 @@ function loadConversationScope(isAdmin: boolean): ConversationScope {
 
 export function ChatPage() {
   const { role, gateEnabled } = useGate()
+  const drawer = useDrawer()
   const [agentId, setAgentId] = useState(AGENT_FALLBACK)
   const [conversationId, setConversationIdState] = useState(loadConversationId)
   const [conversationScope, setConversationScopeState] = useState<ConversationScope>(() =>
@@ -668,10 +671,23 @@ export function ChatPage() {
   const showStop = Boolean(liveRunId && busy)
 
   return (
-    <div className="chat-shell">
+    <div className={`chat-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
+      <button
+        type="button"
+        className="app-drawer-scrim"
+        aria-label="关闭菜单"
+        onClick={drawer.close}
+      />
       <aside className="chat-sidebar" aria-label="对话列表">
         <div className="chat-sidebar-top">
-          <button type="button" className="btn ghost sidebar-new" onClick={onNewChat}>
+          <button
+            type="button"
+            className="btn ghost sidebar-new"
+            onClick={() => {
+              onNewChat()
+              drawer.close()
+            }}
+          >
             新对话
           </button>
           {role === 'admin' && (
@@ -710,7 +726,10 @@ export function ChatPage() {
                       ? 'conversation-item active'
                       : 'conversation-item'
                   }
-                  onClick={() => onSelectConversation(c.id)}
+                  onClick={() => {
+                    onSelectConversation(c.id)
+                    drawer.close()
+                  }}
                 >
                   {conversationListLabel(c.id, c.title)}
                 </button>
@@ -754,6 +773,16 @@ export function ChatPage() {
       </aside>
 
       <main className="chat-main">
+        <div className="app-mobile-bar">
+          <button
+            type="button"
+            className="app-menu-btn"
+            aria-label="打开对话列表"
+            onClick={drawer.open}
+          >
+            <Menu size={20} aria-hidden="true" />
+          </button>
+        </div>
         <div
           className="messages"
           aria-live="polite"
