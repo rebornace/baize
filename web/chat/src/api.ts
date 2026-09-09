@@ -382,18 +382,6 @@ export async function createRun(
     headers: authInit({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    let code = 'unknown'
-    let message = res.statusText
-    try {
-      const errBody = (await res.json()) as { error?: { code?: string; message?: string } }
-      if (errBody.error?.code) code = errBody.error.code
-      if (errBody.error?.message) message = errBody.error.message
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, code, message)
-  }
   return parseJSON<CreateRunResponse>(res)
 }
 

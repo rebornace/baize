@@ -35,6 +35,9 @@ export const HITL = {
   title: '需要你确认',
   approve: '同意',
   reject: '拒绝',
+  confirmReject: '确认拒绝',
+  viewParams: '看参数',
+  failed: '操作失败，请重试',
   commentPlaceholder: '留言（选填）',
   approved: '已同意',
   rejected: '已拒绝',
@@ -81,6 +84,8 @@ export const CHAT = {
   // 空模型态
   addModel: '添加模型',
   noModelConfigured: '暂未配置模型',
+  // SSE 降级轮询提示
+  reconnecting: '正在重新连接…',
 } as const
 
 export interface FriendlyError {

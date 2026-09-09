@@ -141,4 +141,21 @@ describe('ToolCard HITL 两段式拒绝链路', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenCalledWith('r1', 'approve', '')
   })
+
+  it('resumeRun reject 时回调 onError 一次且卡片只显通用提示、不露 HTTP 技术串', async () => {
+    const technical = new Error('HTTP 502: upstream connect failure')
+    vi.spyOn(api, 'resumeRun').mockRejectedValue(technical)
+    const onError = vi.fn()
+    render(<ToolCard block={block} catalog={[]} onError={onError} />)
+
+    await act(async () => {
+      buttonByText('同意')!.click()
+    })
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(technical)
+    const errorEl = host.querySelector('.tool-card-error')
+    expect(errorEl?.textContent).toContain('操作失败，请重试')
+    expect(host.textContent).not.toContain('HTTP')
+  })
 })

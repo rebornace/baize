@@ -291,7 +291,7 @@ export function ChatPage() {
         },
         () => {
           if (conversationIdRef.current !== forConversationId) return
-          setStatus('SSE 中断，改用轮询…')
+          setStatus(CHAT.reconnecting)
           startPoll(runId, forConversationId)
         },
       )
@@ -979,15 +979,20 @@ export function ChatPage() {
               const bubbleClass =
                 m.role === 'user' ? 'user' : m.role === 'system_note' ? 'system' : 'assistant'
               const persisted = !m.id.startsWith('local_')
-              const pages =
-                m.role === 'assistant' && m.run_id && m.run_id !== liveRunId
-                  ? historyPages[m.run_id] ?? []
-                  : []
               const runHistoryBlocks =
                 m.role === 'assistant' &&
                 m.run_id &&
                 isFirstAssistantMessageOfRun(msgIndex, messages) &&
                 historyBlocks[m.run_id]
+              // 分析页产物源自工具结果：有历史工具块时预览已在 ToolCard 内承载，
+              // 独立 pages 仅作为「无工具块的分析页」兜底，避免重复 iframe。
+              const pages =
+                m.role === 'assistant' &&
+                m.run_id &&
+                m.run_id !== liveRunId &&
+                !runHistoryBlocks
+                  ? historyPages[m.run_id] ?? []
+                  : []
               const canAct = persisted && !busy && !liveRunId && !historyMutating
               return (
                 <div key={m.id} className={`msg-row ${bubbleClass}`}>
@@ -1068,7 +1073,7 @@ export function ChatPage() {
                 case 'tool':
                   return (
                     <div key={`live-t-${i}`} className="msg-row tool">
-                      <ToolCard block={block} catalog={toolCatalog} />
+                      <ToolCard block={block} catalog={toolCatalog} onError={reportError} />
                     </div>
                   )
                 case 'workflow':

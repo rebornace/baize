@@ -17,13 +17,40 @@ export function Modal({ open, title, onClose, children, footer }: ModalProps) {
     previousActive.current = document.activeElement
     const close = onClose
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close?.()
+      if (e.key === 'Escape') {
+        close?.()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const nodes = Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => !el.hasAttribute('disabled'))
+      // 无可用控件时焦点留在 panel（panel 带 tabIndex={-1}）。
+      e.preventDefault()
+      if (nodes.length === 0) {
+        panelRef.current?.focus()
+        return
+      }
+      // 显式接管 Tab：jsdom 不会原生移动焦点，且这样能保证 disabled
+      // 被跳过、首尾环绕；当前焦点不在列表内（背景/panel）时分别落到首/尾。
+      const current = nodes.indexOf(document.activeElement as HTMLElement)
+      if (e.shiftKey) {
+        const prev = current <= 0 ? nodes[nodes.length - 1] : nodes[current - 1]
+        prev.focus()
+      } else {
+        const next = current === -1 || current === nodes.length - 1 ? nodes[0] : nodes[current + 1]
+        next.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
-    const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    )
-    ;(focusables?.[0] ?? panelRef.current)?.focus()
+    const initialFocusables = Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    ).filter((el) => !el.hasAttribute('disabled'))
+    ;(initialFocusables[0] ?? panelRef.current)?.focus()
     return () => {
       document.removeEventListener('keydown', onKey)
       ;(previousActive.current as HTMLElement | null)?.focus?.()

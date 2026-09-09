@@ -295,6 +295,13 @@
   opacity: 1;
 }
 
+/* 触屏设备无 hover：消息操作按钮常显，避免永远停在 opacity:0。 */
+@media (hover: none) {
+  .msg-actions {
+    opacity: 1;
+  }
+}
+
 .msg-row.user .msg-actions {
   justify-content: flex-end;
 }
@@ -670,7 +677,7 @@
   margin-bottom: 0.5rem;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--surface-2);
   padding: 0.35rem 0.75rem 0.65rem;
 }
 
@@ -785,10 +792,6 @@
   color: var(--text-muted);
   font-size: 0.82rem;
   flex: 1;
-}
-
-.status-error {
-  color: var(--danger);
 }
 
 .chat-status-row {
@@ -1542,13 +1545,21 @@
 
 .composer-toolbar { display: inline-flex; align-items: center; margin-right: var(--space-1); }
 .model-chip, .model-chip-inner { display: inline-flex; align-items: center; gap: 4px; }
-.model-chip-inner { font-size: 13px; color: var(--text-muted); }
+.model-chip-inner {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .model-chip {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   padding: 2px 10px;
   background: var(--surface);
   min-height: 32px;
+  /* 相对 composer-box：长模型名在窄屏截断而非挤压输入区。 */
+  max-width: 46%;
 }
 .model-chip:hover { background: var(--surface-2); color: var(--text); }
 

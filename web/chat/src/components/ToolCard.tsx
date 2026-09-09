@@ -15,14 +15,15 @@ export interface ToolCardProps {
   catalog?: ToolCatalog
   /** 历史回看：只渲染结果态，不出现审批操作。 */
   readOnly?: boolean
-  onResumed?: () => void
+  /** 决议失败时回调父级弹 toast；卡片自身只显通用提示。 */
+  onError?: (e: unknown) => void
 }
 
-export function ToolCard({ block, catalog = [], readOnly = false, onResumed }: ToolCardProps) {
+export function ToolCard({ block, catalog = [], readOnly = false, onError }: ToolCardProps) {
   const waiting = block.status === 'waiting_human' && !readOnly
   const [expanded, setExpanded] = useState(waiting)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
   const [showComment, setShowComment] = useState(false)
   const [comment, setComment] = useState('')
 
@@ -38,12 +39,13 @@ export function ToolCard({ block, catalog = [], readOnly = false, onResumed }: T
 
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(true)
-    setError(null)
+    setFailed(false)
     try {
       await resumeRun(block.runId, decision, decision === 'reject' ? comment.trim() : '')
-      onResumed?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      // 技术细节交给父级 toast（friendlyError），卡片只保留通用提示。
+      setFailed(true)
+      onError?.(err)
     } finally {
       setBusy(false)
     }
@@ -133,7 +135,7 @@ export function ToolCard({ block, catalog = [], readOnly = false, onResumed }: T
             </Button>
           ) : (
             <Button size="sm" variant="danger" disabled={busy} onClick={() => void decide('reject')}>
-              确认拒绝
+              {HITL.confirmReject}
             </Button>
           )}
           <button
@@ -142,12 +144,12 @@ export function ToolCard({ block, catalog = [], readOnly = false, onResumed }: T
             disabled={busy}
             onClick={() => setExpanded((v) => !v)}
           >
-            看参数
+            {HITL.viewParams}
           </button>
         </div>
       )}
 
-      {error && <p className="tool-card-error">{error}</p>}
+      {failed && <p className="tool-card-error">{HITL.failed}</p>}
     </div>
   )
 }
