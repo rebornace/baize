@@ -724,7 +724,7 @@ describe('useSettingsBadges', () => {
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockImplementation(async (url: unknown) => {
       const u = String(url)
-      if (u === '/v0/tools') return jsonResponse([{ name: 't', connector_id: 'oa1', source: 'spec', enabled: true }])
+      if (u === '/v0/tools') return jsonResponse({ tools: [{ name: 't', connector_id: 'oa1', source: 'spec', enabled: true }] })
       if (u === '/v0/settings/models') return jsonResponse({ profiles: [{ id: 'm1' }] })
       if (u === '/v0/skills') return jsonResponse({ skills: [{ id: 's1' }] })
       if (u === '/v0/settings/channels/weixin') return jsonResponse({ running: true })
@@ -955,7 +955,7 @@ describe('SettingsHome', () => {
   it('admin renders all 13 cards grouped under four group titles', async () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
       const u = String(url)
-      if (u === '/v0/tools') return jsonResponse([{ name: 't', connector_id: 'oa1', source: 'spec', enabled: true }])
+      if (u === '/v0/tools') return jsonResponse({ tools: [{ name: 't', connector_id: 'oa1', source: 'spec', enabled: true }] })
       if (u === '/v0/skills') return jsonResponse({ skills: [{ id: 's1' }] })
       if (u === '/v0/settings/channels/weixin') return jsonResponse({ running: true })
       if (u === '/v0/settings/events-webhook') return jsonResponse({ url: 'https://x', headers: {} })
@@ -997,7 +997,7 @@ describe('SettingsHome', () => {
   it('operator locked cards are not buttons and not focusable; allowed cards are', async () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
       const u = String(url)
-      if (u === '/v0/tools') return jsonResponse([])
+      if (u === '/v0/tools') return jsonResponse({ tools: [] })
       if (u === '/v0/skills') return jsonResponse({ skills: [] })
       if (u === '/v0/settings/channels/weixin') return jsonResponse({ enabled: false })
       if (u === '/v0/settings/runtime') return jsonResponse({ effective: {}, overridden: {} })
@@ -1304,6 +1304,23 @@ function SettingsIndex() {
 ```
 若 `useGate`/`Navigate` 在 main.tsx 中因此变为未使用（`noUnusedLocals` 会报错），删除对应 import 与仅服务于它的引用；`AdminOnly` 仍使用 `useGate`，故保留 `useGate` import；`Navigate` 仍被底部通配路由使用，保留。
 
+**同时解除 5 个运营可达路由的 `<AdminOnly>` 包装（关键，否则任务 7-9 的运营只读页无法进入）：**
+
+当前 `tools`、`skills`、`channels/weixin`、`models`、`runtime` 这 5 条路由都被 `<AdminOnly>…</AdminOnly>` 包裹，运营访问会被重定向。按任务 1 放开的后端 ACL 与 P2 权限模型，这 5 项对运营分别为 read/read/login/read/read，必须去掉外层 `<AdminOnly>`，直接渲染页面组件（页面内部在任务 7-9 做控件级只读 gate）。
+
+即把这 5 条改为例如：
+```tsx
+            <Route path="models" element={<ModelSettings />} />
+            <Route path="tools" element={<ToolsSettings />} />
+            <Route path="skills" element={<SkillsSettings />} />
+            <Route path="runtime" element={<RuntimeSettings />} />
+            <Route path="channels/weixin" element={<WeixinChannelSettings />} />
+```
+
+7 个 locked 路由**必须保留** `<AdminOnly>` 包装（运营侧边栏看不到、手输 URL 也应被拦回）：`openapi`、`mcp`、`mcp-export`、`plugins`、`webhooks`、`inbox`、`storage`。
+
+`AdminOnly` 当前重定向目标是 `/settings/identities`；改完后它仍被 7 个 locked 路由使用，`AdminOnly` 组件本身与该重定向保持不变。
+
 - [ ] **步骤 3：类型检查与前端全量测试**
 
 运行：`npx tsc --noEmit`，预期 PASS。
@@ -1566,9 +1583,9 @@ describe('ToolsSettings read-only for operator', () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
       const u = String(url)
       if (u === '/v0/tools') {
-        return jsonResponse([
+        return jsonResponse({ tools: [
           { name: 'list_tickets', title: '查工单', connector_id: 'oa1', source: 'spec', enabled: true, require_login: false },
-        ])
+        ] })
       }
       // connector detail GET is admin-only for operators
       return new Response('forbidden', { status: 403 })

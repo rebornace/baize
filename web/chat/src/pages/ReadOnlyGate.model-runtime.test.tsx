@@ -49,7 +49,9 @@ describe('ModelSettings read-only for operator', () => {
 
 describe('RuntimeSettings read-only for operator', () => {
   it('shows engine values but hides save button and entire credentials section', async () => {
+    const urls: string[] = []
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
+      urls.push(String(url))
       const u = String(url)
       if (u === '/v0/settings/runtime') return jsonResponse({ effective: { max_messages: 20 }, overridden: {} })
       if (u === '/v0/settings/credentials') return new Response('forbidden', { status: 403 })
@@ -60,5 +62,6 @@ describe('RuntimeSettings read-only for operator', () => {
     expect(host.textContent).not.toContain('保存引擎参数')
     expect(host.textContent).not.toContain('控制面凭据')
     expect(host.textContent).not.toContain('轮换主口令')
+    expect(urls.some((u) => u.includes('/v0/settings/credentials'))).toBe(false)
   })
 })

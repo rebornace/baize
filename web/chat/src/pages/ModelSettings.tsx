@@ -516,8 +516,8 @@ export function ModelSettings() {
             profiles={profiles}
             busy={false}
             readOnly
-            onEdit={startEdit}
-            onDelete={(target) => void onDelete(target)}
+            onEdit={() => undefined}
+            onDelete={() => undefined}
           />
         </section>
       )}
