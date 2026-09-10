@@ -2,12 +2,12 @@ import { NavLink, Outlet, Link } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { ThemeToggle } from '../components/ui'
 import { useGate } from '../gateContext'
-import { settingsNavItems } from '../settingsNav'
+import { visibleNavItems } from '../settingsNav'
 import { useDrawer } from '../useDrawer'
 
 export function SettingsLayout() {
   const { role } = useGate()
-  const nav = settingsNavItems(role)
+  const nav = visibleNavItems(role)
   const drawer = useDrawer()
   return (
     <div className={`settings-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
