@@ -10,6 +10,7 @@ import {
   stopWeixinProcess,
   type WeixinChannelSettings,
 } from '../api'
+import { useGate } from '../gateContext'
 import { qrDataUrlFromText } from '../qrDataUrl'
 
 const POLL_MS = 2000
@@ -53,6 +54,9 @@ export function WeixinChannelSettings() {
   const [status, setStatus] = useState<string | null>(null)
   const [running, setRunning] = useState<boolean | null>(null)
   const [runReason, setRunReason] = useState<string | null>(null)
+
+  const { role } = useGate()
+  const isAdmin = role === 'admin'
 
   const [ticket, setTicket] = useState<string | null>(null)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
@@ -254,8 +258,8 @@ export function WeixinChannelSettings() {
     <div className="settings-section">
       <h1 className="settings-heading">渠道 · 微信</h1>
       <div className="settings-meta">
-        <p>扫码登录微信个人号 Bot（iLink），配置默认 Agent、受理人与私信 allowlist。</p>
-        <p>仅管理员可操作。出站双向同步见后续任务。</p>
+        <p>{isAdmin ? '扫码登录微信个人号 Bot（iLink），配置默认 Agent、受理人与私信 allowlist。' : '扫码登录你的微信账号后，即可通过微信与助手对话。配置由管理员维护。'}</p>
+        {isAdmin && <p>仅管理员可操作。出站双向同步见后续任务。</p>}
       </div>
 
       {loading && <p className="settings-muted">加载中…</p>}
@@ -271,42 +275,44 @@ export function WeixinChannelSettings() {
           )}
           {runReason === 'login_required' && '（未登录：启用前请先扫码登录）'}
           {runReason === 'start_failed' && '（启动失败，请检查日志）'}
-          {runReason === 'stopped' && '（适配器进程已手动停止，点「启动进程」恢复）'}
+          {runReason === 'stopped' && (isAdmin ? '（适配器进程已手动停止，点「启动进程」恢复）' : '（适配器进程已停止，请联系管理员启动）')}
         </p>
       )}
 
-      <section className="weixin-login-block">
-        <h2 className="settings-subheading">适配器进程</h2>
-        <div className="weixin-login-actions">
-          <button
-            type="button"
-            className="btn primary"
-            disabled={busy}
-            onClick={() => void onProcessAction('start')}
-          >
-            启动进程
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            disabled={busy}
-            onClick={() => void onProcessAction('restart')}
-          >
-            重启进程
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            disabled={busy}
-            onClick={() => void onProcessAction('stop')}
-          >
-            停止进程
-          </button>
-        </div>
-        <p className="settings-muted">
-          对 weixin-adapter 子进程进行启动 / 重启 / 停止（进程级，区别于下方「启用」开关——后者只控制收消息轮询）。适配器卡死或启动失败时可点「重启进程」恢复，无需重启 baize。
-        </p>
-      </section>
+      {isAdmin && (
+        <section className="weixin-login-block">
+          <h2 className="settings-subheading">适配器进程</h2>
+          <div className="weixin-login-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy}
+              onClick={() => void onProcessAction('start')}
+            >
+              启动进程
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => void onProcessAction('restart')}
+            >
+              重启进程
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => void onProcessAction('stop')}
+            >
+              停止进程
+            </button>
+          </div>
+          <p className="settings-muted">
+            对 weixin-adapter 子进程进行启动 / 重启 / 停止（进程级，区别于下方「启用」开关——后者只控制收消息轮询）。适配器卡死或启动失败时可点「重启进程」恢复，无需重启 baize。
+          </p>
+        </section>
+      )}
 
       <section className="weixin-login-block">
         <h2 className="settings-subheading">登录</h2>
@@ -314,9 +320,11 @@ export function WeixinChannelSettings() {
           <button type="button" className="btn primary" disabled={busy} onClick={() => void onStartLogin()}>
             {qrUrl ? '刷新二维码' : '获取登录二维码'}
           </button>
-          <button type="button" className="btn ghost" disabled={busy} onClick={() => void onLogout()}>
-            登出
-          </button>
+          {isAdmin && (
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void onLogout()}>
+              登出
+            </button>
+          )}
         </div>
         {qrUrl && (
           <div className="weixin-qr">
@@ -334,7 +342,7 @@ export function WeixinChannelSettings() {
         )}
       </section>
 
-      {!loading && (
+      {!loading && isAdmin && (
         <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>
           <h2 className="settings-subheading">设置</h2>
           <label className="settings-field">
