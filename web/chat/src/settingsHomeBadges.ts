@@ -1,3 +1,15 @@
+import { useEffect, useState } from 'react'
+import {
+  getEventsWebhook,
+  getInboxChannels,
+  getRuntimeSettings,
+  getStoreSettings,
+  getWeixinSettings,
+  listMCPExportIdentities,
+  listModelProfiles,
+  listSkills,
+  listTools,
+} from './api'
 import type {
   EventsWebhookConfig,
   InboxChannel,
@@ -8,7 +20,7 @@ import type {
   ToolInfo,
   WeixinChannelSettings,
 } from './api'
-import type { BadgeKind } from './settingsNav'
+import type { BadgeKind, SettingsNavItem, SettingsRole } from './settingsNav'
 
 export interface BadgeResult {
   tone: 'success' | 'warning' | 'neutral'
@@ -101,4 +113,113 @@ export function resolveBadge(kind: BadgeKind, data: unknown): BadgeResult | null
       return _exhaustive
     }
   }
+}
+
+// ---- useSettingsBadges ----
+
+/** Kinds whose GET endpoint is admin-only; skipped (locked badge) for operators. */
+const ADMIN_ONLY_KINDS = new Set<BadgeKind>([
+  'webhook', 'inbox', 'store', 'mcpExport', 'openapi', 'mcp', 'plugins',
+])
+
+export type BadgeMap = Partial<Record<BadgeKind, BadgeResult | null>>
+
+/** Shared tool-list fetch; failures degrade to an empty list rather than rejecting. */
+async function fetchToolList(): Promise<ToolInfo[]> {
+  return listTools().catch(() => [] as ToolInfo[])
+}
+
+/**
+ * Concurrently fetches badge data for the given nav items.
+ *
+ * The `/v0/tools` response is fetched at most once and reused for the
+ * tools/openapi/mcp/plugins kinds. Admin-only kinds are never requested for
+ * operators. Any single failed request resolves its kind to null without
+ * affecting the others. Re-runs when `items`, `role` or `refreshKey` change.
+ */
+export function useSettingsBadges(
+  items: readonly SettingsNavItem[],
+  role: SettingsRole,
+  refreshKey: number,
+): BadgeMap {
+  const [badges, setBadges] = useState<BadgeMap>({})
+
+  // Callers may pass an inline filtered array whose identity changes every
+  // render; key the fetch effect on the badge-kind set contents (plus role)
+  // rather than the array reference, otherwise setBadges -> re-render -> new
+  // array -> effect re-run would loop forever.
+  const itemsKey = `${role}|${items.map((i) => i.badge ?? '').sort().join('|')}`
+
+  useEffect(() => {
+    let cancelled = false
+    const kinds = new Set<BadgeKind>()
+    for (const it of items) {
+      if (!it.badge) continue
+      if (role === 'operator' && ADMIN_ONLY_KINDS.has(it.badge)) continue
+      kinds.add(it.badge)
+    }
+
+    async function run(): Promise<void> {
+      // Shared tool list feeds tools/openapi/mcp/plugins.
+      const needTools = (['tools', 'openapi', 'mcp', 'plugins'] as const).some((k) => kinds.has(k))
+      const toolsP = needTools ? fetchToolList() : Promise.resolve([] as ToolInfo[])
+      const tasks: Promise<void>[] = []
+      const next: BadgeMap = {}
+
+      if (kinds.has('models')) {
+        tasks.push(listModelProfiles()
+          .then((p) => { next.models = resolveBadge('models', p) })
+          .catch(() => { next.models = null }))
+      }
+      if (kinds.has('skills')) {
+        tasks.push(listSkills()
+          .then((s) => { next.skills = resolveBadge('skills', s) })
+          .catch(() => { next.skills = null }))
+      }
+      if (kinds.has('weixin')) {
+        tasks.push(getWeixinSettings()
+          .then((s) => { next.weixin = resolveBadge('weixin', s) })
+          .catch(() => { next.weixin = null }))
+      }
+      if (kinds.has('webhook')) {
+        tasks.push(getEventsWebhook()
+          .then((s) => { next.webhook = resolveBadge('webhook', s) })
+          .catch(() => { next.webhook = null }))
+      }
+      if (kinds.has('inbox')) {
+        tasks.push(getInboxChannels()
+          .then((s) => { next.inbox = resolveBadge('inbox', s) })
+          .catch(() => { next.inbox = null }))
+      }
+      if (kinds.has('store')) {
+        tasks.push(getStoreSettings()
+          .then((s) => { next.store = resolveBadge('store', s) })
+          .catch(() => { next.store = null }))
+      }
+      if (kinds.has('runtime')) {
+        tasks.push(getRuntimeSettings()
+          .then((s) => { next.runtime = resolveBadge('runtime', s) })
+          .catch(() => { next.runtime = null }))
+      }
+      if (kinds.has('mcpExport')) {
+        tasks.push(listMCPExportIdentities()
+          .then((s) => { next.mcpExport = resolveBadge('mcpExport', s) })
+          .catch(() => { next.mcpExport = null }))
+      }
+
+      const tools = await toolsP
+      if (kinds.has('tools')) next.tools = resolveBadge('tools', tools)
+      if (kinds.has('openapi')) next.openapi = resolveBadge('openapi', tools)
+      if (kinds.has('mcp')) next.mcp = resolveBadge('mcp', tools)
+      if (kinds.has('plugins')) next.plugins = resolveBadge('plugins', tools)
+
+      await Promise.all(tasks)
+      if (!cancelled) setBadges(next)
+    }
+
+    void run()
+    return () => { cancelled = true }
+  }, [itemsKey, refreshKey])
+
+  return badges
 }

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   EventsWebhookConfig,
   InboxChannel,
@@ -14,7 +17,9 @@ import {
   countConnectorsBySource,
   enabledToolCount,
   resolveBadge,
+  useSettingsBadges,
 } from './settingsHomeBadges'
+import { settingsNavItems } from './settingsNav'
 
 const model = (over: Partial<ModelProfile> = {}): ModelProfile => ({
   id: 'm1', name: 'm', provider: 'openai_compatible', base_url: 'u', model: 'gpt',
@@ -102,5 +107,100 @@ describe('resolveBadge', () => {
       ({ effective: {}, overridden }) as unknown as RuntimeKnobsView
     expect(resolveBadge('runtime', view({}))).toEqual({ tone: 'neutral', text: '默认' })
     expect(resolveBadge('runtime', view({ max_messages: true }))).toEqual({ tone: 'neutral', text: '已自定义' })
+  })
+})
+
+// ---- useSettingsBadges ----
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+function runHook<T>(useHook: (refreshKey: number) => T): { value: () => T; rerender: (p: { key: number }) => void } {
+  let current: T
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const Harness = ({ keyStep }: { keyStep: number }) => {
+    current = useHook(keyStep)
+    return null
+  }
+  act(() => { root.render(createElement(Harness, { keyStep: 0 })) })
+  return {
+    value: () => current,
+    rerender: (p) => act(() => { root.render(createElement(Harness, { keyStep: p.key })) }),
+  }
+}
+
+describe('useSettingsBadges', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+    ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+
+  it('admin: fetches shared tool list once and resolves all badges', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async (url: unknown) => {
+      const u = String(url)
+      if (u === '/v0/tools') return jsonResponse({ tools: [{ name: 't', connector_id: 'oa1', source: 'spec', enabled: true }] })
+      if (u === '/v0/settings/models') return jsonResponse({ profiles: [{ id: 'm1' }] })
+      if (u === '/v0/skills') return jsonResponse({ skills: [{ id: 's1' }] })
+      if (u === '/v0/settings/channels/weixin') return jsonResponse({ running: true })
+      if (u === '/v0/settings/events-webhook') return jsonResponse({ url: 'https://x', headers: {} })
+      if (u === '/v0/settings/inbox-channels') return jsonResponse({ channels: [] })
+      if (u === '/v0/settings/store') return jsonResponse({ driver: 'sqlite' })
+      if (u === '/v0/settings/runtime') return jsonResponse({ effective: {}, overridden: {} })
+      if (u === '/v0/settings/mcp-export/identities') return jsonResponse([])
+      return jsonResponse(null)
+    })
+    const h = runHook(() => useSettingsBadges(settingsNavItems('admin'), 'admin', 0))
+    await flush()
+    const toolsCalls = fetchMock.mock.calls.filter(([u]) => String(u) === '/v0/tools').length
+    expect(toolsCalls).toBe(1)
+    const badges = h.value()
+    expect(badges.models).toEqual({ tone: 'success', text: '已配置 1 个' })
+    expect(badges.weixin).toEqual({ tone: 'success', text: '运行中' })
+    expect(badges.store).toEqual({ tone: 'neutral', text: '本地文件' })
+  })
+
+  it('operator: never requests locked kinds (no webhook/inbox/store/mcp-export)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async () => jsonResponse(null))
+    runHook(() => useSettingsBadges(settingsNavItems('admin'), 'operator', 0))
+    await flush()
+    const urls = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(urls).not.toContain('/v0/settings/events-webhook')
+    expect(urls).not.toContain('/v0/settings/inbox-channels')
+    expect(urls).not.toContain('/v0/settings/store')
+    expect(urls).not.toContain('/v0/settings/mcp-export/identities')
+    // operator-allowed kinds ARE fetched
+    expect(urls).toContain('/v0/tools')
+    expect(urls).toContain('/v0/settings/channels/weixin')
+  })
+
+  it('a failing request yields null badge without affecting other kinds', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async (url: unknown) =>
+      String(url) === '/v0/settings/models'
+        ? new Response('nope', { status: 500 })
+        : jsonResponse({ profiles: [{ id: 'm1' }] }))
+    const h = runHook(() => useSettingsBadges(
+      settingsNavItems('admin').filter((i) => i.badge === 'models' || i.badge === 'weixin'),
+      'admin', 0))
+    await flush()
+    const badges = h.value()
+    expect(badges.models).toBeNull()
+  })
+
+  it('re-fetches when refreshKey changes', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async () => jsonResponse({ profiles: [] }))
+    const h = runHook((k) => useSettingsBadges(settingsNavItems('admin'), 'admin', k))
+    await flush()
+    h.rerender({ key: 1 })
+    await flush()
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1)
   })
 })
