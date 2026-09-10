@@ -273,7 +273,7 @@ export function WeixinChannelSettings() {
           ) : (
             <span className="settings-badge">已停止</span>
           )}
-          {runReason === 'login_required' && '（未登录：启用前请先扫码登录）'}
+          {runReason === 'login_required' && (isAdmin ? '（未登录：启用前请先扫码登录）' : '（未登录：请扫码登录）')}
           {runReason === 'start_failed' && '（启动失败，请检查日志）'}
           {runReason === 'stopped' && (isAdmin ? '（适配器进程已手动停止，点「启动进程」恢复）' : '（适配器进程已停止，请联系管理员启动）')}
         </p>
