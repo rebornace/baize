@@ -7,6 +7,7 @@ import {
   type CredentialsView,
   type RuntimeKnobsView,
 } from '../api'
+import { useGate } from '../gateContext'
 import {
   buildKnobsPatch,
   knobsToForm,
@@ -20,6 +21,7 @@ function apiErrorMessage(err: unknown): string {
 }
 
 function CredentialsSection() {
+  const { role } = useGate()
   const [view, setView] = useState<CredentialsView | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -31,6 +33,10 @@ function CredentialsSection() {
   const [newOpToken, setNewOpToken] = useState('')
 
   const load = useCallback(async () => {
+    if (role !== 'admin') {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -40,7 +46,7 @@ function CredentialsSection() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [role])
 
   useEffect(() => {
     void load()
@@ -125,6 +131,9 @@ function CredentialsSection() {
       setBusy(false)
     }
   }
+
+  // 凭据（含 operator 列表）仅 admin 可见；hooks 必须保持无条件执行，故早退放在全部 hooks 之后。
+  if (role !== 'admin') return null
 
   return (
     <section className="settings-form">
@@ -236,6 +245,8 @@ function CredentialsSection() {
 }
 
 export function RuntimeSettings() {
+  const { role } = useGate()
+  const readOnly = role !== 'admin'
   const [knobView, setKnobView] = useState<RuntimeKnobsView | null>(null)
   const [form, setForm] = useState<KnobsForm | null>(null)
   const [loading, setLoading] = useState(true)
@@ -299,7 +310,11 @@ export function RuntimeSettings() {
     <div className="settings-section">
       <h1 className="settings-heading">运行时设置</h1>
       <div className="settings-meta">
-        <p>引擎参数与控制面凭据可在线热更新：保存后立即生效、跨重启保留、多副本约 20 秒内同步。</p>
+        {readOnly ? (
+          <p>引擎参数保存后立即生效、跨重启保留、多副本约 20 秒内同步（仅管理员可修改）。</p>
+        ) : (
+          <p>引擎参数与控制面凭据可在线热更新：保存后立即生效、跨重启保留、多副本约 20 秒内同步。</p>
+        )}
       </div>
 
       {loading && <p className="settings-muted">加载中…</p>}
@@ -325,7 +340,7 @@ export function RuntimeSettings() {
                   max={spec.max}
                   value={form[spec.key]}
                   onChange={(e) => setField(spec.key, e.target.value)}
-                  disabled={busy}
+                  disabled={busy || readOnly}
                 />
                 <span className="settings-field-hint">{spec.hint}</span>
               </label>
@@ -336,16 +351,18 @@ export function RuntimeSettings() {
               type="checkbox"
               checked={form.compaction_enabled}
               onChange={(e) => setField('compaction_enabled', e.target.checked)}
-              disabled={busy}
+              disabled={busy || readOnly}
             />
             启用上下文压缩
             {knobView.overridden.compaction_enabled && (
               <span className="settings-badge">已覆盖基线</span>
             )}
           </label>
-          <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? '保存中…' : '保存引擎参数'}
-          </button>
+          {!readOnly && (
+            <button type="submit" className="btn primary" disabled={busy}>
+              {busy ? '保存中…' : '保存引擎参数'}
+            </button>
+          )}
         </form>
       )}
 

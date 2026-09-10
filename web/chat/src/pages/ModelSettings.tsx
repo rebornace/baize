@@ -7,6 +7,7 @@ import {
   type ModelProfile,
   type ModelTier,
 } from '../api'
+import { useGate } from '../gateContext'
 import { tierLabel } from '../modelSelect'
 import { VISION_LABEL } from '../strings'
 
@@ -266,6 +267,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
 export interface ModelProfileListProps {
   profiles: ModelProfile[]
   busy: boolean
+  readOnly?: boolean
   onEdit: (p: ModelProfile) => void
   onDelete: (p: ModelProfile) => void
 }
@@ -273,13 +275,16 @@ export interface ModelProfileListProps {
 export function ModelProfileList({
   profiles,
   busy,
+  readOnly = false,
   onEdit,
   onDelete,
 }: ModelProfileListProps) {
   if (profiles.length === 0) {
     return (
       <p className="settings-empty">
-        尚未配置任何模型。请先在下方「新建模型」添加至少一个模型，否则无法发起对话。
+        {readOnly
+          ? '尚未配置任何模型，请联系管理员配置，否则无法发起对话。'
+          : '尚未配置任何模型。请先在下方「新建模型」添加至少一个模型，否则无法发起对话。'}
       </p>
     )
   }
@@ -299,24 +304,26 @@ export function ModelProfileList({
             {p.disable_thinking ? ' · 禁用思考' : ''}
             {p.context_tokens > 0 ? ` · ${p.context_tokens} ctx` : ''}
           </p>
-          <div className="settings-toolbar">
-            <button
-              type="button"
-              className="btn ghost sm"
-              disabled={busy}
-              onClick={() => onEdit(p)}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              className="btn danger sm"
-              disabled={busy}
-              onClick={() => onDelete(p)}
-            >
-              删除
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="settings-toolbar">
+              <button
+                type="button"
+                className="btn ghost sm"
+                disabled={busy}
+                onClick={() => onEdit(p)}
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                className="btn danger sm"
+                disabled={busy}
+                onClick={() => onDelete(p)}
+              >
+                删除
+              </button>
+            </div>
+          )}
         </li>
       ))}
     </ul>
@@ -363,6 +370,8 @@ export function ModelProfileForm({
 }
 
 export function ModelSettings() {
+  const { role } = useGate()
+  const readOnly = role !== 'admin'
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -477,10 +486,12 @@ export function ModelSettings() {
       {!loading && error && <p className="settings-error">{error}</p>}
       {!loading && status && <p className="settings-muted">{status}</p>}
       {!loading && profiles.length === 0 && !error && (
-        <p className="settings-error">当前没有任何可用模型，请先在下方添加一个模型再发起对话。</p>
+        <p className="settings-error">
+          {readOnly ? '当前没有任何可用模型，请联系管理员配置。' : '当前没有任何可用模型，请先在下方添加一个模型再发起对话。'}
+        </p>
       )}
 
-      {!loading && editingId && (
+      {!loading && !readOnly && editingId && (
         <section className="settings-form">
           <ModelProfileForm
             form={editForm}
@@ -498,7 +509,19 @@ export function ModelSettings() {
         </section>
       )}
 
-      {!loading && (
+      {!loading && readOnly && (
+        <section>
+          <h2 className="settings-subheading">模型列表</h2>
+          <ModelProfileList
+            profiles={profiles}
+            busy={false}
+            readOnly
+            onEdit={startEdit}
+            onDelete={(target) => void onDelete(target)}
+          />
+        </section>
+      )}
+      {!loading && !readOnly && (
         <section className="settings-form">
           <h2 className="settings-subheading">模型列表</h2>
           <ModelProfileList
