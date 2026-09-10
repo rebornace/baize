@@ -419,6 +419,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		// served back by the API with the owning conversation's ACL.
 		channelMedia = channelmedia.New(blobStore)
 		srv.ChannelMedia = channelMedia
+		// Web-uploaded chat attachments persist to the same channel-media
+		// namespace so they render inline / download from the user bubble.
+		srv.ChatMedia = channelMedia
 
 		// Per-conversation file workspace reuses the same blob.Store
 		// (artifacts use the "artifacts/" prefix; workspace uses

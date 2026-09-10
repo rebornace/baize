@@ -11,11 +11,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/memory"
+	"github.com/rebornace/baize/internal/channelmedia"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/run"
@@ -105,6 +109,15 @@ func attachmentsServer(t *testing.T, vision bool) (*api.Server, store.Store, *ca
 	srv.LLM = llmMock
 	srv.SkillCatalog = cat
 	srv.Messages = conversation.NewMemoryStore()
+	// Persist uploaded attachments exactly like production (channelmedia over
+	// a blob store) so the user bubble carries renderable media references.
+	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatalf("open memory blob: %v", err)
+	}
+	media := channelmedia.New(blobs)
+	srv.ChannelMedia = media
+	srv.ChatMedia = media
 	return srv, st, llmMock, srv.Handler(), cat
 }
 
@@ -431,7 +444,7 @@ func TestPostRunTextFileNoVisionModelNoRouting(t *testing.T) {
 }
 
 func TestPostRunMarkdownAttachmentInjected(t *testing.T) {
-	_, _, llmMock, h, _ := attachmentsServer(t, false)
+	_, st, llmMock, h, _ := attachmentsServer(t, false)
 	putAgent(t, h, "a1")
 
 	md := "# Title\nhello attachment body"
@@ -490,12 +503,116 @@ func TestPostRunMarkdownAttachmentInjected(t *testing.T) {
 			userBubble = m.Content
 		}
 	}
-	if !strings.Contains(userBubble, "notes.md") {
-		t.Fatalf("persisted user bubble missing filename: %q", userBubble)
+	// The bubble shows the typed text once plus a renderable file card marker;
+	// it must not repeat the filename as a "（附件：…）" note or leak extracted
+	// text / an internal media URL into the plain text portion.
+	if !strings.Contains(userBubble, "summarize the attachment") {
+		t.Fatalf("persisted user bubble missing typed text: %q", userBubble)
+	}
+	if !strings.Contains(userBubble, "[file:notes.md](/v0/channels/media/") {
+		t.Fatalf("persisted user bubble missing renderable file marker: %q", userBubble)
+	}
+	if strings.Contains(userBubble, "（附件：") {
+		t.Fatalf("persisted user bubble must not repeat a （附件：…） note: %q", userBubble)
 	}
 	if strings.Contains(userBubble, "hello attachment body") {
 		t.Fatalf("persisted user bubble must not contain extracted attachment text: %q", userBubble)
 	}
+
+	// The run record (model-facing input) must stay clean: no media marker.
+	runRec, err := st.GetRun(runID)
+	if err != nil || runRec == nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if strings.Contains(runRec.Input, "/v0/channels/media/") || strings.Contains(runRec.Input, "（附件：") {
+		t.Fatalf("run.Input must be clean model-facing text, got %q", runRec.Input)
+	}
+	if runRec.Input != "summarize the attachment" {
+		t.Fatalf("run.Input = %q, want clean typed text", runRec.Input)
+	}
+}
+
+// TestPostRunImageBubbleRendersInlineMarker: a web-uploaded image persists a
+// thumbnail and the user bubble carries an inline-image media marker (not a
+// bare filename note), while the run input stays clean.
+func TestPostRunImageBubbleRendersInlineMarker(t *testing.T) {
+	_, st, llmMock, h, _ := attachmentsServer(t, true)
+	putAgent(t, h, "a1")
+	seedVisionProfile(t, st, "视觉模型")
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "看这张图",
+		"conversation_id": "c1",
+		"attachments": []map[string]any{
+			{
+				"filename":       "pic.png",
+				"media_type":     "image/png",
+				"content_base64": tinyPNGBase64(t),
+			},
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	runID := postRunID(t, rr)
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+	if _, sawImage, _ := llmMock.snapshot(); !sawImage {
+		t.Fatal("expected the image part to be delivered to the model")
+	}
+
+	getMsgs := httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/messages", nil)
+	mr := httptest.NewRecorder()
+	h.ServeHTTP(mr, getMsgs)
+	if mr.Code != http.StatusOK {
+		t.Fatalf("messages status=%d", mr.Code)
+	}
+	var msgs []conversation.Message
+	if err := json.NewDecoder(mr.Body).Decode(&msgs); err != nil {
+		t.Fatal(err)
+	}
+	var bubble string
+	for _, m := range msgs {
+		if m.Role == conversation.RoleUser {
+			bubble = m.Content
+		}
+	}
+	if !strings.Contains(bubble, "![图片](/v0/channels/media/") {
+		t.Fatalf("image bubble missing inline marker: %q", bubble)
+	}
+	if strings.Contains(bubble, "（附件：") {
+		t.Fatalf("image bubble must not repeat （附件：…）: %q", bubble)
+	}
+
+	// The stored object must be downloadable through the ACL media route.
+	_, images := splitBubbleMedia(bubble)
+	if len(images) != 1 {
+		t.Fatalf("want 1 image url, got %v (%q)", images, bubble)
+	}
+	mediaReq := httptest.NewRequest(http.MethodGet, images[0], nil)
+	mediaRR := httptest.NewRecorder()
+	h.ServeHTTP(mediaRR, mediaReq)
+	if mediaRR.Code != http.StatusOK {
+		t.Fatalf("media GET %s status=%d", images[0], mediaRR.Code)
+	}
+}
+
+// splitBubbleMedia is a tiny test helper mirroring the frontend's marker
+// grammar, returning image and file media URLs found in a bubble.
+func splitBubbleMedia(bubble string) (files, images []string) {
+	re := regexp.MustCompile(`/v0/channels/media/[^)\s]+`)
+	for _, line := range strings.Split(bubble, "\n") {
+		u := re.FindString(line)
+		if u == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "![") {
+			images = append(images, u)
+		} else {
+			files = append(files, u)
+		}
+	}
+	return files, images
 }
 
 func TestPostRunImageWithVisionSendsImagePart(t *testing.T) {

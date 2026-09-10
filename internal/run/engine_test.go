@@ -652,6 +652,44 @@ func TestExecuteInjectsConversationHistory(t *testing.T) {
 	}
 }
 
+// TestExecuteStripsHistoricalMediaRefs: a prior user turn whose persisted
+// bubble carries UI-only attachment references (![图片]/[file:] → internal
+// /v0/channels/media URL) must reach the model as plain text, never leaking
+// the internal URL.
+func TestExecuteStripsHistoricalMediaRefs(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_, _ = msgStore.Append("conv1", conversation.Message{
+		Role: conversation.RoleUser,
+		Content: "看这张图\n" +
+			"![图片](/v0/channels/media/conv1/prev.png)\n" +
+			"[file:notes.docx](/v0/channels/media/conv1/prev.docx)",
+	})
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleAssistant, Content: "我看到了"})
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "本轮回答"}
+	}}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "再问一句", ConversationID: "conv1"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "再问一句"); err != nil {
+		t.Fatal(err)
+	}
+	// saw[1] is the prior user turn rendered for the model.
+	got := saw[1].Content
+	if got != "看这张图" {
+		t.Fatalf("historical user content = %q, want stripped %q", got, "看这张图")
+	}
+	for _, m := range saw {
+		if strings.Contains(m.Content, "/v0/channels/media/") {
+			t.Fatalf("internal media URL leaked into prompt: %+v", saw)
+		}
+	}
+}
+
 // TestExecuteRespectsMaxMessagesWindow: only the most recent MaxMessages
 // history entries are injected into the LLM prompt.
 func TestExecuteRespectsMaxMessagesWindow(t *testing.T) {

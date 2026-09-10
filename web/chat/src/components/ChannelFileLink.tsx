@@ -54,6 +54,16 @@ export function ChannelFileLink({ name, url }: ChannelFileLinkProps) {
   const Icon = kind.icon
 
   const download = async () => {
+    // Local optimistic preview (blob:): download the object URL directly.
+    if (url.startsWith('blob:')) {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      return
+    }
     try {
       const res = await fetch(url, {
         headers: gateEnabled ? (authHeaders(true) as Record<string, string>) : undefined,

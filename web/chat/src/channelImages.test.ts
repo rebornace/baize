@@ -52,4 +52,15 @@ describe('splitChannelAttachments', () => {
     expect(images).toHaveLength(0)
     expect(files).toHaveLength(0)
   })
+
+  it('parses optimistic blob: preview markers (just-sent web uploads)', () => {
+    const content =
+      '刚发的图\n' +
+      '![图片](blob:http://localhost/uuid-img)\n' +
+      '[file:行程.docx](blob:http://localhost/uuid-doc)'
+    const { text, images, files } = splitChannelAttachments(content)
+    expect(images).toEqual(['blob:http://localhost/uuid-img'])
+    expect(files).toEqual([{ name: '行程.docx', url: 'blob:http://localhost/uuid-doc' }])
+    expect(text).toBe('刚发的图')
+  })
 })

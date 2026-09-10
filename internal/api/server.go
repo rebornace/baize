@@ -82,6 +82,16 @@ type ChannelMediaOpener interface {
 	OpenMedia(ctx context.Context, conversationID, object string) (data []byte, mime string, found bool, err error)
 }
 
+// ChatMediaSaver persists chat-uploaded attachments (images and files) to a
+// blob-backed namespace and returns browser-reachable relative URLs, so a
+// web-uploaded image renders inline and a document downloads from the user
+// bubble — the same mechanism inbound IM channels use. Implemented by
+// internal/channelmedia.Store.
+type ChatMediaSaver interface {
+	SaveInboundImage(ctx context.Context, conversationID, filename, mime string, data []byte) (url string, object string, err error)
+	SaveInboundFile(ctx context.Context, conversationID, filename, mime string, data []byte) (url string, object string, err error)
+}
+
 type Server struct {
 	Store     store.Store
 	Registry  *tool.Registry
@@ -89,6 +99,10 @@ type Server struct {
 	// ChannelMedia optionally serves inbound channel images (e.g. WeChat) for
 	// inline display. nil = the media route returns 404.
 	ChannelMedia ChannelMediaOpener
+	// ChatMedia optionally persists web-uploaded chat attachments (images and
+	// files) so they render inline / download from the user bubble. nil = web
+	// uploads stay model-only (no durable preview/download).
+	ChatMedia ChatMediaSaver
 	// Workspace optionally persists chat attachments to the per-conversation
 	// file workspace. nil = attachments are not persisted (in-turn only).
 	Workspace      UploadSaver
@@ -1482,10 +1496,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Attachments: extract text + images up-front so size/type/vision failures
-	// reject the request before any run is created. Image bytes never enter
-	// SQLite; only filenames surface in the persisted user bubble.
-	textExts, imageExts, err := attach.Process(body.Attachments, attach.DefaultOptions())
+	// Attachments: decode once (raw bytes preserved, upload order kept), then
+	// extract model-bound text/images up-front so size/type/vision failures
+	// reject the request before any run is created. The raw bytes are persisted
+	// for UI preview/download; image bytes never enter SQLite.
+	attachOpts := attach.DefaultOptions()
+	decoded, err := attach.Decode(body.Attachments, attachOpts)
+	if err != nil {
+		s.writeAttachmentError(w, err)
+		return
+	}
+	textExts, imageExts, err := attach.ProcessDecoded(decoded, attachOpts)
 	if err != nil {
 		s.writeAttachmentError(w, err)
 		return
@@ -1535,6 +1556,39 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 			} else {
 				savedWorkspaceFiles = append(savedWorkspaceFiles, p)
 			}
+		}
+	}
+
+	// Persist the uploads for UI preview/download (best-effort: a blob failure
+	// never blocks the turn — the model still received extracted text / image
+	// bytes via userParts). Images use the thumbnail-capped bytes; non-image
+	// files keep their ORIGINAL bytes so they open/download unchanged even
+	// though only their extracted text was sent to the model. Markers are built
+	// in the original upload order.
+	var bubbleMarkers []string
+	if conv != "" && s.ChatMedia != nil && len(decoded) > 0 {
+		imgIdx := 0 // imageExts are already in decoded order, images only
+		for _, d := range decoded {
+			if attach.IsImageMIME(d.MediaType) {
+				if imgIdx >= len(imageExts) {
+					continue
+				}
+				ex := imageExts[imgIdx]
+				imgIdx++
+				u, _, serr := s.ChatMedia.SaveInboundImage(r.Context(), conv, d.Filename, ex.ImageMIME, ex.ImageBytes)
+				if serr != nil {
+					log.Printf("chat media: save image upload %q: %v", d.Filename, serr)
+					continue
+				}
+				bubbleMarkers = append(bubbleMarkers, "![图片]("+u+")")
+				continue
+			}
+			u, _, serr := s.ChatMedia.SaveInboundFile(r.Context(), conv, d.Filename, d.MediaType, d.Data)
+			if serr != nil {
+				log.Printf("chat media: save file upload %q: %v", d.Filename, serr)
+				continue
+			}
+			bubbleMarkers = append(bubbleMarkers, "[file:"+d.Filename+"]("+u+")")
 		}
 	}
 
@@ -1597,16 +1651,19 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 			userParts[0] = llm.ContentPart{Type: "text", Text: llmText}
 		}
 	}
+	// run.Input / dispatched job / mirrored peer text carry only the clean
+	// user text (attachment content is delivered to the model via userParts,
+	// not via the input string). The persisted bubble appends renderable
+	// attachment reference lines (inline images / download cards), so the UI
+	// shows exactly what was sent with no redundant "（附件：…）" note.
 	displayText := cleanedInput
-	if n := len(textExts) + len(imageExts); n > 0 {
-		names := make([]string, 0, n)
-		for _, e := range textExts {
-			names = append(names, e.Filename)
+	bubbleContent := displayText
+	if len(bubbleMarkers) > 0 {
+		bubbleContent = strings.TrimSpace(cleanedInput)
+		if bubbleContent != "" {
+			bubbleContent += "\n"
 		}
-		for _, e := range imageExts {
-			names = append(names, e.Filename)
-		}
-		displayText = strings.TrimSpace(cleanedInput) + "（附件：" + strings.Join(names, ", ") + "）"
+		bubbleContent += strings.Join(bubbleMarkers, "\n")
 	}
 
 	var passthrough map[string]string
@@ -1631,6 +1688,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Passthrough:    passthrough,
 		UserParts:      userParts,
 		ModelProfileID: modelProfileID,
+		BubbleContent:  bubbleContent,
 	})
 	if err != nil {
 		if err.Error() == "无权访问该会话" {

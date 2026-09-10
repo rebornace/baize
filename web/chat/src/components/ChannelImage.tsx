@@ -16,7 +16,10 @@ export interface ChannelImageProps {
  */
 export function ChannelImage({ url, alt }: ChannelImageProps) {
   const { gateEnabled } = useGate()
-  const [src, setSrc] = useState<string | null>(gateEnabled ? null : url)
+  // Local optimistic previews use blob: object URLs: render directly (no auth
+  // fetch / no second object URL). Persisted media goes through the ACL route.
+  const isLocal = url.startsWith('blob:')
+  const [src, setSrc] = useState<string | null>(isLocal || !gateEnabled ? url : null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
@@ -24,7 +27,7 @@ export function ChannelImage({ url, alt }: ChannelImageProps) {
     let cancelled = false
 
     const load = async () => {
-      if (!gateEnabled) {
+      if (isLocal || !gateEnabled) {
         setSrc(url)
         return
       }
@@ -52,7 +55,7 @@ export function ChannelImage({ url, alt }: ChannelImageProps) {
       cancelled = true
       if (revoked) URL.revokeObjectURL(revoked)
     }
-  }, [url, gateEnabled])
+  }, [url, gateEnabled, isLocal])
 
   if (failed) {
     return <span className="channel-image-failed">（图片加载失败）</span>

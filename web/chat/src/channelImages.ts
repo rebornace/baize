@@ -12,7 +12,10 @@
  * and each non-image file as a download link. This splits the references out.
  */
 
-const MEDIA_URL = String.raw`/v0/channels/media/[^)\s]+`
+// Persisted references point at the conversation-ACL media endpoint; the
+// optimistic bubble for a just-sent upload uses a transient blob: object URL
+// (local preview until the server version replaces it), so both are accepted.
+const MEDIA_URL = String.raw`(?:/v0/channels/media/[^)\s]+|blob:[^)\s]+)`
 const IMAGE_RE = new RegExp(String.raw`!\[([^\]]*)\]\((${MEDIA_URL})\)`, 'g')
 const FILE_RE = new RegExp(String.raw`\[file:([^\]]+)\]\((${MEDIA_URL})\)`, 'g')
 

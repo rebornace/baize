@@ -61,6 +61,7 @@ import {
 } from '../historyBlocks'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
+import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
 import { ACTIONS, CHAT, friendlyError, WELCOME } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
@@ -135,6 +136,26 @@ export function ChatPage() {
   liveEventsRef.current = liveEvents
   const conversationScopeRef = useRef(conversationScope)
   conversationScopeRef.current = conversationScope
+
+  // Transient blob: object URLs backing optimistic attachment previews. They
+  // are revoked as soon as no message references them (the optimistic bubble
+  // is replaced by the server version on run end / refresh / switch / delete).
+  const liveBlobURLsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const referenced = new Set(extractBlobURLs(messages.map((m) => m.content)))
+    for (const url of liveBlobURLsRef.current) {
+      if (!referenced.has(url)) URL.revokeObjectURL(url)
+    }
+    liveBlobURLsRef.current = referenced
+  }, [messages])
+  // Revoke every preview object URL on unmount (e.g. leaving the chat page).
+  useEffect(() => {
+    const tracked = liveBlobURLsRef
+    return () => {
+      for (const url of tracked.current) URL.revokeObjectURL(url)
+      tracked.current = new Set()
+    }
+  }, [])
 
   const { scrollerRef, bottomRef, onScroll, scrollToBottom } = useStickToBottom([
     messages,
@@ -627,10 +648,11 @@ export function ChatPage() {
     // source so a rejected send keeps the composer contents.
     setComposerDraft(undefined)
 
-    const displayNames = attachments && attachments.length > 0
-      ? `（附件：${attachments.map((a) => a.filename).join(', ')}）`
-      : ''
-    const userBubble = (text + (displayNames ? ` ${displayNames}` : '')).trim()
+    // Optimistic bubble renders exactly what was sent: typed text plus inline
+    // image / file-card previews backed by transient blob: URLs (no redundant
+    // "（附件：…）" note). The server version replaces it on run end.
+    const preview = buildLocalPreview(text, files)
+    const userBubble = preview.content
 
     setMessages((prev) => [
       ...prev,

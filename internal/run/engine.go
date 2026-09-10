@@ -278,7 +278,11 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 		for _, m := range hist {
 			switch m.Role {
 			case conversation.RoleUser:
-				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: m.Content})
+				// Drop UI-only attachment reference lines (![图片]/[file:] →
+				// /v0/channels/media/…) so internal media URLs never reach the
+				// model as historical context; attachment bytes are delivered
+				// via multimodal parts on their originating turn.
+				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: conversation.StripMediaRefs(m.Content)})
 			case conversation.RoleAssistant, conversation.RoleSystemNote:
 				messages = append(messages, llm.Message{Role: llm.RoleAssistant, Content: m.Content})
 			}

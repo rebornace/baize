@@ -21,6 +21,11 @@ type startRunInput struct {
 	UserParts                                  []llm.ContentPart
 	PreEvents                                  []store.Event
 	ModelProfileID                             string
+	// BubbleContent is the exact text persisted to the conversation message
+	// for display. It may carry UI-only attachment reference lines
+	// (![图片](…)/[file:…](…)) that must not reach the model or a mirrored
+	// channel peer. When empty, Input is persisted.
+	BubbleContent string
 }
 
 func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, error) {
@@ -49,10 +54,17 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		return nil, err
 	}
 
+	// The persisted conversation bubble may carry UI-only attachment reference
+	// lines; the run record, dispatched job and mirrored channel peer all use
+	// the clean model-facing Input.
+	bubble := in.BubbleContent
+	if bubble == "" {
+		bubble = in.Input
+	}
 	if s.Messages != nil && conv != "" {
 		_, _ = s.Messages.Append(conv, conversation.Message{
 			Role:    conversation.RoleUser,
-			Content: in.Input,
+			Content: bubble,
 			RunID:   runRec.ID,
 		})
 		s.deliverUserOutbound(ctx, runRec.ID, conv, in.Input)

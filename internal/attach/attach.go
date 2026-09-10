@@ -30,6 +30,16 @@ type Extracted struct {
 	ImageBytes []byte // Kind == "image", thumbnail-capped
 }
 
+// Decoded is a base64-decoded attachment in its original request order, with
+// the raw on-the-wire bytes preserved. Unlike Extracted (which only retains
+// extracted text or a re-encoded thumbnail), Decoded keeps the original bytes
+// so a caller can persist the unmodified file for later download/preview.
+type Decoded struct {
+	Filename  string
+	MediaType string
+	Data      []byte
+}
+
 // Options controls attachment processing limits.
 type Options struct {
 	MaxCount      int // max number of attachments per request
@@ -56,6 +66,38 @@ var (
 	ErrEmptyPDFText = errors.New("attach: pdf has no extractable text")
 )
 
+// Decode base64-decodes attachments in their original request order, enforcing
+// the count and total-byte budgets, and preserves each file's raw bytes. It
+// does not inspect or extract content, so an unsupported MIME does not fail
+// here (callers decide per-type handling). Any zero-valued Options field is
+// replaced with its DefaultOptions value.
+func Decode(atts []AttachmentIn, opts Options) ([]Decoded, error) {
+	opts = opts.withDefaults()
+	if len(atts) > opts.MaxCount {
+		return nil, fmt.Errorf("%w: %d > %d", ErrTooMany, len(atts), opts.MaxCount)
+	}
+
+	// Pre-decode and budget-check so a too-large payload fails before heavy work.
+	decoded := make([]Decoded, 0, len(atts))
+	var total int64
+	for _, a := range atts {
+		b, derr := base64.StdEncoding.DecodeString(a.ContentB64)
+		if derr != nil {
+			return nil, fmt.Errorf("attach: decode %s: %w", a.Filename, derr)
+		}
+		total += int64(len(b))
+		if total > int64(opts.MaxTotalBytes) {
+			return nil, fmt.Errorf("%w: %d > %d", ErrTooLarge, total, opts.MaxTotalBytes)
+		}
+		decoded = append(decoded, Decoded{
+			Filename:  a.Filename,
+			MediaType: a.MediaType,
+			Data:      b,
+		})
+	}
+	return decoded, nil
+}
+
 // Process extracts text and image attachments. It returns the text and image
 // results separately; on error the returned slices are nil.
 //
@@ -64,52 +106,46 @@ var (
 // the spec defaults for the fields they left unset.
 func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Extracted, err error) {
 	opts = opts.withDefaults()
-	if len(atts) > opts.MaxCount {
-		return nil, nil, fmt.Errorf("%w: %d > %d", ErrTooMany, len(atts), opts.MaxCount)
+	decoded, err := Decode(atts, opts)
+	if err != nil {
+		return nil, nil, err
 	}
+	return ProcessDecoded(decoded, opts)
+}
 
-	// Pre-decode and budget-check so a too-large payload fails before heavy work.
-	decoded := make([][]byte, len(atts))
-	var total int64
-	for i, a := range atts {
-		b, derr := base64.StdEncoding.DecodeString(a.ContentB64)
-		if derr != nil {
-			return nil, nil, fmt.Errorf("attach: decode %s: %w", a.Filename, derr)
-		}
-		decoded[i] = b
-		total += int64(len(b))
-		if total > int64(opts.MaxTotalBytes) {
-			return nil, nil, fmt.Errorf("%w: %d > %d", ErrTooLarge, total, opts.MaxTotalBytes)
-		}
-	}
-
-	texts = make([]Extracted, 0, len(atts))
-	images = make([]Extracted, 0, len(atts))
-	for i, a := range atts {
-		ex := Extracted{Filename: a.Filename}
+// ProcessDecoded runs content extraction over already-decoded attachments
+// (see Decode). It lets a caller decode once and then both extract model-bound
+// content and persist the original bytes without re-decoding base64. On error
+// the returned slices are nil.
+func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images []Extracted, err error) {
+	opts = opts.withDefaults()
+	texts = make([]Extracted, 0, len(decoded))
+	images = make([]Extracted, 0, len(decoded))
+	for _, d := range decoded {
+		ex := Extracted{Filename: d.Filename}
 		switch {
-		case isTextMIME(a.MediaType):
+		case isTextMIME(d.MediaType):
 			ex.Kind = "text"
-			ex.Text = truncateText(string(decoded[i]), opts.MaxTextChars)
+			ex.Text = truncateText(string(d.Data), opts.MaxTextChars)
 			texts = append(texts, ex)
-		case a.MediaType == mimeDocx:
-			t, perr := extractDocx(decoded[i])
+		case d.MediaType == mimeDocx:
+			t, perr := extractDocx(d.Data)
 			if perr != nil {
 				return nil, nil, perr
 			}
 			ex.Kind = "text"
 			ex.Text = truncateText(t, opts.MaxTextChars)
 			texts = append(texts, ex)
-		case a.MediaType == mimeXlsx:
-			t, perr := extractXlsx(decoded[i])
+		case d.MediaType == mimeXlsx:
+			t, perr := extractXlsx(d.Data)
 			if perr != nil {
 				return nil, nil, perr
 			}
 			ex.Kind = "text"
 			ex.Text = truncateText(t, opts.MaxTextChars)
 			texts = append(texts, ex)
-		case a.MediaType == mimePDF:
-			t, perr := extractPDF(decoded[i])
+		case d.MediaType == mimePDF:
+			t, perr := extractPDF(d.Data)
 			if perr != nil {
 				return nil, nil, perr
 			}
@@ -119,8 +155,8 @@ func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Ext
 			ex.Kind = "text"
 			ex.Text = truncateText(t, opts.MaxTextChars)
 			texts = append(texts, ex)
-		case isImageMIME(a.MediaType):
-			mime, thumb, perr := processImage(decoded[i], a.MediaType, opts.MaxImageEdge)
+		case isImageMIME(d.MediaType):
+			mime, thumb, perr := processImage(d.Data, d.MediaType, opts.MaxImageEdge)
 			if perr != nil {
 				return nil, nil, perr
 			}
@@ -129,11 +165,15 @@ func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Ext
 			ex.ImageBytes = thumb
 			images = append(images, ex)
 		default:
-			return nil, nil, fmt.Errorf("%w: %s", ErrUnsupported, a.MediaType)
+			return nil, nil, fmt.Errorf("%w: %s", ErrUnsupported, d.MediaType)
 		}
 	}
 	return texts, images, nil
 }
+
+// IsImageMIME reports whether m is an image type Process accepts as a vision
+// attachment. Callers use it to keep extraction order when persisting.
+func IsImageMIME(m string) bool { return isImageMIME(m) }
 
 // withDefaults returns a copy of opts where every zero-valued field is
 // replaced by the corresponding DefaultOptions value. This lets callers pass
