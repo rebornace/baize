@@ -156,6 +156,45 @@ func TestManagedOperatorCanRead(t *testing.T) {
 	}
 }
 
+// P2 设置信息架构：运营可发起微信扫码登录（login/start、login/status 为 200），
+// 但登出与进程控制仍需管理员（403）。
+func TestManagedOperatorLoginAllowedProcessForbidden(t *testing.T) {
+	srv := managedTestServer(t)
+	srv.OperatorToken = "op"
+	opReq := func(method, path string) *http.Request {
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer op")
+		return req
+	}
+	code := func(method, path string) int {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, opReq(method, path))
+		return rec.Code
+	}
+
+	if c := code(http.MethodPost, "/v0/settings/channels/weixin/login/start"); c != http.StatusOK {
+		t.Fatalf("operator login/start=%d want 200", c)
+	}
+	if c := code(http.MethodGet, "/v0/settings/channels/weixin/login/status?ticket=tk"); c != http.StatusOK {
+		t.Fatalf("operator login/status=%d want 200", c)
+	}
+	if c := code(http.MethodPost, "/v0/settings/channels/weixin/logout"); c != http.StatusForbidden {
+		t.Fatalf("operator logout=%d want 403", c)
+	}
+	if c := code(http.MethodPost, "/v0/settings/channels/weixin/process/start"); c != http.StatusForbidden {
+		t.Fatalf("operator process/start=%d want 403", c)
+	}
+	if c := code(http.MethodPost, "/v0/settings/channels/weixin/process/stop"); c != http.StatusForbidden {
+		t.Fatalf("operator process/stop=%d want 403", c)
+	}
+	if c := code(http.MethodGet, "/v0/settings/events-webhook"); c != http.StatusForbidden {
+		t.Fatalf("operator GET events-webhook=%d want 403", c)
+	}
+	if c := code(http.MethodGet, "/v0/settings/store"); c != http.StatusForbidden {
+		t.Fatalf("operator GET store=%d want 403", c)
+	}
+}
+
 func TestManagedLoginLogoutRoutes(t *testing.T) {
 	srv := managedTestServer(t)
 	hit := func(method, path string) int {

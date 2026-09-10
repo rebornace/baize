@@ -62,8 +62,13 @@ func TestMinRoleTable(t *testing.T) {
 		{"POST", "/v0/settings/channels/weixin/login/start", RoleOperator},
 		{"GET", "/v0/settings/channels/weixin/login/status", RoleOperator},
 		{"POST", "/v0/settings/channels/weixin/logout", RoleAdmin},
+		{"POST", "/v0/settings/channels/weixin/process/start", RoleAdmin},
+		{"POST", "/v0/settings/channels/weixin/process/stop", RoleAdmin},
+		{"POST", "/v0/settings/channels/weixin/process/restart", RoleAdmin},
 		{"GET", "/v0/settings/channels/weixin", RoleOperator},
 		{"PUT", "/v0/settings/channels/weixin", RoleAdmin},
+		{"GET", "/v0/settings/events-webhook", RoleAdmin},
+		{"GET", "/v0/settings/store", RoleAdmin},
 		{"GET", "/v0/unknown", RoleAdmin},
 		{"POST", "/v0/runs/r1/resume/extra", RoleAdmin},
 	}
