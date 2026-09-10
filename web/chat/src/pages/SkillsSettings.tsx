@@ -85,19 +85,28 @@ export function SkillsSettings() {
       }
       setAgentId(resolvedAgentId)
 
-      const [{ skills: list }, agent] = await Promise.all([
-        listSkills(),
-        getAgent(resolvedAgentId),
-      ])
+      // Skill list is the read-only core payload; its success must not depend on getAgent.
+      const { skills: list } = await listSkills()
       setSkills(list ?? [])
-      setSystem(agent.system ?? '')
-      setSelected(new Set(agent.skills ?? []))
       setError(null)
+
+      // Agent config (system prompt + saved selection) is admin-only (GET /v0/agents/{id}
+      // returns 403 for operators). Skip it entirely on the read-only path; operators see
+      // an unselected, disabled list. For admins, a failure here is non-fatal: the list is
+      // already rendered and selection simply stays empty.
+      if (readOnly) return
+      try {
+        const agent = await getAgent(resolvedAgentId)
+        setSystem(agent.system ?? '')
+        setSelected(new Set(agent.skills ?? []))
+      } catch {
+        /* non-fatal: skill list remains visible without saved selection/system */
+      }
     } catch (err) {
       setSkills(null)
       setError(errorMessage(err))
     }
-  }, [])
+  }, [readOnly])
 
   useEffect(() => {
     void load()

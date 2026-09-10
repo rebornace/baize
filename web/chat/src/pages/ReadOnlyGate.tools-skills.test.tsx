@@ -52,24 +52,36 @@ describe('ToolsSettings read-only for operator', () => {
     expect(host.textContent).not.toContain('需要登录')
     expect(host.textContent).not.toContain('MCP 导出')
     expect(host.textContent).not.toContain('删除')
+    // strong DOM assertions: enable/require-login toggles and MCP export select are not rendered at all
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(0)
+    expect(host.querySelectorAll('select').length).toBe(0)
   })
 })
 
 describe('SkillsSettings read-only for operator', () => {
   it('lists skills but hides upload, save-default and delete', async () => {
+    const urls: string[] = []
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
+      urls.push(String(url))
       const u = String(url)
       if (u === '/v0/skills') return jsonResponse({ skills: [
         // SkillsSettings renders s.id (name is not displayed); align fixture with real DOM
         { id: '分诊', name: '分诊', description: '', tools: [], source: 'builtin' },
         { id: '自定义', name: '自定义', description: '', tools: [], source: 'user' },
       ] })
-      // getAgent resolves for operators in production; null would crash agent.system access
-      if (u.startsWith('/v0/agents/')) return jsonResponse({ id: 'ticket-agent', system: '', skills: [] })
-      return jsonResponse(null)
+      // Real ACL: GET /v0/agents/{id} is RoleAdmin (acl.go); operators get 403 and the
+      // read-only skill list must still render (list load must not depend on getAgent).
+      if (u.startsWith('/v0/agents/')) return new Response('forbidden', { status: 403 })
+      // /v0/ui-config is RoleNone; an empty body makes agent_id fall back to ticket-agent
+      return jsonResponse({})
     })
     await renderOperator(<SkillsSettings />)
     expect(host.textContent).toContain('分诊')
+    // real 403 on getAgent must NOT fail the whole page: skill list still renders
+    expect(host.textContent).not.toContain('无法加载 Skills')
+    expect(host.textContent).toContain('默认 Agent：ticket-agent')
+    // read-only path must not even request the admin-only agent config endpoint
+    expect(urls.some((u) => u.startsWith('/v0/agents/'))).toBe(false)
     expect(host.querySelector('input[type="file"]')).toBeNull()
     expect(host.textContent).not.toContain('保存默认勾选')
     // user-source skill shows a delete button for admins; it must be hidden for operators
