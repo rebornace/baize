@@ -45,3 +45,5 @@ data/
 
 baize-stdout.log
 baize-stderr.log
+
+.walkthrough/
