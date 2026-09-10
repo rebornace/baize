@@ -2,7 +2,7 @@ import { NavLink, Outlet, Link } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { ThemeToggle } from '../components/ui'
 import { useGate } from '../gateContext'
-import { visibleNavItems } from '../settingsNav'
+import { OVERVIEW_ITEM, SETTINGS_GROUPS, visibleNavItems } from '../settingsNav'
 import { useDrawer } from '../useDrawer'
 
 export function SettingsLayout() {
@@ -20,19 +20,38 @@ export function SettingsLayout() {
       <aside className="settings-nav" aria-label="设置导航">
         <p className="settings-nav-title">设置</p>
         <nav className="settings-nav-list">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `settings-nav-link${isActive ? ' active' : ''}`
-              }
-              end
-              onClick={drawer.close}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          <NavLink
+            to={OVERVIEW_ITEM.to}
+            end
+            className={({ isActive }) =>
+              `settings-nav-link settings-nav-overview${isActive ? ' active' : ''}`
+            }
+            onClick={drawer.close}
+          >
+            {OVERVIEW_ITEM.label}
+          </NavLink>
+
+          {SETTINGS_GROUPS.map((group) => {
+            const items = nav.filter((i) => i.group === group.id)
+            if (items.length === 0) return null
+            return (
+              <div className="settings-nav-group" key={group.id}>
+                <p className="settings-nav-group-title">{group.label}</p>
+                {items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `settings-nav-link${isActive ? ' active' : ''}`
+                    }
+                    onClick={drawer.close}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )
+          })}
         </nav>
         <ThemeToggle />
         <Link to="/" className="settings-back">

@@ -13,6 +13,7 @@ import { InboxSettings } from './pages/InboxSettings'
 import { WebhookSettings } from './pages/WebhookSettings'
 import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
+import { SettingsHome } from './pages/SettingsHome'
 import { SettingsLayout } from './pages/SettingsLayout'
 import { SkillsSettings } from './pages/SkillsSettings'
 import { StorageSettings } from './pages/StorageSettings'
@@ -22,17 +23,13 @@ import './styles/tokens.css'
 import './styles/base.css'
 import './styles/components.css'
 import './styles/layout.css'
+import './styles/settings.css'
 import './style.css'
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const { role } = useGate()
   if (role !== 'admin') return <Navigate to="/settings/identities" replace />
   return children
-}
-
-function SettingsIndex() {
-  const { role } = useGate()
-  return <Navigate to={role === 'admin' ? 'tools' : 'identities'} replace />
 }
 
 createRoot(document.getElementById('app')!).render(
@@ -42,15 +39,8 @@ createRoot(document.getElementById('app')!).render(
         <Routes>
           <Route path="/" element={<ChatPage />} />
           <Route path="/settings" element={<SettingsLayout />}>
-            <Route index element={<SettingsIndex />} />
-            <Route
-              path="tools"
-              element={
-                <AdminOnly>
-                  <ToolsSettings />
-                </AdminOnly>
-              }
-            />
+            <Route index element={<SettingsHome />} />
+            <Route path="tools" element={<ToolsSettings />} />
             <Route
               path="openapi"
               element={
@@ -59,14 +49,7 @@ createRoot(document.getElementById('app')!).render(
                 </AdminOnly>
               }
             />
-            <Route
-              path="skills"
-              element={
-                <AdminOnly>
-                  <SkillsSettings />
-                </AdminOnly>
-              }
-            />
+            <Route path="skills" element={<SkillsSettings />} />
             <Route path="identities" element={<IdentitiesSettings />} />
             <Route
               path="mcp"
@@ -108,22 +91,8 @@ createRoot(document.getElementById('app')!).render(
                 </AdminOnly>
               }
             />
-            <Route
-              path="channels/weixin"
-              element={
-                <AdminOnly>
-                  <WeixinChannelSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="models"
-              element={
-                <AdminOnly>
-                  <ModelSettings />
-                </AdminOnly>
-              }
-            />
+            <Route path="channels/weixin" element={<WeixinChannelSettings />} />
+            <Route path="models" element={<ModelSettings />} />
             <Route
               path="storage"
               element={
@@ -132,14 +101,7 @@ createRoot(document.getElementById('app')!).render(
                 </AdminOnly>
               }
             />
-            <Route
-              path="runtime"
-              element={
-                <AdminOnly>
-                  <RuntimeSettings />
-                </AdminOnly>
-              }
-            />
+            <Route path="runtime" element={<RuntimeSettings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
