@@ -47,7 +47,7 @@ describe('modelOptions', () => {
     const opts = modelOptions([
       profile({ id: 'mp_v', name: '视觉', model: 'gpt-4o', supports_vision: true }),
     ])
-    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 标准·能看图' })
+    expect(opts[1]).toEqual({ value: 'mp_v', label: '视觉（gpt-4o） · 标准·视觉' })
   })
 
   it('still yields only the Auto option for an empty profile list', () => {
@@ -89,7 +89,7 @@ describe('visionGate', () => {
   it('Auto mode blocks images only when no vision model exists at all', () => {
     const r = visionGate(profiles, AUTO_MODEL_ID, true, false)
     expect(r.allowed).toBe(false)
-    expect(r.message).toContain('能看图')
+    expect(r.message).toContain('视觉')
   })
 
   it('manual vision model allows images', () => {

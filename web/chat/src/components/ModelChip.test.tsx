@@ -37,7 +37,7 @@ describe('ModelChip', () => {
     const items = host.querySelectorAll('[role="menuitem"]')
     expect(items.length).toBe(3)
     expect(host.textContent).toContain('快速')
-    expect(host.textContent).toContain('能看图')
+    expect(host.textContent).toContain('视觉')
   })
   it('shows the chosen short name and emits onChange for a concrete pick', () => {
     const onChange = vi.fn()

@@ -23,7 +23,7 @@ export interface ModelOption {
  * Build the dropdown options for the chat composer model picker. The first
  * option is always "智能选择". Every configured profile follows as a manual
  * choice. Profiles are tagged with their task-aware Auto tier
- * (快速 / 标准 / 深度思考) and 能看图 when the model accepts images. A
+ * (快速 / 标准 / 深度思考) and 视觉 when the model accepts images. A
  * deliberate manual pick always pins that exact model with no auto rerouting.
  */
 export function modelOptions(profiles: ModelProfile[]): ModelOption[] {
@@ -78,14 +78,14 @@ export function visionGate(
     if (canVision) return { allowed: true }
     return {
       allowed: false,
-      message: '当前没有可用的「能看图」模型，请到「设置 → AI 模型」添加，或移除图片后再发送。',
+      message: '当前没有可用的「视觉」模型，请到「设置 → AI 模型」添加，或移除图片后再发送。',
     }
   }
   const chosen = profiles.find((p) => p.id === selectedId.trim())
   if (chosen?.supports_vision) return { allowed: true }
   return {
     allowed: false,
-    message: '这个模型看不了图片。请改用「智能选择」或带「能看图」标记的模型，或移除图片。',
+    message: '这个模型看不了图片。请改用「智能选择」或带「视觉」标记的模型，或移除图片。',
   }
 }
 

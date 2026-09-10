@@ -216,7 +216,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           onChange={(e) => setForm((f) => ({ ...f, supportsVision: e.target.checked }))}
           disabled={busy}
         />
-        能看图（支持图片附件）
+        视觉（支持图片附件）
       </label>
       <label className="settings-checkbox">
         <input
@@ -256,7 +256,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           ))}
         </select>
         <small className="settings-muted">
-          智能选择按对话难度在快速/标准/深度思考档位间选模型；图片消息只走勾选了「能看图」的模型。
+          智能选择按对话难度在快速/标准/深度思考档位间选模型；图片消息只走勾选了「视觉」的模型。
         </small>
       </label>
     </>
@@ -468,7 +468,7 @@ export function ModelSettings() {
         <p>
           配置多个 OpenAI 兼容模型，并为每个模型选择「Auto 路由档位」（快速 / 标准 / 深度思考）。聊天默认走
           「智能选择」：根据每轮对话的实际难度、长度、代码与附件情况，以及是否含图片，自动挑选最合适档位的模型——
-          图片消息只会使用勾选了「能看图」的模型。也可在输入框手动指定某条消息固定使用某个模型（此时不自动路由）。
+          图片消息只会使用勾选了「视觉」的模型。也可在输入框手动指定某条消息固定使用某个模型（此时不自动路由）。
           API Key 保存在本地库中，界面仅显示脱敏值；也可只填环境变量名，由进程环境提供密钥。
         </p>
       </div>

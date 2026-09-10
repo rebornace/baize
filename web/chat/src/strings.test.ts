@@ -25,7 +25,7 @@ describe('tierLabel', () => {
 describe('labels', () => {
   it('exposes friendly auto/vision/action/hitl/welcome strings', () => {
     expect(AUTO_LABEL).toBe('智能选择')
-    expect(VISION_LABEL).toBe('能看图')
+    expect(VISION_LABEL).toBe('视觉')
     expect(ACTIONS.copy).toBe('复制')
     expect(ACTIONS.regenerate).toBe('重新回答')
     expect(ACTIONS.editAndReanswer).toBe('编辑后重新回答')

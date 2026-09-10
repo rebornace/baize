@@ -18,7 +18,7 @@ export function tierLabel(tier?: string): string {
 }
 
 export const AUTO_LABEL = '智能选择'
-export const VISION_LABEL = '能看图'
+export const VISION_LABEL = '视觉'
 
 // ---- 聊天动作 ----
 export const ACTIONS = {
@@ -88,7 +88,7 @@ export interface FriendlyError {
 const CODE_TITLE: Record<string, string> = {
   conversation_busy: '上一条还在处理中，请稍候再发。',
   no_model_configured: '还没有可用的 AI 模型，请到「设置 → AI 模型」添加一个。',
-  vision_unsupported: '当前模型看不了图片，请改用「智能选择」或带「能看图」标记的模型。',
+  vision_unsupported: '当前模型看不了图片，请改用「智能选择」或带「视觉」标记的模型。',
   invalid_signature: '连接校验未通过，请刷新页面后重试。',
   not_found: '内容不存在或已被删除。',
   internal_error: '服务暂时出了点问题，请稍后重试。',

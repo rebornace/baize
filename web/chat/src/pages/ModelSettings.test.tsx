@@ -283,8 +283,8 @@ describe('ModelProfileList', () => {
     // 轻量模型's name still contains 轻量, so the light tier is asserted via
     // its 快速 tier badge rather than via the 轻量 substring.
     expect(items[1]).toContain('<span class="settings-badge">快速</span>')
-    // The vision profile carries a 能看图 badge in addition to its tier badge.
-    const visionBadges = html.match(/能看图/g)?.length ?? 0
+    // The vision profile carries a 视觉 badge in addition to its tier badge.
+    const visionBadges = html.match(/视觉/g)?.length ?? 0
     expect(visionBadges).toBeGreaterThanOrEqual(1)
   })
 
