@@ -12,6 +12,7 @@ import {
   type ToolInfo,
 } from '../api'
 import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
+import { useGate } from '../gateContext'
 import { CaptureSettingsFields } from './CaptureSettingsFields'
 import {
   captureToDraft,
@@ -149,6 +150,8 @@ export function defaultExpandedSets(tools: ToolInfo[]): {
 }
 
 export function ToolsSettings() {
+  const { role } = useGate()
+  const readOnly = role !== 'admin'
   const [tools, setTools] = useState<ToolInfo[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -467,6 +470,7 @@ export function ToolsSettings() {
   }
 
   const renderGroupButtons = (groupKey: string, rows: ToolInfo[]) => {
+    if (readOnly) return null
     const lockGroups = groupBusy !== null || toggling !== null || savingCopy
     return (
       <span className="settings-group-actions" onClick={(e) => e.stopPropagation()}>
@@ -511,51 +515,57 @@ export function ToolsSettings() {
           </span>
           <span className="settings-tool-actions">
             {t.require_approval && <span className="settings-badge">需审批</span>}
-            <label className="settings-login-toggle">
-              <input
-                type="checkbox"
-                checked={isToolEnabled(t)}
-                disabled={rowBusy}
-                onChange={(e) => {
-                  void onEnabledChange(t.name, e.target.checked)
-                }}
-              />
-              启用
-            </label>
-            <label className="settings-login-toggle">
-              <input
-                type="checkbox"
-                checked={Boolean(t.require_login)}
-                disabled={rowBusy}
-                onChange={(e) => {
-                  void onRequireLoginChange(t.name, e.target.checked)
-                }}
-              />
-              需要登录
-            </label>
-            <label className="settings-login-toggle">
-              MCP 导出
-              <select
-                className="settings-select"
-                value={toolExportMode(t)}
-                disabled={rowBusy}
-                onChange={(e) => {
-                  void onExportChange(t.name, e.target.value as ToolExportMode)
-                }}
-              >
-                {EXPORT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!readOnly && (
+              <label className="settings-login-toggle">
+                <input
+                  type="checkbox"
+                  checked={isToolEnabled(t)}
+                  disabled={rowBusy}
+                  onChange={(e) => {
+                    void onEnabledChange(t.name, e.target.checked)
+                  }}
+                />
+                启用
+              </label>
+            )}
+            {!readOnly && (
+              <label className="settings-login-toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(t.require_login)}
+                  disabled={rowBusy}
+                  onChange={(e) => {
+                    void onRequireLoginChange(t.name, e.target.checked)
+                  }}
+                />
+                需要登录
+              </label>
+            )}
+            {!readOnly && (
+              <label className="settings-login-toggle">
+                MCP 导出
+                <select
+                  className="settings-select"
+                  value={toolExportMode(t)}
+                  disabled={rowBusy}
+                  onChange={(e) => {
+                    void onExportChange(t.name, e.target.value as ToolExportMode)
+                  }}
+                >
+                  {EXPORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {t.source === 'mcp' && (
               <span className="settings-muted" title="MCP 写类工具即使强制允许也不会导出">
                 MCP 写类工具即使强制允许也不会导出
               </span>
             )}
-            {canDelete && (
+            {canDelete && !readOnly && (
               <button
                 type="button"
                 className="btn danger sm"
@@ -567,20 +577,22 @@ export function ToolsSettings() {
                 {isDeleting ? '删除中…' : '删除'}
               </button>
             )}
-            <button
-              type="button"
-              className="btn ghost sm"
-              disabled={savingCopy || (rowBusy && !isEditing)}
-              onClick={() => {
-                if (isEditing) {
-                  setEditingKey(null)
-                  return
-                }
-                startEdit(t)
-              }}
-            >
-              {isEditing ? '收起' : '编辑文案'}
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                className="btn ghost sm"
+                disabled={savingCopy || (rowBusy && !isEditing)}
+                onClick={() => {
+                  if (isEditing) {
+                    setEditingKey(null)
+                    return
+                  }
+                  startEdit(t)
+                }}
+              >
+                {isEditing ? '收起' : '编辑文案'}
+              </button>
+            )}
           </span>
         </div>
         {isEditing && (
@@ -642,7 +654,7 @@ export function ToolsSettings() {
               placeholder="搜索"
               aria-label="搜索工具"
             />
-            {showAdd && (
+            {showAdd && !readOnly && (
               <button
                 type="button"
                 className="btn primary sm"
@@ -658,9 +670,11 @@ export function ToolsSettings() {
           {tools.length === 0 && (
             <p className="settings-empty">
               尚未注册 Connector。{' '}
-              <Link to="/settings/openapi" className="settings-link">
-                去 OpenAPI 设置注册
-              </Link>
+              {!readOnly && (
+                <Link to="/settings/openapi" className="settings-link">
+                  去 OpenAPI 设置注册
+                </Link>
+              )}
             </p>
           )}
           {callbackError && <p className="settings-error">{callbackError}</p>}
@@ -767,7 +781,7 @@ export function ToolsSettings() {
           )}
         </>
       )}
-      {drawerOpen && (
+      {drawerOpen && !readOnly && (
         <div className="settings-drawer-backdrop" onClick={closeDrawer}>
           <aside
             className="settings-drawer"

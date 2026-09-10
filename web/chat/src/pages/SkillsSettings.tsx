@@ -8,6 +8,7 @@ import {
   uploadSkill,
   type SkillSummary,
 } from '../api'
+import { useGate } from '../gateContext'
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -60,6 +61,8 @@ function toolsSummary(tools: string[]): string {
 }
 
 export function SkillsSettings() {
+  const { role } = useGate()
+  const readOnly = role !== 'admin'
   const [skills, setSkills] = useState<SkillSummary[] | null>(null)
   const [agentId, setAgentId] = useState('ticket-agent')
   const [system, setSystem] = useState('')
@@ -174,28 +177,30 @@ export function SkillsSettings() {
       {skills === null && !loadFailed && <p className="settings-muted">加载中…</p>}
       {skills !== null && (
         <>
-          <div className="settings-toolbar">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".md,.zip"
-              disabled={busy}
-              aria-label="上传 Skill"
-              onChange={(e) => {
-                void onUpload(e.target.files?.[0])
-              }}
-            />
-            <button
-              type="button"
-              className="btn primary sm"
-              disabled={busy}
-              onClick={() => {
-                void onSave()
-              }}
-            >
-              {saving ? '保存中…' : '保存默认勾选'}
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="settings-toolbar">
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".md,.zip"
+                disabled={busy}
+                aria-label="上传 Skill"
+                onChange={(e) => {
+                  void onUpload(e.target.files?.[0])
+                }}
+              />
+              <button
+                type="button"
+                className="btn primary sm"
+                disabled={busy}
+                onClick={() => {
+                  void onSave()
+                }}
+              >
+                {saving ? '保存中…' : '保存默认勾选'}
+              </button>
+            </div>
+          )}
           {skills.length === 0 && <p className="settings-empty">尚未安装 Skill</p>}
           {skills.length > 0 && (
             <ul className="settings-list">
@@ -207,7 +212,7 @@ export function SkillsSettings() {
                       <input
                         type="checkbox"
                         checked={selected.has(s.id)}
-                        disabled={busy}
+                        disabled={busy || readOnly}
                         onChange={(e) => {
                           setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
                         }}
@@ -222,7 +227,7 @@ export function SkillsSettings() {
                     </label>
                     <span className="settings-tool-actions">
                       <span className="settings-badge">{sourceLabel(s.source)}</span>
-                      {s.source === 'user' && (
+                      {s.source === 'user' && !readOnly && (
                         <button
                           type="button"
                           className="btn danger sm"
