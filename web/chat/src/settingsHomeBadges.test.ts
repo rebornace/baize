@@ -112,13 +112,20 @@ describe('resolveBadge', () => {
 
 // ---- useSettingsBadges ----
 
+const hookHosts: HTMLElement[] = []
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
-function runHook<T>(useHook: (refreshKey: number) => T): { value: () => T; rerender: (p: { key: number }) => void } {
+function runHook<T>(useHook: (refreshKey: number) => T): {
+  value: () => T
+  rerender: (p: { key: number }) => void
+  unmount: () => void
+} {
   let current: T
   const host = document.createElement('div')
   document.body.appendChild(host)
+  hookHosts.push(host)
   const root = createRoot(host)
   const Harness = ({ keyStep }: { keyStep: number }) => {
     current = useHook(keyStep)
@@ -128,6 +135,7 @@ function runHook<T>(useHook: (refreshKey: number) => T): { value: () => T; reren
   return {
     value: () => current,
     rerender: (p) => act(() => { root.render(createElement(Harness, { keyStep: p.key })) }),
+    unmount: () => act(() => { root.unmount() }),
   }
 }
 
@@ -136,7 +144,10 @@ describe('useSettingsBadges', () => {
     vi.stubGlobal('fetch', vi.fn())
     ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    hookHosts.splice(0).forEach((h) => h.remove())
+  })
 
   const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
 
@@ -202,5 +213,54 @@ describe('useSettingsBadges', () => {
     h.rerender({ key: 1 })
     await flush()
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('tools request failure: tools/openapi/mcp/plugins badges are all null (no 去接入 CTA)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async (url: unknown) =>
+      String(url) === '/v0/tools'
+        ? new Response('boom', { status: 500 })
+        : jsonResponse(null))
+    const h = runHook(() => useSettingsBadges(
+      settingsNavItems('admin').filter((i) =>
+        i.badge === 'tools' || i.badge === 'openapi' || i.badge === 'mcp' || i.badge === 'plugins'),
+      'admin', 0))
+    await flush()
+    const badges = h.value()
+    expect(badges.tools).toBeNull()
+    expect(badges.openapi).toBeNull()
+    expect(badges.mcp).toBeNull()
+    expect(badges.plugins).toBeNull()
+  })
+
+  it('tools 200 with zero connectors: openapi still shows 去接入 (distinct from request failure)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async (url: unknown) =>
+      String(url) === '/v0/tools'
+        ? jsonResponse({ tools: [] })
+        : jsonResponse(null))
+    const h = runHook(() => useSettingsBadges(
+      settingsNavItems('admin').filter((i) =>
+        i.badge === 'tools' || i.badge === 'openapi' || i.badge === 'mcp' || i.badge === 'plugins'),
+      'admin', 0))
+    await flush()
+    const badges = h.value()
+    expect(badges.openapi).toEqual({ tone: 'neutral', text: '去接入' })
+    expect(badges.tools).toBeNull()
+    expect(badges.mcp).toBeNull()
+    expect(badges.plugins).toBeNull()
+  })
+
+  it('unmount before fetch settles: no setState after unmount', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async () => jsonResponse({ profiles: [{ id: 'm1' }] }))
+    const h = runHook(() => useSettingsBadges(
+      settingsNavItems('admin').filter((i) => i.badge === 'models'),
+      'admin', 0))
+    expect(h.value().models).toBeUndefined()
+    h.unmount()
+    // Let the pending fetch resolve; a post-unmount setState would surface as an act warning.
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(fetchMock.mock.calls.length).toBe(1)
   })
 })

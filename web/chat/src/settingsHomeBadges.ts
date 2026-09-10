@@ -124,10 +124,8 @@ const ADMIN_ONLY_KINDS = new Set<BadgeKind>([
 
 export type BadgeMap = Partial<Record<BadgeKind, BadgeResult | null>>
 
-/** Shared tool-list fetch; failures degrade to an empty list rather than rejecting. */
-async function fetchToolList(): Promise<ToolInfo[]> {
-  return listTools().catch(() => [] as ToolInfo[])
-}
+/** Kinds derived from the shared `/v0/tools` response. */
+const TOOL_DERIVED_KINDS = ['tools', 'openapi', 'mcp', 'plugins'] as const
 
 /**
  * Concurrently fetches badge data for the given nav items.
@@ -160,9 +158,13 @@ export function useSettingsBadges(
     }
 
     async function run(): Promise<void> {
-      // Shared tool list feeds tools/openapi/mcp/plugins.
-      const needTools = (['tools', 'openapi', 'mcp', 'plugins'] as const).some((k) => kinds.has(k))
-      const toolsP = needTools ? fetchToolList() : Promise.resolve([] as ToolInfo[])
+      // Shared tool list feeds tools/openapi/mcp/plugins. A rejected fetch
+      // resolves to null (not []): the four derived kinds must then be null,
+      // because [] would make openapi show a misleading "去接入" CTA on error.
+      const needTools = TOOL_DERIVED_KINDS.some((k) => kinds.has(k))
+      const toolsP: Promise<ToolInfo[] | null> = needTools
+        ? listTools().then((t) => t, () => null)
+        : Promise.resolve([] as ToolInfo[])
       const tasks: Promise<void>[] = []
       const next: BadgeMap = {}
 
@@ -208,10 +210,16 @@ export function useSettingsBadges(
       }
 
       const tools = await toolsP
-      if (kinds.has('tools')) next.tools = resolveBadge('tools', tools)
-      if (kinds.has('openapi')) next.openapi = resolveBadge('openapi', tools)
-      if (kinds.has('mcp')) next.mcp = resolveBadge('mcp', tools)
-      if (kinds.has('plugins')) next.plugins = resolveBadge('plugins', tools)
+      if (tools === null) {
+        for (const k of TOOL_DERIVED_KINDS) {
+          if (kinds.has(k)) next[k] = null
+        }
+      } else {
+        if (kinds.has('tools')) next.tools = resolveBadge('tools', tools)
+        if (kinds.has('openapi')) next.openapi = resolveBadge('openapi', tools)
+        if (kinds.has('mcp')) next.mcp = resolveBadge('mcp', tools)
+        if (kinds.has('plugins')) next.plugins = resolveBadge('plugins', tools)
+      }
 
       await Promise.all(tasks)
       if (!cancelled) setBadges(next)
