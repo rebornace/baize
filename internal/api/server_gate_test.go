@@ -133,11 +133,12 @@ func TestGateOperatorForbiddenOnAdminRoutes(t *testing.T) {
 		t.Fatalf("POST runs must not be blocked for operator: code=%d %s", rr.Code, rr.Body.String())
 	}
 
+	// P2 设置信息架构：GET /v0/tools 已降为 RoleOperator，运营可只读工具列表。
 	req = httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
 	auth(req)
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != 403 || !strings.Contains(rr.Body.String(), "forbidden") {
+	if rr.Code != 200 {
 		t.Fatalf("GET tools=%d %s", rr.Code, rr.Body.String())
 	}
 

@@ -134,15 +134,25 @@ func TestManagedGetSettings(t *testing.T) {
 	}
 }
 
-func TestManagedOperatorForbidden(t *testing.T) {
+// P2 设置信息架构：渠道状态 GET 已降为 RoleOperator，运营可查看；
+// 写操作（PUT）仍需管理员。
+func TestManagedOperatorCanRead(t *testing.T) {
 	srv := managedTestServer(t)
 	srv.OperatorToken = "op"
 	req := httptest.NewRequest(http.MethodGet, "/v0/settings/channels/weixin", nil)
 	req.Header.Set("Authorization", "Bearer op")
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("operator GET=%d want 403", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("operator GET=%d want 200", rec.Code)
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/v0/settings/channels/weixin", nil)
+	putReq.Header.Set("Authorization", "Bearer op")
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusForbidden {
+		t.Fatalf("operator PUT=%d want 403", putRec.Code)
 	}
 }
 
