@@ -29,7 +29,7 @@ func (n *notifyingStore) UpdateRun(id string, status store.Status, output, errMs
 	if err := n.Store.UpdateRun(id, status, output, errMsg); err != nil {
 		return err
 	}
-	if status == store.StatusSucceeded || status == store.StatusFailed || status == store.StatusCancelled {
+	if status == store.StatusSucceeded || status == store.StatusFailed || status == store.StatusCancelled || status == store.StatusRejected {
 		n.hub.PublishEnd(id, status)
 	}
 	return nil

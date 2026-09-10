@@ -150,7 +150,7 @@ func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {
 }
 
 func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
-	if status != store.StatusSucceeded && status != store.StatusFailed {
+	if status != store.StatusSucceeded && status != store.StatusFailed && status != store.StatusRejected {
 		return
 	}
 	run, err := d.store.GetRun(runID)

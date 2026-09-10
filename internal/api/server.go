@@ -1671,7 +1671,7 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		return err
 	}
 	switch cur.Status {
-	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusWaitingHuman:
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected, store.StatusWaitingHuman:
 		return nil
 	}
 
@@ -1698,6 +1698,11 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		return nil
 	}
 	if err := s.runExecute(ctx, job.RunID, def, input, opts); err != nil {
+		// A human declining an approval is an intentional terminal outcome
+		// (run settled as "rejected"), not a job failure to log/retry.
+		if errors.Is(err, run.ErrHITLRejected) {
+			return nil
+		}
 		s.finalizeRunError(job.RunID, cur.ConversationID, err)
 		return err
 	}
@@ -2221,7 +2226,7 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 		lastSent = i
 	}
 
-	terminal := runRec.Status == store.StatusSucceeded || runRec.Status == store.StatusFailed
+	terminal := runRec.Status == store.StatusSucceeded || runRec.Status == store.StatusFailed || runRec.Status == store.StatusRejected
 	if terminal {
 		_ = writeSSEEnded(w, rc, runRec.Status)
 		return
@@ -2358,7 +2363,7 @@ func catchUpRunStream(w http.ResponseWriter, rc *http.ResponseController, st sto
 		}
 		*lastSent = i
 	}
-	if runRec.Status == store.StatusSucceeded || runRec.Status == store.StatusFailed {
+	if runRec.Status == store.StatusSucceeded || runRec.Status == store.StatusFailed || runRec.Status == store.StatusRejected {
 		return true, runRec.Status, nil
 	}
 	return false, "", nil

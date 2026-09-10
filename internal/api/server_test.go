@@ -677,7 +677,7 @@ func TestResumeApproveSucceeds(t *testing.T) {
 	}
 }
 
-func TestResumeRejectFails(t *testing.T) {
+func TestResumeRejectMarksRejected(t *testing.T) {
 	_, _, _, h := newHITLServer(t)
 
 	putAgent := httptest.NewRequest(http.MethodPut, "/v0/agents/ticket-agent",
@@ -703,7 +703,7 @@ func TestResumeRejectFails(t *testing.T) {
 		t.Fatalf("resume=%d body=%s", rr.Code, rr.Body.String())
 	}
 
-	pollRunStatus(t, h, runID, store.StatusFailed)
+	pollRunStatus(t, h, runID, store.StatusRejected)
 }
 
 func TestResumeNotWaitingConflict(t *testing.T) {

@@ -1208,6 +1208,8 @@ function statusLabel(status: string): string {
       return '失败'
     case 'cancelled':
       return '已取消'
+    case 'rejected':
+      return '已停止'
     default:
       return status
   }

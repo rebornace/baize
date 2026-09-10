@@ -41,7 +41,7 @@ func TestHITLRejectNoTicket(t *testing.T) {
 	pollRun(t, runtimeURL, runID, store.StatusWaitingHuman)
 
 	resumeRun(t, runtimeURL, runID, "reject", "nope")
-	pollRun(t, runtimeURL, runID, store.StatusFailed)
+	pollRun(t, runtimeURL, runID, store.StatusRejected)
 
 	after := ticketCount(t, ticketURL)
 	if after != before {

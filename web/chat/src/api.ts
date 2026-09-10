@@ -18,6 +18,7 @@ export type RunStatus =
   | 'succeeded'
   | 'failed'
   | 'cancelled'
+  | 'rejected'
 
 export interface Run {
   id: string
@@ -747,7 +748,12 @@ export async function cancelRun(runId: string): Promise<ResumeResponse> {
 }
 
 export function isTerminal(status: RunStatus): boolean {
-  return status === 'succeeded' || status === 'failed' || status === 'cancelled'
+  return (
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'rejected'
+  )
 }
 
 export type ToolExportMode = 'default' | 'force_allow' | 'force_deny'

@@ -181,10 +181,71 @@ func TestEngineHITLRejectNoInvoke(t *testing.T) {
 		t.Fatalf("invoke count=%d want 0", calls.Load())
 	}
 	got, _ := st.GetRun(r.ID)
-	if got.Status != store.StatusFailed {
-		t.Fatalf("status=%s want failed", got.Status)
+	if got.Status != store.StatusRejected {
+		t.Fatalf("status=%s want rejected", got.Status)
+	}
+	if got.Error != "" {
+		t.Fatalf("rejected run error field=%q want empty (no technical reason)", got.Error)
 	}
 	assertEventTypes(t, st, r.ID, EventHITLWaiting, EventHITLRejected)
+}
+
+// TestHITLRejectWritesHumanizedNote: a live HITL rejection is an intentional
+// user decision: the run ends as "rejected" (not failed) and the conversation
+// gets a neutral Chinese system note — never the technical "运行失败：hitl rejected".
+func TestHITLRejectWritesHumanizedNote(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"id": "1"}, false, nil
+	}, true)
+	msgStore := conversation.NewMemoryStore()
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单", ConversationID: "conv1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "创建工单", RunID: r.ID})
+
+	gate := NewGate()
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: gate, Messages: msgStore}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if err := gate.Resume(r.ID, Decision{Approve: false, Comment: "请先补充影响范围"}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute timed out")
+	}
+
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusRejected {
+		t.Fatalf("status=%s want rejected", got.Status)
+	}
+	var note *conversation.Message
+	for _, m := range msgStore.List("conv1") {
+		if m.Role == conversation.RoleSystemNote {
+			mm := m
+			note = &mm
+		}
+	}
+	if note == nil {
+		t.Fatal("missing system_note for rejection")
+	}
+	if strings.Contains(note.Content, "运行失败") || strings.Contains(note.Content, "hitl rejected") {
+		t.Fatalf("note must be humanized, got %q", note.Content)
+	}
+	if note.Content != HITLRejectedNote {
+		t.Fatalf("note=%q want %q", note.Content, HITLRejectedNote)
+	}
 }
 
 func TestLoginGateBeforeHITL(t *testing.T) {
@@ -422,6 +483,60 @@ func TestContinueFromHITLColdApprove(t *testing.T) {
 	got, _ := st.GetRun(r.ID)
 	if got.Status != store.StatusSucceeded {
 		t.Fatalf("status=%s", got.Status)
+	}
+}
+
+// TestContinueFromHITLColdReject: after a process restart (no Gate waiter),
+// rejecting a pending approval ends the run as "rejected" with a humanized
+// note — the pending tool must never be invoked.
+func TestContinueFromHITLColdReject(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "create_ticket"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"id": "9"}, false, nil
+	}, true)
+	msgStore := conversation.NewMemoryStore()
+
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "创建工单", ConversationID: "conv1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "创建工单", RunID: r.ID})
+	_ = st.AppendEvent(r.ID, store.Event{Type: EventRunStarted})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventLLMToolCall,
+		Data: map[string]any{"id": "c1", "name": "create_ticket", "arguments": map[string]any{"title": "x"}},
+	})
+	_ = st.AppendEvent(r.ID, store.Event{
+		Type: EventHITLWaiting,
+		Data: map[string]any{"prompt": "Approve tool create_ticket?", "tool_name": "create_ticket"},
+	})
+	_ = st.UpdateRun(r.ID, store.StatusWaitingHuman, "", "")
+	_ = st.SetHITL(r.ID, &store.HITLPayload{
+		Prompt:    "Approve tool create_ticket?",
+		ToolName:  "create_ticket",
+		Arguments: map[string]any{"title": "x"},
+	})
+
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: NewGate(), Messages: msgStore}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: "nope"}); err != nil {
+		t.Fatalf("ContinueFromHITL reject: %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("tool must not run after reject, calls=%d", calls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusRejected {
+		t.Fatalf("status=%s want rejected", got.Status)
+	}
+	for _, m := range msgStore.List("conv1") {
+		if m.Role == conversation.RoleSystemNote && m.Content != HITLRejectedNote {
+			t.Fatalf("note=%q want %q", m.Content, HITLRejectedNote)
+		}
 	}
 }
 
@@ -705,7 +820,7 @@ func TestExecuteNoMessageOnWaitingHuman(t *testing.T) {
 		}
 	}
 
-	// Unblock the goroutine so it can exit; reject → failed (writes system_note).
+	// Unblock the goroutine so it can exit; reject → rejected (writes system_note).
 	_ = eng.Gate.Resume(r.ID, Decision{Approve: false, Comment: "no"})
 	select {
 	case <-errCh:

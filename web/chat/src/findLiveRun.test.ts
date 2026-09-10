@@ -65,5 +65,6 @@ describe('isActiveRunStatus', () => {
     expect(isActiveRunStatus('succeeded')).toBe(false)
     expect(isActiveRunStatus('failed')).toBe(false)
     expect(isActiveRunStatus('cancelled')).toBe(false)
+    expect(isActiveRunStatus('rejected')).toBe(false)
   })
 })

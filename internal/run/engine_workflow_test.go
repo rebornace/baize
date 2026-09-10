@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
@@ -372,6 +373,81 @@ func TestContinueFromHITLWorkflowFailFast(t *testing.T) {
 	}
 	if sawRejectWaitInvoke {
 		t.Fatal("cold resume must not invoke the pending workflow step")
+	}
+}
+
+// TestExecuteWorkflowGateRejectIsRejected: rejecting an approve-gated step in a
+// live workflow ends the run as "rejected" with a humanized note; later steps
+// never run and no llm.error event is appended.
+func TestExecuteWorkflowGateRejectIsRejected(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var taCalls, tbCalls atomic.Int32
+	reg.Register("ta", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		taCalls.Add(1)
+		return map[string]any{"ok": true}, false, nil
+	})
+	reg.Register("tb", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		tbCalls.Add(1)
+		t.Fatal("tb must not run after the gated step is rejected")
+		return nil, false, nil
+	})
+	// Step a is approval-gated; b must never be reached.
+	wfYAML := "name: demo\nsteps:\n  - id: a\n    tool: ta\n    approve: true\n  - id: b\n    tool: tb\n"
+	cat := loadWorkflowCatalog(t, "demo", wfYAML)
+	msgStore := conversation.NewMemoryStore()
+
+	llmMock := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}},
+		}}
+	}}
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi", ConversationID: "conv1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "hi", RunID: r.ID})
+
+	gate := NewGate()
+	eng := &Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat, Gate: gate, Messages: msgStore}
+	errCh := make(chan error, 1)
+	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if err := gate.Resume(r.ID, Decision{Approve: false, Comment: "stop"}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	select {
+	case <-errCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute timed out")
+	}
+
+	if taCalls.Load() != 0 || tbCalls.Load() != 0 {
+		t.Fatalf("no gated step may run after reject: ta=%d tb=%d", taCalls.Load(), tbCalls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusRejected {
+		t.Fatalf("status=%s want rejected", got.Status)
+	}
+	notes := 0
+	for _, m := range msgStore.List("conv1") {
+		if m.Role == conversation.RoleSystemNote {
+			notes++
+			if m.Content != HITLRejectedNote {
+				t.Fatalf("note=%q want %q", m.Content, HITLRejectedNote)
+			}
+		}
+	}
+	if notes != 1 {
+		t.Fatalf("system notes=%d want exactly 1 (no double finalize)", notes)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	for _, ev := range evs {
+		if ev.Type == EventLLMError {
+			t.Fatalf("rejection must not append %s event", EventLLMError)
+		}
 	}
 }
 

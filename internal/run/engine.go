@@ -43,6 +43,11 @@ const (
 // ErrHITLRejected reports that a human rejected the pending tool approval.
 var ErrHITLRejected = errors.New("hitl rejected")
 
+// HITLRejectedNote is the neutral, user-facing system note recorded when a
+// human declines an approval. It deliberately avoids "失败"/error wording: a
+// rejection is an intentional decision, not a run error.
+const HITLRejectedNote = "已按你的选择停止本次操作。"
+
 type Engine struct {
 	Store    store.Store
 	LLM      llm.Provider
@@ -206,7 +211,7 @@ func (e *Engine) markCancelled(runID string) {
 		return
 	}
 	switch runRec.Status {
-	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled:
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
 		return
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
@@ -346,10 +351,8 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 			Type: EventHITLRejected,
 			Data: map[string]any{"decision": "reject", "comment": d.Comment},
 		})
-		_ = e.Store.SetHITL(runID, nil)
-		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", "hitl rejected")
-		e.recordTerminalMessage(runID)
-		return fmt.Errorf("hitl rejected")
+		e.finalizeRejectedRun(runID)
+		return nil
 	}
 
 	_ = e.Store.AppendEvent(runID, store.Event{
@@ -719,6 +722,10 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 		},
 	})
 	if werr != nil {
+		if workflow.Rejected(werr) {
+			e.finalizeRejectedRun(runID)
+			return ErrHITLRejected
+		}
 		return e.finalizeFailedRun(runID, werr)
 	}
 
@@ -745,6 +752,22 @@ func (e *Engine) finalizeFailedRun(runID string, cause error) error {
 	return cause
 }
 
+// finalizeRejectedRun settles a run a human declined at an approval gate.
+// Unlike a failure it records the neutral "rejected" status (no technical
+// error reason) and a user-facing system note, so the chat never shows
+// "运行失败：hitl rejected".
+func (e *Engine) finalizeRejectedRun(runID string) {
+	// Idempotent: the live workflow gate rejects inside waitForDecision (run
+	// already settled) before maybeRunWorkflow observes the wrapped error; do
+	// not append a second system note on that second pass.
+	if rec, err := e.Store.GetRun(runID); err == nil && rec != nil && rec.Status == store.StatusRejected {
+		return
+	}
+	_ = e.Store.SetHITL(runID, nil)
+	_ = e.Store.UpdateRun(runID, store.StatusRejected, "", "")
+	e.recordTerminalMessage(runID)
+}
+
 // workflowInterrupted reports whether the event stream shows a workflow run
 // that started but never reached a terminal event (llm.message completion or
 // llm.error failure) — i.e. a cold resume would land mid-pipeline.
@@ -764,9 +787,10 @@ func workflowInterrupted(evs []store.Event) bool {
 // invokeTool performs one full tool interaction for a run: pre-call gate
 // (login / approval) and events, then the timeout-bounded Invoke with the same
 // event/data shapes as before. A rejection returns ErrHITLRejected and the run
-// has already been finalized as failed; the caller must stop instead of
-// appending further results. Transient failures inside one interaction keep the
-// last-known return shape so the value/error contract stays uniform.
+// has already been finalized as rejected (with a humanized note); the caller
+// must stop instead of appending further results. Transient failures inside
+// one interaction keep the last-known return shape so the value/error
+// contract stays uniform.
 func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval bool) (map[string]any, bool, error) {
 	isError := false
 	content := map[string]any{}
@@ -870,9 +894,7 @@ func (e *Engine) awaitHITLPayload(ctx context.Context, runID, prompt, toolName s
 			Type: EventHITLRejected,
 			Data: map[string]any{"decision": "reject", "comment": d.Comment},
 		})
-		_ = e.Store.SetHITL(runID, nil)
-		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", "hitl rejected")
-		e.recordTerminalMessage(runID)
+		e.finalizeRejectedRun(runID)
 		return ErrHITLRejected
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
@@ -948,6 +970,12 @@ func (e *Engine) recordTerminalMessage(runID string) {
 		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
 			Role:    conversation.RoleSystemNote,
 			Content: "已取消",
+			RunID:   runID,
+		})
+	case store.StatusRejected:
+		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
+			Role:    conversation.RoleSystemNote,
+			Content: HITLRejectedNote,
 			RunID:   runID,
 		})
 	}

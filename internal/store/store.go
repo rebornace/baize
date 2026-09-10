@@ -15,6 +15,10 @@ const (
 	StatusFailed       Status = "failed"
 	StatusWaitingHuman Status = "waiting_human"
 	StatusCancelled    Status = "cancelled"
+	// StatusRejected is the terminal state for a run a human declined at an
+	// approval gate. Unlike failed, it is an intentional user decision rather
+	// than an error.
+	StatusRejected Status = "rejected"
 )
 
 type Agent struct {
