@@ -15,6 +15,7 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   vi.stubGlobal('fetch', vi.fn())
+  vi.clearAllMocks()
 })
 afterEach(() => { host.remove(); vi.unstubAllGlobals() })
 
@@ -95,5 +96,26 @@ describe('SettingsHome', () => {
     expect(locked.length).toBe(7)
     for (const c of locked) expect(c.getAttribute('tabindex')).toBeNull()
     expect(host.textContent).toContain('仅管理员')
+  })
+
+  it('admin hides the onboarding bar and add-model link when the models API fails', async () => {
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('500'))
+    render('admin')
+    await settle()
+    expect(host.textContent).not.toContain('先添加一个模型')
+    expect(host.querySelector('a[href="/settings/models"]')).toBeNull()
+  })
+
+  it('clicking the refresh button re-fetches badge data', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockImplementation(async () => jsonResponse({ profiles: [{ id: 'm1' }] }))
+    render('admin')
+    await settle()
+    const callsBefore = fetchMock.mock.calls.length
+    expect(callsBefore).toBeGreaterThan(0)
+    const btn = host.querySelector('button.settings-refresh-btn') as HTMLButtonElement
+    await act(async () => { btn.click() })
+    await settle()
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 })

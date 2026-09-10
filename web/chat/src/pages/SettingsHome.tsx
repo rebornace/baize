@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Lock, RefreshCw } from 'lucide-react'
 import { useGate } from '../gateContext'
@@ -17,8 +17,16 @@ export function SettingsHome() {
   const refresh = () => {
     setRefreshing(true)
     setRefreshKey((k) => k + 1)
-    window.setTimeout(() => setRefreshing(false), 600)
   }
+
+  // Keep the spinner visible for a minimum of 600ms; the timer is owned by an
+  // effect so it is cleared on unmount (no setState after unmount) and rapid
+  // clicks collapse into a single pending timer.
+  useEffect(() => {
+    if (!refreshing) return
+    const t = window.setTimeout(() => setRefreshing(false), 600)
+    return () => window.clearTimeout(t)
+  }, [refreshing])
 
   // Completion bar driven by the same models data; null while loading.
   const modelCount = badges.models === undefined ? null : (badges.models?.tone === 'warning' ? 0 : 1)
