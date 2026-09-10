@@ -242,7 +242,7 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
             // Defer so click-on-suggestion still fires before we clear.
             window.setTimeout(() => setCompletion(null), 150)
           }}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行；@ 触发 Skill 补全"
+          placeholder="输入消息，Enter 发送，Shift+Enter 换行；输入 @ 或 / 选择技能"
           rows={1}
           disabled={disabled}
           aria-label="消息输入"
@@ -255,31 +255,31 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
         >
           发送
         </button>
+        {completion && completion.matches.length > 0 && (
+          <ul className="composer-complete" role="listbox" aria-label="Skill 补全">
+            {completion.matches.map((s, i) => (
+              <li
+                key={s.id}
+                role="option"
+                aria-selected={i === completion.activeIndex}
+                className={i === completion.activeIndex ? 'composer-complete-item active' : 'composer-complete-item'}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  applyCompletion(s)
+                }}
+                onMouseEnter={() =>
+                  setCompletion((c) => (c ? { ...c, activeIndex: i } : c))
+                }
+              >
+                <span className="composer-complete-id">{s.id}</span>
+                {s.description ? (
+                  <span className="composer-complete-desc">{s.description}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-      {completion && completion.matches.length > 0 && (
-        <ul className="composer-complete" role="listbox" aria-label="Skill 补全">
-          {completion.matches.map((s, i) => (
-            <li
-              key={s.id}
-              role="option"
-              aria-selected={i === completion.activeIndex}
-              className={i === completion.activeIndex ? 'composer-complete-item active' : 'composer-complete-item'}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                applyCompletion(s)
-              }}
-              onMouseEnter={() =>
-                setCompletion((c) => (c ? { ...c, activeIndex: i } : c))
-              }
-            >
-              <span className="composer-complete-id">{s.id}</span>
-              {s.description ? (
-                <span className="composer-complete-desc">{s.description}</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
       {skillsById.size > 0 && (
         <span className="composer-hint" aria-hidden="true">
           可用 Skill：{Array.from(skillsById.keys()).slice(0, 6).join('、')}

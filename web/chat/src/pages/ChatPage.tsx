@@ -61,7 +61,7 @@ import {
 } from '../historyBlocks'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
-import { ACTIONS, ADVANCED, CHAT, friendlyError, WELCOME } from '../strings'
+import { ACTIONS, CHAT, friendlyError, WELCOME } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { uuid } from '../uuid'
@@ -106,8 +106,6 @@ export function ChatPage() {
   const [busy, setBusy] = useState(false)
   const [historyMutating, setHistoryMutating] = useState(false)
   const [status, setStatus] = useState('')
-  const [runWebhookUrl, setRunWebhookUrl] = useState('')
-  const [sessionToken, setSessionToken] = useState('')
   const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [supportsVision, setSupportsVision] = useState(true)
@@ -649,11 +647,7 @@ export function ChatPage() {
     requestAnimationFrame(() => scrollToBottom('smooth'))
 
     try {
-      const webhookUrl = runWebhookUrl.trim()
-      const token = sessionToken.trim()
       const runOptions = buildRunOptions(selectedModelId, {
-        webhookUrl: webhookUrl || undefined,
-        sessionToken: token || undefined,
         attachments,
       })
       const created = await createRun(agentId, text, sentConversationId, runOptions)
@@ -1112,34 +1106,6 @@ export function ChatPage() {
               )}
             </div>
           )}
-
-          <details className="chat-advanced">
-            <summary className="chat-advanced-summary">{ADVANCED.summary}</summary>
-            <label className="chat-advanced-field">
-              <span className="chat-advanced-label">{ADVANCED.tokenLabel}</span>
-              <input
-                className="chat-advanced-input"
-                type="password"
-                value={sessionToken}
-                onChange={(e) => setSessionToken(e.target.value)}
-                disabled={composerDisabled}
-                placeholder={ADVANCED.tokenPlaceholder}
-                autoComplete="off"
-              />
-              <span className="chat-advanced-hint">{ADVANCED.tokenHint}</span>
-            </label>
-            <label className="chat-advanced-field">
-              <span className="chat-advanced-label">{ADVANCED.webhookLabel}</span>
-              <input
-                className="chat-advanced-input"
-                type="url"
-                value={runWebhookUrl}
-                onChange={(e) => setRunWebhookUrl(e.target.value)}
-                disabled={busy}
-                placeholder="https://example.com/hooks/this-run"
-              />
-            </label>
-          </details>
 
           <Composer
             disabled={composerDisabled}

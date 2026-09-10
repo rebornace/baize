@@ -52,15 +52,6 @@ export const WELCOME = {
   subtitle: '我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。',
 } as const
 
-// ---- 高级项 ----
-export const ADVANCED = {
-  summary: '高级',
-  tokenLabel: '临时访问凭证（选填）',
-  tokenHint: '需要带身份访问时填写，仅本次会话使用。',
-  webhookLabel: '本次结果回调地址（选填）',
-  tokenPlaceholder: '选填',
-} as const
-
 // ---- 聊天页反馈/门控/空态（任务 8 新增，集中收纳，组件不裸写新中文）----
 export const CHAT = {
   // 模型持久化失效回退
