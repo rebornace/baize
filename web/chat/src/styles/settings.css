@@ -32,7 +32,13 @@
 .settings-locked-label { font-size: 0.75rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
 
 /* 侧边导航分组 */
-.settings-nav-overview { font-weight: 600; }
+.settings-nav-overview {
+  font-weight: 600;
+  /* 规格 §5.1：总览与下方分组之间一条细分隔线 */
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
 .settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
 .settings-nav-group + .settings-nav-group { margin-top: var(--space-3); }
 .settings-nav-group-title {

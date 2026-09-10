@@ -210,6 +210,9 @@ export function ToolsSettings() {
   const searchActive = query.trim() !== ''
 
   useEffect(() => {
+    // 运营无权 GET connector（admin-only，必 403）；只读视图也不展示连接器面板，
+    // 直接跳过，避免对每个 connector 发起注定失败的请求。
+    if (readOnly) return
     let cancelled = false
     void (async () => {
       for (const id of catalogConnectorIds) {
@@ -228,7 +231,7 @@ export function ToolsSettings() {
     return () => {
       cancelled = true
     }
-  }, [catalogConnectorIds])
+  }, [catalogConnectorIds, readOnly])
 
   useEffect(() => {
     if (tools == null) return
