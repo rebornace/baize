@@ -268,3 +268,68 @@
 .ui-empty-state-action {
   margin-top: var(--space-2);
 }
+
+/* ---- Field / Input / Select ---- */
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ui-field-label {
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: var(--text);
+}
+.ui-field-required {
+  color: var(--danger);
+}
+.ui-field-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.ui-field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--danger);
+}
+.ui-input,
+.ui-select {
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.ui-input:focus-visible,
+.ui-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.ui-input:disabled,
+.ui-select:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.ui-input.invalid,
+.ui-select.invalid {
+  border-color: var(--danger);
+}
+.ui-input.invalid:focus-visible,
+.ui-select.invalid:focus-visible {
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+@media (max-width: 768px) {
+  .ui-input,
+  .ui-select {
+    min-height: 40px;
+  }
+}
