@@ -7,3 +7,5 @@ export { ToastRegion, useToast, type ToastInput, type ToastTone, type ToastApi }
 export { Modal, type ModalProps } from './Modal'
 export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog'
 export { DropdownMenu, type MenuItem, type DropdownMenuProps } from './DropdownMenu'
+export { PageHeader, type PageHeaderProps } from './PageHeader'
+export { EmptyState, type EmptyStateProps } from './EmptyState'
