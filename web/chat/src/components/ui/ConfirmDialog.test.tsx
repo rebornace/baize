@@ -27,4 +27,33 @@ describe('ConfirmDialog', () => {
     const cancel = host.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement
     expect(document.activeElement).toBe(cancel)
   })
+
+  it('does not call onCancel via Escape while busy', () => {
+    const onCancel = vi.fn()
+    render(<ConfirmDialog open busy title="x" body="y" onConfirm={() => {}} onCancel={onCancel} />)
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('does not call onCancel via overlay click while busy', () => {
+    const onCancel = vi.fn()
+    render(<ConfirmDialog open busy title="x" body="y" onConfirm={() => {}} onCancel={onCancel} />)
+    act(() => {
+      ;(host.querySelector('.modal-overlay') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('still calls onCancel via Escape when not busy', () => {
+    const onCancel = vi.fn()
+    render(<ConfirmDialog open title="x" body="y" onConfirm={() => {}} onCancel={onCancel} />)
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('renders an error line inside the dialog when error is provided', () => {
+    render(<ConfirmDialog open title="x" body="y" error="操作未能完成，请稍后重试。" onConfirm={() => {}} onCancel={() => {}} />)
+    expect(host.textContent).toContain('操作未能完成，请稍后重试。')
+    expect(host.querySelector('[role="alert"]')).toBeTruthy()
+  })
 })

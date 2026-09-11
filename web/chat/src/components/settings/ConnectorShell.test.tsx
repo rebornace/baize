@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../api'
 import { ConnectorShell, type ConnectorRowData } from './ConnectorShell'
 
 let host: HTMLDivElement
@@ -57,5 +58,100 @@ describe('ConnectorShell', () => {
       await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
     })
     expect(onDelete).toHaveBeenCalledWith('ticket-api')
+  })
+
+  it('keeps the confirm dialog open and surfaces an error when delete fails, then retries successfully', async () => {
+    const unhandled: PromiseRejectionEvent[] = []
+    const onUnhandled = (e: PromiseRejectionEvent) => { unhandled.push(e) }
+    window.addEventListener('unhandledrejection', onUnhandled)
+    const onDelete = vi.fn()
+      .mockRejectedValueOnce(new ApiError(500, 'internal_error', 'x'))
+      .mockResolvedValueOnce(undefined)
+    try {
+      await render({ kind: 'openapi', rows, loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete })
+      await act(async () => {
+        ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+        await new Promise((r) => setTimeout(r, 0))
+      })
+      await act(async () => {
+        ;[...host.querySelectorAll('.dropdown-item')].find((i) => i.textContent!.includes('删除'))!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 0))
+      })
+      await act(async () => {
+        ;(host.querySelector('[data-testid="confirm-ok"]') as HTMLElement).click()
+        await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
+      })
+      // 弹窗仍在、错误文案出现、错误被 catch
+      expect(host.querySelector('[data-testid="confirm-ok"]')).toBeTruthy()
+      expect(host.textContent).toContain('操作未能完成，请稍后重试。')
+      expect(host.textContent).not.toContain('internal_error:')
+      expect(unhandled).toHaveLength(0)
+
+      // 再点一次，这次成功，弹窗关闭
+      await act(async () => {
+        ;(host.querySelector('[data-testid="confirm-ok"]') as HTMLElement).click()
+        await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
+      })
+      expect(host.querySelector('[data-testid="confirm-ok"]')).toBeFalsy()
+      expect(onDelete).toHaveBeenCalledTimes(2)
+      expect(onDelete).toHaveBeenNthCalledWith(2, 'ticket-api')
+    } finally {
+      window.removeEventListener('unhandledrejection', onUnhandled)
+    }
+  })
+
+  it('clears a previous delete error when canceling and opening the menu again', async () => {
+    const onDelete = vi.fn()
+      .mockRejectedValueOnce(new ApiError(500, 'internal_error', 'x'))
+      .mockResolvedValueOnce(undefined)
+    await render({ kind: 'openapi', rows, loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete })
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')].find((i) => i.textContent!.includes('删除'))!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      ;(host.querySelector('[data-testid="confirm-ok"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(host.textContent).toContain('操作未能完成，请稍后重试。')
+    // 取消后错误消失
+    await act(async () => {
+      ;(host.querySelector('[data-testid="confirm-cancel"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(host.textContent).not.toContain('操作未能完成，请稍后重试。')
+    // 再次发起删除，错误已被清空
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')].find((i) => i.textContent!.includes('删除'))!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(host.textContent).not.toContain('操作未能完成，请稍后重试。')
+    await act(async () => {
+      ;(host.querySelector('[data-testid="confirm-ok"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(host.querySelector('[data-testid="confirm-ok"]')).toBeFalsy()
+  })
+
+  it('calls onEdit with the row id from the edit menu item', async () => {
+    const onEdit = vi.fn()
+    await render({ kind: 'openapi', rows, loading: false, loadError: null, onCreate: vi.fn(), onEdit, onDelete: vi.fn() })
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')].find((i) => i.textContent!.includes('编辑'))!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(onEdit).toHaveBeenCalledWith('ticket-api')
   })
 })

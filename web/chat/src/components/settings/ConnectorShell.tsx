@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge, Button, Card, ConfirmDialog, DropdownMenu, EmptyState, PageHeader } from '../ui'
-import { CONNECTORS, permissionSummary } from '../../strings'
+import { CONNECTORS, connectorErrorText, permissionSummary } from '../../strings'
 import type { ConnectorKind } from '../../pages/connectorForms/types'
 
 export interface ConnectorRowData {
@@ -25,6 +25,34 @@ export interface ConnectorShellProps {
 export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdit, onDelete }: ConnectorShellProps) {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const beginDelete = (id: string) => {
+    setDeleteError(null)
+    setPendingDelete(id)
+  }
+
+  const cancelDelete = () => {
+    if (deleting) return
+    setPendingDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await onDelete(pendingDelete)
+      setPendingDelete(null)
+      setDeleteError(null)
+    } catch (e) {
+      // 删除失败：保留弹窗，由 Shell 统一呈现中文错误（父页面 onDelete 可直接 reject）。
+      setDeleteError(connectorErrorText(e).title)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const isOpenapi = kind === 'openapi'
   const title = isOpenapi ? CONNECTORS.openapiTitle : CONNECTORS.pluginTitle
@@ -32,17 +60,6 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
   const addLabel = isOpenapi ? CONNECTORS.addOpenapi : CONNECTORS.addPlugin
   const emptyTitle = isOpenapi ? CONNECTORS.openapiEmptyTitle : CONNECTORS.pluginEmptyTitle
   const emptyDesc = isOpenapi ? CONNECTORS.openapiEmptyDesc : CONNECTORS.pluginEmptyDesc
-
-  const confirmDelete = async () => {
-    if (!pendingDelete) return
-    setDeleting(true)
-    try {
-      await onDelete(pendingDelete)
-      setPendingDelete(null)
-    } finally {
-      setDeleting(false)
-    }
-  }
 
   return (
     <div className="settings-panel">
@@ -76,7 +93,7 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
                     triggerLabel={`${row.id} 操作`}
                     items={[
                       { id: 'edit', label: CONNECTORS.menuEdit, onSelect: () => onEdit(row.id) },
-                      { id: 'delete', label: CONNECTORS.menuDelete, destructive: true, onSelect: () => setPendingDelete(row.id) },
+                      { id: 'delete', label: CONNECTORS.menuDelete, destructive: true, onSelect: () => beginDelete(row.id) },
                     ]}
                   />
                 </div>
@@ -93,7 +110,8 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
         body={CONNECTORS.deleteBody}
         confirmText={CONNECTORS.deleteOk}
         busy={deleting}
-        onCancel={() => setPendingDelete(null)}
+        error={deleteError}
+        onCancel={cancelDelete}
         onConfirm={() => void confirmDelete()}
       />
     </div>
