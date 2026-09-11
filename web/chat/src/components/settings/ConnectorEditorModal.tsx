@@ -38,6 +38,9 @@ export interface ConnectorEditorModalProps {
     loginNames: string[],
     approvalNames: string[],
   ) => Promise<void>
+  // 第一步连接信息真正保存成功时回调一次（失败不回调）；页面据此立即提示并
+  // 刷新列表，避免用户新建后直接跳过/关闭弹窗看不到新连接器。
+  onSavedInfo?: (id: string) => void
 }
 
 const EMPTY_INITIAL: ConnectorEditorInitial = {
@@ -148,6 +151,9 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       // 保留本次打开期间已勾选过的同名工具权限（I-1）
       setSelection(reselect(nextTools, fallback))
       setStep(2)
+      // 第一步已真正保存（连接器已创建/更新）：通知页面提示并刷新列表，
+      // 这样用户随后直接「暂不设置」或关闭弹窗也能看到新连接器。
+      props.onSavedInfo?.(result.id)
     } catch (e) {
       setFormError(props.formatError(e))
     } finally {

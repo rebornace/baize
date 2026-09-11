@@ -145,4 +145,51 @@ describe('OpenApiSettings page', () => {
     expect(second.spec_url).toBeUndefined()
     expect(second.import_format).toBeUndefined()
   })
+
+  it('refreshes the list and shows a success toast when skipping after step-1 save', async () => {
+    let created = false
+    const newConn = {
+      id: 'o1', type: 'openapi', base_url: 'https://api.example.com',
+      require_login: [], require_approval: [], tools: [{ name: 'ping' }],
+    }
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+      const u = String(url)
+      if (!init?.method && u.endsWith('/v0/tools')) {
+        return json({
+          tools: created
+            ? [{ name: 'ping', connector_id: 'o1', source: 'spec' }]
+            : [{ name: 'me', connector_id: 'ticket-api', source: 'spec' }],
+        })
+      }
+      if (!init?.method && u.includes('/v0/connectors/o1')) return json(newConn)
+      if (!init?.method && u.includes('/v0/connectors/ticket-api')) return json(conn)
+      if (init?.method === 'PUT' && u.includes('/v0/connectors/o1')) {
+        created = true
+        return json(newConn)
+      }
+      return json({})
+    })
+    await act(async () => { createRoot(host).render(<MemoryRouter><OpenApiSettings /></MemoryRouter>); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    const toolsGets = () => fetchMock.mock.calls.filter(
+      ([u, i]) => !(i as RequestInit | undefined)?.method && String(u).endsWith('/v0/tools'),
+    ).length
+    expect(toolsGets()).toBe(1)
+
+    await act(async () => { btn('接入业务系统').click(); await new Promise((r) => setTimeout(r, 0)) })
+    const textInputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(textInputs[0], 'o1')
+    await setValue(textInputs[1], 'https://api.example.com')
+    await setValue(textInputs[2], 'https://api.example.com/openapi.json')
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(4)
+    expect(host.textContent).toContain('工具权限')
+
+    // 第一步已保存成功：点「暂不设置」关闭弹窗，也要提示并刷新列表。
+    await act(async () => { btn('暂不设置').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(5)
+    expect(host.textContent).toContain('已保存')
+    expect(toolsGets()).toBeGreaterThanOrEqual(2)
+    expect(host.textContent).toContain('o1')
+  })
 })

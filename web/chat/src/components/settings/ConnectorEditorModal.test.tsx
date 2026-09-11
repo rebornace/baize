@@ -99,6 +99,30 @@ describe('ConnectorEditorModal step 1', () => {
     expect(host.textContent).toContain('工具权限')
     expect(host.textContent).toContain('ping')
   })
+
+  it('notifies onSavedInfo once with the new id after step-1 save succeeds', async () => {
+    const onSavedInfo = vi.fn()
+    await render({ kind: 'plugin', onSavedInfo })
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'p1')
+    await setValue(inputs[1], 'http://127.0.0.1:19090')
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    expect(onSavedInfo).toHaveBeenCalledTimes(1)
+    expect(onSavedInfo).toHaveBeenCalledWith('p1')
+  })
+
+  it('does not notify onSavedInfo when step-1 save fails', async () => {
+    const onSaveInfo = vi.fn(async () => { throw new Error('boom') })
+    const onSavedInfo = vi.fn()
+    await render({ kind: 'plugin', onSaveInfo, onSavedInfo, formatError: () => '保存失败' })
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'p1')
+    await setValue(inputs[1], 'http://127.0.0.1:19090')
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    expect(onSavedInfo).not.toHaveBeenCalled()
+  })
 })
 
 describe('ConnectorEditorModal step 2', () => {

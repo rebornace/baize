@@ -100,7 +100,8 @@ export function PluginSettings() {
       <ConnectorEditorModal kind="plugin" open={editor.open} editing={editor.editing} initial={editor.initial}
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
         formatError={(e) => connectorErrorText(e).title}
-        onSaveInfo={handleSaveInfo} onSavePermissions={handleSavePermissions} />
+        onSaveInfo={handleSaveInfo} onSavePermissions={handleSavePermissions}
+        onSavedInfo={(id) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` }); void load() }} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </>
   )

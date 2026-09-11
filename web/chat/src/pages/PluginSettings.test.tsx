@@ -69,4 +69,50 @@ describe('PluginSettings page', () => {
     expect(first.auth).toBeUndefined()
     expect(second.require_login).toEqual(['ping'])
   })
+
+  it('refreshes the list and shows a success toast when skipping after step-1 save', async () => {
+    let created = false
+    const newPlugin = {
+      id: 'p1', type: 'http', base_url: 'http://127.0.0.1:19090',
+      require_login: [], require_approval: [], tools: [{ name: 'ping' }],
+    }
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+      const u = String(url)
+      if (!init?.method && u.endsWith('/v0/tools')) {
+        return json({
+          tools: created
+            ? [{ name: 'ping', connector_id: 'p1', source: 'plugin' }]
+            : [{ name: 'ping', connector_id: 'legacy', source: 'plugin' }],
+        })
+      }
+      if (!init?.method && u.includes('/v0/connectors/p1')) return json(newPlugin)
+      if (!init?.method && u.includes('/v0/connectors/legacy')) return json(pluginConnector)
+      if (init?.method === 'PUT' && u.includes('/v0/connectors/p1')) {
+        created = true
+        return json(newPlugin)
+      }
+      return json({})
+    })
+    await act(async () => { createRoot(host).render(<MemoryRouter><PluginSettings /></MemoryRouter>); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    const toolsGets = () => fetchMock.mock.calls.filter(
+      ([u, i]) => !(i as RequestInit | undefined)?.method && String(u).endsWith('/v0/tools'),
+    ).length
+    expect(toolsGets()).toBe(1)
+
+    await act(async () => { btn('接入插件服务').click(); await new Promise((r) => setTimeout(r, 0)) })
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'p1')
+    await setValue(inputs[1], 'http://127.0.0.1:19090')
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(4)
+    expect(host.textContent).toContain('工具权限')
+
+    // 第一步已保存成功：点「暂不设置」关闭弹窗，也要提示并刷新列表。
+    await act(async () => { btn('暂不设置').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(5)
+    expect(host.textContent).toContain('已保存')
+    expect(toolsGets()).toBeGreaterThanOrEqual(2)
+    expect(host.textContent).toContain('p1')
+  })
 })
