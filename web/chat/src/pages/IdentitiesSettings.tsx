@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Users } from 'lucide-react'
 import {
   clearIdentities,
-  createIdentity,
   deleteIdentity,
   listIdentities,
   setDefaultIdentity,
   type IdentityView,
 } from '../api'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  PageHeader,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
 import { redactSensitive } from '../sensitive'
+import { ACCOUNTS, friendlyError, identitySourceLabel } from '../strings'
 import { uuid } from '../uuid'
 
 const CONV_KEY = 'baize.conversation_id'
@@ -18,19 +29,6 @@ function loadConversationId(): string {
   const id = `conv_${uuid()}`
   localStorage.setItem(CONV_KEY, id)
   return id
-}
-
-function sourceLabel(source: string): string {
-  switch (source) {
-    case 'login_capture':
-      return '登录捕获'
-    case 'env':
-      return '环境变量'
-    case 'manual':
-      return '手动'
-    default:
-      return source
-  }
 }
 
 function formatClaims(claims: Record<string, unknown> | undefined): string | null {
@@ -45,135 +43,141 @@ function formatClaims(claims: Record<string, unknown> | undefined): string | nul
 export function IdentitiesSettings() {
   const [conversationId] = useState(loadConversationId)
   const [identities, setIdentities] = useState<IdentityView[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-  const [pasteToken, setPasteToken] = useState('')
+  const [confirmClear, setConfirmClear] = useState(false)
+  const { toasts, push, dismiss } = useToast()
 
   const refresh = useCallback(async () => {
     try {
-      const list = await listIdentities(conversationId)
-      setIdentities(list)
-      setError(null)
-    } catch (err) {
+      setIdentities(await listIdentities(conversationId))
+    } catch (e) {
       setIdentities(null)
-      setError(err instanceof Error ? err.message : String(err))
+      const f = friendlyError(e)
+      push({ tone: 'error', title: ACCOUNTS.loadFailed, detail: f.detail ?? f.title })
     }
-  }, [conversationId])
+  }, [conversationId, push])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  const runAction = async (fn: () => Promise<void>) => {
-    setBusy(true)
-    setStatus('')
-    try {
-      await fn()
-      await refresh()
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const runAction = useCallback(
+    async (fn: () => Promise<void>, successTitle: string) => {
+      setBusy(true)
+      try {
+        await fn()
+        await refresh()
+        push({ tone: 'success', title: successTitle })
+      } catch (e) {
+        const f = friendlyError(e)
+        push({ tone: 'error', title: f.title, detail: f.detail })
+      } finally {
+        setBusy(false)
+      }
+    },
+    [refresh, push],
+  )
 
   const hasCaptured = (identities ?? []).some((i) => i.source !== 'env')
 
   return (
-    <div className="settings-section">
-      <h1 className="settings-heading">账号</h1>
-      <p className="settings-meta">会话 {conversationId}</p>
-      <label className="settings-field">
-        <span className="settings-field-label">粘贴用户 Token（跳过登录接口）</span>
-        <input
-          className="settings-input"
-          type="password"
-          value={pasteToken}
-          onChange={(e) => setPasteToken(e.target.value)}
-          disabled={busy}
-          placeholder="Bearer eyJ… 或 accessToken"
-          autoComplete="off"
+    <div className="settings-panel">
+      <PageHeader title={ACCOUNTS.title} description={ACCOUNTS.description} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+
+      {identities === null && <p className="settings-muted">加载中…</p>}
+      {identities !== null && identities.length === 0 && (
+        <EmptyState
+          icon={<Users size={28} aria-hidden="true" />}
+          title={ACCOUNTS.emptyTitle}
+          description={ACCOUNTS.emptyDesc}
         />
-        <button
-          type="button"
-          className="btn primary sm"
-          disabled={busy || !pasteToken.trim()}
-          onClick={() =>
-            void runAction(async () => {
-              await createIdentity(conversationId, pasteToken.trim())
-              setPasteToken('')
-              setStatus('已保存临时 Token')
-            })
-          }
-        >
-          保存 Token
-        </button>
-      </label>
-      {status && <p className="settings-error">{status}</p>}
-      {error && <p className="settings-error">无法加载账号：{error}</p>}
-      {!error && identities === null && <p className="settings-muted">加载中…</p>}
-      {!error && identities !== null && identities.length === 0 && (
-        <p className="settings-empty">暂无已登录账号</p>
       )}
-      {!error && identities !== null && identities.length > 0 && (
-        <ul className="settings-list accounts-list">
+
+      {identities !== null && identities.length > 0 && (
+        <div className="accounts-grid">
           {identities.map((idt) => {
             const claimsText = formatClaims(idt.claims_summary)
+            const scheme = idt.scheme ? `${idt.scheme} · ` : ''
             return (
-              <li key={idt.id} className="accounts-item">
-                <div className="accounts-main">
-                  <div className="accounts-title">{idt.label || idt.id}</div>
-                  <div className="accounts-detail">
-                    {idt.scheme ? idt.scheme : '—'} · {sourceLabel(idt.source)}
+              <Card
+                key={idt.id}
+                title={idt.label || idt.id}
+                description={`${scheme}${identitySourceLabel(idt.source)}`}
+                trailing={
+                  <div className="accounts-actions">
+                    {idt.is_default ? (
+                      <Badge tone="success">{ACCOUNTS.defaultBadge}</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          void runAction(() => setDefaultIdentity(conversationId, idt.id), ACCOUNTS.toastDefault)
+                        }
+                      >
+                        {ACCOUNTS.setDefault}
+                      </Button>
+                    )}
+                    {idt.source !== 'env' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="danger-text"
+                        disabled={busy}
+                        onClick={() =>
+                          void runAction(() => deleteIdentity(conversationId, idt.id), ACCOUNTS.toastLogout)
+                        }
+                      >
+                        {ACCOUNTS.logout}
+                      </Button>
+                    )}
                   </div>
-                  {claimsText && (
+                }
+              >
+                {claimsText && (
+                  <details className="accounts-claims-details">
+                    <summary>{ACCOUNTS.details}</summary>
                     <pre className="accounts-claims">{claimsText}</pre>
-                  )}
-                </div>
-                <div className="accounts-actions">
-                  {idt.is_default ? (
-                    <span className="settings-badge accounts-default">默认</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn ghost sm"
-                      disabled={busy}
-                      onClick={() =>
-                        void runAction(() => setDefaultIdentity(conversationId, idt.id))
-                      }
-                    >
-                      设为默认
-                    </button>
-                  )}
-                  {idt.source !== 'env' && (
-                    <button
-                      type="button"
-                      className="btn ghost sm danger-text"
-                      disabled={busy}
-                      onClick={() =>
-                        void runAction(() => deleteIdentity(conversationId, idt.id))
-                      }
-                    >
-                      退出
-                    </button>
-                  )}
-                </div>
-              </li>
+                  </details>
+                )}
+              </Card>
             )
           })}
-        </ul>
+        </div>
       )}
+
       {hasCaptured && (
-        <button
-          type="button"
-          className="btn ghost sm accounts-clear"
+        <Button
+          className="accounts-clear"
+          variant="ghost"
           disabled={busy}
-          onClick={() => void runAction(() => clearIdentities(conversationId))}
+          onClick={() => setConfirmClear(true)}
         >
-          清空捕获账号
-        </button>
+          {ACCOUNTS.clear}
+        </Button>
       )}
+
+      <ConfirmDialog
+        open={confirmClear}
+        danger
+        title={ACCOUNTS.clearConfirmTitle}
+        body={ACCOUNTS.clearConfirmBody}
+        confirmText={ACCOUNTS.clearConfirmOk}
+        busy={busy}
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() =>
+          void runAction(() => clearIdentities(conversationId), ACCOUNTS.toastCleared).then(() =>
+            setConfirmClear(false),
+          )
+        }
+      />
+
+      <details className="settings-developer">
+        <summary>{ACCOUNTS.developer}</summary>
+        <p className="settings-meta">会话 {conversationId}</p>
+      </details>
     </div>
   )
 }

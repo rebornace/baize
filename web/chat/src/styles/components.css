@@ -333,3 +333,40 @@
     min-height: 40px;
   }
 }
+
+/* ---- 账号页 ---- */
+.accounts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.accounts-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.accounts-claims-details {
+  margin-top: var(--space-2);
+}
+.accounts-claims-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.accounts-claims {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  overflow-x: auto;
+}
+.accounts-clear {
+  margin-top: var(--space-4);
+}
+.settings-developer {
+  margin-top: var(--space-6);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
