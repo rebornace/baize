@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -72,20 +73,31 @@ func WriteStoreOverlay(baseConfigPath string, overlay StoreOverlay) error {
 	return os.Rename(tmp, overlayPath)
 }
 
-// RedactDSN masks credentials in a DSN for display.
+// dsnKeywordPassword matches the libpq keyword/value DSN credential, e.g.
+// `password=secret`, `PASSWORD='s e'`, `password="p""w"`. It also matches a
+// password= entry inside a URL query string (?/&). The leading boundary and
+// the key's original casing are preserved on rewrite.
+var dsnKeywordPassword = regexp.MustCompile(`(?i)(^|[\s?&])(password)=(?:'[^']*'|"(?:[^"]|"")*"|[^\s&]+)`)
+
+// RedactDSN masks credentials in a DSN for display. It handles both the URL
+// form (postgres://user:secret@host/db) and the libpq keyword/value form
+// (host=... password=...). Unrecognized strings are returned unchanged.
 func RedactDSN(dsn string) string {
 	if dsn == "" {
 		return ""
 	}
-	// postgres://user:secret@host/db -> postgres://user:***@host/db
-	if i := strings.Index(dsn, "://"); i >= 0 {
-		rest := dsn[i+3:]
+	out := dsn
+	// URL form userinfo: postgres://user:secret@host/db -> postgres://user:***@host/db
+	if i := strings.Index(out, "://"); i >= 0 {
+		rest := out[i+3:]
 		if at := strings.Index(rest, "@"); at > 0 {
 			userInfo := rest[:at]
 			if colon := strings.Index(userInfo, ":"); colon >= 0 {
-				return dsn[:i+3] + userInfo[:colon+1] + "***" + rest[at:]
+				out = out[:i+3] + userInfo[:colon+1] + "***" + rest[at:]
 			}
 		}
 	}
-	return dsn
+	// Keyword/value form (also covers a password= in a URL query string):
+	// password=secret -> password=***
+	return dsnKeywordPassword.ReplaceAllString(out, "${1}${2}=***")
 }
