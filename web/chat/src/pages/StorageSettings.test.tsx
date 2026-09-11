@@ -101,16 +101,47 @@ describe('StorageSettings', () => {
     expect(body).toMatchObject({ driver: 'sqlite', acknowledge_no_migrate: true, restart: true })
   })
 
-  it('requires DSN for postgres', async () => {
-    await renderPage({ driver: 'postgres', drivers: ['sqlite', 'postgres'] })
-    await changeSelect('postgres')
+  it('requires DSN for postgres even when a DSN was previously saved', async () => {
+    await renderPage({
+      driver: 'postgres',
+      drivers: ['sqlite', 'postgres'],
+      dsn_redacted: 'postgres://u:***@db:5432/baize',
+    })
+    // 页面诚实提示已有连接串，但不存在「留空保留原 DSN」
+    expect(host.textContent).toContain('已保存：postgres://u:***@db:5432/baize')
     await act(async () => {
       ;(host.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
       await new Promise((r) => setTimeout(r, 0))
     })
     await fire(findBtn('保存并重启'))
-    // 未填 DSN：不进入确认、不发 PUT，提示需要 DSN
+    // DSN 留空：不进入确认、不发 PUT，行内提示必填（与 dsn_redacted 是否存在无关）
     expect(host.querySelector('[data-testid="confirm-ok"]')).toBeNull()
     expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
+    expect(host.textContent).toContain('使用 PostgreSQL 需要填写连接地址（DSN）')
+  })
+
+  it('PUTs the newly entered DSN for an already configured postgres', async () => {
+    await renderPage({
+      driver: 'postgres',
+      drivers: ['sqlite', 'postgres'],
+      dsn_redacted: 'postgres://u:***@db:5432/baize',
+    })
+    const nextDSN = 'host=db user=u password=p dbname=baize sslmode=disable'
+    await act(async () => {
+      const input = host.querySelector('input[type="password"]') as HTMLInputElement
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, nextDSN)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      ;(host.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await fire(findBtn('保存并重启'))
+    expect(host.querySelector('[data-testid="confirm-ok"]')).not.toBeNull()
+    await fire(host.querySelector('[data-testid="confirm-ok"]')!)
+    const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
+    expect(puts).toHaveLength(1)
+    const body = JSON.parse((puts[0][1] as RequestInit).body as string)
+    expect(body).toMatchObject({ driver: 'postgres', acknowledge_no_migrate: true, restart: true })
+    expect(body.dsn).toBe(nextDSN)
   })
 })

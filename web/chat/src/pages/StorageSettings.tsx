@@ -54,7 +54,8 @@ export function StorageSettings() {
       setFieldError(STORAGE.ackRequired)
       return
     }
-    if (driver === 'postgres' && !dsn.trim() && !info?.dsn_redacted) {
+    // 后端契约：postgres 下 DSN 去空白为空一律 400 dsn_required，无「留空保留原 DSN」能力
+    if (driver === 'postgres' && !dsn.trim()) {
       setFieldError(STORAGE.postgresRequiresDSN)
       return
     }
@@ -106,11 +107,18 @@ export function StorageSettings() {
           )}
 
           {driver === 'postgres' && (
-            <Field label={STORAGE.dsn} hint={STORAGE.dsnHint} error={fieldError ?? undefined}>
+            <Field
+              label={STORAGE.dsn}
+              hint={
+                info?.dsn_redacted
+                  ? `已保存：${info.dsn_redacted}，重新保存需再次填写完整连接串`
+                  : '连接串形如 host=... user=... password=... dbname=...，仅保存在服务端配置。'
+              }
+              error={fieldError ?? undefined}
+            >
               <Input
                 type="password"
                 value={dsn}
-                placeholder={info?.dsn_redacted || 'postgres://user:pass@host:5432/baize?sslmode=disable'}
                 onChange={(e) => { setDSN(e.target.value); setFieldError(null) }}
                 disabled={busy}
               />
