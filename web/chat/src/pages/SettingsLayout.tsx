@@ -53,10 +53,12 @@ export function SettingsLayout() {
             )
           })}
         </nav>
-        <ThemeToggle />
-        <Link to="/" className="settings-back">
-          返回聊天
-        </Link>
+        <div className="settings-nav-bottom">
+          <ThemeToggle />
+          <Link to="/" className="settings-back">
+            返回聊天
+          </Link>
+        </div>
       </aside>
       <main className="settings-main">
         <div className="app-mobile-bar">

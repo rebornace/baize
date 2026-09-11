@@ -14,7 +14,7 @@
   font-size: 0.875rem;
 }
 
-.settings-group { display: flex; flex-direction: column; gap: var(--space-3); }
+.settings-home-group { display: flex; flex-direction: column; gap: var(--space-3); }
 .settings-group-title {
   margin: 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em;
   color: var(--text-muted); text-transform: none;

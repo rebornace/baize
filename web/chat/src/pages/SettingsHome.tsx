@@ -89,7 +89,7 @@ export function SettingsHome() {
       {SETTINGS_GROUPS.map((group) => {
         const groupItems = items.filter((i) => i.group === group.id)
         return (
-          <section className="settings-group" key={group.id}>
+          <section className="settings-home-group" key={group.id}>
             <h2 className="settings-group-title">{group.label}</h2>
             <div className="settings-card-grid">{groupItems.map(renderCard)}</div>
           </section>
