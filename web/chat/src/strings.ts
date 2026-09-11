@@ -120,3 +120,72 @@ export function friendlyError(e: unknown): FriendlyError {
   const detail = e instanceof Error ? e.message : String(e ?? '')
   return { title: '出现了未知问题。', detail: detail || undefined }
 }
+
+// ---- 设置页：账号 ----
+export const ACCOUNTS = {
+  title: '账号',
+  description:
+    '这里显示助手当前已登录的业务系统账号。正常使用时，在对话中完成登录会自动出现在这里，无需手动填写。',
+  emptyTitle: '暂无已登录的业务账号',
+  emptyDesc: '在对话中登录业务系统后，会自动显示在这里。',
+  setDefault: '设为默认',
+  defaultBadge: '默认中',
+  logout: '退出',
+  clear: '清空登录账号',
+  clearConfirmTitle: '清空已登录的账号？',
+  clearConfirmBody: '将移除当前在对话中登录的全部业务账号（系统预设账号不受影响）。需要时可重新登录。',
+  clearConfirmOk: '清空',
+  toastLogout: '已退出账号',
+  toastDefault: '已设为默认',
+  toastCleared: '已清空登录账号',
+  loadFailed: '无法加载账号',
+  details: '详情',
+  developer: '开发者信息',
+} as const
+
+/** 身份来源 -> 人话；未知来源原值兜底，不吞信息。 */
+export function identitySourceLabel(source: string): string {
+  switch (source) {
+    case 'login_capture':
+      return '对话中登录'
+    case 'env':
+      return '系统预设'
+    case 'manual':
+      return '临时提供'
+    default:
+      return source
+  }
+}
+
+// ---- 设置页：数据存储 ----
+export const STORAGE = {
+  title: '数据存储',
+  description:
+    '选择助手数据的保存位置。更改并保存后服务会重启，且不会自动搬迁旧数据，请先自行备份。',
+  driverField: '保存方式',
+  sqlitePath: '数据库文件路径',
+  sqliteHint: '默认 ./data/baize.db；换成新路径不会自动搬迁已有数据。',
+  dsn: '连接地址（DSN）',
+  dsnHint: '形如 postgres://用户名:密码@主机:5432/库名，仅保存在服务端配置。',
+  ack: '我了解：切换存储不会自动迁移数据，旧库中的数据需自行处理',
+  ackRequired: '请先勾选确认：切换存储不会自动迁移数据',
+  postgresRequiresDSN: '使用 PostgreSQL 需要填写连接地址（DSN）',
+  saveRestart: '保存并重启',
+  saving: '正在保存…',
+  confirmRestartTitle: '保存并重启服务？',
+  confirmRestartBody:
+    '服务将立即重启，进行中的对话会中断；数据不会从旧存储自动迁移。确认继续？',
+  restarting: '正在重启…',
+  developer: '技术信息',
+} as const
+
+const DRIVER_LABELS: Record<string, string> = {
+  sqlite: '本地文件（SQLite）',
+  postgres: 'PostgreSQL 数据库',
+  memory: '内存（重启即清空，仅试用）',
+}
+
+/** 存储驱动 -> 人话选项；未知驱动原值兜底。提交值仍用英文 driver。 */
+export function driverLabel(driver: string): string {
+  return DRIVER_LABELS[driver] ?? driver
+}
