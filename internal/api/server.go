@@ -846,6 +846,20 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	// for HTTP are handled inside connector.Apply. MCP connectors ignore auth.
 	var connectorAuth store.ConnectorAuth
 	if body.Type != "mcp" {
+		capture := store.CaptureAuth{}
+		if body.Auth.Capture != nil {
+			capture = store.CaptureAuth{
+				ToolNameGlob:   body.Auth.Capture.ToolNameGlob,
+				TokenJSONPaths: body.Auth.Capture.TokenJSONPaths,
+				LabelJSONPaths: body.Auth.Capture.LabelJSONPaths,
+				HeaderTemplate: body.Auth.Capture.HeaderTemplate,
+				DefaultScheme:  body.Auth.Capture.DefaultScheme,
+			}
+		} else if existing, err := s.Store.GetConnector(id); err == nil {
+			// 连接器页不再编辑 capture；省略时保留 Tools 页配置的登录捕获，
+			// 避免一次普通保存把本人登录链路清空。
+			capture = existing.Auth.Capture
+		}
 		connectorAuth = store.ConnectorAuth{
 			Mode: body.Auth.Mode,
 			Static: store.StaticAuth{
@@ -857,13 +871,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			VaultRef: store.VaultRefAuth{
 				Headers: body.Auth.VaultRef.Headers,
 			},
-			Capture: store.CaptureAuth{
-				ToolNameGlob:   body.Auth.Capture.ToolNameGlob,
-				TokenJSONPaths: body.Auth.Capture.TokenJSONPaths,
-				LabelJSONPaths: body.Auth.Capture.LabelJSONPaths,
-				HeaderTemplate: body.Auth.Capture.HeaderTemplate,
-				DefaultScheme:  body.Auth.Capture.DefaultScheme,
-			},
+			Capture: capture,
 		}
 	}
 
@@ -960,7 +968,7 @@ type authBody struct {
 	VaultRef struct {
 		Headers map[string]string `json:"headers"`
 	} `json:"vault_ref"`
-	Capture struct {
+	Capture *struct {
 		ToolNameGlob   string   `json:"tool_name_glob"`
 		TokenJSONPaths []string `json:"token_json_paths"`
 		LabelJSONPaths []string `json:"label_json_paths"`
