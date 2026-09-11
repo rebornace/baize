@@ -25,6 +25,9 @@ import './styles/components.css'
 import './styles/layout.css'
 import './styles/settings.css'
 import './style.css'
+import { initSidebarWidth } from './sidebarResize'
+
+initSidebarWidth()
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const { role } = useGate()

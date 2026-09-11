@@ -5,7 +5,6 @@
 }
 
 .chat-sidebar {
-  width: 240px;
   flex-shrink: 0;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
@@ -834,7 +833,6 @@
 }
 
 .settings-nav {
-  width: 200px;
   flex-shrink: 0;
   background: var(--sidebar);
   border-right: 1px solid var(--border);

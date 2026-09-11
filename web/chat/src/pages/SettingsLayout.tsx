@@ -1,6 +1,7 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { ThemeToggle } from '../components/ui'
+import { SidebarResizer } from '../components/SidebarResizer'
 import { useGate } from '../gateContext'
 import { OVERVIEW_ITEM, SETTINGS_GROUPS, visibleNavItems } from '../settingsNav'
 import { useDrawer } from '../useDrawer'
@@ -59,6 +60,7 @@ export function SettingsLayout() {
             返回聊天
           </Link>
         </div>
+        <SidebarResizer />
       </aside>
       <main className="settings-main">
         <div className="app-mobile-bar">

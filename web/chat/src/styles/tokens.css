@@ -10,6 +10,11 @@
   --border: #e2e5eb;
   --border-strong: #cfd5df;
 
+  /* 布局：侧栏统一宽度（聊天页/设置页共用，可被拖拽手柄覆盖） */
+  --sidebar-width: 240px;
+  --sidebar-min: 200px;
+  --sidebar-max: 420px;
+
   /* 文本 */
   --text: #1c1f26;
   --text-muted: #6b7280;

@@ -3,6 +3,54 @@
   display: none;
 }
 
+/* 桌面侧栏：统一宽度（可用右缘手柄拖拽），relative 作为手柄定位上下文 */
+.chat-sidebar,
+.settings-nav {
+  position: relative;
+  width: var(--sidebar-width, 240px);
+}
+
+/* 侧栏右缘拖拽手柄 */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+}
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background var(--t-fast, 120ms);
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after {
+  background: var(--accent);
+}
+.sidebar-resizer:focus-visible {
+  outline: none;
+}
+/* 拖拽进行中：全局禁用文本选择并保持列宽光标 */
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.sidebar-resizing .sidebar-resizer::after {
+  background: var(--accent);
+}
+
 @media (max-width: 1024px) {
   :root {
     --chat-max: 100%;
@@ -19,6 +67,9 @@
     transform: translateX(-100%);
     transition: transform var(--t);
     box-shadow: var(--shadow-3);
+  }
+  .sidebar-resizer {
+    display: none;
   }
   .app-with-drawer.drawer-open .chat-sidebar,
   .app-with-drawer.drawer-open .settings-nav {

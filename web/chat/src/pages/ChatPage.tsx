@@ -32,6 +32,7 @@ import {
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
 import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
+import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
 import { ToolCard } from '../components/ToolCard'
@@ -965,6 +966,7 @@ export function ChatPage() {
             </button>
           )}
         </div>
+        <SidebarResizer />
       </aside>
 
       <main className="chat-main">
