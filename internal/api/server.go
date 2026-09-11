@@ -719,7 +719,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		ImportFormat         string          `json:"import_format"`
 		BaseURL              string          `json:"base_url"`
 		ExecutionCallbackURL string          `json:"execution_callback_url"`
-		RequireApproval      []string        `json:"require_approval"`
+		RequireApproval      *[]string       `json:"require_approval"`
 		RequireLogin         *[]string       `json:"require_login"`
 		Auth                 authBody        `json:"auth"`
 		MCP                  store.MCPConfig `json:"mcp"`

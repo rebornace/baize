@@ -68,10 +68,11 @@ func TestMergeCatalogApprovalRewritesAndDropsMissingPlugin(t *testing.T) {
 		{Name: "a", ConnectorID: "c", Source: store.ToolSourceSpec, Method: "POST", Path: "/a"},
 		{Name: "b", ConnectorID: "c", Source: store.ToolSourceSpec, Method: "GET", Path: "/b"},
 	}
+	approval := []string{"a"}
 	out := MergeCatalog(MergeOpts{
 		Existing:        existing,
 		Discovered:      discovered,
-		RequireApproval: []string{"a"},
+		RequireApproval: &approval,
 	})
 	by := map[string]store.Tool{}
 	for _, r := range out {
@@ -85,6 +86,58 @@ func TestMergeCatalogApprovalRewritesAndDropsMissingPlugin(t *testing.T) {
 	}
 	if !by["a"].RequireApproval || by["b"].RequireApproval {
 		t.Fatalf("approval rewrite wrong: %+v", by)
+	}
+}
+
+// 显式空切片必须按整表重写处理：既有 RequireApproval=true 的工具也被清空，
+// 与 RequireLogin 的空切片语义对称（I-1）。
+func TestMergeCatalogEmptyApprovalListClearsExisting(t *testing.T) {
+	empty := []string{}
+	out := MergeCatalog(MergeOpts{
+		Existing: []store.Tool{
+			{Name: "a", ConnectorID: "c", Source: store.ToolSourceSpec, Enabled: true, RequireApproval: false},
+			{Name: "b", ConnectorID: "c", Source: store.ToolSourceSpec, Enabled: true, RequireApproval: true},
+		},
+		Discovered: []store.Tool{
+			{Name: "a", ConnectorID: "c", Source: store.ToolSourceSpec},
+			{Name: "b", ConnectorID: "c", Source: store.ToolSourceSpec},
+		},
+		RequireApproval: &empty,
+	})
+	by := map[string]store.Tool{}
+	for _, r := range out {
+		by[r.Name] = r
+	}
+	if by["a"].RequireApproval {
+		t.Fatalf("a.RequireApproval must stay false: %+v", by["a"])
+	}
+	if by["b"].RequireApproval {
+		t.Fatalf("b.RequireApproval must be cleared by explicit empty list: %+v", by["b"])
+	}
+}
+
+// RequireApproval 传 nil（省略）时，既有行上的审批位必须原样保留（I-1）。
+func TestMergeCatalogNilApprovalPreservesExisting(t *testing.T) {
+	out := MergeCatalog(MergeOpts{
+		Existing: []store.Tool{
+			{Name: "a", ConnectorID: "c", Source: store.ToolSourceSpec, Enabled: true, RequireApproval: false},
+			{Name: "b", ConnectorID: "c", Source: store.ToolSourceSpec, Enabled: true, RequireApproval: true},
+		},
+		Discovered: []store.Tool{
+			{Name: "a", ConnectorID: "c", Source: store.ToolSourceSpec},
+			{Name: "b", ConnectorID: "c", Source: store.ToolSourceSpec},
+		},
+		RequireApproval: nil,
+	})
+	by := map[string]store.Tool{}
+	for _, r := range out {
+		by[r.Name] = r
+	}
+	if by["a"].RequireApproval {
+		t.Fatalf("a.RequireApproval must stay false: %+v", by["a"])
+	}
+	if !by["b"].RequireApproval {
+		t.Fatalf("b.RequireApproval must be preserved when list is nil: %+v", by["b"])
 	}
 }
 

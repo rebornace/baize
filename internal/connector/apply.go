@@ -27,7 +27,7 @@ type ApplyInput struct {
 	ID, Type, Spec, BaseURL string
 	ImportFormat            string
 	ExecutionCallbackURL    string
-	RequireApproval         []string
+	RequireApproval         *[]string // nil=保留 catalog 行上既有 per-tool 审批位；非 nil=整表重写（空切片=全部取消审批）
 	RequireApprovalMutating bool
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
 	Auth                    store.ConnectorAuth

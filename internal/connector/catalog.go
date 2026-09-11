@@ -9,7 +9,7 @@ type MergeOpts struct {
 	Existing        []store.Tool
 	Discovered      []store.Tool
 	RequireLogin    *[]string
-	RequireApproval []string
+	RequireApproval *[]string
 }
 
 // MergeCatalog merges the persisted connector tool catalog with the freshly
@@ -28,7 +28,7 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 	}
 
 	loginNil := opts.RequireLogin == nil
-	approvalEmpty := len(opts.RequireApproval) == 0
+	approvalNil := opts.RequireApproval == nil
 
 	loginSet := map[string]bool{}
 	if !loginNil {
@@ -37,8 +37,10 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 		}
 	}
 	approvalSet := map[string]bool{}
-	for _, n := range opts.RequireApproval {
-		approvalSet[n] = true
+	if !approvalNil {
+		for _, n := range *opts.RequireApproval {
+			approvalSet[n] = true
+		}
 	}
 
 	var out []store.Tool
@@ -73,11 +75,14 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 	}
 
 	// Final rewrite pass for explicit login/approval lists.
-	if !loginNil || !approvalEmpty {
+	if !loginNil || !approvalNil {
 		for i, r := range out {
 			if r.Source == store.ToolSourceExtra {
 				if !loginNil {
 					out[i].RequireLogin = loginSet[r.Name]
+				}
+				if !approvalNil {
+					out[i].RequireApproval = approvalSet[r.Name]
 				}
 				continue
 			}
@@ -87,7 +92,7 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 			if !loginNil {
 				out[i].RequireLogin = loginSet[r.Name]
 			}
-			if !approvalEmpty {
+			if !approvalNil {
 				out[i].RequireApproval = approvalSet[r.Name]
 			}
 		}

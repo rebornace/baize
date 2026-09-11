@@ -1009,6 +1009,13 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		login := cfg.Connector.RequireLogin
 		requireLogin = &login
 	}
+	// 同 require_login：YAML 省略 require_approval 时传 nil，保留设置页勾选的
+	// per-tool 审批位；仅当 YAML 显式给出名单（含空数组=全部取消）时才传指针。
+	var requireApproval *[]string
+	if cfg.Connector.RequireApproval != nil {
+		approval := cfg.Connector.RequireApproval
+		requireApproval = &approval
+	}
 	_, _, err := connector.Apply(connector.ApplyInput{
 		Store:                   st,
 		Registry:                reg,
@@ -1018,7 +1025,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		Spec:                    cfg.Connector.Spec,
 		BaseURL:                 cfg.Connector.BaseURL,
 		ExecutionCallbackURL:    cfg.Connector.ExecutionCallbackURL,
-		RequireApproval:         cfg.Connector.RequireApproval,
+		RequireApproval:         requireApproval,
 		RequireApprovalMutating: cfg.Connector.RequireApprovalMutating,
 		RequireLogin:            requireLogin,
 		Auth: store.ConnectorAuth{
@@ -1064,12 +1071,15 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			ExecutionCallbackURL: c.ExecutionCallbackURL,
 			Auth:                 c.Auth,
 			MCP:                  c.MCP,
-			RequireApproval:      c.RequireApproval,
-			RequireLogin:         nil, // preserve persisted per-tool require_login
-			CallbackSigner:       cb.Signer,
-			CallbackSecret:       cb.Secret,
-			CallbackPublicBase:   cb.PublicBase,
-			CallbackTTL:          cb.TTL,
+			// 重放已持久化连接器时传 nil：保留 catalog 行上的 per-tool 审批位，
+			// 不把 connector 行上聚合的名单当成"整表重写"（merged 行的审批位
+			// 本来就从 store 行保留，不会丢数据）。
+			RequireApproval:    nil,
+			RequireLogin:       nil, // preserve persisted per-tool require_login
+			CallbackSigner:     cb.Signer,
+			CallbackSecret:     cb.Secret,
+			CallbackPublicBase: cb.PublicBase,
+			CallbackTTL:        cb.TTL,
 		})
 		if err != nil {
 			log.Printf("loadStoredConnectors: %s: %v", c.ID, err)

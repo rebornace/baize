@@ -1,8 +1,10 @@
 package api_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rebornace/baize/internal/api"
@@ -139,5 +141,76 @@ func TestPutConnectorExplicitCaptureOverrides(t *testing.T) {
 	got, _ := st.GetConnector("cap3")
 	if got.Auth.Capture.ToolNameGlob != "__none__" {
 		t.Fatalf("explicit capture not honored: %+v", got.Auth.Capture)
+	}
+}
+
+// 第二步保存工具权限时显式发送 require_approval: []（JSON 必须真正序列化为
+// []，而非缺省）必须清空第一步/之前保存的审批勾选，与 require_login 的
+// nil=保留、非 nil=整表重写语义对称（I-1）。
+func TestPutConnectorEmptyApprovalArrayClearsExisting(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	srv := apiNewServer(st, reg)
+	h := srv.Handler()
+
+	// 第一次 PUT：第一步连接信息 + 第二步审批名单（login 为 spec 中的 POST 工具）。
+	putConnectorJSON(t, h, "app1", map[string]any{
+		"type":             "openapi",
+		"spec":             writeLoginGetMeAPISpec(t),
+		"base_url":         upstream.URL,
+		"require_approval": []string{"login"},
+	})
+	first, err := st.GetConnector("app1")
+	if err != nil {
+		t.Fatalf("get after first PUT: %v", err)
+	}
+	if len(first.RequireApproval) != 1 || first.RequireApproval[0] != "login" {
+		t.Fatalf("first PUT require_approval=%v want [login]", first.RequireApproval)
+	}
+
+	// 第二次 PUT：第二步取消全部审批勾选。空切片必须编码为 JSON []，不能缺省。
+	body := map[string]any{
+		"type":             "openapi",
+		"base_url":         upstream.URL,
+		"require_approval": []string{},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"require_approval":[]`) {
+		t.Fatalf("test body must serialize empty array as [], got %s", raw)
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/v0/connectors/app1",
+		strings.NewReader(string(raw))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("second PUT status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	got, err := st.GetConnector("app1")
+	if err != nil {
+		t.Fatalf("get after second PUT: %v", err)
+	}
+	if len(got.RequireApproval) != 0 {
+		t.Fatalf("connector require_approval must be cleared, got %v", got.RequireApproval)
+	}
+	var found bool
+	for _, tl := range st.ListToolsByConnector("app1") {
+		if tl.Name == "login" {
+			found = true
+			if tl.RequireApproval {
+				t.Fatalf("login.RequireApproval must be false after explicit empty array, got %+v", tl)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("login tool missing from catalog")
 	}
 }
