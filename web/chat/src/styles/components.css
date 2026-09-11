@@ -402,3 +402,8 @@
   flex-direction: column;
   gap: var(--space-4);
 }
+
+/* 账号/存储设置页根容器：与历史 .settings-section 一致的阅读宽度，避免宽屏拉满 */
+.settings-panel {
+  max-width: 40rem;
+}
