@@ -995,63 +995,8 @@
   cursor: not-allowed;
 }
 
-.accounts-list .accounts-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.accounts-main {
-  min-width: 0;
-  flex: 1;
-}
-
-.accounts-title {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.accounts-detail {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  margin-top: 0.15rem;
-}
-
-.accounts-claims {
-  margin: 0.5rem 0 0;
-  padding: 0.45rem 0.55rem;
-  background: #f6f7f9;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.accounts-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.accounts-default {
-  background: rgba(0, 0, 0, 0.06);
-  color: var(--text-muted);
-}
-
 .danger-text {
   color: var(--danger);
-}
-
-.accounts-clear {
-  margin-top: 0.85rem;
 }
 
 .settings-form {

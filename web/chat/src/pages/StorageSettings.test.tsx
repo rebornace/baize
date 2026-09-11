@@ -76,7 +76,39 @@ describe('StorageSettings', () => {
   it('blocks submit until the acknowledgement is checked', async () => {
     await renderPage()
     await fire(findBtn('保存并重启'))
-    expect(host.textContent).toContain('请先勾选确认')
+    const ackNode = host.querySelector('[data-testid="storage-ack-error"]')
+    expect(ackNode).not.toBeNull()
+    expect(ackNode!.textContent).toContain('请先勾选确认')
+    expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
+  })
+
+  it('postgres: shows the ack inline error near the checkbox, not inside the DSN field', async () => {
+    await renderPage({ driver: 'postgres', drivers: ['sqlite', 'postgres'] })
+    await fire(findBtn('保存并重启'))
+    // 独立 ack 行内错误节点出现
+    const ackNode = host.querySelector('[data-testid="storage-ack-error"]')
+    expect(ackNode).not.toBeNull()
+    expect(ackNode!.textContent).toContain('请先勾选确认')
+    // DSN Field 的错误槽（ui-field-error）不承载 ack 文案
+    const dsnFieldErrors = [...host.querySelectorAll('.ui-field-error')].map((n) => n.textContent)
+    expect(dsnFieldErrors.some((t) => t?.includes('请先勾选确认'))).toBe(false)
+    expect(dsnFieldErrors).toContain('使用 PostgreSQL 需要填写连接地址（DSN）')
+    // 仍不打开确认弹窗、不发 PUT
+    expect(host.querySelector('[data-testid="confirm-ok"]')).toBeNull()
+    expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
+  })
+
+  it('postgres: with ack checked and empty DSN, error is attached to the DSN field', async () => {
+    await renderPage({ driver: 'postgres', drivers: ['sqlite', 'postgres'] })
+    await act(async () => {
+      ;(host.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await fire(findBtn('保存并重启'))
+    expect(host.querySelector('[data-testid="storage-ack-error"]')).toBeNull()
+    const dsnFieldErrors = [...host.querySelectorAll('.ui-field-error')].map((n) => n.textContent)
+    expect(dsnFieldErrors).toContain('使用 PostgreSQL 需要填写连接地址（DSN）')
+    expect(host.querySelector('[data-testid="confirm-ok"]')).toBeNull()
     expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
   })
 

@@ -25,7 +25,8 @@ export function StorageSettings() {
   const [sqlitePath, setSQLitePath] = useState('./data/baize.db')
   const [dsn, setDSN] = useState('')
   const [ack, setAck] = useState(false)
-  const [fieldError, setFieldError] = useState<string | null>(null)
+  const [ackError, setAckError] = useState<string | null>(null)
+  const [dsnError, setDsnError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const { toasts, push, dismiss } = useToast()
@@ -50,16 +51,12 @@ export function StorageSettings() {
 
   function requestSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!ack) {
-      setFieldError(STORAGE.ackRequired)
-      return
-    }
-    // 后端契约：postgres 下 DSN 去空白为空一律 400 dsn_required，无「留空保留原 DSN」能力
-    if (driver === 'postgres' && !dsn.trim()) {
-      setFieldError(STORAGE.postgresRequiresDSN)
-      return
-    }
-    setFieldError(null)
+    // 两个错误来源分离：ack 行内错误对所有 driver 都展示；DSN 必填只挂 DSN Field
+    const missingAck = !ack
+    const missingDSN = driver === 'postgres' && !dsn.trim()
+    setAckError(missingAck ? STORAGE.ackRequired : null)
+    setDsnError(missingDSN ? STORAGE.postgresRequiresDSN : null)
+    if (missingAck || missingDSN) return
     setConfirmOpen(true)
   }
 
@@ -91,7 +88,7 @@ export function StorageSettings() {
       <Card>
         <form className="storage-form" onSubmit={requestSubmit}>
           <Field label={STORAGE.driverField}>
-            <Select value={driver} onChange={(e) => { setDriver(e.target.value); setFieldError(null) }} disabled={busy}>
+            <Select value={driver} onChange={(e) => { setDriver(e.target.value); setDsnError(null); setAckError(null) }} disabled={busy}>
               {drivers.map((d) => (
                 <option key={d} value={d}>
                   {driverLabel(d)}
@@ -114,12 +111,12 @@ export function StorageSettings() {
                   ? `已保存：${info.dsn_redacted}，重新保存需再次填写完整连接串`
                   : '连接串形如 host=... user=... password=... dbname=...，仅保存在服务端配置。'
               }
-              error={fieldError ?? undefined}
+              error={dsnError ?? undefined}
             >
               <Input
                 type="password"
                 value={dsn}
-                onChange={(e) => { setDSN(e.target.value); setFieldError(null) }}
+                onChange={(e) => { setDSN(e.target.value); setDsnError(null) }}
                 disabled={busy}
               />
             </Field>
@@ -129,12 +126,18 @@ export function StorageSettings() {
             <input
               type="checkbox"
               checked={ack}
-              onChange={(e) => { setAck(e.target.checked); setFieldError(null) }}
+              aria-invalid={ackError ? true : undefined}
+              aria-describedby={ackError ? 'storage-ack-error' : undefined}
+              onChange={(e) => { setAck(e.target.checked); setAckError(null) }}
               disabled={busy}
             />
             <span>{STORAGE.ack}</span>
           </label>
-          {fieldError && driver !== 'postgres' && <p className="ui-inline-error">{fieldError}</p>}
+          {ackError && (
+            <p className="ui-inline-error" id="storage-ack-error" data-testid="storage-ack-error">
+              {ackError}
+            </p>
+          )}
 
           <Button type="submit" variant="primary" disabled={busy}>
             {busy ? STORAGE.saving : STORAGE.saveRestart}

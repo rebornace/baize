@@ -166,7 +166,6 @@ export const STORAGE = {
   sqlitePath: '数据库文件路径',
   sqliteHint: '默认 ./data/baize.db；换成新路径不会自动搬迁已有数据。',
   dsn: '连接地址（DSN）',
-  dsnHint: '形如 postgres://用户名:密码@主机:5432/库名，仅保存在服务端配置。',
   ack: '我了解：切换存储不会自动迁移数据，旧库中的数据需自行处理',
   ackRequired: '请先勾选确认：切换存储不会自动迁移数据',
   postgresRequiresDSN: '使用 PostgreSQL 需要填写连接地址（DSN）',
