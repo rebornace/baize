@@ -227,6 +227,8 @@ export const CONNECTORS = {
   fmtSwagger2: 'Swagger 2',
   fmtPostman: 'Postman 合集',
   specFileChosen: (name: string) => `已选择文件：${name}`,
+  specRemoveFile: '移除已选文件',
+  specReadFailed: '读取文件失败',
   permsIntro:
     '勾选「需本人登录」后，每位运营用自己的账号访问，权限互不混用；不勾则任何人都能直接调用此工具。',
   permLogin: '使用前需本人登录',

@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useState } from 'react'
+import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { Button, Field, Input, Modal, Select } from '../ui'
 import { CONNECTORS } from '../../strings'
 import { validateConnection } from '../../pages/connectorForms/validate'
@@ -44,8 +44,29 @@ const EMPTY_INITIAL: ConnectorEditorInitial = {
   id: '', baseUrl: '', tools: [], loginNames: [], approvalNames: [],
 }
 
+interface NamedTool {
+  name: string
+}
+
+/**
+ * 重建第 2 步的权限选择：保留 prev 中同名工具已有的勾选，
+ * 仅对新出现的工具使用 fallback（编辑回显 / 新建全不勾）。
+ */
+const reselect = (tools: NamedTool[], fallback: PermissionSelection) =>
+  (prev: PermissionSelection): PermissionSelection => {
+    const out: PermissionSelection = {}
+    for (const t of tools) {
+      out[t.name] = prev[t.name] ?? fallback[t.name] ?? { login: false, approval: false }
+    }
+    return out
+  }
+
 export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const { kind, open, editing, initial = EMPTY_INITIAL } = props
+  // 父级可能渲染期内联传入新的 initial 对象；重置只允许在 open 变 true 时发生一次，
+  // 故用 ref 读最新值、effect 仅依赖 open（I-3）。
+  const initialRef = useRef(initial)
+  initialRef.current = initial
   const [step, setStep] = useState<1 | 2>(1)
   const [id, setId] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
@@ -61,9 +82,10 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
 
   useEffect(() => {
     if (!open) return
+    const init = initialRef.current
     setStep(1)
-    setId(initial.id)
-    setBaseUrl(initial.baseUrl)
+    setId(init.id)
+    setBaseUrl(init.baseUrl)
     setImportFormat('auto')
     setSpecContent(null)
     setSpecFileName(null)
@@ -71,9 +93,9 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setFieldErrors({})
     setFormError(null)
     setSaving(false)
-    setTools(initial.tools)
-    setSelection(selectionFromLists(initial.tools, initial.loginNames, initial.approvalNames))
-  }, [open, initial])
+    setTools(init.tools)
+    setSelection(selectionFromLists(init.tools, init.loginNames, init.approvalNames))
+  }, [open])
 
   if (!open) return null
 
@@ -92,6 +114,9 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       setSpecFileName(file.name)
       setSpecUrl('')
       setFieldErrors((prev) => ({ ...prev, spec: undefined }))
+    }
+    reader.onerror = () => {
+      setFormError(CONNECTORS.specReadFailed)
     }
     reader.readAsText(file)
   }
@@ -116,12 +141,12 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         importFormat,
       })
       const nextTools = discovered.length > 0 ? discovered : initial.tools
+      const fallback = editing
+        ? selectionFromLists(nextTools, initial.loginNames, initial.approvalNames)
+        : emptySelection(nextTools)
       setTools(nextTools)
-      setSelection(
-        editing
-          ? selectionFromLists(nextTools, initial.loginNames, initial.approvalNames)
-          : emptySelection(nextTools),
-      )
+      // 保留本次打开期间已勾选过的同名工具权限（I-1）
+      setSelection(reselect(nextTools, fallback))
       setStep(2)
     } catch (e) {
       setFormError(props.formatError(e))
@@ -131,9 +156,17 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   }
 
   const gotoPermissions = () => {
+    const fallback = selectionFromLists(initial.tools, initial.loginNames, initial.approvalNames)
     setTools(initial.tools)
-    setSelection(selectionFromLists(initial.tools, initial.loginNames, initial.approvalNames))
+    // 保留本次打开期间已勾选过的同名工具权限（I-1）
+    setSelection(reselect(initial.tools, fallback))
     setStep(2)
+  }
+
+  const removeSpecFile = () => {
+    setSpecContent(null)
+    setSpecFileName(null)
+    setFieldErrors((prev) => ({ ...prev, spec: undefined }))
   }
 
   const finish = async () => {
@@ -196,11 +229,27 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
               <Field label={CONNECTORS.fieldSpec} hint={CONNECTORS.fieldSpecHint} error={fieldErrors.spec}>
                 <Input type="file" accept=".json,.yaml,.yml" disabled={saving} onChange={onSpecFile} />
               </Field>
-              {specFileName && <p className="ui-field-hint">{CONNECTORS.specFileChosen(specFileName)}</p>}
+              {specFileName && (
+                <p className="ui-field-hint connector-spec-file-row">
+                  <span>{CONNECTORS.specFileChosen(specFileName)}</span>
+                  <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={removeSpecFile}>
+                    {CONNECTORS.specRemoveFile}
+                  </Button>
+                </p>
+              )}
               <Field label={CONNECTORS.fieldSpecUrl}>
                 <Input value={specUrl} disabled={saving || specContent != null}
                   placeholder="https://api.example.com/openapi.json"
-                  onChange={(e) => { setSpecUrl(e.target.value); setFieldErrors((p) => ({ ...p, spec: undefined })) }} />
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setSpecUrl(v)
+                    // 双保险：改为填链接时清掉已选文件（I-2）
+                    if (v.trim() !== '') {
+                      setSpecContent(null)
+                      setSpecFileName(null)
+                    }
+                    setFieldErrors((p) => ({ ...p, spec: undefined }))
+                  }} />
               </Field>
               <Field label={CONNECTORS.fieldFormat}>
                 <Select value={importFormat} disabled={saving}
