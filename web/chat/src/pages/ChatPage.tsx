@@ -947,7 +947,7 @@ export function ChatPage() {
         <div className="chat-sidebar-bottom">
           <ThemeToggle />
           <Link
-            to={role === 'admin' ? '/settings/tools' : '/settings/identities'}
+            to={role === 'admin' ? '/settings' : '/settings/identities'}
             className="settings-link"
           >
             {role === 'admin' ? '设置' : '账号'}
