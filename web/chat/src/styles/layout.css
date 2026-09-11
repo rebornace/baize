@@ -80,7 +80,7 @@ body.sidebar-resizing .sidebar-resizer::after {
     position: fixed;
     inset: 0;
     z-index: calc(var(--z-drawer) - 1);
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--overlay-scrim);
     border: none;
   }
 }

@@ -29,6 +29,9 @@
   /* 焦点环 / 悬停中性态（明暗各一套，禁止裸 rgba） */
   --focus-ring: rgba(37, 99, 235, 0.35);
   --hover: rgba(16, 24, 40, 0.05);
+  /* 模态/抽屉/移动端遮罩；二维码等必须保持白底的素材（明暗都不翻转） */
+  --overlay-scrim: rgba(15, 23, 42, 0.45);
+  --qr-bg: #ffffff;
   /* 聊天内联代码 / 代码块底色 */
   --code-inline-bg: rgba(16, 24, 40, 0.06);
   --code-bg: #f6f7f9;
@@ -71,6 +74,8 @@
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.10);
   --shadow-3: 0 12px 32px rgba(16, 24, 40, 0.16);
+  /* 右侧抽屉的方向性投影 */
+  --shadow-drawer: -8px 0 24px rgba(16, 24, 40, 0.12);
 
   /* 字体 / 动效 / 层级 */
   --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -104,6 +109,8 @@ html[data-theme="dark"] {
   --on-accent: #ffffff;
   --focus-ring: rgba(96, 165, 250, 0.4);
   --hover: rgba(255, 255, 255, 0.06);
+  --overlay-scrim: rgba(0, 0, 0, 0.6);
+  --qr-bg: #ffffff;
   --code-inline-bg: rgba(255, 255, 255, 0.08);
   --code-bg: #1a1e25;
 
@@ -126,4 +133,5 @@ html[data-theme="dark"] {
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-drawer: -8px 0 24px rgba(0, 0, 0, 0.5);
 }
