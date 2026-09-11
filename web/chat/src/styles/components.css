@@ -407,3 +407,6 @@
 .settings-panel {
   max-width: 40rem;
 }
+.connector-list { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.connector-card-actions { display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-2); }
+.connector-perm { margin: var(--space-1) 0 0; color: var(--text-muted); font-size: 0.875rem; }
