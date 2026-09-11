@@ -370,3 +370,30 @@
   font-size: 0.82rem;
   color: var(--text-muted);
 }
+
+/* ---- 确认勾选行 / 行内错误 ---- */
+.ui-checkbox-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  font-size: 0.875rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.ui-checkbox-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+.ui-inline-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+.storage-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
