@@ -188,3 +188,91 @@ const DRIVER_LABELS: Record<string, string> = {
 export function driverLabel(driver: string): string {
   return DRIVER_LABELS[driver] ?? driver
 }
+
+// ---- 设置页：业务系统 / 插件（连接器） ----
+export const CONNECTORS = {
+  openapiTitle: '业务系统',
+  openapiDesc:
+    '上传一份接口文档，助手就能调用公司的订单、工单等业务系统。无需写代码。',
+  pluginTitle: '插件服务',
+  pluginDesc: '接入你们自行部署、按白泽约定提供能力的程序，助手即可使用其能力。',
+  addOpenapi: '接入业务系统',
+  addPlugin: '接入插件服务',
+  editOpenapi: '编辑业务系统',
+  editPlugin: '编辑插件服务',
+  openapiEmptyTitle: '还没有接入业务系统',
+  openapiEmptyDesc: '上传一份接口文档，助手就能调用订单、工单等系统。',
+  pluginEmptyTitle: '还没有接入插件服务',
+  pluginEmptyDesc: '接入自行部署、按白泽约定提供能力的程序后，助手即可使用其能力。',
+  menuEdit: '编辑',
+  menuDelete: '删除',
+  deleteTitle: '删除这个连接？',
+  deleteBody: '删除后，该连接提供的工具会从助手的能力中移除。',
+  deleteOk: '删除',
+  saved: '已保存',
+  deleted: '已删除',
+  toolsLink: '查看工具',
+  toolCount: (n: number) => `${n} 个工具`,
+  stepInfo: '连接信息',
+  stepPermissions: '工具权限',
+  fieldId: '连接编号',
+  fieldIdHint: '仅用于区分，保存后不可改；用小写字母、数字、- 或 _。',
+  fieldBaseUrl: '服务地址',
+  fieldSpec: '接口文档',
+  fieldSpecHint: '上传文件（.json / .yaml / .yml），或在下方填写文档链接，二选一。',
+  fieldSpecUrl: '文档链接',
+  fieldFormat: '接口文档格式',
+  fmtAuto: '自动识别',
+  fmtOpenapi3: 'OpenAPI 3',
+  fmtSwagger2: 'Swagger 2',
+  fmtPostman: 'Postman 合集',
+  specFileChosen: (name: string) => `已选择文件：${name}`,
+  permsIntro:
+    '勾选「需本人登录」后，每位运营用自己的账号访问，权限互不混用；不勾则任何人都能直接调用此工具。',
+  permLogin: '使用前需本人登录',
+  permApproval: '使用前需人工审批',
+  nextToPermissions: '下一步：设置工具权限',
+  save: '保存连接',
+  saving: '正在保存…',
+  skip: '暂不设置',
+  finish: '完成',
+  back: '上一步',
+  cancel: '取消',
+  errIdRequired: '请填写连接编号',
+  errIdPattern: '连接编号只能用小写字母开头，后跟小写字母、数字、- 或 _（最长 64 位）',
+  errBaseUrlRequired: '请填写服务地址',
+  errBaseUrlHttp: '服务地址需以 http:// 或 https:// 开头',
+  errSpecRequired: '请上传接口文档或填写文档链接',
+  errorGeneric: '操作未能完成，请稍后重试。',
+} as const
+
+const CONNECTOR_CODE_TITLES: Record<string, string> = {
+  invalid_spec: '接口文档无法解析，请确认是有效的 OpenAPI / Swagger / Postman 文档。',
+  invalid_spec_url: '文档链接格式不正确，请检查链接。',
+  spec_fetch_blocked: '服务器不允许抓取该地址的文档（地址被安全策略拦截）。',
+  spec_fetch_failed: '无法下载该文档链接，请确认地址可以访问。',
+  unsupported_import_format: '不支持的文档格式。',
+  invalid_plugin: '无法从该插件地址识别到可用能力，请检查服务是否正常。',
+  tool_conflict: '有工具与其它连接重名，请调整对方系统里的操作名称后重试。',
+  invalid_auth: '连接保存的凭证无效，请联系管理员通过配置处理。',
+}
+
+/** 把连接器相关异常翻译为 {title, detail?}；未知错误给出通用标题与可展开技术详情。 */
+export function connectorErrorText(e: unknown): FriendlyError {
+  if (e instanceof ApiError) {
+    const byCode = CONNECTOR_CODE_TITLES[e.code]
+    if (byCode) return { title: byCode }
+    if (/base_url is required/.test(e.message)) return { title: '请填写服务地址。' }
+    if (/spec is required/.test(e.message)) return { title: '请提供接口文档。' }
+    return { title: CONNECTORS.errorGeneric, detail: `${e.code}: ${e.message}` }
+  }
+  return friendlyError(e)
+}
+
+/** 连接卡上的一行权限摘要；两项皆空返回 null。 */
+export function permissionSummary(loginNames: string[], approvalNames: string[]): string | null {
+  const parts: string[] = []
+  if (loginNames.length > 0) parts.push(`${loginNames.length} 个工具需本人登录`)
+  if (approvalNames.length > 0) parts.push(`${approvalNames.length} 个需审批`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
