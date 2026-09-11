@@ -46,6 +46,20 @@ describe('openApiConnectorIds', () => {
       { name: 'c', connector_id: 'p1', source: 'plugin' },
     ] as any)).toEqual(['o1', 'o2'])
   })
+
+  it('dedupes connector ids, preserves first-seen order and excludes plugin/mcp', () => {
+    const ids = openApiConnectorIds([
+      { name: 'a', connector_id: 'o1', source: 'spec' },
+      { name: 'b', connector_id: 'o1', source: 'extra' },
+      { name: 'c', connector_id: 'o2', source: 'extra' },
+      { name: 'd', connector_id: 'o1', source: 'spec' },
+      { name: 'e', connector_id: 'p1', source: 'plugin' },
+      { name: 'f', connector_id: 'm1', source: 'mcp' },
+      { name: 'g', connector_id: 'o3', source: 'spec' },
+      { name: 'h', source: 'spec' },
+    ] as any)
+    expect(ids).toEqual(['o1', 'o2', 'o3'])
+  })
 })
 
 describe('OpenApiSettings page', () => {
@@ -77,5 +91,58 @@ describe('OpenApiSettings page', () => {
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'openapi', spec_url: 'https://api.example.com/openapi.json' })
     expect(first.auth).toBeUndefined()
+  })
+
+  it('two-step create sends spec_url on first PUT and permissions-only body on second PUT', async () => {
+    await renderOpenApi()
+    await act(async () => { btn('接入业务系统').click(); await new Promise((r) => setTimeout(r, 0)) })
+    const textInputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(textInputs[0], 'o1')
+    await setValue(textInputs[1], 'https://api.example.com')
+    await setValue(textInputs[2], 'https://api.example.com/openapi.json')
+    // 第一步：文档链接创建
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(4)
+    expect(host.textContent).toContain('工具权限')
+    // 第二步：me 勾选「需本人登录」，create_ticket 勾选「需审批」
+    await act(async () => {
+      ;(host.querySelector('input[data-tool="me"][data-flag="login"]') as HTMLInputElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      ;(host.querySelector('input[data-tool="create_ticket"][data-flag="approval"]') as HTMLInputElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await flush(2)
+    // 完成：触发第二个 PUT 与随后的列表重载
+    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(5)
+
+    const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
+    expect(puts).toHaveLength(2)
+    const first = JSON.parse((puts[0][1] as RequestInit).body as string)
+    const second = JSON.parse((puts[1][1] as RequestInit).body as string)
+
+    // 第一步：连接信息 + 文档链接，不带 auth / spec_content
+    expect(first).toMatchObject({
+      type: 'openapi',
+      base_url: 'https://api.example.com',
+      spec_url: 'https://api.example.com/openapi.json',
+    })
+    expect(first.auth).toBeUndefined()
+    expect(first.spec_content).toBeUndefined()
+
+    // 第二步：仅权限与服务地址，不带 auth / 任何 spec 字段 / import_format
+    expect(second).toMatchObject({
+      type: 'openapi',
+      base_url: 'https://api.example.com',
+      require_login: ['me'],
+      require_approval: ['create_ticket'],
+    })
+    expect(second.auth).toBeUndefined()
+    expect(second.spec).toBeUndefined()
+    expect(second.spec_content).toBeUndefined()
+    expect(second.spec_url).toBeUndefined()
+    expect(second.import_format).toBeUndefined()
   })
 })
