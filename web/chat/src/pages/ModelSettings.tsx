@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Cpu } from 'lucide-react'
 import {
   createModelProfile,
@@ -13,7 +13,11 @@ import {
   Button,
   Card,
   EmptyState,
+  Field,
+  Input,
+  Modal,
   PageHeader,
+  Select,
   ToastRegion,
   useToast,
 } from '../components/ui'
@@ -162,44 +166,33 @@ interface ProfileFieldsProps {
 
 function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
   return (
-    <>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldName}</span>
-        <input
-          className="settings-input"
+    <div className="connector-form">
+      <Field label={MODELS.fieldName} required>
+        <Input
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           disabled={busy}
           placeholder="例如：工作模型 / 视觉模型"
-          required
         />
-      </label>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldBaseUrl}</span>
-        <input
-          className="settings-input"
+      </Field>
+      <Field label={MODELS.fieldBaseUrl} required>
+        <Input
           value={form.baseUrl}
           onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
           disabled={busy}
           placeholder="https://api.openai.com/v1"
-          required
         />
-      </label>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldModel}</span>
-        <input
-          className="settings-input"
+      </Field>
+      <Field label={MODELS.fieldModel} required>
+        <Input
           value={form.model}
           onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
           disabled={busy}
           placeholder="gpt-4o"
-          required
         />
-      </label>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldApiKey}</span>
-        <input
-          className="settings-input"
+      </Field>
+      <Field label={MODELS.fieldApiKey}>
+        <Input
           type="password"
           value={form.apiKey}
           onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
@@ -207,51 +200,12 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           placeholder={isEdit ? '留空则不修改' : '留空则使用环境变量'}
           autoComplete="off"
         />
-      </label>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldApiKeyEnv}</span>
-        <input
-          className="settings-input"
-          value={form.apiKeyEnv}
-          onChange={(e) => setForm((f) => ({ ...f, apiKeyEnv: e.target.value }))}
-          disabled={busy}
-          placeholder="OPENAI_API_KEY"
-        />
-      </label>
-      <label className="settings-checkbox">
-        <input
-          type="checkbox"
-          checked={form.supportsVision}
-          onChange={(e) => setForm((f) => ({ ...f, supportsVision: e.target.checked }))}
-          disabled={busy}
-        />
-        {MODELS.fieldVision}
-      </label>
-      <label className="settings-checkbox">
-        <input
-          type="checkbox"
-          checked={form.disableThinking}
-          onChange={(e) => setForm((f) => ({ ...f, disableThinking: e.target.checked }))}
-          disabled={busy}
-        />
-        {MODELS.fieldDisableThinking}（disable_thinking）
-      </label>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldContextTokens}（tokens，留空/0 用默认 128000）</span>
-        <input
-          className="settings-input"
-          type="number"
-          min={1024}
-          step={1000}
-          value={form.contextTokens}
-          onChange={(e) => setForm((f) => ({ ...f, contextTokens: Number(e.target.value) }))}
-          disabled={busy}
-        />
-      </label>
-      <label className="settings-field">
-        <span className="settings-field-label">{MODELS.fieldTier}</span>
-        <select
-          className="settings-input"
+      </Field>
+      <Field
+        label={MODELS.fieldTier}
+        hint="智能选择按对话难度在快速/标准/深度思考档位间选模型；图片消息只走勾选了「视觉」的模型。"
+      >
+        <Select
           value={form.tier}
           onChange={(e) =>
             setForm((f) => ({ ...f, tier: e.target.value as ProfileFormState['tier'] }))
@@ -263,12 +217,48 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
               {o.label}
             </option>
           ))}
-        </select>
-        <small className="settings-muted">
-          智能选择按对话难度在快速/标准/深度思考档位间选模型；图片消息只走勾选了「视觉」的模型。
-        </small>
-      </label>
-    </>
+        </Select>
+      </Field>
+      <details className="settings-advanced">
+        <summary>{MODELS.advanced}</summary>
+        <label className="ui-checkbox-row">
+          <input
+            type="checkbox"
+            checked={form.supportsVision}
+            onChange={(e) => setForm((f) => ({ ...f, supportsVision: e.target.checked }))}
+            disabled={busy}
+          />
+          <span>{MODELS.fieldVision}</span>
+        </label>
+        <label className="ui-checkbox-row">
+          <input
+            type="checkbox"
+            checked={form.disableThinking}
+            onChange={(e) => setForm((f) => ({ ...f, disableThinking: e.target.checked }))}
+            disabled={busy}
+          />
+          <span>{MODELS.fieldDisableThinking}</span>
+        </label>
+        <Field label={MODELS.fieldContextTokens} hint="tokens，留空/0 用默认 128000">
+          <Input
+            type="number"
+            min={1024}
+            step={1000}
+            value={form.contextTokens}
+            onChange={(e) => setForm((f) => ({ ...f, contextTokens: Number(e.target.value) }))}
+            disabled={busy}
+          />
+        </Field>
+        <Field label={MODELS.fieldApiKeyEnv}>
+          <Input
+            value={form.apiKeyEnv}
+            onChange={(e) => setForm((f) => ({ ...f, apiKeyEnv: e.target.value }))}
+            disabled={busy}
+            placeholder="OPENAI_API_KEY"
+          />
+        </Field>
+      </details>
+    </div>
   )
 }
 
@@ -335,45 +325,6 @@ export function ModelProfileList({
   )
 }
 
-export interface ModelProfileFormProps {
-  form: ProfileFormState
-  setForm: (updater: (f: ProfileFormState) => ProfileFormState) => void
-  busy: boolean
-  isEdit: boolean
-  title: string
-  submitLabel: string
-  onSubmit: (e: FormEvent) => void
-  onCancel?: () => void
-}
-
-export function ModelProfileForm({
-  form,
-  setForm,
-  busy,
-  isEdit,
-  title,
-  submitLabel,
-  onSubmit,
-  onCancel,
-}: ModelProfileFormProps) {
-  return (
-    <form className="settings-form" onSubmit={onSubmit}>
-      <h3 className="settings-subheading">{title}</h3>
-      <ProfileFields form={form} setForm={setForm} busy={busy} isEdit={isEdit} />
-      <div className="settings-toolbar">
-        <button type="submit" className="btn primary sm" disabled={busy}>
-          {submitLabel}
-        </button>
-        {onCancel && (
-          <button type="button" className="btn ghost sm" disabled={busy} onClick={onCancel}>
-            {MODELS.cancel}
-          </button>
-        )}
-      </div>
-    </form>
-  )
-}
-
 export function ModelSettings() {
   const { role } = useGate()
   const readOnly = role !== 'admin'
@@ -382,9 +333,12 @@ export function ModelSettings() {
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [createForm, setCreateForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
+  const [form, setForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const modalOpen = editingId != null
+  const isCreate = editingId === CREATE_ID
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -405,57 +359,70 @@ export function ModelSettings() {
     void load()
   }, [load])
 
+  const closeEditor = () => {
+    if (busy) return
+    setEditingId(null)
+    setForm(EMPTY_PROFILE_FORM)
+    setFormError(null)
+  }
+
   const openCreate = () => {
     setEditingId(CREATE_ID)
-    setCreateForm(EMPTY_PROFILE_FORM)
-  }
-
-  const closeEditor = () => {
-    setEditingId(null)
-    setCreateForm(EMPTY_PROFILE_FORM)
-    setEditForm(EMPTY_PROFILE_FORM)
-  }
-
-  const onCreate = async (e: FormEvent) => {
-    e.preventDefault()
-    const built = buildCreatePayload(createForm)
-    if (!built.ok) {
-      push({ tone: 'error', title: built.message })
-      return
-    }
-    setBusy(true)
-    try {
-      await createModelProfile(built.payload)
-      closeEditor()
-      push({ tone: 'success', title: MODELS.toastSaved })
-      await load()
-    } catch (err) {
-      const f = modelErrorText(err)
-      push({ tone: 'error', title: f.title, detail: f.detail })
-    } finally {
-      setBusy(false)
-    }
+    setForm(EMPTY_PROFILE_FORM)
+    setFormError(null)
   }
 
   const startEdit = (p: ModelProfile) => {
     setEditingId(p.id)
-    setEditForm(profileToForm(p))
+    setForm(profileToForm(p))
+    setFormError(null)
   }
 
-  const onSaveEdit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!editingId || editingId === CREATE_ID) return
+  const save = async () => {
+    setFormError(null)
+    if (isCreate) {
+      const built = buildCreatePayload(form)
+      if (!built.ok) {
+        setFormError(built.message)
+        return
+      }
+      setBusy(true)
+      try {
+        await createModelProfile(built.payload)
+        setEditingId(null)
+        setForm(EMPTY_PROFILE_FORM)
+        setFormError(null)
+        push({ tone: 'success', title: MODELS.toastSaved })
+        await load()
+      } catch (err) {
+        const f = modelErrorText(err)
+        setFormError(f.detail ? `${f.title} ${f.detail}` : f.title)
+        push({ tone: 'error', title: f.title, detail: f.detail })
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    if (!editingId) return
     const original = profiles.find((p) => p.id === editingId)
     if (!original) return
-    const payload = buildPatchPayload(editForm, original)
+    const name = form.name.trim()
+    if (!name) {
+      setFormError(MODELS.errNameRequired)
+      return
+    }
+    const payload = buildPatchPayload(form, original)
     setBusy(true)
     try {
       await updateModelProfile(editingId, payload)
-      closeEditor()
+      setEditingId(null)
+      setForm(EMPTY_PROFILE_FORM)
+      setFormError(null)
       push({ tone: 'success', title: MODELS.toastSaved })
       await load()
     } catch (err) {
       const f = modelErrorText(err)
+      setFormError(f.detail ? `${f.title} ${f.detail}` : f.title)
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
@@ -473,7 +440,11 @@ export function ModelSettings() {
     setBusy(true)
     try {
       await deleteModelProfile(p.id)
-      if (editingId === p.id) closeEditor()
+      if (editingId === p.id) {
+        setEditingId(null)
+        setForm(EMPTY_PROFILE_FORM)
+        setFormError(null)
+      }
       push({ tone: 'success', title: MODELS.toastDeleted, detail: p.name })
       await load()
     } catch (err) {
@@ -491,6 +462,10 @@ export function ModelSettings() {
         {MODELS.add}
       </Button>
     )
+
+  const modalTitle = isCreate
+    ? MODELS.add
+    : `${MODELS.edit} ${profiles.find((p) => p.id === editingId)?.name ?? ''}`.trim()
 
   return (
     <div className="settings-panel settings-models">
@@ -517,37 +492,36 @@ export function ModelSettings() {
       {!loading && profiles.length > 0 && (
         <ModelProfileList
           profiles={profiles}
-          busy={busy || editingId != null}
+          busy={busy || modalOpen}
           readOnly={readOnly}
           onEdit={startEdit}
           onDelete={(target) => void onDelete(target)}
         />
       )}
 
-      {!readOnly && editingId === CREATE_ID && (
-        <ModelProfileForm
-          form={createForm}
-          setForm={setCreateForm}
-          busy={busy}
-          isEdit={false}
-          title="新建模型"
-          submitLabel="创建模型"
-          onSubmit={(e) => void onCreate(e)}
-          onCancel={closeEditor}
-        />
-      )}
-
-      {!readOnly && editingId != null && editingId !== CREATE_ID && (
-        <ModelProfileForm
-          form={editForm}
-          setForm={setEditForm}
-          busy={busy}
-          isEdit
-          title={`编辑 ${profiles.find((p) => p.id === editingId)?.name ?? ''}`}
-          submitLabel={MODELS.save}
-          onSubmit={(e) => void onSaveEdit(e)}
-          onCancel={closeEditor}
-        />
+      {!readOnly && (
+        <Modal
+          open={modalOpen}
+          title={modalTitle}
+          onClose={busy ? undefined : closeEditor}
+          footer={
+            <>
+              <Button variant="ghost" disabled={busy} onClick={closeEditor}>
+                {MODELS.cancel}
+              </Button>
+              <Button disabled={busy} onClick={() => void save()}>
+                {MODELS.save}
+              </Button>
+            </>
+          }
+        >
+          <ProfileFields form={form} setForm={setForm} busy={busy} isEdit={!isCreate} />
+          {formError && (
+            <p className="ui-inline-error" role="alert">
+              {formError}
+            </p>
+          )}
+        </Modal>
       )}
     </div>
   )

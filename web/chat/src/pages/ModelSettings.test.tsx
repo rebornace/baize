@@ -16,13 +16,18 @@ import { MODELS } from '../strings'
 import {
   buildCreatePayload,
   buildPatchPayload,
-  EMPTY_PROFILE_FORM,
-  ModelProfileForm,
   ModelProfileList,
   ModelSettings,
   profileToForm,
   type ProfileFormState,
 } from './ModelSettings'
+
+function setNativeValue(el: HTMLInputElement, value: string) {
+  const proto = Object.getPrototypeOf(el)
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+  desc?.set?.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+}
 
 const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>): ModelProfile => ({
   provider: 'openai_compatible',
@@ -365,44 +370,155 @@ describe('ModelSettings empty header dedupe', () => {
   })
 })
 
-describe('ModelProfileForm', () => {
-  it('create form hints that an empty key falls back to the environment and shows tier selector', () => {
-    const html = renderToStaticMarkup(
-      createElement(ModelProfileForm, {
-        form: EMPTY_PROFILE_FORM,
-        setForm: () => {},
-        busy: false,
-        isEdit: false,
-        title: '新建模型',
-        submitLabel: '创建模型',
-        onSubmit: () => {},
-      }),
+async function renderModelSettings(role: 'admin' | 'operator' = 'admin') {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  await act(async () => {
+    root.render(
+      createElement(
+        GateContext.Provider,
+        { value: { role, gateEnabled: true, operatorId: role } },
+        createElement(ModelSettings),
+      ),
     )
-    expect(html).toContain('留空则使用环境变量')
-    expect(html).toContain(MODELS.fieldTier)
-    expect(html).toContain('自动识别（按模型名）')
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+  })
+  return { host, root }
+}
+
+describe('ModelSettings create modal', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
-  it('edit form hints that an empty key means "keep unchanged"', () => {
-    const form: ProfileFormState = {
-      ...EMPTY_PROFILE_FORM,
-      name: 'p',
-      baseUrl: 'https://x/v1',
-      model: 'm',
-      apiKeyEnv: 'K',
-    }
-    const html = renderToStaticMarkup(
-      createElement(ModelProfileForm, {
-        form,
-        setForm: () => {},
-        busy: false,
-        isEdit: true,
-        title: '编辑 p',
-        submitLabel: '保存',
-        onSubmit: () => {},
-        onCancel: () => {},
-      }),
+  it('opens create modal with main fields; advanced collapsed by default', async () => {
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
+    const { host, root } = await renderModelSettings()
+    const addBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.add),
     )
-    expect(html).toContain('留空则不修改')
+    expect(addBtn).toBeTruthy()
+    await act(async () => {
+      addBtn!.click()
+    })
+    expect(host.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(host.textContent).toContain(MODELS.fieldBaseUrl)
+    expect(host.textContent).toContain(MODELS.fieldTier)
+    const keyInput = host.querySelector('[role="dialog"] input[type="password"]') as HTMLInputElement
+    expect(keyInput.placeholder).toBe('留空则使用环境变量')
+    const details = host.querySelector('details.settings-advanced') as HTMLDetailsElement | null
+    expect(details).toBeTruthy()
+    expect(details?.open).toBe(false)
+    expect(details?.textContent).toContain(MODELS.fieldDisableThinking)
+    const summary = details!.querySelector('summary')
+    await act(async () => {
+      summary!.click()
+    })
+    expect(details!.open).toBe(true)
+    root.unmount()
+    host.remove()
+  })
+
+  it('saves create via createModelProfile then closes dialog with toast', async () => {
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
+    const createSpy = vi.spyOn(api, 'createModelProfile').mockResolvedValue(
+      profile({ id: 'mp_new', name: '新模型' }),
+    )
+    const { host, root } = await renderModelSettings()
+    const addBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.add),
+    )
+    await act(async () => {
+      addBtn!.click()
+    })
+    const dialog = host.querySelector('[role="dialog"]')!
+    const inputs = [...dialog.querySelectorAll('input')] as HTMLInputElement[]
+    const nameInput = inputs.find((i) => i.getAttribute('placeholder')?.includes('工作模型'))!
+    const urlInput = inputs.find((i) => i.getAttribute('placeholder')?.includes('api.openai'))!
+    const modelInput = inputs.find((i) => i.getAttribute('placeholder') === 'gpt-4o')!
+    const keyInput = inputs.find((i) => i.getAttribute('type') === 'password')!
+    await act(async () => {
+      setNativeValue(nameInput, '新模型')
+      setNativeValue(urlInput, 'https://api.example.com/v1')
+      setNativeValue(modelInput, 'gpt-4o')
+      setNativeValue(keyInput, 'sk-test')
+    })
+    const saveBtn = [...dialog.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.save),
+    )
+    await act(async () => {
+      saveBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(createSpy).toHaveBeenCalled()
+    expect(host.querySelector('[role="dialog"]')).toBeNull()
+    expect(host.textContent).toContain(MODELS.toastSaved)
+    root.unmount()
+    host.remove()
+  })
+
+  it('shows validation error inside modal instead of only toast', async () => {
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
+    const { host, root } = await renderModelSettings()
+    const addBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.add),
+    )
+    await act(async () => {
+      addBtn!.click()
+    })
+    const dialog = host.querySelector('[role="dialog"]')!
+    const saveBtn = [...dialog.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.save),
+    )
+    await act(async () => {
+      saveBtn!.click()
+    })
+    expect(dialog.querySelector('.ui-inline-error')?.textContent).toBe(MODELS.errNameRequired)
+    expect(host.querySelector('[role="dialog"]')).toBeTruthy()
+    root.unmount()
+    host.remove()
+  })
+
+  it('opens edit modal and saves via updateModelProfile', async () => {
+    const existing = profile({ id: 'mp_1', name: '标准模型', api_key: 'sk-…1234' })
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([existing])
+    const updateSpy = vi.spyOn(api, 'updateModelProfile').mockResolvedValue({
+      ...existing,
+      name: '标准模型-改',
+    })
+    const { host, root } = await renderModelSettings()
+    const editBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.edit),
+    )
+    await act(async () => {
+      editBtn!.click()
+    })
+    const dialog = host.querySelector('[role="dialog"]')!
+    expect(dialog).toBeTruthy()
+    expect(host.textContent).toContain(MODELS.edit)
+    const keyInput = dialog.querySelector('input[type="password"]') as HTMLInputElement
+    expect(keyInput.placeholder).toBe('留空则不修改')
+    const nameInput = [...dialog.querySelectorAll('input')].find(
+      (i) => (i as HTMLInputElement).value === '标准模型',
+    ) as HTMLInputElement
+    await act(async () => {
+      setNativeValue(nameInput, '标准模型-改')
+    })
+    const saveBtn = [...dialog.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.save),
+    )
+    await act(async () => {
+      saveBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(updateSpy).toHaveBeenCalledWith('mp_1', expect.objectContaining({ name: '标准模型-改' }))
+    expect(host.querySelector('[role="dialog"]')).toBeNull()
+    expect(host.textContent).toContain(MODELS.toastSaved)
+    root.unmount()
+    host.remove()
   })
 })

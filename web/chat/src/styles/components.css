@@ -410,6 +410,20 @@
   font-size: 0.82rem;
   color: var(--text-muted);
 }
+.settings-advanced {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.settings-advanced > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.settings-advanced .ui-checkbox-row,
+.settings-advanced .ui-field {
+  margin-top: var(--space-3);
+}
 
 /* ---- 确认勾选行 / 行内错误 ---- */
 .ui-checkbox-row {
