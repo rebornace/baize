@@ -275,6 +275,37 @@ export function skillErrorText(e: unknown): FriendlyError {
   return friendlyError(e)
 }
 
+// ---- 设置页：助手功能 ----
+export const TOOLS = {
+  title: '助手功能',
+  description: '管理助手可调用的功能：启用/停用、登录与审批策略，以及对外导出设置。',
+  advanced: '高级',
+  addTool: '添加',
+  viewSchema: '查看参数说明',
+  captureToolGlob: '匹配哪些登录功能',
+  captureTokenPaths: '令牌字段路径（每行一条）',
+  captureLabelPaths: '显示名字段路径（每行一条）',
+  captureHeaderTemplate: '请求头模板',
+  captureDefaultScheme: '默认认证方案',
+  errGeneric: '操作未能完成，请稍后重试。',
+  errNotFound: '找不到该功能，可能已被删除。',
+  errInvalidRequest: '填写内容不完整或不正确，请检查后重试。',
+  errInternal: '服务暂时出了问题，请稍后重试。',
+} as const
+
+/** 把助手功能页相关异常翻译为人话标题；未知错误附技术详情。 */
+export function toolErrorText(e: unknown): FriendlyError {
+  if (e instanceof ApiError) {
+    if (e.code === 'not_found') return { title: TOOLS.errNotFound }
+    if (e.code === 'invalid_request') return { title: TOOLS.errInvalidRequest }
+    if (e.code === 'internal_error' || e.status >= 500) {
+      return { title: TOOLS.errInternal, detail: `${e.code}: ${e.message}` }
+    }
+    return { title: TOOLS.errGeneric, detail: `${e.code}: ${e.message}` }
+  }
+  return friendlyError(e)
+}
+
 // ---- 设置页：业务系统 / 插件（连接器） ----
 export const CONNECTORS = {
   openapiTitle: '业务系统',
