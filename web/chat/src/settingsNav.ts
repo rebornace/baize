@@ -57,7 +57,7 @@ const ITEMS: SettingsNavItem[] = [
   {
     to: '/settings/tools', label: '助手功能', group: 'assistant', icon: Wrench, operator: 'read',
     badge: 'tools',
-    desc: '助手能调用的功能开关，如查订单、建工单；可设置是否需你确认或登录',
+    desc: '管理助手能调用的各项功能；可设置调用前是否需你确认或登录',
   },
   {
     to: '/settings/skills', label: '技能', group: 'assistant', icon: Sparkles, operator: 'read',

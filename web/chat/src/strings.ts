@@ -327,6 +327,12 @@ export const MCP_EXPORTS = {
   deletedIdentity: (name: string) => `已删除身份 ${name}`,
   revokedKey: (name: string) => `已撤销密钥 ${name}`,
   copyFailed: '复制失败，请手动复制',
+  errGeneric: '操作未能完成，请稍后重试。',
+  errInternal: '服务暂时出了点问题，请稍后重试。',
+  errInvalidRequest: '提交的内容有误，请检查后重试。',
+  errIdentityRequired: '请选择要绑定的调用方身份。',
+  errIdentityNotFound: '调用方身份不存在或已被删除。',
+  errKeyNotFound: '密钥不存在或已被撤销。',
 } as const
 
 const CONNECTOR_CODE_TITLES: Record<string, string> = {
@@ -360,6 +366,31 @@ export function connectorErrorText(e: unknown): FriendlyError {
     if (/base_url is required/.test(e.message)) return { title: '请填写服务地址。' }
     if (/spec is required/.test(e.message)) return { title: '请提供接口文档。' }
     return { title: CONNECTORS.errorGeneric, detail: `${e.code}: ${e.message}` }
+  }
+  return friendlyError(e)
+}
+
+/** 把「对外提供能力」页身份/密钥接口异常翻译为人话标题；未知错误附技术详情。 */
+export function mcpExportErrorText(e: unknown): FriendlyError {
+  if (e instanceof ApiError) {
+    // 后端契约（internal/api/server_mcp_export.go）：
+    // 404 not_found: identity not found / key not found；
+    // 400 invalid_request: name is required / missing identity id /
+    //   identity_id is required / unknown identity_id / invalid json body；
+    // 500 internal_error: 底层错误原文。
+    if (e.code === 'not_found') {
+      if (/key/i.test(e.message)) return { title: MCP_EXPORTS.errKeyNotFound }
+      return { title: MCP_EXPORTS.errIdentityNotFound }
+    }
+    if (e.code === 'internal_error') {
+      return { title: MCP_EXPORTS.errInternal, detail: `${e.code}: ${e.message}` }
+    }
+    if (e.code === 'invalid_request') {
+      if (/name is required/.test(e.message)) return { title: MCP_EXPORTS.errNameRequired }
+      if (/identity/.test(e.message)) return { title: MCP_EXPORTS.errIdentityRequired }
+      return { title: MCP_EXPORTS.errInvalidRequest, detail: `${e.code}: ${e.message}` }
+    }
+    return { title: MCP_EXPORTS.errGeneric, detail: `${e.code}: ${e.message}` }
   }
   return friendlyError(e)
 }

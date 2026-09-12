@@ -26,7 +26,7 @@ import {
   useToast,
 } from '../components/ui'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
-import { MCP_EXPORTS } from '../strings'
+import { MCP_EXPORTS, mcpExportErrorText } from '../strings'
 
 export interface IdentityFormState {
   name: string
@@ -80,10 +80,6 @@ export function validateIdentityForm(
   }
 }
 
-function apiErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
 function isKeyActive(key: MCPExportKey): boolean {
   return key.revoked_at == null || key.revoked_at === ''
 }
@@ -133,7 +129,7 @@ export function McpExportSettings() {
         return ids[0]?.id ?? ''
       })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      setError(mcpExportErrorText(err).title)
     } finally {
       setLoading(false)
     }
@@ -180,7 +176,7 @@ export function McpExportSettings() {
       push({ tone: 'success', title: MCP_EXPORTS.savedIdentity })
       await load()
     } catch (err) {
-      setCreateFormError(apiErrorMessage(err))
+      setCreateFormError(mcpExportErrorText(err).title)
     } finally {
       setBusy(false)
     }
@@ -219,7 +215,7 @@ export function McpExportSettings() {
       push({ tone: 'success', title: MCP_EXPORTS.savedIdentity })
       await load()
     } catch (err) {
-      setEditFormError(apiErrorMessage(err))
+      setEditFormError(mcpExportErrorText(err).title)
     } finally {
       setBusy(false)
     }
@@ -245,7 +241,7 @@ export function McpExportSettings() {
       setTokenModal({ name: created.name, token: created.token })
       await load()
     } catch (err) {
-      setKeyFormError(apiErrorMessage(err))
+      setKeyFormError(mcpExportErrorText(err).title)
     } finally {
       setBusy(false)
     }
@@ -271,7 +267,7 @@ export function McpExportSettings() {
       await load()
     } catch (err) {
       // 弹窗保持打开，错误内联展示，允许重试。
-      setConfirmError(apiErrorMessage(err))
+      setConfirmError(mcpExportErrorText(err).title)
     } finally {
       setBusy(false)
     }
