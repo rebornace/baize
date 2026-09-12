@@ -1,15 +1,26 @@
 import { type ChangeEvent, useEffect, useRef, useState } from 'react'
-import { Button, Field, Input, Modal, Select } from '../ui'
+import { Button, Field, Input, Modal, Select, Textarea } from '../ui'
 import { CONNECTORS } from '../../strings'
+import type { ImportFormat, MCPConfig } from '../../api'
 import { validateConnection } from '../../pages/connectorForms/validate'
+import {
+  connectorToMcpForm,
+  validateMcp,
+  type McpFieldErrors,
+  type McpFormValues,
+} from '../../pages/connectorForms/mcp'
 import {
   emptySelection,
   selectionFromLists,
   toNameLists,
   toggleTool,
 } from '../../pages/connectorForms/permissions'
-import type { ConnectorKind, FieldErrors, PermissionSelection } from '../../pages/connectorForms/types'
-import type { ImportFormat } from '../../api'
+import type {
+  ConnectorKind,
+  FieldErrors,
+  PermissionSelection,
+  SavedConnection,
+} from '../../pages/connectorForms/types'
 
 export interface ConnectorEditorInitial {
   id: string
@@ -17,6 +28,11 @@ export interface ConnectorEditorInitial {
   tools: { name: string }[]
   loginNames: string[]
   approvalNames: string[]
+  mcp?: MCPConfig
+}
+
+const EMPTY_MCP_FORM: McpFormValues = {
+  id: '', transport: 'stdio', command: '', argsText: '', envText: '', url: '', headersText: '',
 }
 
 export interface ConnectorEditorModalProps {
@@ -26,21 +42,11 @@ export interface ConnectorEditorModalProps {
   initial: ConnectorEditorInitial
   onClose: () => void
   formatError: (e: unknown) => string
-  onSaveInfo: (input: {
-    id: string
-    baseUrl: string
-    spec?: { content?: string; url?: string }
-    importFormat: ImportFormat
-  }) => Promise<{ name: string }[]>
-  onSavePermissions: (
-    id: string,
-    baseUrl: string,
-    loginNames: string[],
-    approvalNames: string[],
-  ) => Promise<void>
-  // 第一步连接信息真正保存成功时回调一次（失败不回调）；页面据此立即提示并
-  // 刷新列表，避免用户新建后直接跳过/关闭弹窗看不到新连接器。
-  onSavedInfo?: (id: string) => void
+  onSaveInfo: (conn: SavedConnection) => Promise<{ name: string }[]>
+  onSavePermissions: (id: string, loginNames: string[], approvalNames: string[]) => Promise<void>
+  // 第一步连接信息真正保存成功时回调一次（失败不回调）；页面据此缓存连接级负载、
+  // 立即提示并刷新列表，避免用户新建后直接跳过/关闭弹窗看不到新连接器。
+  onSavedInfo?: (conn: SavedConnection) => void
 }
 
 const EMPTY_INITIAL: ConnectorEditorInitial = {
@@ -82,6 +88,11 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [tools, setTools] = useState<{ name: string }[]>([])
   const [selection, setSelection] = useState<PermissionSelection>({})
   const [saving, setSaving] = useState(false)
+  const [mcpForm, setMcpForm] = useState<McpFormValues>(EMPTY_MCP_FORM)
+  const [mcpErrors, setMcpErrors] = useState<McpFieldErrors>({})
+  const [savedConn, setSavedConn] = useState<SavedConnection | null>(null)
+  const isMcp = kind === 'mcp'
+  const isOpenapi = kind === 'openapi'
 
   useEffect(() => {
     if (!open) return
@@ -98,14 +109,18 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setSaving(false)
     setTools(init.tools)
     setSelection(selectionFromLists(init.tools, init.loginNames, init.approvalNames))
+    setMcpForm(init.mcp
+      ? connectorToMcpForm({ id: init.id, type: 'mcp', mcp: init.mcp })
+      : { ...EMPTY_MCP_FORM })
+    setMcpErrors({})
+    setSavedConn(null)
   }, [open])
 
   if (!open) return null
 
-  const isOpenapi = kind === 'openapi'
   const title = editing
-    ? (isOpenapi ? CONNECTORS.editOpenapi : CONNECTORS.editPlugin)
-    : (isOpenapi ? CONNECTORS.addOpenapi : CONNECTORS.addPlugin)
+    ? { openapi: CONNECTORS.editOpenapi, plugin: CONNECTORS.editPlugin, mcp: CONNECTORS.editMcp }[kind]
+    : { openapi: CONNECTORS.addOpenapi, plugin: CONNECTORS.addPlugin, mcp: CONNECTORS.addMcp }[kind]
 
   const onSpecFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -126,35 +141,61 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   }
 
   const saveInfo = async () => {
-    const hasSpec = specContent != null || specUrl.trim() !== ''
-    const result = validateConnection({ kind, id, baseUrl, hasSpec, editing })
-    if (!result.ok) {
-      setFieldErrors(result.fieldErrors)
-      return
+    let conn: SavedConnection | null = null
+    if (isMcp) {
+      // MCP 复用顶部共享「连接编号」输入（id state），传输字段在 mcpForm。
+      const result = validateMcp({ ...mcpForm, id })
+      if (!result.ok) {
+        setFieldErrors((p) => ({ ...p, id: result.fieldErrors.id }))
+        setMcpErrors({
+          command: result.fieldErrors.command,
+          url: result.fieldErrors.url,
+          env: result.fieldErrors.env,
+          headers: result.fieldErrors.headers,
+        })
+        return
+      }
+      setFieldErrors({})
+      setMcpErrors({})
+      conn = { kind: 'mcp', id: result.id, mcp: result.mcp }
+    } else {
+      const hasSpec = specContent != null || specUrl.trim() !== ''
+      const result = validateConnection({ kind, id, baseUrl, hasSpec, editing })
+      if (!result.ok) {
+        setFieldErrors(result.fieldErrors)
+        return
+      }
+      setFieldErrors({})
+      if (kind === 'openapi') {
+        conn = {
+          kind: 'openapi',
+          id: result.id,
+          baseUrl: result.baseUrl,
+          importFormat,
+          spec: hasSpec
+            ? { content: specContent ?? undefined, url: specContent == null ? specUrl.trim() : undefined }
+            : undefined,
+        }
+      } else {
+        conn = { kind: 'plugin', id: result.id, baseUrl: result.baseUrl }
+      }
     }
-    setFieldErrors({})
     setFormError(null)
     setSaving(true)
     try {
-      const discovered = await props.onSaveInfo({
-        id: result.id,
-        baseUrl: result.baseUrl,
-        spec: isOpenapi && hasSpec
-          ? { content: specContent ?? undefined, url: specContent == null ? specUrl.trim() : undefined }
-          : undefined,
-        importFormat,
-      })
+      const discovered = await props.onSaveInfo(conn)
       const nextTools = discovered.length > 0 ? discovered : initial.tools
       const fallback = editing
-        ? selectionFromLists(nextTools, initial.loginNames, initial.approvalNames)
+        ? selectionFromLists(nextTools, isMcp ? [] : initial.loginNames, initial.approvalNames)
         : emptySelection(nextTools)
       setTools(nextTools)
       // 保留本次打开期间已勾选过的同名工具权限（I-1）
       setSelection(reselect(nextTools, fallback))
+      setSavedConn(conn)
       setStep(2)
-      // 第一步已真正保存（连接器已创建/更新）：通知页面提示并刷新列表，
+      // 第一步已真正保存（连接器已创建/更新）：通知页面缓存连接级负载、提示并刷新列表，
       // 这样用户随后直接「暂不设置」或关闭弹窗也能看到新连接器。
-      props.onSavedInfo?.(result.id)
+      props.onSavedInfo?.(conn)
     } catch (e) {
       setFormError(props.formatError(e))
     } finally {
@@ -162,11 +203,29 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     }
   }
 
+  // 编辑态不重存第一步、直接去第二步：也要让页面拿到回传所需连接级字段。
+  const connFromInitial = (): SavedConnection => {
+    if (kind === 'mcp') return { kind: 'mcp', id: initial.id, mcp: initial.mcp ?? { transport: 'stdio' } }
+    if (kind === 'openapi') {
+      return { kind: 'openapi', id: initial.id, baseUrl: initial.baseUrl, importFormat: 'auto' }
+    }
+    return { kind: 'plugin', id: initial.id, baseUrl: initial.baseUrl }
+  }
+
   const gotoPermissions = () => {
-    const fallback = selectionFromLists(initial.tools, initial.loginNames, initial.approvalNames)
+    const fallback = selectionFromLists(
+      initial.tools,
+      isMcp ? [] : initial.loginNames,
+      initial.approvalNames,
+    )
     setTools(initial.tools)
     // 保留本次打开期间已勾选过的同名工具权限（I-1）
     setSelection(reselect(initial.tools, fallback))
+    if (!savedConn) {
+      const c = connFromInitial()
+      setSavedConn(c)
+      props.onSavedInfo?.(c)
+    }
     setStep(2)
   }
 
@@ -180,7 +239,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setSaving(true)
     try {
       const { loginNames, approvalNames } = toNameLists(selection)
-      await props.onSavePermissions(id.trim(), baseUrl.trim(), loginNames, approvalNames)
+      // MCP 无 login 位：恒传空 login 名单（页面据此省略 require_login）。
+      await props.onSavePermissions(id.trim(), isMcp ? [] : loginNames, approvalNames)
       props.onClose()
     } catch (e) {
       setFormError(props.formatError(e))
@@ -226,11 +286,63 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
             <Input value={id} disabled={editing || saving} placeholder="ticket-api"
               onChange={(e) => { setId(e.target.value); setFieldErrors((p) => ({ ...p, id: undefined })) }} />
           </Field>
-          <Field label={CONNECTORS.fieldBaseUrl} required error={fieldErrors.baseUrl}>
-            <Input value={baseUrl} disabled={saving}
-              placeholder={isOpenapi ? 'https://api.example.com' : 'http://127.0.0.1:19090'}
-              onChange={(e) => { setBaseUrl(e.target.value); setFieldErrors((p) => ({ ...p, baseUrl: undefined })) }} />
-          </Field>
+          {isMcp && (
+            <>
+              <Field label={CONNECTORS.fieldTransport} required>
+                <Select value={mcpForm.transport} disabled={saving}
+                  onChange={(e) => setMcpForm((f) => ({ ...f, transport: e.target.value === 'http' ? 'http' : 'stdio' }))}>
+                  <option value="stdio">{CONNECTORS.transportStdio}</option>
+                  <option value="http">{CONNECTORS.transportHttp}</option>
+                </Select>
+              </Field>
+              {mcpForm.transport === 'stdio' ? (
+                <>
+                  <Field label={CONNECTORS.fieldCommand} hint={CONNECTORS.fieldCommandHint} required error={mcpErrors.command}>
+                    <Input value={mcpForm.command} disabled={saving} placeholder="npx"
+                      onChange={(e) => {
+                        setMcpForm((f) => ({ ...f, command: e.target.value }))
+                        setMcpErrors((p) => ({ ...p, command: undefined }))
+                      }} />
+                  </Field>
+                  <Field label={CONNECTORS.fieldArgs} hint={CONNECTORS.fieldArgsHint}>
+                    <Textarea rows={3} value={mcpForm.argsText} disabled={saving} placeholder="@bytebase/dbhub"
+                      onChange={(e) => setMcpForm((f) => ({ ...f, argsText: e.target.value }))} />
+                  </Field>
+                  <Field label={CONNECTORS.fieldEnv} hint={CONNECTORS.fieldEnvHint} error={mcpErrors.env}>
+                    <Textarea rows={3} value={mcpForm.envText} disabled={saving} placeholder={'DSN=${DSN}'}
+                      onChange={(e) => {
+                        setMcpForm((f) => ({ ...f, envText: e.target.value }))
+                        setMcpErrors((p) => ({ ...p, env: undefined }))
+                      }} />
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field label={CONNECTORS.fieldUrl} required error={mcpErrors.url}>
+                    <Input value={mcpForm.url} disabled={saving} placeholder="https://mcp.example.com/mcp"
+                      onChange={(e) => {
+                        setMcpForm((f) => ({ ...f, url: e.target.value }))
+                        setMcpErrors((p) => ({ ...p, url: undefined }))
+                      }} />
+                  </Field>
+                  <Field label={CONNECTORS.fieldHeaders} hint={CONNECTORS.fieldHeadersHint} error={mcpErrors.headers}>
+                    <Textarea rows={3} value={mcpForm.headersText} disabled={saving} placeholder="Authorization=Bearer ${TOKEN}"
+                      onChange={(e) => {
+                        setMcpForm((f) => ({ ...f, headersText: e.target.value }))
+                        setMcpErrors((p) => ({ ...p, headers: undefined }))
+                      }} />
+                  </Field>
+                </>
+              )}
+            </>
+          )}
+          {!isMcp && (
+            <Field label={CONNECTORS.fieldBaseUrl} required error={fieldErrors.baseUrl}>
+              <Input value={baseUrl} disabled={saving}
+                placeholder={isOpenapi ? 'https://api.example.com' : 'http://127.0.0.1:19090'}
+                onChange={(e) => { setBaseUrl(e.target.value); setFieldErrors((p) => ({ ...p, baseUrl: undefined })) }} />
+            </Field>
+          )}
           {isOpenapi && (
             <>
               <Field label={CONNECTORS.fieldSpec} hint={CONNECTORS.fieldSpecHint} error={fieldErrors.spec}>
@@ -273,22 +385,24 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       ) : (
         <div className="connector-permissions">
           <h3 className="connector-perms-title">{CONNECTORS.stepPermissions}</h3>
-          <p className="connector-perms-intro">{CONNECTORS.permsIntro}</p>
+          <p className="connector-perms-intro">{isMcp ? CONNECTORS.permsIntroMcp : CONNECTORS.permsIntro}</p>
           {tools.length === 0 && <p className="settings-muted">暂无已识别工具。</p>}
           {tools.map((t) => (
             <div key={t.name} className="connector-perm-row">
               <span className="connector-perm-name">{t.name}</span>
-              <label className="ui-checkbox-row">
-                <input
-                  type="checkbox"
-                  data-tool={t.name}
-                  data-flag="login"
-                  checked={selection[t.name]?.login ?? false}
-                  disabled={saving}
-                  onChange={() => setSelection((s) => toggleTool(s, t.name, 'login'))}
-                />
-                <span>{CONNECTORS.permLogin}</span>
-              </label>
+              {!isMcp && (
+                <label className="ui-checkbox-row">
+                  <input
+                    type="checkbox"
+                    data-tool={t.name}
+                    data-flag="login"
+                    checked={selection[t.name]?.login ?? false}
+                    disabled={saving}
+                    onChange={() => setSelection((s) => toggleTool(s, t.name, 'login'))}
+                  />
+                  <span>{CONNECTORS.permLogin}</span>
+                </label>
+              )}
               <label className="ui-checkbox-row">
                 <input
                   type="checkbox"

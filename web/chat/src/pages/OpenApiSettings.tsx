@@ -10,6 +10,7 @@ import {
 import { ToastRegion, useToast } from '../components/ui'
 import { ConnectorShell, type ConnectorRowData } from '../components/settings/ConnectorShell'
 import { ConnectorEditorModal, type ConnectorEditorInitial } from '../components/settings/ConnectorEditorModal'
+import type { SavedConnection } from './connectorForms/types'
 import { CONNECTORS, connectorErrorText } from '../strings'
 
 export function openApiConnectorIds(tools: ToolInfo[]): string[] {
@@ -44,6 +45,8 @@ export function OpenApiSettings() {
   const [editor, setEditor] = useState<{ open: boolean; editing: boolean; initial: ConnectorEditorInitial }>({
     open: false, editing: false, initial: emptyInitial,
   })
+  // 缓存第一步的连接级负载：第二步 PUT 必须整表回传（后端每次 PUT 都重新探测）。
+  const [savedConn, setSavedConn] = useState<SavedConnection | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -66,18 +69,21 @@ export function OpenApiSettings() {
 
   useEffect(() => { void load() }, [load])
 
-  const openCreate = () => setEditor({ open: true, editing: false, initial: emptyInitial })
+  const openCreate = () => {
+    setSavedConn(null)
+    setEditor({ open: true, editing: false, initial: emptyInitial })
+  }
   const openEdit = (id: string) => {
     const c = connectors.find((x) => x.id === id)
     if (!c) return
-    setEditor({
-      open: true, editing: true,
-      initial: {
-        id: c.id, baseUrl: c.base_url ?? '',
-        tools: (c.tools ?? []).map((t) => ({ name: t.name })),
-        loginNames: c.require_login ?? [], approvalNames: c.require_approval ?? [],
-      },
-    })
+    const initial: ConnectorEditorInitial = {
+      id: c.id, baseUrl: c.base_url ?? '',
+      tools: (c.tools ?? []).map((t) => ({ name: t.name })),
+      loginNames: c.require_login ?? [], approvalNames: c.require_approval ?? [],
+    }
+    // 预构造连接级负载，使「直接进入工具权限」也能整表回传。
+    setSavedConn({ kind: 'openapi', id: c.id, baseUrl: c.base_url ?? '', importFormat: 'auto' })
+    setEditor({ open: true, editing: true, initial })
   }
 
   const handleDelete = async (id: string) => {
@@ -86,29 +92,26 @@ export function OpenApiSettings() {
     await load()
   }
 
-  const handleSaveInfo = async (input: {
-    id: string
-    baseUrl: string
-    spec?: { content?: string; url?: string }
-    importFormat: import('../api').ImportFormat
-  }) => {
-    const c = await putConnector(input.id, {
+  const handleSaveInfo = async (conn: SavedConnection) => {
+    if (conn.kind !== 'openapi') throw new Error('unexpected connector kind')
+    const c = await putConnector(conn.id, {
       type: 'openapi',
-      base_url: input.baseUrl,
-      import_format: input.importFormat,
-      spec_content: input.spec?.content,
-      spec_url: input.spec?.url,
+      base_url: conn.baseUrl,
+      import_format: conn.importFormat,
+      spec_content: conn.spec?.content,
+      spec_url: conn.spec?.url,
     })
     return (c.tools ?? []).map((t) => ({ name: t.name }))
   }
 
   const handleSavePermissions = async (
-    id: string, baseUrl: string, loginNames: string[], approvalNames: string[],
+    id: string, loginNames: string[], approvalNames: string[],
   ) => {
-    // 不传文档：后端对编辑/已存在连接器复用已保存 spec。
+    // 不传文档：后端对编辑/已存在连接器复用已保存 spec；连接级字段整表回传。
+    if (!savedConn || savedConn.kind !== 'openapi') return
     await putConnector(id, {
       type: 'openapi',
-      base_url: baseUrl,
+      base_url: savedConn.baseUrl,
       require_login: loginNames,
       require_approval: approvalNames,
     })
@@ -124,7 +127,7 @@ export function OpenApiSettings() {
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
         formatError={(e) => connectorErrorText(e).title}
         onSaveInfo={handleSaveInfo} onSavePermissions={handleSavePermissions}
-        onSavedInfo={(id) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` }); void load() }} />
+        onSavedInfo={(c) => { setSavedConn(c); push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </>
   )

@@ -10,6 +10,7 @@ import {
 import { ToastRegion, useToast } from '../components/ui'
 import { ConnectorShell, type ConnectorRowData } from '../components/settings/ConnectorShell'
 import { ConnectorEditorModal, type ConnectorEditorInitial } from '../components/settings/ConnectorEditorModal'
+import type { SavedConnection } from './connectorForms/types'
 import { CONNECTORS, connectorErrorText } from '../strings'
 
 export function pluginConnectorIds(tools: ToolInfo[]): string[] {
@@ -42,6 +43,8 @@ export function PluginSettings() {
   const [editor, setEditor] = useState<{ open: boolean; editing: boolean; initial: ConnectorEditorInitial }>({
     open: false, editing: false, initial: { id: '', baseUrl: '', tools: [], loginNames: [], approvalNames: [] },
   })
+  // 缓存第一步的连接级负载：第二步 PUT 必须整表回传（后端每次 PUT 都重新探测）。
+  const [savedConn, setSavedConn] = useState<SavedConnection | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -63,10 +66,15 @@ export function PluginSettings() {
 
   useEffect(() => { void load() }, [load])
 
-  const openCreate = () => setEditor({ open: true, editing: false, initial: { id: '', baseUrl: '', tools: [], loginNames: [], approvalNames: [] } })
+  const openCreate = () => {
+    setSavedConn(null)
+    setEditor({ open: true, editing: false, initial: { id: '', baseUrl: '', tools: [], loginNames: [], approvalNames: [] } })
+  }
   const openEdit = (id: string) => {
     const c = connectors.find((x) => x.id === id)
     if (!c) return
+    // 预构造连接级负载，使「直接进入工具权限」也能整表回传。
+    setSavedConn({ kind: 'plugin', id: c.id, baseUrl: c.base_url ?? '' })
     setEditor({
       open: true, editing: true,
       initial: {
@@ -83,12 +91,20 @@ export function PluginSettings() {
     await load()
   }
 
-  const handleSaveInfo = async (input: { id: string; baseUrl: string }) => {
-    const c = await putConnector(input.id, { type: 'http', base_url: input.baseUrl })
+  const handleSaveInfo = async (conn: SavedConnection) => {
+    if (conn.kind !== 'plugin') throw new Error('unexpected connector kind')
+    const c = await putConnector(conn.id, { type: 'http', base_url: conn.baseUrl })
     return (c.tools ?? []).map((t) => ({ name: t.name }))
   }
-  const handleSavePermissions = async (id: string, baseUrl: string, loginNames: string[], approvalNames: string[]) => {
-    await putConnector(id, { type: 'http', base_url: baseUrl, require_login: loginNames, require_approval: approvalNames })
+  const handleSavePermissions = async (id: string, loginNames: string[], approvalNames: string[]) => {
+    // 连接级字段整表回传（后端每次 PUT 都重新探测）。
+    if (!savedConn || savedConn.kind !== 'plugin') return
+    await putConnector(id, {
+      type: 'http',
+      base_url: savedConn.baseUrl,
+      require_login: loginNames,
+      require_approval: approvalNames,
+    })
     push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` })
     await load()
   }
@@ -101,7 +117,7 @@ export function PluginSettings() {
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
         formatError={(e) => connectorErrorText(e).title}
         onSaveInfo={handleSaveInfo} onSavePermissions={handleSavePermissions}
-        onSavedInfo={(id) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` }); void load() }} />
+        onSavedInfo={(c) => { setSavedConn(c); push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </>
   )

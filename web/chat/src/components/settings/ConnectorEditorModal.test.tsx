@@ -109,7 +109,7 @@ describe('ConnectorEditorModal step 1', () => {
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSavedInfo).toHaveBeenCalledTimes(1)
-    expect(onSavedInfo).toHaveBeenCalledWith('p1')
+    expect(onSavedInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
   })
 
   it('does not notify onSavedInfo when step-1 save fails', async () => {
@@ -143,7 +143,7 @@ describe('ConnectorEditorModal step 2', () => {
     await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
     await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
-    expect(onSavePermissions).toHaveBeenCalledWith('o1', 'https://x', ['login'], ['create_ticket'])
+    expect(onSavePermissions).toHaveBeenCalledWith('o1', ['login'], ['create_ticket'])
   })
 })
 
@@ -318,8 +318,10 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     await fillAndSaveOpenapi()
     await flush()
     expect(onSaveInfo).toHaveBeenCalledTimes(1)
-    const input = onSaveInfo.mock.calls[0][0]
-    expect(input.spec).toEqual({ content: undefined, url: 'https://api.example.com/openapi.json' })
+    expect(onSaveInfo.mock.calls[0][0]).toEqual(expect.objectContaining({
+      kind: 'openapi',
+      spec: { content: undefined, url: 'https://api.example.com/openapi.json' },
+    }))
   })
 
   it('openapi file save sends spec.content even if URL field shows a value placeholder flow', async () => {
@@ -333,8 +335,10 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSaveInfo).toHaveBeenCalledTimes(1)
-    const input = onSaveInfo.mock.calls[0][0]
-    expect(input.spec).toEqual({ content: JSON.stringify({ openapi: '3.0.0' }), url: undefined })
+    expect(onSaveInfo.mock.calls[0][0]).toEqual(expect.objectContaining({
+      kind: 'openapi',
+      spec: { content: JSON.stringify({ openapi: '3.0.0' }), url: undefined },
+    }))
   })
 
   it('plugin save payload carries no spec key', async () => {
@@ -346,7 +350,8 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     const input = onSaveInfo.mock.calls[0][0]
-    expect(input.spec).toBeUndefined()
+    expect(input).toEqual({ kind: 'plugin', id: 'p1', baseUrl: 'http://127.0.0.1:19090' })
+    expect('spec' in input).toBe(false)
   })
 })
 
@@ -378,5 +383,74 @@ describe('ConnectorEditorModal minor: file read failure', () => {
     await setFile(new File(['openapi: 3.0.0'], 'ok.json', { type: 'application/json' }))
     expect(host.textContent).not.toContain('读取文件失败')
     expect(host.textContent).toContain('已选择文件：ok.json')
+  })
+})
+
+describe('ConnectorEditorModal mcp', () => {
+  const mcpProps = (over: Partial<Props> = {}): Props => ({
+    ...baseProps, kind: 'mcp', onSaveInfo: vi.fn(async () => [{ name: 'query' }]), ...over,
+  })
+  const mcpEditInitial = {
+    id: 'a1', baseUrl: '',
+    mcp: { transport: 'stdio' as const, command: 'npx', args: ['x'] },
+    tools: [{ name: 'query' }, { name: 'write' }], loginNames: [], approvalNames: ['write'],
+  }
+
+  it('stdio: requires command and submits mcp config, then step2 shows approval only', async () => {
+    const onSaveInfo = vi.fn(async () => [{ name: 'query' }])
+    await render(mcpProps({ onSaveInfo }))
+    // 默认 stdio：不填命令先保存
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'a1')
+    await act(async () => { btn('保存连接').click(); await Promise.resolve() })
+    expect(host.textContent).toContain('请填写启动命令')
+    expect(onSaveInfo).not.toHaveBeenCalled()
+    // 填命令
+    const cmd = [...host.querySelectorAll('input')].find((i) => i.placeholder === 'npx')!
+    await setValue(cmd, 'npx')
+    await act(async () => { btn('保存连接').click(); await Promise.resolve() })
+    await flush()
+    expect(onSaveInfo).toHaveBeenCalledWith({ kind: 'mcp', id: 'a1', mcp: { transport: 'stdio', command: 'npx', args: [] } })
+    expect(host.textContent).toContain('工具权限')
+    // 第二步没有「需本人登录」复选框，只有审批
+    expect(host.querySelector('input[data-flag="login"]')).toBeNull()
+    expect(host.querySelector('input[data-tool="query"][data-flag="approval"]')).toBeTruthy()
+  })
+
+  it('http: requires url and submits url+headers', async () => {
+    const onSaveInfo = vi.fn(async () => [{ name: 'q' }])
+    await render(mcpProps({ onSaveInfo }))
+    await act(async () => {
+      const sel = host.querySelector('select')!
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(sel, 'http'); sel.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'r1')
+    const url = [...host.querySelectorAll('input')].find((i) => (i.placeholder ?? '').includes('mcp'))!
+    await setValue(url, 'https://mcp.example.com')
+    const headers = host.querySelector('textarea')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!
+      setter.call(headers, 'Authorization=Bearer t'); headers.dispatchEvent(new Event('input', { bubbles: true })); await Promise.resolve()
+    })
+    await act(async () => { btn('保存连接').click(); await Promise.resolve() })
+    await flush()
+    expect(onSaveInfo).toHaveBeenCalledWith({
+      kind: 'mcp', id: 'r1',
+      mcp: { transport: 'http', url: 'https://mcp.example.com', headers: { Authorization: 'Bearer t' } },
+    })
+  })
+
+  it('finish permissions calls onSavePermissions with approval list only (no login flag)', async () => {
+    const onSavePermissions = vi.fn(async () => {})
+    await render(mcpProps({ editing: true, initial: mcpEditInitial, onSavePermissions }))
+    await act(async () => { btn('设置工具权限').click(); await Promise.resolve() })
+    const writeBox = host.querySelector('input[data-tool="write"][data-flag="approval"]') as HTMLInputElement
+    expect(writeBox.checked).toBe(true)
+    await act(async () => { btn('完成').click(); await Promise.resolve() })
+    await flush()
+    expect(onSavePermissions).toHaveBeenCalledWith('a1', [], ['write'])
   })
 })
