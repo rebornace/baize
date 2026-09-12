@@ -337,6 +337,31 @@
 .ui-select.invalid:focus-visible {
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
+.ui-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 72px;
+}
+.ui-textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.ui-textarea:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.ui-textarea.invalid { border-color: var(--danger); }
+.ui-textarea.invalid:focus-visible { box-shadow: 0 0 0 3px var(--danger-soft); }
 @media (max-width: 768px) {
   .ui-input,
   .ui-select {
