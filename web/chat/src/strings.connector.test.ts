@@ -23,6 +23,12 @@ describe('connectorErrorText', () => {
     expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'x')).title).toBe(CONNECTORS.errMcpConnect)
   })
 
+  it('maps reachable invalid_mcp backend messages', () => {
+    expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'invalid_mcp: mcp.command is required')).title).toContain('连接配置不完整')
+    expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'invalid_mcp: unsupported mcp transport: ws')).title).toContain('连接配置不完整')
+    expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'invalid_mcp: mcp.url is required')).title).toContain('远程服务地址')
+  })
+
   it('falls back to a generic title for unknown codes', () => {
     const out = connectorErrorText(new ApiError(400, 'weird_code', 'boom'))
     expect(out.title).toBe(CONNECTORS.errorGeneric)
