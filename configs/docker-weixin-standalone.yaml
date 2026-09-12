@@ -1,0 +1,56 @@
+# 容器 standalone（适配器独立部署）范本：baize 与 weixin-adapter 作为两个
+# 容器/服务，适配器由 compose 的 restart 策略托管，baize 不再 autostart 子进程。
+# 以 docker-minimal.yaml 为底本，追加 weixin webhook 渠道块。
+# docker-compose.weixin.yml 默认把本文件挂进 baize 容器并作为 -config，
+# 因此 `docker compose -f docker-compose.weixin.yml up` 即可端到端跑通。
+#
+# 生产部署必须把下面的 secret/outbound_secret 与适配器的 -secret
+# （compose 里即 WEIXIN_ADAPTER_SECRET，默认与本文件相同）一起改为同一个
+# 强随机值；默认值仅用于本地试用，绝不可用于生产。
+listen: ":8080"
+store:
+  driver: sqlite
+  sqlite_path: /app/data/baize.db
+ui:
+  enabled: true
+control_plane:
+  operator_token: ""
+  admin_token: ""
+llm:
+  provider: openai_compatible
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+  disable_thinking: true
+  api_key_env: BAIZE_API_KEY
+skills:
+  builtin_dir: /app/skills
+  user_dir: /app/data/skills
+agent:
+  id: default-agent
+  system: "你是企业助手。仅通过已注册工具访问后端系统；无工具时说明如何配置 Connector。"
+  skills:
+    - data-analytics
+run:
+  max_steps: 16
+conversation:
+  max_messages: 40
+  persist_identities: true
+mock_ticket:
+  listen: off
+channels:
+  - name: weixin
+    type: webhook
+    enabled: true
+    config:
+      source: weixin
+      # 独立部署：baize 不启动/监管适配器子进程（适配器由 compose 托管）。
+      adapter_autostart: "false"
+      # 不设 adapter_command / adapter_args（仅 autostart 模式使用）。
+      admin_url: http://weixin-adapter:8090
+      outbound_url: http://weixin-adapter:8090/outbound
+      assignee: channel:weixin
+      supports_vision: "true"
+      # 与适配器 -secret（WEIXIN_ADAPTER_SECRET）相同的共享 HMAC 密钥。
+      # 生产环境必须把这两处覆盖为同一个强随机值。
+      secret: dev-standalone-weixin-shared-secret
+      outbound_secret: dev-standalone-weixin-shared-secret

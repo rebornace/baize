@@ -1,0 +1,15 @@
+[Unit]
+Description=Baize agent runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/baize
+ExecStart=/opt/baize/baize serve -config /opt/baize/config.yaml
+Restart=always
+RestartSec=2
+# 桌面/autostart 模式下 baize 自己托管适配器子进程，无需 weixin-adapter.service。
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,816 @@
+[![CI](https://github.com/rebornace/baize/actions/workflows/ci.yml/badge.svg)](https://github.com/rebornace/baize/actions/workflows/ci.yml)
+
+# Baize
+
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+**English** | [中文](README.zh-CN.md)
+
+**Add AI next to your existing HTTP APIs — no rewrite, nothing left behind.**
+
+Baize is an Agent Runtime that sits beside your existing HTTP APIs: no changes to your business process, no embedded SDK. With OpenAPI, operations become tools automatically; without it, add a small HTTP plugin. Writes can require human approval. When you are done, stop the process and leave nothing behind.
+
+> Sidecar, not chatbot: the main path is **OpenAPI → Tools → HTTP**. `/ui` is an operator console (conversation list, tool cards, HITL), not a consumer chat product. Session credentials are optional.
+
+---
+
+## Why Baize
+
+| Problem | Baize approach |
+|--------|----------------|
+| Your service is already running — no AI, and you do not want to touch the code | Sidecar Runtime; a Connector turns APIs into Tools |
+| No Swagger / OpenAPI | HTTP plugin sidecar |
+| Uncomfortable letting the LLM hit write APIs directly | `require_approval` |
+| Hard to unplug cleanly / platform lock-in | Single process, config outside the app — stop it and you are gone |
+
+### Core concepts
+
+| Concept | Role |
+|---------|------|
+| **Runtime** | Process hosting agents, tools, store, and HTTP control plane |
+| **Agent** | Prompt + LLM that drives a Run |
+| **Tool** | One invokable capability (usually one OpenAPI operation) |
+| **Connector** | Binding of a spec + `base_url` (+ auth) into the tool registry |
+| **Run** | One execution: input → ReAct loop → output / waiting for approval / failure |
+
+---
+
+## Try it in 30 seconds
+
+**Requirements:** Go 1.22+ (no C compiler; SQLite is pure Go)
+
+Windows (from repo root — no global `baize` on PATH):
+
+```powershell
+.\demo.cmd          # trial: mock LLM + demo HTTP, no key
+.\start.cmd         # production: needs BAIZE_API_KEY (see below)
+.\baize.cmd demo    # same as demo.cmd
+.\baize.cmd start   # same as start.cmd
+```
+
+POSIX:
+
+```bash
+./scripts/demo.sh
+go run ./cmd/baize demo
+```
+
+`baize demo` / `demo.cmd` uses `configs/demo.yaml`: mock LLM + bundled demo HTTP — **no API key**. Not the production default.
+
+> Until you `go install` or add a binary to PATH, do not run bare `baize start`; use `go run ./cmd/baize start`, `.\start.cmd`, or `.\baize.cmd start`.
+
+Default sample:
+
+- Runtime: `http://127.0.0.1:8080` (`/ui`)
+- Demo HTTP: `http://127.0.0.1:18080`
+- LLM: built-in `mock`
+
+If ports are busy, stop the previous `baize` process and retry.
+
+### Operator UI (`/ui`)
+
+Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening `/ui` unlocks first; operators can only access Identities, while changing Tools requires an admin token.
+
+- Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
+- Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
+- `waiting_human`: **Approve / Reject** on that card (no footer banner)
+- Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from OpenAPI, Plugins, or MCP settings (with confirmation); Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
+- Settings → Models (admin-only): maintain multiple named model profiles (OpenAI-compatible) tagged with a tier (light/standard/power) that feeds task-aware Auto routing; any profile can be deleted, including the last one; operators can read the list for the chat dropdown (see **Multiple model profiles** below)
+- Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
+- Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
+- Settings → Channels / Weixin (admin-only): iLink QR login for a personal WeChat bot, default Agent, assignee, and allowlist (see **Weixin Channel** below)
+- Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
+- Live runs use SSE (`GET /v0/runs/{id}/stream`); outbound webhooks POST each event and a terminal `run.ended` payload; if the stream drops, the UI falls back to 700ms polling
+
+With the bundled mock LLM, send something like “VPN is down, please file a record” and approve `create_ticket` on the card.
+
+### Call a demo write API (curl)
+
+`POST /v0/runs` is async: it returns `run_id` immediately. In the demo, the tool name `create_ticket` requires approval by default (`waiting_human`).
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v0/runs \
+  -H "Content-Type: application/json" \
+  -d "{\"agent_id\":\"ticket-agent\",\"input\":\"VPN is down, please file a record\",\"conversation_id\":\"conv_example_1\"}"
+```
+
+```bash
+curl -s http://127.0.0.1:8080/v0/runs/<run_id>
+```
+
+### HITL approval
+
+This demo write API is marked for approval.
+
+```bash
+# Approve
+curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
+  -H "Content-Type: application/json" \
+  -d "{\"decision\":\"approve\",\"comment\":\"ok\"}"
+
+# Reject
+curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
+  -H "Content-Type: application/json" \
+  -d "{\"decision\":\"reject\",\"comment\":\"nope\"}"
+```
+
+Default `configs/demo.yaml` uses SQLite. After a Runtime restart, `waiting_human` runs can still be resumed.
+
+```bash
+curl -s http://127.0.0.1:18080/tickets
+curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
+# Live trajectory (SSE). Ctrl+C to stop.
+curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
+```
+
+If `control_plane` has a token configured, the `/v0` requests above need:
+
+`Authorization: Bearer <operator or admin token>`
+
+Changing Connector / Tools requires the admin token. This is not the same key as the downstream login in the conversation.
+
+---
+
+## Point it at your APIs
+
+### With OpenAPI
+
+Register your HTTP service as Tools by uploading an API document.
+
+1. Open `/ui` → **Settings → OpenAPI** (admin).
+2. **Add Connector**: set `id`, `base_url`, upload your API document (`.json`, `.yaml`, `.yml`), or paste a document URL (direct `.json`/`yaml` link or Swagger UI page; Runtime fetches server-side).
+3. Save — the server detects the format, converts to OpenAPI 3, and discovers all operations.
+4. Manage tools under **Settings → Tools**; run via `/ui` or `POST /v0/runs`.
+
+| Format | Extensions | Notes |
+|--------|------------|-------|
+| OpenAPI 3 | `.json`, `.yaml`, `.yml` | OpenAPI 3.0 / 3.1 |
+| Swagger 2 | `.json`, `.yaml`, `.yml` | Converted to OpenAPI 3 |
+| Postman Collection v2.1 | `.json` | Converted to OpenAPI 3 |
+
+**Not supported (v0):** PDF, Word, WSDL/SOAP.
+
+If the document’s host is wrong, the form `base_url` wins.
+
+Re-`PUT` with the same `id` **merges** that Connector’s Tools: existing `spec`/`plugin` rows keep their `enabled` and `require_login` state, disappeared operations are removed, new operations default to enabled, and `extra` rows survive unless explicitly deleted. Omit the catalog fields (`require_login` / `require_approval` / `tools`) to keep the on-disk catalog untouched. Invalid specs return `400` without corrupting the existing Registry or catalog.
+
+#### Advanced: curl / YAML bootstrap
+
+For automation or bootstrap defaults, register via `PUT /v0/connectors/{id}` with a server-side `spec` path or `spec_content`:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"openapi\",\"spec\":\"examples/mock-ticket/openapi.yaml\",\"base_url\":\"http://127.0.0.1:18080\",\"require_approval\":[\"create_ticket\"]}"
+```
+
+Inspect Tools:
+
+```bash
+curl -s http://127.0.0.1:8080/v0/tools
+```
+
+You should see `method`, `path`, `operation_id`, and `connector_id`.
+
+### No OpenAPI: HTTP plugin
+
+When your HTTP service has no usable OpenAPI spec, run a sidecar that implements
+`GET /healthz`, `GET /v0/tools`, and `POST /v0/tools/{name}/invoke`
+(`X-Baize-Protocol: v0`).
+
+```bash
+go run ./examples/http-plugin/cmd/http-plugin
+```
+
+Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`type: http`):
+
+HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
+
+Set `runtime.public_base_url` (Runtime root URL reachable by the sidecar) to inject a short-lived signed `callback_urls.event` on HTTP plugin invoke; the sidecar may POST notes/progress into the Run event stream (`plugin.callback`). MCP `tools/call` and enterprise execution callbacks receive the same `callback_urls.event` at invoke time for async Run event posts. If unset, nothing is injected. See architecture doc §4.2.
+
+### Enterprise execution callback (§4.3)
+
+When the legacy system exposes a single execution endpoint instead of per-operation HTTP, set `execution_callback_url` on the Connector. Tool discovery still comes from OpenAPI or the HTTP sidecar; invoke POSTs to your URL with `tool`, `arguments`, `run_id`, and `idempotency_key`. Edit per Connector under **Settings → Tools**, or via `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`.
+
+Reference server:
+
+```bash
+go run ./examples/enterprise-callback
+```
+
+### MCP connectors (optional)
+
+[MCP](https://modelcontextprotocol.io/) Servers expose tools over **stdio** (local subprocess) or **Streamable HTTP** (remote URL). Register one with `PUT /v0/connectors/{id}` (`type: mcp`) or **Settings → MCP** (admin). Discovered tools enter the catalog with `source: mcp`; enable/disable, HITL `require_approval`, and Run invoke behave like OpenAPI / HTTP plugin tools. The `auth` block on the Connector is **ignored** — pass secrets via `mcp.env` (stdio) or `mcp.headers` (HTTP). Production `baize start` does **not** pre-register any MCP Server.
+
+**stdio — local subprocess** (needs Node.js on the **same host as Baize** for `npx` commands):
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/analytics-db \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@bytebase/dbhub\",\"--transport\",\"stdio\",\"--dsn\",\"postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable\"]},\"require_approval\":[\"execute_sql\"]}"
+```
+
+**HTTP — Streamable HTTP endpoint** (remote MCP or a Server you run on the host while Baize is in Docker):
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+Bad config or unreachable Server → `400 invalid_mcp` (Registry unchanged). Global tool name conflicts → `409 tool_conflict`.
+
+#### MCP + Postgres trial (`docker-compose.mcp-demo.yml`)
+
+Postgres demo DB + Baize Runtime only — **no** Node/DBHub container and **no** pre-registered MCP connector:
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+- Postgres: `postgres://baize:baize@127.0.0.1:5432/demo` (sample `tickets` table from `examples/mcp-demo/init.sql`)
+- Runtime / UI: http://127.0.0.1:8080 (`/ui`)
+
+Because the Baize image does not include Node, run [DBHub](https://github.com/bytebase/dbhub) on your **host** (Node 18+), then register MCP:
+
+```bash
+# Host terminal — stdio DBHub against compose Postgres (Baize must also run on the host)
+npx -y @bytebase/dbhub --transport stdio --dsn "postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable"
+```
+
+Use the stdio `PUT` snippet above (`command` / `args` instead of a one-off shell). When Baize runs **inside** Docker, start DBHub on the host with HTTP transport and register `transport: http` — e.g. `url: http://host.docker.internal:9090/mcp` (port/path per DBHub docs).
+
+Prefer a read-only DSN in production; the compose credentials are for local trials only.
+
+#### Search / web MCP (documentation only)
+
+Baize does not proxy the public internet — the MCP Server calls search APIs. There is **no** search compose stack; add connectors yourself after `baize start` or via Settings → MCP.
+
+**Tavily (HTTP)** — remote Streamable HTTP, your API key in the URL:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+**Brave Search (stdio)** — host `npx`, your `BRAVE_API_KEY`:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@modelcontextprotocol/server-brave-search\"],\"env\":{\"BRAVE_API_KEY\":\"env:BRAVE_API_KEY\"}}}"
+```
+
+Tool names come from each Server; they must be globally unique across all Connectors.
+
+### MCP export (optional)
+
+The inverse of [MCP connectors](#mcp-connectors-optional): Baize acts as an **MCP Server** (Streamable HTTP) and exposes a **read-only subset** of the tool catalog to personal agents (e.g. Cursor). Agents use their own model; MCP `tools/call` **does not** start a Baize Run or consume Baize LLM quota.
+
+| | MCP connectors (client) | MCP export |
+|--|-------------------------|------------|
+| Direction | Baize → external MCP Server | Personal agent → Baize |
+| Settings | Settings → MCP (admin) | Settings → MCP export (admin) |
+| Auth | `mcp.env` / `mcp.headers` on Connector | Dedicated **export Key** (+ bound export identity) |
+| Control plane | Gate admin/operator token | **Separate** — Gate token ≠ export Key |
+
+1. Open `/ui` → **Settings → MCP export** (admin): create an **export identity** (prefer a read-only service account), then create an export Key (plaintext shown once; must bind an identity).
+2. Tune per-tool export policy under **Settings → Tools** (`default` / force allow / force deny). DB / MCP write tools are never exported.
+3. Point your MCP client at Baize over **HTTPS** in production.
+
+```json
+{
+  "mcpServers": {
+    "baize-export": {
+      "url": "https://<host>/v0/mcp/export",
+      "headers": {
+        "Authorization": "Bearer <mcp_export_key>"
+      }
+    }
+  }
+}
+```
+
+Export Keys and identities live in the runtime store (not git). Revoke compromised Keys immediately. Gate tokens cannot call `/v0/mcp/export`; export Keys cannot access admin APIs or `/ui`.
+
+### Tool catalog (enable / disable / add REST)
+
+Each Connector owns a **tool catalog** persisted in the store (SQLite by default). `GET /v0/tools` returns catalog rows — including disabled ones — so the Settings page can list and re-enable them; the in-memory Registry only registers `enabled = true` rows, so a disabled tool is invisible to the model and to invoke.
+
+- **Display name / description** — catalog rows may carry a `title` (Settings UI only; never sent in the model tool list) and a `description`. `PATCH /v0/tools/{name}` can update `title` and/or `description`. A human-edited `description` is marked `description_custom`; a later re-`PUT` of the Connector spec does not overwrite it. `title` is always kept across merge.
+- **Enable / disable** — `PATCH /v0/tools/{name}` with `{"enabled": false}` (or `true`) unregisters (or re-registers) the tool immediately and persists the flag to the catalog. With SQLite, disabled rows and manually added rows survive a Runtime restart. The same `PATCH` can also flip `require_login` on the row. Group enable / disable on the Settings page is repeated per-tool `PATCH enabled` calls, not a separate API.
+- **Settings tree / search** — the Tools page groups by Connector and path prefix (collapsible) and supports search; it does not introduce a new catalog HTTP surface.
+- **Add a REST tool (OpenAPI only)** — `POST /v0/connectors/{id}/tools` adds an `extra` row on an `openapi` Connector, reusing that Connector’s `base_url`, auth, session identity, and HITL. Use it when the spec is missing an endpoint. Conflicting names return `409`.
+- **Plugin tools** — sidecar-discovered (`plugin`) rows can be enabled / disabled but **cannot** be added or deleted; the sidecar is the source of truth. Adding an `extra` row on an `http` Connector returns `400`.
+- **Delete** — `DELETE /v0/connectors/{id}/tools/{name}` only removes `source = extra` rows; `spec` / `plugin` rows return `400`.
+- **Re-PUT / restart** — re-`PUT`-ing a Connector merges with the existing catalog (see above); a Runtime restart reloads the on-disk catalog and only re-registers enabled rows. YAML / PUT may omit catalog fields to keep the on-disk catalog untouched.
+
+This catalog switch is **not** the same as:
+
+- **Session login** — `require_login` on a tool row gates whether a Run with a `conversation_id` may call it without a captured identity; it does not store credentials.
+- **Control-plane token** — `control_plane.operator_token` / `admin_token` gates who may call `/v0`. Catalog writes (`PATCH /v0/tools/{name}`, `POST/DELETE /v0/connectors/{id}/tools`) require the admin token; operators get `403`.
+
+### Agent Skills (optional)
+
+Skills are an optional **configuration** layer (not a sixth Runtime abstract): a `SKILL.md` with Markdown process guidance plus a list of tool names. They narrow (or stack) which enabled tools the model sees and inject flow text into the Run system prompt.
+
+| Topic | Behavior |
+|-------|----------|
+| Disk layout | Builtin `./skills` (`skills.builtin_dir`) and user `./data/skills` (`skills.user_dir`); each subfolder is a pack id with `SKILL.md` |
+| Install / remove | Admin upload `.md` or `.zip` via `POST /v0/skills` or Settings → Skills; `DELETE /v0/skills/{id}` removes **user** packs only (builtin → `400`). Same id: user overrides builtin |
+| Default activation | `agent.skills` (YAML / `PUT /v0/agents/{id}`) lists packs active at Run start |
+| Progressive activation | When any pack is installed, the model gets built-in `activate_skill` to expand the active set **for that Run** |
+| Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
+| Intersection | Visible tools = ∪(active Skill `tools`) ∩ catalog `enabled`; Skills cannot turn on a disabled catalog row |
+
+**Chat composer — Skill symbols (`@` / `/`):** In `/ui`, type `@skill-id` or `/skill-id` (equivalent) to activate packs for **that Run only**. Multiple mentions are deduplicated in order and merged with the optional `skills` field on `POST /v0/runs`; together they **override** the Agent default list (not append). Unknown ids → `400 unknown_skill`. Symbols are stripped from the stored user text. `@` / `/` also open an autocomplete list (`GET /v0/skills` is readable by operators).
+
+**Chat attachments:** Use the paperclip in `/ui` or send `attachments[]` on `POST /v0/runs` (base64 JSON). Supported types:
+
+| Extension | Handling |
+|-----------|----------|
+| `.txt` `.md` `.csv` | UTF-8 text injected into the user context |
+| `.docx` `.xlsx` `.pdf` | Text extracted (PDF text layer only; no page rendering) |
+| `.png` `.jpg` `.jpeg` `.webp` `.gif` | Multimodal image parts when vision is enabled |
+
+Limits: up to 5 files, 8 MiB total decoded, 64 KiB extracted text per file (truncated with `…[truncated]`). Other extensions → `400 unsupported_attachment`. PDF with no extractable text → `400 empty_pdf_text`.
+
+**Vision hard failure:** `llm.supports_vision` defaults to `false` (see sample YAML comments). If a Run includes image attachments while `supports_vision=false`, the server returns **`400 vision_unsupported`** and **does not create a Run** — images are never silently downgraded to filenames only. Set `supports_vision: true` when using a vision-capable model. `/ui` reads `GET /v0/ui-config` and blocks image sends locally; the server remains authoritative.
+
+Built-in Skills use two tiers: `skills/` for core packs (`minimal` scans only this; default `data-analytics`); `examples/skills/` for demo trials (`demo` / `docker-demo` add it via `builtin_dirs`). Clean deployments list only core packs under Settings → Skills.
+
+This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
+
+Skill packs may include an optional `workflow.yaml` for a deterministic linear pipeline: use `{{input.text}}` for the user input and `{{<step_id>.result.x}}` for a prior step’s output; set `approve: true` on a step to route it through HITL.
+
+### Data analytics & reports
+
+For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Built-in Skill **`data-analytics`** (`skills/data-analytics`, default in `minimal.yaml`): toggle in Settings → Skills or via `activate_skill`. Works with only `create_analysis_page` before any Connector; `list_tickets` / `get_ticket` appear once those tools are registered.
+
+**Recommended:** `create_analysis_page` → a self-contained analysis page with **filters**, chart **drilldown**, and in-browser **PDF export**. The tool returns `{ artifact_id, artifact_url, kind: "analysis_page" }`; `/ui` embeds the page in an iframe.
+
+**Token strategy:**
+
+| Approach | When to use |
+|----------|-------------|
+| `format: "sections"` + `binding` | **Default** — aggregate Connector JSON into `datasets` in the model, bind charts / KPIs / tables; smallest token footprint |
+| `echarts.option` in a section | Complex charts that `binding` cannot express |
+| `format: "html"` | Full layout freedom; larger payload; Runtime wraps and validates the HTML |
+
+Pull JSON from your Connector tools and reshape into `datasets` in the model — do not dump raw large JSON into a single section.
+
+**Optional — AntV MCP for static PNG:**
+
+Baize does **not** pre-register AntV. Admins may add MCP Server `@antv/mcp-server-chart` (stdio `npx`) under **Settings → MCP** for single-chart PNG URLs — useful for Office / slides, not a full analysis site. MCP results still appear as JSON tool cards in chat (no dedicated image embed).
+
+| | `create_analysis_page` | AntV MCP |
+|--|------------------------|----------|
+| Output | **Full analysis page** (multi-block + filters + drilldown) | Usually **one chart** + image URL |
+| Narrative | markdown / KPI / mixed tables & charts | None |
+| Hosting | Baize artifact + chat iframe | External image URL |
+| Flexibility | sections + full ECharts option; or whole-page HTML | Fixed `generate_*` chart types |
+
+### Production one-shot (native Go)
+
+`baize start` uses `configs/minimal.yaml`: **no demo Connector, no mock-ticket, real LLM**. Set an API key first:
+
+```bash
+cp .env.example .env   # set BAIZE_API_KEY
+export BAIZE_API_KEY=sk-...   # or source .env
+go run ./cmd/baize start
+```
+
+Optional: copy `configs/minimal.yaml` → `configs/minimal.local.yaml` (gitignored) to override `llm.base_url` / `model`.
+
+The tool catalog is empty until you register a Connector (`PUT /v0/connectors/{id}`) or an MCP Server (`type: mcp`). SQLite still stores runs and conversations.
+
+### Real LLM and your APIs
+
+Do **not** put secrets in YAML.
+
+1. Production default `configs/minimal.yaml` already uses `openai_compatible`; `baize start` fails fast if `BAIZE_API_KEY` is missing.
+2. Copy `.env.example` → `.env` and set `BAIZE_API_KEY` (and optional control-plane / connector tokens).
+3. Add a `connector` block in `configs/minimal.local.yaml`, or register after startup:
+
+```yaml
+connector:
+  id: my-api
+  type: openapi
+  spec: path/to/your/openapi.yaml
+  base_url: https://your-api.example.com
+  require_approval_mutating: true
+  auth:
+    mode: static
+    static:
+      headers:
+        Authorization: "Bearer ${BAIZE_CONNECTOR_TOKEN}"
+    capture:
+      tool_name_glob: "*login*"
+      token_json_paths: ["accessToken", "data.accessToken", "data.token"]
+      header_template: "Bearer {{token}"
+      default_scheme: "bearer"
+```
+
+```bash
+go run ./cmd/baize start
+# or: go run ./cmd/baize serve -config configs/minimal.local.yaml
+```
+
+For the trial stack, use `go run ./cmd/baize demo` (mock LLM, no key).
+
+### Multiple model profiles
+
+Once a production Runtime is up, maintain multiple **named model profiles** under **Settings → Models** (`/settings/models`, admin-only) — no YAML edits, no restart:
+
+- Each profile holds: name, Provider (fixed to `openai_compatible` in this release), Base URL, model name, API Key (or the API Key **environment variable name**), `disable_thinking`, `supports_vision`, `context_tokens`, and an **Auto tier** (`light` / `standard` / `power`; pick "auto" to infer it from the model name). The tier tells the task-aware Auto router how capable the model is.
+- **API Keys are stored in the local store** (SQLite / Postgres — same trust tier as a DSN password). The UI and API responses always echo them **redacted** (first 3 / last 4 chars, middle elided). When editing, leaving the Key blank means **do not change it**; you may also store only the env-var name and let the Runtime read it at call time. **Any profile can be deleted — including the last one**; with zero models configured the chat blocks and prompts you to add a model before sending.
+- **Hot switch, no restart**: after adding or editing a profile, the next conversation picks it up automatically; the Runtime resolves/caches the Provider per Run and rebuilds it when the profile changes.
+- **Smart routing (Auto)**: the chat composer dropdown's first item is **“Smart routing (Auto)”**, which is also the default behavior and the only mode for unattended entry points. Auto is not a separate model but a deterministic routing policy: it classifies each turn from the actual content — text length, reasoning keywords, code blocks, number of attachments — into a difficulty tier and picks a model in that tier (preferring a `standard` model for ordinary text), falling back to a neighboring tier when the ideal one has no model. Turns carrying images are restricted to `supports_vision` profiles. You may instead **manually pin** a single message to a concrete model; a manual pick is always honored and **never** silently rerouted (if that model cannot see images, the UI warns rather than switching behind the scenes). The choice is **not remembered** — after a successful send the dropdown resets to Auto and nothing is written to `localStorage`. **Unattended entry points** (WeChat channel, Inbox, MCP export, …) always run under Auto.
+- **Permissions**: operators may list models (to populate the chat dropdown); only admins may create / edit / delete.
+- **First-boot seed**: if the store has no profile yet, the Runtime seeds one profile (named after the model) from the YAML `llm` section (`provider` / `base_url` / `model` / `api_key_env` / `disable_thinking` / `supports_vision`, with the Auto tier inferred from the model name), **without persisting the raw Key** (only the env-var name is kept). From then on the store is authoritative; UI changes are never written back to YAML. The mock-provider path (`baize demo`) does not use this feature.
+
+---
+
+## Runtime hot-reload settings (no restart)
+
+A set of settings that previously required YAML edits + a restart can now be changed via API/UI and take effect on the next request. Overrides persist in the DB settings KV (`runtime_settings`), survive restarts, and propagate to all replicas within ~20s (background re-read TTL).
+
+| Endpoint | Method / permission | Purpose |
+|----------|--------------------|---------|
+| `/v0/settings/runtime` | GET — operator; PATCH — admin | Engine knobs |
+| `/v0/settings/credentials` | GET / PATCH — admin | Control-plane tokens & named operators |
+| `/v0/settings/channels/weixin` | PUT — admin | Weixin channel enable / disable |
+
+**Engine knobs** — `PATCH /v0/settings/runtime` is a partial update: send only the fields to change; out-of-range values return `400`.
+
+| Field | Range | Default | Meaning |
+|-------|-------|---------|---------|
+| `max_messages` | 1–500 | 40 | History window fed back to the LLM |
+| `max_steps` | 1–100 | 16 | Max tool steps per Run |
+| `tool_timeout_seconds` | 1–600 | 60 | Per-tool invocation timeout |
+| `compaction_enabled` | bool | true | Context compaction switch |
+| `compact_threshold` | 0.1–0.95 | 0.8 | Context-usage ratio that triggers compaction |
+| `compact_reserve_tokens` | 256–100000 | 8000 | Tokens reserved when compacting |
+| `compact_keep_recent` | 0–100 | 8 | Recent messages always kept verbatim |
+| `compact_summary_timeout_seconds` | 1–600 | 60 | Cap on the compaction summary LLM call |
+
+`GET /v0/settings/runtime` (operator-readable) returns each knob’s `effective` value plus an `overridden` flag (vs the YAML baseline).
+
+**Control-plane credentials** — `GET /v0/settings/credentials` **never returns plaintext tokens**: only `source` (`config`/`override`), `operator_set` / `admin_set` booleans, and an `operators` list where each item carries just `id` + `source` (`config`/`runtime`). `PATCH` supports: `operator_token` / `admin_token` (rotate the main tokens — effective on the next request), `add_operators: [{id, token}]` (duplicate id → `409`), `remove_operators: [id]` (only runtime-added operators; removing a config-baseline one → `400`), and `reset: true` (clear all hot-updated credentials and fall back to the YAML/env baseline; cannot be combined with other fields). YAML/env tokens are a permanent break-glass baseline; hot updates overlay them.
+
+**Lockout recovery**: if a rotated admin token is lost, run on the server host (bypasses the HTTP gate):
+
+```bash
+baize reset-credentials -config <config-path>
+```
+
+This clears credential overrides only (engine knobs are untouched); after a restart or TTL expiry the YAML/env baseline tokens apply again.
+
+**Weixin adapter (out-of-process)** — Weixin moved from an in-process channel to an out-of-process webhook adapter, `weixin-adapter`. baize can supervise the child process via `adapter_autostart` (the default config does this), or the adapter can be deployed independently. Build the adapter binary first (baize finds it via PATH or `./bin/`):
+
+```bash
+go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-adapter.exe
+```
+
+The adapter and baize exchange HMAC-signed JSON over HTTP (`/outbound` for outbound, `/v0/channels/weixin/inbound` for inbound, `/admin/*` for login/status/start/stop). When `secret` is left empty, baize generates one and passes it to the adapter via `-secret`. Weixin login credentials (`creds.json`) are stored by the adapter under `adapter_creds_dir` (default `./data/channels/weixin`), so restarts need no re-scan.
+
+**Weixin enable/disable** — `PUT /v0/settings/channels/weixin` with `{"enabled": true}` starts long-polling immediately when login credentials exist, or returns `running:false, reason:"login_required"` when not logged in; `{"enabled": false}` stops polling but **keeps the login credentials** — re-enabling needs no re-scan (unlike logout). Both `GET` and `PUT` responses include `running` plus a `reason` (`login_required` / `start_failed`), so the UI shows current state on first load.
+
+**Weixin DM allowlist** — `allowlist` is a list of peer (`from_user_id`) ids. A non-empty list makes the channel drop direct messages from any peer not on it — before media download or run creation, with no auto-reply (prevents probing / outbound cost). An empty list (the default) means open DMs. It hot-applies on save and is re-applied at startup; group messages are always ignored.
+
+Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths, and KV credential encryption (credentials are stored plaintext, same trust tier as a model `api_key`). Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md).
+
+---
+
+## Approvals and identities
+
+Mutating tools can require human approval via `require_approval` before the real invoke (see the demo flow under “Try it in 30 seconds” above).
+
+### Session identities
+
+Successful login tools can **capture** tokens into a per-`conversation_id` identity store. Later calls in the same conversation attach the resolved Bearer when a session identity is available (default selection follows OpenAPI `securitySchemes`).
+
+Runs **with** a `conversation_id` (including `/ui`) use **only** session identities — never the connector’s configured default Token. Configured Tokens are optional and only apply to machine / curl Runs that omit `conversation_id`.
+
+- `/ui` → **Settings → Identities**: list accounts (redacted), set default, sign out
+- `/ui` → **Settings → Tools**: mark a tool as「需要登录」(default: public; not inferred from OpenAPI `security`)
+- Sidebar **New chat** → new `conversation_id` (`localStorage` key `baize.conversation_id`)
+- For Runs **without** `conversation_id`, default HTTP headers come from `connector.auth.mode`:
+  - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
+  - `passthrough` — per-Run allowlisted request headers from `POST /v0/runs`
+  - `vault_ref` — `env:` / `file:` references resolved at registration
+- Default capture matches `*login*` and reads `accessToken` / `data.token` (override via `connector.auth.capture`; set `tool_name_glob: "__none__"` to disable). Plugin tools whose names match `*login*` are captured the same way.
+- `baize start` and `PUT /v0/connectors` both wire Identities / Resolver / Capture (OpenAPI and HTTP plugin Connectors)
+- Restart Runtime after changing auth/capture YAML; `PATCH /v0/tools/{name}` persists `enabled` / `require_login` to the catalog (SQLite keeps them across restart) and immediately registers/unregisters the tool with the in-memory Registry. This is a different switch from the conversation login (session identity) and from the control-plane token.
+
+```bash
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
+```
+
+### Conversation memory
+
+With the default SQLite driver, Baize persists conversation messages and captured identities to `data/baize.db` (configurable via `store.sqlite_path`). Restarting the Runtime restores prior turns and signed-in accounts for each `conversation_id`.
+
+- `conversation.max_messages` (default `40`) bounds the window of recent turns fed back to the LLM as context. Older turns stay in the database for audit but are dropped from the prompt. Values `<=0` are normalized to `40` on load.
+- Clearing chat (`DELETE /v0/conversations/{id}/messages`) wipes the message history **only** — it does **not** sign the user out. Captured identities remain until removed via the identities API. An empty conversation also **disappears from the left list**.
+- **Rollback / Fork (`/ui`)**: user bubbles — edit & rollback (truncate from that message); assistant — regenerate; any message — fork prefix into a new conversation (identities not copied). Blocked while a run is active.
+- `GET /v0/conversations` lists summaries; title is the first user message, truncated to 40 runes (no LLM titles).
+- `data/baize.db` is a runtime artifact; do not commit it to git (the default `.gitignore` already excludes `data/`).
+
+```bash
+# Conversation list (left sidebar)
+curl -s http://127.0.0.1:8080/v0/conversations
+
+# List persisted turns
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# Clear turns without signing out
+curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# Rollback from a message (deletes that message and everything after)
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages/<message_id>/rollback
+
+# Fork: copy prefix through a message into a new conversation
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
+  -H 'Content-Type: application/json' \
+  -d '{"through_message_id":"<message_id>"}'
+```
+
+---
+
+## Production integration: Webhook Inbox
+
+**One-liner:** External systems POST signed JSON to Baize Inbox; the Runtime starts an Agent Run; optional outbound Webhooks stream events back to your platform.
+
+```
+Monitor / ITSM / script          Baize Runtime                    Your callback
+        │                               │                               │
+        │  POST /v0/inbox/{channel_id}  │                               │
+        │  + HMAC (channel secret)       │                               │
+        ├──────────────────────────────►│  verify → idempotency → Run    │
+        │  202 {delivery_id, run_id}    │                               │
+        │◄──────────────────────────────┤                               │
+        │                               │  POST run events + run.ended    │
+        │                               ├──────────────────────────────►│
+        │                               │  (global or channel webhook)    │
+```
+
+Capability name is **Inbox v1**; HTTP routes stay under the **`/v0/`** protocol prefix (optional header `X-Baize-Protocol: v0`).
+
+### Configure a channel
+
+1. Open `/ui` → **Settings → Inbox** (admin).
+2. Add a channel: `id` (URL slug, e.g. `alerts`), `agent_id`, optional **Skills** and per-channel outbound `webhook_url` / headers.
+3. Copy the inbound URL (`https://<host>/v0/inbox/{id}`) and the **secret** (shown once on create or **Rotate secret**).
+4. **Send test** from the settings page, or use the script below.
+
+YAML seed (optional startup default; runtime authority is SQLite `settings`):
+
+```yaml
+inbox:
+  channels:
+    - id: alerts
+      agent_id: ticket-agent
+      enabled: true
+      skills: [ticket-triage]
+```
+
+Admin API: `GET/PUT /v0/settings/inbox-channels`, `POST .../{id}/rotate-secret`, `POST .../{id}/test`.
+
+### Signed POST (curl + OpenSSL)
+
+```bash
+export RUNTIME_URL=http://127.0.0.1:8080
+export INBOX_SECRET='<channel-secret>'
+TS=$(date +%s)
+BODY='{"input":"VPN fault, employee 10086","idempotency_key":"alert-20260828-001","external_id":"jira-OPS-1234"}'
+SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$INBOX_SECRET" | awk '{print $2}')"
+curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
+  -H "Content-Type: application/json" \
+  -H "X-Baize-Inbox-Timestamp: $TS" \
+  -H "X-Baize-Inbox-Signature: $SIG" \
+  -d "$BODY"
+```
+
+PowerShell: see [`examples/inbox-alert/post.ps1`](examples/inbox-alert/post.ps1).
+
+**Headers (required):** `Content-Type: application/json`, `X-Baize-Inbox-Timestamp` (Unix seconds), `X-Baize-Inbox-Signature: v1=<hex>` where `v1=<HMAC-SHA256(secret, "<timestamp>.<raw_body>")>`.
+
+**Body (fixed schema):** `input` (required, 1–8192 chars after trim); optional `idempotency_key`, `conversation_id`, `external_id`, `metadata` (stored on `inbox.received` only, not passed to the LLM). Max body **64 KiB**.
+
+**Success:** `202 Accepted` with `delivery_id`, `run_id`, `status: accepted`, and `conversation_id` when threaded.
+
+### Idempotency and threading
+
+| Mechanism | Behavior |
+|-----------|----------|
+| `idempotency_key` | Same `(channel_id, key)` and same body hash within **24h** → **200 OK**, same `run_id` / `delivery_id` (no duplicate Run). Same key, different body → **409** `idempotency_conflict`. |
+| `external_id` | Maps to a stable `conversation_id` per channel; each POST still creates a **new Run**, but later messages share conversation context. |
+| `conversation_id` | Explicit thread id (used as-is; created if unknown). |
+
+Omit both `external_id` and `conversation_id` for a stateless machine path (no conversation binding).
+
+### Pair with outbound Webhook
+
+- **Global:** Settings → Webhook — URL + headers for all runs (unless overridden).
+- **Per channel:** Inbox channel `webhook_url` / `webhook_headers` — used for runs started via that channel.
+- **Per run:** Chat **Advanced** `webhook_url` (UI / `POST /v0/runs` only; not on Inbox body in v1).
+
+Outbound delivery POSTs each run event and a terminal `run.ended` payload (see Settings → Webhook test). Inbox runs also emit `inbox.received` as the first event.
+
+### Security checklist (production)
+
+1. Enable `control_plane.admin_token`; expose Inbox URLs only on internal networks or behind an API gateway.
+2. Use a **separate secret per channel**; rotate periodically (`POST /v0/settings/inbox-channels/{id}/rotate-secret`).
+3. Callers should send **`idempotency_key`** on every delivery (retries, webhooks, queues).
+4. Configure a global or channel-level **outbound Webhook** for audit and integration.
+5. Optional **WAF / mTLS** at the gateway — not built into Baize.
+
+**Built-in limits:** invalid or missing signature → **401**; timestamp skew > **300s** → **401** `timestamp_skew`; disabled or unknown channel → **404**; **120 requests/minute per channel** → **429** with `Retry-After: 60` (in-memory, single process).
+
+Runnable sample: [`examples/inbox-alert/`](examples/inbox-alert/).
+
+---
+
+## Weixin Channel (personal WeChat via iLink)
+
+**One-liner:** Admins QR-login a personal WeChat bot (Tencent iLink) in Settings; DM text / common media create Runs; operators with access can reply in `/ui` and sync outbound to WeChat. Complements Inbox (HMAC alert ingress) — does not replace it.
+
+| | Inbox | Weixin Channel |
+|--|--------|----------------|
+| Use case | Alerts / ITSM / custom gateway | Human DMs to a personal WeChat bot |
+| Auth | Channel secret HMAC | iLink QR token |
+| Transport | Caller HTTP POST | Long-poll + send |
+| Thread key | `external_id`, etc. | `weixin:<account_id>:<peer_id>` |
+
+### Named operators and dev mode
+
+For multi-operator isolation (recommended in production):
+
+```yaml
+control_plane:
+  admin_token: "env:BAIZE_ADMIN_TOKEN"
+  operators:
+    - id: alice
+      token: "env:BAIZE_OP_ALICE"
+    - id: bob
+      token: "env:BAIZE_OP_BOB"
+```
+
+- A lone `operator_token` (no `operators` list) maps to operator id `operator`.
+- Conversations carry `owner_id`: operators see their own by default; admin can view all (UI **All / Mine**).
+- **Gate off** (empty `admin_token` / `operator_token` / `operators`): dev mode — UI acts as a single local admin, `owner_id` may be `local-dev`, **no multi-operator privacy**. Configure named operators (or at least control-plane tokens) for isolation.
+
+### QR login (Settings)
+
+1. Open `/ui` → **Settings → Channels / Weixin** (admin).
+2. **Get QR code**, scan with WeChat; the page polls until `success`.
+3. Set `agent_id`, **assignee** (operator id), optional allowlist (one peer id per line), then save.
+4. Credentials land in `./data/channels/weixin/` (gitignored); a restart with valid creds resumes long-poll automatically.
+5. Logout clears local creds and stops polling.
+
+New peer DMs get `owner_id = assignee` (default `channel:weixin` if unset — mainly visible to admin). A **queued/running** Run for the same peer skips a second Run and replies with a busy message on WeChat. If the Run is **waiting_human**, WeChat receives an approval prompt; reply `批准`/`拒绝` (or approve/reject) to resume, otherwise a short help text is sent.
+
+### Media, groups, and v0 limits
+
+- **Media:** DM text, images, and common files can enter Runs as attachments; assistant text can sync back. **CDN AES decryption is not implemented** — encrypted CDN media may be unusable after download.
+- **Outbound display:** Operator turns from `/ui` and assistant replies both arrive as Bot bubbles; they are prefixed with `【客服】` / `【助手】`. A short settle delay follows the operator mirror so WeChat is less likely to reorder it after the assistant reply.
+- **Outbound `context_token`:** Cached in-process only; after a restart the peer must send another WeChat message before `/ui` outbound sync is reliable (not persisted in v0).
+- **Allowlist:** Persisted in settings and **inbound-enforced** — DMs from peers not on a non-empty list are silently dropped before media download / run creation, with no auto-reply; an empty list means open DMs (default).
+- **Groups:** Ordinary WeChat groups are unsupported (iLink bots typically do not deliver them).
+- **Verification:** Fake iLink unit tests cover login / ownership; **real-device QR and DM round-trips are manual** — not automated in CI.
+- **Deploy:** Single-instance for one bot account in this milestone.
+
+---
+
+## Run and deploy
+
+Baize is a single static binary. Optional launchers (set a China module proxy when `GOPROXY` is unset):
+
+- Production Windows: `.\start.cmd` or `.\baize.cmd start` (loads `BAIZE_API_KEY` from `.env`)
+- Trial Windows: `.\demo.cmd` or `.\baize.cmd demo`
+- POSIX production: `./scripts/start.sh`; trial: `./scripts/demo.sh`
+
+### Native binary
+
+```bash
+# Linux server
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o baize ./cmd/baize
+# macOS
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o baize ./cmd/baize
+# Windows
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
+```
+
+Copy the binary to the target host; no runtime dependencies beyond the OS.
+
+### Docker
+
+**Production** (Runtime only, no demo HTTP):
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose up --build
+```
+
+- Runtime / UI: http://127.0.0.1:8080 (`/ui`)
+- Uses `configs/docker-minimal.yaml`; requires `BAIZE_API_KEY`
+
+**Try the sample stack** (Runtime + demo HTTP, mock LLM):
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+- Runtime / UI: http://127.0.0.1:8080
+- Demo HTTP: http://127.0.0.1:18080
+- Uses `configs/docker-demo.yaml`; `mock-ticket` runs as a separate container
+
+Trial compose may set `BAIZE_CONNECTOR_TOKEN` to `dev` for machine-path scripts; `/ui` does not use it. Do not put secrets in YAML.
+
+**MCP + Postgres trial** (Runtime + demo DB, no bundled MCP Server):
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+See [MCP connectors](#mcp-connectors-optional) for DBHub on the host and `PUT` examples.
+
+**Custom YAML mount**:
+
+```bash
+docker build -t baize:local .
+docker run --rm -p 8080:8080 \
+  -v /path/to/your.yaml:/app/configs/docker-minimal.yaml \
+  -v baize-data:/app/data \
+  -e BAIZE_API_KEY \
+  baize:local
+```
+
+Override module proxy at build time if needed: `docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
+
+### Artifact storage (file / S3-compatible)
+
+Analysis-report HTML artifacts are stored through a pluggable blob store. The default `storage.driver: file` writes bytes under `<dataDir>/artifacts` (i.e. next to the SQLite DB; no migration needed). For shared or multi-replica deployments, point it at any S3-compatible object store (AWS S3 / MinIO / Alibaba OSS / Tencent COS). Note `storage.s3.endpoint` is **required for every S3-compatible backend** (the driver rejects an empty endpoint); set `use_ssl`/`path_style` to match:
+
+```yaml
+storage:
+  driver: s3
+  s3:
+    # Required for all backends:
+    #   AWS S3:        "s3.amazonaws.com" (or "s3.<region>.amazonaws.com"), use_ssl: true,  path_style: false
+    #   MinIO/self:    "minio.local:9000",                       use_ssl: false, path_style: true
+    #   Alibaba OSS:   "oss-<region>.aliyuncs.com",              use_ssl: true,  path_style: true
+    #   Tencent COS:   "cos.<region>.myqcloud.com",              use_ssl: true,  path_style: true
+    endpoint: "minio.local:9000"
+    region: "us-east-1"
+    bucket: "baize"
+    prefix: "baize"
+    access_key_env: S3_ACCESS_KEY   # credentials are read from env only
+    secret_key_env: S3_SECRET_KEY
+    use_ssl: false
+    path_style: true               # true for MinIO/self-hosted/OSS/COS; false for AWS
+    auto_create_bucket: false
+```
+
+Inject credentials via `S3_ACCESS_KEY` / `S3_SECRET_KEY` environment variables (never put secrets in YAML). Artifact metadata stays in the SQL store; only the HTML bytes move to object storage.
+
+---
+
+## Chat UI build (optional)
+
+`/ui` is a React + Vite SPA, prebuilt under `internal/ui/dist` (`//go:embed`). Rebuild after editing `web/chat` (Node 18+):
+
+```bash
+cd web/chat
+npm ci
+npm run build
+```
+
+---
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `baize start` | Production default: `minimal.yaml`; Runtime only; **requires** `BAIZE_API_KEY`; no demo Connector |
+| `baize demo` | Trial: `demo.yaml`; Runtime + bundled demo HTTP; mock LLM, no key |
+| `baize serve -config <path>` | Runtime only with explicit config (no API key check) |
+| `baize reset-credentials -config <path>` | Clear hot-updated control-plane tokens; fall back to YAML/env baseline (lockout recovery; see **Runtime hot-reload settings**) |
+
+---
+
+## Documentation
+
+- [Architecture & plugin protocol (draft)](docs/architecture-and-plugin-protocol.md)
+- [Deployment guide](docs/deployment.md) — autostart vs. standalone adapter deployment.
+
+---
+
+## License
+
+[MIT](LICENSE)

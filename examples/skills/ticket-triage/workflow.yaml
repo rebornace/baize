@@ -1,0 +1,10 @@
+# 需 ReAct 判断分支的场景请不用本文件，让 LLM 自行调度 tools。
+name: ticket-triage
+steps:
+  - id: list
+    tool: list_tickets
+  - id: create
+    tool: create_ticket
+    approve: true
+    args:
+      title: "{{input.text}}"

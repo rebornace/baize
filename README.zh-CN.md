@@ -1,0 +1,823 @@
+[![CI](https://github.com/rebornace/baize/actions/workflows/ci.yml/badge.svg)](https://github.com/rebornace/baize/actions/workflows/ci.yml)
+
+# Baize（白泽）
+
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+[English](README.md) | **中文**
+
+**不改你的服务，旁挂一层就能用上 AI。卸掉不留痕。**
+
+白泽是旁挂在现有 HTTP API 旁边的 Agent Runtime：业务进程不用改、不用嵌 SDK。有 OpenAPI 就自动变成工具；没有就加一个小 HTTP 插件。写操作可人工审批，用完把进程停掉即可。
+
+> 侧车，不是聊天机器人：主路径是 **OpenAPI → Tools → HTTP**。`/ui` 是操作员控制台（对话列表、工具卡片、HITL），不是面向终端用户的聊天产品。会话级凭证按需启用。
+
+---
+
+## 为什么需要白泽
+
+| 痛点 | 白泽做法 |
+|------|----------|
+| 服务端已经在跑，没有 AI，也不想动代码 | 旁挂 Runtime，Connector 把接口变成 Tool |
+| 没有 Swagger / OpenAPI | HTTP 插件侧车 |
+| LLM 直接打写接口不放心 | `require_approval` |
+| 接完拆不干净、绑死平台 | 单进程、配置在外，停掉即走 |
+
+### 五个概念
+
+| 概念 | 含义 |
+|------|------|
+| **Runtime** | 承载 Agent、Tool、存储与控制面 HTTP 的进程 |
+| **Agent** | 提示词 + LLM，驱动一次 Run |
+| **Tool** | 可调用能力（通常对应一个 OpenAPI operation） |
+| **Connector** | Spec + `base_url`（+ 鉴权）到 Tool 注册表的绑定 |
+| **Run** | 一次执行：输入 → ReAct → 输出 / 待审批 / 失败 |
+
+---
+
+## 30 秒跑通（试用）
+
+**环境要求：** Go 1.22+（无需 C 编译器；SQLite 为纯 Go）
+
+Windows（仓库根目录，无需把 `baize` 装进 PATH）：
+
+```powershell
+.\demo.cmd          # 试用：mock LLM + 演示 HTTP，无需 Key
+.\start.cmd         # 生产：须先配置 BAIZE_API_KEY（见下）
+.\baize.cmd demo    # 与 demo.cmd 等价
+.\baize.cmd start   # 与 start.cmd 等价
+```
+
+POSIX：
+
+```bash
+git clone https://github.com/rebornace/baize.git
+cd baize
+./scripts/demo.sh   # 或 go run ./cmd/baize demo
+```
+
+试用（`demo`）：
+
+`baize demo` / `demo.cmd` 使用 `configs/demo.yaml`：mock LLM + 内嵌演示 HTTP，**无需 API Key**。不是生产默认路径。
+
+> 说明：在未 `go install` 或加入 PATH 前，不能直接敲 `baize start`；请用 `go run ./cmd/baize start`、`.\start.cmd` 或 `.\baize.cmd start`。
+
+- Runtime：`http://127.0.0.1:8080`（`/ui`）
+- 演示 HTTP：`http://127.0.0.1:18080`
+- LLM：内置 `mock`
+
+若端口被占用，先结束旧的 `baize` 进程再启动。
+
+### 操作员界面（`/ui`）
+
+打开 `http://127.0.0.1:8080/ui`。若配置了控制面口令，打开 `/ui` 先解锁；操作员只能进账号，改 Tools 需要管理员口令。
+
+- 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
+- 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
+- `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
+- 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
+- 设置 → 模型（仅管理员）：维护多个命名模型 profile（OpenAI 兼容），按档位（light/standard/power）参与任务感知 Auto 智能路由，任意 profile 均可删除；操作员可查看列表用于聊天下拉（详见下文「多模型配置与对话选模型」）
+- 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
+- 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
+- 设置 → 渠道 / 微信（仅管理员）：iLink 扫码登录个人微信 Bot、配置默认 Agent、受理人与 allowlist（见下文「微信 Channel」）
+- 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
+- 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；出站 Webhook 会 POST 每条事件与终态 `run.ended`；断流后 UI 回退为 700ms 轮询
+
+内置 mock LLM 下，可发送「VPN 挂了，请建一条记录」，并在卡片上批准 `create_ticket`。
+
+### 调用演示写接口（curl）
+
+`POST /v0/runs` 为异步，立即返回 `run_id`。演示里工具名 `create_ticket` 默认要审批，状态为 `waiting_human`。
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v0/runs \
+  -H "Content-Type: application/json" \
+  -d "{\"agent_id\":\"ticket-agent\",\"input\":\"VPN 挂了，请建一条记录\",\"conversation_id\":\"conv_example_1\"}"
+```
+
+```bash
+curl -s http://127.0.0.1:8080/v0/runs/<run_id>
+```
+
+### HITL 审批
+
+这个演示写接口被标了审批。
+
+```bash
+# 批准
+curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
+  -H "Content-Type: application/json" \
+  -d "{\"decision\":\"approve\",\"comment\":\"ok\"}"
+
+# 驳回
+curl -s -X POST http://127.0.0.1:8080/v0/runs/<run_id>/resume \
+  -H "Content-Type: application/json" \
+  -d "{\"decision\":\"reject\",\"comment\":\"nope\"}"
+```
+
+默认 `configs/demo.yaml` 使用 SQLite；Runtime 重启后，仍可对 `waiting_human` 的 Run 继续 `resume`。
+
+```bash
+curl -s http://127.0.0.1:18080/tickets
+curl -s http://127.0.0.1:8080/v0/runs/<run_id>/events
+# 实时轨迹（SSE），Ctrl+C 结束
+curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
+```
+
+若 `control_plane` 配置了口令，上述 `/v0` 请求需带：
+
+`Authorization: Bearer <操作员或管理员口令>`
+
+改 Connector / Tools 只能用管理员口令。这与对话里登录下游系统不是同一把钥匙。
+
+---
+
+## 接到你的服务
+
+### 有 OpenAPI
+
+通过上传接口文档，把 HTTP 服务注册成 Tools。
+
+1. 打开 `/ui` → **设置 → OpenAPI**（管理员）。
+2. **添加 Connector**：填写 `id`、`base_url`，上传接口文档（`.json`、`.yaml`、`.yml`），或填写线上文档 URL（支持直链与 Swagger UI 页面，服务端抓取）。
+3. 保存 — 服务端识别格式、转换为 OpenAPI 3，并发现全部 operation。
+4. 在 **设置 → Tools** 管理工具；通过 `/ui` 或 `POST /v0/runs` 运行。
+
+| 格式 | 扩展名 | 说明 |
+|------|--------|------|
+| OpenAPI 3 | `.json`、`.yaml`、`.yml` | OpenAPI 3.0 / 3.1 |
+| Swagger 2 | `.json`、`.yaml`、`.yml` | 转换为 OpenAPI 3 |
+| Postman Collection v2.1 | `.json` | 转换为 OpenAPI 3 |
+
+**不支持（v0）：** PDF、Word、WSDL/SOAP。
+
+若文档内 host 不正确，以表单填写的 `base_url` 为准。
+
+同 `id` 再 `PUT` 会与该 Connector 已有目录**合并**：原 `spec`/`plugin` 行保留 `enabled` 与 `require_login`，消失的 operation 删除，新 operation 默认启用，`extra` 行除非显式 DELETE 否则保留。省略目录相关字段（`require_login` / `require_approval` / `tools`）则保持磁盘目录不变。坏 Spec 返回 `400`，不污染已有 Registry 或目录。
+
+#### 高级：curl / YAML 启动
+
+自动化或启动默认值时，可用 `PUT /v0/connectors/{id}` 指定服务端 `spec` 路径或 `spec_content`：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/ticket-api \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"openapi\",\"spec\":\"examples/mock-ticket/openapi.yaml\",\"base_url\":\"http://127.0.0.1:18080\",\"require_approval\":[\"create_ticket\"]}"
+```
+
+核对 Tools：
+
+```bash
+curl -s http://127.0.0.1:8080/v0/tools
+```
+
+应看到 `method` / `path` / `operation_id` / `connector_id`。
+
+### 无 OpenAPI：HTTP 插件
+
+当你的 HTTP 服务没有可用的 OpenAPI 规格时，可运行实现
+`GET /healthz`、`GET /v0/tools`、`POST /v0/tools/{name}/invoke`
+（`X-Baize-Protocol: v0`）的侧车。
+
+```bash
+go run ./examples/http-plugin/cmd/http-plugin
+```
+
+用 **设置 → 插件**（管理员）或 `PUT /v0/connectors/{id}`（`type: http`）注册：
+
+HITL 仍使用 `require_approval`。试用 OpenAPI Connector 请用 `baize demo`。
+
+配置 `runtime.public_base_url`（侧车可达的 Runtime 根地址）后，HTTP 插件 invoke 会注入短期签名的 `callback_urls.event`；侧车可回投进度/备注到 Run 事件流（`plugin.callback`）。MCP `tools/call` 与企业执行回调在 invoke 时亦会收到同一 `callback_urls.event`，用于异步回投 Run 事件。未配置则不注入。详见架构文档 §4.2。
+
+### 企业执行回调（§4.3）
+
+遗留系统只暴露一个统一执行入口、不想被 Runtime 按 operation 直连时，在 Connector 上配置 `execution_callback_url`。工具清单仍来自 OpenAPI 或 HTTP 侧车发现；invoke 时 Runtime POST 到企业 URL（body 含 `tool`、`arguments`、`run_id`、`idempotency_key`）。可在 **设置 → Tools** 每个 Connector 组头编辑，或 `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`。
+
+参考样例：
+
+```bash
+go run ./examples/enterprise-callback
+```
+
+### MCP Connector（可选）
+
+[MCP](https://modelcontextprotocol.io/) Server 通过 **stdio**（本地子进程）或 **Streamable HTTP**（远程 URL）暴露工具。用 `PUT /v0/connectors/{id}`（`type: mcp`）或 **设置 → MCP**（管理员）注册；发现的工具写入目录 `source: mcp`，启停、HITL `require_approval`、Run 调用与 OpenAPI / HTTP 插件一致。Connector 上的 `auth` 块**忽略**，鉴权写在 `mcp.env`（stdio）或 `mcp.headers`（HTTP）。生产 `baize start` **不**预置任何 MCP Server。
+
+**stdio — 本地子进程**（`npx` 命令需在 **与 Baize 同一台宿主机** 上执行）：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/analytics-db \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@bytebase/dbhub\",\"--transport\",\"stdio\",\"--dsn\",\"postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable\"]},\"require_approval\":[\"execute_sql\"]}"
+```
+
+**HTTP — Streamable HTTP 端点**（远程 MCP，或 Baize 在容器内、Server 在宿主机时）：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+配置错误或 Server 不可达 → `400 invalid_mcp`（Registry 不变）。工具名全局冲突 → `409 tool_conflict`。
+
+#### MCP + Postgres 试用（`docker-compose.mcp-demo.yml`）
+
+仅 Postgres 演示库 + Baize Runtime — **不含** Node/DBHub 容器，**不**预注册 MCP：
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+- Postgres：`postgres://baize:baize@127.0.0.1:5432/demo`（`examples/mcp-demo/init.sql` 含示例 `tickets` 表）
+- Runtime / UI：http://127.0.0.1:8080 （`/ui`）
+
+Baize 镜像不含 Node，请在**宿主机**（Node 18+）运行 [DBHub](https://github.com/bytebase/dbhub)，再 `PUT` 注册：
+
+```bash
+# 宿主机 — stdio DBHub 连 compose Postgres（Baize 也需跑在宿主机）
+npx -y @bytebase/dbhub --transport stdio --dsn "postgres://baize:baize@127.0.0.1:5432/demo?sslmode=disable"
+```
+
+用上方 stdio `PUT` 片段（`command` / `args`）注册。Baize 在 **Docker 内**时，在宿主机以 HTTP 模式起 DBHub，再注册 `transport: http`，例如 `url: http://host.docker.internal:9090/mcp`（端口/路径以 DBHub 文档为准）。
+
+生产环境建议只读 DSN；compose 凭据仅供本地试用。
+
+#### 搜索 / 联网 MCP（仅文档）
+
+白泽不代理公网 — 由 MCP Server 访问搜索 API。**无**搜索 compose；`baize start` 后自行在设置 → MCP 或 `PUT` 添加。
+
+**Tavily（HTTP）** — 远程 Streamable HTTP，API Key 写在 URL：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
+```
+
+**Brave Search（stdio）** — 宿主机 `npx`，自备 `BRAVE_API_KEY`：
+
+```bash
+curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"@modelcontextprotocol/server-brave-search\"],\"env\":{\"BRAVE_API_KEY\":\"env:BRAVE_API_KEY\"}}}"
+```
+
+工具名以各 Server 为准，且在所有 Connector 间全局唯一。
+
+### MCP 导出（可选）
+
+与上文 [MCP Connector](#mcp-connector可选) **方向相反**：白泽作为 **MCP Server**（Streamable HTTP），把工具目录中符合策略的**只读子集**暴露给个人 Agent（如 Cursor）。个人 Agent 消耗自有模型；MCP `tools/call` **不**创建白泽 Run、**不**消耗白泽 LLM 额度。
+
+| | MCP Connector（客户端） | MCP 导出 |
+|--|-------------------------|----------|
+| 方向 | 白泽 → 外部 MCP Server | 个人 Agent → 白泽 |
+| 设置 | 设置 → MCP（管理员） | 设置 → MCP 导出（管理员） |
+| 鉴权 | Connector 上 `mcp.env` / `mcp.headers` | 专用 **导出 Key**（须绑定导出身份） |
+| 控制面 | Gate 管理员/操作员口令 | **分离** — Gate 口令 ≠ 导出 Key |
+
+1. 打开 `/ui` → **设置 → MCP 导出**（管理员）：先建 **导出身份**（建议只读服务账号），再创建导出 Key（明文仅创建时展示一次，且必须绑定身份）。
+2. 在 **设置 → Tools** 调整每工具导出策略（`default` / 强制允许 / 强制拒绝）。数据库 / MCP 写类工具永不导出。
+3. 生产环境请用 **HTTPS** 连接白泽。
+
+```json
+{
+  "mcpServers": {
+    "baize-export": {
+      "url": "https://<host>/v0/mcp/export",
+      "headers": {
+        "Authorization": "Bearer <mcp_export_key>"
+      }
+    }
+  }
+}
+```
+
+导出 Key 与身份落在运行时 Store（不进 git）。泄露请立即撤销。Gate 口令不能调用 `/v0/mcp/export`；导出 Key 不能访问管理 API 或 `/ui`。
+
+### 工具目录（启用 / 停用 / 手加 REST）
+
+每个 Connector 拥有一份**工具目录**，落盘在 Store（默认 SQLite）。`GET /v0/tools` 返回目录行——**包含已停用行**——以便设置页列出并重新启用；内存 Registry 只注册 `enabled = true` 的行，因此停用的工具对模型和 invoke 都不可见。
+
+- **显示名 / 说明** — 目录行可带 `title`（只出现在设置页，不进模型 tool list）与 `description`。`PATCH /v0/tools/{name}` 可改 `title` / `description`；人改过的 `description` 带 `description_custom`，再 `PUT` spec 不覆盖。合并时 `title` 始终保留。
+- **启用 / 停用** — `PATCH /v0/tools/{name}` 带 `{"enabled": false}`（或 `true`）立即在 Registry 中卸下（或重新注册）该工具，并把标志落盘到目录。SQLite 下停用行与手加行重启后仍在。同一接口也可改行上的 `require_login`。设置页组启停是多次 `PATCH enabled`，不是新接口。
+- **设置页树与搜索** — Tools 页按 Connector 与路径前缀折叠，并支持搜索；不新增目录 HTTP 面。
+- **手加 REST 工具（仅 OpenAPI）** — `POST /v0/connectors/{id}/tools` 在 `openapi` Connector 上加一行 `extra`，复用该 Connector 的 `base_url`、鉴权、会话身份与 HITL。规格漏写的接口可由此补上。重名返回 `409`。
+- **插件工具** — 侧车发现的 `plugin` 行可启停，但**不能**手加或删除，侧车是唯一来源。对 `http` Connector 手加会返回 `400`。
+- **删除** — `DELETE /v0/connectors/{id}/tools/{name}` 仅对 `source = extra` 行生效；`spec` / `plugin` 行返回 `400`。
+- **再 PUT / 重启** — 同 `id` 再 `PUT` 与已有目录合并（见上文）；Runtime 重启时从磁盘目录恢复，只重新注册启用行。YAML / PUT 可省略目录字段以保持磁盘目录不变。
+
+这个目录开关**不是**：
+
+- **会话登录** — 工具行上的 `require_login` 控制带 `conversation_id` 的 Run 在没有捕获身份时能否调用该工具；它不存凭证。
+- **控制面口令** — `control_plane.operator_token` / `admin_token` 挡的是谁能调 `/v0`。目录写操作（`PATCH /v0/tools/{name}`、`POST/DELETE /v0/connectors/{id}/tools`）需要管理员口令；操作员返回 `403`。
+
+### Agent Skills（可选）
+
+Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL.md`（流程 Markdown）+ 工具名列表。用来收窄（或叠加）模型可见的已启用工具，并把流程正文注入 Run 的 system。
+
+| 主题 | 行为 |
+|------|------|
+| 落盘 | 内置 `./skills`（`skills.builtin_dir`）与用户 `./data/skills`（`skills.user_dir`）；一级子目录为包 id，内含 `SKILL.md` |
+| 上传 / 删除 | 管理员经 `POST /v0/skills` 或「设置 → Skills」上传 `.md` / `.zip`；`DELETE /v0/skills/{id}` 仅删 **user** 包（内置 → `400`）。同 id：用户覆盖内置 |
+| 默认激活 | `agent.skills`（YAML / `PUT /v0/agents/{id}`）列出 Run 开始时已激活的包 |
+| 渐进激活 | 安装集非空时，模型可见内置工具 `activate_skill`，可在**本 Run** 内扩大激活集 |
+| `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
+| 求交 | 可见工具 = ∪(已激活 Skill 的 `tools`) ∩ 目录 `enabled`；Skill **不能**启用已停用的目录行 |
+
+**Chat Composer — Skill 符号（`@` / `/`）：** 在 `/ui` 输入 `@skill-id` 或 `/skill-id`（等价）即可为**本 Run** 激活 Skill 包。一条消息可多个，去重保序；与 `POST /v0/runs` 可选字段 `skills` 合并后**覆盖** Agent 默认列表（不是追加到默认之上）。未知 id → `400 unknown_skill`；符号会从落库的用户文案中剥离。输入 `@` / `/` 会弹出补全（`GET /v0/skills` 对操作员可读）。
+
+**对话附件：** 使用 `/ui` 纸夹按钮，或在 `POST /v0/runs` 传 `attachments[]`（base64 JSON）。支持类型：
+
+| 扩展名 | 处理 |
+|--------|------|
+| `.txt` `.md` `.csv` | UTF-8 原文注入 user 上下文 |
+| `.docx` `.xlsx` `.pdf` | 抽取文本（PDF 仅文本层，不做页渲染） |
+| `.png` `.jpg` `.jpeg` `.webp` `.gif` | 在启用 vision 时作为多模态 image part |
+
+限额：单次最多 5 个文件、解码后合计 ≤ 8 MiB、单文件抽取文本 ≤ 64 KiB（超出截断并标注 `…[truncated]`）。其它扩展名 → `400 unsupported_attachment`；PDF 无可用文本 → `400 empty_pdf_text`。
+
+**Vision 硬失败：** `llm.supports_vision` 默认为 `false`（见示例 YAML 注释）。Run 含图片附件且 `supports_vision=false` 时，服务端返回 **`400 vision_unsupported`** 且**不创建 Run** — 禁止把图片静默降级为「仅文件名」后继续执行。换支持识图的模型时请显式设 `supports_vision: true`。`/ui` 会读取 `GET /v0/ui-config` 并在发送前拦截图片；服务端仍为权威。
+
+内置 Skill 分两层目录：`skills/` 为核心（`minimal` 仅扫描此目录，默认 `data-analytics`）；`examples/skills/` 为 demo 试用包（仅 `demo` / `docker-demo` 通过 `builtin_dirs` 额外扫描）。干净部署在设置 → Skills 只见核心包。
+
+这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
+
+Skill 包可附 `workflow.yaml` 定义确定性流水线：`{{input.text}}` 取用户输入、`{{<步骤id>.result.x}}` 取上一步结果；审批标 `approve: true`。
+
+### 数据分析与报表
+
+多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。开箱内置 Skill **`data-analytics`**（`skills/data-analytics`，`minimal.yaml` 默认激活）：在「设置 → Skills」可取消勾选，或由模型调用 `activate_skill`。无 Connector 时仍可用 `create_analysis_page`；注册 OpenAPI 后 Skill 中的 `list_tickets` / `get_ticket` 随目录启用而可见。
+
+**推荐路径：** `create_analysis_page` → 自包含分析页，支持**筛选**、图表**下钻**、页内**导出 PDF**。工具返回 `{ artifact_id, artifact_url, kind: "analysis_page" }`；`/ui` 以 iframe 嵌入。
+
+**Token 策略：**
+
+| 方式 | 适用场景 |
+|------|----------|
+| `format: "sections"` + `binding` | **默认** — 在模型侧把 Connector JSON 聚合为 `datasets`，用 binding 绑定图 / KPI / 表；token 最省 |
+| section 内 `echarts.option` | binding 表达不了的复杂图 |
+| `format: "html"` | 版式完全自由；payload 更大；Runtime 会包装并校验 HTML |
+
+从企业工具拉 JSON，在模型侧重构为 `datasets`；勿把原始大 JSON 塞进单个 section。
+
+**可选 — AntV MCP 静态 PNG：**
+
+白泽**不**开箱预置 AntV。管理员可在 **设置 → MCP** 自行注册 `@antv/mcp-server-chart`（stdio `npx`），得到单图 PNG URL — 适合 Office / 幻灯片，不是完整分析站。MCP 结果仍以 JSON 工具卡展示（无专用图片嵌入组件）。
+
+| | `create_analysis_page` | AntV MCP |
+|--|------------------------|----------|
+| 产物 | **整页分析站**（多区块 + 筛选 + 下钻） | 多为 **单图** + 图片 URL |
+| 叙事 | markdown / KPI / 表与图混排 | 无 |
+| 托管 | Baize artifact + 对话 iframe | 外部图床 URL |
+| 灵活性 | sections + 完整 ECharts option；或整页 HTML | 固定 `generate_*` 图表类型 |
+
+### 生产一键启动（Go 原生）
+
+`baize start` 使用 `configs/minimal.yaml`：**无演示 Connector、无 mock-ticket、真实 LLM**。须先设置 API Key：
+
+```bash
+cp .env.example .env   # 填写 BAIZE_API_KEY
+export BAIZE_API_KEY=sk-...   # 或 source .env
+go run ./cmd/baize start
+# Windows: .\start.cmd  或  .\baize.cmd start  （会读取 .env）
+```
+
+可选：复制 `configs/minimal.yaml` → `configs/minimal.local.yaml`（gitignore）覆盖 `llm.base_url` / `model` 等。
+
+若曾跑过 `demo` 且 Tools 里仍有 `ticket-api` / 工单工具，多半是旧库 `./data/baize.db` 里残留的 Connector。`demo` 现已改用 `./data/baize-demo.db`；生产可删一次旧库后重启：
+
+```powershell
+Remove-Item -Recurse -Force .\data\baize.db -ErrorAction SilentlyContinue
+.\start.cmd
+```
+
+启动日志应出现 `baize start: config=configs/minimal.yaml agent=default-agent llm=openai_compatible`，且**不应**有 `persisted connectors restored`（全新库时）。
+
+启动后工具目录为空，需注册 Connector（`PUT /v0/connectors/{id}`）或 MCP Server（`type: mcp`）。SQLite 仍用于 Run / 对话落盘。
+
+### 真实 LLM 与对接业务 API
+
+**不要把密钥写进 YAML。**
+
+1. 生产默认已在 `configs/minimal.yaml` 使用 `openai_compatible`；`baize start` 在缺少 `BAIZE_API_KEY` 时会直接失败并提示。
+2. 复制 `.env.example` → `.env`，填写 `BAIZE_API_KEY`（以及可选的控制面 / Connector Token）
+3. 在 `configs/minimal.local.yaml` 中增加 `connector` 段，或启动后用 API 注册：
+
+```yaml
+connector:
+  id: my-api
+  type: openapi
+  spec: path/to/your/openapi.yaml
+  base_url: https://your-api.example.com
+  require_approval_mutating: true
+  auth:
+    mode: static
+    static:
+      headers:
+        Authorization: "Bearer ${BAIZE_CONNECTOR_TOKEN}"
+    capture:
+      tool_name_glob: "*login*"
+      token_json_paths: ["accessToken", "data.accessToken", "data.token"]
+      header_template: "Bearer {{token}}"
+      default_scheme: "bearer"
+```
+
+```bash
+go run ./cmd/baize start
+# 或：go run ./cmd/baize serve -config configs/minimal.local.yaml
+```
+
+试用栈仍用 `go run ./cmd/baize demo`（mock LLM，无需 Key）。
+
+### 多模型配置与对话选模型
+
+生产启动后，可在 **设置 → 模型**（`/settings/models`，仅管理员）维护多个**命名模型 profile**，无需改 YAML、无需重启：
+
+- 每个 profile 含：名称、Provider（本版固定 `openai_compatible`）、Base URL、模型名、API Key（或 API Key 环境变量名）、`disable_thinking`、`supports_vision`、`context_tokens`，以及 **Auto 路由档位**（`light` / `standard` / `power`，可选「auto」按模型名自动识别）。档位告诉任务感知 Auto 路由器该模型的能力级别。
+- **API Key 存本地库**（SQLite / Postgres，与 DSN 密码同级信任）；界面与 API 响应一律**脱敏**回显（前 3 后 4，中间省略）。编辑时 Key 留空表示**不修改**；也可只填环境变量名、由 Runtime 启动/调用时读取。**任何 profile 都可删除，包括最后一个**；当一个模型都没有时，聊天会被拦截并提示先添加模型。
+- **热切换、不重启**：profile 增改后，下一次对话自动生效；底层按 Run 解析 / 缓存 Provider，配置更新即热重建。
+- **智能路由（Auto）**：聊天框模型下拉首项为「智能路由（Auto）」，也是默认与无人值守入口的行为。Auto 并非独立模型，而是一套确定性路由策略：根据每轮对话的**实际内容**（文本长度、推理类关键词、代码块、附件数量）判定难度档位，在该档位里挑选模型（普通文本优先用 `standard`），理想档位没有模型时向相邻档位降级；**带图片的消息只会使用勾选了 `supports_vision` 的模型**。也可在下拉里**手动指定**某条消息固定使用某个具体模型；手动选择会被严格遵守、**不会**自动改道（即便该模型不支持图片，也只会提示而不偷偷换模型）。**选择不记忆**——发送成功后下拉重置回 Auto，不写 `localStorage`。微信渠道、Inbox、MCP 导出等**无人值守入口**始终走 Auto。
+- **权限**：操作员可查看模型列表（供聊天下拉），仅管理员可增删改。
+- **首次启动种子**：若库里还没有任何 profile，Runtime 用配置文件 YAML 的 `llm` 段（`provider` / `base_url` / `model` / `api_key_env` / `disable_thinking` / `supports_vision`，Auto 档位按模型名推断）种子一个以模型名命名的 profile（**不把 Key 原文入库**，只记环境变量名）。此后以库为准，UI 增改不回写 YAML。`baize demo` 的 mock provider 路径不启用此功能。
+
+---
+
+## 运行时热更新设置（不重启）
+
+一批原先只能改 YAML + 重启的设置，现在可经 API / UI 修改，下一次请求即刻生效。覆盖值落库到设置 KV（`runtime_settings`），重启不丢，多副本间约 20s 内同步（后台 TTL 重读）。
+
+| 端点 | 方法 / 权限 | 用途 |
+|------|------------|------|
+| `/v0/settings/runtime` | GET — 操作员；PATCH — 管理员 | 引擎参数旋钮 |
+| `/v0/settings/credentials` | GET / PATCH — 管理员 | 控制面口令与具名操作员 |
+| `/v0/settings/channels/weixin` | PUT — 管理员 | 微信渠道启停 |
+
+**引擎参数** — `PATCH /v0/settings/runtime` 为部分更新：只传要改的字段；越界值返回 `400`。
+
+| 字段 | 取值范围 | 默认 | 含义 |
+|------|----------|------|------|
+| `max_messages` | 1–500 | 40 | 回喂 LLM 的历史窗口 |
+| `max_steps` | 1–100 | 16 | 单次 Run 最大工具步数 |
+| `tool_timeout_seconds` | 1–600 | 60 | 单次工具调用超时 |
+| `compaction_enabled` | 布尔 | true | 上下文压缩开关 |
+| `compact_threshold` | 0.1–0.95 | 0.8 | 触发压缩的上下文占用比例 |
+| `compact_reserve_tokens` | 256–100000 | 8000 | 压缩时预留的 token 数 |
+| `compact_keep_recent` | 0–100 | 8 | 始终保留原文的最近消息数 |
+| `compact_summary_timeout_seconds` | 1–600 | 60 | 压缩摘要 LLM 调用的超时上限 |
+
+`GET /v0/settings/runtime`（操作员可读）返回每个旋钮的生效值 `effective` 与是否已自定义的 `overridden`（相对 YAML 基线）。
+
+**控制面凭据** — `GET /v0/settings/credentials` **绝不返回明文口令**：只回 `source`（`config`/`override`）、`operator_set` / `admin_set` 布尔，以及 `operators` 列表（每项仅含 `id` 与 `source`（`config`/`runtime`））。`PATCH` 支持：`operator_token` / `admin_token`（轮换主口令，下一个请求即刻生效）、`add_operators: [{id, token}]`（id 重复返回 `409`）、`remove_operators: [id]`（只能删运行时新增的；删 config 基线的返回 `400`）、`reset: true`（清空全部热更新凭据，回落到 YAML/env 基线口令；不能与其它字段同用）。YAML/env 配置的口令是永久 break-glass 基线，热更新为叠加覆盖。
+
+**锁死恢复**：轮换后若丢失新的 admin 口令，在服务器本地执行（不走 HTTP 门禁）：
+
+```bash
+baize reset-credentials -config <配置路径>
+```
+
+仅清空凭据覆盖、引擎参数不受影响；重启或等 TTL 过期后即回落 YAML/env 基线口令。
+
+**微信适配器（独立进程）** — 微信已从进程内渠道迁移为进程外 webhook 适配器 `weixin-adapter`。baize 可经 `adapter_autostart` 自动托管该子进程（默认配置即如此），也可独立部署。启用微信前需先构建适配器二进制（baize 经 PATH 或 `./bin/` 查找）：
+
+```bash
+go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-adapter.exe
+```
+
+适配器与 baize 之间用 HMAC 签名的 JSON-over-HTTP 通信（`/outbound` 出站、`/v0/channels/weixin/inbound` 入站、`/admin/*` 登录/状态/启停）；`secret` 留空时 baize 自动生成并经 `-secret` 注入。微信登录凭证（`creds.json`）由适配器保存在 `adapter_creds_dir`（默认 `./data/channels/weixin`），重启免重扫。
+
+**微信启停** — `PUT /v0/settings/channels/weixin` 带 `{"enabled": true}`：有登录凭证时立即启动长轮询，未登录则返回 `running:false, reason:"login_required"`；`{"enabled": false}` 停止轮询但**保留登录凭证**——重新启用无需重新扫码（区别于 logout）。`GET` 与 `PUT` 响应均包含 `running` 与 `reason`（`login_required` / `start_failed`），界面首屏即可看到当前运行状态。
+
+**微信私信白名单** — `allowlist` 为 peer（`from_user_id`）id 列表。非空时，渠道会在下载媒体 / 创建会话之前**丢弃名单外 peer 的私信**，且不自动回复（避免被探测 / 节省出站成本）；空列表（默认）表示不限制私信。保存即热生效、启动时也会重新应用；群消息始终忽略。
+
+非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径、凭据 KV 加密（凭据明文落库，与模型 `api_key` 同级信任）。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。
+
+---
+
+## 写操作与身份
+
+变更类工具可通过 `require_approval` 先走人工审批，再真正调用（演示流程见上文「30 秒跑通」）。
+
+### 会话身份
+
+登录类 Tool 成功后，可将 Token **捕获**到按 `conversation_id` 隔离的身份库；同一会话后续调用在已有会话身份时会自动带上解析出的 Bearer（默认按 OpenAPI `securitySchemes` 选型）。
+
+带 `conversation_id` 的 Run（含 `/ui`）**只用**会话身份，不会静默使用 Connector 配置里的默认 Token。配置 Token 可选，仅供**不带** `conversation_id` 的脚本 / curl 使用。
+
+- `/ui` → **设置 → 账号**：查看账号（脱敏）、设默认、退出
+- `/ui` → **设置 → Tools**：可标「需要登录」（默认公开，不读 OpenAPI `security`）
+- 左栏 **新对话** → 新的 `conversation_id`（`localStorage` 键 `baize.conversation_id`）
+- **不带** `conversation_id` 的 Run，默认 HTTP 头由 `connector.auth.mode` 决定：
+  - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
+  - `passthrough` — 每次 `POST /v0/runs` 按白名单透传请求头
+  - `vault_ref` — 注册时解析 `env:` / `file:` 引用
+- 默认捕获匹配 `*login*`，读取 `accessToken` / `data.token` 等（可用 `connector.auth.capture` 覆盖；`tool_name_glob: "__none__"` 关闭）。插件侧车中名称匹配 `*login*` 的工具同样可捕获。
+- `baize start` 与 `PUT /v0/connectors` 都会挂上 Identities / Resolver / Capture（OpenAPI 与 HTTP 插件 Connector）
+- 修改鉴权 / 捕获 YAML 后需重启 Runtime；`PATCH /v0/tools/{name}` 会把 `enabled` / `require_login` 落到目录（SQLite 重启后仍在），并立即在内存 Registry 中注册或卸下该工具。这个开关与对话里登录下游系统（会话身份）、与控制面口令不是同一回事。
+
+```bash
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/identities
+```
+
+### 对话记忆
+
+默认 SQLite 驱动下，白泽会把对话消息与捕获的身份写入 `data/baize.db`（可用 `store.sqlite_path` 配置）。Runtime 重启后，按 `conversation_id` 恢复历史轮次与已登录账号。
+
+**PostgreSQL（可选）：** 在配置中设置 `store.driver: postgres` 与 `store.dsn`，或在 **设置 → 存储**（管理员）选择 `postgres` 并填写 DSN 后 **保存并重启**。会话、身份与 Run 目录共用同一 DSN。**不会**自动从 SQLite 迁移数据；换库前请自行备份或导出。本版为单实例部署；Docker 请配置 `restart: unless-stopped` 以便重启后容器继续运行。新增 SQL 驱动可参考 `internal/store` 注册表模式（`RegisterDriver` + 独立包）。
+
+- `conversation.max_messages`（默认 `40`）控制回喂给 LLM 的最近轮次窗口；更早的消息仍留存数据库备查，但不会进入提示词。配置为 `<=0` 时会在加载时回填为 `40`。
+- 「清空聊天」（`DELETE /v0/conversations/{id}/messages`）只删除消息历史，**不会**退出登录；捕获的身份仍在，需通过身份 API 单独删除。消息清空后该对话也会从**左栏列表消失**。
+- **回滚 / Fork（`/ui`）**：用户气泡「编辑并回滚」截断该条及之后；助手气泡「重新生成」截断后自动重跑；任意气泡可「Fork 到此」复制前缀到新对话（不复制登录态）。进行中 Run 时不可用。
+- `GET /v0/conversations` 返回摘要；标题取自首条用户消息，截断到 40 字（不用 LLM 起标题）。
+- `data/baize.db` 是运行时产物，请勿提交到 git（默认 `.gitignore` 已忽略 `data/`）。
+
+```bash
+# 对话列表（左栏）
+curl -s http://127.0.0.1:8080/v0/conversations
+
+# 查看持久化的对话轮次
+curl -s http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# 清空聊天但不退出登录
+curl -s -X DELETE http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages
+
+# 回滚到某条消息（含该条及之后删除）
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/messages/<message_id>/rollback
+
+# Fork：复制到某条消息为止的前缀到新会话
+curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
+  -H 'Content-Type: application/json' \
+  -d '{"through_message_id":"<message_id>"}'
+```
+
+---
+
+## 生产集成：Webhook Inbox
+
+**一句话：** 告警、工单或自研网关向 Baize Inbox 签名 POST，Runtime 自动建 Run；可选出站 Webhook 把 Run 事件推回你的平台。
+
+```
+监控 / 工单 / 脚本                 Baize Runtime                    你的回调
+        │                               │                               │
+        │  POST /v0/inbox/{channel_id}  │                               │
+        │  + HMAC（Channel Secret）        │                               │
+        ├──────────────────────────────►│  验签 → 幂等 → 建 Run           │
+        │  202 {delivery_id, run_id}    │                               │
+        │◄──────────────────────────────┤                               │
+        │                               │  POST run 事件 + run.ended      │
+        │                               ├──────────────────────────────►│
+        │                               │  （全局或 Channel 级 Webhook）   │
+```
+
+能力称 **Inbox v1**；HTTP 路径仍在 **`/v0/`** 协议前缀下（可选头 `X-Baize-Protocol: v0`）。
+
+### 配置 Channel
+
+1. 打开 `/ui` → **设置 → Inbox**（管理员）。
+2. 新建 Channel：`id`（URL 段，如 `alerts`）、`agent_id`、可选 **Skills** 与 Channel 级出站 `webhook_url` / headers。
+3. 复制入站 URL（`https://<host>/v0/inbox/{id}`）与 **Secret**（创建或 **轮换 Secret** 时明文展示一次）。
+4. 在设置页 **发送测试**，或使用下方脚本。
+
+YAML 种子（可选启动默认；运行时以 SQLite `settings` 为准）：
+
+```yaml
+inbox:
+  channels:
+    - id: alerts
+      agent_id: ticket-agent
+      enabled: true
+      skills: [ticket-triage]
+```
+
+管理 API：`GET/PUT /v0/settings/inbox-channels`、`POST .../{id}/rotate-secret`、`POST .../{id}/test`。
+
+### 签名 POST（curl + OpenSSL）
+
+```bash
+export RUNTIME_URL=http://127.0.0.1:8080
+export INBOX_SECRET='<channel-secret>'
+TS=$(date +%s)
+BODY='{"input":"VPN 故障，工号 10086","idempotency_key":"alert-20260828-001","external_id":"jira-OPS-1234"}'
+SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$INBOX_SECRET" | awk '{print $2}')"
+curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
+  -H "Content-Type: application/json" \
+  -H "X-Baize-Inbox-Timestamp: $TS" \
+  -H "X-Baize-Inbox-Signature: $SIG" \
+  -d "$BODY"
+```
+
+PowerShell：见 [`examples/inbox-alert/post.ps1`](examples/inbox-alert/post.ps1)。
+
+**请求头（必填）：** `Content-Type: application/json`、`X-Baize-Inbox-Timestamp`（Unix 秒）、`X-Baize-Inbox-Signature: v1=<hex>`，其中 `v1=<HMAC-SHA256(secret, "<timestamp>.<raw_body>")>`。
+
+**请求体（create_run，默认）：** `input`（必填，trim 后 1–8192 字符）；可选 `idempotency_key`、`conversation_id`、`external_id`、`metadata`（仅写入 `inbox.received` 事件，不传入 LLM）。`action` 可省略，等价 `create_run`。Body 上限 **64 KiB**。
+
+**成功：** `202 Accepted`，返回 `delivery_id`、`run_id`、`status: accepted`；有会话绑定时含 `conversation_id`。
+
+### 机器审批（HITL resume）
+
+Run 进入 `waiting_human` 后，可用**同一 Inbox URL 与签名方式**投递 `action: resume`，走与控制面 `POST /v0/runs/{id}/resume` 相同的 `ContinueFromHITL` 路径（适合工单/审批网关自动批过，无需 Operator Token）。
+
+```bash
+export RUN_ID='<run_id_from_create_or_webhook>'
+TS=$(date +%s)
+BODY='{"action":"resume","run_id":"'"$RUN_ID"'","decision":"approve","comment":"自动审批","idempotency_key":"alert-20260828-approve-001"}'
+SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$INBOX_SECRET" | awk '{print $2}')"
+curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
+  -H "Content-Type: application/json" \
+  -H "X-Baize-Inbox-Timestamp: $TS" \
+  -H "X-Baize-Inbox-Signature: $SIG" \
+  -d "$BODY"
+```
+
+`decision` 为 `approve` 或 `reject`；`comment` 可选。成功 **200 OK**，返回 `delivery_id`、`run_id`、`status`（resume 后 Run 状态）、`action: resume`。Run 的 `agent_id` 须与本 Channel 一致，否则 **403**；非 `waiting_human`（含已被 `/ui` 批过）→ **409** `not_waiting`。幂等规则与 create 相同（同 `idempotency_key` + body hash → 200 重放首次响应）。轨迹含 `inbox.resumed` 事件。规格见 [`docs/superpowers/specs/2026-08-28-inbox-hitl-resume-v0-design.md`](docs/superpowers/specs/2026-08-28-inbox-hitl-resume-v0-design.md)。
+
+### 幂等与续聊
+
+| 机制 | 行为 |
+|------|------|
+| `idempotency_key` | 相同 `(channel_id, key)` 且 body hash 相同，**24h** 内重投 → **200 OK**，同一 `run_id` / `delivery_id`（不重复建 Run）。同 key 不同 body → **409** `idempotency_conflict`。 |
+| `external_id` | 按 Channel 映射稳定 `conversation_id`；每次 POST 仍建**新 Run**，后续消息共享对话上下文。 |
+| `conversation_id` | 显式指定会话 id（未知则创建并沿用）。 |
+
+同时省略 `external_id` 与 `conversation_id` 时，为无会话的机器路径。
+
+### 与出站 Webhook 配对
+
+- **全局：** 设置 → Webhook — 所有 Run 的事件 URL（可被覆盖）。
+- **按 Channel：** Inbox 的 `webhook_url` / `webhook_headers` — 仅该 Channel 触发的 Run。
+- **按 Run：** 聊天页 **高级** `webhook_url`（仅 UI / `POST /v0/runs`；Inbox v1 请求体不含此字段）。
+
+出站投递会 POST 每条 Run 事件及终态 `run.ended`（可在设置 → Webhook 发测试）。Inbox 触发的 Run 首条事件为 `inbox.received`。
+
+**出站可靠性（v0）：** 下游 **5xx / 网络错误 / 429** 时自动重试（最多 5 次 POST，退避 1s→2s→4s→8s→16s，单次间隔上限 60s）；其他 **4xx** 不重试，进入死信。SQLite `webhook_outbox` 持久化 pending，进程重启可续投。管理员在 **设置 → Webhook → 最近投递** 查看 pending / dead 并手动重投。
+
+### 安全清单（生产）
+
+1. 启用 `control_plane.admin_token`；Inbox URL 仅在内网或 API 网关后暴露。
+2. **每个 Channel 独立 Secret**；定期轮换（`POST /v0/settings/inbox-channels/{id}/rotate-secret`）。
+3. 调用方应始终携带 **`idempotency_key`**（重试、Webhook、队列投递）。
+4. 配置全局或 Channel 级**出站 Webhook** 做审计与集成。
+5. 网关层可选 **WAF / mTLS**（Baize 不内置）。
+
+**内置限制：** 无效或缺失签名 → **401**；时间戳偏移 > **300s** → **401** `timestamp_skew`；Channel 禁用或不存在 → **404**；每 Channel **120 次/分钟** → **429**，`Retry-After: 60`（内存计数，单进程）。
+
+可运行示例：[`examples/inbox-alert/`](examples/inbox-alert/)。
+
+---
+
+## 微信 Channel（个人号 iLink）
+
+**一句话：** 管理员在设置页扫码登录个人微信 Bot（腾讯 iLink），私信文本 / 常见媒体入站建 Run；有权限的操作员可在 `/ui` 同会话回复并出站回微信。与 Inbox（HMAC 告警入站）并行，互不替代。
+
+| | Inbox | 微信 Channel |
+|--|--------|----------------|
+| 场景 | 告警 / 工单 / 自建网关 | 人在个人微信**私信** bot |
+| 鉴权 | Channel Secret HMAC | iLink 扫码 token |
+| 传输 | 调用方 HTTP POST | 长轮询 + send |
+| 会话键 | `external_id` 等 | `weixin:<account_id>:<peer_id>` |
+
+### 具名操作员与开发态
+
+多运营时在 YAML 配置具名操作员（推荐生产）：
+
+```yaml
+control_plane:
+  admin_token: "env:BAIZE_ADMIN_TOKEN"
+  operators:
+    - id: alice
+      token: "env:BAIZE_OP_ALICE"
+    - id: bob
+      token: "env:BAIZE_OP_BOB"
+```
+
+- 仍只配单个 `operator_token`（无 `operators`）时，视为唯一操作员 `id=operator`。
+- 会话带 `owner_id`：普通操作员默认只看自己的对话；admin 可看全部（UI「全部 / 我的」）。
+- **Gate 关闭**（`admin_token` / `operator_token` / `operators` 皆空）：开发态，UI 按单一本地 admin 渲染，`owner_id` 可为 `local-dev`——**无多运营隐私隔离**。要隔离必须配置具名操作员（或至少控制面口令）。
+
+### 设置页扫码步骤
+
+1. 打开 `/ui` → **设置 → 渠道 / 微信**（管理员）。
+2. **获取登录二维码**，用手机微信扫码；页面轮询至 `success`。
+3. 配置 `agent_id`、**受理人**（`assignee`，操作员 id）、可选 allowlist（每行一个 peer id），保存。
+4. 凭证写入 `./data/channels/weixin/`（`creds.json` 等，已 gitignore）；进程启动若凭证有效会自动恢复长轮询。
+5. 登出：清除本地凭证并停止轮询。
+
+新 peer 首条私信创建会话时：`owner_id = 受理人`；未配置受理人时默认为 `channel:weixin`（仅 admin 默认列表可见）。同 peer 已有 **queued/running** Run 时不建第二 Run，微信侧回复「请稍候，上一轮还在处理」。若 Run 处于 **waiting_human（工具审批）**，微信会收到审批说明；回复「批准」/「拒绝」（或 approve/reject）可续跑，其它内容会提示如何审批。
+
+### 媒体、群与已知限制（v0）
+
+- **媒体：** 私信文本、图片与常见文件可入站为附件并进 Run（vision 开启则图片多模态，否则文本说明）；助手文本可出站回 peer。**CDN AES 解密尚未实现**——依赖加密 CDN 的媒体可能下载后无法使用。
+- **出站展示：** `/ui` 操作员发言与助手回复均以 Bot 气泡到达微信，分别带 `【客服】` / `【助手】` 前缀以便区分；客服出站后短暂等待再发助手回复，降低乱序概率。
+- **出站 `context_token`：** 仅缓存在进程内存；服务重启后需该 peer 再发一条微信消息，之后才能从 `/ui` 可靠出站（本版不落盘）。
+- **allowlist：** 设置页可保存并**已做入站强制**——非名单内 peer 的私信在下载媒体 / 建会话前被静默丢弃、不自动回复；留空表示不限制（默认开放私信）。
+- **群聊：** 普通微信群默认不支持（iLink bot 通常不推群）。
+- **验收：** 假 iLink 单测覆盖登录 / 归属等；**真机扫码与私信往返需手工验收**，仓库未做自动化真机测。
+- **部署：** 本版按**单实例**使用同一 bot 凭证；勿多副本抢同一账号。
+
+---
+
+## 部署
+
+白泽是单个静态二进制。可选启动脚本（Windows 无需全局 `baize` 命令）：
+
+- 生产：`.\start.cmd` 或 `.\baize.cmd start`（读取 `.env` 中的 `BAIZE_API_KEY`）
+- 试用：`.\demo.cmd` 或 `.\baize.cmd demo`
+- POSIX 生产：`./scripts/start.sh`；试用：`./scripts/demo.sh`
+
+### 本机二进制
+
+```bash
+# Linux 服务器
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o baize ./cmd/baize
+# macOS
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o baize ./cmd/baize
+# Windows
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o baize.exe ./cmd/baize
+```
+
+将二进制拷到目标主机即可，除操作系统外无其它运行时依赖。
+
+### Docker
+
+**生产（仅 Runtime，无演示 HTTP）**：
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose up --build
+```
+
+- Runtime / UI：http://127.0.0.1:8080 （`/ui`）
+- 使用 `configs/docker-minimal.yaml`；须设置 `BAIZE_API_KEY`
+
+**试用样板栈**（Runtime + 演示 HTTP，mock LLM）：
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+- Runtime / UI：http://127.0.0.1:8080
+- 演示 HTTP：http://127.0.0.1:18080
+- 使用 `configs/docker-demo.yaml`；`mock-ticket` 为独立容器
+
+试用 compose 可设置 `BAIZE_CONNECTOR_TOKEN` 为 `dev`，仅供不带会话的脚本；`/ui` 不会用它。不要把密钥写进 YAML。
+
+**MCP + Postgres 试用**（Runtime + 演示库，不含 MCP Server）：
+
+```bash
+export BAIZE_API_KEY=sk-...
+docker compose -f docker-compose.mcp-demo.yml up --build
+```
+
+DBHub 宿主机 `npx` 与 `PUT` 示例见 [MCP Connector](#mcp-connector可选)。
+
+**自定义 YAML 挂载**：
+
+```bash
+docker build -t baize:local .
+docker run --rm -p 8080:8080 \
+  -v /path/to/your.yaml:/app/configs/docker-minimal.yaml \
+  -v baize-data:/app/data \
+  -e BAIZE_API_KEY \
+  baize:local
+```
+
+如需覆盖构建时的模块代理：`docker build --build-arg GOPROXY=https://proxy.golang.org,direct .`
+
+---
+
+## Chat UI 构建（可选）
+
+`/ui` 是 React + Vite 单页，仓库已提交 `internal/ui/dist` 预构建产物（`//go:embed`）。修改 `web/chat` 后需 Node 18+ 重新构建：
+
+```bash
+cd web/chat
+npm ci
+npm run build
+```
+
+---
+
+## 命令
+
+| 命令 | 说明 |
+|------|------|
+| `baize start` | 生产默认：`minimal.yaml`；仅 Runtime；**须** `BAIZE_API_KEY`；无演示 Connector |
+| `baize demo` | 试用：`demo.yaml`；Runtime + 内嵌演示 HTTP；mock LLM，无需 Key |
+| `baize serve -config <path>` | 仅 Runtime，显式指定配置（不校验 API Key） |
+| `baize reset-credentials -config <path>` | 清空热更新控制面口令，回落 YAML/env 基线（锁死恢复；见「运行时热更新设置」） |
+
+---
+
+## 文档
+
+- [架构与插件协议草案](docs/architecture-and-plugin-protocol.md)
+- [部署指南](docs/deployment.md) —— 适配器 autostart 托管 vs 独立部署。
+
+---
+
+## 许可证
+
+[MIT](LICENSE)

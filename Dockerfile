@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o /out/baize ./cmd/baize \
+ && go build -o /out/mock-ticket ./examples/mock-ticket/cmd/mock-ticket \
+ && go build -o /out/weixin-adapter ./cmd/weixin-adapter
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=build /out/baize /app/baize
+COPY --from=build /out/mock-ticket /app/mock-ticket
+COPY --from=build /out/weixin-adapter /app/weixin-adapter
+COPY configs/docker-minimal.yaml /app/configs/docker-minimal.yaml
+COPY configs/docker-demo.yaml /app/configs/docker-demo.yaml
+COPY configs/docker-weixin-standalone.yaml /app/configs/docker-weixin-standalone.yaml
+COPY skills /app/skills
+COPY examples/skills /app/examples/skills
+EXPOSE 8080
+CMD ["/app/baize", "serve", "-config", "/app/configs/docker-minimal.yaml"]

@@ -1,0 +1,51 @@
+# 本地 / 工具残留（勿进任何远程）
+.cursor/
+.idea/
+*.swp
+.DS_Store
+*.exe
+*.test
+bin/
+# 通用 dist；Go embed 需跟踪 internal/ui/dist（须逐级取消忽略）
+dist/
+!internal/
+!internal/ui/
+!internal/ui/dist/
+!internal/ui/dist/**
+_public_export/
+_public_git/
+.env
+.env.*
+!.env.example
+
+# 本地 LLM / 调试覆盖（含真实 provider 配置）
+configs/default.local.yaml
+configs/minimal.local.yaml
+configs/demo.local.yaml
+
+# 本地对接的真实系统 OpenAPI（每个环境不同，勿提交）
+examples/local/**
+!examples/local/README.md
+
+# 导出开源仓时本机使用的私人敏感词表（含私人系统名/域名，仅本机保存，勿提交）
+scripts/.export-secret-patterns.txt
+
+# Go
+vendor/
+
+# 说明：docs/superpowers/ 保留在本工作区与 baize_real；
+# 同步到开源仓 baize 时请用 scripts/export-public.ps1，不要直接把含 superpowers 的树推到 public。
+
+.worktrees/
+
+# 头脑风暴视觉伴侣会话
+.superpowers/
+
+# 本地运行数据（含渠道凭证；下方 channels 行显式标明微信目录）
+data/
+/data/channels/
+
+baize-stdout.log
+baize-stderr.log
+
+.walkthrough/
