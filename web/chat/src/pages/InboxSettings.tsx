@@ -9,7 +9,7 @@ import {
   type InboxChannel,
   type SkillSummary,
 } from '../api'
-import { formatKeyValueMap, parseKeyValueLines } from './McpSettings'
+import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 import { toggleSkillSelection } from './SkillsSettings'
 
 const CHANNEL_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/

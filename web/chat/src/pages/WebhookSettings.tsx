@@ -8,7 +8,7 @@ import {
   type EventsWebhookConfig,
   type EventsWebhookDelivery,
 } from '../api'
-import { formatKeyValueMap, parseKeyValueLines } from './McpSettings'
+import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 
 export interface WebhookFormState {
   url: string

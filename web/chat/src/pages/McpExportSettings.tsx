@@ -13,7 +13,7 @@ import {
   type MCPExportKey,
   type MCPExportSettings as MCPExportSettingsInfo,
 } from '../api'
-import { formatKeyValueMap, parseKeyValueLines } from './McpSettings'
+import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 
 export interface IdentityFormState {
   name: string
