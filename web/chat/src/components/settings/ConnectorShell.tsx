@@ -62,18 +62,23 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
     mcp: { title: CONNECTORS.mcpTitle, desc: CONNECTORS.mcpDesc, add: CONNECTORS.addMcp, emptyTitle: CONNECTORS.mcpEmptyTitle, emptyDesc: CONNECTORS.mcpEmptyDesc },
   }[kind]
 
+  // 空状态卡片会自带唯一的新增 CTA；仅在它出现时隐藏页头按钮，避免两个同义入口。
+  const showEmptyState = !loading && rows.length === 0 && !loadError
+
   return (
     <div className="settings-panel">
       <PageHeader
         title={labels.title}
         description={labels.desc}
-        actions={<Button variant="primary" size="sm" onClick={onCreate}>{labels.add}</Button>}
+        actions={showEmptyState
+          ? undefined
+          : <Button variant="primary" size="sm" onClick={onCreate}>{labels.add}</Button>}
       />
 
       {loadError && <p className="ui-inline-error" role="alert">{loadError}</p>}
       {loading && rows.length === 0 && <p className="settings-muted">加载中…</p>}
 
-      {!loading && rows.length === 0 && !loadError && (
+      {showEmptyState && (
         <EmptyState title={labels.emptyTitle} description={labels.emptyDesc}
           action={<Button variant="primary" onClick={onCreate}>{labels.add}</Button>} />
       )}

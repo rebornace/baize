@@ -35,10 +35,11 @@ describe('ConnectorShell', () => {
     expect(btn('接入业务系统')).toBeTruthy()
   })
 
-  it('shows friendly empty state', async () => {
+  it('shows friendly empty state with a single add CTA (no duplicate header button)', async () => {
     await render({ kind: 'plugin', rows: [], loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
     expect(host.textContent).toContain('还没有接入插件服务')
-    expect(host.textContent).toContain('接入插件服务')
+    const addButtons = [...host.querySelectorAll('button')].filter((b) => b.textContent!.includes('接入插件服务'))
+    expect(addButtons).toHaveLength(1)
   })
 
   it('opens row menu and confirms delete', async () => {
@@ -166,9 +167,10 @@ describe('ConnectorShell', () => {
     expect(host.textContent).not.toContain('需本人登录')
   })
 
-  it('empty mcp list shows the mcp empty state and add button', async () => {
+  it('empty mcp list shows the mcp empty state with a single add CTA', async () => {
     await render({ kind: 'mcp', rows: [], loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
     expect(host.textContent).toContain('还没有接入外部工具服务')
-    expect([...host.querySelectorAll('button')].some((b) => b.textContent!.includes('接入外部工具'))).toBe(true)
+    const addButtons = [...host.querySelectorAll('button')].filter((b) => b.textContent!.includes('接入外部工具'))
+    expect(addButtons).toHaveLength(1)
   })
 })
