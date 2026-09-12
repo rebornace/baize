@@ -589,7 +589,9 @@ export function McpExportSettings() {
               : MCP_EXPORTS.revokeKeyBody(confirm.name, confirm.prefix)
             : ''
         }
-        confirmText={MCP_EXPORTS.delete}
+        confirmText={
+          confirm?.kind === 'identity' ? MCP_EXPORTS.delete : MCP_EXPORTS.confirmRevoke
+        }
         busy={busy}
         error={confirmError}
         onCancel={() => {

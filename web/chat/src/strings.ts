@@ -318,6 +318,7 @@ export const MCP_EXPORTS = {
   deleteIdentityBody: (name: string) => `删除身份「${name}」后，其名下密钥也会一并删除。`,
   revokeKeyTitle: '撤销这把密钥？',
   revokeKeyBody: (name: string, prefix: string) => `撤销密钥「${name}」（${prefix}…）后不可恢复。`,
+  confirmRevoke: '确认撤销',
   errNameRequired: '请填写名称',
   errKeyNameRequired: '请填写密钥名称',
   errKeyIdentityRequired: '请选择绑定的身份',
