@@ -15,7 +15,12 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  Field,
+  Input,
+  Modal,
   PageHeader,
+  Select,
+  Textarea,
   ToastRegion,
   useToast,
 } from '../components/ui'
@@ -177,8 +182,8 @@ export function ToolsSettings() {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftDescription, setDraftDescription] = useState('')
   const [savingCopy, setSavingCopy] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerError, setDrawerError] = useState<string | null>(null)
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [addFormError, setAddFormError] = useState<string | null>(null)
   const [form, setForm] = useState<AddFormState>(EMPTY_FORM)
   const [formConnectorId, setFormConnectorId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -466,20 +471,21 @@ export function ToolsSettings() {
     }
   }
 
-  const onAddSubmit = async (e: FormEvent) => {
-    e.preventDefault()
+  const onAddSubmit = async (e?: FormEvent) => {
+    e?.preventDefault()
     if (!formConnectorId) {
-      setDrawerError('未选择 Connector')
+      setAddFormError(TOOLS.errNoConnector)
       return
     }
     let schema: Record<string, unknown> = {}
     try {
       schema = form.schema.trim() === '' ? {} : (JSON.parse(form.schema) as Record<string, unknown>)
     } catch {
-      setDrawerError('input_schema 不是合法 JSON')
+      setAddFormError(TOOLS.errInvalidSchema)
       return
     }
     setSubmitting(true)
+    setAddFormError(null)
     try {
       const created = await createConnectorTool(formConnectorId, {
         name: form.name.trim(),
@@ -494,20 +500,22 @@ export function ToolsSettings() {
       setExpandedConnectors((prev) => addExpandKey(prev, keys.connectorId))
       setExpandedPrefixes((prev) => addExpandKey(prev, keys.prefixKey))
       setForm(EMPTY_FORM)
-      setDrawerError(null)
-      setDrawerOpen(false)
+      setAddFormError(null)
+      setAddModalOpen(false)
+      push({ tone: 'success', title: TOOLS.toastAdded, detail: created.title || created.name })
     } catch (err) {
       const f = toolErrorText(err)
-      setDrawerError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      setAddFormError(f.detail ? `${f.title} ${f.detail}` : f.title)
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setSubmitting(false)
     }
   }
 
-  const closeDrawer = () => {
+  const closeAddModal = () => {
     if (submitting) return
-    setDrawerOpen(false)
+    setAddModalOpen(false)
+    setAddFormError(null)
   }
 
   const renderGroupButtons = (groupKey: string, rows: ToolInfo[]) => {
@@ -701,8 +709,8 @@ export function ToolsSettings() {
             variant="primary"
             size="sm"
             onClick={() => {
-              setDrawerError(null)
-              setDrawerOpen(true)
+              setAddFormError(null)
+              setAddModalOpen(true)
             }}
           >
             {TOOLS.addTool}
@@ -836,116 +844,109 @@ export function ToolsSettings() {
           )}
         </>
       )}
-      {drawerOpen && !readOnly && (
-        <div className="settings-drawer-backdrop" onClick={closeDrawer}>
-          <aside
-            className="settings-drawer"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label="添加工具"
-          >
-            <div className="settings-drawer-head">
-              <h2 className="settings-subheading">添加工具</h2>
-              <Button type="button" variant="ghost" size="sm" onClick={closeDrawer} disabled={submitting}>
-                关闭
+      {!readOnly && (
+        <Modal
+          open={addModalOpen}
+          title={TOOLS.addModalTitle}
+          onClose={submitting ? undefined : closeAddModal}
+          footer={
+            <>
+              <Button type="button" variant="ghost" disabled={submitting} onClick={closeAddModal}>
+                {TOOLS.cancel}
               </Button>
-            </div>
-            <p className="settings-hint">
-              此处仅添加单条 extra 工具；批量导入请用{' '}
-              <Link to="/settings/openapi" className="settings-link">
-                OpenAPI 设置
-              </Link>
-              上传接口文档。
-            </p>
-            {drawerError && <p className="settings-error">{drawerError}</p>}
-            <form className="settings-form" onSubmit={onAddSubmit}>
-              {openConnectorIds.length > 1 && (
-                <label className="settings-field">
-                  <span className="settings-field-label">Connector</span>
-                  <select
-                    className="settings-select"
-                    value={formConnectorId}
-                    onChange={(e) => setFormConnectorId(e.target.value)}
-                    disabled={submitting}
-                  >
-                    {openConnectorIds.map((id) => (
-                      <option key={id} value={id}>
-                        {id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label className="settings-field">
-                <span className="settings-field-label">名称</span>
-                <input
-                  className="settings-input"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  disabled={submitting}
-                  required
-                />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">HTTP 方法</span>
-                <select
-                  className="settings-select"
-                  value={form.method}
-                  onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}
-                  disabled={submitting}
-                >
-                  {HTTP_METHODS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">路径</span>
-                <input
-                  className="settings-input"
-                  value={form.path}
-                  onChange={(e) => setForm((f) => ({ ...f, path: e.target.value }))}
-                  disabled={submitting}
-                  required
-                  placeholder="/items/{id}"
-                />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">显示名（可选）</span>
-                <input
-                  className="settings-input"
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  disabled={submitting}
-                />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">描述</span>
-                <input
-                  className="settings-input"
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  disabled={submitting}
-                />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">input_schema</span>
-                <textarea
-                  className="settings-textarea"
-                  value={form.schema}
-                  onChange={(e) => setForm((f) => ({ ...f, schema: e.target.value }))}
-                  disabled={submitting}
-                  rows={4}
-                />
-              </label>
-              <Button type="submit" variant="primary" disabled={submitting}>
+              <Button type="button" variant="primary" disabled={submitting} onClick={() => void onAddSubmit()}>
                 {submitting ? '提交中…' : TOOLS.addTool}
               </Button>
-            </form>
-          </aside>
-        </div>
+            </>
+          }
+        >
+          <p className="settings-hint">
+            此处仅添加单条 extra 工具；批量导入请用{' '}
+            <Link to="/settings/openapi" className="settings-link">
+              OpenAPI 设置
+            </Link>
+            上传接口文档。
+          </p>
+          <form
+            className="settings-form"
+            onSubmit={(e) => {
+              void onAddSubmit(e)
+            }}
+          >
+            {openConnectorIds.length > 0 && (
+              <Field label={TOOLS.fieldConnector} required>
+                <Select
+                  value={formConnectorId}
+                  onChange={(e) => setFormConnectorId(e.target.value)}
+                  disabled={submitting || openConnectorIds.length === 1}
+                >
+                  {openConnectorIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            <Field label={TOOLS.fieldName} required>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                disabled={submitting}
+                required
+              />
+            </Field>
+            <Field label={TOOLS.fieldMethod} required>
+              <Select
+                value={form.method}
+                onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}
+                disabled={submitting}
+              >
+                {HTTP_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={TOOLS.fieldPath} required>
+              <Input
+                value={form.path}
+                onChange={(e) => setForm((f) => ({ ...f, path: e.target.value }))}
+                disabled={submitting}
+                required
+                placeholder="/items/{id}"
+              />
+            </Field>
+            <Field label={TOOLS.fieldTitle}>
+              <Input
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                disabled={submitting}
+              />
+            </Field>
+            <Field label={TOOLS.fieldDescription}>
+              <Input
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                disabled={submitting}
+              />
+            </Field>
+            <Field label={TOOLS.fieldSchema} hint="JSON">
+              <Textarea
+                value={form.schema}
+                onChange={(e) => setForm((f) => ({ ...f, schema: e.target.value }))}
+                disabled={submitting}
+                rows={4}
+              />
+            </Field>
+          </form>
+          {addFormError && (
+            <p className="ui-inline-error" role="alert">
+              {addFormError}
+            </p>
+          )}
+        </Modal>
       )}
       {!readOnly && (
         <ConfirmDialog

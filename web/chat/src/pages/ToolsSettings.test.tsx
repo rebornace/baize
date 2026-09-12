@@ -129,6 +129,34 @@ describe('ToolsSettings humanized shell', () => {
     host.remove()
   })
 
+  it('opens add-tool Modal instead of drawer', async () => {
+    vi.spyOn(api, 'listTools').mockResolvedValue([extraTool])
+    vi.spyOn(api, 'getConnector').mockResolvedValue({
+      id: 'oa1',
+      type: 'openapi',
+    } as api.ConnectorInfo)
+
+    const { host, root } = await renderTools('admin')
+
+    const addBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(TOOLS.addTool),
+    )
+    expect(addBtn).toBeTruthy()
+    await act(async () => {
+      addBtn!.click()
+    })
+
+    expect(host.querySelector('.settings-drawer')).toBeNull()
+    expect(host.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(host.textContent).toContain(TOOLS.fieldConnector)
+    expect(host.textContent).toContain(TOOLS.fieldMethod)
+    expect(host.textContent).toContain(TOOLS.fieldPath)
+    expect(host.textContent).toContain(TOOLS.fieldSchema)
+
+    root.unmount()
+    host.remove()
+  })
+
   it('folds schema behind TOOLS.viewSchema details', async () => {
     vi.spyOn(api, 'listTools').mockResolvedValue([extraTool])
     vi.spyOn(api, 'getConnector').mockResolvedValue({
