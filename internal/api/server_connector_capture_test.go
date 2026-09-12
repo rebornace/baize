@@ -213,4 +213,17 @@ func TestPutConnectorEmptyApprovalArrayClearsExisting(t *testing.T) {
 	if !found {
 		t.Fatal("login tool missing from catalog")
 	}
+
+	// GET 必须把空名单稳定序列化为 []，而不是 null（O-1）。
+	getRR := httptest.NewRecorder()
+	h.ServeHTTP(getRR, httptest.NewRequest(http.MethodGet, "/v0/connectors/app1", nil))
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", getRR.Code, getRR.Body.String())
+	}
+	gotBody := getRR.Body.String()
+	for _, key := range []string{`"require_approval":[]`, `"require_login":[]`} {
+		if !strings.Contains(gotBody, key) {
+			t.Fatalf("GET connector body must contain %s, got %s", key, gotBody)
+		}
+	}
 }

@@ -484,6 +484,15 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, errorBody{Error: apiError{Code: code, Message: message}})
 }
 
+// nonNilStrings guarantees an empty gate list serializes as [] rather than
+// null (SQLite omits empty lists, so a freshly cleared connector loads nil).
+func nonNilStrings(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
+}
+
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -934,8 +943,8 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"import_format_detected": c.ImportFormat,
 		"base_url":               c.BaseURL,
 		"execution_callback_url": c.ExecutionCallbackURL,
-		"require_approval":       c.RequireApproval,
-		"require_login":          c.RequireLogin,
+		"require_approval":       nonNilStrings(c.RequireApproval),
+		"require_login":          nonNilStrings(c.RequireLogin),
 		"auth":                   c.Auth,
 		"tools":                  infos,
 	}
@@ -995,8 +1004,8 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"import_format_detected": c.ImportFormat,
 		"base_url":               c.BaseURL,
 		"execution_callback_url": c.ExecutionCallbackURL,
-		"require_approval":       c.RequireApproval,
-		"require_login":          c.RequireLogin,
+		"require_approval":       nonNilStrings(c.RequireApproval),
+		"require_login":          nonNilStrings(c.RequireLogin),
 		"auth":                   c.Auth,
 		"tools":                  tools,
 	}

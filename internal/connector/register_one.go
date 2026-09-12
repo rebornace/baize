@@ -354,8 +354,11 @@ func mcpInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 
 // listsFromTools aggregates the RequireLogin / RequireApproval tool-name lists
 // from a merged catalog and returns them sorted. Used to echo the lists back
-// onto the persisted Connector row.
+// onto the persisted Connector row. The slices are always non-nil (empty list
+// serializes to []) so the API never reports an empty gate as null.
 func listsFromTools(tools []store.Tool) (login, approval []string) {
+	login = []string{}
+	approval = []string{}
 	for _, t := range tools {
 		if t.RequireLogin {
 			login = append(login, t.Name)
