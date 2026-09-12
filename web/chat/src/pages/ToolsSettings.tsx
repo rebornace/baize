@@ -773,17 +773,20 @@ export function ToolsSettings() {
                               </label>
                             )}
                             {connectorSupportsLoginCapture(connectorMeta[group.connectorId]?.type) && (
-                              <CaptureSettingsFields
-                                connectorId={group.connectorId}
-                                connectorType={
-                                  connectorMeta[group.connectorId]?.type === 'http' ? 'http' : 'openapi'
-                                }
-                                draft={
-                                  captureDrafts[group.connectorId] ??
-                                  captureToDraft(connectorMeta[group.connectorId]?.auth?.capture)
-                                }
-                                onDraftChange={(patch) => updateCaptureDraft(group.connectorId, patch)}
-                              />
+                              <details className="settings-advanced">
+                                <summary>{TOOLS.advanced}</summary>
+                                <CaptureSettingsFields
+                                  connectorId={group.connectorId}
+                                  connectorType={
+                                    connectorMeta[group.connectorId]?.type === 'http' ? 'http' : 'openapi'
+                                  }
+                                  draft={
+                                    captureDrafts[group.connectorId] ??
+                                    captureToDraft(connectorMeta[group.connectorId]?.auth?.capture)
+                                  }
+                                  onDraftChange={(patch) => updateCaptureDraft(group.connectorId, patch)}
+                                />
+                              </details>
                             )}
                             <Button
                               type="button"

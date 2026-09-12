@@ -26,8 +26,16 @@ async function renderTools(role: 'admin' | 'operator' = 'admin') {
     )
     await new Promise((r) => setTimeout(r, 0))
     await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
   })
   return { host, root }
+}
+
+function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = Object.getPrototypeOf(el) as HTMLInputElement | HTMLTextAreaElement
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+  desc?.set?.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 const extraTool = {
@@ -40,6 +48,20 @@ const extraTool = {
   enabled: true,
   require_login: false,
   input_schema: { type: 'object' },
+}
+
+const connectorMeta: api.ConnectorInfo = {
+  id: 'oa1',
+  type: 'openapi',
+  base_url: 'https://api.example.com',
+  auth: {
+    mode: 'static',
+    static: { headers: { Authorization: '${TOKEN}' } },
+    capture: {
+      tool_name_glob: 'old_login',
+      token_json_paths: ['accessToken'],
+    },
+  },
 }
 
 describe('ToolsSettings humanized shell', () => {
@@ -122,11 +144,89 @@ describe('ToolsSettings humanized shell', () => {
       editBtn!.click()
     })
 
-    const details = host.querySelector('details')
+    const details = [...host.querySelectorAll('details')].find(
+      (d) => d.querySelector('summary')?.textContent === TOOLS.viewSchema,
+    )
     expect(details).toBeTruthy()
     expect(details!.querySelector('summary')?.textContent).toBe(TOOLS.viewSchema)
     expect(details!.querySelector('pre')?.textContent).toContain('"type"')
     expect(details!.open).toBe(false)
+
+    root.unmount()
+    host.remove()
+  })
+})
+
+describe('CaptureSettingsFields', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('uses humanized labels and starts collapsed in parent advanced details', async () => {
+    vi.spyOn(api, 'listTools').mockResolvedValue([extraTool])
+    vi.spyOn(api, 'getConnector').mockResolvedValue(connectorMeta)
+
+    const { host, root } = await renderTools('admin')
+
+    const adv = host.querySelector('details.settings-advanced') as HTMLDetailsElement | null
+    expect(adv && !adv.open).toBe(true)
+    expect(host.textContent).toContain(TOOLS.captureToolGlob)
+    expect(host.textContent).not.toContain('token_json_paths')
+    expect(host.textContent).toContain(TOOLS.captureTokenPaths)
+    expect(host.textContent).toContain(TOOLS.captureLabelPaths)
+    expect(host.textContent).toContain(TOOLS.captureHeaderTemplate)
+    expect(host.textContent).toContain(TOOLS.captureDefaultScheme)
+    expect(adv?.querySelector('summary')?.textContent).toBe(TOOLS.advanced)
+
+    root.unmount()
+    host.remove()
+  })
+})
+
+describe('saveConnectorSettings capture merge', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('PUT body includes mergeAuthWithCapture result', async () => {
+    vi.spyOn(api, 'listTools').mockResolvedValue([extraTool])
+    vi.spyOn(api, 'getConnector').mockResolvedValue(connectorMeta)
+    const put = vi.spyOn(api, 'putConnector').mockResolvedValue({
+      ...connectorMeta,
+      auth: {
+        ...connectorMeta.auth,
+        capture: { tool_name_glob: '*login*', token_json_paths: ['accessToken'] },
+      },
+    })
+
+    const { host, root } = await renderTools('admin')
+
+    const adv = host.querySelector('details.settings-advanced') as HTMLDetailsElement
+    expect(adv).toBeTruthy()
+    const globInput = [...adv.querySelectorAll('input')].find((el) =>
+      (el as HTMLInputElement).placeholder.includes('*login*'),
+    ) as HTMLInputElement
+    expect(globInput).toBeTruthy()
+
+    await act(async () => {
+      setNativeValue(globInput, '*login*')
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    const saveBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('保存 Connector 设置'),
+    )
+    expect(saveBtn).toBeTruthy()
+    await act(async () => {
+      saveBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    expect(put).toHaveBeenCalled()
+    expect(put.mock.calls[0][1].auth?.capture?.tool_name_glob).toBe('*login*')
+    expect(put.mock.calls[0][1].auth?.capture?.token_json_paths).toEqual(['accessToken'])
+    expect(put.mock.calls[0][1].auth?.static?.headers?.Authorization).toBe('${TOKEN}')
 
     root.unmount()
     host.remove()

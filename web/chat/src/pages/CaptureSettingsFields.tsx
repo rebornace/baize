@@ -1,3 +1,4 @@
+import { TOOLS } from '../strings'
 import type { CaptureDraft } from './captureForm'
 
 export interface CaptureSettingsFieldsProps {
@@ -8,8 +9,8 @@ export interface CaptureSettingsFieldsProps {
 }
 
 const CAPTURE_HINT: Record<CaptureSettingsFieldsProps['connectorType'], string> = {
-  http: '登录捕获：侧车中名称匹配 glob 的工具 invoke 成功后写入会话身份（如 login）。',
-  openapi: '登录捕获：匹配 glob 的 operation 响应 JSON 写入会话身份。',
+  http: '名称匹配的登录功能成功后，会把返回里的令牌写入本会话身份。',
+  openapi: '匹配的登录接口返回后，会把令牌写入本会话身份。',
 }
 
 export function CaptureSettingsFields({
@@ -20,7 +21,7 @@ export function CaptureSettingsFields({
   return (
     <>
       <label className="settings-field">
-        <span className="settings-label">登录捕获 tool_name_glob</span>
+        <span className="settings-label">{TOOLS.captureToolGlob}</span>
         <input
           className="settings-input"
           value={draft.toolNameGlob}
@@ -29,7 +30,7 @@ export function CaptureSettingsFields({
         />
       </label>
       <label className="settings-field">
-        <span className="settings-label">token_json_paths（每行一条）</span>
+        <span className="settings-label">{TOOLS.captureTokenPaths}</span>
         <textarea
           className="settings-input"
           rows={3}
@@ -39,7 +40,7 @@ export function CaptureSettingsFields({
         />
       </label>
       <label className="settings-field">
-        <span className="settings-label">label_json_paths（每行一条）</span>
+        <span className="settings-label">{TOOLS.captureLabelPaths}</span>
         <textarea
           className="settings-input"
           rows={2}
@@ -49,7 +50,7 @@ export function CaptureSettingsFields({
         />
       </label>
       <label className="settings-field">
-        <span className="settings-label">header_template</span>
+        <span className="settings-label">{TOOLS.captureHeaderTemplate}</span>
         <input
           className="settings-input"
           value={draft.headerTemplate}
@@ -58,7 +59,7 @@ export function CaptureSettingsFields({
         />
       </label>
       <label className="settings-field">
-        <span className="settings-label">default_scheme（可选）</span>
+        <span className="settings-label">{TOOLS.captureDefaultScheme}</span>
         <input
           className="settings-input"
           value={draft.defaultScheme}
