@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import {
   deleteSkill,
   getAgent,
@@ -8,11 +9,17 @@ import {
   uploadSkill,
   type SkillSummary,
 } from '../api'
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  PageHeader,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
 import { useGate } from '../gateContext'
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
+import { SKILLS, skillErrorText } from '../strings'
 
 export function toggleSkillSelection(prev: Set<string>, id: string, checked: boolean): Set<string> {
   const next = new Set(prev)
@@ -45,14 +52,22 @@ export function mergeSkillSelection(
 function sourceLabel(source: SkillSummary['source']): string {
   switch (source) {
     case 'builtin':
-      return '内置'
+      return SKILLS.sourceBuiltin
     case 'user':
-      return '用户'
+      return SKILLS.sourceUser
     default: {
       const _exhaustive: never = source
       return _exhaustive
     }
   }
+}
+
+function skillDisplayName(s: SkillSummary): string {
+  const desc = s.description?.trim()
+  if (desc) return desc
+  const name = s.name?.trim()
+  if (name) return name
+  return s.id
 }
 
 function toolsSummary(tools: string[]): string {
@@ -63,15 +78,17 @@ function toolsSummary(tools: string[]): string {
 export function SkillsSettings() {
   const { role } = useGate()
   const readOnly = role !== 'admin'
+  const { toasts, push, dismiss } = useToast()
   const [skills, setSkills] = useState<SkillSummary[] | null>(null)
   const [agentId, setAgentId] = useState('ticket-agent')
   const [system, setSystem] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<SkillSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -88,7 +105,7 @@ export function SkillsSettings() {
       // Skill list is the read-only core payload; its success must not depend on getAgent.
       const { skills: list } = await listSkills()
       setSkills(list ?? [])
-      setError(null)
+      setLoadError(null)
 
       // Agent config (system prompt + saved selection) is admin-only (GET /v0/agents/{id}
       // returns 403 for operators). Skip it entirely on the read-only path; operators see
@@ -104,9 +121,11 @@ export function SkillsSettings() {
       }
     } catch (err) {
       setSkills(null)
-      setError(errorMessage(err))
+      const f = skillErrorText(err)
+      setLoadError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     }
-  }, [readOnly])
+  }, [readOnly, push])
 
   useEffect(() => {
     void load()
@@ -120,141 +139,192 @@ export function SkillsSettings() {
   const onUpload = async (file: File | undefined) => {
     if (!file) return
     setUploading(true)
-    setStatus(null)
     try {
       await uploadSkill(file)
       await refreshList()
-      setError(null)
-      setStatus(`已上传 ${file.name}`)
+      push({ tone: 'success', title: SKILLS.toastUploaded, detail: file.name })
     } catch (err) {
-      setError(errorMessage(err))
+      const f = skillErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
     }
   }
 
-  const onDelete = async (id: string) => {
-    setDeleting(id)
-    setStatus(null)
+  const beginDelete = (s: SkillSummary) => {
+    setDeleteError(null)
+    setPendingDelete(s)
+  }
+
+  const cancelDelete = () => {
+    if (deleting) return
+    setPendingDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError(null)
     try {
-      await deleteSkill(id)
+      await deleteSkill(pendingDelete.id)
       setSelected((prev) => {
         const next = new Set(prev)
-        next.delete(id)
+        next.delete(pendingDelete.id)
         return next
       })
+      push({ tone: 'success', title: SKILLS.toastDeleted, detail: skillDisplayName(pendingDelete) })
+      setPendingDelete(null)
       await refreshList()
-      setError(null)
-      setStatus(`已删除 ${id}`)
     } catch (err) {
-      setError(errorMessage(err))
+      const f = skillErrorText(err)
+      setDeleteError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
-      setDeleting(null)
+      setDeleting(false)
     }
   }
 
   const onSave = async () => {
     if (skills == null) return
     setSaving(true)
-    setStatus(null)
     try {
       const agent = await getAgent(agentId)
       const catalogOrder = skills.map((s) => s.id)
       const skillsIds = mergeSkillSelection(agent.skills ?? [], selected, catalogOrder)
       await putAgent(agentId, { system: agent.system ?? system, skills: skillsIds })
       setSystem(agent.system ?? system)
-      setError(null)
-      setStatus('默认 Skills 已保存')
+      push({ tone: 'success', title: SKILLS.toastSaved })
     } catch (err) {
-      setError(errorMessage(err))
+      const f = skillErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setSaving(false)
     }
   }
 
-  const loadFailed = skills === null && error !== null
-  const busy = uploading || saving || deleting !== null
+  const loadFailed = skills === null && loadError !== null
+  const busy = uploading || saving || deleting
+  const showEmpty = skills !== null && skills.length === 0 && !loadFailed
+
+  const headerActions =
+    readOnly || showEmpty || skills === null ? undefined : (
+      <div className="settings-toolbar">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".md,.zip"
+          disabled={busy}
+          aria-label={SKILLS.upload}
+          onChange={(e) => {
+            void onUpload(e.target.files?.[0])
+          }}
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            void onSave()
+          }}
+        >
+          {saving ? '保存中…' : SKILLS.saveDefaults}
+        </Button>
+      </div>
+    )
 
   return (
-    <div className="settings-section settings-skills">
-      <h1 className="settings-heading">Skills</h1>
-      <p className="settings-meta">默认 Agent：{agentId}</p>
-      {loadFailed && <p className="settings-error">无法加载 Skills：{error}</p>}
-      {!loadFailed && error && <p className="settings-error">{error}</p>}
-      {!loadFailed && status && <p className="settings-muted">{status}</p>}
+    <div className="settings-panel settings-skills">
+      <PageHeader title={SKILLS.title} description={SKILLS.description} actions={headerActions} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+
+      {loadFailed && <p className="settings-error">{loadError}</p>}
       {skills === null && !loadFailed && <p className="settings-muted">加载中…</p>}
-      {skills !== null && (
-        <>
-          {!readOnly && (
-            <div className="settings-toolbar">
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".md,.zip"
-                disabled={busy}
-                aria-label="上传 Skill"
-                onChange={(e) => {
-                  void onUpload(e.target.files?.[0])
-                }}
-              />
-              <button
-                type="button"
-                className="btn primary sm"
-                disabled={busy}
-                onClick={() => {
-                  void onSave()
-                }}
-              >
-                {saving ? '保存中…' : '保存默认勾选'}
-              </button>
-            </div>
-          )}
-          {skills.length === 0 && <p className="settings-empty">尚未安装 Skill</p>}
-          {skills.length > 0 && (
-            <ul className="settings-list">
-              {skills.map((s) => {
-                const isDeleting = deleting === s.id
-                return (
-                  <li key={s.id} className="settings-list-item settings-skill-row">
-                    <label className="settings-login-toggle settings-skill-check">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(s.id)}
-                        disabled={busy || readOnly}
-                        onChange={(e) => {
-                          setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
-                        }}
-                      />
-                      <span className="settings-skill-line">
-                        <span className="settings-tool-title">{s.id}</span>
-                        {s.description ? (
-                          <span className="settings-tool-desc">{s.description}</span>
-                        ) : null}
-                        <span className="settings-tool-sub">{toolsSummary(s.tools)}</span>
-                      </span>
-                    </label>
-                    <span className="settings-tool-actions">
-                      <span className="settings-badge">{sourceLabel(s.source)}</span>
-                      {s.source === 'user' && !readOnly && (
-                        <button
-                          type="button"
-                          className="btn danger sm"
-                          disabled={busy}
-                          onClick={() => {
-                            void onDelete(s.id)
-                          }}
-                        >
-                          {isDeleting ? '删除中…' : '删除'}
-                        </button>
-                      )}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </>
+
+      {showEmpty && (
+        <EmptyState
+          icon={<Sparkles size={28} aria-hidden="true" />}
+          title={SKILLS.emptyTitle}
+          description={SKILLS.emptyDesc}
+          action={
+            readOnly ? undefined : (
+              <>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".md,.zip"
+                  disabled={busy}
+                  aria-label={SKILLS.upload}
+                  hidden
+                  onChange={(e) => {
+                    void onUpload(e.target.files?.[0])
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {SKILLS.upload}
+                </Button>
+              </>
+            )
+          }
+        />
+      )}
+
+      {skills !== null && skills.length > 0 && (
+        <ul className="settings-list">
+          {skills.map((s) => (
+            <li key={s.id} className="settings-list-item settings-skill-row">
+              <label className="settings-login-toggle settings-skill-check">
+                <input
+                  type="checkbox"
+                  checked={selected.has(s.id)}
+                  disabled={busy || readOnly}
+                  onChange={(e) => {
+                    setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
+                  }}
+                />
+                <span className="settings-skill-line">
+                  <span className="settings-tool-title">{skillDisplayName(s)}</span>
+                  {s.description?.trim() && s.id !== skillDisplayName(s) ? (
+                    <span className="settings-tool-sub">{s.id}</span>
+                  ) : null}
+                  <span className="settings-tool-sub">{toolsSummary(s.tools)}</span>
+                </span>
+              </label>
+              <span className="settings-tool-actions">
+                <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{sourceLabel(s.source)}</Badge>
+                {s.source === 'user' && !readOnly && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() => beginDelete(s)}
+                  >
+                    {SKILLS.confirmDeleteOk}
+                  </Button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!readOnly && (
+        <ConfirmDialog
+          open={!!pendingDelete}
+          danger
+          title={SKILLS.confirmDeleteTitle}
+          body={SKILLS.confirmDeleteBody}
+          confirmText={SKILLS.confirmDeleteOk}
+          busy={deleting}
+          error={deleteError}
+          onCancel={cancelDelete}
+          onConfirm={() => void confirmDelete()}
+        />
       )}
     </div>
   )

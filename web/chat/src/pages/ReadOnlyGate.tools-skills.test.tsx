@@ -76,10 +76,12 @@ describe('SkillsSettings read-only for operator', () => {
       return jsonResponse({})
     })
     await renderOperator(<SkillsSettings />)
+    expect(host.textContent).toContain('技能')
     expect(host.textContent).toContain('分诊')
+    expect(host.textContent).not.toMatch(/\bSkills\b/)
+    expect(host.textContent).not.toMatch(/默认 Agent/)
     // real 403 on getAgent must NOT fail the whole page: skill list still renders
-    expect(host.textContent).not.toContain('无法加载 Skills')
-    expect(host.textContent).toContain('默认 Agent：ticket-agent')
+    expect(host.textContent).not.toContain('无法加载')
     // read-only path must not even request the admin-only agent config endpoint
     expect(urls.some((u) => u.startsWith('/v0/agents/'))).toBe(false)
     expect(host.querySelector('input[type="file"]')).toBeNull()
