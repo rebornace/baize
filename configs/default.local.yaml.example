@@ -13,19 +13,21 @@ ui:
   enabled: true
 llm:
   provider: openai_compatible
-  base_url: https://api.deepseek.com
-  model: deepseek-chat
+  base_url: https://api.example.com
+  model: your-model
   api_key_env: BAIZE_API_KEY
   disable_thinking: true
   # supports_vision: false   # default; set true for vision-capable models (e.g. gpt-4o)
 agent:
-  id: miao-agent
+  id: local-agent
   system: "你是业务助手，只能通过已注册工具访问后端 API。"
+# 本地要对接的真实系统接口文档放在被 gitignore 的目录（见 examples/local/README.md），
+# 切勿把真实系统地址、接口文档或账号信息提交到仓库。
 connector:
-  id: doctor-miao
+  id: example-connector
   type: openapi
-  spec: examples/miaomiao/openapi.json
-  base_url: https://www.miaomiaomiao.online
+  spec: examples/local/openapi.json
+  base_url: https://api.example.com
   require_approval_mutating: true
   auth:
     mode: static
