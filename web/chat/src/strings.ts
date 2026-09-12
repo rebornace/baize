@@ -245,6 +245,34 @@ export const CONNECTORS = {
   errBaseUrlRequired: '请填写服务地址',
   errBaseUrlHttp: '服务地址需以 http:// 或 https:// 开头',
   errSpecRequired: '请上传接口文档或填写文档链接',
+  // ---- MCP（外部工具服务） ----
+  mcpTitle: '外部工具服务',
+  mcpDesc: '接入标准 MCP 工具服务（本地子进程或远程 HTTP），扩展助手可用能力。',
+  addMcp: '接入外部工具',
+  editMcp: '编辑外部工具',
+  mcpEmptyTitle: '还没有接入外部工具服务',
+  mcpEmptyDesc: '接入遵循 MCP 标准的本地或远程工具服务后，助手即可调用其工具。',
+  fieldTransport: '连接方式',
+  transportStdio: '本地子进程（stdio）',
+  transportHttp: '远程服务（Streamable HTTP）',
+  fieldCommand: '启动命令',
+  fieldCommandHint: '本地启动该工具服务的可执行命令，如 npx。',
+  fieldArgs: '启动参数',
+  fieldArgsHint: '空格分隔，或每行一个。',
+  fieldEnv: '环境变量',
+  fieldEnvHint: '每行一个 KEY=VALUE。密钥建议用 ${VAR}、env:VAR 或 file:路径 占位符，不要直接写死。',
+  fieldUrl: '服务地址',
+  fieldHeaders: '请求头',
+  fieldHeadersHint: '每行一个 KEY=VALUE，例如 Authorization=Bearer ${TOKEN}。',
+  errCommandRequired: '请填写启动命令',
+  errMcpUrlRequired: '请填写服务地址',
+  errMcpUrlHttp: '服务地址需以 http:// 或 https:// 开头',
+  errEnvLine: (row: string) => `环境变量存在无法识别的行：${row}`,
+  errHeadersLine: (row: string) => `请求头存在无法识别的行：${row}`,
+  errMcpConnect: '无法连接到这个外部工具服务，请检查配置后重试。',
+  permsIntroMcp: '勾选后，助手每次调用该工具前都会请你确认；不勾则直接执行。',
+  mcpStdioSummary: (command: string) => `本地程序 · ${command}`,
+  mcpHttpSummary: (url: string) => `远程服务 · ${url}`,
   errorGeneric: '操作未能完成，请稍后重试。',
 } as const
 
@@ -264,6 +292,17 @@ export function connectorErrorText(e: unknown): FriendlyError {
   if (e instanceof ApiError) {
     const byCode = CONNECTOR_CODE_TITLES[e.code]
     if (byCode) return { title: byCode }
+    if (e.code === 'invalid_mcp') {
+      if (/command is required|unsupported mcp transport/.test(e.message)) return { title: '连接配置不完整，请检查启动命令或连接方式。' }
+      if (/url is required/.test(e.message)) return { title: '请填写远程服务地址。' }
+      if (/401|403|unauthor|forbidden/i.test(e.message)) {
+        return { title: '该服务需要鉴权，请在请求头中提供有效的 API Key；交互式 OAuth 登录暂不支持。' }
+      }
+      if (/no tools|0 tools|did not report|without any tools/i.test(e.message)) {
+        return { title: '已连上服务，但没有发现任何可用工具。' }
+      }
+      return { title: CONNECTORS.errMcpConnect, detail: `${e.code}: ${e.message}` }
+    }
     if (/base_url is required/.test(e.message)) return { title: '请填写服务地址。' }
     if (/spec is required/.test(e.message)) return { title: '请提供接口文档。' }
     return { title: CONNECTORS.errorGeneric, detail: `${e.code}: ${e.message}` }

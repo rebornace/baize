@@ -1,4 +1,6 @@
-export type ConnectorKind = 'openapi' | 'plugin'
+import type { ImportFormat, MCPConfig } from '../../api'
+
+export type ConnectorKind = 'openapi' | 'plugin' | 'mcp'
 
 export interface ConnectionFormValues {
   kind: ConnectorKind
@@ -10,7 +12,14 @@ export interface ConnectionFormValues {
   editing?: boolean
 }
 
+/** 旧两页第一步字段错误键；MCP 使用 McpFieldErrors。 */
 export type FieldErrors = Partial<Record<'id' | 'baseUrl' | 'spec', string>>
+
+/** 第一步保存成功后的判别联合连接负载（供第二步整表回传）。 */
+export type SavedConnection =
+  | { kind: 'openapi'; id: string; baseUrl: string; spec?: { content?: string; url?: string }; importFormat: ImportFormat }
+  | { kind: 'plugin'; id: string; baseUrl: string }
+  | { kind: 'mcp'; id: string; mcp: MCPConfig }
 
 export type PermissionFlag = 'login' | 'approval'
 

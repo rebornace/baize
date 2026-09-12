@@ -19,6 +19,10 @@ describe('connectorErrorText', () => {
     expect(connectorErrorText(new ApiError(400, 'invalid_request', 'spec is required')).title).toContain('接口文档')
   })
 
+  it('maps invalid_mcp to a human title', () => {
+    expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'x')).title).toBe(CONNECTORS.errMcpConnect)
+  })
+
   it('falls back to a generic title for unknown codes', () => {
     const out = connectorErrorText(new ApiError(400, 'weird_code', 'boom'))
     expect(out.title).toBe(CONNECTORS.errorGeneric)
