@@ -118,7 +118,7 @@ P3-B 抽出了可复用的连接器列表外壳 `ConnectorShell` 与两步编辑
 - 复用现有权限纯函数（`permissions.ts` 的 selection / toggle / toNameLists）与列表渲染。
 - 对 `kind==='mcp'` **只渲染「使用前需人工审批」复选框一列**，不渲染「需本人登录」；选择状态中 login 恒为 false。
 - 提交时 `require_approval` 始终为数组（空数组=整表清空，`*[]string` 非 nil 语义），修复旧 MCP 页「空名单被省略→无法清空审批」的缺陷；`require_login` 省略（nil=保留，MCP 工具本就无 login 位）。第二步 PUT 同时回传第一步保留的完整 `mcp` 配置。
-- 回调签名（消除 P3-B 里 openapi/plugin 专用的 `baseUrl` 形参对第三种类型的歧义）：第一步成功后，Modal 保留本次已提交的连接负载，并经 `onSavedInfo(id, connection)` 把它回传页面（`connection` 即第一步 `onSaveInfo` 的入参：openapi/plugin 为 `{id,baseUrl,spec?,importFormat}`，mcp 为 `{id,mcp}`）；页面缓存该负载。第二步 Modal 调 `onSavePermissions(id, loginNames, approvalNames)`，页面用缓存的连接负载 + 两个名单拼出完整 PUT 体（mcp 页带 `mcp` 且省略 `require_login`，openapi/plugin 维持现状）。`onSavedInfo` 新增的第二参数为可选，P3-B 两页接线同步小改并有测试锁定。
+- 回调签名（消除 P3-B 里 openapi/plugin 专用的 `baseUrl` 形参对第三种类型的歧义）：定义判别联合 `SavedConnection`（`{kind:'openapi',id,baseUrl,spec?,importFormat}` | `{kind:'plugin',id,baseUrl}` | `{kind:'mcp',id,mcp:MCPConfig}`）。第一步 `onSaveInfo(conn: SavedConnection)`；成功后 Modal 保留该负载并经 `onSavedInfo(conn)` 回传页面缓存。第二步 Modal 调 `onSavePermissions(id, loginNames, approvalNames)`，页面用缓存的连接负载 + 两个名单拼出完整 PUT 体（mcp 页带 `mcp` 且省略 `require_login`，openapi/plugin 维持现状字段）。为覆盖「编辑态直接进入工具权限」（未经第一步保存），Modal 在 open 时用 `initial` 初始化连接负载——为此 `ConnectorEditorInitial` 增加可选 `mcp?: MCPConfig`，页面 `openEdit` 对 mcp 传入 `c.mcp`，并在打开编辑时就缓存对应负载。P3-B 两页接线同步从缓存取 `baseUrl`，并有测试锁定。
 - 编辑态：第一步提供「直接进入工具权限」次级按钮（沿用现有 `nextToPermissions`），用 GET 已有的工具与审批名单初始化选择。
 
 ### 6.3 校验纯函数
