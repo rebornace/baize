@@ -334,13 +334,7 @@ export type PermissionSelection = Record<string, ToolPermission>
   mcpHttpSummary: (url: string) => `远程服务 · ${url}`,
 ```
 
-- [ ] **步骤 5：在 `CONNECTOR_CODE_TITLES` 增加一行**（与其他键同级）：
-
-```ts
-  invalid_mcp: CONNECTORS.errMcpConnect,
-```
-
-并在 `connectorErrorText` 的 ApiError 分支、`CONNECTOR_CODE_TITLES` 查表之后，补充对常见后端 message 的人话细分（放在 `base_url is required` 判断之前）：
+- [ ] **步骤 5：在 `connectorErrorText` 的 ApiError 分支、`CONNECTOR_CODE_TITLES` 查表之后，补充 invalid_mcp 专用细分分支**（放在 `base_url is required` 判断之前；**不要**把 `invalid_mcp` 加进 `CONNECTOR_CODE_TITLES`——否则顶部 byCode 提前返回会让下面按 message 的细分成为死代码）：
 
 ```ts
     if (e.code === 'invalid_mcp') {
