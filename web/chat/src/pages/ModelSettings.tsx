@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { Cpu } from 'lucide-react'
 import {
   createModelProfile,
   deleteModelProfile,
@@ -7,9 +8,20 @@ import {
   type ModelProfile,
   type ModelTier,
 } from '../api'
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  PageHeader,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
 import { useGate } from '../gateContext'
 import { tierLabel } from '../modelSelect'
-import { MODELS, VISION_LABEL } from '../strings'
+import { MODELS, VISION_LABEL, modelErrorText } from '../strings'
+
+const CREATE_ID = '__new__'
 
 // Editable tier options plus "auto" (infer from the model name server-side).
 const TIER_OPTIONS: { value: ModelTier | 'auto'; label: string }[] = [
@@ -83,7 +95,7 @@ export function buildCreatePayload(form: ProfileFormState):
   const apiKey = form.apiKey.trim()
   const apiKeyEnv = form.apiKeyEnv.trim()
   if (!apiKey && !apiKeyEnv) {
-    return { ok: false, message: 'API Key 与环境变量名至少填写一项' }
+    return { ok: false, message: MODELS.errApiKeyRequired }
   }
   return {
     ok: true,
@@ -135,10 +147,6 @@ export function buildPatchPayload(
   return payload
 }
 
-function apiErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
 function credentialHint(p: ModelProfile): string {
   if (p.api_key_env) return `env:${p.api_key_env}`
   if (p.api_key) return `key:${p.api_key}`
@@ -156,7 +164,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
   return (
     <>
       <label className="settings-field">
-        <span className="settings-field-label">名称</span>
+        <span className="settings-field-label">{MODELS.fieldName}</span>
         <input
           className="settings-input"
           value={form.name}
@@ -167,7 +175,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
         />
       </label>
       <label className="settings-field">
-        <span className="settings-field-label">Base URL</span>
+        <span className="settings-field-label">{MODELS.fieldBaseUrl}</span>
         <input
           className="settings-input"
           value={form.baseUrl}
@@ -178,7 +186,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
         />
       </label>
       <label className="settings-field">
-        <span className="settings-field-label">模型</span>
+        <span className="settings-field-label">{MODELS.fieldModel}</span>
         <input
           className="settings-input"
           value={form.model}
@@ -189,7 +197,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
         />
       </label>
       <label className="settings-field">
-        <span className="settings-field-label">API Key</span>
+        <span className="settings-field-label">{MODELS.fieldApiKey}</span>
         <input
           className="settings-input"
           type="password"
@@ -201,7 +209,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
         />
       </label>
       <label className="settings-field">
-        <span className="settings-field-label">API Key 环境变量名</span>
+        <span className="settings-field-label">{MODELS.fieldApiKeyEnv}</span>
         <input
           className="settings-input"
           value={form.apiKeyEnv}
@@ -217,7 +225,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           onChange={(e) => setForm((f) => ({ ...f, supportsVision: e.target.checked }))}
           disabled={busy}
         />
-        视觉（支持图片附件）
+        {MODELS.fieldVision}
       </label>
       <label className="settings-checkbox">
         <input
@@ -226,10 +234,10 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           onChange={(e) => setForm((f) => ({ ...f, disableThinking: e.target.checked }))}
           disabled={busy}
         />
-        禁用思考（disable_thinking）
+        {MODELS.fieldDisableThinking}（disable_thinking）
       </label>
       <label className="settings-field">
-        <span className="settings-field-label">上下文长度（tokens，留空/0 用默认 128000）</span>
+        <span className="settings-field-label">{MODELS.fieldContextTokens}（tokens，留空/0 用默认 128000）</span>
         <input
           className="settings-input"
           type="number"
@@ -241,7 +249,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
         />
       </label>
       <label className="settings-field">
-        <span className="settings-field-label">Auto 路由档位</span>
+        <span className="settings-field-label">{MODELS.fieldTier}</span>
         <select
           className="settings-input"
           value={form.tier}
@@ -279,26 +287,21 @@ export function ModelProfileList({
   onEdit,
   onDelete,
 }: ModelProfileListProps) {
-  if (profiles.length === 0) {
-    return (
-      <p className="settings-empty">
-        {readOnly
-          ? '尚未配置任何模型，请联系管理员配置，否则无法发起对话。'
-          : '尚未配置任何模型。请先在下方「新建模型」添加至少一个模型，否则无法发起对话。'}
-      </p>
-    )
-  }
+  if (profiles.length === 0) return null
   return (
-    <ul className="settings-list">
+    <div className="connector-list">
       {profiles.map((p) => (
-        <li key={p.id} className="settings-list-item">
-          <span className="settings-tool-line">
-            <span className="settings-tool-title">{p.name}</span>
-            <span className="settings-badge">{tierLabel(p.auto_tier)}</span>
-            {p.supports_vision && <span className="settings-badge">{VISION_LABEL}</span>}
-            <span className="settings-muted"> · {p.model}</span>
-            <span className="settings-muted"> · {p.base_url}</span>
-          </span>
+        <Card
+          key={p.id}
+          title={p.name}
+          description={`${p.model} · ${p.base_url}`}
+          trailing={
+            <div className="accounts-actions">
+              <Badge tone="info">{tierLabel(p.auto_tier)}</Badge>
+              {p.supports_vision && <Badge tone="info">{VISION_LABEL}</Badge>}
+            </div>
+          }
+        >
           <p className="settings-muted">
             {credentialHint(p)}
             {p.disable_thinking ? ' · 禁用思考' : ''}
@@ -306,27 +309,29 @@ export function ModelProfileList({
           </p>
           {!readOnly && (
             <div className="settings-toolbar">
-              <button
+              <Button
                 type="button"
-                className="btn ghost sm"
+                variant="ghost"
+                size="sm"
                 disabled={busy}
                 onClick={() => onEdit(p)}
               >
-                编辑
-              </button>
-              <button
+                {MODELS.edit}
+              </Button>
+              <Button
                 type="button"
-                className="btn danger sm"
+                variant="danger"
+                size="sm"
                 disabled={busy}
                 onClick={() => onDelete(p)}
               >
-                删除
-              </button>
+                {MODELS.delete}
+              </Button>
             </div>
           )}
-        </li>
+        </Card>
       ))}
-    </ul>
+    </div>
   )
 }
 
@@ -361,7 +366,7 @@ export function ModelProfileForm({
         </button>
         {onCancel && (
           <button type="button" className="btn ghost sm" disabled={busy} onClick={onCancel}>
-            取消
+            {MODELS.cancel}
           </button>
         )}
       </div>
@@ -372,10 +377,10 @@ export function ModelProfileForm({
 export function ModelSettings() {
   const { role } = useGate()
   const readOnly = role !== 'admin'
+  const { toasts, push, dismiss } = useToast()
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [createForm, setCreateForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -386,35 +391,47 @@ export function ModelSettings() {
     try {
       const list = await listModelProfiles()
       setProfiles(list)
-      setError(null)
+      setLoadFailed(false)
     } catch (err) {
-      setError(apiErrorMessage(err))
+      setLoadFailed(true)
+      const f = modelErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [push])
 
   useEffect(() => {
     void load()
   }, [load])
 
+  const openCreate = () => {
+    setEditingId(CREATE_ID)
+    setCreateForm(EMPTY_PROFILE_FORM)
+  }
+
+  const closeEditor = () => {
+    setEditingId(null)
+    setCreateForm(EMPTY_PROFILE_FORM)
+    setEditForm(EMPTY_PROFILE_FORM)
+  }
+
   const onCreate = async (e: FormEvent) => {
     e.preventDefault()
     const built = buildCreatePayload(createForm)
     if (!built.ok) {
-      setError(built.message)
+      push({ tone: 'error', title: built.message })
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       await createModelProfile(built.payload)
-      setCreateForm(EMPTY_PROFILE_FORM)
-      setStatus('已创建模型 profile')
+      closeEditor()
+      push({ tone: 'success', title: MODELS.toastSaved })
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = modelErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
@@ -423,124 +440,114 @@ export function ModelSettings() {
   const startEdit = (p: ModelProfile) => {
     setEditingId(p.id)
     setEditForm(profileToForm(p))
-    setError(null)
-    setStatus(null)
   }
 
   const onSaveEdit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!editingId) return
+    if (!editingId || editingId === CREATE_ID) return
     const original = profiles.find((p) => p.id === editingId)
     if (!original) return
     const payload = buildPatchPayload(editForm, original)
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       await updateModelProfile(editingId, payload)
-      setEditingId(null)
-      setEditForm(EMPTY_PROFILE_FORM)
-      setStatus('已更新模型 profile')
+      closeEditor()
+      push({ tone: 'success', title: MODELS.toastSaved })
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = modelErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
   }
 
   const onDelete = async (p: ModelProfile) => {
-    const suffix = profiles.length === 1 ? '\n\n这是最后一个模型，删除后将无法发起对话，请尽快添加新模型。' : ''
-    if (!window.confirm(`删除模型「${p.name}」？此操作不可恢复。${suffix}`)) return
+    const suffix =
+      profiles.length === 1
+        ? `\n\n${MODELS.confirmDeleteLast}`
+        : ''
+    if (!window.confirm(`${MODELS.confirmDeleteTitle}\n${MODELS.confirmDeleteBody}${suffix}`)) {
+      return
+    }
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       await deleteModelProfile(p.id)
-      if (editingId === p.id) {
-        setEditingId(null)
-        setEditForm(EMPTY_PROFILE_FORM)
-      }
-      setStatus(`已删除模型 ${p.name}`)
+      if (editingId === p.id) closeEditor()
+      push({ tone: 'success', title: MODELS.toastDeleted, detail: p.name })
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = modelErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
   }
 
+  const showEmpty = !loading && profiles.length === 0 && !loadFailed
+  const headerAdd =
+    showEmpty || readOnly ? undefined : (
+      <Button variant="primary" size="sm" onClick={openCreate}>
+        {MODELS.add}
+      </Button>
+    )
+
   return (
-    <div className="settings-section settings-models">
-      <h1 className="settings-heading">模型</h1>
-      <div className="settings-meta">
-        <p>
-          配置多个 OpenAI 兼容模型，并为每个模型选择「Auto 路由档位」（快速 / 标准 / 深度思考）。聊天默认走
-          「智能选择」：根据每轮对话的实际难度、长度、代码与附件情况，以及是否含图片，自动挑选最合适档位的模型——
-          图片消息只会使用勾选了「视觉」的模型。也可在输入框手动指定某条消息固定使用某个模型（此时不自动路由）。
-          API Key 保存在本地库中，界面仅显示脱敏值；也可只填环境变量名，由进程环境提供密钥。
-        </p>
-      </div>
+    <div className="settings-panel settings-models">
+      <PageHeader title={MODELS.title} description={MODELS.description} actions={headerAdd} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
       {loading && <p className="settings-muted">加载中…</p>}
-      {!loading && error && <p className="settings-error">{error}</p>}
-      {!loading && status && <p className="settings-muted">{status}</p>}
-      {!loading && profiles.length === 0 && !error && (
-        <p className="settings-error">
-          {readOnly ? '当前没有任何可用模型，请联系管理员配置。' : '当前没有任何可用模型，请先在下方添加一个模型再发起对话。'}
-        </p>
+
+      {showEmpty && (
+        <EmptyState
+          icon={<Cpu size={28} aria-hidden="true" />}
+          title={MODELS.emptyTitle}
+          description={readOnly ? MODELS.emptyDescOperator : MODELS.emptyDescAdmin}
+          action={
+            readOnly ? undefined : (
+              <Button variant="primary" onClick={openCreate}>
+                {MODELS.add}
+              </Button>
+            )
+          }
+        />
       )}
 
-      {!loading && !readOnly && editingId && (
-        <section className="settings-form">
-          <ModelProfileForm
-            form={editForm}
-            setForm={setEditForm}
-            busy={busy}
-            isEdit
-            title={`编辑 ${profiles.find((p) => p.id === editingId)?.name ?? ''}`}
-            submitLabel="保存"
-            onSubmit={(e) => void onSaveEdit(e)}
-            onCancel={() => {
-              setEditingId(null)
-              setEditForm(EMPTY_PROFILE_FORM)
-            }}
-          />
-        </section>
+      {!loading && profiles.length > 0 && (
+        <ModelProfileList
+          profiles={profiles}
+          busy={busy || editingId != null}
+          readOnly={readOnly}
+          onEdit={startEdit}
+          onDelete={(target) => void onDelete(target)}
+        />
       )}
 
-      {!loading && readOnly && (
-        <section>
-          <h2 className="settings-subheading">模型列表</h2>
-          <ModelProfileList
-            profiles={profiles}
-            busy={false}
-            readOnly
-            onEdit={() => undefined}
-            onDelete={() => undefined}
-          />
-        </section>
+      {!readOnly && editingId === CREATE_ID && (
+        <ModelProfileForm
+          form={createForm}
+          setForm={setCreateForm}
+          busy={busy}
+          isEdit={false}
+          title="新建模型"
+          submitLabel="创建模型"
+          onSubmit={(e) => void onCreate(e)}
+          onCancel={closeEditor}
+        />
       )}
-      {!loading && !readOnly && (
-        <section className="settings-form">
-          <h2 className="settings-subheading">模型列表</h2>
-          <ModelProfileList
-            profiles={profiles}
-            busy={busy || editingId != null}
-            onEdit={startEdit}
-            onDelete={(target) => void onDelete(target)}
-          />
 
-          <ModelProfileForm
-            form={createForm}
-            setForm={setCreateForm}
-            busy={busy}
-            isEdit={false}
-            title="新建模型"
-            submitLabel="创建模型"
-            onSubmit={(e) => void onCreate(e)}
-          />
-        </section>
+      {!readOnly && editingId != null && editingId !== CREATE_ID && (
+        <ModelProfileForm
+          form={editForm}
+          setForm={setEditForm}
+          busy={busy}
+          isEdit
+          title={`编辑 ${profiles.find((p) => p.id === editingId)?.name ?? ''}`}
+          submitLabel={MODELS.save}
+          onSubmit={(e) => void onSaveEdit(e)}
+          onCancel={closeEditor}
+        />
       )}
     </div>
   )

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
+import { MODELS } from '../strings'
 import { ModelSettings } from './ModelSettings'
 import { RuntimeSettings } from './RuntimeSettings'
 
@@ -39,11 +40,12 @@ describe('ModelSettings read-only for operator', () => {
         ? jsonResponse({ profiles: [{ id: 'm1', name: '标准模型', model: 'gpt', base_url: 'u', provider: 'openai_compatible', supports_vision: false, disable_thinking: false, context_tokens: 1, auto_tier: 'standard' }] })
         : jsonResponse(null))
     await renderOperator(<ModelSettings />)
+    expect(host.textContent).toContain(MODELS.title)
     expect(host.textContent).toContain('标准模型')
-    expect(host.textContent).not.toContain('添加模型')
+    expect(host.textContent).not.toContain(MODELS.add)
     expect(host.querySelector('.settings-form')).toBeNull()
-    expect(host.textContent).not.toContain('编辑')
-    expect(host.textContent).not.toContain('删除')
+    expect(host.textContent).not.toContain(MODELS.edit)
+    expect(host.textContent).not.toContain(MODELS.delete)
   })
 })
 

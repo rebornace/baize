@@ -9,6 +9,7 @@ describe('MODELS', () => {
     expect(MODELS.advanced).toBe('高级')
     expect(MODELS.fieldBaseUrl).toBe('服务地址')
     expect(MODELS.fieldDisableThinking).toBe('禁用思考')
+    expect(MODELS.errApiKeyRequired).toBe('API Key 与环境变量名至少填写一项')
   })
 })
 

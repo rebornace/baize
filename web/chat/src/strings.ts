@@ -224,6 +224,7 @@ export const MODELS = {
   errNameRequired: '请填写名称。',
   errBaseUrlRequired: '请填写服务地址。',
   errModelRequired: '请填写模型名。',
+  errApiKeyRequired: 'API Key 与环境变量名至少填写一项',
 } as const
 
 /** 把模型设置页相关异常翻译为人话标题；未知错误附技术详情。 */
