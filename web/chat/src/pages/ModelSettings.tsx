@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -336,9 +337,12 @@ export function ModelSettings() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
   const [formError, setFormError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ModelProfile | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const modalOpen = editingId != null
   const isCreate = editingId === CREATE_ID
+  const isLastModel = profiles.length === 1
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -429,26 +433,34 @@ export function ModelSettings() {
     }
   }
 
-  const onDelete = async (p: ModelProfile) => {
-    const suffix =
-      profiles.length === 1
-        ? `\n\n${MODELS.confirmDeleteLast}`
-        : ''
-    if (!window.confirm(`${MODELS.confirmDeleteTitle}\n${MODELS.confirmDeleteBody}${suffix}`)) {
-      return
-    }
+  const beginDelete = (p: ModelProfile) => {
+    setDeleteError(null)
+    setPendingDelete(p)
+  }
+
+  const cancelDelete = () => {
+    if (busy) return
+    setPendingDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
     setBusy(true)
+    setDeleteError(null)
     try {
-      await deleteModelProfile(p.id)
-      if (editingId === p.id) {
+      await deleteModelProfile(pendingDelete.id)
+      if (editingId === pendingDelete.id) {
         setEditingId(null)
         setForm(EMPTY_PROFILE_FORM)
         setFormError(null)
       }
-      push({ tone: 'success', title: MODELS.toastDeleted, detail: p.name })
+      push({ tone: 'success', title: MODELS.toastDeleted, detail: pendingDelete.name })
+      setPendingDelete(null)
       await load()
     } catch (err) {
       const f = modelErrorText(err)
+      setDeleteError(f.detail ? `${f.title} ${f.detail}` : f.title)
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
@@ -495,7 +507,7 @@ export function ModelSettings() {
           busy={busy || modalOpen}
           readOnly={readOnly}
           onEdit={startEdit}
-          onDelete={(target) => void onDelete(target)}
+          onDelete={beginDelete}
         />
       )}
 
@@ -522,6 +534,24 @@ export function ModelSettings() {
             </p>
           )}
         </Modal>
+      )}
+
+      {!readOnly && (
+        <ConfirmDialog
+          open={!!pendingDelete}
+          danger
+          title={MODELS.confirmDeleteTitle}
+          body={
+            isLastModel
+              ? `${MODELS.confirmDeleteBody}\n${MODELS.confirmDeleteLast}`
+              : MODELS.confirmDeleteBody
+          }
+          confirmText={MODELS.confirmDeleteOk}
+          busy={busy}
+          error={deleteError}
+          onCancel={cancelDelete}
+          onConfirm={() => void confirmDelete()}
+        />
       )}
     </div>
   )

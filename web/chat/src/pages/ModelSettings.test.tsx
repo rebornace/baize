@@ -522,3 +522,41 @@ describe('ModelSettings create modal', () => {
     host.remove()
   })
 })
+
+describe('ModelSettings delete ConfirmDialog', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('asks ConfirmDialog before delete; last model shows extra warning', async () => {
+    const onlyProfile = profile({ id: 'mp_1', name: '唯一模型' })
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([onlyProfile])
+    const deleteSpy = vi.spyOn(api, 'deleteModelProfile').mockResolvedValue()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+
+    const { host, root } = await renderModelSettings()
+    const deleteBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.delete),
+    )
+    expect(deleteBtn).toBeTruthy()
+    await act(async () => {
+      deleteBtn!.click()
+    })
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(host.textContent).toContain(MODELS.confirmDeleteTitle)
+    expect(host.textContent).toContain(MODELS.confirmDeleteBody)
+    expect(host.textContent).toContain(MODELS.confirmDeleteLast)
+    expect(deleteSpy).not.toHaveBeenCalled()
+
+    await act(async () => {
+      ;(host.querySelector('[data-testid="confirm-ok"]') as HTMLButtonElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    expect(deleteSpy).toHaveBeenCalledWith('mp_1')
+    root.unmount()
+    host.remove()
+  })
+})
