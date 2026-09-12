@@ -173,12 +173,22 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-3);
   width: min(440px, 100%);
+  /* 限制整体高度并做纵向 flex：标题与底部操作栏常驻，长内容在内容区滚动，
+     避免多工具权限列表把按钮顶出视口（手机端可达性必须）。 */
+  max-height: calc(100vh - 2 * var(--space-4));
   padding: var(--space-6);
   outline: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
-.modal-title { margin: 0 0 var(--space-2); font-size: 17px; color: var(--text); }
-.modal-content { color: var(--text); font-size: 14px; line-height: 1.6; }
-.modal-footer { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+.modal-title { margin: 0 0 var(--space-2); font-size: 17px; color: var(--text); flex: none; }
+.modal-content {
+  color: var(--text); font-size: 14px; line-height: 1.6;
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.modal-footer { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); flex: none; }
 
 /* ---- DropdownMenu ---- */
 .dropdown { position: relative; display: inline-flex; }

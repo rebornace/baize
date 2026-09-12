@@ -117,6 +117,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       setSpecFileName(file.name)
       setSpecUrl('')
       setFieldErrors((prev) => ({ ...prev, spec: undefined }))
+      setFormError(null)
     }
     reader.onerror = () => {
       setFormError(CONNECTORS.specReadFailed)

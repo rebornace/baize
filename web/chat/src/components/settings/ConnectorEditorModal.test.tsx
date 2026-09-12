@@ -364,4 +364,19 @@ describe('ConnectorEditorModal minor: file read failure', () => {
       spy.mockRestore()
     }
   })
+
+  it('clears a prior read-failed error once a new file is read successfully (M13)', async () => {
+    await render()
+    const failSpy = vi.spyOn(window.FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) {
+      setTimeout(() => { this.dispatchEvent(new Event('error')) }, 0)
+    })
+    await setFile(new File(['{}'], 'bad.json', { type: 'application/json' }))
+    expect(host.textContent).toContain('读取文件失败')
+    failSpy.mockRestore()
+
+    // 重新选择一个可正常读取的文件：顶部错误条必须消失。
+    await setFile(new File(['openapi: 3.0.0'], 'ok.json', { type: 'application/json' }))
+    expect(host.textContent).not.toContain('读取文件失败')
+    expect(host.textContent).toContain('已选择文件：ok.json')
+  })
 })
