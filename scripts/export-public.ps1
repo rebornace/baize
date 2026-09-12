@@ -144,6 +144,6 @@ Write-Host "  cd $Out"
 Write-Host "  git init"
 Write-Host "  git remote add origin https://github.com/rebornace/baize.git"
 Write-Host '  git add .'
-Write-Host '  git commit -F commit-msg.txt   # commit-msg.txt 写真实功能描述'
+Write-Host '  git commit -m "feat: 与 real 仓一致的真实功能描述"   # 切勿写“开源切片/发布切片”'
 Write-Host "  git branch -M main"
 Write-Host "  git push -u origin main --force-with-lease"
