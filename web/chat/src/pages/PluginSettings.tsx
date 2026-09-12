@@ -98,7 +98,10 @@ export function PluginSettings() {
   }
   const handleSavePermissions = async (id: string, loginNames: string[], approvalNames: string[]) => {
     // 连接级字段整表回传（后端每次 PUT 都重新探测）。
-    if (!savedConn || savedConn.kind !== 'plugin') return
+    // 缓存缺失属接线错误：显式抛出，由组件 finish 的 catch 提示用户，避免静默丢权限。
+    if (!savedConn || savedConn.kind !== 'plugin') {
+      throw new Error('saved connection missing before permissions save')
+    }
     await putConnector(id, {
       type: 'http',
       base_url: savedConn.baseUrl,

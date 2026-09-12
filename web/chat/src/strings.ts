@@ -215,6 +215,7 @@ export const CONNECTORS = {
   toolCount: (n: number) => `${n} 个工具`,
   stepInfo: '连接信息',
   stepPermissions: '工具权限',
+  noToolsDiscovered: '暂无已识别工具。',
   fieldId: '连接编号',
   fieldIdHint: '仅用于区分，保存后不可改；用小写字母、数字、- 或 _。',
   fieldBaseUrl: '服务地址',

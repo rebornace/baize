@@ -90,7 +90,6 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [saving, setSaving] = useState(false)
   const [mcpForm, setMcpForm] = useState<McpFormValues>(EMPTY_MCP_FORM)
   const [mcpErrors, setMcpErrors] = useState<McpFieldErrors>({})
-  const [savedConn, setSavedConn] = useState<SavedConnection | null>(null)
   const isMcp = kind === 'mcp'
   const isOpenapi = kind === 'openapi'
 
@@ -113,7 +112,6 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       ? connectorToMcpForm({ id: init.id, type: 'mcp', mcp: init.mcp })
       : { ...EMPTY_MCP_FORM })
     setMcpErrors({})
-    setSavedConn(null)
   }, [open])
 
   if (!open) return null
@@ -191,7 +189,6 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       setTools(nextTools)
       // 保留本次打开期间已勾选过的同名工具权限（I-1）
       setSelection(reselect(nextTools, fallback))
-      setSavedConn(conn)
       setStep(2)
       // 第一步已真正保存（连接器已创建/更新）：通知页面缓存连接级负载、提示并刷新列表，
       // 这样用户随后直接「暂不设置」或关闭弹窗也能看到新连接器。
@@ -203,15 +200,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     }
   }
 
-  // 编辑态不重存第一步、直接去第二步：也要让页面拿到回传所需连接级字段。
-  const connFromInitial = (): SavedConnection => {
-    if (kind === 'mcp') return { kind: 'mcp', id: initial.id, mcp: initial.mcp ?? { transport: 'stdio' } }
-    if (kind === 'openapi') {
-      return { kind: 'openapi', id: initial.id, baseUrl: initial.baseUrl, importFormat: 'auto' }
-    }
-    return { kind: 'plugin', id: initial.id, baseUrl: initial.baseUrl }
-  }
-
+  // 编辑态不重存第一步、直接去第二步：纯导航，不触发保存成功回调
+  // （第二步 PUT 所需的连接级负载由各页 openEdit 打开弹窗前预构造缓存）。
   const gotoPermissions = () => {
     const fallback = selectionFromLists(
       initial.tools,
@@ -221,11 +211,6 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setTools(initial.tools)
     // 保留本次打开期间已勾选过的同名工具权限（I-1）
     setSelection(reselect(initial.tools, fallback))
-    if (!savedConn) {
-      const c = connFromInitial()
-      setSavedConn(c)
-      props.onSavedInfo?.(c)
-    }
     setStep(2)
   }
 
@@ -386,7 +371,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         <div className="connector-permissions">
           <h3 className="connector-perms-title">{CONNECTORS.stepPermissions}</h3>
           <p className="connector-perms-intro">{isMcp ? CONNECTORS.permsIntroMcp : CONNECTORS.permsIntro}</p>
-          {tools.length === 0 && <p className="settings-muted">暂无已识别工具。</p>}
+          {tools.length === 0 && <p className="settings-muted">{CONNECTORS.noToolsDiscovered}</p>}
           {tools.map((t) => (
             <div key={t.name} className="connector-perm-row">
               <span className="connector-perm-name">{t.name}</span>

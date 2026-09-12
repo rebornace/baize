@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectorEditorModal } from './ConnectorEditorModal'
+import { CONNECTORS } from '../../strings'
 
 let host: HTMLDivElement
 let root: ReturnType<typeof createRoot>
@@ -144,6 +145,15 @@ describe('ConnectorEditorModal step 2', () => {
     await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSavePermissions).toHaveBeenCalledWith('o1', ['login'], ['create_ticket'])
+  })
+
+  it('edit: navigating directly to permissions does not notify onSavedInfo', async () => {
+    const onSavedInfo = vi.fn()
+    await render({ editing: true, initial: editInitial, onSavedInfo })
+    // 纯导航（无 PUT、无第一步保存）：不应走「保存成功」通道。
+    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
+    expect(host.textContent).toContain('工具权限')
+    expect(onSavedInfo).not.toHaveBeenCalled()
   })
 })
 
@@ -452,5 +462,29 @@ describe('ConnectorEditorModal mcp', () => {
     await act(async () => { btn('完成').click(); await Promise.resolve() })
     await flush()
     expect(onSavePermissions).toHaveBeenCalledWith('a1', [], ['write'])
+  })
+
+  it('http: empty url shows inline error and does not save', async () => {
+    const onSaveInfo = vi.fn(async () => [{ name: 'q' }])
+    await render(mcpProps({ onSaveInfo }))
+    await act(async () => {
+      const sel = host.querySelector('select')!
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(sel, 'http'); sel.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'r1')
+    await act(async () => { btn('保存连接').click(); await Promise.resolve() })
+    expect(host.textContent).toContain(CONNECTORS.errMcpUrlRequired)
+    expect(onSaveInfo).not.toHaveBeenCalled()
+  })
+
+  it('edit: navigating directly to permissions does not notify onSavedInfo', async () => {
+    const onSavedInfo = vi.fn()
+    await render(mcpProps({ editing: true, initial: mcpEditInitial, onSavedInfo }))
+    await act(async () => { btn('设置工具权限').click(); await Promise.resolve() })
+    expect(host.textContent).toContain('工具权限')
+    expect(onSavedInfo).not.toHaveBeenCalled()
   })
 })

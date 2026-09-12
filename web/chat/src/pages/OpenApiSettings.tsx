@@ -108,7 +108,10 @@ export function OpenApiSettings() {
     id: string, loginNames: string[], approvalNames: string[],
   ) => {
     // 不传文档：后端对编辑/已存在连接器复用已保存 spec；连接级字段整表回传。
-    if (!savedConn || savedConn.kind !== 'openapi') return
+    // 缓存缺失属接线错误：显式抛出，由组件 finish 的 catch 提示用户，避免静默丢权限。
+    if (!savedConn || savedConn.kind !== 'openapi') {
+      throw new Error('saved connection missing before permissions save')
+    }
     await putConnector(id, {
       type: 'openapi',
       base_url: savedConn.baseUrl,
