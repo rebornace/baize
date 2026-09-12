@@ -240,6 +240,41 @@ export function modelErrorText(e: unknown): FriendlyError {
   return friendlyError(e)
 }
 
+// ---- 设置页：技能 ----
+export const SKILLS = {
+  title: '技能',
+  description: '对话中可用 @ 或 / 调用已启用的技能。',
+  upload: '上传技能',
+  saveDefaults: '保存默认勾选',
+  emptyTitle: '还没有技能',
+  emptyDesc: '上传 .md 或 .zip 技能包后，对话中即可用 @ 或 / 调用。',
+  confirmDeleteTitle: '删除这个技能？',
+  confirmDeleteBody: '删除后不可恢复，且会从默认勾选列表中移除。',
+  confirmDeleteOk: '删除',
+  toastUploaded: '技能已上传',
+  toastSaved: '默认勾选已保存',
+  toastDeleted: '技能已删除',
+  sourceBuiltin: '内置',
+  sourceUser: '用户',
+  errGeneric: '操作未能完成，请稍后重试。',
+  errNotFound: '找不到该技能，可能已被删除。',
+  errInvalidRequest: '上传的文件无效或格式不正确，请检查后重试。',
+  errInternal: '服务暂时出了问题，请稍后重试。',
+} as const
+
+/** 把技能设置页相关异常翻译为人话标题；未知错误附技术详情。 */
+export function skillErrorText(e: unknown): FriendlyError {
+  if (e instanceof ApiError) {
+    if (e.code === 'not_found') return { title: SKILLS.errNotFound }
+    if (e.code === 'invalid_request') return { title: SKILLS.errInvalidRequest }
+    if (e.code === 'internal_error' || e.status >= 500) {
+      return { title: SKILLS.errInternal, detail: `${e.code}: ${e.message}` }
+    }
+    return { title: SKILLS.errGeneric, detail: `${e.code}: ${e.message}` }
+  }
+  return friendlyError(e)
+}
+
 // ---- 设置页：业务系统 / 插件（连接器） ----
 export const CONNECTORS = {
   openapiTitle: '业务系统',
