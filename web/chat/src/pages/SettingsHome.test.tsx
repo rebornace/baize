@@ -50,7 +50,7 @@ describe('SettingsHome', () => {
     })
     render('admin')
     await settle()
-    for (const name of ['模型', '助手功能', '技能', '业务系统', 'MCP', '插件', 'MCP 导出', '微信', '消息回调', '外部来信', '账号', '存储', '运行参数']) {
+    for (const name of ['模型', '助手功能', '技能', '业务系统', '外部工具服务', '插件', '对外提供能力', '微信', '消息回调', '外部来信', '账号', '存储', '运行参数']) {
       expect(host.textContent).toContain(name)
     }
     for (const g of ['助手', '连接', '消息', '系统']) expect(host.textContent).toContain(g)

@@ -68,12 +68,12 @@ const ITEMS: SettingsNavItem[] = [
   {
     to: '/settings/openapi', label: '业务系统', group: 'connect', icon: Network, operator: 'locked',
     badge: 'openapi',
-    desc: '粘贴接口文档即可连上公司的订单、工单等系统，不用写代码',
+    desc: '上传一份接口文档，即可对接公司内部的各类业务系统，不用写代码',
   },
   {
-    to: '/settings/mcp', label: 'MCP', group: 'connect', icon: Boxes, operator: 'locked',
+    to: '/settings/mcp', label: '外部工具服务', group: 'connect', icon: Boxes, operator: 'locked',
     badge: 'mcp',
-    desc: '接入标准 MCP 工具服务，扩展助手能力',
+    desc: '接入标准 MCP 工具服务（本地子进程或远程 HTTP），扩展助手可用能力',
   },
   {
     to: '/settings/plugins', label: '插件', group: 'connect', icon: Puzzle, operator: 'locked',
@@ -81,9 +81,9 @@ const ITEMS: SettingsNavItem[] = [
     desc: '接入独立部署的插件程序',
   },
   {
-    to: '/settings/mcp-export', label: 'MCP 导出', group: 'connect', icon: Share2, operator: 'locked',
+    to: '/settings/mcp-export', label: '对外提供能力', group: 'connect', icon: Share2, operator: 'locked',
     badge: 'mcpExport',
-    desc: '把助手能力以标准 MCP 方式开放给其他客户端',
+    desc: '把助手的能力以标准 MCP 服务对外开放，供其他客户端调用',
   },
   // 消息
   {

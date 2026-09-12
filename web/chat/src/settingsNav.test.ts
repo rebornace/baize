@@ -40,6 +40,8 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/models']).toBe('模型')
     expect(byTo['/settings/tools']).toBe('助手功能')
     expect(byTo['/settings/openapi']).toBe('业务系统')
+    expect(byTo['/settings/mcp']).toBe('外部工具服务')
+    expect(byTo['/settings/mcp-export']).toBe('对外提供能力')
     expect(byTo['/settings/channels/weixin']).toBe('微信')
     expect(byTo['/settings/runtime']).toBe('运行参数')
   })
