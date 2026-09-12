@@ -13,7 +13,20 @@ import {
   type MCPExportKey,
   type MCPExportSettings as MCPExportSettingsInfo,
 } from '../api'
+import {
+  Button,
+  ConfirmDialog,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+  Textarea,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
+import { MCP_EXPORTS } from '../strings'
 
 export interface IdentityFormState {
   name: string
@@ -48,11 +61,16 @@ export function validateIdentityForm(
   | { ok: false; message: string } {
   const name = form.name.trim()
   if (!name) {
-    return { ok: false, message: '名称不能为空' }
+    return { ok: false, message: MCP_EXPORTS.errNameRequired }
   }
   const headersParsed = parseKeyValueLines(form.headersText)
   if (!headersParsed.ok) {
-    return { ok: false, message: headersParsed.message }
+    // parseKeyValueLines 的消息含旧文案，这里自行定位首个非法行，保证文案统一来自 MCP_EXPORTS。
+    const badRow = form.headersText
+      .split('\n')
+      .map((line) => line.trim())
+      .find((row) => row !== '' && (row.indexOf('=') <= 0 || row.slice(0, row.indexOf('=')).trim() === ''))
+    return { ok: false, message: MCP_EXPORTS.errBadHeaderLine(badRow ?? '') }
   }
   return {
     ok: true,
@@ -70,22 +88,33 @@ function isKeyActive(key: MCPExportKey): boolean {
   return key.revoked_at == null || key.revoked_at === ''
 }
 
+type ConfirmState =
+  | { kind: 'identity'; id: string; name: string }
+  | { kind: 'key'; id: string; name: string; prefix: string }
+  | null
+
 export function McpExportSettings() {
+  const { toasts, push, dismiss } = useToast()
   const [settings, setSettings] = useState<MCPExportSettingsInfo | null>(null)
   const [identities, setIdentities] = useState<MCPExportIdentity[]>([])
   const [keys, setKeys] = useState<MCPExportKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const [createForm, setCreateForm] = useState<IdentityFormState>(EMPTY_IDENTITY_FORM)
+  const [createFormError, setCreateFormError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<IdentityFormState>(EMPTY_IDENTITY_FORM)
+  const [editFormError, setEditFormError] = useState<string | null>(null)
 
   const [keyName, setKeyName] = useState('')
   const [keyIdentityId, setKeyIdentityId] = useState('')
+  const [keyFormError, setKeyFormError] = useState<string | null>(null)
   const [tokenModal, setTokenModal] = useState<{ name: string; token: string } | null>(null)
+
+  const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -126,10 +155,9 @@ export function McpExportSettings() {
     if (!endpointUrl) return
     try {
       await navigator.clipboard.writeText(endpointUrl)
-      setStatus(`已复制 endpoint：${endpointUrl}`)
-      setError(null)
-    } catch (err) {
-      setError(`复制失败：${apiErrorMessage(err)}`)
+      push({ tone: 'success', title: MCP_EXPORTS.endpointCopied })
+    } catch {
+      push({ tone: 'error', title: MCP_EXPORTS.copyFailed })
     }
   }
 
@@ -137,12 +165,11 @@ export function McpExportSettings() {
     e.preventDefault()
     const validated = validateIdentityForm(createForm)
     if (!validated.ok) {
-      setError(validated.message)
+      setCreateFormError(validated.message)
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
+    setCreateFormError(null)
     try {
       await createMCPExportIdentity({
         name: validated.name,
@@ -150,10 +177,10 @@ export function McpExportSettings() {
         headers: Object.keys(validated.headers).length > 0 ? validated.headers : undefined,
       })
       setCreateForm(EMPTY_IDENTITY_FORM)
-      setStatus('已创建导出身份')
+      push({ tone: 'success', title: MCP_EXPORTS.savedIdentity })
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      setCreateFormError(apiErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -162,8 +189,13 @@ export function McpExportSettings() {
   const startEdit = (identity: MCPExportIdentity) => {
     setEditingId(identity.id)
     setEditForm(identityToForm(identity))
-    setError(null)
-    setStatus(null)
+    setEditFormError(null)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditForm(EMPTY_IDENTITY_FORM)
+    setEditFormError(null)
   }
 
   const onSaveEdit = async (e: FormEvent) => {
@@ -171,12 +203,11 @@ export function McpExportSettings() {
     if (!editingId) return
     const validated = validateIdentityForm(editForm)
     if (!validated.ok) {
-      setError(validated.message)
+      setEditFormError(validated.message)
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
+    setEditFormError(null)
     try {
       await patchMCPExportIdentity(editingId, {
         name: validated.name,
@@ -185,30 +216,10 @@ export function McpExportSettings() {
       })
       setEditingId(null)
       setEditForm(EMPTY_IDENTITY_FORM)
-      setStatus('已更新导出身份')
+      push({ tone: 'success', title: MCP_EXPORTS.savedIdentity })
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onDeleteIdentity = async (id: string, name: string) => {
-    if (!window.confirm(`删除导出身份「${name}」？其下的 Key 也会被删除。`)) return
-    setBusy(true)
-    setError(null)
-    setStatus(null)
-    try {
-      await deleteMCPExportIdentity(id)
-      if (editingId === id) {
-        setEditingId(null)
-        setEditForm(EMPTY_IDENTITY_FORM)
-      }
-      setStatus(`已删除身份 ${name}`)
-      await load()
-    } catch (err) {
-      setError(apiErrorMessage(err))
+      setEditFormError(apiErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -219,83 +230,101 @@ export function McpExportSettings() {
     const name = keyName.trim()
     const identityId = keyIdentityId.trim()
     if (!name) {
-      setError('Key 名称不能为空')
+      setKeyFormError(MCP_EXPORTS.errKeyNameRequired)
       return
     }
     if (!identityId) {
-      setError('请选择绑定的导出身份')
+      setKeyFormError(MCP_EXPORTS.errKeyIdentityRequired)
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
+    setKeyFormError(null)
     try {
       const created = await createMCPExportKey({ name, identity_id: identityId })
       setKeyName('')
       setTokenModal({ name: created.name, token: created.token })
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      setKeyFormError(apiErrorMessage(err))
     } finally {
       setBusy(false)
     }
   }
 
-  const onRevokeKey = async (key: MCPExportKey) => {
-    if (!window.confirm(`撤销 Key「${key.name}」（${key.prefix}…）？此操作不可恢复。`)) return
+  const runConfirm = async () => {
+    if (!confirm) return
     setBusy(true)
-    setError(null)
-    setStatus(null)
+    setConfirmError(null)
     try {
-      await revokeMCPExportKey(key.id)
-      setStatus(`已撤销 Key ${key.name}`)
+      if (confirm.kind === 'identity') {
+        await deleteMCPExportIdentity(confirm.id)
+        if (editingId === confirm.id) {
+          setEditingId(null)
+          setEditForm(EMPTY_IDENTITY_FORM)
+        }
+        push({ tone: 'success', title: MCP_EXPORTS.deletedIdentity(confirm.name) })
+      } else {
+        await revokeMCPExportKey(confirm.id)
+        push({ tone: 'success', title: MCP_EXPORTS.revokedKey(confirm.name) })
+      }
+      setConfirm(null)
       await load()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      // 弹窗保持打开，错误内联展示，允许重试。
+      setConfirmError(apiErrorMessage(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const copyToken = async () => {
+    if (!tokenModal) return
+    try {
+      await navigator.clipboard.writeText(tokenModal.token)
+      push({ tone: 'success', title: MCP_EXPORTS.tokenCopied })
+    } catch {
+      push({ tone: 'error', title: MCP_EXPORTS.copyFailed })
     }
   }
 
   const identityName = (id: string) => identities.find((i) => i.id === id)?.name ?? id
 
   return (
-    <div className="settings-section settings-mcp-export">
-      <h1 className="settings-heading">MCP 导出</h1>
-      <div className="settings-meta">
-        <p>
-          将白泽工具目录以 Streamable HTTP MCP Server 暴露给外部 Agent（如 Cursor）。与「
-          <Link to="/settings/mcp" className="settings-link">
-            MCP
-          </Link>
-          」客户端注册页分开；工具导出策略在{' '}
-          <Link to="/settings/tools" className="settings-link">
-            Tools
-          </Link>{' '}
-          中配置。鉴权使用专用导出 Key（非 Gate）。
-        </p>
-      </div>
+    <div className="settings-panel">
+      <PageHeader
+        title={MCP_EXPORTS.title}
+        description={
+          <>
+            {MCP_EXPORTS.intro}{' '}
+            <Link to="/settings/tools" className="settings-link">
+              {MCP_EXPORTS.introToolsLink}
+            </Link>
+          </>
+        }
+      />
 
       {loading && <p className="settings-muted">加载中…</p>}
-      {!loading && error && <p className="settings-error">{error}</p>}
-      {!loading && status && <p className="settings-muted">{status}</p>}
+      {!loading && error && (
+        <p className="ui-inline-error" role="alert">
+          {error}
+        </p>
+      )}
 
       {!loading && settings && (
         <section className="settings-form">
-          <h2 className="settings-subheading">端点</h2>
+          <h2 className="settings-subheading">{MCP_EXPORTS.endpointTitle}</h2>
           <p className="settings-meta">
-            状态：{settings.enabled ? '已启用' : '已关闭'}
-            {!settings.enabled ? '（进程配置 mcp_export.enabled=false）' : null}
+            {settings.enabled ? MCP_EXPORTS.endpointEnabled : MCP_EXPORTS.endpointDisabled}
           </p>
-          <label className="settings-field">
-            <span className="settings-field-label">endpoint</span>
-            <input className="settings-input" value={endpointUrl} readOnly />
-          </label>
+          <Field label="endpoint">
+            <Input value={endpointUrl} readOnly />
+          </Field>
           <div className="settings-toolbar">
-            <button type="button" className="btn ghost sm" onClick={() => void onCopyEndpoint()}>
-              复制 endpoint
-            </button>
+            <Button variant="secondary" size="sm" onClick={() => void onCopyEndpoint()}>
+              {MCP_EXPORTS.copyEndpoint}
+            </Button>
           </div>
+          <h3 className="settings-subheading">{MCP_EXPORTS.exampleTitle}</h3>
           <pre className="settings-muted">{`{
   "mcpServers": {
     "baize-export": {
@@ -312,12 +341,10 @@ export function McpExportSettings() {
       {!loading && (
         <>
           <section className="settings-form">
-            <h2 className="settings-subheading">导出身份</h2>
-            <p className="settings-meta">
-              每把导出 Key 必须绑定一个身份；调用时注入 headers / scheme，供 require_login 类工具使用。
-            </p>
+            <h2 className="settings-subheading">{MCP_EXPORTS.identityTitle}</h2>
+            <p className="settings-meta">{MCP_EXPORTS.identityIntro}</p>
             {identities.length === 0 && (
-              <p className="settings-empty">尚未创建导出身份。</p>
+              <p className="settings-empty">{MCP_EXPORTS.identityEmpty}</p>
             )}
             {identities.length > 0 && (
               <ul className="settings-list">
@@ -325,54 +352,50 @@ export function McpExportSettings() {
                   <li key={identity.id} className="settings-list-item">
                     {editingId === identity.id ? (
                       <form className="settings-form" onSubmit={(e) => void onSaveEdit(e)}>
-                        <label className="settings-field">
-                          <span className="settings-field-label">名称</span>
-                          <input
-                            className="settings-input"
+                        <Field label={MCP_EXPORTS.identityName} required>
+                          <Input
                             value={editForm.name}
                             onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                             disabled={busy}
-                            required
                           />
-                        </label>
-                        <label className="settings-field">
-                          <span className="settings-field-label">scheme（可选）</span>
-                          <input
-                            className="settings-input"
+                        </Field>
+                        <Field label={MCP_EXPORTS.identityScheme}>
+                          <Input
                             value={editForm.scheme}
                             onChange={(e) => setEditForm((f) => ({ ...f, scheme: e.target.value }))}
                             disabled={busy}
                             placeholder="Bearer"
                           />
-                        </label>
-                        <label className="settings-field">
-                          <span className="settings-field-label">headers（每行 KEY=VALUE）</span>
-                          <textarea
-                            className="settings-textarea"
+                        </Field>
+                        <Field label={MCP_EXPORTS.identityHeaders}>
+                          <Textarea
+                            rows={3}
                             value={editForm.headersText}
                             onChange={(e) =>
                               setEditForm((f) => ({ ...f, headersText: e.target.value }))
                             }
                             disabled={busy}
-                            rows={3}
-                            placeholder="Authorization=Bearer ${TOKEN}"
+                            placeholder={'Authorization=Bearer ${TOKEN}'}
                           />
-                        </label>
+                        </Field>
+                        {editFormError && (
+                          <p className="ui-inline-error" role="alert">
+                            {editFormError}
+                          </p>
+                        )}
                         <div className="settings-toolbar">
-                          <button type="submit" className="btn primary sm" disabled={busy}>
-                            保存
-                          </button>
-                          <button
+                          <Button type="submit" variant="primary" size="sm" disabled={busy}>
+                            {MCP_EXPORTS.save}
+                          </Button>
+                          <Button
                             type="button"
-                            className="btn ghost sm"
+                            variant="secondary"
+                            size="sm"
                             disabled={busy}
-                            onClick={() => {
-                              setEditingId(null)
-                              setEditForm(EMPTY_IDENTITY_FORM)
-                            }}
+                            onClick={cancelEdit}
                           >
-                            取消
-                          </button>
+                            {MCP_EXPORTS.cancel}
+                          </Button>
                         </div>
                       </form>
                     ) : (
@@ -385,29 +408,33 @@ export function McpExportSettings() {
                           ) : null}
                         </span>
                         {identity.headers && Object.keys(identity.headers).length > 0 ? (
-                          <pre className="settings-muted">
-                            {formatKeyValueMap(identity.headers)}
-                          </pre>
-                        ) : (
-                          <p className="settings-muted">无 headers</p>
-                        )}
+                          <pre className="settings-muted">{formatKeyValueMap(identity.headers)}</pre>
+                        ) : null}
                         <div className="settings-toolbar">
-                          <button
+                          <Button
                             type="button"
-                            className="btn ghost sm"
+                            variant="ghost"
+                            size="sm"
                             disabled={busy}
                             onClick={() => startEdit(identity)}
                           >
-                            编辑
-                          </button>
-                          <button
+                            {MCP_EXPORTS.edit}
+                          </Button>
+                          <Button
                             type="button"
-                            className="btn danger sm"
+                            variant="danger"
+                            size="sm"
                             disabled={busy}
-                            onClick={() => void onDeleteIdentity(identity.id, identity.name)}
+                            onClick={() =>
+                              setConfirm({
+                                kind: 'identity',
+                                id: identity.id,
+                                name: identity.name,
+                              })
+                            }
                           >
-                            删除
-                          </button>
+                            {MCP_EXPORTS.delete}
+                          </Button>
                         </div>
                       </>
                     )}
@@ -417,51 +444,49 @@ export function McpExportSettings() {
             )}
 
             <form className="settings-form" onSubmit={(e) => void onCreateIdentity(e)}>
-              <h3 className="settings-subheading">新建身份</h3>
-              <label className="settings-field">
-                <span className="settings-field-label">名称</span>
-                <input
-                  className="settings-input"
+              <h3 className="settings-subheading">{MCP_EXPORTS.createIdentity}</h3>
+              <Field label={MCP_EXPORTS.identityName} required>
+                <Input
                   value={createForm.name}
                   onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
                   disabled={busy}
                   placeholder="Ops"
-                  required
                 />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">scheme（可选）</span>
-                <input
-                  className="settings-input"
+              </Field>
+              <Field label={MCP_EXPORTS.identityScheme}>
+                <Input
                   value={createForm.scheme}
                   onChange={(e) => setCreateForm((f) => ({ ...f, scheme: e.target.value }))}
                   disabled={busy}
                   placeholder="Bearer"
                 />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">headers（每行 KEY=VALUE）</span>
-                <textarea
-                  className="settings-textarea"
+              </Field>
+              <Field label={MCP_EXPORTS.identityHeaders}>
+                <Textarea
+                  rows={3}
                   value={createForm.headersText}
                   onChange={(e) => setCreateForm((f) => ({ ...f, headersText: e.target.value }))}
                   disabled={busy}
-                  rows={3}
                   placeholder="X-Team=ops"
                 />
-              </label>
+              </Field>
+              {createFormError && (
+                <p className="ui-inline-error" role="alert">
+                  {createFormError}
+                </p>
+              )}
               <div className="settings-toolbar">
-                <button type="submit" className="btn primary sm" disabled={busy}>
-                  创建身份
-                </button>
+                <Button type="submit" variant="primary" size="sm" disabled={busy}>
+                  {MCP_EXPORTS.createIdentity}
+                </Button>
               </div>
             </form>
           </section>
 
           <section className="settings-form">
-            <h2 className="settings-subheading">导出 Key</h2>
-            <p className="settings-meta">创建时仅展示一次明文 token；列表只显示前缀。撤销后不可恢复。</p>
-            {keys.length === 0 && <p className="settings-empty">尚未创建导出 Key。</p>}
+            <h2 className="settings-subheading">{MCP_EXPORTS.keyTitle}</h2>
+            <p className="settings-meta">{MCP_EXPORTS.keyIntro}</p>
+            {keys.length === 0 && <p className="settings-empty">{MCP_EXPORTS.keyEmpty}</p>}
             {keys.length > 0 && (
               <ul className="settings-list">
                 {keys.map((key) => {
@@ -474,17 +499,27 @@ export function McpExportSettings() {
                           {' '}
                           · {key.prefix}… · {identityName(key.identity_id)}
                         </span>
-                        {!active ? <span className="settings-muted"> · 已撤销</span> : null}
+                        {!active ? (
+                          <span className="settings-muted"> · {MCP_EXPORTS.revoked}</span>
+                        ) : null}
                       </span>
                       <div className="settings-toolbar">
-                        <button
+                        <Button
                           type="button"
-                          className="btn danger sm"
+                          variant="danger"
+                          size="sm"
                           disabled={busy || !active}
-                          onClick={() => void onRevokeKey(key)}
+                          onClick={() =>
+                            setConfirm({
+                              kind: 'key',
+                              id: key.id,
+                              name: key.name,
+                              prefix: key.prefix,
+                            })
+                          }
                         >
-                          {active ? '撤销' : '已撤销'}
-                        </button>
+                          {active ? MCP_EXPORTS.revoke : MCP_EXPORTS.revoked}
+                        </Button>
                       </div>
                     </li>
                   )
@@ -493,28 +528,23 @@ export function McpExportSettings() {
             )}
 
             <form className="settings-form" onSubmit={(e) => void onCreateKey(e)}>
-              <h3 className="settings-subheading">新建 Key</h3>
-              <label className="settings-field">
-                <span className="settings-field-label">名称</span>
-                <input
-                  className="settings-input"
+              <h3 className="settings-subheading">{MCP_EXPORTS.createKey}</h3>
+              <Field label={MCP_EXPORTS.keyName} required>
+                <Input
                   value={keyName}
                   onChange={(e) => setKeyName(e.target.value)}
                   disabled={busy || identities.length === 0}
                   placeholder="cursor-dev"
-                  required
                 />
-              </label>
-              <label className="settings-field">
-                <span className="settings-field-label">绑定身份</span>
-                <select
-                  className="settings-select"
+              </Field>
+              <Field label={MCP_EXPORTS.keyBindIdentity} required>
+                <Select
                   value={keyIdentityId}
                   onChange={(e) => setKeyIdentityId(e.target.value)}
                   disabled={busy || identities.length === 0}
                 >
                   {identities.length === 0 ? (
-                    <option value="">请先创建身份</option>
+                    <option value="">{MCP_EXPORTS.keyNeedIdentityFirst}</option>
                   ) : (
                     identities.map((i) => (
                       <option key={i.id} value={i.id}>
@@ -522,55 +552,80 @@ export function McpExportSettings() {
                       </option>
                     ))
                   )}
-                </select>
-              </label>
+                </Select>
+              </Field>
+              {keyFormError && (
+                <p className="ui-inline-error" role="alert">
+                  {keyFormError}
+                </p>
+              )}
               <div className="settings-toolbar">
-                <button
+                <Button
                   type="submit"
-                  className="btn primary sm"
+                  variant="primary"
+                  size="sm"
                   disabled={busy || identities.length === 0}
                 >
-                  创建 Key
-                </button>
+                  {MCP_EXPORTS.createKey}
+                </Button>
               </div>
             </form>
           </section>
         </>
       )}
 
-      {tokenModal && (
-        <div className="settings-drawer-backdrop" onClick={() => setTokenModal(null)}>
-          <aside
-            className="settings-drawer"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label="新导出 Key"
-          >
-            <div className="settings-drawer-head">
-              <h2 className="settings-subheading">Key {tokenModal.name} 明文 token</h2>
-              <button type="button" className="btn ghost sm" onClick={() => setTokenModal(null)}>
-                关闭
-              </button>
-            </div>
-            <p className="settings-meta">仅展示一次，请立即复制到 MCP 客户端配置。</p>
+      <ConfirmDialog
+        open={confirm !== null}
+        danger
+        title={
+          confirm?.kind === 'identity'
+            ? MCP_EXPORTS.deleteIdentityTitle
+            : MCP_EXPORTS.revokeKeyTitle
+        }
+        body={
+          confirm
+            ? confirm.kind === 'identity'
+              ? MCP_EXPORTS.deleteIdentityBody(confirm.name)
+              : MCP_EXPORTS.revokeKeyBody(confirm.name, confirm.prefix)
+            : ''
+        }
+        confirmText={MCP_EXPORTS.delete}
+        busy={busy}
+        error={confirmError}
+        onCancel={() => {
+          if (!busy) {
+            setConfirm(null)
+            setConfirmError(null)
+          }
+        }}
+        onConfirm={() => void runConfirm()}
+      />
+
+      <Modal
+        open={tokenModal !== null}
+        title={MCP_EXPORTS.tokenTitle}
+        onClose={() => setTokenModal(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => void copyToken()}>
+              {MCP_EXPORTS.copyToken}
+            </Button>
+            <Button variant="primary" onClick={() => setTokenModal(null)}>
+              {MCP_EXPORTS.tokenSaved}
+            </Button>
+          </>
+        }
+      >
+        {tokenModal && (
+          <>
+            <p className="settings-meta">{MCP_EXPORTS.tokenBody(tokenModal.name)}</p>
             <pre className="settings-muted">{tokenModal.token}</pre>
-            <div className="settings-toolbar">
-              <button
-                type="button"
-                className="btn primary sm"
-                onClick={() => {
-                  void navigator.clipboard.writeText(tokenModal.token).then(
-                    () => setStatus('已复制导出 Key'),
-                    (err) => setError(`复制失败：${apiErrorMessage(err)}`),
-                  )
-                }}
-              >
-                复制 token
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
+
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
+
