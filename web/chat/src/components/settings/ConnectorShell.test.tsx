@@ -154,4 +154,21 @@ describe('ConnectorShell', () => {
     })
     expect(onEdit).toHaveBeenCalledWith('ticket-api')
   })
+
+  it('renders mcp kind title and a transport summary row without a base url', async () => {
+    const mcpRows: ConnectorRowData[] = [
+      { id: 'a1', summary: '本地程序 · npx', toolCount: 2, loginNames: [], approvalNames: ['t'] },
+    ]
+    await render({ kind: 'mcp', rows: mcpRows, loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
+    expect(host.textContent).toContain('外部工具服务')
+    expect(host.textContent).toContain('本地程序 · npx')
+    expect(host.textContent).toContain('1 个需审批')
+    expect(host.textContent).not.toContain('需本人登录')
+  })
+
+  it('empty mcp list shows the mcp empty state and add button', async () => {
+    await render({ kind: 'mcp', rows: [], loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
+    expect(host.textContent).toContain('还没有接入外部工具服务')
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent!.includes('接入外部工具'))).toBe(true)
+  })
 })

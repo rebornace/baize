@@ -7,6 +7,8 @@ import type { ConnectorKind } from '../../pages/connectorForms/types'
 export interface ConnectorRowData {
   id: string
   baseUrl?: string
+  /** MCP 连接的传输方式摘要（如「本地程序 · npx」）；优先于 baseUrl 展示。 */
+  summary?: string
   toolCount: number
   loginNames: string[]
   approvalNames: string[]
@@ -54,27 +56,26 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
     }
   }
 
-  const isOpenapi = kind === 'openapi'
-  const title = isOpenapi ? CONNECTORS.openapiTitle : CONNECTORS.pluginTitle
-  const description = isOpenapi ? CONNECTORS.openapiDesc : CONNECTORS.pluginDesc
-  const addLabel = isOpenapi ? CONNECTORS.addOpenapi : CONNECTORS.addPlugin
-  const emptyTitle = isOpenapi ? CONNECTORS.openapiEmptyTitle : CONNECTORS.pluginEmptyTitle
-  const emptyDesc = isOpenapi ? CONNECTORS.openapiEmptyDesc : CONNECTORS.pluginEmptyDesc
+  const labels = {
+    openapi: { title: CONNECTORS.openapiTitle, desc: CONNECTORS.openapiDesc, add: CONNECTORS.addOpenapi, emptyTitle: CONNECTORS.openapiEmptyTitle, emptyDesc: CONNECTORS.openapiEmptyDesc },
+    plugin: { title: CONNECTORS.pluginTitle, desc: CONNECTORS.pluginDesc, add: CONNECTORS.addPlugin, emptyTitle: CONNECTORS.pluginEmptyTitle, emptyDesc: CONNECTORS.pluginEmptyDesc },
+    mcp: { title: CONNECTORS.mcpTitle, desc: CONNECTORS.mcpDesc, add: CONNECTORS.addMcp, emptyTitle: CONNECTORS.mcpEmptyTitle, emptyDesc: CONNECTORS.mcpEmptyDesc },
+  }[kind]
 
   return (
     <div className="settings-panel">
       <PageHeader
-        title={title}
-        description={description}
-        actions={<Button variant="primary" size="sm" onClick={onCreate}>{addLabel}</Button>}
+        title={labels.title}
+        description={labels.desc}
+        actions={<Button variant="primary" size="sm" onClick={onCreate}>{labels.add}</Button>}
       />
 
       {loadError && <p className="ui-inline-error" role="alert">{loadError}</p>}
       {loading && rows.length === 0 && <p className="settings-muted">加载中…</p>}
 
       {!loading && rows.length === 0 && !loadError && (
-        <EmptyState title={emptyTitle} description={emptyDesc}
-          action={<Button variant="primary" onClick={onCreate}>{addLabel}</Button>} />
+        <EmptyState title={labels.emptyTitle} description={labels.emptyDesc}
+          action={<Button variant="primary" onClick={onCreate}>{labels.add}</Button>} />
       )}
 
       {rows.length > 0 && (
@@ -84,7 +85,7 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
             return (
               <Card key={row.id} className="connector-card"
                 title={row.id}
-                description={row.baseUrl || '—'}
+                description={row.summary ?? row.baseUrl ?? '—'}
                 trailing={<Badge tone="info">{CONNECTORS.toolCount(row.toolCount)}</Badge>}>
                 {summary && <p className="connector-perm">{summary}</p>}
                 <div className="connector-card-actions">
