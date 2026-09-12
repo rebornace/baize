@@ -45,6 +45,8 @@ describe('ToolsSettings read-only for operator', () => {
       return new Response('forbidden', { status: 403 })
     })
     await renderOperator(<ToolsSettings />)
+    expect(host.textContent).toContain('助手功能')
+    expect(host.querySelector('h1')?.textContent).not.toBe('Tools')
     expect(host.textContent).toContain('查工单')
     expect(host.textContent).not.toContain('全部启用')
     expect(host.textContent).not.toContain('全部停用')

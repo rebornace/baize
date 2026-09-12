@@ -11,8 +11,17 @@ import {
   type ToolExportMode,
   type ToolInfo,
 } from '../api'
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  PageHeader,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
 import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
 import { useGate } from '../gateContext'
+import { TOOLS, toolErrorText } from '../strings'
 import { CaptureSettingsFields } from './CaptureSettingsFields'
 import {
   captureToDraft,
@@ -52,8 +61,9 @@ const EMPTY_FORM: AddFormState = {
   schema: '{}',
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+function toolErrorLabel(err: unknown): string {
+  const f = toolErrorText(err)
+  return f.detail ? `${f.title} ${f.detail}` : f.title
 }
 
 function toolRowKey(t: ToolInfo): string {
@@ -152,13 +162,16 @@ export function defaultExpandedSets(tools: ToolInfo[]): {
 export function ToolsSettings() {
   const { role } = useGate()
   const readOnly = role !== 'admin'
+  const { toasts, push, dismiss } = useToast()
   const [tools, setTools] = useState<ToolInfo[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [expandedConnectors, setExpandedConnectors] = useState<Set<string>>(new Set())
   const [expandedPrefixes, setExpandedPrefixes] = useState<Set<string>>(new Set())
   const [toggling, setToggling] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ToolInfo | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [groupBusy, setGroupBusy] = useState<string | null>(null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
@@ -173,9 +186,17 @@ export function ToolsSettings() {
   const [callbackDrafts, setCallbackDrafts] = useState<Record<string, string>>({})
   const [captureDrafts, setCaptureDrafts] = useState<Record<string, CaptureDraft>>({})
   const [callbackSaving, setCallbackSaving] = useState<string | null>(null)
-  const [callbackError, setCallbackError] = useState<string | null>(null)
   const didInitExpand = useRef(false)
   const prevSearchRef = useRef(false)
+
+  const pushToolError = (err: unknown, prefix?: string) => {
+    const f = toolErrorText(err)
+    push({
+      tone: 'error',
+      title: prefix ? `${prefix}：${f.title}` : f.title,
+      detail: f.detail,
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -184,19 +205,21 @@ export function ToolsSettings() {
         const list = await listTools()
         if (!cancelled) {
           setTools(list)
-          setError(null)
+          setLoadError(null)
         }
       } catch (err) {
         if (!cancelled) {
           setTools(null)
-          setError(errorMessage(err))
+          const f = toolErrorText(err)
+          setLoadError(f.detail ? `${f.title} ${f.detail}` : f.title)
+          push({ tone: 'error', title: f.title, detail: f.detail })
         }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [push])
 
   const openConnectorIds = useMemo(() => (tools == null ? [] : openApiConnectorIds(tools)), [tools])
   const catalogConnectorIds = useMemo(() => {
@@ -269,8 +292,8 @@ export function ToolsSettings() {
 
   const tree = useMemo(() => groupToolsTree(visible), [visible])
   const showAdd = openConnectorIds.length > 0
-  const loadFailed = tools === null && error !== null
-  const rowBusy = toggling !== null || deleting !== null || groupBusy !== null || savingCopy
+  const loadFailed = tools === null && loadError !== null
+  const rowBusy = toggling !== null || deleting || groupBusy !== null || savingCopy
 
   const mergeTools = (updated: ToolInfo[]) => {
     setTools((prev) => {
@@ -289,9 +312,8 @@ export function ToolsSettings() {
     try {
       const updated = await patchTool(name, { require_login: requireLogin })
       mergeTools([updated])
-      setError(null)
     } catch (err) {
-      setError(`${name}：${errorMessage(err)}`)
+      pushToolError(err, name)
     } finally {
       setToggling(null)
     }
@@ -302,9 +324,8 @@ export function ToolsSettings() {
     try {
       const updated = await patchTool(name, { export: exportMode })
       mergeTools([updated])
-      setError(null)
     } catch (err) {
-      setError(`${name}：${errorMessage(err)}`)
+      pushToolError(err, name)
     } finally {
       setToggling(null)
     }
@@ -315,28 +336,44 @@ export function ToolsSettings() {
     try {
       const updated = await patchTool(name, { enabled })
       mergeTools([updated])
-      setError(null)
     } catch (err) {
-      setError(`${name}：${errorMessage(err)}`)
+      pushToolError(err, name)
     } finally {
       setToggling(null)
     }
   }
 
-  const onDelete = async (t: ToolInfo) => {
+  const beginDelete = (t: ToolInfo) => {
+    setDeleteError(null)
+    setPendingDelete(t)
+  }
+
+  const cancelDelete = () => {
+    if (deleting) return
+    setPendingDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const t = pendingDelete
     const key = toolRowKey(t)
-    setDeleting(key)
+    setDeleting(true)
+    setDeleteError(null)
     try {
       await deleteConnectorTool(t.connector_id, t.name)
       setTools((prev) =>
         prev == null ? prev : prev.filter((row) => row.name !== t.name || row.connector_id !== t.connector_id),
       )
       if (editingKey === key) setEditingKey(null)
-      setError(null)
+      push({ tone: 'success', title: TOOLS.toastDeleted, detail: t.title || t.name })
+      setPendingDelete(null)
     } catch (err) {
-      setError(`${t.name}：${errorMessage(err)}`)
+      const f = toolErrorText(err)
+      setDeleteError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
-      setDeleting(null)
+      setDeleting(false)
     }
   }
 
@@ -346,11 +383,10 @@ export function ToolsSettings() {
   const saveConnectorSettings = async (connectorId: string) => {
     const meta = connectorMeta[connectorId]
     if (!meta) {
-      setCallbackError(`${connectorId}：尚未加载 Connector 详情`)
+      push({ tone: 'error', title: TOOLS.errGeneric, detail: `${connectorId}：尚未加载 Connector 详情` })
       return
     }
     setCallbackSaving(connectorId)
-    setCallbackError(null)
     try {
       const captureDraft = captureDrafts[connectorId] ?? captureToDraft(meta.auth?.capture)
       const auth = connectorSupportsLoginCapture(meta.type)
@@ -370,7 +406,7 @@ export function ToolsSettings() {
       setCallbackDrafts((prev) => ({ ...prev, [connectorId]: updated.execution_callback_url ?? '' }))
       setCaptureDrafts((prev) => ({ ...prev, [connectorId]: captureToDraft(updated.auth?.capture) }))
     } catch (err) {
-      setCallbackError(`${connectorId}：${errorMessage(err)}`)
+      pushToolError(err, connectorId)
     } finally {
       setCallbackSaving(null)
     }
@@ -396,13 +432,15 @@ export function ToolsSettings() {
           succeeded.push(r.value)
           return
         }
-        failures.push({ name: names[i], reason: errorMessage(r.reason) })
+        failures.push({ name: names[i], reason: toolErrorLabel(r.reason) })
       })
       if (succeeded.length > 0) mergeTools(succeeded)
       if (failures.length > 0) {
-        setError(formatGroupPatchSummary(succeeded.length, names.length, failures))
-      } else {
-        setError(null)
+        push({
+          tone: 'error',
+          title: TOOLS.errGeneric,
+          detail: formatGroupPatchSummary(succeeded.length, names.length, failures),
+        })
       }
     } finally {
       setGroupBusy(null)
@@ -421,9 +459,8 @@ export function ToolsSettings() {
       const updated = await patchTool(t.name, { title: draftTitle, description: draftDescription })
       mergeTools([updated])
       setEditingKey(null)
-      setError(null)
     } catch (err) {
-      setError(`${t.name}：${errorMessage(err)}`)
+      pushToolError(err, t.name)
     } finally {
       setSavingCopy(false)
     }
@@ -459,9 +496,10 @@ export function ToolsSettings() {
       setForm(EMPTY_FORM)
       setDrawerError(null)
       setDrawerOpen(false)
-      setError(null)
     } catch (err) {
-      setDrawerError(errorMessage(err))
+      const f = toolErrorText(err)
+      setDrawerError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setSubmitting(false)
     }
@@ -477,26 +515,28 @@ export function ToolsSettings() {
     const lockGroups = groupBusy !== null || toggling !== null || savingCopy
     return (
       <span className="settings-group-actions" onClick={(e) => e.stopPropagation()}>
-        <button
+        <Button
           type="button"
-          className="btn ghost sm"
+          variant="ghost"
+          size="sm"
           disabled={lockGroups}
           onClick={() => {
             void onGroupEnabled(groupKey, rows, true)
           }}
         >
           全部启用
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="btn ghost sm"
+          variant="ghost"
+          size="sm"
           disabled={lockGroups}
           onClick={() => {
             void onGroupEnabled(groupKey, rows, false)
           }}
         >
           全部停用
-        </button>
+        </Button>
       </span>
     )
   }
@@ -504,7 +544,7 @@ export function ToolsSettings() {
   const renderTool = (t: ToolInfo) => {
     const key = toolRowKey(t)
     const canDelete = canDeleteCatalogTool(t.source ?? '')
-    const isDeleting = deleting === key
+    const isDeleting = deleting && pendingDelete != null && toolRowKey(pendingDelete) === key
     const isEditing = editingKey === key
     const methodPath = formatMethodPath(t)
     const schemaText = JSON.stringify(t.input_schema ?? {}, null, 2)
@@ -517,7 +557,7 @@ export function ToolsSettings() {
             {t.description ? <span className="settings-tool-desc">{t.description}</span> : null}
           </span>
           <span className="settings-tool-actions">
-            {t.require_approval && <span className="settings-badge">需审批</span>}
+            {t.require_approval && <Badge tone="warning">需审批</Badge>}
             {!readOnly && (
               <label className="settings-login-toggle">
                 <input
@@ -569,21 +609,21 @@ export function ToolsSettings() {
               </span>
             )}
             {canDelete && !readOnly && (
-              <button
+              <Button
                 type="button"
-                className="btn danger sm"
+                variant="danger"
+                size="sm"
                 disabled={isDeleting || rowBusy}
-                onClick={() => {
-                  void onDelete(t)
-                }}
+                onClick={() => beginDelete(t)}
               >
-                {isDeleting ? '删除中…' : '删除'}
-              </button>
+                {TOOLS.confirmDeleteOk}
+              </Button>
             )}
             {!readOnly && (
-              <button
+              <Button
                 type="button"
-                className="btn ghost sm"
+                variant="ghost"
+                size="sm"
                 disabled={savingCopy || (rowBusy && !isEditing)}
                 onClick={() => {
                   if (isEditing) {
@@ -594,7 +634,7 @@ export function ToolsSettings() {
                 }}
               >
                 {isEditing ? '收起' : '编辑文案'}
-              </button>
+              </Button>
             )}
           </span>
         </div>
@@ -622,18 +662,22 @@ export function ToolsSettings() {
             <p className="settings-muted">
               方法 / 路径：{methodPath || '—'}
             </p>
-            <pre className="settings-tool-schema">{schemaText}</pre>
+            <details>
+              <summary>{TOOLS.viewSchema}</summary>
+              <pre className="settings-tool-schema">{schemaText}</pre>
+            </details>
             <div className="settings-tool-edit-actions">
-              <button
+              <Button
                 type="button"
-                className="btn primary sm"
+                variant="primary"
+                size="sm"
                 disabled={savingCopy}
                 onClick={() => {
                   void onSaveCopy(t)
                 }}
               >
                 {savingCopy ? '保存中…' : '保存'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -641,35 +685,40 @@ export function ToolsSettings() {
     )
   }
 
+  const headerActions =
+    tools === null ? undefined : (
+      <div className="settings-toolbar">
+        <input
+          className="settings-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索"
+          aria-label="搜索工具"
+        />
+        {showAdd && !readOnly && (
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setDrawerError(null)
+              setDrawerOpen(true)
+            }}
+          >
+            {TOOLS.addTool}
+          </Button>
+        )}
+      </div>
+    )
+
   return (
     <div className="settings-section settings-tools">
-      <h1 className="settings-heading">Tools</h1>
-      {loadFailed && <p className="settings-error">无法加载 Tools：{error}</p>}
-      {!loadFailed && error && <p className="settings-error">{error}</p>}
+      <PageHeader title={TOOLS.title} description={TOOLS.description} actions={headerActions} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+      {loadFailed && <p className="settings-error">{loadError}</p>}
       {tools === null && !loadFailed && <p className="settings-muted">加载中…</p>}
       {tools !== null && (
         <>
-          <div className="settings-toolbar">
-            <input
-              className="settings-input"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索"
-              aria-label="搜索工具"
-            />
-            {showAdd && !readOnly && (
-              <button
-                type="button"
-                className="btn primary sm"
-                onClick={() => {
-                  setDrawerError(null)
-                  setDrawerOpen(true)
-                }}
-              >
-                添加
-              </button>
-            )}
-          </div>
           {tools.length === 0 && (
             <p className="settings-empty">
               尚未注册 Connector。{' '}
@@ -680,7 +729,6 @@ export function ToolsSettings() {
               )}
             </p>
           )}
-          {callbackError && <p className="settings-error">{callbackError}</p>}
           {tools.length > 0 && visible.length === 0 && <p className="settings-empty">无匹配</p>}
           {visible.length > 0 && (
             <div className="settings-tree">
@@ -737,14 +785,15 @@ export function ToolsSettings() {
                                 onDraftChange={(patch) => updateCaptureDraft(group.connectorId, patch)}
                               />
                             )}
-                            <button
+                            <Button
                               type="button"
-                              className="btn secondary sm"
+                              variant="secondary"
+                              size="sm"
                               disabled={callbackSaving === group.connectorId}
                               onClick={() => void saveConnectorSettings(group.connectorId)}
                             >
                               {callbackSaving === group.connectorId ? '保存中…' : '保存 Connector 设置'}
-                            </button>
+                            </Button>
                             {supportsExecutionCallback(connectorMeta[group.connectorId]) && (
                               <p className="settings-hint">执行回调：invoke 走企业统一 URL。</p>
                             )}
@@ -794,9 +843,9 @@ export function ToolsSettings() {
           >
             <div className="settings-drawer-head">
               <h2 className="settings-subheading">添加工具</h2>
-              <button type="button" className="btn ghost sm" onClick={closeDrawer} disabled={submitting}>
+              <Button type="button" variant="ghost" size="sm" onClick={closeDrawer} disabled={submitting}>
                 关闭
-              </button>
+              </Button>
             </div>
             <p className="settings-hint">
               此处仅添加单条 extra 工具；批量导入请用{' '}
@@ -888,12 +937,25 @@ export function ToolsSettings() {
                   rows={4}
                 />
               </label>
-              <button type="submit" className="btn primary" disabled={submitting}>
-                {submitting ? '提交中…' : '添加'}
-              </button>
+              <Button type="submit" variant="primary" disabled={submitting}>
+                {submitting ? '提交中…' : TOOLS.addTool}
+              </Button>
             </form>
           </aside>
         </div>
+      )}
+      {!readOnly && (
+        <ConfirmDialog
+          open={!!pendingDelete}
+          danger
+          title={TOOLS.confirmDeleteTitle}
+          body={TOOLS.confirmDeleteBody}
+          confirmText={TOOLS.confirmDeleteOk}
+          busy={deleting}
+          error={deleteError}
+          onCancel={cancelDelete}
+          onConfirm={() => void confirmDelete()}
+        />
       )}
     </div>
   )

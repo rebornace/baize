@@ -13,6 +13,8 @@ describe('TOOLS', () => {
     expect(TOOLS.advanced).toBe('高级')
     expect(TOOLS.addTool).toBe('添加')
     expect(TOOLS.viewSchema).toBe('查看参数说明')
+    expect(TOOLS.confirmDeleteTitle).toBe('删除这个功能？')
+    expect(TOOLS.confirmDeleteOk).toBe('删除')
   })
 })
 
