@@ -256,6 +256,11 @@ export function Textarea({ invalid, className = '', ...rest }: TextareaProps) {
 it('maps invalid_mcp to a human title', () => {
   expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'x')).title).toBe(CONNECTORS.errMcpConnect)
 })
+it('maps reachable invalid_mcp backend messages', () => {
+  expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'invalid_mcp: mcp.command is required')).title).toContain('连接配置不完整')
+  expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'invalid_mcp: unsupported mcp transport: ws')).title).toContain('连接配置不完整')
+  expect(connectorErrorText(new ApiError(400, 'invalid_mcp', 'invalid_mcp: mcp.url is required')).title).toContain('远程服务地址')
+})
 ```
 
 并在同文件确认 `import { CONNECTORS, connectorErrorText, permissionSummary } from './strings'` 已含 `CONNECTORS`。
@@ -338,13 +343,14 @@ export type PermissionSelection = Record<string, ToolPermission>
 
 ```ts
     if (e.code === 'invalid_mcp') {
+      // 后端契约（internal/connector/apply.go、mcp/errors.go）：可达 message 为
+      // "invalid_mcp: mcp.command is required" / "...mcp.url is required" /
+      // "...unsupported mcp transport: X"；连接失败为 "invalid_mcp: <底层错误>"；
+      // 空工具与配置解析失败只有裸串 "invalid_mcp"（无法细分，走通用兜底）。
       if (/command is required|unsupported mcp transport/.test(e.message)) return { title: '连接配置不完整，请检查启动命令或连接方式。' }
       if (/url is required/.test(e.message)) return { title: '请填写远程服务地址。' }
       if (/401|403|unauthor|forbidden/i.test(e.message)) {
         return { title: '该服务需要鉴权，请在请求头中提供有效的 API Key；交互式 OAuth 登录暂不支持。' }
-      }
-      if (/no tools|0 tools|did not report|without any tools/i.test(e.message)) {
-        return { title: '已连上服务，但没有发现任何可用工具。' }
       }
       return { title: CONNECTORS.errMcpConnect, detail: `${e.code}: ${e.message}` }
     }
