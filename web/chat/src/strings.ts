@@ -189,6 +189,56 @@ export function driverLabel(driver: string): string {
   return DRIVER_LABELS[driver] ?? driver
 }
 
+// ---- 设置页：AI 模型 ----
+export const MODELS = {
+  title: '模型',
+  description: '管理对话与理解用的模型；可按任务档位区分，并支持「智能选择」。',
+  add: '添加模型',
+  edit: '编辑',
+  delete: '删除',
+  save: '保存',
+  cancel: '取消',
+  emptyTitle: '还没有模型',
+  emptyDescAdmin: '添加一个模型后，对话里就能选用。',
+  emptyDescOperator: '暂无可用模型，请联系管理员添加。',
+  advanced: '高级',
+  fieldName: '名称',
+  fieldBaseUrl: '服务地址',
+  fieldModel: '模型名',
+  fieldApiKey: 'API 密钥',
+  fieldApiKeyEnv: 'API Key 环境变量名',
+  fieldTier: '任务档位',
+  fieldVision: '视觉（支持图片附件）',
+  fieldDisableThinking: '禁用思考',
+  fieldContextTokens: '上下文长度',
+  confirmDeleteTitle: '删除这个模型？',
+  confirmDeleteBody: '删除后不可恢复。',
+  confirmDeleteLast: '这是当前唯一的模型，删除后对话将无法选择模型。',
+  confirmDeleteOk: '删除',
+  toastSaved: '已保存模型',
+  toastDeleted: '已删除模型',
+  errGeneric: '操作未能完成，请稍后重试。',
+  errNotFound: '找不到该模型，可能已被删除。',
+  errInvalidRequest: '填写内容不完整或不正确，请检查后重试。',
+  errInternal: '服务暂时出了问题，请稍后重试。',
+  errNameRequired: '请填写名称。',
+  errBaseUrlRequired: '请填写服务地址。',
+  errModelRequired: '请填写模型名。',
+} as const
+
+/** 把模型设置页相关异常翻译为人话标题；未知错误附技术详情。 */
+export function modelErrorText(e: unknown): FriendlyError {
+  if (e instanceof ApiError) {
+    if (e.code === 'not_found') return { title: MODELS.errNotFound }
+    if (e.code === 'invalid_request') return { title: MODELS.errInvalidRequest }
+    if (e.code === 'internal_error' || e.status >= 500) {
+      return { title: MODELS.errInternal, detail: `${e.code}: ${e.message}` }
+    }
+    return { title: MODELS.errGeneric, detail: `${e.code}: ${e.message}` }
+  }
+  return friendlyError(e)
+}
+
 // ---- 设置页：业务系统 / 插件（连接器） ----
 export const CONNECTORS = {
   openapiTitle: '业务系统',

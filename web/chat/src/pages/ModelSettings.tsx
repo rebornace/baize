@@ -9,7 +9,7 @@ import {
 } from '../api'
 import { useGate } from '../gateContext'
 import { tierLabel } from '../modelSelect'
-import { VISION_LABEL } from '../strings'
+import { MODELS, VISION_LABEL } from '../strings'
 
 // Editable tier options plus "auto" (infer from the model name server-side).
 const TIER_OPTIONS: { value: ModelTier | 'auto'; label: string }[] = [
@@ -75,11 +75,11 @@ export function buildCreatePayload(form: ProfileFormState):
   | { ok: true; payload: ModelProfilePayload }
   | { ok: false; message: string } {
   const name = form.name.trim()
-  if (!name) return { ok: false, message: '名称不能为空' }
+  if (!name) return { ok: false, message: MODELS.errNameRequired }
   const baseUrl = form.baseUrl.trim()
-  if (!baseUrl) return { ok: false, message: 'Base URL 不能为空' }
+  if (!baseUrl) return { ok: false, message: MODELS.errBaseUrlRequired }
   const model = form.model.trim()
-  if (!model) return { ok: false, message: '模型不能为空' }
+  if (!model) return { ok: false, message: MODELS.errModelRequired }
   const apiKey = form.apiKey.trim()
   const apiKeyEnv = form.apiKeyEnv.trim()
   if (!apiKey && !apiKeyEnv) {
