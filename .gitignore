@@ -27,6 +27,9 @@ configs/demo.local.yaml
 examples/local/**
 !examples/local/README.md
 
+# 导出开源仓时本机使用的私人敏感词表（含私人系统名/域名，仅本机保存，勿提交）
+scripts/.export-secret-patterns.txt
+
 # Go
 vendor/
 
