@@ -193,4 +193,56 @@ describe('OpenApiSettings page', () => {
     expect(toolsGets()).toBeGreaterThanOrEqual(2)
     expect(host.textContent).toContain('o1')
   })
+
+  it('edit without touching advanced keeps existing auth.capture on permissions PUT', async () => {
+    const customCapture = {
+      tool_name_glob: '*login*',
+      token_json_paths: ['$.token', '$.access_token'],
+      header_template: 'Bearer {{token}}',
+    }
+    const connWithCapture = {
+      ...conn,
+      auth: { mode: 'static' as const, capture: customCapture },
+    }
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+      const u = String(url)
+      if (!init?.method && u.endsWith('/v0/tools'))
+        return json({ tools: [{ name: 'me', connector_id: 'ticket-api', source: 'spec' }] })
+      if (!init?.method && u.includes('/v0/connectors/ticket-api')) return json(connWithCapture)
+      if (init?.method === 'PUT') return json(connWithCapture)
+      return json({})
+    })
+    await act(async () => {
+      createRoot(host).render(<MemoryRouter><OpenApiSettings /></MemoryRouter>)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await flush()
+
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')]
+        .find((i) => i.textContent!.includes('编辑'))!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await flush()
+    expect(host.textContent).toContain('编辑业务系统')
+
+    // 不改高级区：直接进权限并完成 → PUT 须回传原 capture（openEdit 水合）
+    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush(5)
+
+    const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
+    expect(puts).toHaveLength(1)
+    const body = JSON.parse((puts[0][1] as RequestInit).body as string)
+    expect(body.auth).toMatchObject({
+      mode: 'static',
+      capture: customCapture,
+    })
+    expect(body.auth.capture).not.toEqual({})
+  })
 })
