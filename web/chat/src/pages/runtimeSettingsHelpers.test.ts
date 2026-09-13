@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildKnobsPatch,
   knobsToForm,
-  KNOB_FIELDS,
+  MAIN_KNOB_FIELDS,
+  COMPACT_ADV_FIELDS,
+  allKnobFieldSpecs,
   validateKnobField,
   type KnobsForm,
 } from './runtimeSettingsHelpers'
+import { RUNTIME } from '../strings'
 import type { RuntimeKnobs } from '../api'
 
 const baseKnobs: RuntimeKnobs = {
@@ -28,19 +31,46 @@ describe('knobsToForm', () => {
   })
 })
 
+describe('field groups', () => {
+  it('splits main vs compact advanced keys', () => {
+    expect(MAIN_KNOB_FIELDS.map((f) => f.key)).toEqual([
+      'max_messages',
+      'max_steps',
+      'tool_timeout_seconds',
+    ])
+    expect(COMPACT_ADV_FIELDS.map((f) => f.key)).toEqual([
+      'compact_threshold',
+      'compact_reserve_tokens',
+      'compact_keep_recent',
+      'compact_summary_timeout_seconds',
+    ])
+  })
+
+  it('allKnobFieldSpecs covers seven numeric fields', () => {
+    expect(allKnobFieldSpecs()).toHaveLength(7)
+  })
+})
+
 describe('validateKnobField', () => {
+  const maxMessages = MAIN_KNOB_FIELDS.find((f) => f.key === 'max_messages')!
+  const maxSteps = MAIN_KNOB_FIELDS.find((f) => f.key === 'max_steps')!
+  const threshold = COMPACT_ADV_FIELDS.find((f) => f.key === 'compact_threshold')!
+
   it('accepts in-range values', () => {
-    expect(validateKnobField(KNOB_FIELDS[0], '100')).toBeNull() // max_messages
-    expect(validateKnobField(KNOB_FIELDS[3], '0.5')).toBeNull() // threshold float
+    expect(validateKnobField(maxMessages, '100')).toBeNull()
+    expect(validateKnobField(threshold, '0.5')).toBeNull()
+  })
+
+  it('rejects out-of-range with human label from RUNTIME', () => {
+    const msg = validateKnobField(maxSteps, '0')
+    expect(msg).toContain(RUNTIME.fieldMaxSteps)
   })
 
   it('rejects out-of-range values', () => {
-    expect(validateKnobField(KNOB_FIELDS[1], '0')).not.toBeNull() // max_steps min 1
-    expect(validateKnobField(KNOB_FIELDS[1], '500')).not.toBeNull() // max_steps max 100
+    expect(validateKnobField(maxSteps, '500')).not.toBeNull()
   })
 
   it('rejects non-numbers and non-integers for integer fields', () => {
-    const maxSteps = KNOB_FIELDS[1]
     expect(validateKnobField(maxSteps, '')).not.toBeNull()
     expect(validateKnobField(maxSteps, 'abc')).not.toBeNull()
     expect(validateKnobField(maxSteps, '12.5')).not.toBeNull()

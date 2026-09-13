@@ -1,4 +1,5 @@
 import type { RuntimeKnobs, RuntimeKnobsPatch } from '../api'
+import { RUNTIME } from '../strings'
 
 /** Editable form fields for engine knobs (all strings/booleans for inputs). */
 export interface KnobsForm {
@@ -22,15 +23,74 @@ export interface KnobFieldSpec {
   integer: boolean
 }
 
-export const KNOB_FIELDS: KnobFieldSpec[] = [
-  { key: 'max_messages', label: '历史窗口消息数（max_messages）', hint: '1-500，默认 40', min: 1, max: 500, integer: true },
-  { key: 'max_steps', label: '最大工具步数（max_steps）', hint: '1-100，默认 16', min: 1, max: 100, integer: true },
-  { key: 'tool_timeout_seconds', label: '单次工具超时秒数（tool_timeout_seconds）', hint: '1-600，默认 60', min: 1, max: 600, integer: true },
-  { key: 'compact_threshold', label: '压缩触发比例（compact_threshold）', hint: '0.1-0.95，默认 0.8', min: 0.1, max: 0.95, integer: false },
-  { key: 'compact_reserve_tokens', label: '压缩预留 token（compact_reserve_tokens）', hint: '256-100000，默认 8000', min: 256, max: 100000, integer: true },
-  { key: 'compact_keep_recent', label: '保留原文最近消息数（compact_keep_recent）', hint: '0-100，默认 8', min: 0, max: 100, integer: true },
-  { key: 'compact_summary_timeout_seconds', label: '压缩摘要 LLM 超时秒数（compact_summary_timeout_seconds）', hint: '1-600，默认 60', min: 1, max: 600, integer: true },
+export const MAIN_KNOB_FIELDS: KnobFieldSpec[] = [
+  {
+    key: 'max_messages',
+    label: RUNTIME.fieldMaxMessages,
+    hint: RUNTIME.hintMaxMessages,
+    min: 1,
+    max: 500,
+    integer: true,
+  },
+  {
+    key: 'max_steps',
+    label: RUNTIME.fieldMaxSteps,
+    hint: RUNTIME.hintMaxSteps,
+    min: 1,
+    max: 100,
+    integer: true,
+  },
+  {
+    key: 'tool_timeout_seconds',
+    label: RUNTIME.fieldToolTimeout,
+    hint: RUNTIME.hintToolTimeout,
+    min: 1,
+    max: 600,
+    integer: true,
+  },
 ]
+
+export const COMPACT_ADV_FIELDS: KnobFieldSpec[] = [
+  {
+    key: 'compact_threshold',
+    label: RUNTIME.fieldCompactThreshold,
+    hint: RUNTIME.hintCompactThreshold,
+    min: 0.1,
+    max: 0.95,
+    integer: false,
+  },
+  {
+    key: 'compact_reserve_tokens',
+    label: RUNTIME.fieldCompactReserve,
+    hint: RUNTIME.hintCompactReserve,
+    min: 256,
+    max: 100000,
+    integer: true,
+  },
+  {
+    key: 'compact_keep_recent',
+    label: RUNTIME.fieldCompactKeep,
+    hint: RUNTIME.hintCompactKeep,
+    min: 0,
+    max: 100,
+    integer: true,
+  },
+  {
+    key: 'compact_summary_timeout_seconds',
+    label: RUNTIME.fieldCompactSummaryTimeout,
+    hint: RUNTIME.hintCompactSummaryTimeout,
+    min: 1,
+    max: 600,
+    integer: true,
+  },
+]
+
+export function allKnobFieldSpecs(): KnobFieldSpec[] {
+  return [...MAIN_KNOB_FIELDS, ...COMPACT_ADV_FIELDS]
+}
+
+/** @deprecated 勿用；保留一版别名以免遗漏引用时可 grep */
+export const KNOB_FIELDS = allKnobFieldSpecs()
 
 export function knobsToForm(k: RuntimeKnobs): KnobsForm {
   return {
@@ -49,13 +109,13 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
 export function validateKnobField(spec: KnobFieldSpec, raw: string): string | null {
   const v = Number(raw)
   if (raw.trim() === '' || Number.isNaN(v)) {
-    return `${spec.label} 必须是数字`
+    return `${spec.label} ${RUNTIME.errMustNumber}`
   }
   if (spec.integer && !Number.isInteger(v)) {
-    return `${spec.label} 必须是整数`
+    return `${spec.label} ${RUNTIME.errMustInt}`
   }
   if (v < spec.min || v > spec.max) {
-    return `${spec.label} 必须在 ${spec.min}-${spec.max} 之间`
+    return `${spec.label} ${RUNTIME.errOutOfRange}（${spec.min}–${spec.max}）`
   }
   return null
 }
