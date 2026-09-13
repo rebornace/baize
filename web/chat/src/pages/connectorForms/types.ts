@@ -1,4 +1,4 @@
-import type { ImportFormat, MCPConfig } from '../../api'
+import type { ConnectorAuth, ImportFormat, MCPConfig } from '../../api'
 
 export type ConnectorKind = 'openapi' | 'plugin' | 'mcp'
 
@@ -17,8 +17,22 @@ export type FieldErrors = Partial<Record<'id' | 'baseUrl' | 'spec', string>>
 
 /** 第一步保存成功后的判别联合连接负载（供第二步整表回传）。 */
 export type SavedConnection =
-  | { kind: 'openapi'; id: string; baseUrl: string; spec?: { content?: string; url?: string }; importFormat: ImportFormat }
-  | { kind: 'plugin'; id: string; baseUrl: string }
+  | {
+      kind: 'openapi'
+      id: string
+      baseUrl: string
+      spec?: { content?: string; url?: string }
+      importFormat: ImportFormat
+      executionCallbackUrl: string
+      auth?: ConnectorAuth
+    }
+  | {
+      kind: 'plugin'
+      id: string
+      baseUrl: string
+      executionCallbackUrl: string
+      auth?: ConnectorAuth
+    }
   | { kind: 'mcp'; id: string; mcp: MCPConfig }
 
 export type PermissionFlag = 'login' | 'approval'

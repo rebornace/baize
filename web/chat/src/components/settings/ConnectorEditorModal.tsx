@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Field, Input, Modal, Select, Textarea } from '../ui'
 import { CONNECTORS } from '../../strings'
 import { FilePickerButton } from './FilePickerButton'
-import type { ImportFormat, MCPConfig } from '../../api'
+import type { ConnectorAuth, ImportFormat, MCPConfig } from '../../api'
+import { CaptureSettingsFields } from '../../pages/CaptureSettingsFields'
+import {
+  captureToDraft,
+  mergeAuthWithCapture,
+  type CaptureDraft,
+} from '../../pages/captureForm'
 import { validateConnection } from '../../pages/connectorForms/validate'
 import {
   connectorToMcpForm,
@@ -30,6 +36,9 @@ export interface ConnectorEditorInitial {
   loginNames: string[]
   approvalNames: string[]
   mcp?: MCPConfig
+  executionCallbackUrl?: string
+  /** 用于回显 capture */
+  auth?: ConnectorAuth
 }
 
 const EMPTY_MCP_FORM: McpFormValues = {
@@ -44,7 +53,12 @@ export interface ConnectorEditorModalProps {
   onClose: () => void
   formatError: (e: unknown) => string
   onSaveInfo: (conn: SavedConnection) => Promise<{ name: string }[]>
-  onSavePermissions: (id: string, loginNames: string[], approvalNames: string[]) => Promise<void>
+  onSavePermissions: (
+    id: string,
+    loginNames: string[],
+    approvalNames: string[],
+    advanced?: { executionCallbackUrl: string; auth?: ConnectorAuth },
+  ) => Promise<void>
   // 第一步连接信息真正保存成功时回调一次（失败不回调）；页面据此缓存连接级负载、
   // 立即提示并刷新列表，避免用户新建后直接跳过/关闭弹窗看不到新连接器。
   onSavedInfo?: (conn: SavedConnection) => void
@@ -91,6 +105,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [saving, setSaving] = useState(false)
   const [mcpForm, setMcpForm] = useState<McpFormValues>(EMPTY_MCP_FORM)
   const [mcpErrors, setMcpErrors] = useState<McpFieldErrors>({})
+  const [executionCallbackUrl, setExecutionCallbackUrl] = useState('')
+  const [captureDraft, setCaptureDraft] = useState<CaptureDraft>(() => captureToDraft(undefined))
   const isMcp = kind === 'mcp'
   const isOpenapi = kind === 'openapi'
 
@@ -113,6 +129,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       ? connectorToMcpForm({ id: init.id, type: 'mcp', mcp: init.mcp })
       : { ...EMPTY_MCP_FORM })
     setMcpErrors({})
+    setExecutionCallbackUrl(init.executionCallbackUrl ?? '')
+    setCaptureDraft(captureToDraft(init.auth?.capture))
   }, [open])
 
   if (!open) return null
@@ -163,18 +181,28 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         return
       }
       setFieldErrors({})
+      const advancedAuth = mergeAuthWithCapture(initialRef.current.auth, captureDraft)
+      const callbackUrl = executionCallbackUrl.trim()
       if (kind === 'openapi') {
         conn = {
           kind: 'openapi',
           id: result.id,
           baseUrl: result.baseUrl,
           importFormat,
+          executionCallbackUrl: callbackUrl,
+          auth: advancedAuth,
           spec: hasSpec
             ? { content: specContent ?? undefined, url: specContent == null ? specUrl.trim() : undefined }
             : undefined,
         }
       } else {
-        conn = { kind: 'plugin', id: result.id, baseUrl: result.baseUrl }
+        conn = {
+          kind: 'plugin',
+          id: result.id,
+          baseUrl: result.baseUrl,
+          executionCallbackUrl: callbackUrl,
+          auth: advancedAuth,
+        }
       }
     }
     setFormError(null)
@@ -224,7 +252,18 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     try {
       const { loginNames, approvalNames } = toNameLists(selection)
       // MCP 无 login 位：恒传空 login 名单（页面据此省略 require_login）。
-      await props.onSavePermissions(id.trim(), isMcp ? [] : loginNames, approvalNames)
+      // 非 MCP：即便用户跳过「保存连接」直接进权限，也要带上当前高级草稿。
+      await props.onSavePermissions(
+        id.trim(),
+        isMcp ? [] : loginNames,
+        approvalNames,
+        isMcp
+          ? undefined
+          : {
+              executionCallbackUrl: executionCallbackUrl.trim(),
+              auth: mergeAuthWithCapture(initialRef.current.auth, captureDraft),
+            },
+      )
       props.onClose()
     } catch (e) {
       setFormError(props.formatError(e))
@@ -364,6 +403,25 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                 </Select>
               </Field>
             </>
+          )}
+          {!isMcp && (
+            <details className="settings-advanced">
+              <summary>{CONNECTORS.advanced}</summary>
+              <Field label={CONNECTORS.executionCallback} hint={CONNECTORS.executionCallbackHint}>
+                <Input
+                  value={executionCallbackUrl}
+                  disabled={saving}
+                  onChange={(e) => setExecutionCallbackUrl(e.target.value)}
+                  placeholder="https://enterprise.example/baize/execute"
+                />
+              </Field>
+              <CaptureSettingsFields
+                connectorId={id || 'new'}
+                connectorType={kind === 'plugin' ? 'http' : 'openapi'}
+                draft={captureDraft}
+                onDraftChange={(patch) => setCaptureDraft((d) => ({ ...d, ...patch }))}
+              />
+            </details>
           )}
         </div>
       ) : (

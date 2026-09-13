@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectorEditorModal } from './ConnectorEditorModal'
-import { CONNECTORS } from '../../strings'
+import { CONNECTORS, TOOLS } from '../../strings'
 
 let host: HTMLDivElement
 let root: ReturnType<typeof createRoot>
@@ -144,7 +144,12 @@ describe('ConnectorEditorModal step 2', () => {
     await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
     await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
-    expect(onSavePermissions).toHaveBeenCalledWith('o1', ['login'], ['create_ticket'])
+    expect(onSavePermissions).toHaveBeenCalledWith(
+      'o1',
+      ['login'],
+      ['create_ticket'],
+      expect.objectContaining({ executionCallbackUrl: '' }),
+    )
   })
 
   it('edit: navigating directly to permissions does not notify onSavedInfo', async () => {
@@ -360,7 +365,12 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     const input = onSaveInfo.mock.calls[0][0]
-    expect(input).toEqual({ kind: 'plugin', id: 'p1', baseUrl: 'http://127.0.0.1:19090' })
+    expect(input).toEqual(expect.objectContaining({
+      kind: 'plugin',
+      id: 'p1',
+      baseUrl: 'http://127.0.0.1:19090',
+      executionCallbackUrl: '',
+    }))
     expect('spec' in input).toBe(false)
   })
 })
@@ -461,7 +471,7 @@ describe('ConnectorEditorModal mcp', () => {
     expect(writeBox.checked).toBe(true)
     await act(async () => { btn('完成').click(); await Promise.resolve() })
     await flush()
-    expect(onSavePermissions).toHaveBeenCalledWith('a1', [], ['write'])
+    expect(onSavePermissions).toHaveBeenCalledWith('a1', [], ['write'], undefined)
   })
 
   it('http: empty url shows inline error and does not save', async () => {
@@ -486,5 +496,75 @@ describe('ConnectorEditorModal mcp', () => {
     await act(async () => { btn('设置工具权限').click(); await Promise.resolve() })
     expect(host.textContent).toContain('工具权限')
     expect(onSavedInfo).not.toHaveBeenCalled()
+  })
+})
+
+describe('ConnectorEditorModal advanced', () => {
+  it('shows collapsed advanced block for openapi with callback + capture labels; mcp has none', async () => {
+    await render({ kind: 'openapi' })
+    const adv = host.querySelector('details.settings-advanced') as HTMLDetailsElement | null
+    expect(adv).toBeTruthy()
+    expect(adv!.open).toBe(false)
+    expect(adv!.querySelector('summary')?.textContent).toBe(CONNECTORS.advanced)
+    expect(host.textContent).toContain(CONNECTORS.executionCallback)
+    expect(host.textContent).toContain(TOOLS.captureToolGlob)
+    expect(host.textContent).toContain(TOOLS.captureTokenPaths)
+    expect(host.textContent).not.toContain('token_json_paths')
+
+    await render({ kind: 'mcp' })
+    expect(host.querySelector('details.settings-advanced')).toBeNull()
+    expect(host.textContent).not.toContain(CONNECTORS.executionCallback)
+  })
+
+  it('onSaveInfo includes executionCallbackUrl and auth.capture', async () => {
+    const onSaveInfo = vi.fn(async () => [{ name: 'ping' }])
+    await render({ kind: 'plugin', onSaveInfo })
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'p1')
+    await setValue(inputs[1], 'http://127.0.0.1:19090')
+    const cb = [...host.querySelectorAll('input')].find(
+      (el) => (el as HTMLInputElement).placeholder === 'https://enterprise.example/baize/execute',
+    ) as HTMLInputElement
+    expect(cb).toBeTruthy()
+    await setValue(cb, 'https://gw.example/execute')
+    const glob = [...host.querySelectorAll('input')].find((el) =>
+      (el as HTMLInputElement).placeholder.includes('*login*'),
+    ) as HTMLInputElement
+    await setValue(glob, '*login*')
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    expect(onSaveInfo).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'plugin',
+      id: 'p1',
+      executionCallbackUrl: 'https://gw.example/execute',
+      auth: expect.objectContaining({
+        capture: expect.objectContaining({ tool_name_glob: '*login*' }),
+      }),
+    }))
+  })
+
+  it('permissions-only finish passes current advanced URL as 4th arg', async () => {
+    const onSavePermissions = vi.fn(async () => {})
+    await render({
+      editing: true,
+      initial: {
+        ...editInitial,
+        executionCallbackUrl: 'https://old.example/cb',
+      },
+      onSavePermissions,
+    })
+    const cb = [...host.querySelectorAll('input')].find(
+      (el) => (el as HTMLInputElement).placeholder === 'https://enterprise.example/baize/execute',
+    ) as HTMLInputElement
+    await setValue(cb, 'https://new.example/cb')
+    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    expect(onSavePermissions).toHaveBeenCalledWith(
+      'o1',
+      ['login'],
+      ['create_ticket'],
+      expect.objectContaining({ executionCallbackUrl: 'https://new.example/cb' }),
+    )
   })
 })

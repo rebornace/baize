@@ -80,9 +80,18 @@ export function OpenApiSettings() {
       id: c.id, baseUrl: c.base_url ?? '',
       tools: (c.tools ?? []).map((t) => ({ name: t.name })),
       loginNames: c.require_login ?? [], approvalNames: c.require_approval ?? [],
+      executionCallbackUrl: c.execution_callback_url ?? '',
+      auth: c.auth,
     }
     // 预构造连接级负载，使「直接进入工具权限」也能整表回传。
-    setSavedConn({ kind: 'openapi', id: c.id, baseUrl: c.base_url ?? '', importFormat: 'auto' })
+    setSavedConn({
+      kind: 'openapi',
+      id: c.id,
+      baseUrl: c.base_url ?? '',
+      importFormat: 'auto',
+      executionCallbackUrl: c.execution_callback_url ?? '',
+      auth: c.auth,
+    })
     setEditor({ open: true, editing: true, initial })
   }
 
@@ -100,12 +109,17 @@ export function OpenApiSettings() {
       import_format: conn.importFormat,
       spec_content: conn.spec?.content,
       spec_url: conn.spec?.url,
+      execution_callback_url: conn.executionCallbackUrl,
+      auth: conn.auth,
     })
     return (c.tools ?? []).map((t) => ({ name: t.name }))
   }
 
   const handleSavePermissions = async (
-    id: string, loginNames: string[], approvalNames: string[],
+    id: string,
+    loginNames: string[],
+    approvalNames: string[],
+    advanced?: { executionCallbackUrl: string; auth?: ConnectorInfo['auth'] },
   ) => {
     // 不传文档：后端对编辑/已存在连接器复用已保存 spec；连接级字段整表回传。
     // 缓存缺失属接线错误：显式抛出，由组件 finish 的 catch 提示用户，避免静默丢权限。
@@ -117,6 +131,8 @@ export function OpenApiSettings() {
       base_url: savedConn.baseUrl,
       require_login: loginNames,
       require_approval: approvalNames,
+      execution_callback_url: advanced?.executionCallbackUrl ?? savedConn.executionCallbackUrl,
+      auth: advanced?.auth ?? savedConn.auth,
     })
     push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` })
     await load()

@@ -364,6 +364,10 @@ export const CONNECTORS = {
   chooseSpec: '选择接口文档',
   specRemoveFile: '移除已选文件',
   specReadFailed: '读取文件失败',
+  advanced: '高级',
+  executionCallback: '企业统一执行地址',
+  executionCallbackHint:
+    '选填。不是业务 API 前缀，也不是「消息回调」。有值时工具调用改 POST 到此地址，由企业网关执行。多数场景留空。',
   permsIntro:
     '勾选「需本人登录」后，每位运营用自己的账号访问，权限互不混用；不勾则任何人都能直接调用此工具。',
   permLogin: '使用前需本人登录',

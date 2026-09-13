@@ -3,11 +3,8 @@ import { Link } from 'react-router-dom'
 import {
   createConnectorTool,
   deleteConnectorTool,
-  getConnector,
   listTools,
   patchTool,
-  putConnector,
-  type ConnectorInfo,
   type ToolExportMode,
   type ToolInfo,
 } from '../api'
@@ -27,13 +24,6 @@ import {
 import { canDeleteCatalogTool, groupToolsTree, pathPrefixGroup, toolMatchesQuery } from '../toolCatalog'
 import { useGate } from '../gateContext'
 import { TOOLS, toolErrorText } from '../strings'
-import { CaptureSettingsFields } from './CaptureSettingsFields'
-import {
-  captureToDraft,
-  connectorSupportsLoginCapture,
-  mergeAuthWithCapture,
-  type CaptureDraft,
-} from './captureForm'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -187,10 +177,6 @@ export function ToolsSettings() {
   const [form, setForm] = useState<AddFormState>(EMPTY_FORM)
   const [formConnectorId, setFormConnectorId] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [connectorMeta, setConnectorMeta] = useState<Record<string, ConnectorInfo>>({})
-  const [callbackDrafts, setCallbackDrafts] = useState<Record<string, string>>({})
-  const [captureDrafts, setCaptureDrafts] = useState<Record<string, CaptureDraft>>({})
-  const [callbackSaving, setCallbackSaving] = useState<string | null>(null)
   const didInitExpand = useRef(false)
   const prevSearchRef = useRef(false)
 
@@ -227,39 +213,7 @@ export function ToolsSettings() {
   }, [push])
 
   const openConnectorIds = useMemo(() => (tools == null ? [] : openApiConnectorIds(tools)), [tools])
-  const catalogConnectorIds = useMemo(() => {
-    if (tools == null) return [] as string[]
-    const seen = new Set<string>()
-    for (const t of tools) {
-      if (t.connector_id) seen.add(t.connector_id)
-    }
-    return [...seen]
-  }, [tools])
   const searchActive = query.trim() !== ''
-
-  useEffect(() => {
-    // 运营无权 GET connector（admin-only，必 403）；只读视图也不展示连接器面板，
-    // 直接跳过，避免对每个 connector 发起注定失败的请求。
-    if (readOnly) return
-    let cancelled = false
-    void (async () => {
-      for (const id of catalogConnectorIds) {
-        try {
-          const c = await getConnector(id)
-          if (!cancelled) {
-            setConnectorMeta((prev) => ({ ...prev, [id]: c }))
-            setCallbackDrafts((prev) => ({ ...prev, [id]: c.execution_callback_url ?? '' }))
-            setCaptureDrafts((prev) => ({ ...prev, [id]: captureToDraft(c.auth?.capture) }))
-          }
-        } catch {
-          /* per-connector load failure is non-fatal */
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [catalogConnectorIds, readOnly])
 
   useEffect(() => {
     if (tools == null) return
@@ -380,48 +334,6 @@ export function ToolsSettings() {
     } finally {
       setDeleting(false)
     }
-  }
-
-  const supportsExecutionCallback = (c: ConnectorInfo | undefined) =>
-    c?.type === 'openapi' || c?.type === 'http'
-
-  const saveConnectorSettings = async (connectorId: string) => {
-    const meta = connectorMeta[connectorId]
-    if (!meta) {
-      push({ tone: 'error', title: TOOLS.errGeneric, detail: `${connectorId}：尚未加载 Connector 详情` })
-      return
-    }
-    setCallbackSaving(connectorId)
-    try {
-      const captureDraft = captureDrafts[connectorId] ?? captureToDraft(meta.auth?.capture)
-      const auth = connectorSupportsLoginCapture(meta.type)
-        ? mergeAuthWithCapture(meta.auth, captureDraft)
-        : meta.auth
-      const updated = await putConnector(connectorId, {
-        type: meta.type,
-        spec: meta.spec,
-        base_url: meta.base_url,
-        execution_callback_url: (callbackDrafts[connectorId] ?? '').trim(),
-        auth,
-        require_approval: meta.require_approval,
-        require_login: meta.require_login,
-        mcp: meta.mcp,
-      })
-      setConnectorMeta((prev) => ({ ...prev, [connectorId]: updated }))
-      setCallbackDrafts((prev) => ({ ...prev, [connectorId]: updated.execution_callback_url ?? '' }))
-      setCaptureDrafts((prev) => ({ ...prev, [connectorId]: captureToDraft(updated.auth?.capture) }))
-    } catch (err) {
-      pushToolError(err, connectorId)
-    } finally {
-      setCallbackSaving(null)
-    }
-  }
-
-  const updateCaptureDraft = (connectorId: string, patch: Partial<CaptureDraft>) => {
-    setCaptureDrafts((prev) => ({
-      ...prev,
-      [connectorId]: { ...(prev[connectorId] ?? captureToDraft(undefined)), ...patch },
-    }))
   }
 
   const onGroupEnabled = async (groupKey: string, rows: ToolInfo[], enabled: boolean) => {
@@ -761,55 +673,6 @@ export function ToolsSettings() {
                     </div>
                     {connectorOpen && (
                       <div className="settings-group-body">
-                        {(supportsExecutionCallback(connectorMeta[group.connectorId]) ||
-                          connectorSupportsLoginCapture(connectorMeta[group.connectorId]?.type)) && (
-                          <div className="settings-callback-bar settings-form" style={{ marginBottom: '0.75rem' }}>
-                            {supportsExecutionCallback(connectorMeta[group.connectorId]) && (
-                              <label className="settings-field">
-                                <span className="settings-label">执行回调 URL（§4.3）</span>
-                                <input
-                                  className="settings-input"
-                                  value={callbackDrafts[group.connectorId] ?? ''}
-                                  onChange={(e) =>
-                                    setCallbackDrafts((prev) => ({
-                                      ...prev,
-                                      [group.connectorId]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="https://enterprise.example/baize/execute"
-                                />
-                              </label>
-                            )}
-                            {connectorSupportsLoginCapture(connectorMeta[group.connectorId]?.type) && (
-                              <details className="settings-advanced">
-                                <summary>{TOOLS.advanced}</summary>
-                                <CaptureSettingsFields
-                                  connectorId={group.connectorId}
-                                  connectorType={
-                                    connectorMeta[group.connectorId]?.type === 'http' ? 'http' : 'openapi'
-                                  }
-                                  draft={
-                                    captureDrafts[group.connectorId] ??
-                                    captureToDraft(connectorMeta[group.connectorId]?.auth?.capture)
-                                  }
-                                  onDraftChange={(patch) => updateCaptureDraft(group.connectorId, patch)}
-                                />
-                              </details>
-                            )}
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              disabled={callbackSaving === group.connectorId}
-                              onClick={() => void saveConnectorSettings(group.connectorId)}
-                            >
-                              {callbackSaving === group.connectorId ? '保存中…' : '保存 Connector 设置'}
-                            </Button>
-                            {supportsExecutionCallback(connectorMeta[group.connectorId]) && (
-                              <p className="settings-hint">执行回调：invoke 走企业统一 URL。</p>
-                            )}
-                          </div>
-                        )}
                         {group.prefixes.map((prefixGroup) => {
                           const pKey = prefixExpandKey(group.connectorId, prefixGroup.prefix)
                           const prefixOpen = isPrefixOpen(group.connectorId, prefixGroup.prefix)

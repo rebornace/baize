@@ -74,13 +74,21 @@ export function PluginSettings() {
     const c = connectors.find((x) => x.id === id)
     if (!c) return
     // 预构造连接级负载，使「直接进入工具权限」也能整表回传。
-    setSavedConn({ kind: 'plugin', id: c.id, baseUrl: c.base_url ?? '' })
+    setSavedConn({
+      kind: 'plugin',
+      id: c.id,
+      baseUrl: c.base_url ?? '',
+      executionCallbackUrl: c.execution_callback_url ?? '',
+      auth: c.auth,
+    })
     setEditor({
       open: true, editing: true,
       initial: {
         id: c.id, baseUrl: c.base_url ?? '',
         tools: (c.tools ?? []).map((t) => ({ name: t.name })),
         loginNames: c.require_login ?? [], approvalNames: c.require_approval ?? [],
+        executionCallbackUrl: c.execution_callback_url ?? '',
+        auth: c.auth,
       },
     })
   }
@@ -93,10 +101,20 @@ export function PluginSettings() {
 
   const handleSaveInfo = async (conn: SavedConnection) => {
     if (conn.kind !== 'plugin') throw new Error('unexpected connector kind')
-    const c = await putConnector(conn.id, { type: 'http', base_url: conn.baseUrl })
+    const c = await putConnector(conn.id, {
+      type: 'http',
+      base_url: conn.baseUrl,
+      execution_callback_url: conn.executionCallbackUrl,
+      auth: conn.auth,
+    })
     return (c.tools ?? []).map((t) => ({ name: t.name }))
   }
-  const handleSavePermissions = async (id: string, loginNames: string[], approvalNames: string[]) => {
+  const handleSavePermissions = async (
+    id: string,
+    loginNames: string[],
+    approvalNames: string[],
+    advanced?: { executionCallbackUrl: string; auth?: ConnectorInfo['auth'] },
+  ) => {
     // 连接级字段整表回传（后端每次 PUT 都重新探测）。
     // 缓存缺失属接线错误：显式抛出，由组件 finish 的 catch 提示用户，避免静默丢权限。
     if (!savedConn || savedConn.kind !== 'plugin') {
@@ -107,6 +125,8 @@ export function PluginSettings() {
       base_url: savedConn.baseUrl,
       require_login: loginNames,
       require_approval: approvalNames,
+      execution_callback_url: advanced?.executionCallbackUrl ?? savedConn.executionCallbackUrl,
+      auth: advanced?.auth ?? savedConn.auth,
     })
     push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` })
     await load()
