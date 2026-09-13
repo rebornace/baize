@@ -210,7 +210,7 @@ describe('ConnectorEditorModal I-2 spec file removal', () => {
     expect(host.textContent).toContain('移除已选文件')
     expect(urlInput().disabled).toBe(true)
     await act(async () => { btn('移除已选文件').click(); await new Promise((r) => setTimeout(r, 0)) })
-    expect(host.textContent).not.toContain('已选择文件：openapi.json')
+    expect(host.textContent).not.toContain('openapi.json')
     expect(host.textContent).not.toContain('移除已选文件')
     expect(urlInput().disabled).toBe(false)
     // 无文件无 URL：仍被 spec 必填拦住
@@ -229,11 +229,11 @@ describe('ConnectorEditorModal I-2 spec file removal', () => {
   it('a non-empty URL change clears a previously chosen file (double insurance)', async () => {
     await render()
     await setFile(new File(['{"x":1}'], 'spec2.json', { type: 'application/json' }))
-    expect(host.textContent).toContain('已选择文件：spec2.json')
+    expect(host.textContent).toContain('spec2.json')
     // 正常 UI 下选中文件后 URL 框 disabled；此处直接派发原生 input 事件，
     // 验证 onChange 的双保险逻辑：非空 URL 会清掉已选文件。
     await setValue(urlInput(), 'https://api.example.com/openapi.json')
-    expect(host.textContent).not.toContain('已选择文件：spec2.json')
+    expect(host.textContent).not.toContain('spec2.json')
     expect(host.textContent).not.toContain('移除已选文件')
     expect(urlInput().disabled).toBe(false)
   })
@@ -392,7 +392,7 @@ describe('ConnectorEditorModal minor: file read failure', () => {
     // 重新选择一个可正常读取的文件：顶部错误条必须消失。
     await setFile(new File(['openapi: 3.0.0'], 'ok.json', { type: 'application/json' }))
     expect(host.textContent).not.toContain('读取文件失败')
-    expect(host.textContent).toContain('已选择文件：ok.json')
+    expect(host.textContent).toContain('ok.json')
   })
 })
 

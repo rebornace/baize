@@ -1,6 +1,7 @@
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Field, Input, Modal, Select, Textarea } from '../ui'
 import { CONNECTORS } from '../../strings'
+import { FilePickerButton } from './FilePickerButton'
 import type { ImportFormat, MCPConfig } from '../../api'
 import { validateConnection } from '../../pages/connectorForms/validate'
 import {
@@ -120,9 +121,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     ? { openapi: CONNECTORS.editOpenapi, plugin: CONNECTORS.editPlugin, mcp: CONNECTORS.editMcp }[kind]
     : { openapi: CONNECTORS.addOpenapi, plugin: CONNECTORS.addPlugin, mcp: CONNECTORS.addMcp }[kind]
 
-  const onSpecFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
+  const onSpecFile = (file: File | undefined) => {
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
@@ -331,16 +330,16 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
           {isOpenapi && (
             <>
               <Field label={CONNECTORS.fieldSpec} hint={CONNECTORS.fieldSpecHint} error={fieldErrors.spec}>
-                <Input type="file" accept=".json,.yaml,.yml" disabled={saving} onChange={onSpecFile} />
+                <FilePickerButton
+                  accept=".json,.yaml,.yml"
+                  chooseLabel={CONNECTORS.chooseSpec}
+                  clearLabel={CONNECTORS.specRemoveFile}
+                  fileName={specFileName}
+                  disabled={saving}
+                  onFile={onSpecFile}
+                  onClear={removeSpecFile}
+                />
               </Field>
-              {specFileName && (
-                <p className="ui-field-hint connector-spec-file-row">
-                  <span>{CONNECTORS.specFileChosen(specFileName)}</span>
-                  <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={removeSpecFile}>
-                    {CONNECTORS.specRemoveFile}
-                  </Button>
-                </p>
-              )}
               <Field label={CONNECTORS.fieldSpecUrl}>
                 <Input value={specUrl} disabled={saving || specContent != null}
                   placeholder="https://api.example.com/openapi.json"

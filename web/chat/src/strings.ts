@@ -361,6 +361,7 @@ export const CONNECTORS = {
   fmtSwagger2: 'Swagger 2',
   fmtPostman: 'Postman 合集',
   specFileChosen: (name: string) => `已选择文件：${name}`,
+  chooseSpec: '选择接口文档',
   specRemoveFile: '移除已选文件',
   specReadFailed: '读取文件失败',
   permsIntro:

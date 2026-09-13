@@ -215,12 +215,21 @@ export function SkillsSettings() {
           ref={fileRef}
           type="file"
           accept=".md,.zip"
+          hidden
           disabled={busy}
           aria-label={SKILLS.upload}
           onChange={(e) => {
             void onUpload(e.target.files?.[0])
           }}
         />
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          {SKILLS.upload}
+        </Button>
         <Button
           variant="primary"
           size="sm"
