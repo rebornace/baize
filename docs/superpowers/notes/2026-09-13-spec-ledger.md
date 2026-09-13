@@ -27,7 +27,7 @@
 | 规格 | 状态 | 对照 | 下一动作 |
 |------|------|------|----------|
 | `2026-08-28-inbox-hitl-resume-v0-design.md` | 已交付 | I1 | — |
-| `2026-08-29-sql-store-drivers-v0-design.md` | 已交付 | P4 SQL/PG | —（遗留 worktree `sql-store-drivers-v0` 可清理） |
+| `2026-08-29-sql-store-drivers-v0-design.md` | 已交付 | P4 SQL/PG | —（本地 worktree `sql-store-drivers-v0` 已于 2026-09-13 清理） |
 | `2026-08-29-channel-weixin-v0-design.md` | 已交付（进程内 v0） | 后续形态见 phase2b | — |
 | `2026-08-29-mcp-export-v0-design.md` | 已交付 | X1 | — |
 | `2026-08-30-multi-model-profiles-design.md` | 已交付 | X2 | — |
@@ -110,7 +110,7 @@ A1 多订阅 · B1 SDK 实现 · P3 OTel · P5 多 Agent · I2–I5 Inbox 增强
 2. **运行参数页人话化**（WebUI 最后明显旧壳）  
 3. **F 生产硬化**（需新规格）  
 4. **渠道/supervisor DoD 核验**（可选，防遗漏）  
-5. **清理** `.worktrees/sql-store-drivers-v0`
+5. ~~清理 `.worktrees/sql-store-drivers-v0`~~（2026-09-13 已完成）
 
 ---
 
