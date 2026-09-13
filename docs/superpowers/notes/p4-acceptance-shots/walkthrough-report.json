@@ -1,0 +1,617 @@
+{
+  "checks": [
+    {
+      "cell": "desktop/light",
+      "shot": "desktop-light-chat",
+      "measure": {
+        "theme": "light",
+        "composerH": 81.125,
+        "composerClass": "composer",
+        "addModel": {
+          "w": 74,
+          "h": 32,
+          "tag": "SPAN",
+          "class": "composer-toolbar",
+          "text": "添加模型"
+        },
+        "mainBg": "rgb(255, 255, 255)",
+        "bodyBg": "rgb(243, 244, 246)",
+        "textColor": "rgb(28, 31, 38)",
+        "focusRingToken": "rgba(37, 99, 235, .35)",
+        "focusOutline": {
+          "outline": "rgb(0, 0, 0) none 3px",
+          "boxShadow": "none",
+          "outlineColor": "rgb(0, 0, 0)"
+        },
+        "viewport": {
+          "w": 1280,
+          "h": 900
+        },
+        "brightSurfaces": [
+          {
+            "tag": "BODY",
+            "class": "",
+            "brightness": 244,
+            "bg": "rgb(243, 244, 246)",
+            "w": 1280,
+            "h": 900
+          },
+          {
+            "tag": "ASIDE",
+            "class": "chat-sidebar",
+            "brightness": 236,
+            "bg": "rgb(235, 236, 239)",
+            "w": 240,
+            "h": 900
+          },
+          {
+            "tag": "BUTTON",
+            "class": "conversation-scope-btn active",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 106,
+            "h": 30
+          },
+          {
+            "tag": "DIV",
+            "class": "ui-theme-toggle",
+            "brightness": 248,
+            "bg": "rgb(247, 248, 250)",
+            "w": 90,
+            "h": 34
+          },
+          {
+            "tag": "MAIN",
+            "class": "chat-main",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 1040,
+            "h": 900
+          },
+          {
+            "tag": "DIV",
+            "class": "composer-box",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 720,
+            "h": 58
+          },
+          {
+            "tag": "A",
+            "class": "model-chip model-chip-empty",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 74,
+            "h": 32
+          }
+        ],
+        "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+      },
+      "textContrast": 16.49182723001865
+    },
+    {
+      "cell": "tablet/light",
+      "shot": "tablet-light-chat",
+      "measure": {
+        "theme": "light",
+        "composerH": 81.125,
+        "composerClass": "composer",
+        "addModel": {
+          "w": 74,
+          "h": 32,
+          "tag": "SPAN",
+          "class": "composer-toolbar",
+          "text": "添加模型"
+        },
+        "mainBg": "rgb(255, 255, 255)",
+        "bodyBg": "rgb(243, 244, 246)",
+        "textColor": "rgb(28, 31, 38)",
+        "focusRingToken": "rgba(37, 99, 235, .35)",
+        "focusOutline": {
+          "outline": "rgb(0, 0, 0) none 3px",
+          "boxShadow": "none",
+          "outlineColor": "rgb(0, 0, 0)"
+        },
+        "viewport": {
+          "w": 1024,
+          "h": 900
+        },
+        "brightSurfaces": [
+          {
+            "tag": "BODY",
+            "class": "",
+            "brightness": 244,
+            "bg": "rgb(243, 244, 246)",
+            "w": 1024,
+            "h": 900
+          },
+          {
+            "tag": "ASIDE",
+            "class": "chat-sidebar",
+            "brightness": 236,
+            "bg": "rgb(235, 236, 239)",
+            "w": 240,
+            "h": 900
+          },
+          {
+            "tag": "BUTTON",
+            "class": "conversation-scope-btn active",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 106,
+            "h": 30
+          },
+          {
+            "tag": "DIV",
+            "class": "ui-theme-toggle",
+            "brightness": 248,
+            "bg": "rgb(247, 248, 250)",
+            "w": 90,
+            "h": 34
+          },
+          {
+            "tag": "MAIN",
+            "class": "chat-main",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 784,
+            "h": 900
+          },
+          {
+            "tag": "DIV",
+            "class": "composer-box",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 736,
+            "h": 58
+          },
+          {
+            "tag": "A",
+            "class": "model-chip model-chip-empty",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 74,
+            "h": 32
+          }
+        ],
+        "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+      },
+      "textContrast": 16.49182723001865
+    },
+    {
+      "cell": "phone/light",
+      "shot": "phone-light-chat",
+      "measure": {
+        "theme": "light",
+        "composerH": 147.4375,
+        "composerClass": "composer",
+        "addModel": {
+          "w": 74,
+          "h": 32,
+          "tag": "SPAN",
+          "class": "composer-toolbar",
+          "text": "添加模型"
+        },
+        "mainBg": "rgb(255, 255, 255)",
+        "bodyBg": "rgb(243, 244, 246)",
+        "textColor": "rgb(28, 31, 38)",
+        "focusRingToken": "rgba(37, 99, 235, .35)",
+        "focusOutline": {
+          "outline": "rgb(0, 0, 0) none 3px",
+          "boxShadow": "none",
+          "outlineColor": "rgb(0, 0, 0)"
+        },
+        "viewport": {
+          "w": 390,
+          "h": 844
+        },
+        "brightSurfaces": [
+          {
+            "tag": "BODY",
+            "class": "",
+            "brightness": 244,
+            "bg": "rgb(243, 244, 246)",
+            "w": 390,
+            "h": 844
+          },
+          {
+            "tag": "ASIDE",
+            "class": "chat-sidebar",
+            "brightness": 236,
+            "bg": "rgb(235, 236, 239)",
+            "w": 320,
+            "h": 844
+          },
+          {
+            "tag": "BUTTON",
+            "class": "conversation-scope-btn active",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 145,
+            "h": 30
+          },
+          {
+            "tag": "DIV",
+            "class": "ui-theme-toggle",
+            "brightness": 248,
+            "bg": "rgb(247, 248, 250)",
+            "w": 90,
+            "h": 34
+          },
+          {
+            "tag": "MAIN",
+            "class": "chat-main",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 390,
+            "h": 844
+          },
+          {
+            "tag": "DIV",
+            "class": "app-mobile-bar",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 390,
+            "h": 57
+          },
+          {
+            "tag": "DIV",
+            "class": "composer-box",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 342,
+            "h": 124
+          },
+          {
+            "tag": "A",
+            "class": "model-chip model-chip-empty",
+            "brightness": 255,
+            "bg": "rgb(255, 255, 255)",
+            "w": 74,
+            "h": 32
+          }
+        ],
+        "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+      },
+      "textContrast": 16.49182723001865
+    },
+    {
+      "cell": "desktop/dark",
+      "shot": "desktop-dark-chat",
+      "measure": {
+        "theme": "dark",
+        "composerH": 81.125,
+        "composerClass": "composer",
+        "addModel": {
+          "w": 74,
+          "h": 32,
+          "tag": "SPAN",
+          "class": "composer-toolbar",
+          "text": "添加模型"
+        },
+        "mainBg": "rgb(28, 32, 39)",
+        "bodyBg": "rgb(21, 24, 30)",
+        "textColor": "rgb(230, 233, 239)",
+        "focusRingToken": "rgba(96, 165, 250, .4)",
+        "focusOutline": {
+          "outline": "rgb(255, 255, 255) none 3px",
+          "boxShadow": "none",
+          "outlineColor": "rgb(255, 255, 255)"
+        },
+        "viewport": {
+          "w": 1280,
+          "h": 900
+        },
+        "brightSurfaces": [],
+        "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+      },
+      "textContrast": 13.434121506327774
+    },
+    {
+      "cell": "tablet/dark",
+      "shot": "tablet-dark-chat",
+      "measure": {
+        "theme": "dark",
+        "composerH": 81.125,
+        "composerClass": "composer",
+        "addModel": {
+          "w": 74,
+          "h": 32,
+          "tag": "SPAN",
+          "class": "composer-toolbar",
+          "text": "添加模型"
+        },
+        "mainBg": "rgb(28, 32, 39)",
+        "bodyBg": "rgb(21, 24, 30)",
+        "textColor": "rgb(230, 233, 239)",
+        "focusRingToken": "rgba(96, 165, 250, .4)",
+        "focusOutline": {
+          "outline": "rgb(255, 255, 255) none 3px",
+          "boxShadow": "none",
+          "outlineColor": "rgb(255, 255, 255)"
+        },
+        "viewport": {
+          "w": 1024,
+          "h": 900
+        },
+        "brightSurfaces": [],
+        "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+      },
+      "textContrast": 13.434121506327774
+    },
+    {
+      "cell": "phone/dark",
+      "shot": "phone-dark-chat",
+      "measure": {
+        "theme": "dark",
+        "composerH": 147.4375,
+        "composerClass": "composer",
+        "addModel": {
+          "w": 74,
+          "h": 32,
+          "tag": "SPAN",
+          "class": "composer-toolbar",
+          "text": "添加模型"
+        },
+        "mainBg": "rgb(28, 32, 39)",
+        "bodyBg": "rgb(21, 24, 30)",
+        "textColor": "rgb(230, 233, 239)",
+        "focusRingToken": "rgba(96, 165, 250, .4)",
+        "focusOutline": {
+          "outline": "rgb(255, 255, 255) none 3px",
+          "boxShadow": "none",
+          "outlineColor": "rgb(255, 255, 255)"
+        },
+        "viewport": {
+          "w": 390,
+          "h": 844
+        },
+        "brightSurfaces": [],
+        "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+      },
+      "textContrast": 13.434121506327774
+    },
+    {
+      "settingsPage": "settings",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 设置 管理助手的模型、能力和对外连接 刷新状态 先添加一个模型，助手才能开始对话。 去添加 助手 模型 未配置 管理对话"
+    },
+    {
+      "settingsPage": "settings/models",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 模型 管理对话与理解用的模型；可按任务档位区分，并支持「智能选择」。 还没有模型 添加一个模型后，对话里就能选用。 添加"
+    },
+    {
+      "settingsPage": "settings/assistant",
+      "status": 200,
+      "bodyText": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+    },
+    {
+      "settingsPage": "settings/skills",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 技能 上传技能 保存为默认技能 管理对话默认技能；保存后仅对新开的对话生效。 多源数据统计与完整交互分析页（筛选、下钻、"
+    },
+    {
+      "settingsPage": "settings/connectors",
+      "status": 200,
+      "bodyText": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+    },
+    {
+      "settingsPage": "settings/tools",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 助手功能 添加 管理助手可调用的功能：启停、需登录、需确认与显示名。 ▾ ticket-api 4 个工具 · 4 已启"
+    },
+    {
+      "settingsPage": "settings/mcp",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 外部工具服务 接入标准 MCP 工具服务（本地子进程或远程 HTTP），扩展助手可用能力。 还没有接入外部工具服务 接入"
+    },
+    {
+      "settingsPage": "settings/channels/weixin",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 渠道 · 微信 扫码登录微信个人号 Bot（iLink），配置默认 Agent、受理人与私信 allowlist。 仅管"
+    },
+    {
+      "settingsPage": "settings/identities",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 账号 这里显示助手当前已登录的业务系统账号。正常使用时，在对话中完成登录会自动出现在这里，无需手动填写。 暂无已登录的业"
+    },
+    {
+      "settingsPage": "settings/storage",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 数据存储 选择助手数据的保存位置。更改并保存后服务会重启，且不会自动搬迁旧数据，请先自行备份。 保存方式 内存（重启即清"
+    },
+    {
+      "settingsPage": "settings/runtime",
+      "status": 200,
+      "bodyText": "设置 总览 助手 模型 助手功能 技能 连接 业务系统 外部工具服务 插件 对外提供能力 消息 微信 消息回调 外部来信 系统 账号 存储 运行参数 返回聊天 运行时设置 引擎参数与控制面凭据可在线热更新：保存后立即生效、跨重启保留、多副本约 20 秒内同步。 引擎参数 历史窗口"
+    }
+  ],
+  "defects": [],
+  "notes": [],
+  "chatDetail": {
+    "theme": "light",
+    "composerH": 81.125,
+    "composerClass": "composer",
+    "addModel": {
+      "w": 74,
+      "h": 32,
+      "tag": "SPAN",
+      "class": "composer-toolbar",
+      "text": "添加模型"
+    },
+    "mainBg": "rgb(255, 255, 255)",
+    "bodyBg": "rgb(243, 244, 246)",
+    "textColor": "rgb(28, 31, 38)",
+    "focusRingToken": "rgba(37, 99, 235, .35)",
+    "focusOutline": {
+      "outline": "rgb(0, 0, 0) none 3px",
+      "boxShadow": "none",
+      "outlineColor": "rgb(0, 0, 0)"
+    },
+    "viewport": {
+      "w": 1280,
+      "h": 900
+    },
+    "brightSurfaces": [
+      {
+        "tag": "BODY",
+        "class": "",
+        "brightness": 244,
+        "bg": "rgb(243, 244, 246)",
+        "w": 1280,
+        "h": 900
+      },
+      {
+        "tag": "ASIDE",
+        "class": "chat-sidebar",
+        "brightness": 236,
+        "bg": "rgb(235, 236, 239)",
+        "w": 240,
+        "h": 900
+      },
+      {
+        "tag": "BUTTON",
+        "class": "conversation-scope-btn active",
+        "brightness": 255,
+        "bg": "rgb(255, 255, 255)",
+        "w": 106,
+        "h": 30
+      },
+      {
+        "tag": "DIV",
+        "class": "ui-theme-toggle",
+        "brightness": 248,
+        "bg": "rgb(247, 248, 250)",
+        "w": 90,
+        "h": 34
+      },
+      {
+        "tag": "MAIN",
+        "class": "chat-main",
+        "brightness": 255,
+        "bg": "rgb(255, 255, 255)",
+        "w": 1040,
+        "h": 900
+      },
+      {
+        "tag": "DIV",
+        "class": "composer-box",
+        "brightness": 255,
+        "bg": "rgb(255, 255, 255)",
+        "w": 720,
+        "h": 58
+      },
+      {
+        "tag": "A",
+        "class": "model-chip model-chip-empty",
+        "brightness": 255,
+        "bg": "rgb(255, 255, 255)",
+        "w": 74,
+        "h": 32
+      }
+    ],
+    "bodySnippet": "新对话 全部 我的 设置 退出 有什么可以帮你？ 我可以查询数据、调用业务系统、处理文件与图片，直接说出你的需求即可。 添加模型 发送 可用 Skill：data-analytics、ticket-triage"
+  },
+  "drawer": {
+    "candidates": [
+      {
+        "label": "关闭菜单",
+        "text": "",
+        "class": "app-drawer-scrim"
+      },
+      {
+        "label": null,
+        "text": "新对话",
+        "class": "btn ghost sidebar-new"
+      },
+      {
+        "label": null,
+        "text": "全部",
+        "class": "conversation-scope-btn active"
+      },
+      {
+        "label": null,
+        "text": "我的",
+        "class": "conversation-scope-btn"
+      },
+      {
+        "label": "浅色",
+        "text": "",
+        "class": "ui-theme-btn"
+      },
+      {
+        "label": "跟随系统",
+        "text": "",
+        "class": "ui-theme-btn"
+      },
+      {
+        "label": "深色",
+        "text": "",
+        "class": "ui-theme-btn"
+      },
+      {
+        "label": null,
+        "text": "退出",
+        "class": "settings-logout"
+      },
+      {
+        "label": "拖动调整侧栏宽度",
+        "text": "",
+        "class": "sidebar-resizer"
+      },
+      {
+        "label": "打开对话列表",
+        "text": "",
+        "class": "app-menu-btn"
+      },
+      {
+        "label": "添加附件",
+        "text": "",
+        "class": "composer-attach"
+      },
+      {
+        "label": null,
+        "text": "发送",
+        "class": "btn primary composer-send"
+      }
+    ],
+    "foundToggle": true,
+    "after": {
+      "sideW": 319.796875,
+      "composerH": 147.4375,
+      "composerW": 342
+    }
+  },
+  "settingsNav": [
+    "/ui/settings",
+    "/ui/settings/models",
+    "/ui/settings/tools",
+    "/ui/settings/skills",
+    "/ui/settings/openapi",
+    "/ui/settings/mcp",
+    "/ui/settings/plugins",
+    "/ui/settings/mcp-export",
+    "/ui/settings/channels/weixin",
+    "/ui/settings/webhooks",
+    "/ui/settings/inbox",
+    "/ui/settings/identities",
+    "/ui/settings/storage",
+    "/ui/settings/runtime",
+    "/ui/settings/models"
+  ],
+  "runtimeConfirm": {
+    "resetBtn": "重置为基线口令（break-glass）"
+  },
+  "focusAfterTab": {
+    "tag": "A",
+    "class": "settings-nav-link",
+    "outline": "rgb(37, 99, 235) solid 2px",
+    "boxShadow": "none",
+    "focusRingToken": "rgba(37, 99, 235, .35)"
+  },
+  "operatorHome": "设置\n\n总览\n\n助手\n\n模型\n助手功能\n技能\n\n消息\n\n微信\n\n系统\n\n账号\n运行参数\n返回聊天\n设置\n\n管理助手的模型、能力和对外连接\n\n刷新状态\n还没有可用模型，请联系管理员添加。\n助手\n模型\n未配置\n\n管理对话与理解用的模型；「智能选择」会按任务自动切换（未来向量、音频等模型在此扩展分类）\n\n助手功能\n4 项可用\n\n管理助手能调用的各项功能；可设置调用前是否需你确认或登录\n\n技能\n2 个技能\n\n可复用的操作流程，对话里输入 @ 或 / 即可调用\n\n连接\n业务系统\n仅管理员\n\n上传一份接口文档，即可对接公司内部的各类业务系统，不用写代码\n\n外部工具服务\n仅管理员\n\n接入标准 MCP 工具服务（本地子进程或远程 HTTP），扩展助手可用能力\n\n插件\n仅管理员\n\n接入独立部署的插件程序\n\n对外提供能力\n仅管理员\n\n把助手的能力以标准 MCP 服务对外开放，供其他客户端调用\n\n消息\n微信\n启动异常\n\n接入微信账号，让客户/同事通过微信与助手对话（未来钉钉、飞书各占一张卡）\n\n消息回调\n仅管理员\n\n有新消息或事件时，主动推送到你指定的地址\n\n外部来信\n仅管理员\n\n生成专属收件地址，外部系统",
+  "operatorSkills": "设置\n\n总览\n\n助手\n\n模型\n助手功能\n技能\n\n消息\n\n微信\n\n系统\n\n账号\n运行参数\n返回聊天\n技能\n\n管理对话默认技能；保存后仅对新开的对话生效。\n\n多源数据统计与完整交互分析页（筛选、下钻、导出 PDF）\ndata-analytics\ncreate_analysis_page, list_tickets, get_ticket\n内置\n工单分诊与建单流程（mock-ticket）\nticket-triage\nlist_tickets, get_ticket, create_ticket, update_ticket_status\n内置",
+  "operatorWeixin": "设置\n\n总览\n\n助手\n\n模型\n助手功能\n技能\n\n消息\n\n微信\n\n系统\n\n账号\n运行参数\n返回聊天\n渠道 · 微信\n\n扫码登录你的微信账号后，即可通过微信与助手对话。配置由管理员维护。\n\n运行状态：已停止（启动失败，请检查日志）\n\n登录\n获取登录二维码",
+  "hoverNoneRule": true
+}
