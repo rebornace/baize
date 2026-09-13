@@ -5,10 +5,9 @@ import { SKILLS, skillErrorText } from './strings'
 describe('SKILLS', () => {
   it('exposes humanized page copy', () => {
     expect(SKILLS.title).toBe('技能')
-    expect(SKILLS.description).toMatch(/默认/)
+    expect(SKILLS.description).toMatch(/新开/)
     expect(SKILLS.upload).toBeTruthy()
     expect(SKILLS.saveDefaults).toBe('保存为默认技能')
-    expect(SKILLS.saveDefaultsHint).toMatch(/新开/)
     expect(SKILLS.emptyTitle).toBeTruthy()
     expect(SKILLS.emptyDesc).toBeTruthy()
     expect(SKILLS.confirmDeleteTitle).toBeTruthy()

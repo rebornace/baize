@@ -64,7 +64,7 @@ describe('SkillsSettings humanized shell', () => {
     expect(host.textContent).not.toMatch(/\bSkills\b/)
     expect(host.textContent).not.toMatch(/默认 Agent/)
     expect(host.textContent).toContain(SKILLS.saveDefaults)
-    expect(host.textContent).toContain(SKILLS.saveDefaultsHint)
+    expect(host.textContent).toContain(SKILLS.description)
     expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(2)
 
     const deleteBtn = [...host.querySelectorAll('button')].find((b) =>
@@ -123,7 +123,6 @@ describe('SkillsSettings humanized shell', () => {
     expect(host.textContent).toContain(SKILLS.sourceUser)
     expect(host.querySelector('input[type="file"]')).toBeNull()
     expect(host.textContent).not.toContain(SKILLS.saveDefaults)
-    expect(host.textContent).not.toContain(SKILLS.saveDefaultsHint)
     expect(host.textContent).not.toContain(SKILLS.confirmDeleteOk)
     const badges = [...host.querySelectorAll('.ui-badge, [class*="Badge"], .settings-tool-actions *')]
     expect(badges.some((el) => el.textContent === SKILLS.defaultBadge)).toBe(false)

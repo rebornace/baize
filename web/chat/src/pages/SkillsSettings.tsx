@@ -210,39 +210,36 @@ export function SkillsSettings() {
 
   const headerActions =
     readOnly || showEmpty || skills === null ? undefined : (
-      <div className="settings-skills-actions">
-        <div className="settings-toolbar">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".md,.zip"
-            hidden
-            disabled={busy}
-            aria-label={SKILLS.upload}
-            onChange={(e) => {
-              void onUpload(e.target.files?.[0])
-            }}
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            {SKILLS.upload}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              void onSave()
-            }}
-          >
-            {saving ? '保存中…' : SKILLS.saveDefaults}
-          </Button>
-        </div>
-        <p className="settings-muted">{SKILLS.saveDefaultsHint}</p>
+      <div className="settings-toolbar">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".md,.zip"
+          hidden
+          disabled={busy}
+          aria-label={SKILLS.upload}
+          onChange={(e) => {
+            void onUpload(e.target.files?.[0])
+          }}
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          {SKILLS.upload}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            void onSave()
+          }}
+        >
+          {saving ? '保存中…' : SKILLS.saveDefaults}
+        </Button>
       </div>
     )
 

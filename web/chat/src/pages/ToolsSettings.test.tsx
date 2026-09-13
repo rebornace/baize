@@ -166,10 +166,11 @@ describe('ToolsSettings humanized shell', () => {
     host.remove()
   })
 
-  it('hides MCP export controls and method/path behind tech details', async () => {
+  it('hides MCP export and require-login toggle; gates show as badges only', async () => {
     vi.spyOn(api, 'listTools').mockResolvedValue([
       {
         ...extraTool,
+        require_login: true,
         require_approval: true,
         description: '探测连通性',
       },
@@ -183,6 +184,8 @@ describe('ToolsSettings humanized shell', () => {
     expect(host.textContent).not.toContain('MCP 导出')
     expect(host.textContent).not.toContain('MCP 写类工具')
     expect(host.querySelectorAll('select').length).toBe(0)
+    // only the enable checkbox remains writable
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(1)
     expect(host.querySelector('.settings-tool-sub')).toBeNull()
 
     const tech = [...host.querySelectorAll('details')].find(

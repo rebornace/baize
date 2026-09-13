@@ -243,10 +243,9 @@ export function modelErrorText(e: unknown): FriendlyError {
 // ---- 设置页：技能 ----
 export const SKILLS = {
   title: '技能',
-  description: '管理对话可用的技能包；勾选并保存后，对新开对话默认生效。',
+  description: '管理对话默认技能；保存后仅对新开的对话生效。',
   upload: '上传技能',
   saveDefaults: '保存为默认技能',
-  saveDefaultsHint: '仅影响之后新开的对话；进行中的对话不受影响。',
   emptyTitle: '还没有技能',
   emptyDesc: '上传 .md 或 .zip 技能包后，即可在对话中选用。',
   confirmDeleteTitle: '删除这个技能？',
@@ -281,7 +280,7 @@ export function skillErrorText(e: unknown): FriendlyError {
 // ---- 设置页：助手功能 ----
 export const TOOLS = {
   title: '助手功能',
-  description: '管理助手可调用的功能：启停、登录与确认门闸，以及显示名与说明。',
+  description: '管理助手可调用的功能：启停与显示名。「需登录 / 需确认」在接入业务系统或插件时配置。',
   enable: '启用',
   requireLogin: '需登录',
   requireApprovalBadge: '需确认',
@@ -301,6 +300,7 @@ export const TOOLS = {
   fieldDescription: '描述',
   fieldSchema: '参数说明',
   viewSchema: '查看参数说明',
+  captureSection: '登录令牌捕获',
   captureIntro:
     '登录工具调用成功后，从返回 JSON 取出令牌写入当前会话身份，供后续「需登录」的工具使用。',
   captureToolGlob: '登录工具名匹配',
@@ -383,15 +383,16 @@ export const CONNECTORS = {
   specRemoveFile: '移除已选文件',
   specReadFailed: '读取文件失败',
   advanced: '高级',
-  executionCallback: '统一执行地址',
+  executionCallbackSection: '统一执行地址',
+  executionCallback: '执行地址',
   executionCallbackHint:
     '选填。填写后，本连接下的工具调用会改为向该地址 POST，由企业网关代为执行（多数场景留空）。网关需按工具名与参数完成真实调用。',
   executionCallbackExample:
     'POST {统一执行地址}\n{\n  "tool": "create_ticket",\n  "arguments": { "title": "..." },\n  "run_id": "run_...",\n  "...": "..."\n}',
   permsIntro:
-    '勾选「需本人登录」后，每位运营用自己的账号访问，权限互不混用；不勾则任何人都能直接调用此工具。',
-  permLogin: '使用前需本人登录',
-  permApproval: '使用前需人工审批',
+    '在此配置工具门闸：勾选「需登录」后，运营需先完成本人登录；勾选「需确认」后，每次调用前需人工确认。启停请到「助手功能」。',
+  permLogin: '需登录',
+  permApproval: '需确认',
   nextToPermissions: '下一步：设置工具权限',
   save: '保存连接',
   saving: '正在保存…',

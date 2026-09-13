@@ -7,6 +7,7 @@ describe('TOOLS', () => {
     expect(TOOLS.title).toBe('助手功能')
     expect(TOOLS.requireLogin).toBe('需登录')
     expect(TOOLS.requireApprovalBadge).toBe('需确认')
+    expect(TOOLS.captureSection).toBe('登录令牌捕获')
     expect(TOOLS.captureIntro).toBeTruthy()
     expect(TOOLS.captureToolGlob).toBe('登录工具名匹配')
     expect(TOOLS.captureToolGlobHint).toMatch(/\*/)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Field, Input, Modal, Select, Textarea } from '../ui'
-import { CONNECTORS } from '../../strings'
+import { CONNECTORS, TOOLS } from '../../strings'
 import { FilePickerButton } from './FilePickerButton'
 import type { ConnectorAuth, ImportFormat, MCPConfig } from '../../api'
 import { CaptureSettingsFields } from '../../pages/CaptureSettingsFields'
@@ -407,28 +407,34 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
           {!isMcp && (
             <details className="settings-advanced">
               <summary>{CONNECTORS.advanced}</summary>
-              <Field
-                label={CONNECTORS.executionCallback}
-                hint={
-                  <>
-                    {CONNECTORS.executionCallbackHint}
-                    <pre className="settings-code-sample">{CONNECTORS.executionCallbackExample}</pre>
-                  </>
-                }
-              >
-                <Input
-                  value={executionCallbackUrl}
-                  disabled={saving}
-                  onChange={(e) => setExecutionCallbackUrl(e.target.value)}
-                  placeholder="https://enterprise.example/baize/execute"
+              <section className="settings-advanced-block">
+                <h4 className="settings-advanced-title">{CONNECTORS.executionCallbackSection}</h4>
+                <Field
+                  label={CONNECTORS.executionCallback}
+                  hint={
+                    <>
+                      {CONNECTORS.executionCallbackHint}
+                      <pre className="settings-code-sample">{CONNECTORS.executionCallbackExample}</pre>
+                    </>
+                  }
+                >
+                  <Input
+                    value={executionCallbackUrl}
+                    disabled={saving}
+                    onChange={(e) => setExecutionCallbackUrl(e.target.value)}
+                    placeholder="https://enterprise.example/baize/execute"
+                  />
+                </Field>
+              </section>
+              <section className="settings-advanced-block">
+                <h4 className="settings-advanced-title">{TOOLS.captureSection}</h4>
+                <CaptureSettingsFields
+                  connectorId={id || 'new'}
+                  connectorType={kind === 'plugin' ? 'http' : 'openapi'}
+                  draft={captureDraft}
+                  onDraftChange={(patch) => setCaptureDraft((d) => ({ ...d, ...patch }))}
                 />
-              </Field>
-              <CaptureSettingsFields
-                connectorId={id || 'new'}
-                connectorType={kind === 'plugin' ? 'http' : 'openapi'}
-                draft={captureDraft}
-                onDraftChange={(patch) => setCaptureDraft((d) => ({ ...d, ...patch }))}
-              />
+              </section>
             </details>
           )}
         </div>

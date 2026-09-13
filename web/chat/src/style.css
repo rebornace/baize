@@ -1303,11 +1303,29 @@
   color: var(--text);
 }
 
+.settings-advanced-block {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-advanced-block:first-of-type {
+  margin-top: 0.5rem;
+  padding-top: 0;
+  border-top: none;
+}
+
+.settings-advanced-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .settings-capture-fields {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  margin-top: 0.75rem;
 }
 
 .settings-capture-fields .settings-field {
