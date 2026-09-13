@@ -1,14 +1,11 @@
 package store
 
 import (
-	"errors"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
 )
-
-var errChannelOutboxSQLNotImplemented = errors.New("channel outbox: sql store not implemented")
 
 func normalizeChannelOutboxEntry(e *ChannelOutboxEntry, now time.Time) {
 	if e.ID == "" {
@@ -146,28 +143,4 @@ func (s *Memory) ResetChannelOutboxRetry(id string) error {
 	e.UpdatedAt = now
 	s.channelOutbox[id] = e
 	return nil
-}
-
-func (s *SQLStore) PutChannelOutboxIfAbsent(entry ChannelOutboxEntry) (bool, string, error) {
-	return false, "", errChannelOutboxSQLNotImplemented
-}
-
-func (s *SQLStore) ListChannelOutboxDue(now time.Time, limit int) ([]ChannelOutboxEntry, error) {
-	return nil, errChannelOutboxSQLNotImplemented
-}
-
-func (s *SQLStore) ListChannelOutbox(channel string, statuses []ChannelOutboxStatus, limit int) ([]ChannelOutboxEntry, error) {
-	return nil, errChannelOutboxSQLNotImplemented
-}
-
-func (s *SQLStore) GetChannelOutbox(id string) (ChannelOutboxEntry, error) {
-	return ChannelOutboxEntry{}, errChannelOutboxSQLNotImplemented
-}
-
-func (s *SQLStore) UpdateChannelOutbox(entry ChannelOutboxEntry) error {
-	return errChannelOutboxSQLNotImplemented
-}
-
-func (s *SQLStore) ResetChannelOutboxRetry(id string) error {
-	return errChannelOutboxSQLNotImplemented
 }
