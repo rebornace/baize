@@ -1,7 +1,7 @@
 # CH-OUTBOX：渠道出站持久化 Outbox
 
 - 日期：2026-09-13
-- 状态：已批准（待实现）
+- 状态：已交付（2026-09-13）
 - 归属：开源首版史诗 **CH-OUTBOX**；确认清单「渠道 outbox」；接在 **CH-PORT** 之后
 - 承接：`2026-09-06-phase2-webhook-channel-design.md` §8「不做持久化 outbox」后续增强；Run 事件 outbox 见 `2026-08-28-webhook-outbound-retry-v0-design.md`
 - 产品决策来源：`docs/superpowers/notes/2026-09-13-v1-product-confirmation-checklist.md`

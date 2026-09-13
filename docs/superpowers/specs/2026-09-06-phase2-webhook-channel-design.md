@@ -29,7 +29,7 @@
 **非目标（YAGNI）：**
 - 不做公共 Go SDK（阶段三，暂缓）。
 - 不做出站长轮询 pull 传输（本阶段定 push：baize 直推适配器）。
-- 不做持久化 outbox / 跨重启可靠投递（v1 用同步 + 有限重试；outbox 列后续增强）。
+- ~~不做持久化 outbox / 跨重启可靠投递~~ — **已由 CH-OUTBOX 交付**（见 [`2026-09-13-ch-outbox-design.md`](2026-09-13-ch-outbox-design.md)；本阶段当时用同步 + 有限重试）。
 - 不实现真实飞书/钉钉/Slack API 对接——`examples/im-adapter` 只模拟与演示，真实第三方 IM 适配是适配器作者的事（微信适配器除外，微信由本仓 2B 提供）。
 - 不动 inbox（系统告警 / HITL 审批回调继续走 `POST /v0/inbox/{id}`，职责不变）。
 - 不做适配器市场/动态加载/远程安装等运营化能力；适配器通过配置声明接入。
@@ -256,7 +256,7 @@ baize 对 `outbound_url` 发签名 POST。
 - **入站幂等**：`idempotency_key` 非空时落一条投递记录（store/KV）去重，重复返回 `200 {"ok":true,"duplicate":true}`（与 inbox 幂等同思路，但封在 webhook 渠道/独立表，不共用 inbox 表）。
 - **入站限流**：轻量限流（可复用既有 limiter 模式），防适配器异常刷量。
 - **出站**：同步 HTTP，10s 超时，3 次指数退避重试（1s/2s/4s，仅对连接错误/5xx 重试；4xx 不重试——协议/配置错误）；最终失败返回 error，引擎记日志不中断 run。
-- **不做持久化 outbox**（进程崩溃时在途出站消息丢失）——v1 接受，列为后续增强。
+- ~~**不做持久化 outbox**~~ — **已由 CH-OUTBOX 交付**（表 `channel_outbox` + worker；跨重启续投 / 死信 / 管理面重投）。详见 [`2026-09-13-ch-outbox-design.md`](2026-09-13-ch-outbox-design.md)。（本阶段原设计为同步出站；进程崩溃时在途消息丢失已由此后续增强收口。）
 
 ## 9. 测试策略（TDD）
 
