@@ -66,6 +66,8 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
     const confirmSpy = vi.spyOn(window, 'confirm')
     const { host, root } = await renderRuntime()
 
+    expect(host.textContent).toContain(RUNTIME.credsSourceOverride)
+
     const btn = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes(RUNTIME.resetButton),
     )
@@ -74,6 +76,7 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
 
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(host.textContent).toContain(RUNTIME.confirmResetTitle)
+    expect(host.textContent).toContain(RUNTIME.confirmResetOk)
     expect(patch).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -82,6 +85,7 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
       await new Promise((r) => setTimeout(r, 0))
     })
     expect(patch).toHaveBeenCalledWith({ reset: true })
+    expect(host.textContent).toContain(RUNTIME.toastReset)
     root.unmount()
     host.remove()
   })
@@ -105,6 +109,18 @@ describe('RuntimeSettings humanize shell', () => {
     // 折叠未开时，高级 label 仍可能在 summary 旁；字段 input 应在 details 内
     const advInputs = details!.querySelectorAll('input')
     expect(advInputs.length).toBeGreaterThanOrEqual(4)
+    root.unmount()
+    host.remove()
+  })
+
+  it('credentials section uses humanized labels and empty named-ops copy', async () => {
+    const { host, root } = await renderRuntime()
+    expect(host.textContent).toContain(RUNTIME.fieldOperatorToken)
+    expect(host.textContent).toContain(RUNTIME.fieldAdminToken)
+    expect(host.textContent).toContain(RUNTIME.namedOpsEmpty)
+    expect(host.textContent).toContain(RUNTIME.namedOpsTitle)
+    expect(host.textContent).toContain(RUNTIME.rotateSubmit)
+    expect(host.textContent).toContain(RUNTIME.addOperator)
     root.unmount()
     host.remove()
   })
