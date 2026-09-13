@@ -5,14 +5,16 @@ package webhook
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/store"
 )
 
 func init() {
@@ -65,6 +67,13 @@ type Channel struct {
 	// procMu serializes process-level control (start/stop/restart) driven by
 	// the management plane so concurrent operators cannot spawn/kill races.
 	procMu sync.Mutex
+
+	// Channel outbox: durable async delivery to the adapter outbound URL.
+	persist    store.Store
+	blobs      blob.Store
+	outboxSeq  atomic.Uint64
+	outboxWake chan struct{}
+	outboxMu   sync.RWMutex // guards persist hot-swap
 }
 
 // bgCtx returns the context for adapter management calls made outside of an
@@ -294,8 +303,9 @@ func (c *Channel) applyDiscoveredListen(addr string) {
 	c.admin = newHTTPAdminClient(base, c.cfg.OutboundSecret)
 }
 
-// SendText pushes a text message to the adapter for peerID.
+// SendText enqueues a text outbound for async delivery to the adapter.
 func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[string]string) error {
+	_ = ctx
 	acct := c.activeAccountOr(extras)
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
@@ -304,14 +314,18 @@ func (c *Channel) SendText(ctx context.Context, peerID, text string, extras map[
 		Account:        acct,
 		Peer:           Peer{ID: peerID},
 		Text:           text,
-		ContextToken:   extras["context_token"],
+		ContextToken:   contextTokenFromExtras(extras),
 	}
-	return c.sender.post(ctx, msg)
+	return c.enqueue(msg, store.ChannelOutboxKindText, nil)
 }
 
-// SendMedia pushes a file to the adapter (small files inline base64).
+// SendMedia stores media bytes in blob storage and enqueues async delivery.
 func (c *Channel) SendMedia(ctx context.Context, peerID, filename, mime string, data []byte, extras map[string]string) error {
 	acct := c.activeAccountOr(extras)
+	key, err := c.putMediaBlob(ctx, filename, mime, data)
+	if err != nil {
+		return err
+	}
 	msg := OutboundMessage{
 		Kind:           kindFromExtras(extras),
 		RunID:          runIDFromExtras(extras),
@@ -319,13 +333,12 @@ func (c *Channel) SendMedia(ctx context.Context, peerID, filename, mime string, 
 		Account:        acct,
 		Peer:           Peer{ID: peerID},
 		Media: []OutboundMedia{{
-			Name:          filename,
-			MIME:          mime,
-			ContentBase64: base64.StdEncoding.EncodeToString(data),
+			Name: filename,
+			MIME: mime,
 		}},
-		ContextToken: extras["context_token"],
+		ContextToken: contextTokenFromExtras(extras),
 	}
-	return c.sender.post(ctx, msg)
+	return c.enqueue(msg, store.ChannelOutboxKindMedia, []string{key})
 }
 
 func kindFromExtras(extras map[string]string) string {
@@ -342,6 +355,13 @@ func runIDFromExtras(extras map[string]string) string {
 		return strings.TrimSpace(extras[channel.ExtraRunID])
 	}
 	return ""
+}
+
+func contextTokenFromExtras(extras map[string]string) string {
+	if extras == nil {
+		return ""
+	}
+	return extras["context_token"]
 }
 
 // safeInstanceName reports whether name is a single URL path segment made only
