@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { ApiError } from './api'
 import { MCP_EXPORTS, mcpExportErrorText } from './strings'
 
+describe('MCP_EXPORTS tool export copy', () => {
+  it('uses finalized export strategy labels', () => {
+    expect(MCP_EXPORTS.toolsExportTitle).toBe('按功能是否对外导出')
+    expect(MCP_EXPORTS.exportDefault).toBe('跟随默认规则')
+    expect(MCP_EXPORTS.exportForceAllow).toBe('必须导出')
+    expect(MCP_EXPORTS.exportForceDeny).toBe('禁止导出')
+    expect(MCP_EXPORTS.introToolsLink).not.toMatch(/助手功能/)
+  })
+})
+
 describe('mcpExportErrorText', () => {
   it('maps key not found', () => {
     expect(mcpExportErrorText(new ApiError(404, 'not_found', 'HTTP 404: key not found')).title).toBe(

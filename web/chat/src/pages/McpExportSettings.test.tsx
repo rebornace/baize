@@ -3,11 +3,13 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as api from '../api'
 import { MCP_EXPORTS } from '../strings'
 import {
   identityToForm,
   mcpExportEndpointUrl,
   McpExportSettings,
+  toolExportMode,
   validateIdentityForm,
 } from './McpExportSettings'
 
@@ -27,6 +29,23 @@ describe('mcpExportEndpointUrl', () => {
   it('ensures leading slash on path', () => {
     expect(mcpExportEndpointUrl('https://example.com', 'v0/mcp/export')).toBe(
       'https://example.com/v0/mcp/export',
+    )
+  })
+})
+
+describe('toolExportMode', () => {
+  it('treats empty/omitted export as default', () => {
+    expect(toolExportMode({ name: 'a', connector_id: 'c' })).toBe('default')
+    expect(toolExportMode({ name: 'a', connector_id: 'c', export: '' })).toBe('default')
+    expect(toolExportMode({ name: 'a', connector_id: 'c', export: 'default' })).toBe('default')
+  })
+
+  it('keeps force modes', () => {
+    expect(toolExportMode({ name: 'a', connector_id: 'c', export: 'force_allow' })).toBe(
+      'force_allow',
+    )
+    expect(toolExportMode({ name: 'a', connector_id: 'c', export: 'force_deny' })).toBe(
+      'force_deny',
     )
   })
 })
@@ -87,7 +106,7 @@ function json(body: unknown, init?: ResponseInit) {
 let host: HTMLDivElement
 let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => { host = document.createElement('div'); document.body.appendChild(host); fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock) })
-afterEach(() => { host.remove(); vi.unstubAllGlobals() })
+afterEach(() => { host.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const flush = async (n = 3) => { await act(async () => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)) }) }
 const btn = (t: string) => [...host.querySelectorAll('button')].find((b) => b.textContent!.includes(t))!
 const setValue = (el: Element, v: string) => act(async () => {
@@ -103,16 +122,23 @@ const settings = { enabled: true, endpoint_path: '/v0/mcp/export' }
 const identities = [{ id: 'ops', name: 'Ops', scheme: 'Bearer', headers: {} }]
 const oneKey = [{ id: 'k1', name: 'cursor-dev', identity_id: 'ops', prefix: 'mcp_ab', revoked_at: null }]
 
+function mockExportFetches(extra?: (url: string, init?: RequestInit) => Response | undefined) {
+  fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+    const u = String(url)
+    const override = extra?.(u, init)
+    if (override) return override
+    if (u.endsWith('/mcp-export')) return json(settings)
+    if (u.includes('/identities')) return json(identities)
+    if (u.includes('/keys/') && init?.method === 'DELETE') return json({ status: 'ok' })
+    if (u.endsWith('/keys')) return json(oneKey)
+    if (u.endsWith('/v0/tools') || u.includes('/v0/tools?')) return json({ tools: [] })
+    return json({})
+  })
+}
+
 describe('McpExportSettings page', () => {
   it('asks via ConfirmDialog before revoking a key and toasts on success', async () => {
-    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
-      const u = String(url)
-      if (u.endsWith('/mcp-export')) return json(settings)
-      if (u.includes('/identities')) return json(identities)
-      if (u.includes('/keys/') && init?.method === 'DELETE') return json({ status: 'ok' })
-      if (u.endsWith('/keys')) return json(oneKey)
-      return json({})
-    })
+    mockExportFetches()
     await renderExport()
     await act(async () => { btn('撤销').click(); await Promise.resolve() })
     // 确认弹窗出现（复用 Modal）
@@ -128,18 +154,11 @@ describe('McpExportSettings page', () => {
   })
 
   it('shows the one-time token in a Modal with a copy button', async () => {
-    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
-      const u = String(url)
-      if (u.endsWith('/mcp-export')) return json(settings)
-      if (u.endsWith('/identities')) return json(identities)
-      if (u.includes('/keys/') && init?.method === 'DELETE') return json({ status: 'ok' })
-      if (u.endsWith('/keys')) {
-        if (init?.method === 'POST') {
-          return json({ id: 'k2', name: 'cursor-dev', identity_id: 'ops', token: 'SECRET-TOKEN', prefix: 'mcp_cd' })
-        }
-        return json(oneKey)
+    mockExportFetches((u, init) => {
+      if (u.endsWith('/keys') && init?.method === 'POST') {
+        return json({ id: 'k2', name: 'cursor-dev', identity_id: 'ops', token: 'SECRET-TOKEN', prefix: 'mcp_cd' })
       }
-      return json({})
+      return undefined
     })
     await renderExport()
     // 「新建密钥」区名称输入：取最后一个文本输入框
@@ -150,5 +169,42 @@ describe('McpExportSettings page', () => {
     expect(host.textContent).toContain('密钥仅显示这一次')
     expect(host.textContent).toContain('SECRET-TOKEN')
     expect(btn('复制密钥')).toBeTruthy()
+  })
+
+  it('lists tools for per-tool export and patches force_allow', async () => {
+    mockExportFetches()
+    vi.spyOn(api, 'listTools').mockResolvedValue([
+      {
+        name: 'tickets.list',
+        title: '查工单',
+        description: '列出工单',
+        connector_id: 'hr',
+        export: 'default',
+      },
+    ])
+    const patch = vi.spyOn(api, 'patchTool').mockResolvedValue({
+      name: 'tickets.list',
+      title: '查工单',
+      connector_id: 'hr',
+      export: 'force_allow',
+    })
+
+    await renderExport()
+    expect(host.textContent).toContain(MCP_EXPORTS.toolsExportTitle)
+    expect(host.textContent).toContain('查工单')
+
+    const select = [...host.querySelectorAll('select')].find((el) =>
+      el.getAttribute('aria-label')?.includes('查工单'),
+    )
+    expect(select).toBeTruthy()
+    await act(async () => {
+      select!.value = 'force_allow'
+      select!.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(patch).toHaveBeenCalledWith('tickets.list', { export: 'force_allow' })
+    expect(host.textContent).toContain(MCP_EXPORTS.toastExportSaved)
   })
 })

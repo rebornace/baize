@@ -1,5 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createMCPExportIdentity,
   createMCPExportKey,
@@ -7,11 +6,15 @@ import {
   getMCPExportSettings,
   listMCPExportIdentities,
   listMCPExportKeys,
+  listTools,
   patchMCPExportIdentity,
+  patchTool,
   revokeMCPExportKey,
   type MCPExportIdentity,
   type MCPExportKey,
   type MCPExportSettings as MCPExportSettingsInfo,
+  type ToolExportMode,
+  type ToolInfo,
 } from '../api'
 import {
   Button,
@@ -25,8 +28,20 @@ import {
   ToastRegion,
   useToast,
 } from '../components/ui'
+import { MCP_EXPORTS, mcpExportErrorText, toolErrorText } from '../strings'
+import { toolMatchesQuery } from '../toolCatalog'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
-import { MCP_EXPORTS, mcpExportErrorText } from '../strings'
+
+const EXPORT_OPTIONS: { value: ToolExportMode; label: string }[] = [
+  { value: 'default', label: MCP_EXPORTS.exportDefault },
+  { value: 'force_allow', label: MCP_EXPORTS.exportForceAllow },
+  { value: 'force_deny', label: MCP_EXPORTS.exportForceDeny },
+]
+
+export function toolExportMode(t: ToolInfo): ToolExportMode {
+  if (t.export === 'force_allow' || t.export === 'force_deny') return t.export
+  return 'default'
+}
 
 export interface IdentityFormState {
   name: string
@@ -112,6 +127,11 @@ export function McpExportSettings() {
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
+  const [tools, setTools] = useState<ToolInfo[] | null>(null)
+  const [toolsError, setToolsError] = useState<string | null>(null)
+  const [toolQuery, setToolQuery] = useState('')
+  const [exportBusy, setExportBusy] = useState<string | null>(null)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -135,9 +155,45 @@ export function McpExportSettings() {
     }
   }, [])
 
+  const loadTools = useCallback(async () => {
+    try {
+      const list = await listTools()
+      setTools(list)
+      setToolsError(null)
+    } catch (err) {
+      setTools([])
+      setToolsError(toolErrorText(err).title)
+    }
+  }, [])
+
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    void loadTools()
+  }, [loadTools])
+
+  const filteredTools = useMemo(() => {
+    if (tools == null) return [] as ToolInfo[]
+    return tools.filter((t) => toolMatchesQuery(t, toolQuery))
+  }, [tools, toolQuery])
+
+  const onExportChange = async (name: string, exportMode: ToolExportMode) => {
+    setExportBusy(name)
+    try {
+      const updated = await patchTool(name, { export: exportMode })
+      setTools((prev) =>
+        prev == null ? prev : prev.map((row) => (row.name === updated.name ? { ...row, ...updated } : row)),
+      )
+      push({ tone: 'success', title: MCP_EXPORTS.toastExportSaved })
+    } catch (err) {
+      const f = toolErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setExportBusy(null)
+    }
+  }
 
   const endpointUrl =
     settings != null
@@ -291,10 +347,7 @@ export function McpExportSettings() {
         title={MCP_EXPORTS.title}
         description={
           <>
-            {MCP_EXPORTS.intro}{' '}
-            <Link to="/settings/tools" className="settings-link">
-              {MCP_EXPORTS.introToolsLink}
-            </Link>
+            {MCP_EXPORTS.intro} {MCP_EXPORTS.introToolsLink}
           </>
         }
       />
@@ -331,6 +384,68 @@ export function McpExportSettings() {
     }
   }
 }`}</pre>
+        </section>
+      )}
+
+      {!loading && (
+        <section className="settings-form">
+          <h2 className="settings-subheading">{MCP_EXPORTS.toolsExportTitle}</h2>
+          <p className="settings-meta">{MCP_EXPORTS.toolsExportIntro}</p>
+          {toolsError && (
+            <p className="ui-inline-error" role="alert">
+              {toolsError}
+            </p>
+          )}
+          {tools != null && tools.length > 0 && (
+            <Field label={MCP_EXPORTS.toolsExportSearch}>
+              <Input
+                value={toolQuery}
+                onChange={(e) => setToolQuery(e.target.value)}
+                placeholder={MCP_EXPORTS.toolsExportSearch}
+                aria-label={MCP_EXPORTS.toolsExportSearch}
+              />
+            </Field>
+          )}
+          {tools == null && !toolsError && <p className="settings-muted">加载中…</p>}
+          {tools != null && tools.length === 0 && !toolsError && (
+            <p className="settings-empty">{MCP_EXPORTS.toolsExportEmpty}</p>
+          )}
+          {tools != null && tools.length > 0 && filteredTools.length === 0 && (
+            <p className="settings-empty">{MCP_EXPORTS.toolsExportEmpty}</p>
+          )}
+          {filteredTools.length > 0 && (
+            <ul className="settings-list">
+              {filteredTools.map((t) => (
+                <li key={t.name} className="settings-list-item">
+                  <span className="settings-tool-line">
+                    <span className="settings-tool-title">{t.title || t.name}</span>
+                    {t.description ? (
+                      <span className="settings-tool-desc">{t.description}</span>
+                    ) : null}
+                  </span>
+                  <div className="settings-toolbar">
+                    <Select
+                      value={toolExportMode(t)}
+                      disabled={exportBusy === t.name}
+                      aria-label={`${t.title || t.name} 导出策略`}
+                      onChange={(e) => {
+                        void onExportChange(t.name, e.target.value as ToolExportMode)
+                      }}
+                    >
+                      {EXPORT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  {t.source === 'mcp' ? (
+                    <p className="settings-muted">{MCP_EXPORTS.toolsExportMcpWriteHint}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 
