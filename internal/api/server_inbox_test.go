@@ -16,9 +16,17 @@ import (
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
+
+const testSettingsKey = "test-settings-key-32bytes-ok!!"
+
+func setTestSettingsKey(t *testing.T) {
+	t.Helper()
+	t.Setenv("BAIZE_SETTINGS_KEY", testSettingsKey)
+}
 
 // hitlResumeFakeRunner updates waiting runs to running on ContinueFromHITL
 // and optionally counts resume calls for idempotency assertions.
@@ -144,6 +152,7 @@ func seedInboxChannels(t *testing.T, st store.Store, reg *inbox.Registry, channe
 }
 
 func TestPutInboxChannelsPreservesSecret(t *testing.T) {
+	setTestSettingsKey(t)
 	const secret = "my-secret-abcdefghij"
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
@@ -200,6 +209,7 @@ func TestPutInboxChannelsPreservesSecret(t *testing.T) {
 }
 
 func TestRotateInboxSecret(t *testing.T) {
+	setTestSettingsKey(t)
 	const oldSecret = "old-secret-abcdefghij"
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
@@ -341,6 +351,7 @@ func TestInboxChannelDisabled(t *testing.T) {
 }
 
 func TestPutInboxChannelsEnabledDefaultsTrue(t *testing.T) {
+	setTestSettingsKey(t)
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
 	reg := inbox.NewRegistry()
@@ -614,6 +625,81 @@ func TestInboxResumeIdempotent(t *testing.T) {
 	}
 	if resp["action"] != "resume" || resp["run_id"] != runRec.ID {
 		t.Fatalf("replay resp=%v", resp)
+	}
+}
+
+func TestInboxChannelsSealSecretAtRest(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	putBody := map[string]any{
+		"channels": []map[string]any{{
+			"id":       "alerts",
+			"agent_id": "a",
+			"secret":   "sec-secret-abcdefghij",
+		}},
+	}
+	putRR := httptest.NewRecorder()
+	h.ServeHTTP(putRR, httptest.NewRequest(http.MethodPut, "/v0/settings/inbox-channels", jsonBody(t, putBody)))
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("PUT code=%d body=%s", putRR.Code, putRR.Body.String())
+	}
+
+	raw, ok, err := st.GetSetting(store.SettingKeyInboxChannels)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), settingscrypto.Prefix) {
+		t.Fatalf("stored inbox channels must seal secrets, raw=%s", raw)
+	}
+}
+
+func TestPutInboxChannelsRequiresSettingsKey(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	putBody := map[string]any{
+		"channels": []map[string]any{{
+			"id":       "alerts",
+			"agent_id": "a",
+			"secret":   "sec-secret-abcdefghij",
+		}},
+	}
+	putRR := httptest.NewRecorder()
+	h.ServeHTTP(putRR, httptest.NewRequest(http.MethodPut, "/v0/settings/inbox-channels", jsonBody(t, putBody)))
+	if putRR.Code != http.StatusBadRequest {
+		t.Fatalf("PUT code=%d body=%s", putRR.Code, putRR.Body.String())
+	}
+	if got := decodeInboxErrCode(t, putRR); got != "settings_key_required" {
+		t.Fatalf("code=%q", got)
+	}
+}
+
+func TestRotateInboxSecretRequiresSettingsKey(t *testing.T) {
+	const secret = "rotate-secret-abcdefghij"
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	seedInboxChannels(t, st, reg, []inbox.Channel{{
+		ID: "alerts", AgentID: "a", Secret: secret, Enabled: true,
+	}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	rotateRR := httptest.NewRecorder()
+	h.ServeHTTP(rotateRR, httptest.NewRequest(http.MethodPost, "/v0/settings/inbox-channels/alerts/rotate-secret", nil))
+	if rotateRR.Code != http.StatusBadRequest {
+		t.Fatalf("rotate code=%d body=%s", rotateRR.Code, rotateRR.Body.String())
+	}
+	if got := decodeInboxErrCode(t, rotateRR); got != "settings_key_required" {
+		t.Fatalf("code=%q", got)
 	}
 }
 

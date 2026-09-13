@@ -9,8 +9,16 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/controlplane"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 )
+
+const testSettingsKey = "test-settings-key-32bytes-ok!!"
+
+func setTestSettingsKey(t *testing.T) {
+	t.Helper()
+	t.Setenv("BAIZE_SETTINGS_KEY", testSettingsKey)
+}
 
 func baseSnapshot() Snapshot {
 	return Snapshot{
@@ -205,6 +213,141 @@ func TestApplyCredsResetRestoresBaseline(t *testing.T) {
 	// baseline, so a PATCH can never empty a configured gate (break-glass holds);
 	// the lockout guard in ApplyCreds is defense-in-depth and is structurally
 	// unreachable via the API.
+}
+
+func TestApplyCredsSealsTokensAtRest(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	h := New(baseSnapshot())
+	ctx := context.Background()
+	if err := h.ApplyCreds(ctx, st, CredsPatch{
+		OperatorToken: "op-secret",
+		AdminToken:    "adm-secret",
+		AddOperators:  []OperatorInput{{ID: "bob", Token: "tb-secret"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c := h.Credentials()
+	if c.OperatorToken != "op-secret" || c.AdminToken != "adm-secret" {
+		t.Fatalf("snapshot must stay plaintext: %+v", c)
+	}
+	var bobTok string
+	for _, op := range c.Operators {
+		if op.ID == "bob" {
+			bobTok = op.Token
+		}
+	}
+	if bobTok != "tb-secret" {
+		t.Fatalf("runtime operator token in snapshot: %q", bobTok)
+	}
+
+	raw, ok, err := st.GetSetting(store.SettingKeyRuntimeSettings)
+	if err != nil || !ok {
+		t.Fatalf("get runtime_settings: ok=%v err=%v", ok, err)
+	}
+	var stored struct {
+		Creds credsOverride `json:"creds"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if !settingscrypto.IsSealed(stored.Creds.OperatorToken) {
+		t.Fatalf("operator_token at rest must be sealed, got %q", stored.Creds.OperatorToken)
+	}
+	if !settingscrypto.IsSealed(stored.Creds.AdminToken) {
+		t.Fatalf("admin_token at rest must be sealed, got %q", stored.Creds.AdminToken)
+	}
+	if len(stored.Creds.Operators) != 1 || !settingscrypto.IsSealed(stored.Creds.Operators[0].Token) {
+		t.Fatalf("operator entry token at rest must be sealed: %+v", stored.Creds.Operators)
+	}
+}
+
+func TestApplyKnobsDoesNotSealInMemoryCreds(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	h := New(baseSnapshot())
+	ctx := context.Background()
+	if err := h.ApplyCreds(ctx, st, CredsPatch{
+		AddOperators: []OperatorInput{{ID: "bob", Token: "tb-secret"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ApplyKnobs(ctx, st, KnobsPatch{MaxSteps: ptr(20)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range h.Credentials().Operators {
+		if op.ID == "bob" {
+			if settingscrypto.IsSealed(op.Token) || op.Token != "tb-secret" {
+				t.Fatalf("knobs persist must not seal in-memory operator token: %q", op.Token)
+			}
+		}
+	}
+	raw, ok, err := st.GetSetting(store.SettingKeyRuntimeSettings)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Creds credsOverride `json:"creds"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Creds.Operators) != 1 || !settingscrypto.IsSealed(stored.Creds.Operators[0].Token) {
+		t.Fatalf("KV operator token must stay sealed: %+v", stored.Creds.Operators)
+	}
+}
+
+func TestApplyCredsRequiresSettingsKey(t *testing.T) {
+	st := store.NewMemory()
+	h := New(baseSnapshot())
+	err := h.ApplyCreds(context.Background(), st, CredsPatch{AdminToken: "new-adm"})
+	if !errors.Is(err, settingscrypto.ErrNoKey) {
+		t.Fatalf("persist creds without BAIZE_SETTINGS_KEY: got %v want ErrNoKey", err)
+	}
+}
+
+func TestLoadPlaintextCredsBackwardCompat(t *testing.T) {
+	st := store.NewMemory()
+	raw := []byte(`{"creds":{"admin_token":"kv-adm","operator_token":"kv-op","operators":[{"id":"bob","token":"tb"}]}}`)
+	if err := st.UpsertSetting(store.SettingKeyRuntimeSettings, raw); err != nil {
+		t.Fatal(err)
+	}
+	h := New(baseSnapshot())
+	if err := h.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	c := h.Credentials()
+	if c.AdminToken != "kv-adm" || c.OperatorToken != "kv-op" {
+		t.Fatalf("plain creds load: %+v", c)
+	}
+	var foundBob bool
+	for _, op := range c.Operators {
+		if op.ID == "bob" && op.Token == "tb" {
+			foundBob = true
+		}
+	}
+	if !foundBob {
+		t.Fatalf("plain operator token load: %+v", c.Operators)
+	}
+}
+
+func TestLoadSealedCredsRoundTrip(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	ctx := context.Background()
+	w := New(baseSnapshot())
+	if err := w.ApplyCreds(ctx, st, CredsPatch{
+		AdminToken: "sealed-adm",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := New(baseSnapshot())
+	if err := h.Load(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if h.Credentials().AdminToken != "sealed-adm" {
+		t.Fatalf("sealed creds round-trip: %q", h.Credentials().AdminToken)
+	}
 }
 
 func TestLoadFromStoreAppliesOverride(t *testing.T) {

@@ -48,6 +48,7 @@ import (
 	_ "github.com/rebornace/baize/internal/middleware/memory"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -267,6 +268,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
 	closer := &storeAndMCPCloser{inner: storeCloser(st)}
+
+	if err := store.MigrateStore(st); err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("settings secrets: %w", err)
+	}
 
 	// Resolve the active LLM provider. The mock/demo path (provider unset or
 	// "mock", matching newLLM) keeps the YAML-built provider and neither seeds
@@ -902,6 +908,7 @@ func loadEventsWebhook(st store.Store, cfg config.Config) (webhook.Config, error
 // seedInboxChannels loads channel config from the settings KV when present,
 // otherwise seeds from YAML and persists generated secrets to the store.
 func seedInboxChannels(cfg config.Config, st store.Store, reg *inbox.Registry) error {
+	key, _ := settingscrypto.KeyFromEnv()
 	raw, ok, err := st.GetSetting(store.SettingKeyInboxChannels)
 	if err != nil {
 		return err
@@ -910,6 +917,13 @@ func seedInboxChannels(cfg config.Config, st store.Store, reg *inbox.Registry) e
 		var channels []inbox.Channel
 		if err := json.Unmarshal(raw, &channels); err != nil {
 			return err
+		}
+		for i := range channels {
+			plain, err := settingscrypto.Open(key, channels[i].Secret)
+			if err != nil {
+				return err
+			}
+			channels[i].Secret = plain
 		}
 		reg.Replace(channels)
 		return nil
@@ -923,7 +937,20 @@ func seedInboxChannels(cfg config.Config, st store.Store, reg *inbox.Registry) e
 		}
 	}
 	reg.Replace(channels)
-	b, err := json.Marshal(channels)
+	toStore := make([]inbox.Channel, len(channels))
+	for i, c := range channels {
+		toStore[i] = c
+		secret := strings.TrimSpace(c.Secret)
+		if secret == "" {
+			continue
+		}
+		sealed, err := settingscrypto.Seal(key, secret)
+		if err != nil {
+			return err
+		}
+		toStore[i].Secret = sealed
+	}
+	b, err := json.Marshal(toStore)
 	if err != nil {
 		return err
 	}

@@ -220,6 +220,7 @@ func TestPostRunImageWithoutVisionReturns400(t *testing.T) {
 // router regardless of tier.
 func seedVisionProfile(t *testing.T, st store.Store, name string) string {
 	t.Helper()
+	setTestSettingsKey(t)
 	p, err := st.UpsertModelProfile(store.ModelProfile{
 		Name:           name,
 		Provider:       "openai_compatible",
@@ -290,6 +291,7 @@ func TestPostRunImageAutoRoutesToVisionProfile(t *testing.T) {
 // seedTextProfile inserts a text-only model profile and returns its id.
 func seedTextProfile(t *testing.T, st store.Store, name string) string {
 	t.Helper()
+	setTestSettingsKey(t)
 	p, err := st.UpsertModelProfile(store.ModelProfile{
 		Name:           name,
 		Provider:       "openai_compatible",
