@@ -727,7 +727,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		SpecURL              string          `json:"spec_url"`
 		ImportFormat         string          `json:"import_format"`
 		BaseURL              string          `json:"base_url"`
-		ExecutionCallbackURL string          `json:"execution_callback_url"`
+		ExecutionCallbackURL *string         `json:"execution_callback_url"`
 		RequireApproval      *[]string       `json:"require_approval"`
 		RequireLogin         *[]string       `json:"require_login"`
 		Auth                 authBody        `json:"auth"`
@@ -853,6 +853,18 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	// Persist the auth configuration shape (mode + references), not the
 	// resolved secrets, on the stored Connector. Capture defaults / clearing
 	// for HTTP are handled inside connector.Apply. MCP connectors ignore auth.
+	// Single GetConnector when either capture or execution_callback_url is
+	// omitted so both preserve-on-omit paths share one store read.
+	var existingConn store.Connector
+	var hasExisting bool
+	needExisting := body.ExecutionCallbackURL == nil || (body.Type != "mcp" && body.Auth.Capture == nil)
+	if needExisting {
+		if existing, err := s.Store.GetConnector(id); err == nil {
+			existingConn = existing
+			hasExisting = true
+		}
+	}
+
 	var connectorAuth store.ConnectorAuth
 	if body.Type != "mcp" {
 		capture := store.CaptureAuth{}
@@ -864,10 +876,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 				HeaderTemplate: body.Auth.Capture.HeaderTemplate,
 				DefaultScheme:  body.Auth.Capture.DefaultScheme,
 			}
-		} else if existing, err := s.Store.GetConnector(id); err == nil {
+		} else if hasExisting {
 			// 连接器页不再编辑 capture；省略时保留 Tools 页配置的登录捕获，
 			// 避免一次普通保存把本人登录链路清空。
-			capture = existing.Auth.Capture
+			capture = existingConn.Auth.Capture
 		}
 		connectorAuth = store.ConnectorAuth{
 			Mode: body.Auth.Mode,
@@ -884,6 +896,13 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	callbackURL := ""
+	if body.ExecutionCallbackURL != nil {
+		callbackURL = strings.TrimSpace(*body.ExecutionCallbackURL)
+	} else if hasExisting {
+		callbackURL = existingConn.ExecutionCallbackURL
+	}
+
 	c, infos, err := connector.Apply(connector.ApplyInput{
 		Store:                s.Store,
 		Registry:             s.Registry,
@@ -893,7 +912,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Spec:                 specPath,
 		ImportFormat:         importFormatDetected,
 		BaseURL:              body.BaseURL,
-		ExecutionCallbackURL: body.ExecutionCallbackURL,
+		ExecutionCallbackURL: callbackURL,
 		RequireApproval:      body.RequireApproval,
 		RequireLogin:         body.RequireLogin,
 		Auth:                 connectorAuth,
