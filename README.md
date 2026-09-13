@@ -791,6 +791,26 @@ npm ci
 npm run build
 ```
 
+## Local checks (contributing)
+
+Go (install [golangci-lint](https://golangci-lint.run/) first):
+
+```bash
+golangci-lint run ./...
+```
+
+CI fails on **new** Go issues only (`only-new-issues`); locally you may run the full linter—clearing historical warnings is not required for F-C1.
+
+Web:
+
+```bash
+cd web/chat
+npm ci
+npm run lint
+npm test
+npx tsc --noEmit
+```
+
 ---
 
 ## Commands
