@@ -70,12 +70,12 @@ If ports are busy, stop the previous `baize` process and retry.
 
 ### Operator UI (`/ui`)
 
-Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening `/ui` unlocks first; operators can only access Identities, while changing Tools requires an admin token.
+Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening `/ui` unlocks first; operators can only access 账号 (accounts), while changing 助手功能 (assistant capabilities) requires an admin token.
 
-- Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
+- Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “账号”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → 业务系统 (business systems) (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from 业务系统 (business systems), 插件 (plugins), or 外部工具服务 (external tool services) settings pages (with confirmation); Settings → 助手功能 (assistant capabilities) (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; Identities page is available to operators; Settings → 外部工具服务 (external tool services) (admin-only) registers MCP Servers; Settings → 插件 (plugins) (admin-only) registers HTTP plugin sidecars
+- Settings → 业务系统 (business systems) (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from 业务系统 (business systems), 插件 (plugins), or 外部工具服务 (external tool services) settings pages (with confirmation); Settings → 助手功能 (assistant capabilities) (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; 账号 (accounts) page is available to operators; Settings → 外部工具服务 (external tool services) (admin-only) registers MCP Servers; Settings → 插件 (plugins) (admin-only) registers HTTP plugin sidecars
 - Settings → 模型 (models) (admin-only): maintain multiple named model profiles (OpenAI-compatible) tagged with a tier (light/standard/power) that feeds task-aware Auto routing; any profile can be deleted, including the last one; operators can read the list for the chat dropdown (see **Multiple model profiles** below)
 - Settings → 技能 (skills) (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
 - Settings → 消息回调 (message callbacks) (admin-only): configure global run-event webhook URL and headers; send a test delivery
