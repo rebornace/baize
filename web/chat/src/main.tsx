@@ -24,7 +24,7 @@ import './styles/base.css'
 import './styles/components.css'
 import './styles/layout.css'
 import './styles/settings.css'
-import './style.css'
+import './styles/chat.css'
 import { initSidebarWidth } from './sidebarResize'
 
 initSidebarWidth()
