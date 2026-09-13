@@ -17,11 +17,11 @@
 - 不在「对外提供能力」页再放一份开关
 - 不自动推断「是否像数据库 MCP」
 - 不做 MCP OAuth、capture、OpenAPI 连接器的同类字段
-- 不改变白泽自己 Run 对 MCP 工具的可用性（本开关只影响导出面）
+- 不改变本机对话/Run 对 MCP 工具的可用性（本开关只影响导出面）
 
 ## 2. 背景
 
-白泽可作 MCP **客户端**接入第三方服务（设置 → MCP 连接），也可作 MCP **服务端**把目录子集导出给个人 Agent。`export_db_readonly` 挂在 `store.MCPConfig` 上，导出策略在 `DBReadonlyConnector` 时对 `source=mcp` 工具施加更严筛选；写类工具仍永不导出。P3-C 未做 UI 写入，本史诗补齐。
+产品可作 MCP **客户端**接入第三方服务（设置 → MCP 连接），也可作 MCP **服务端**把目录子集导出给个人 Agent。`export_db_readonly` 挂在 `store.MCPConfig` 上，导出策略在 `DBReadonlyConnector` 时对 `source=mcp` 工具施加更严筛选；写类工具仍永不导出。P3-C 未做 UI 写入，本史诗补齐。
 
 ## 3. UX
 
@@ -30,7 +30,7 @@
 | 入口 | MCP 连接新建/编辑弹窗第一步（与 transport / command|url 同表单） |
 | 控件 | 复选框；stdio 与 http 共用 |
 | 标签 | 「对外导出时按数据库只读筛选」 |
-| Hint | 仅约束 MCP 导出；白泽对话仍可用该连接器已启用工具；建议数据库类 MCP 开启 |
+| Hint | 仅约束 MCP 导出；对话里仍可用该连接器已启用工具；建议数据库类 MCP 开启 |
 | 默认 | 新建 `false`；编辑回显库内值 |
 | 保存 | 与现有 `validateMcp` → `onSaveInfo` → `putConnector` 同路径，body 含 `mcp.export_db_readonly` |
 
