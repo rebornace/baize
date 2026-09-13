@@ -109,8 +109,8 @@ export function SkillsSettings() {
 
       // Agent config (system prompt + saved selection) is admin-only (GET /v0/agents/{id}
       // returns 403 for operators). Skip it entirely on the read-only path; operators see
-      // an unselected, disabled list. For admins, a failure here is non-fatal: the list is
-      // already rendered and selection simply stays empty.
+      // title + source only (no checkbox / default badge — no getAgent data). For admins,
+      // a failure here is non-fatal: the list is already rendered and selection stays empty.
       if (readOnly) return
       try {
         const agent = await getAgent(resolvedAgentId)
@@ -210,36 +210,39 @@ export function SkillsSettings() {
 
   const headerActions =
     readOnly || showEmpty || skills === null ? undefined : (
-      <div className="settings-toolbar">
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".md,.zip"
-          hidden
-          disabled={busy}
-          aria-label={SKILLS.upload}
-          onChange={(e) => {
-            void onUpload(e.target.files?.[0])
-          }}
-        />
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-        >
-          {SKILLS.upload}
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={busy}
-          onClick={() => {
-            void onSave()
-          }}
-        >
-          {saving ? '保存中…' : SKILLS.saveDefaults}
-        </Button>
+      <div className="settings-skills-actions">
+        <div className="settings-toolbar">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".md,.zip"
+            hidden
+            disabled={busy}
+            aria-label={SKILLS.upload}
+            onChange={(e) => {
+              void onUpload(e.target.files?.[0])
+            }}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+          >
+            {SKILLS.upload}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              void onSave()
+            }}
+          >
+            {saving ? '保存中…' : SKILLS.saveDefaults}
+          </Button>
+        </div>
+        <p className="settings-muted">{SKILLS.saveDefaultsHint}</p>
       </div>
     )
 
@@ -285,40 +288,55 @@ export function SkillsSettings() {
 
       {skills !== null && skills.length > 0 && (
         <ul className="settings-list">
-          {skills.map((s) => (
-            <li key={s.id} className="settings-list-item settings-skill-row">
-              <label className="settings-login-toggle settings-skill-check">
-                <input
-                  type="checkbox"
-                  checked={selected.has(s.id)}
-                  disabled={busy || readOnly}
-                  onChange={(e) => {
-                    setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
-                  }}
-                />
-                <span className="settings-skill-line">
-                  <span className="settings-tool-title">{skillDisplayName(s)}</span>
-                  {s.description?.trim() && s.id !== skillDisplayName(s) ? (
-                    <span className="settings-tool-sub">{s.id}</span>
-                  ) : null}
-                  <span className="settings-tool-sub">{toolsSummary(s.tools)}</span>
-                </span>
-              </label>
-              <span className="settings-tool-actions">
-                <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{sourceLabel(s.source)}</Badge>
-                {s.source === 'user' && !readOnly && (
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    disabled={busy}
-                    onClick={() => beginDelete(s)}
-                  >
-                    {SKILLS.confirmDeleteOk}
-                  </Button>
-                )}
+          {skills.map((s) => {
+            const title = skillDisplayName(s)
+            const showId = Boolean(s.description?.trim() && s.id !== title)
+            const toolsLine = toolsSummary(s.tools)
+            const sourceBadge = (
+              <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{sourceLabel(s.source)}</Badge>
+            )
+            const meta = (
+              <span className="settings-skill-line">
+                <span className="settings-tool-title">{title}</span>
+                {showId ? <span className="settings-tool-sub">{s.id}</span> : null}
+                {toolsLine !== '—' ? (
+                  <span className="settings-muted">{toolsLine}</span>
+                ) : null}
               </span>
-            </li>
-          ))}
+            )
+            return (
+              <li key={s.id} className="settings-list-item settings-skill-row">
+                {readOnly ? (
+                  meta
+                ) : (
+                  <label className="settings-login-toggle settings-skill-check">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(s.id)}
+                      disabled={busy}
+                      onChange={(e) => {
+                        setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
+                      }}
+                    />
+                    {meta}
+                  </label>
+                )}
+                <span className="settings-tool-actions">
+                  {sourceBadge}
+                  {s.source === 'user' && !readOnly && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={() => beginDelete(s)}
+                    >
+                      {SKILLS.confirmDeleteOk}
+                    </Button>
+                  )}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
 

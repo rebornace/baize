@@ -99,11 +99,11 @@ describe('SkillsSettings read-only for operator', () => {
     // read-only path must not even request the admin-only agent config endpoint
     expect(urls.some((u) => u.startsWith('/v0/agents/'))).toBe(false)
     expect(host.querySelector('input[type="file"]')).toBeNull()
+    expect(host.textContent).not.toContain('保存为默认技能')
     expect(host.textContent).not.toContain('保存默认勾选')
     // user-source skill shows a delete button for admins; it must be hidden for operators
     expect(host.textContent).not.toContain('删除')
-    // checkboxes present but disabled (read-only)
-    const boxes = host.querySelectorAll('input[type="checkbox"]')
-    boxes.forEach((b) => expect((b as HTMLInputElement).disabled).toBe(true))
+    // zero checkboxes — operators have no getAgent data for default selection
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(0)
   })
 })

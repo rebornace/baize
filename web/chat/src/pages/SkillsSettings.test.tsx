@@ -63,6 +63,9 @@ describe('SkillsSettings humanized shell', () => {
     expect(host.textContent).toContain(SKILLS.title)
     expect(host.textContent).not.toMatch(/\bSkills\b/)
     expect(host.textContent).not.toMatch(/默认 Agent/)
+    expect(host.textContent).toContain(SKILLS.saveDefaults)
+    expect(host.textContent).toContain(SKILLS.saveDefaultsHint)
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(2)
 
     const deleteBtn = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes(SKILLS.confirmDeleteOk),
@@ -90,7 +93,7 @@ describe('SkillsSettings humanized shell', () => {
     host.remove()
   })
 
-  it('disables checkboxes for operator', async () => {
+  it('hides checkboxes and default controls for operator', async () => {
     vi.spyOn(api, 'getUIConfig').mockResolvedValue({})
     vi.spyOn(api, 'listSkills').mockResolvedValue({
       skills: [
@@ -116,14 +119,15 @@ describe('SkillsSettings humanized shell', () => {
 
     expect(host.textContent).toContain(SKILLS.title)
     expect(host.textContent).toContain('分诊')
+    expect(host.textContent).toContain(SKILLS.sourceBuiltin)
+    expect(host.textContent).toContain(SKILLS.sourceUser)
     expect(host.querySelector('input[type="file"]')).toBeNull()
     expect(host.textContent).not.toContain(SKILLS.saveDefaults)
+    expect(host.textContent).not.toContain(SKILLS.saveDefaultsHint)
     expect(host.textContent).not.toContain(SKILLS.confirmDeleteOk)
+    expect(host.textContent).not.toContain(SKILLS.defaultBadge)
     expect(getAgentSpy).not.toHaveBeenCalled()
-
-    const boxes = host.querySelectorAll('input[type="checkbox"]')
-    expect(boxes.length).toBeGreaterThan(0)
-    boxes.forEach((b) => expect((b as HTMLInputElement).disabled).toBe(true))
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(0)
 
     root.unmount()
     host.remove()
