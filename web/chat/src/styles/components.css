@@ -299,6 +299,9 @@
   line-height: 1.5;
   color: var(--text-muted);
 }
+.ui-field-hint .settings-code-sample {
+  color: var(--text);
+}
 .ui-field-error {
   margin: 0;
   font-size: 0.8rem;

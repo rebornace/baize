@@ -5,14 +5,14 @@ import { SKILLS, skillErrorText } from './strings'
 describe('SKILLS', () => {
   it('exposes humanized page copy', () => {
     expect(SKILLS.title).toBe('技能')
-    expect(SKILLS.description).toMatch(/@|\//)
+    expect(SKILLS.description).toMatch(/默认/)
     expect(SKILLS.upload).toBeTruthy()
     expect(SKILLS.saveDefaults).toBe('保存为默认技能')
-    expect(SKILLS.saveDefaultsHint).toBeTruthy()
+    expect(SKILLS.saveDefaultsHint).toMatch(/新开/)
     expect(SKILLS.emptyTitle).toBeTruthy()
     expect(SKILLS.emptyDesc).toBeTruthy()
     expect(SKILLS.confirmDeleteTitle).toBeTruthy()
-    expect(SKILLS.confirmDeleteBody).toBeTruthy()
+    expect(SKILLS.confirmDeleteBody).toMatch(/默认技能/)
     expect(SKILLS.confirmDeleteOk).toBe('删除')
     expect(SKILLS.toastUploaded).toBeTruthy()
     expect(SKILLS.toastSaved).toBe('默认技能已保存')

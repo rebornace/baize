@@ -136,14 +136,17 @@ describe('ToolsSettings humanized shell', () => {
     host.remove()
   })
 
-  it('folds schema behind TOOLS.viewSchema details', async () => {
+  it('keeps method/path/schema only in tech details, not in edit panel', async () => {
     vi.spyOn(api, 'listTools').mockResolvedValue([extraTool])
-    vi.spyOn(api, 'getConnector').mockResolvedValue({
-      id: 'oa1',
-      type: 'openapi',
-    } as api.ConnectorInfo)
 
     const { host, root } = await renderTools('admin')
+
+    const tech = [...host.querySelectorAll('details')].find(
+      (d) => d.querySelector('summary')?.textContent === TOOLS.techDetails,
+    )
+    expect(tech).toBeTruthy()
+    expect(tech!.textContent).toContain('GET /ping')
+    expect(tech!.querySelector('pre')?.textContent).toContain('"type"')
 
     const editBtn = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes(TOOLS.editCopy),
@@ -153,13 +156,11 @@ describe('ToolsSettings humanized shell', () => {
       editBtn!.click()
     })
 
-    const details = [...host.querySelectorAll('details')].find(
-      (d) => d.querySelector('summary')?.textContent === TOOLS.viewSchema,
-    )
-    expect(details).toBeTruthy()
-    expect(details!.querySelector('summary')?.textContent).toBe(TOOLS.viewSchema)
-    expect(details!.querySelector('pre')?.textContent).toContain('"type"')
-    expect(details!.open).toBe(false)
+    const edit = host.querySelector('.settings-tool-edit')
+    expect(edit).toBeTruthy()
+    expect(edit!.textContent).not.toContain('方法 / 路径')
+    expect(edit!.querySelector('details')).toBeNull()
+    expect(edit!.querySelector('pre.settings-tool-schema')).toBeNull()
 
     root.unmount()
     host.remove()
@@ -215,6 +216,7 @@ describe('ToolsSettings connector group header', () => {
     expect(host.querySelector('details.settings-advanced')).toBeNull()
     expect(host.textContent).not.toContain('保存 Connector 设置')
     expect(host.textContent).not.toContain('执行回调 URL')
+    expect(host.textContent).not.toContain('统一执行地址')
     expect(host.textContent).not.toContain('企业统一执行地址')
     expect(put).not.toHaveBeenCalled()
 

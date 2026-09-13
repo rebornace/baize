@@ -507,7 +507,10 @@ describe('ConnectorEditorModal advanced', () => {
     expect(adv!.open).toBe(false)
     expect(adv!.querySelector('summary')?.textContent).toBe(CONNECTORS.advanced)
     expect(host.textContent).toContain(CONNECTORS.executionCallback)
+    expect(host.textContent).toContain(CONNECTORS.executionCallbackExample.split('\n')[0])
     expect(host.textContent).toContain(TOOLS.captureToolGlob)
+    expect(host.textContent).toContain(TOOLS.captureIntro)
+    expect(host.textContent).toContain(TOOLS.captureToolGlobHint)
     expect(host.textContent).toContain(TOOLS.captureTokenPaths)
     expect(host.textContent).not.toContain('token_json_paths')
 

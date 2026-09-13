@@ -1290,6 +1290,36 @@
   word-break: break-word;
 }
 
+.settings-code-sample {
+  display: block;
+  margin: 0.45rem 0 0;
+  padding: 0.45rem 0.55rem;
+  background: var(--code-bg);
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--text);
+}
+
+.settings-capture-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.settings-capture-fields .settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-capture-fields .settings-hint {
+  margin: 0;
+}
+
 .settings-drawer-backdrop {
   position: fixed;
   inset: 0;

@@ -5,10 +5,14 @@ import { TOOLS, toolErrorText } from './strings'
 describe('TOOLS', () => {
   it('exposes humanized page copy', () => {
     expect(TOOLS.title).toBe('助手功能')
-    expect(TOOLS.captureToolGlob).toBe('匹配哪些登录功能')
-    expect(TOOLS.captureTokenPaths).toBe('令牌字段路径（每行一条）')
-    expect(TOOLS.captureLabelPaths).toBe('显示名字段路径（每行一条）')
-    expect(TOOLS.captureHeaderTemplate).toBe('请求头模板')
+    expect(TOOLS.requireLogin).toBe('需登录')
+    expect(TOOLS.requireApprovalBadge).toBe('需确认')
+    expect(TOOLS.captureIntro).toBeTruthy()
+    expect(TOOLS.captureToolGlob).toBe('登录工具名匹配')
+    expect(TOOLS.captureToolGlobHint).toMatch(/\*/)
+    expect(TOOLS.captureTokenPaths).toBe('令牌 JSON 路径')
+    expect(TOOLS.captureLabelPaths).toBe('身份显示名路径')
+    expect(TOOLS.captureHeaderTemplate).toBe('下游请求头模板')
     expect(TOOLS.captureDefaultScheme).toBe('默认认证方案')
     expect(TOOLS.advanced).toBe('高级')
     expect(TOOLS.addTool).toBe('添加')

@@ -407,7 +407,15 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
           {!isMcp && (
             <details className="settings-advanced">
               <summary>{CONNECTORS.advanced}</summary>
-              <Field label={CONNECTORS.executionCallback} hint={CONNECTORS.executionCallbackHint}>
+              <Field
+                label={CONNECTORS.executionCallback}
+                hint={
+                  <>
+                    {CONNECTORS.executionCallbackHint}
+                    <pre className="settings-code-sample">{CONNECTORS.executionCallbackExample}</pre>
+                  </>
+                }
+              >
                 <Input
                   value={executionCallbackUrl}
                   disabled={saving}

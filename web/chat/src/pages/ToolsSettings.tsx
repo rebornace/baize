@@ -548,13 +548,6 @@ export function ToolsSettings() {
                 rows={3}
               />
             </label>
-            <p className="settings-muted">
-              方法 / 路径：{methodPath || '—'}
-            </p>
-            <details>
-              <summary>{TOOLS.viewSchema}</summary>
-              <pre className="settings-tool-schema">{schemaText}</pre>
-            </details>
             <div className="settings-tool-edit-actions">
               <Button
                 type="button"
