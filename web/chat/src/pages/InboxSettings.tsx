@@ -304,11 +304,6 @@ export function InboxSettings() {
       <PageHeader title={INBOX.title} description={INBOX.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
-      <details className="settings-developer">
-        <summary>{INBOX.techDetails}</summary>
-        <p className="settings-meta">{INBOX.techDetailsBody}</p>
-      </details>
-
       {loading && <p className="settings-muted">加载中…</p>}
 
       {!loading && (

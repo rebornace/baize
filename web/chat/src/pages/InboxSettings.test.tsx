@@ -129,18 +129,14 @@ describe('InboxSettings UI', () => {
     host.remove()
   })
 
-  it('hides protocol jargon on main path and shows human secret hint', async () => {
+  it('hides protocol jargon and shows human secret hint', async () => {
     const { host, root } = await renderPage([sampleChannel])
-    const main = host.cloneNode(true) as HTMLElement
-    main.querySelector('details.settings-developer')?.remove()
-    expect(main.textContent).toContain(INBOX.description)
-    expect(main.textContent).not.toMatch(/\bHMAC\b/)
-    expect(main.textContent).not.toMatch(/白泽|Baize/)
+    expect(host.textContent).toContain(INBOX.description)
+    expect(host.textContent).not.toMatch(/\bHMAC\b|给技术人员|KEY=VALUE/)
+    expect(host.textContent).not.toMatch(/白泽|Baize/)
     expect(host.textContent).toContain(inboxSecretHint('abcd'))
     expect(host.textContent).not.toMatch(/secret\s*\u2026/i)
-    const details = host.querySelector('details.settings-developer')
-    expect(details?.querySelector('summary')?.textContent).toBe(INBOX.techDetails)
-    expect(details!.textContent).toContain('KEY=VALUE')
+    expect(host.querySelector('details.settings-developer')).toBeNull()
     root.unmount()
     host.remove()
   })

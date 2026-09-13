@@ -192,8 +192,7 @@ export function driverLabel(driver: string): string {
 // ---- 设置页：消息回调 ----
 export const WEBHOOKS = {
   title: '消息回调',
-  description:
-    '有消息或任务结束时，自动通知你填的网址。这不是连接里的「企业统一执行地址」。',
+  description: '有消息或任务结束时，自动通知你填的网址。',
   urlLabel: '通知地址',
   urlHint: '留空表示不发送通知',
   headersLabel: '请求头',
@@ -210,9 +209,6 @@ export const WEBHOOKS = {
   statusDead: '已停止（多次失败）',
   statusPending: '等待发送',
   statusDelivered: '已发送',
-  techDetails: '给技术人员',
-  techDetailsBody:
-    '请求头每行格式为 KEY=VALUE。网络错误、HTTP 5xx 或 429 会自动重试（最多 5 次）；其余 4xx 记为已停止。本页是运行结束后的出站通知，不是连接高级里的「企业统一执行地址」。',
   toastSaved: '已保存消息回调配置',
   toastTestOk: '测试发送成功',
   toastTestFail: '测试发送失败',
@@ -570,7 +566,7 @@ export const INBOX = {
   description:
     '给外部系统一个专用收件地址；对方按约定发来后，会在这里变成一场对话。',
   emptyTitle: '还没有收件通道',
-  emptyDesc: '添加后，告警、工单等系统就能把消息送进来。',
+  emptyDesc: '添加后，外部系统就能把消息送进来。',
   add: '添加收件通道',
   save: '保存',
   saving: '保存中…',
@@ -604,9 +600,6 @@ export const INBOX = {
   secretModalBody: '仅展示一次，请立即复制到对方系统。',
   secretCopy: '复制密钥',
   secretClose: '关闭',
-  techDetails: '给技术人员',
-  techDetailsBody:
-    '外部系统按约定签名后，向 {origin}/v0/inbox/{channel_id} 发送请求，即可在这里创建对话。请求头格式为每行 KEY=VALUE。签名与示例见仓库 README「生产集成」相关章节。通道高级里的专用通知地址可覆盖全局「消息回调」。',
   toastSaved: '已保存外部来信通道',
   toastCopiedUrl: '已复制收件地址',
   toastCopiedSecret: '已复制新密钥',

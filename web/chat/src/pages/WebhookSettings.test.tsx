@@ -61,17 +61,13 @@ describe('WebhookSettings UI', () => {
     host.remove()
   })
 
-  it('keeps protocol jargon out of the main path', async () => {
+  it('keeps protocol jargon and tech-only sections off the page', async () => {
     const { host, root } = await renderPage()
-    const main = host.cloneNode(true) as HTMLElement
-    main.querySelector('details.settings-developer')?.remove()
-    expect(main.textContent).toContain(WEBHOOKS.urlLabel)
-    expect(main.textContent).toContain(WEBHOOKS.deliveriesTitle)
-    expect(main.textContent).not.toMatch(/\bHMAC\b|\bPOST\b|5xx|KEY=VALUE/)
-    const details = host.querySelector('details.settings-developer')
-    expect(details).toBeTruthy()
-    expect(details!.querySelector('summary')?.textContent).toBe(WEBHOOKS.techDetails)
-    expect(details!.textContent).toContain('KEY=VALUE')
+    expect(host.textContent).toContain(WEBHOOKS.urlLabel)
+    expect(host.textContent).toContain(WEBHOOKS.deliveriesTitle)
+    expect(host.textContent).toContain(WEBHOOKS.description)
+    expect(host.textContent).not.toMatch(/\bHMAC\b|\bPOST\b|5xx|KEY=VALUE|给技术人员|企业统一执行/)
+    expect(host.querySelector('details.settings-developer')).toBeNull()
     root.unmount()
     host.remove()
   })

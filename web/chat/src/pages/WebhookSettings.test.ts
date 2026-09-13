@@ -81,7 +81,8 @@ describe('formatDeliveryStatus', () => {
 
   it('uses outcome-oriented labels without protocol jargon in main copy keys', () => {
     expect(WEBHOOKS.statusDead).toBe('已停止（多次失败）')
-    expect(WEBHOOKS.description).not.toMatch(/引擎|HMAC|5xx|KEY=VALUE|白泽|Baize/i)
+    expect(WEBHOOKS.description).toBe('有消息或任务结束时，自动通知你填的网址。')
+    expect(WEBHOOKS.description).not.toMatch(/引擎|HMAC|5xx|KEY=VALUE|白泽|Baize|不是|企业统一执行/i)
     expect(WEBHOOKS.deliveriesHint).not.toMatch(/5xx|429|4xx|死信/)
     expect(WEBHOOKS.headersHint).not.toMatch(/KEY=VALUE/)
     expect(WEBHOOKS.errBadHeaderLine).not.toMatch(/KEY=VALUE/)

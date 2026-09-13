@@ -131,6 +131,8 @@ describe('validateChannelsForm', () => {
 describe('INBOX copy keys', () => {
   it('avoids protocol jargon and product names in main-path strings', () => {
     expect(INBOX.description).not.toMatch(/HMAC|POST|签名|白泽|Baize/i)
+    expect(INBOX.emptyDesc).toBe('添加后，外部系统就能把消息送进来。')
+    expect(INBOX.emptyDesc).not.toMatch(/告警|工单/)
     expect(INBOX.idHint).not.toMatch(/小写|64|_/)
     expect(INBOX.overrideHeadersHint).not.toMatch(/KEY=VALUE/)
     expect(INBOX.errIdRequired).toMatch(/通道名称/)
