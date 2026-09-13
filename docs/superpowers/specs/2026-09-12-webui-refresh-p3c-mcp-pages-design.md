@@ -177,7 +177,7 @@ P3-B 抽出了可复用的连接器列表外壳 `ConnectorShell` 与两步编辑
 
 - 远程 HTTP MCP 的 OAuth 2.1 交互登录（401 + PRM 发现、PKCE、DCR、浏览器回调、令牌存储与刷新、按连接器/按用户身份）：独立工作流单独立项；本批仅静态请求头与鉴权失败人话提示。
 - MCP 工具的「需本人登录」与 capture：白泽 capture 仅支持 openapi/http，MCP 无后端链路，且非 MCP 标准，UI 不暴露。
-- `export_db_readonly` 的任何 UI 写入（当前仅 YAML/bootstrap 可设）。
+- `export_db_readonly` 的任何 UI 写入 —— **已由 UI-EXPORT-DB-RO 承接**（`docs/superpowers/specs/2026-09-13-ui-export-db-readonly-design.md`；MCP 连接编辑弹窗）。
 - 后端既有问题：DELETE 连接器不关闭 stdio 池会话的潜在泄漏；本批不改后端，仅在计划/风险中记录。
 - Webhook（出站事件推送）/ Inbox（外部来信）页人话化（连接批次 A）。
 - args/env/headers 的结构化行编辑器与密钥密码框遮盖（本批用 Textarea + 占位符提示）。

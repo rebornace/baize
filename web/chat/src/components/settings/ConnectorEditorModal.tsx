@@ -37,6 +37,7 @@ export interface ConnectorEditorInitial {
 
 const EMPTY_MCP_FORM: McpFormValues = {
   id: '', transport: 'stdio', command: '', argsText: '', envText: '', url: '', headersText: '',
+  exportDbReadonly: false,
 }
 
 export interface ConnectorEditorModalProps {
@@ -255,6 +256,19 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                 </Field>
               </>
             )}
+            <label className="ui-checkbox-row">
+              <input
+                type="checkbox"
+                checked={mcpForm.exportDbReadonly}
+                disabled={saving}
+                data-testid="mcp-export-db-readonly"
+                onChange={(e) => setMcpForm((f) => ({ ...f, exportDbReadonly: e.target.checked }))}
+              />
+              <span>
+                {CONNECTORS.exportDbReadonly}
+                <span className="ui-field-hint"> {CONNECTORS.exportDbReadonlyHint}</span>
+              </span>
+            </label>
           </>
         )}
         {!isMcp && (

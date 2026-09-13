@@ -85,7 +85,7 @@
 | 登录入口 `@` 直达 / `login_required` | P3-B/D | **要做**（上调） |
 | i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
 | 模型思考级别开关 | P1 非目标 → 上调 | **要做** |
-| `export_db_readonly` UI | P3-C → 上调 | **要做** |
+| `export_db_readonly` UI | P3-C → **已交付** | [`2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
 | 技能可视化编辑器 | P3-D | 确认不做 |
 | Playwright E2E | U2 | 确认不做 |
 | 对话自动标题 U1 | OSS defer | 确认不做 |

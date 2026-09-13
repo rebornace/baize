@@ -278,7 +278,7 @@ The inverse of [MCP connectors](#mcp-connectors-optional): Baize acts as an **MC
 | Control plane | Gate admin/operator token | **Separate** — Gate token ≠ export Key |
 
 1. Open `/ui` → **Settings → 对外提供能力 (export capabilities)** (admin): create an **export identity** (prefer a read-only service account), then create an export Key (plaintext shown once; must bind an identity).
-2. Configure per-tool export policy under **Settings → 对外提供能力 (export capabilities)** (`default` / force allow / force deny). DB / MCP write tools are never exported.
+2. Configure per-tool export policy under **Settings → 对外提供能力 (export capabilities)** (`default` / force allow / force deny). DB / MCP write tools are never exported. For database-style MCP connectors, open **Settings → 外部工具服务** and enable **export as DB read-only** (`export_db_readonly`) to further tighten the export surface.
 3. Point your MCP client at Baize over **HTTPS** in production.
 
 ```json

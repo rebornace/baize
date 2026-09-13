@@ -361,6 +361,38 @@ describe('ConnectorEditorModal mcp', () => {
     expect(host.textContent).not.toContain('工具权限')
   })
 
+  it('stdio: submits export_db_readonly when checked', async () => {
+    const onSaveInfo = vi.fn(async () => [{ name: 'query' }])
+    await render(mcpProps({ onSaveInfo }))
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[0], 'db1')
+    const cmd = [...host.querySelectorAll('input')].find((i) => i.placeholder === 'npx')!
+    await setValue(cmd, 'npx')
+    await act(async () => {
+      const cb = host.querySelector('[data-testid="mcp-export-db-readonly"]') as HTMLInputElement
+      cb.click()
+      await Promise.resolve()
+    })
+    await act(async () => { btn('保存连接').click(); await Promise.resolve() })
+    await flush()
+    expect(onSaveInfo).toHaveBeenCalledWith({
+      kind: 'mcp', id: 'db1',
+      mcp: { transport: 'stdio', command: 'npx', args: [], export_db_readonly: true },
+    })
+  })
+
+  it('stdio: echoes export_db_readonly when editing', async () => {
+    await render(mcpProps({
+      editing: true,
+      initial: {
+        id: 'db', baseUrl: '', tools: [], loginNames: [], approvalNames: [],
+        mcp: { transport: 'stdio', command: 'npx', export_db_readonly: true },
+      },
+    }))
+    const cb = host.querySelector('[data-testid="mcp-export-db-readonly"]') as HTMLInputElement
+    expect(cb.checked).toBe(true)
+  })
+
   it('http: requires url and submits url+headers', async () => {
     const onSaveInfo = vi.fn(async () => [{ name: 'q' }])
     await render(mcpProps({ onSaveInfo }))
