@@ -47,7 +47,7 @@
 | 计划 `2026-09-06-phase1-channel-registry.md` | 已交付（无独立规格头） | bootstrap `wireChannels` | — |
 | `2026-09-06-phase2-webhook-channel-design.md` | 已交付 | `internal/channel/webhook`、`examples/im-adapter` | — |
 | `2026-09-07-phase2b-weixin-adapter.md` | 已交付 | `cmd/weixin-adapter`；进程内 weixin 已移除 | — |
-| `2026-09-08-adapter-supervisor-hardening-design.md` | 已交付 | watchdog / 优雅关停 / `docker-compose.weixin.yml` / `deploy/systemd` | DoD 核验见 [`2026-09-13-channel-supervisor-dod-audit.md`](2026-09-13-channel-supervisor-dod-audit.md)（通过；§8.6 群聊丢弃可补单测） |
+| `2026-09-08-adapter-supervisor-hardening-design.md` | 已交付 | watchdog / 优雅关停 / `docker-compose.weixin.yml` / `deploy/systemd` | DoD 核验见 [`2026-09-13-channel-supervisor-dod-audit.md`](2026-09-13-channel-supervisor-dod-audit.md)（通过；群聊为产品明确不做） |
 
 ---
 

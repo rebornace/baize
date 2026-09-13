@@ -43,7 +43,7 @@ Go：`C:\Users\Administrator\go-sdk\go\bin\go.exe`（1.25.0）。未跑全量 `g
 | 3 | 登出 | admin logout 测试 + E2E | ✅ |
 | 4 | 启停 | process start/stop 测试；admin start/stop | ✅ |
 | 5 | 白名单 | `inbound_test.go` AllowlistBlocksOutsider | ✅ |
-| 6 | 群聊丢弃 | `poller.go` 丢弃 `@chatroom` | ⚠️ 实现有，**未见专用单测** |
+| 6 | 群聊丢弃 | `poller.go` 丢弃 `@chatroom` | ✅ **产品明确不要群聊**；丢弃即正确行为（非待做能力）。可选补单测仅作回归锁，非产品缺口 |
 | 7 | 出站前缀 | E2E 断言含 `【助手】` | ✅ |
 | 8 | HITL | 通用 `channel/hitl_test` + 引擎/集成 HITL；非微信专用 e2e | ✅（能力在核心，渠道复用） |
 | 9 | UI 镜像 | 出站 kind/operator 路径在 webhook 出站测试 | ✅ 偏单元 |
@@ -69,7 +69,7 @@ Go：`C:\Users\Administrator\go-sdk\go\bin\go.exe`（1.25.0）。未跑全量 `g
 
 非阻塞建议（不强制本刀改代码）：
 
-1. 为 `@chatroom` 丢弃补一条 `poller` 单测（清单 §8.6）。  
+1. ~~为 `@chatroom` 丢弃补单测~~ — **产品确认微信渠道不要群聊**；丢弃群消息是既定行为，非缺口。补测仅为可选回归锁。  
 2. 可选：全量 `go test ./...` 在 CI/本机再跑一轮作回归安心。
 
 **不做本刀范围：** F 硬化、公开架构 P1/P2、运行参数人话化、真机微信手验。

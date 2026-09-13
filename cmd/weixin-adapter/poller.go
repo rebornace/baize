@@ -137,10 +137,12 @@ func (a *Adapter) pollLoop(ctx context.Context, token string) {
 }
 
 // handleInboundUpdate drops group chats (@chatroom) and messages with no
-// peer, and forwards a DM to baize. Each media ref is downloaded/decrypted
-// via MediaDownloader and attached as an attachment; a media that errors or
-// decrypts to zero bytes is skipped (logged) so ciphertext garbage is never
-// forwarded, while the message text still goes through.
+// peer, and forwards a DM to baize. Group chat is intentionally out of product
+// scope for the WeChat channel — @chatroom peers are discarded, not queued.
+// Each media ref is downloaded/decrypted via MediaDownloader and attached as
+// an attachment; a media that errors or decrypts to zero bytes is skipped
+// (logged) so ciphertext garbage is never forwarded, while the message text
+// still goes through.
 func (a *Adapter) handleInboundUpdate(ctx context.Context, u weixinlink.Update) error {
 	peer := strings.TrimSpace(u.PeerID)
 	if peer == "" || strings.Contains(peer, "@chatroom") {
