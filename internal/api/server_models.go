@@ -56,6 +56,9 @@ func validateProvider(p *string) error {
 // upsertStatus maps store upsert errors to HTTP statuses: validation/conflict
 // are client errors (400); anything else is an internal failure (500).
 func writeUpsertError(w http.ResponseWriter, err error) {
+	if writeIfSettingsKeyRequired(w, err) {
+		return
+	}
 	msg := err.Error()
 	if strings.Contains(msg, "already exists") || strings.Contains(msg, "name is required") {
 		writeError(w, http.StatusBadRequest, "upsert_failed", msg)

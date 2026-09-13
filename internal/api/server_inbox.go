@@ -17,6 +17,7 @@ import (
 
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -471,20 +472,45 @@ type inboxChannelInput struct {
 	Secret         string            `json:"secret,omitempty"`
 }
 
-func (s *Server) loadInboxChannels() []inbox.Channel {
+func (s *Server) loadInboxChannels() ([]inbox.Channel, error) {
 	raw, ok, err := s.Store.GetSetting(store.SettingKeyInboxChannels)
-	if err != nil || !ok || len(raw) == 0 {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if !ok || len(raw) == 0 {
+		return nil, nil
 	}
 	var channels []inbox.Channel
 	if err := json.Unmarshal(raw, &channels); err != nil {
-		return nil
+		return nil, err
 	}
-	return channels
+	key, _ := settingscrypto.KeyFromEnv()
+	for i := range channels {
+		plain, err := settingscrypto.Open(key, channels[i].Secret)
+		if err != nil {
+			return nil, err
+		}
+		channels[i].Secret = plain
+	}
+	return channels, nil
 }
 
 func (s *Server) persistInboxChannels(channels []inbox.Channel) error {
-	raw, err := json.Marshal(channels)
+	key, _ := settingscrypto.KeyFromEnv()
+	toStore := make([]inbox.Channel, len(channels))
+	for i, c := range channels {
+		toStore[i] = c
+		secret := strings.TrimSpace(c.Secret)
+		if secret == "" {
+			continue
+		}
+		sealed, err := settingscrypto.Seal(key, secret)
+		if err != nil {
+			return err
+		}
+		toStore[i].Secret = sealed
+	}
+	raw, err := json.Marshal(toStore)
 	if err != nil {
 		return err
 	}
@@ -526,7 +552,14 @@ func inboxChannelsToViews(channels []inbox.Channel) []inboxChannelView {
 }
 
 func (s *Server) handleGetInboxChannels(w http.ResponseWriter, r *http.Request) {
-	channels := s.loadInboxChannels()
+	channels, err := s.loadInboxChannels()
+	if err != nil {
+		if writeIfSealedSecretError(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"channels": inboxChannelsToViews(channels)})
 }
 
@@ -539,7 +572,14 @@ func (s *Server) handlePutInboxChannels(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	existingList := s.loadInboxChannels()
+	existingList, err := s.loadInboxChannels()
+	if err != nil {
+		if writeIfSealedSecretError(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	existing := make(map[string]inbox.Channel, len(existingList))
 	for _, c := range existingList {
 		existing[c.ID] = c
@@ -595,6 +635,9 @@ func (s *Server) handlePutInboxChannels(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := s.persistInboxChannels(merged); err != nil {
+		if writeIfSettingsKeyRequired(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -608,7 +651,14 @@ func (s *Server) handlePostInboxRotateSecret(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	channels := s.loadInboxChannels()
+	channels, err := s.loadInboxChannels()
+	if err != nil {
+		if writeIfSealedSecretError(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	idx := -1
 	for i, c := range channels {
 		if c.ID == channelID {
@@ -624,6 +674,9 @@ func (s *Server) handlePostInboxRotateSecret(w http.ResponseWriter, r *http.Requ
 	newSecret := inbox.GenerateSecret()
 	channels[idx].Secret = newSecret
 	if err := s.persistInboxChannels(channels); err != nil {
+		if writeIfSettingsKeyRequired(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -643,7 +696,15 @@ func (s *Server) handlePostInboxTest(w http.ResponseWriter, r *http.Request) {
 
 	var channel inbox.Channel
 	found := false
-	for _, c := range s.loadInboxChannels() {
+	loaded, err := s.loadInboxChannels()
+	if err != nil {
+		if writeIfSealedSecretError(w, err) {
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	for _, c := range loaded {
 		if c.ID == channelID {
 			channel = c
 			found = true

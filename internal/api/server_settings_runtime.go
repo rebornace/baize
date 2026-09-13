@@ -84,6 +84,9 @@ func (s *Server) handlePatchCredentials(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.Settings.ApplyCreds(r.Context(), s.Store, patch); err != nil {
+		if writeIfSettingsKeyRequired(w, err) {
+			return
+		}
 		writeError(w, runtimecfg.HTTPStatus(err), "invalid_credentials", err.Error())
 		return
 	}

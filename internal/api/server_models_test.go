@@ -11,8 +11,16 @@ import (
 	"github.com/rebornace/baize/internal/tool"
 )
 
+const testSettingsKey = "test-settings-key-32bytes-ok!!"
+
+func setTestSettingsKey(t *testing.T) {
+	t.Helper()
+	t.Setenv("BAIZE_SETTINGS_KEY", testSettingsKey)
+}
+
 func modelProfilesServer(t *testing.T) *Server {
 	t.Helper()
+	setTestSettingsKey(t)
 	st := store.NewMemory()
 	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
 	srv.OperatorToken = "op-token"
@@ -128,6 +136,25 @@ func TestModelProfilesAutoTierInferAndOverride(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("invalid tier must be 400, got %d", rr.Code)
+	}
+}
+
+func TestModelProfilePostRequiresSettingsKey(t *testing.T) {
+	st := store.NewMemory()
+	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
+	srv.OperatorToken = "op-token"
+	srv.AdminToken = "adm-token"
+	h := srv.Handler()
+	body := `{"name":"k","provider":"openai_compatible","base_url":"https://x/v1","model":"m1","api_key":"sk-secret-1234"}`
+	req := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models", strings.NewReader(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"settings_key_required"`) {
+		t.Fatalf("body=%s", rr.Body.String())
 	}
 }
 
