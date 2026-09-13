@@ -90,7 +90,8 @@ describe('OpenApiSettings page', () => {
     expect(puts.length).toBeGreaterThanOrEqual(2)
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'openapi', spec_url: 'https://api.example.com/openapi.json' })
-    expect(first.auth).toBeUndefined()
+    // 高级区默认回传空 capture（mode=static），便于后端按显式字段落库/清空
+    expect(first.auth).toEqual({ mode: 'static', capture: {} })
   })
 
   it('two-step create sends spec_url on first PUT and permissions-only body on second PUT', async () => {
@@ -123,23 +124,23 @@ describe('OpenApiSettings page', () => {
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
     const second = JSON.parse((puts[1][1] as RequestInit).body as string)
 
-    // 第一步：连接信息 + 文档链接，不带 auth / spec_content
+    // 第一步：连接信息 + 文档链接；高级区默认带空 auth，不带 spec_content
     expect(first).toMatchObject({
       type: 'openapi',
       base_url: 'https://api.example.com',
       spec_url: 'https://api.example.com/openapi.json',
     })
-    expect(first.auth).toBeUndefined()
+    expect(first.auth).toEqual({ mode: 'static', capture: {} })
     expect(first.spec_content).toBeUndefined()
 
-    // 第二步：仅权限与服务地址，不带 auth / 任何 spec 字段 / import_format
+    // 第二步：权限 + 服务地址 + 当前高级草稿 auth；不带任何 spec 字段 / import_format
     expect(second).toMatchObject({
       type: 'openapi',
       base_url: 'https://api.example.com',
       require_login: ['me'],
       require_approval: ['create_ticket'],
     })
-    expect(second.auth).toBeUndefined()
+    expect(second.auth).toEqual({ mode: 'static', capture: {} })
     expect(second.spec).toBeUndefined()
     expect(second.spec_content).toBeUndefined()
     expect(second.spec_url).toBeUndefined()

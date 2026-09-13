@@ -66,7 +66,8 @@ describe('PluginSettings page', () => {
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
     const second = JSON.parse((puts[1][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'http', base_url: 'http://127.0.0.1:19090' })
-    expect(first.auth).toBeUndefined()
+    // 高级区默认回传空 capture（mode=static）
+    expect(first.auth).toEqual({ mode: 'static', capture: {} })
     expect(second.require_login).toEqual(['ping'])
   })
 
