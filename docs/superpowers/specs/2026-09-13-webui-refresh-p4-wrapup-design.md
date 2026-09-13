@@ -1,7 +1,7 @@
 # WebUI P4 收尾：走查、a11y、CSS 工程与文档对齐
 
 - 日期：2026-09-13
-- 状态：待用户审查书面规格
+- 状态：已交付
 - 归属：WebUI 体验改版 P4（母规格 `2026-09-09-webui-experience-refresh-design.md` §10）
 - 前置：P0–P3（含 P3-A/B/C/D）与助手功能 IA 收口已合并；公开仓已同步至对应切片
 - 方法：验收驱动收尾（头脑风暴方案 1，已批准）
@@ -158,13 +158,13 @@
 
 ## 7. 完成定义（DoD）
 
-- [ ] §4 矩阵与清单在 acceptance note 中全部勾选或标明「降级/已知债 + 理由」
-- [ ] 无未解释的裸景色；`npm test` / `tsc` / `build` 绿
-- [ ] `style.css` 不再作为第二聊天样式源
-- [ ] Runtime 危险确认走 `ConfirmDialog`
-- [ ] README 用户导航术语与 `settingsNav` 人话一致
-- [ ] `internal/ui/dist` 已随构建更新并提交
-- [ ] 本规格非目标均未纳入本里程碑
+- [x] §4 矩阵与清单在 acceptance note 中全部勾选或标明「降级/已知债 + 理由」
+- [x] 无未解释的裸景色；`npm test` / `tsc` / `build` 绿
+- [x] `style.css` 不再作为第二聊天样式源
+- [x] Runtime 危险确认走 `ConfirmDialog`
+- [x] README 用户导航术语与 `settingsNav` 人话一致
+- [x] `internal/ui/dist` 已随构建更新并提交
+- [x] 本规格非目标均未纳入本里程碑
 
 ## 8. 风险与对策
 

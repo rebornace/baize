@@ -75,3 +75,13 @@
 - 截图目录：`docs/superpowers/notes/p4-acceptance-shots/`（含 `walkthrough-report.json`）
 - 复测：重建前端 → `serve` 隔离端口 → 按 §4.1 六格各开聊天/设置/代表页；运营口令再走总览/技能/微信；运行参数点重置确认对话框
 - 备注：微信适配器二进制缺失时徽标「启动异常」为预期，非 UI 回归
+
+## DoD（对照规格 §7）
+
+- [x] §4 矩阵与清单全部勾选或标明「降级/已知债 + 理由」（见上文；N1–N3 已知债）
+- [x] 无未解释的裸景色；`npm test`（487）/`tsc`/`build` 绿（终验 2026-09-13）
+- [x] `web/chat/src/style.css` 不存在；聊天样式在 `styles/chat.css`
+- [x] Runtime 危险确认走 `ConfirmDialog`；`window.confirm` 仅测试描述/spy，无生产调用
+- [x] README 用户导航术语与 `settingsNav` 人话一致
+- [x] `internal/ui/dist` 已随构建更新并提交
+- [x] 本规格非目标均未纳入本里程碑
