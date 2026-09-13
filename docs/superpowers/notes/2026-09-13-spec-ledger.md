@@ -98,7 +98,7 @@
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
 | **DOC**（P1+P2） | 要做 · 可开刀 | 一个文档计划 |
-| **F**（含 C1 + OPS-HOT） | 要做 · **F-C1 已交付**（`feat/f-c1-lint`，待合并 main） | 母规格已批准；F-C1 见 `plans/2026-09-13-f-c1-lint.md`；仍欠 **F-KV** / **F-HOT** |
+| **F**（含 C1 + OPS-HOT） | 要做 · F-C1 已交付；**F-KV 计划就绪** | `plans/2026-09-13-f-kv-encrypt.md`；仍欠实现 F-KV / 计划+实现 F-HOT |
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **BLOB-CS** / **CH-PORT** / **CH-OUTBOX** | 要做 | 各开规格 |
@@ -118,7 +118,7 @@
 
 1. **DOC**  
 2. **UI-RUNTIME** 或 **UI-EXPORT-DB-RO**  
-3. **F** 母规格待审 → 批准后按 B1 写三份计划（可先落地 C1）  
+3. **F-KV**（计划已就绪）→ **F-HOT**（计划待写）  
 4. **CH-PORT** → **CH-OUTBOX**  
 5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 6. **MCP OAuth** · **P6 Memory**  

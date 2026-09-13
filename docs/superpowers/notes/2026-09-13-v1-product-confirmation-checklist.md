@@ -43,7 +43,7 @@
 | 史诗 ID | 覆盖原勾选项 | 就绪 | 备注 |
 |---------|--------------|------|------|
 | **DOC** | DOC-P1 + DOC-P2 | 可开刀 | **一个**文档计划 |
-| **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | F-C1 已交付；KV/HOT 仍欠 | 母规格已批准；`plans/2026-09-13-f-c1-lint.md`（分支待合并） |
+| **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | F-C1 已交付；**F-KV 计划就绪** | `plans/2026-09-13-f-kv-encrypt.md`；仍欠 F-KV 实现 / F-HOT |
 | **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 已交付 | 已交付（2026-09-13）；`specs/2026-09-13-runtime-settings-humanize-design.md` |
 | **UI-I18N** | i18n 框架（语言切换 / 英等） | 先定范围 | 可紧接 RUNTIME 后；独立规格 |
 | **UI-EXPORT-DB-RO** | export_db_readonly UI | 可开刀 | 小刀；**不**与 OAuth 并计划 |
