@@ -164,6 +164,38 @@ func TestCredentialsRotateAddConflictRemoveReset(t *testing.T) {
 	}
 }
 
+func TestPatchRuntimeKnobsRequiresSettingsKey(t *testing.T) {
+	const settingsKey = "test-settings-key-32bytes-ok!!"
+	t.Setenv("BAIZE_SETTINGS_KEY", settingsKey)
+	st := store.NewMemory()
+	srv := api.NewServer(st, tool.NewRegistry(), nil)
+	base := runtimecfg.Snapshot{
+		Knobs: runtimecfg.Knobs{MaxMessages: 40, MaxSteps: 16, CompactionEnabled: true, CompactThreshold: 0.8},
+		Creds: runtimecfg.Credentials{
+			OperatorToken: "op", AdminToken: "adm",
+			Operators: []controlplane.Operator{{ID: "alice", Token: "ta"}},
+		},
+	}
+	h := runtimecfg.New(base)
+	if err := h.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ApplyCreds(context.Background(), st, runtimecfg.CredsPatch{AdminToken: "new-adm"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Settings = h
+	t.Setenv("BAIZE_SETTINGS_KEY", "")
+
+	rr := doJSON(t, srv, http.MethodPatch, "/v0/settings/runtime", "new-adm",
+		map[string]any{"max_steps": 24})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"settings_key_required"`) {
+		t.Fatalf("body=%s", rr.Body.String())
+	}
+}
+
 func TestPatchCredentialsRequiresSettingsKey(t *testing.T) {
 	st := store.NewMemory()
 	srv := api.NewServer(st, tool.NewRegistry(), nil)

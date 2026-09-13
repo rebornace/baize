@@ -55,6 +55,9 @@ func (s *Server) handlePatchRuntimeSettings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.Settings.ApplyKnobs(r.Context(), s.Store, patch); err != nil {
+		if writeIfSettingsKeyRequired(w, err) {
+			return
+		}
 		writeError(w, runtimecfg.HTTPStatus(err), "invalid_settings", err.Error())
 		return
 	}
