@@ -236,6 +236,20 @@ func (h *Holder) swapLocked() {
 	h.cur.Store(&snap)
 }
 
+// credsForPersist copies creds so sealCreds can mutate tokens without touching
+// the in-memory override (Operators slice must not share backing with h.co).
+func credsForPersist(co credsOverride) credsOverride {
+	p := credsOverride{
+		OperatorToken: co.OperatorToken,
+		AdminToken:    co.AdminToken,
+	}
+	if len(co.Operators) > 0 {
+		p.Operators = make([]operatorEntry, len(co.Operators))
+		copy(p.Operators, co.Operators)
+	}
+	return p
+}
+
 func sealCreds(key settingscrypto.Key, c *credsOverride) error {
 	if c.OperatorToken != "" {
 		sealed, err := settingscrypto.Seal(key, c.OperatorToken)
@@ -297,7 +311,7 @@ func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOver
 	if st == nil {
 		return nil // tests / no-store: swap in-memory only
 	}
-	coPersist := co
+	coPersist := credsForPersist(co)
 	key, _ := settingscrypto.KeyFromEnv()
 	if err := sealCreds(key, &coPersist); err != nil {
 		return err

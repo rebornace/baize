@@ -262,6 +262,41 @@ func TestApplyCredsSealsTokensAtRest(t *testing.T) {
 	}
 }
 
+func TestApplyKnobsDoesNotSealInMemoryCreds(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	h := New(baseSnapshot())
+	ctx := context.Background()
+	if err := h.ApplyCreds(ctx, st, CredsPatch{
+		AddOperators: []OperatorInput{{ID: "bob", Token: "tb-secret"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ApplyKnobs(ctx, st, KnobsPatch{MaxSteps: ptr(20)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range h.Credentials().Operators {
+		if op.ID == "bob" {
+			if settingscrypto.IsSealed(op.Token) || op.Token != "tb-secret" {
+				t.Fatalf("knobs persist must not seal in-memory operator token: %q", op.Token)
+			}
+		}
+	}
+	raw, ok, err := st.GetSetting(store.SettingKeyRuntimeSettings)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Creds credsOverride `json:"creds"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Creds.Operators) != 1 || !settingscrypto.IsSealed(stored.Creds.Operators[0].Token) {
+		t.Fatalf("KV operator token must stay sealed: %+v", stored.Creds.Operators)
+	}
+}
+
 func TestApplyCredsRequiresSettingsKey(t *testing.T) {
 	st := store.NewMemory()
 	h := New(baseSnapshot())
