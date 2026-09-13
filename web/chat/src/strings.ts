@@ -278,7 +278,14 @@ export function skillErrorText(e: unknown): FriendlyError {
 // ---- 设置页：助手功能 ----
 export const TOOLS = {
   title: '助手功能',
-  description: '管理助手可调用的功能：启用/停用、登录与审批策略，以及对外导出设置。',
+  description: '查看并管理助手可调用的功能：启停、用前是否需登录，以及显示名与说明。',
+  enable: '启用',
+  requireLogin: '用前需登录',
+  requireApprovalBadge: '用前需确认',
+  editCopy: '编辑文案',
+  techDetails: '技术详情',
+  statusEnabled: '已启用',
+  statusDisabled: '已停用',
   advanced: '高级',
   addTool: '添加',
   addModalTitle: '添加工具',

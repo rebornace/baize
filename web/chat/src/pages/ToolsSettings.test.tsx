@@ -145,7 +145,9 @@ describe('ToolsSettings humanized shell', () => {
 
     const { host, root } = await renderTools('admin')
 
-    const editBtn = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('编辑文案'))
+    const editBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(TOOLS.editCopy),
+    )
     expect(editBtn).toBeTruthy()
     await act(async () => {
       editBtn!.click()
@@ -158,6 +160,41 @@ describe('ToolsSettings humanized shell', () => {
     expect(details!.querySelector('summary')?.textContent).toBe(TOOLS.viewSchema)
     expect(details!.querySelector('pre')?.textContent).toContain('"type"')
     expect(details!.open).toBe(false)
+
+    root.unmount()
+    host.remove()
+  })
+
+  it('hides MCP export controls and method/path behind tech details', async () => {
+    vi.spyOn(api, 'listTools').mockResolvedValue([
+      {
+        ...extraTool,
+        require_approval: true,
+        description: '探测连通性',
+      },
+    ])
+
+    const { host, root } = await renderTools('admin')
+
+    expect(host.textContent).toContain(TOOLS.description)
+    expect(host.textContent).toContain(TOOLS.requireLogin)
+    expect(host.textContent).toContain(TOOLS.requireApprovalBadge)
+    expect(host.textContent).not.toContain('MCP 导出')
+    expect(host.textContent).not.toContain('MCP 写类工具')
+    expect(host.querySelectorAll('select').length).toBe(0)
+    expect(host.querySelector('.settings-tool-sub')).toBeNull()
+
+    const tech = [...host.querySelectorAll('details')].find(
+      (d) => d.querySelector('summary')?.textContent === TOOLS.techDetails,
+    )
+    expect(tech).toBeTruthy()
+    expect(tech!.open).toBe(false)
+    expect(tech!.textContent).toContain('GET /ping')
+
+    const addBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(TOOLS.addTool),
+    )
+    expect(addBtn?.className).toContain('secondary')
 
     root.unmount()
     host.remove()

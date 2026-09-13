@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
+import { TOOLS } from '../strings'
 import { ToolsSettings } from './ToolsSettings'
 import { SkillsSettings } from './SkillsSettings'
 
@@ -38,7 +39,15 @@ describe('ToolsSettings read-only for operator', () => {
       const u = String(url)
       if (u === '/v0/tools') {
         return jsonResponse({ tools: [
-          { name: 'list_tickets', title: '查工单', connector_id: 'oa1', source: 'spec', enabled: true, require_login: false },
+          {
+            name: 'list_tickets',
+            title: '查工单',
+            connector_id: 'oa1',
+            source: 'spec',
+            enabled: true,
+            require_login: true,
+            require_approval: true,
+          },
         ] })
       }
       // connector detail GET is admin-only for operators
@@ -48,10 +57,13 @@ describe('ToolsSettings read-only for operator', () => {
     expect(host.textContent).toContain('助手功能')
     expect(host.querySelector('h1')?.textContent).not.toBe('Tools')
     expect(host.textContent).toContain('查工单')
+    expect(host.textContent).toContain(TOOLS.statusEnabled)
+    expect(host.textContent).toContain(TOOLS.requireLogin)
+    expect(host.textContent).toContain(TOOLS.requireApprovalBadge)
     expect(host.textContent).not.toContain('全部启用')
     expect(host.textContent).not.toContain('全部停用')
     expect(host.textContent).not.toContain('添加')
-    expect(host.textContent).not.toContain('需要登录')
+    expect(host.textContent).not.toContain(TOOLS.editCopy)
     expect(host.textContent).not.toContain('MCP 导出')
     expect(host.textContent).not.toContain('删除')
     // strong DOM assertions: enable/require-login toggles and MCP export select are not rendered at all

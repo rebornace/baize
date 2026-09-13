@@ -5,7 +5,6 @@ import {
   deleteConnectorTool,
   listTools,
   patchTool,
-  type ToolExportMode,
   type ToolInfo,
 } from '../api'
 import {
@@ -26,17 +25,6 @@ import { useGate } from '../gateContext'
 import { TOOLS, toolErrorText } from '../strings'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
-
-const EXPORT_OPTIONS: { value: ToolExportMode; label: string }[] = [
-  { value: 'default', label: '默认' },
-  { value: 'force_allow', label: '强制允许' },
-  { value: 'force_deny', label: '强制拒绝' },
-]
-
-function toolExportMode(t: ToolInfo): ToolExportMode {
-  if (t.export === 'force_allow' || t.export === 'force_deny') return t.export
-  return 'default'
-}
 
 interface AddFormState {
   name: string
@@ -278,18 +266,6 @@ export function ToolsSettings() {
     }
   }
 
-  const onExportChange = async (name: string, exportMode: ToolExportMode) => {
-    setToggling(name)
-    try {
-      const updated = await patchTool(name, { export: exportMode })
-      mergeTools([updated])
-    } catch (err) {
-      pushToolError(err, name)
-    } finally {
-      setToggling(null)
-    }
-  }
-
   const onEnabledChange = async (name: string, enabled: boolean) => {
     setToggling(name)
     try {
@@ -468,97 +444,90 @@ export function ToolsSettings() {
     const isEditing = editingKey === key
     const methodPath = formatMethodPath(t)
     const schemaText = JSON.stringify(t.input_schema ?? {}, null, 2)
+    const enabled = isToolEnabled(t)
     return (
       <li key={key} className="settings-tool-row">
         <div className="settings-list-item">
           <span className="settings-tool-line">
             <span className="settings-tool-title">{t.title || t.name}</span>
-            {methodPath !== '' && <span className="settings-tool-sub">{methodPath}</span>}
             {t.description ? <span className="settings-tool-desc">{t.description}</span> : null}
+            {(methodPath !== '' || schemaText !== '{}') && (
+              <details className="settings-tool-tech">
+                <summary>{TOOLS.techDetails}</summary>
+                {methodPath !== '' && <p className="settings-muted">{methodPath}</p>}
+                {schemaText !== '{}' && <pre className="settings-tool-schema">{schemaText}</pre>}
+              </details>
+            )}
           </span>
           <span className="settings-tool-actions">
-            {t.require_approval && <Badge tone="warning">需审批</Badge>}
-            {!readOnly && (
-              <label className="settings-login-toggle">
-                <input
-                  type="checkbox"
-                  checked={isToolEnabled(t)}
-                  disabled={rowBusy}
-                  onChange={(e) => {
-                    void onEnabledChange(t.name, e.target.checked)
-                  }}
-                />
-                启用
-              </label>
-            )}
-            {!readOnly && (
-              <label className="settings-login-toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(t.require_login)}
-                  disabled={rowBusy}
-                  onChange={(e) => {
-                    void onRequireLoginChange(t.name, e.target.checked)
-                  }}
-                />
-                需要登录
-              </label>
-            )}
-            {!readOnly && (
-              <label className="settings-login-toggle">
-                MCP 导出
-                <select
-                  className="settings-select"
-                  value={toolExportMode(t)}
-                  disabled={rowBusy}
-                  onChange={(e) => {
-                    void onExportChange(t.name, e.target.value as ToolExportMode)
+            {readOnly ? (
+              <>
+                <Badge tone={enabled ? 'success' : 'neutral'}>
+                  {enabled ? TOOLS.statusEnabled : TOOLS.statusDisabled}
+                </Badge>
+                {t.require_login ? <Badge tone="info">{TOOLS.requireLogin}</Badge> : null}
+                {t.require_approval ? (
+                  <Badge tone="warning">{TOOLS.requireApprovalBadge}</Badge>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {t.require_approval && (
+                  <Badge tone="warning">{TOOLS.requireApprovalBadge}</Badge>
+                )}
+                <label className="settings-login-toggle">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    disabled={rowBusy}
+                    onChange={(e) => {
+                      void onEnabledChange(t.name, e.target.checked)
+                    }}
+                  />
+                  {TOOLS.enable}
+                </label>
+                <label className="settings-login-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(t.require_login)}
+                    disabled={rowBusy}
+                    onChange={(e) => {
+                      void onRequireLoginChange(t.name, e.target.checked)
+                    }}
+                  />
+                  {TOOLS.requireLogin}
+                </label>
+                {canDelete && (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={isDeleting || rowBusy}
+                    onClick={() => beginDelete(t)}
+                  >
+                    {TOOLS.confirmDeleteOk}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={savingCopy || (rowBusy && !isEditing)}
+                  onClick={() => {
+                    if (isEditing) {
+                      setEditingKey(null)
+                      return
+                    }
+                    startEdit(t)
                   }}
                 >
-                  {EXPORT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {t.source === 'mcp' && (
-              <span className="settings-muted" title="MCP 写类工具即使强制允许也不会导出">
-                MCP 写类工具即使强制允许也不会导出
-              </span>
-            )}
-            {canDelete && !readOnly && (
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                disabled={isDeleting || rowBusy}
-                onClick={() => beginDelete(t)}
-              >
-                {TOOLS.confirmDeleteOk}
-              </Button>
-            )}
-            {!readOnly && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={savingCopy || (rowBusy && !isEditing)}
-                onClick={() => {
-                  if (isEditing) {
-                    setEditingKey(null)
-                    return
-                  }
-                  startEdit(t)
-                }}
-              >
-                {isEditing ? '收起' : '编辑文案'}
-              </Button>
+                  {isEditing ? '收起' : TOOLS.editCopy}
+                </Button>
+              </>
             )}
           </span>
         </div>
-        {isEditing && (
+        {isEditing && !readOnly && (
           <div className="settings-tool-edit">
             <label className="settings-field">
               <span className="settings-field-label">显示名</span>
@@ -618,7 +587,7 @@ export function ToolsSettings() {
         {showAdd && !readOnly && (
           <Button
             type="button"
-            variant="primary"
+            variant="secondary"
             size="sm"
             onClick={() => {
               setAddFormError(null)
