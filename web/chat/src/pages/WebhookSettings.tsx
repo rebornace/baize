@@ -8,6 +8,7 @@ import {
   type EventsWebhookConfig,
   type EventsWebhookDelivery,
 } from '../api'
+import { WEBHOOKS } from '../strings'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 
 export interface WebhookFormState {
@@ -23,11 +24,11 @@ const EMPTY_FORM: WebhookFormState = {
 export function formatDeliveryStatus(status: string): string {
   switch (status) {
     case 'dead':
-      return '死信'
+      return WEBHOOKS.statusDead
     case 'pending':
-      return '待投递'
+      return WEBHOOKS.statusPending
     case 'delivered':
-      return '已投递'
+      return WEBHOOKS.statusDelivered
     default:
       return status
   }
@@ -51,7 +52,7 @@ export function validateWebhookForm(
 ): { ok: true; config: EventsWebhookConfig } | { ok: false; message: string } {
   const headersParsed = parseKeyValueLines(form.headersText)
   if (!headersParsed.ok) {
-    return { ok: false, message: headersParsed.message }
+    return { ok: false, message: WEBHOOKS.errBadHeaderLine }
   }
   return {
     ok: true,

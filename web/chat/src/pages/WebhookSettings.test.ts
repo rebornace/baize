@@ -7,6 +7,7 @@ import {
   type WebhookFormState,
 } from './WebhookSettings'
 import type { EventsWebhookDelivery } from '../api'
+import { WEBHOOKS } from '../strings'
 
 describe('configToForm', () => {
   it('maps url and headers to form state', () => {
@@ -66,7 +67,7 @@ describe('validateWebhookForm', () => {
     const result = validateWebhookForm({ ...base, headersText: 'badline' })
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.message).toContain('无效键值行')
+      expect(result.message).toBe(WEBHOOKS.errBadHeaderLine)
     }
   })
 })

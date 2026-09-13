@@ -189,6 +189,36 @@ export function driverLabel(driver: string): string {
   return DRIVER_LABELS[driver] ?? driver
 }
 
+// ---- 设置页：消息回调 ----
+export const WEBHOOKS = {
+  title: '消息回调',
+  description:
+    '有新消息或运行结束时，主动推送到你指定的地址（与对话实时流并行，不堵引擎）。这是运行事件通知，不是连接里的「企业统一执行地址」。',
+  urlLabel: '回调地址',
+  urlHint: '留空表示不推送',
+  headersLabel: '请求头',
+  headersHint: '每行 KEY=VALUE，可选',
+  save: '保存',
+  saving: '保存中…',
+  test: '发送测试',
+  testing: '测试中…',
+  deliveriesTitle: '最近投递',
+  deliveriesHint:
+    '展示待投递与死信；网络错误、5xx 或 429 会自动重试（最多 5 次），其余 4xx 进死信。',
+  deliveriesEmpty: '暂无待投递或死信记录。',
+  retry: '重投',
+  retrying: '重投中…',
+  statusDead: '死信',
+  statusPending: '待投递',
+  statusDelivered: '已投递',
+  toastSaved: '已保存消息回调配置',
+  toastTestOk: '测试投递成功',
+  toastTestFail: '测试投递失败',
+  toastRetryQueued: '已加入重投队列',
+  errBadHeaderLine: '请求头格式不正确：请使用每行 KEY=VALUE',
+  loadFailed: '无法加载消息回调配置',
+} as const
+
 // ---- 设置页：运行参数 ----
 export const RUNTIME = {
   confirmResetTitle: '重置为基线口令？',
