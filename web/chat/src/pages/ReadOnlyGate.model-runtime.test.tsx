@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
-import { MODELS } from '../strings'
+import { MODELS, RUNTIME } from '../strings'
 import { ModelSettings } from './ModelSettings'
 import { RuntimeSettings } from './RuntimeSettings'
 
@@ -55,15 +55,30 @@ describe('RuntimeSettings read-only for operator', () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
       urls.push(String(url))
       const u = String(url)
-      if (u === '/v0/settings/runtime') return jsonResponse({ effective: { max_messages: 20 }, overridden: {} })
+      if (u === '/v0/settings/runtime') {
+        return jsonResponse({
+          effective: {
+            max_messages: 20,
+            max_steps: 16,
+            tool_timeout_seconds: 60,
+            compaction_enabled: true,
+            compact_threshold: 0.8,
+            compact_reserve_tokens: 8000,
+            compact_keep_recent: 8,
+            compact_summary_timeout_seconds: 60,
+          },
+          overridden: {},
+        })
+      }
       if (u === '/v0/settings/credentials') return new Response('forbidden', { status: 403 })
       return jsonResponse(null)
     })
     await renderOperator(<RuntimeSettings />)
-    expect(host.textContent).toContain('引擎参数')
-    expect(host.textContent).not.toContain('保存引擎参数')
-    expect(host.textContent).not.toContain('控制面凭据')
-    expect(host.textContent).not.toContain('轮换主口令')
+    expect(host.textContent).toContain(RUNTIME.title)
+    expect(host.textContent).toContain(RUNTIME.sectionBehavior)
+    expect(host.textContent).not.toContain(RUNTIME.saveKnobs)
+    expect(host.textContent).not.toContain(RUNTIME.sectionCreds)
+    expect(host.textContent).not.toContain(RUNTIME.rotateSubmit)
     expect(urls.some((u) => u.includes('/v0/settings/credentials'))).toBe(false)
   })
 })
