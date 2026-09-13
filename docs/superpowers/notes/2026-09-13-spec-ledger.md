@@ -98,19 +98,22 @@
 
 ---
 
-## 6. 确认不做（本版）— 摘自 OSS backlog
+## 6. 确认不做（本版）— 摘自 OSS backlog + 2026-09-13 产品确认
 
-A1 多订阅 · B1 SDK 实现 · P3 OTel · P5 多 Agent · I2–I5 Inbox 增强 · W1/W2 工作流分支/画布 · 商业 E1–E5 等。详见旧 backlog §1–§4。
+**不做：** A1 多订阅 · B1 SDK 实现 · P3 OTel · P5 多 Agent · I2–I5 Inbox 增强 · W1/W2 工作流分支/画布 · P7 飞书钉钉真实适配器 · CH-SDK 公共 Go SDK · 技能可视化 · Playwright E2E · 微信群聊 · 商业 E1–E5（默认）。
+
+**要做（2026-09-13 上调，待开规格）：** P6 Memory 产品化 · MCP OAuth · 渠道 outbox · 适配器动态端口。详见 [`2026-09-13-v1-product-confirmation-checklist.md`](2026-09-13-v1-product-confirmation-checklist.md)。
 
 ---
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **P1/P2 公开架构文档**（用户可见，改字即可）  
-2. **运行参数页人话化**（WebUI 最后明显旧壳）  
-3. **F 生产硬化**（需新规格）  
-4. ~~渠道/supervisor DoD 核验~~（2026-09-13 完成 → [`2026-09-13-channel-supervisor-dod-audit.md`](2026-09-13-channel-supervisor-dod-audit.md)）  
-5. ~~清理 `.worktrees/sql-store-drivers-v0`~~（2026-09-13 已完成）
+1. **DOC-P1/P2 公开架构文档**（待产品勾选；与 B1/W1=不做配套）  
+2. **运行参数页人话化**（可选）  
+3. **F 生产硬化**（待勾选 + 切片）  
+4. ~~渠道/supervisor DoD 核验~~（已完成）  
+5. ~~清理 sql-store worktree~~（已完成）  
+6. **CH-PORT** 动态端口 / **CH-OUTBOX** / **MCP OAuth** / **P6 Memory**（已确认要做，须排优先并各开规格）
 
 ---
 
