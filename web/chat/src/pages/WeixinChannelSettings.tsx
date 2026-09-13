@@ -10,8 +10,10 @@ import {
   stopWeixinProcess,
   type WeixinChannelSettings,
 } from '../api'
+import { ConfirmDialog, PageHeader, ToastRegion, useToast } from '../components/ui'
 import { useGate } from '../gateContext'
 import { qrDataUrlFromText } from '../qrDataUrl'
+import { WEIXIN, friendlyError } from '../strings'
 
 const POLL_MS = 2000
 
@@ -39,10 +41,6 @@ export function loginStatusLabel(status: string): string {
   }
 }
 
-function apiErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
 export function WeixinChannelSettings() {
   const [agentId, setAgentId] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -50,10 +48,11 @@ export function WeixinChannelSettings() {
   const [enabled, setEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
   const [running, setRunning] = useState<boolean | null>(null)
   const [runReason, setRunReason] = useState<string | null>(null)
+  const [confirmLogout, setConfirmLogout] = useState(false)
+  const [confirmStop, setConfirmStop] = useState(false)
+  const { toasts, push, dismiss } = useToast()
 
   const { role } = useGate()
   const isAdmin = role === 'admin'
@@ -66,6 +65,14 @@ export function WeixinChannelSettings() {
   const pollRef = useRef<number | null>(null)
   /** Whether a login-status poll loop is active (guards the self-chaining loop). */
   const pollingActiveRef = useRef(false)
+
+  const pushError = useCallback(
+    (err: unknown, title?: string) => {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: title ?? f.title, detail: title ? (f.detail ?? f.title) : f.detail })
+    },
+    [push],
+  )
 
   const stopPoll = useCallback(() => {
     pollingActiveRef.current = false
@@ -90,13 +97,13 @@ export function WeixinChannelSettings() {
       .catch((err) => {
         if (!cancelled) {
           setQrImgSrc(null)
-          setError(apiErrorMessage(err))
+          pushError(err)
         }
       })
     return () => {
       cancelled = true
     }
-  }, [qrUrl])
+  }, [qrUrl, pushError])
 
   const applySettings = useCallback((s: WeixinChannelSettings) => {
     setAgentId(s.agent_id ?? '')
@@ -112,16 +119,15 @@ export function WeixinChannelSettings() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
       const s = await getWeixinSettings()
       applySettings(s)
     } catch (err) {
-      setError(apiErrorMessage(err))
+      pushError(err, WEIXIN.loadFailed)
     } finally {
       setLoading(false)
     }
-  }, [applySettings])
+  }, [applySettings, pushError])
 
   useEffect(() => {
     void load()
@@ -146,7 +152,7 @@ export function WeixinChannelSettings() {
           if (res.status === 'success' || res.status === 'expired') {
             stopPoll()
             if (res.status === 'success') {
-              setStatus('微信渠道已登录')
+              push({ tone: 'success', title: WEIXIN.toastLoggedIn })
               setTicket(null)
               setQrUrl(null)
             }
@@ -155,7 +161,7 @@ export function WeixinChannelSettings() {
         } catch (err) {
           if (!pollingActiveRef.current) return
           stopPoll()
-          setError(apiErrorMessage(err))
+          pushError(err)
           return
         }
         if (pollingActiveRef.current) {
@@ -164,13 +170,11 @@ export function WeixinChannelSettings() {
       }
       void tick()
     },
-    [stopPoll],
+    [push, pushError, stopPoll],
   )
 
   const onStartLogin = async () => {
     setBusy(true)
-    setError(null)
-    setStatus(null)
     setLoginStatus(null)
     stopPoll()
     try {
@@ -180,7 +184,7 @@ export function WeixinChannelSettings() {
       setLoginStatus('pending')
       startPolling(res.ticket)
     } catch (err) {
-      setError(apiErrorMessage(err))
+      pushError(err)
       setTicket(null)
       setQrUrl(null)
     } finally {
@@ -190,17 +194,16 @@ export function WeixinChannelSettings() {
 
   const onLogout = async () => {
     setBusy(true)
-    setError(null)
-    setStatus(null)
+    setConfirmLogout(false)
     stopPoll()
     setTicket(null)
     setQrUrl(null)
     setLoginStatus(null)
     try {
       await logoutWeixin()
-      setStatus('已登出微信渠道')
+      push({ tone: 'success', title: WEIXIN.toastLoggedOut })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      pushError(err)
     } finally {
       setBusy(false)
     }
@@ -212,10 +215,13 @@ export function WeixinChannelSettings() {
    * action we re-apply the returned reconciled settings (running/reason).
    */
   const onProcessAction = async (action: 'start' | 'stop' | 'restart') => {
-    const labels = { start: '启动', stop: '停止', restart: '重启' } as const
+    const toastTitles = {
+      start: WEIXIN.toastProcessStart,
+      stop: WEIXIN.toastProcessStop,
+      restart: WEIXIN.toastProcessRestart,
+    } as const
     setBusy(true)
-    setError(null)
-    setStatus(null)
+    if (action === 'stop') setConfirmStop(false)
     try {
       const saved =
         action === 'start'
@@ -224,10 +230,10 @@ export function WeixinChannelSettings() {
             ? await stopWeixinProcess()
             : await restartWeixinProcess()
       applySettings(saved)
-      setStatus(`适配器进程已${labels[action]}`)
+      push({ tone: 'success', title: toastTitles[action] })
       await load() // refresh running/reason after the process settles
     } catch (err) {
-      setError(apiErrorMessage(err))
+      pushError(err)
     } finally {
       setBusy(false)
     }
@@ -236,8 +242,6 @@ export function WeixinChannelSettings() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       const saved = await putWeixinSettings({
         agent_id: agentId.trim(),
@@ -246,9 +250,9 @@ export function WeixinChannelSettings() {
         enabled,
       })
       applySettings(saved)
-      setStatus('渠道设置已保存')
+      push({ tone: 'success', title: WEIXIN.toastSaved })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      pushError(err)
     } finally {
       setBusy(false)
     }
@@ -256,15 +260,10 @@ export function WeixinChannelSettings() {
 
   return (
     <div className="settings-section">
-      <h1 className="settings-heading">渠道 · 微信</h1>
-      <div className="settings-meta">
-        <p>{isAdmin ? '扫码登录微信个人号 Bot（iLink），配置默认 Agent、受理人与私信 allowlist。' : '扫码登录你的微信账号后，即可通过微信与助手对话。配置由管理员维护。'}</p>
-        {isAdmin && <p>仅管理员可操作。出站双向同步见后续任务。</p>}
-      </div>
+      <PageHeader title={WEIXIN.title} description={WEIXIN.description} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
       {loading && <p className="settings-muted">加载中…</p>}
-      {error && <p className="settings-error">{error}</p>}
-      {status && <p className="settings-muted">{status}</p>}
       {running !== null && (
         <p className="settings-muted">
           运行状态：
@@ -303,7 +302,7 @@ export function WeixinChannelSettings() {
               type="button"
               className="btn ghost"
               disabled={busy}
-              onClick={() => void onProcessAction('stop')}
+              onClick={() => setConfirmStop(true)}
             >
               停止进程
             </button>
@@ -321,7 +320,7 @@ export function WeixinChannelSettings() {
             {qrUrl ? '刷新二维码' : '获取登录二维码'}
           </button>
           {isAdmin && (
-            <button type="button" className="btn ghost" disabled={busy} onClick={() => void onLogout()}>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirmLogout(true)}>
               登出
             </button>
           )}
@@ -390,6 +389,28 @@ export function WeixinChannelSettings() {
           </button>
         </form>
       )}
+
+      <ConfirmDialog
+        open={confirmLogout}
+        danger
+        title={WEIXIN.confirmLogoutTitle}
+        body={WEIXIN.confirmLogoutBody}
+        confirmText={WEIXIN.confirmLogoutOk}
+        busy={busy}
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => void onLogout()}
+      />
+
+      <ConfirmDialog
+        open={confirmStop}
+        danger
+        title={WEIXIN.confirmStopTitle}
+        body={WEIXIN.confirmStopBody}
+        confirmText={WEIXIN.confirmStopOk}
+        busy={busy}
+        onCancel={() => setConfirmStop(false)}
+        onConfirm={() => void onProcessAction('stop')}
+      />
     </div>
   )
 }

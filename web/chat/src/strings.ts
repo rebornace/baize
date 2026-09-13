@@ -542,6 +542,26 @@ export const MCP_EXPORTS = {
   errKeyNotFound: '密钥不存在或已被撤销。',
 } as const
 
+// ---- 设置页：微信渠道 ----
+export const WEIXIN = {
+  title: '微信',
+  description:
+    '接入微信账号，让客户/同事通过微信与助手对话（未来钉钉、飞书各占一张卡）',
+  loadFailed: '无法加载微信渠道设置',
+  toastSaved: '渠道设置已保存',
+  toastLoggedIn: '微信渠道已登录',
+  toastLoggedOut: '已登出微信渠道',
+  toastProcessStart: '适配器进程已启动',
+  toastProcessStop: '适配器进程已停止',
+  toastProcessRestart: '适配器进程已重启',
+  confirmLogoutTitle: '登出微信渠道？',
+  confirmLogoutBody: '登出后需重新扫码登录，正在进行的微信对话将无法继续收发。',
+  confirmLogoutOk: '登出',
+  confirmStopTitle: '停止适配器进程？',
+  confirmStopBody: '停止后微信渠道不再收发消息，可随时再点「启动进程」恢复。',
+  confirmStopOk: '停止',
+} as const
+
 // ---- 设置页：外部来信（Inbox） ----
 export const INBOX = {
   title: '外部来信',
