@@ -13,13 +13,15 @@ import (
 )
 
 type storeSettingsResponse struct {
-	Driver      string   `json:"driver"`
-	SQLitePath  string   `json:"sqlite_path,omitempty"`
-	DSN         string   `json:"dsn,omitempty"`
-	DSNRedacted string   `json:"dsn_redacted,omitempty"`
-	Drivers     []string `json:"drivers"`
-	ConfigPath  string   `json:"config_path,omitempty"`
-	OverlayPath string   `json:"overlay_path,omitempty"`
+	Driver              string   `json:"driver"`
+	EffectiveDriver     string   `json:"effective_driver,omitempty"`
+	StoreConfigMismatch bool     `json:"store_config_mismatch,omitempty"`
+	SQLitePath          string   `json:"sqlite_path,omitempty"`
+	DSN                 string   `json:"dsn,omitempty"`
+	DSNRedacted         string   `json:"dsn_redacted,omitempty"`
+	Drivers             []string `json:"drivers"`
+	ConfigPath          string   `json:"config_path,omitempty"`
+	OverlayPath         string   `json:"overlay_path,omitempty"`
 }
 
 type putStoreSettingsRequest struct {
@@ -39,6 +41,14 @@ func (s *Server) handleGetStoreSettings(w http.ResponseWriter, r *http.Request) 
 		DSNRedacted: config.RedactDSN(cfg.Store.DSN),
 		Drivers:     drivers,
 		ConfigPath:  s.ConfigPath,
+	}
+	if s.EffectiveStoreDriver != nil {
+		resp.EffectiveDriver = s.EffectiveStoreDriver()
+	} else {
+		resp.EffectiveDriver = cfg.Store.Driver
+	}
+	if s.StoreConfigMismatch != nil {
+		resp.StoreConfigMismatch = s.StoreConfigMismatch()
 	}
 	if s.ConfigPath != "" {
 		resp.OverlayPath = config.LocalOverlayPath(s.ConfigPath)
@@ -102,7 +112,24 @@ func (s *Server) handlePutStoreSettings(w http.ResponseWriter, r *http.Request) 
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+	if s.HotSwapStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "hot_swap_unavailable", "in-process store hot-swap is not available; use restart:true")
+		return
+	}
+	if err := s.HotSwapStore(overlay); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": map[string]any{
+				"code":    "hot_swap_failed",
+				"message": err.Error(),
+			},
+			"overlay_saved": true,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "hot_swapped",
+		"message": "store settings saved and applied in-process",
+	})
 }
 
 func (s *Server) handlePostStoreRestart(w http.ResponseWriter, r *http.Request) {

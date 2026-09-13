@@ -54,6 +54,7 @@ var aclRules = []routeRule{
 	{method: "GET", segments: []string{"v0", "settings", "store"}, role: RoleAdmin},
 	{method: "PUT", segments: []string{"v0", "settings", "store"}, role: RoleAdmin},
 	{method: "POST", segments: []string{"v0", "settings", "store", "restart"}, role: RoleAdmin},
+	{method: "POST", segments: []string{"v0", "settings", "reload"}, role: RoleAdmin},
 	{method: "POST", segments: []string{"v0", "settings", "channels", "{name}", "login", "start"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "settings", "channels", "{name}", "login", "status"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "settings", "channels", "{name}", "logout"}, role: RoleAdmin},

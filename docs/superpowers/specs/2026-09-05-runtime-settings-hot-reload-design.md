@@ -34,10 +34,10 @@ Baize 的「业务配置面」（模型 profile、工具目录、连接器、技
 
 ### 1.4 非目标（明确不做）
 
-- 存储/中间件/数据库**驱动**的热切换、S3/Redis 连接参数热重连（走现有 overlay+重启）；
+- 存储/中间件/数据库**驱动**的热切换、S3/Redis 连接参数热重连 —— **Store 驱动热切与 SIGHUP 已由 F-HOT 承接**（`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md` §3；blob/S3/Redis 仍须重启）；
 - 监听端口/TLS、`data_dir` 等目录路径、demo/start 运行模式热改；
 - 微信**白名单入站强制**（现状白名单只存不生效；作为独立安全特性另开）；
-- 配置文件 SIGHUP/watch 整体热重载；
+- 配置文件 **watch** 守护进程整体热重载（SIGHUP / `POST /v0/settings/reload` 已由 F-HOT 提供）；
 - 凭据 KV 加密（已由 **F-KV** 承接：`BAIZE_SETTINGS_KEY`、`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md` §2；实现计划 `docs/superpowers/plans/2026-09-13-f-kv-encrypt.md`）。
 
 ### 1.5 整体架构

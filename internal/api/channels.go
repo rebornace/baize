@@ -48,3 +48,19 @@ func (s *Server) Channel(name string) (*ChannelHandle, bool) {
 	h, ok := s.channels[name]
 	return h, ok
 }
+
+// ForEachChannel invokes fn for each registered channel handle.
+func (s *Server) ForEachChannel(fn func(*ChannelHandle)) {
+	if s == nil || fn == nil {
+		return
+	}
+	s.channelsMu.RLock()
+	handles := make([]*ChannelHandle, 0, len(s.channels))
+	for _, h := range s.channels {
+		handles = append(handles, h)
+	}
+	s.channelsMu.RUnlock()
+	for _, h := range handles {
+		fn(h)
+	}
+}

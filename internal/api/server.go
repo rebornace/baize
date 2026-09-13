@@ -146,6 +146,15 @@ type Server struct {
 	Config           *config.Config
 	Shutdown         func(context.Context) error
 	RestartProcess   func() error
+	// HotSwapStore optionally opens a new store in-process (F-HOT). nil = PUT
+	// without restart only writes overlay.
+	HotSwapStore func(config.StoreOverlay) error
+	// ReloadConfig re-reads layered YAML into runtimecfg baseline (SIGHUP /
+	// POST /v0/settings/reload). nil = reload endpoint unavailable.
+	ReloadConfig func() error
+	// EffectiveStoreDriver / StoreConfigMismatch feed GET /settings/store.
+	EffectiveStoreDriver func() string
+	StoreConfigMismatch  func() bool
 	// LLM is the active provider, used to report supports_vision via ui-config
 	// and to gate image attachments before a run is created. nil = no vision
 	// (image attachments are rejected with vision_unsupported).
@@ -431,6 +440,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/store", s.handleGetStoreSettings)
 	s.mux.HandleFunc("PUT /v0/settings/store", s.handlePutStoreSettings)
 	s.mux.HandleFunc("POST /v0/settings/store/restart", s.handlePostStoreRestart)
+	s.mux.HandleFunc("POST /v0/settings/reload", s.handlePostSettingsReload)
 	s.mux.HandleFunc("POST /v0/settings/channels/{name}/login/start", s.handleChannelLoginStart)
 	s.mux.HandleFunc("GET /v0/settings/channels/{name}/login/status", s.handleChannelLoginStatus)
 	s.mux.HandleFunc("POST /v0/settings/channels/{name}/logout", s.handleChannelLogout)

@@ -98,7 +98,7 @@
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
 | **DOC**（P1+P2） | 要做 · 可开刀 | 一个文档计划 |
-| **F**（含 C1 + OPS-HOT） | 要做 · F-C1 已交付；**F-KV 已交付（实现阶段）** | `plans/2026-09-13-f-kv-encrypt.md`；分支 `feat/f-kv-encrypt` 待合并 `main`；DoD 见 [`2026-09-13-f-kv-dod-audit.md`](2026-09-13-f-kv-dod-audit.md)；仍欠 **F-HOT**（计划待写） |
+| **F**（含 C1 + OPS-HOT） | **已交付** | F-C1 / F-KV / F-HOT；DoD：[`2026-09-13-f-kv-dod-audit.md`](2026-09-13-f-kv-dod-audit.md)、[`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md) |
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **BLOB-CS** / **CH-PORT** / **CH-OUTBOX** | 要做 | 各开规格 |
@@ -118,7 +118,7 @@
 
 1. **DOC**  
 2. **UI-RUNTIME** 或 **UI-EXPORT-DB-RO**  
-3. **F-HOT**（计划待写；F-KV 实现分支待合并）  
+3. ~~**F-HOT**~~（已交付；DoD [`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md)）
 4. **CH-PORT** → **CH-OUTBOX**  
 5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 6. **MCP OAuth** · **P6 Memory**  

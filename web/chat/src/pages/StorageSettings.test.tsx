@@ -75,7 +75,7 @@ describe('StorageSettings', () => {
 
   it('blocks submit until the acknowledgement is checked', async () => {
     await renderPage()
-    await fire(findBtn('保存并重启'))
+    await fire(findBtn('保存并热切换'))
     const ackNode = host.querySelector('[data-testid="storage-ack-error"]')
     expect(ackNode).not.toBeNull()
     expect(ackNode!.textContent).toContain('请先勾选确认')
@@ -84,7 +84,7 @@ describe('StorageSettings', () => {
 
   it('postgres: shows the ack inline error near the checkbox, not inside the DSN field', async () => {
     await renderPage({ driver: 'postgres', drivers: ['sqlite', 'postgres'] })
-    await fire(findBtn('保存并重启'))
+    await fire(findBtn('保存并热切换'))
     // 独立 ack 行内错误节点出现
     const ackNode = host.querySelector('[data-testid="storage-ack-error"]')
     expect(ackNode).not.toBeNull()
@@ -104,7 +104,7 @@ describe('StorageSettings', () => {
       ;(host.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
       await new Promise((r) => setTimeout(r, 0))
     })
-    await fire(findBtn('保存并重启'))
+    await fire(findBtn('保存并热切换'))
     expect(host.querySelector('[data-testid="storage-ack-error"]')).toBeNull()
     const dsnFieldErrors = [...host.querySelectorAll('.ui-field-error')].map((n) => n.textContent)
     expect(dsnFieldErrors).toContain('使用 PostgreSQL 需要填写连接地址（DSN）')
@@ -112,7 +112,28 @@ describe('StorageSettings', () => {
     expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
   })
 
-  it('asks for confirmation; cancel sends nothing, confirm PUTs with ack+restart', async () => {
+  it('asks for confirmation; cancel sends nothing, confirm PUTs hot-swap without restart', async () => {
+    await renderPage()
+    await act(async () => {
+      const cb = host.querySelector('input[type="checkbox"]') as HTMLInputElement
+      cb.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await fire(findBtn('保存并热切换'))
+    // 确认弹窗出现
+    expect(host.querySelector('[data-testid="confirm-ok"]')).not.toBeNull()
+    await fire(host.querySelector('[data-testid="confirm-cancel"]')!)
+    expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
+
+    await fire(findBtn('保存并热切换'))
+    await fire(host.querySelector('[data-testid="confirm-ok"]')!)
+    const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
+    expect(puts).toHaveLength(1)
+    const body = JSON.parse((puts[0][1] as RequestInit).body as string)
+    expect(body).toMatchObject({ driver: 'sqlite', acknowledge_no_migrate: true, restart: false })
+  })
+
+  it('secondary restart CTA PUTs with restart:true', async () => {
     await renderPage()
     await act(async () => {
       const cb = host.querySelector('input[type="checkbox"]') as HTMLInputElement
@@ -120,17 +141,11 @@ describe('StorageSettings', () => {
       await new Promise((r) => setTimeout(r, 0))
     })
     await fire(findBtn('保存并重启'))
-    // 确认弹窗出现
-    expect(host.querySelector('[data-testid="confirm-ok"]')).not.toBeNull()
-    await fire(host.querySelector('[data-testid="confirm-cancel"]')!)
-    expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
-
-    await fire(findBtn('保存并重启'))
     await fire(host.querySelector('[data-testid="confirm-ok"]')!)
     const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
     expect(puts).toHaveLength(1)
     const body = JSON.parse((puts[0][1] as RequestInit).body as string)
-    expect(body).toMatchObject({ driver: 'sqlite', acknowledge_no_migrate: true, restart: true })
+    expect(body).toMatchObject({ restart: true, acknowledge_no_migrate: true })
   })
 
   it('requires DSN for postgres even when a DSN was previously saved', async () => {
@@ -145,7 +160,7 @@ describe('StorageSettings', () => {
       ;(host.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
       await new Promise((r) => setTimeout(r, 0))
     })
-    await fire(findBtn('保存并重启'))
+    await fire(findBtn('保存并热切换'))
     // DSN 留空：不进入确认、不发 PUT，行内提示必填（与 dsn_redacted 是否存在无关）
     expect(host.querySelector('[data-testid="confirm-ok"]')).toBeNull()
     expect(fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')).toHaveLength(0)
@@ -167,13 +182,13 @@ describe('StorageSettings', () => {
       ;(host.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
       await new Promise((r) => setTimeout(r, 0))
     })
-    await fire(findBtn('保存并重启'))
+    await fire(findBtn('保存并热切换'))
     expect(host.querySelector('[data-testid="confirm-ok"]')).not.toBeNull()
     await fire(host.querySelector('[data-testid="confirm-ok"]')!)
     const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
     expect(puts).toHaveLength(1)
     const body = JSON.parse((puts[0][1] as RequestInit).body as string)
-    expect(body).toMatchObject({ driver: 'postgres', acknowledge_no_migrate: true, restart: true })
+    expect(body).toMatchObject({ driver: 'postgres', acknowledge_no_migrate: true, restart: false })
     expect(body.dsn).toBe(nextDSN)
   })
 })

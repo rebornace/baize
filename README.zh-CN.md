@@ -494,7 +494,11 @@ go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-a
 
 **微信私信白名单** — `allowlist` 为 peer（`from_user_id`）id 列表。非空时，渠道会在下载媒体 / 创建会话之前**丢弃名单外 peer 的私信**，且不自动回复（避免被探测 / 节省出站成本）；空列表（默认）表示不限制私信。保存即热生效、启动时也会重新应用；群消息始终忽略。
 
-非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。落库秘密加密见 **F-KV**（上文「设置项加密」）。
+**存储驱动热切（F-HOT）** — `PUT /v0/settings/store`（须 `acknowledge_no_migrate: true`）默认**进程内**热切（打开新库 → 原子换引用 → 关闭旧库）。`restart: true` 或 `POST /v0/settings/store/restart` 仍为整进程重启逃生舱。**不**自动迁移数据。Blob / S3 / Redis 仍须整进程重启。
+
+**配置 reload** — Linux/macOS 下 `SIGHUP` 重读 base + local overlay YAML，刷入运行参数基线（引擎 knobs / 控制面口令基线）。**不会**自动换 Store；若 overlay 中 store 段与当前运行驱动不一致，GET `/v0/settings/store` 返回 `store_config_mismatch: true`。Windows（无 SIGHUP）用管理员 `POST /v0/settings/reload`，语义相同。
+
+仍须重启才生效：blob / 对象存储、中间件 Redis 重连、监听端口 / TLS / `data_dir`。引擎参数与凭据热更新：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。Store 热切与 SIGHUP：[`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`](docs/superpowers/specs/2026-09-13-f-production-hardening-design.md) §3（**F-HOT**）。落库秘密加密见 **F-KV**（上文「设置项加密」）。
 
 ---
 

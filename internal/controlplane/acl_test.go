@@ -69,6 +69,7 @@ func TestMinRoleTable(t *testing.T) {
 		{"PUT", "/v0/settings/channels/weixin", RoleAdmin},
 		{"GET", "/v0/settings/events-webhook", RoleAdmin},
 		{"GET", "/v0/settings/store", RoleAdmin},
+		{"POST", "/v0/settings/reload", RoleAdmin},
 		{"GET", "/v0/unknown", RoleAdmin},
 		{"POST", "/v0/runs/r1/resume/extra", RoleAdmin},
 	}
