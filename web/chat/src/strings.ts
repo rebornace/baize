@@ -189,6 +189,13 @@ export function driverLabel(driver: string): string {
   return DRIVER_LABELS[driver] ?? driver
 }
 
+// ---- 设置页：运行参数 ----
+export const RUNTIME = {
+  confirmResetTitle: '重置为基线口令？',
+  confirmResetBody: '将清空全部热更新凭据，回落到 YAML/env 基线口令。引擎参数不受影响。',
+  confirmResetOk: '重置',
+} as const
+
 // ---- 设置页：AI 模型 ----
 export const MODELS = {
   title: '模型',

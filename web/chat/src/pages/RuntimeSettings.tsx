@@ -7,7 +7,9 @@ import {
   type CredentialsView,
   type RuntimeKnobsView,
 } from '../api'
+import { ConfirmDialog } from '../components/ui'
 import { useGate } from '../gateContext'
+import { RUNTIME } from '../strings'
 import {
   buildKnobsPatch,
   knobsToForm,
@@ -31,6 +33,8 @@ function CredentialsSection() {
   const [adminToken, setAdminToken] = useState('')
   const [newOpId, setNewOpId] = useState('')
   const [newOpToken, setNewOpToken] = useState('')
+  const [pendingReset, setPendingReset] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (role !== 'admin') {
@@ -118,15 +122,18 @@ function CredentialsSection() {
   }
 
   const resetAll = async () => {
-    if (!window.confirm('确定清空全部热更新凭据，回落到 YAML/env 基线口令？')) return
     setBusy(true)
     setError(null)
+    setResetError(null)
     setStatus(null)
     try {
       apply(await patchCredentials({ reset: true }))
       setStatus('已重置：凭据回落至配置基线（引擎参数不受影响）。')
+      setPendingReset(false)
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const msg = apiErrorMessage(err)
+      setError(msg)
+      setResetError(msg)
     } finally {
       setBusy(false)
     }
@@ -234,12 +241,35 @@ function CredentialsSection() {
           </form>
 
           <div style={{ marginTop: '1.25rem' }}>
-            <button type="button" className="btn danger" disabled={busy} onClick={() => void resetAll()}>
+            <button
+              type="button"
+              className="btn danger"
+              disabled={busy}
+              onClick={() => {
+                setResetError(null)
+                setPendingReset(true)
+              }}
+            >
               重置为基线口令（break-glass）
             </button>
           </div>
         </>
       )}
+      <ConfirmDialog
+        open={pendingReset}
+        danger
+        title={RUNTIME.confirmResetTitle}
+        body={RUNTIME.confirmResetBody}
+        confirmText={RUNTIME.confirmResetOk}
+        busy={busy}
+        error={resetError}
+        onCancel={() => {
+          if (busy) return
+          setPendingReset(false)
+          setResetError(null)
+        }}
+        onConfirm={() => void resetAll()}
+      />
     </section>
   )
 }
