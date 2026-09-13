@@ -1,11 +1,22 @@
 package store
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/rebornace/baize/internal/settingscrypto"
 )
 
+const testSettingsKey = "test-settings-key-32bytes-ok!!"
+
+func setTestSettingsKey(t *testing.T) {
+	t.Helper()
+	t.Setenv("BAIZE_SETTINGS_KEY", testSettingsKey)
+}
+
 func TestMemoryModelProfileCRUDAndDeleteAll(t *testing.T) {
+	setTestSettingsKey(t)
 	s := NewMemory()
 
 	p, err := s.UpsertModelProfile(ModelProfile{
@@ -30,7 +41,7 @@ func TestMemoryModelProfileCRUDAndDeleteAll(t *testing.T) {
 	}
 
 	if got, err := s.GetModelProfile(p.ID); err != nil || got.APIKey != "sk-secret-1234" {
-		t.Fatalf("store should keep raw key internally; got %q err=%v", got.APIKey, err)
+		t.Fatalf("GetModelProfile should return decrypted key; got %q err=%v", got.APIKey, err)
 	}
 
 	// Any profile — including the last remaining one — can be deleted.
@@ -78,6 +89,7 @@ func TestMemoryUpsertRejectsEmptyNameAndDuplicate(t *testing.T) {
 }
 
 func TestMemoryUpsertEditKeepsRawKeyWhenRedacted(t *testing.T) {
+	setTestSettingsKey(t)
 	s := NewMemory()
 	p, err := s.UpsertModelProfile(ModelProfile{
 		Name: "主力", Provider: "openai_compatible", BaseURL: "https://x/v1",
@@ -112,7 +124,19 @@ func newSQLiteProfileStore(t *testing.T) *SQLStore {
 	return st
 }
 
+func TestMemoryUpsertModelProfileAPIKeyRequiresSettingsKey(t *testing.T) {
+	s := NewMemory()
+	_, err := s.UpsertModelProfile(ModelProfile{
+		Name: "k", Provider: "openai_compatible", BaseURL: "https://x/v1",
+		Model: "m", APIKey: "sk-secret-1234",
+	})
+	if !errors.Is(err, settingscrypto.ErrNoKey) {
+		t.Fatalf("upsert without BAIZE_SETTINGS_KEY: got %v want ErrNoKey", err)
+	}
+}
+
 func TestSQLiteModelProfileRoundTrip(t *testing.T) {
+	setTestSettingsKey(t)
 	s := newSQLiteProfileStore(t)
 	p, err := s.UpsertModelProfile(ModelProfile{
 		Name: "标准", Provider: "openai_compatible", BaseURL: "https://x/v1",
@@ -127,6 +151,14 @@ func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 	}
 	if got.APIKey != "sk-secret-1234" || !got.SupportsVision || got.AutoTier != AutoTierPower {
 		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+
+	var rawKey string
+	if err := s.db.QueryRow(`SELECT api_key FROM model_profiles WHERE id = ?`, p.ID).Scan(&rawKey); err != nil {
+		t.Fatalf("raw select: %v", err)
+	}
+	if !settingscrypto.IsSealed(rawKey) {
+		t.Fatalf("api_key at rest must be sealed, got %q", rawKey)
 	}
 
 	// edit: redacted key must not overwrite; UpdatedAt must advance
@@ -155,6 +187,7 @@ func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 }
 
 func TestSQLiteModelProfileContextTokens(t *testing.T) {
+	setTestSettingsKey(t)
 	s := newSQLiteProfileStore(t)
 	got, err := s.UpsertModelProfile(ModelProfile{
 		Name: "ctx", Provider: "openai_compatible", BaseURL: "http://x", Model: "m",

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rebornace/baize/internal/settingscrypto"
 )
 
 // ErrModelProfileNotFound is returned when a model profile row is missing.
@@ -32,6 +33,32 @@ func RedactAPIKey(k string) string {
 // stored key.
 func IsRedactedAPIKey(s string) bool {
 	return strings.Contains(s, "…") || strings.Contains(s, "•")
+}
+
+func sealModelProfileAPIKey(p *ModelProfile) error {
+	if p.APIKey == "" || IsRedactedAPIKey(p.APIKey) {
+		return nil
+	}
+	key, _ := settingscrypto.KeyFromEnv()
+	sealed, err := settingscrypto.Seal(key, p.APIKey)
+	if err != nil {
+		return err
+	}
+	p.APIKey = sealed
+	return nil
+}
+
+func openModelProfileAPIKey(p *ModelProfile) error {
+	if p.APIKey == "" {
+		return nil
+	}
+	key, _ := settingscrypto.KeyFromEnv()
+	plain, err := settingscrypto.Open(key, p.APIKey)
+	if err != nil {
+		return err
+	}
+	p.APIKey = plain
+	return nil
 }
 
 func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
@@ -72,7 +99,13 @@ func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 		}
 	}
 	p.UpdatedAt = now
+	if err := sealModelProfileAPIKey(&p); err != nil {
+		return ModelProfile{}, err
+	}
 	s.modelProfiles[p.ID] = p
+	if err := openModelProfileAPIKey(&p); err != nil {
+		return ModelProfile{}, err
+	}
 	return p, nil
 }
 
@@ -83,6 +116,9 @@ func (s *Memory) GetModelProfile(id string) (ModelProfile, error) {
 	if !ok {
 		return ModelProfile{}, ErrModelProfileNotFound
 	}
+	if err := openModelProfileAPIKey(&p); err != nil {
+		return ModelProfile{}, err
+	}
 	return p, nil
 }
 
@@ -91,6 +127,9 @@ func (s *Memory) ListModelProfiles() ([]ModelProfile, error) {
 	defer s.mu.RUnlock()
 	out := make([]ModelProfile, 0, len(s.modelProfiles))
 	for _, p := range s.modelProfiles {
+		if err := openModelProfileAPIKey(&p); err != nil {
+			return nil, err
+		}
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool {

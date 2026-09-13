@@ -29,6 +29,9 @@ func scanModelProfile(scanner interface{ Scan(...any) error }) (ModelProfile, er
 	if t, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
 		p.UpdatedAt = t
 	}
+	if err := openModelProfileAPIKey(&p); err != nil {
+		return ModelProfile{}, err
+	}
 	return p, nil
 }
 
@@ -74,6 +77,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 		p.ID = "mp_" + uuid.NewString()
 		p.CreatedAt = now
 		p.UpdatedAt = now
+		if err := sealModelProfileAPIKey(&p); err != nil {
+			return ModelProfile{}, err
+		}
 		_, err := s.exec(
 			`INSERT INTO model_profiles (id, `+upsertModelProfileColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.ID, p.Name, p.Provider, p.BaseURL, p.Model, p.APIKey, p.APIKeyEnv,
@@ -84,6 +90,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 			if isUniqueViolation(err) {
 				return ModelProfile{}, fmt.Errorf("model profile name %q already exists", p.Name)
 			}
+			return ModelProfile{}, err
+		}
+		if err := openModelProfileAPIKey(&p); err != nil {
 			return ModelProfile{}, err
 		}
 		return p, nil
@@ -99,6 +108,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 	}
 	p.CreatedAt = existing.CreatedAt
 	p.UpdatedAt = now
+	if err := sealModelProfileAPIKey(&p); err != nil {
+		return ModelProfile{}, err
+	}
 	_, err = s.exec(
 		`UPDATE model_profiles SET name=?, provider=?, base_url=?, model=?, api_key=?, api_key_env=?,
 		   disable_thinking=?, supports_vision=?, context_tokens=?, auto_tier=?, updated_at=? WHERE id=?`,
@@ -110,6 +122,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 		if isUniqueViolation(err) {
 			return ModelProfile{}, fmt.Errorf("model profile name %q already exists", p.Name)
 		}
+		return ModelProfile{}, err
+	}
+	if err := openModelProfileAPIKey(&p); err != nil {
 		return ModelProfile{}, err
 	}
 	return p, nil
