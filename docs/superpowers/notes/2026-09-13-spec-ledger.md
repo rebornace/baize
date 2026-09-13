@@ -47,7 +47,7 @@
 | 计划 `2026-09-06-phase1-channel-registry.md` | 已交付（无独立规格头） | bootstrap `wireChannels` | — |
 | `2026-09-06-phase2-webhook-channel-design.md` | 已交付 | `internal/channel/webhook`、`examples/im-adapter` | — |
 | `2026-09-07-phase2b-weixin-adapter.md` | 已交付 | `cmd/weixin-adapter`；进程内 weixin 已移除 | — |
-| `2026-09-08-adapter-supervisor-hardening-design.md` | 已交付 | watchdog / 优雅关停 / `docker-compose.weixin.yml` / `deploy/systemd` | 若需 DoD 逐条勾可选「渠道收尾核验」 |
+| `2026-09-08-adapter-supervisor-hardening-design.md` | 已交付 | watchdog / 优雅关停 / `docker-compose.weixin.yml` / `deploy/systemd` | DoD 核验见 [`2026-09-13-channel-supervisor-dod-audit.md`](2026-09-13-channel-supervisor-dod-audit.md)（通过；§8.6 群聊丢弃可补单测） |
 
 ---
 
@@ -109,7 +109,7 @@ A1 多订阅 · B1 SDK 实现 · P3 OTel · P5 多 Agent · I2–I5 Inbox 增强
 1. **P1/P2 公开架构文档**（用户可见，改字即可）  
 2. **运行参数页人话化**（WebUI 最后明显旧壳）  
 3. **F 生产硬化**（需新规格）  
-4. **渠道/supervisor DoD 核验**（可选，防遗漏）  
+4. ~~渠道/supervisor DoD 核验~~（2026-09-13 完成 → [`2026-09-13-channel-supervisor-dod-audit.md`](2026-09-13-channel-supervisor-dod-audit.md)）  
 5. ~~清理 `.worktrees/sql-store-drivers-v0`~~（2026-09-13 已完成）
 
 ---
