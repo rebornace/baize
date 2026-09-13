@@ -76,6 +76,19 @@ func (d *Dispatcher) UpdateConfig(cfg Config) {
 	d.mu.Unlock()
 }
 
+// SetStore atomically replaces the backing store (Store hot-swap).
+func (d *Dispatcher) SetStore(st store.Store) {
+	d.mu.Lock()
+	d.store = st
+	d.mu.Unlock()
+}
+
+func (d *Dispatcher) storeRef() store.Store {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.store
+}
+
 // Config returns the current global webhook configuration.
 func (d *Dispatcher) Config() Config {
 	d.mu.RLock()
@@ -106,7 +119,7 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 		return err
 	}
 	if !created {
-		entry, err := d.store.GetWebhookOutbox(id)
+		entry, err := d.storeRef().GetWebhookOutbox(id)
 		if err != nil {
 			return err
 		}
@@ -114,12 +127,12 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 			return nil
 		}
 	}
-	entry, err := d.store.GetWebhookOutbox(id)
+	entry, err := d.storeRef().GetWebhookOutbox(id)
 	if err != nil {
 		return err
 	}
 	d.deliverOne(ctx, entry)
-	entry, err = d.store.GetWebhookOutbox(id)
+	entry, err = d.storeRef().GetWebhookOutbox(id)
 	if err != nil {
 		return err
 	}
@@ -133,7 +146,7 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 }
 
 func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {
-	run, err := d.store.GetRun(runID)
+	run, err := d.storeRef().GetRun(runID)
 	if err != nil {
 		return
 	}
@@ -153,7 +166,7 @@ func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
 	if status != store.StatusSucceeded && status != store.StatusFailed && status != store.StatusRejected {
 		return
 	}
-	run, err := d.store.GetRun(runID)
+	run, err := d.storeRef().GetRun(runID)
 	if err != nil {
 		return
 	}
@@ -187,7 +200,7 @@ func (d *Dispatcher) enqueue(ctx context.Context, runID string, kind store.Webho
 		TargetURL:   url,
 		HeadersJSON: headersJSON,
 	}
-	created, id, err := d.store.PutWebhookOutboxIfAbsent(entry)
+	created, id, err := d.storeRef().PutWebhookOutboxIfAbsent(entry)
 	if err != nil {
 		return "", false, err
 	}
@@ -205,7 +218,7 @@ func (d *Dispatcher) signalWake() {
 }
 
 func (d *Dispatcher) processDue(ctx context.Context) {
-	entries, err := d.store.ListWebhookOutboxDue(time.Now().UTC(), 20)
+	entries, err := d.storeRef().ListWebhookOutboxDue(time.Now().UTC(), 20)
 	if err != nil {
 		return
 	}
@@ -220,7 +233,7 @@ func (d *Dispatcher) deliverOne(ctx context.Context, entry store.WebhookOutboxEn
 		entry.Attempt++
 		entry.Status = store.WebhookOutboxDead
 		entry.LastError = err.Error()
-		_ = d.store.UpdateWebhookOutbox(entry)
+		_ = d.storeRef().UpdateWebhookOutbox(entry)
 		d.maybeEmitDeadEvent(entry)
 		return
 	}
@@ -229,7 +242,7 @@ func (d *Dispatcher) deliverOne(ctx context.Context, entry store.WebhookOutboxEn
 	if postErr == nil && statusCode >= 200 && statusCode < 300 {
 		entry.Status = store.WebhookOutboxDelivered
 		entry.LastError = ""
-		_ = d.store.UpdateWebhookOutbox(entry)
+		_ = d.storeRef().UpdateWebhookOutbox(entry)
 		return
 	}
 
@@ -237,19 +250,19 @@ func (d *Dispatcher) deliverOne(ctx context.Context, entry store.WebhookOutboxEn
 	entry.LastError = formatDeliveryError(statusCode, postErr)
 	if !Retryable(statusCode, postErr) || entry.Attempt >= entry.MaxAttempts {
 		entry.Status = store.WebhookOutboxDead
-		_ = d.store.UpdateWebhookOutbox(entry)
+		_ = d.storeRef().UpdateWebhookOutbox(entry)
 		d.maybeEmitDeadEvent(entry)
 		return
 	}
 	entry.NextRetryAt = time.Now().UTC().Add(Backoff(entry.Attempt))
-	_ = d.store.UpdateWebhookOutbox(entry)
+	_ = d.storeRef().UpdateWebhookOutbox(entry)
 }
 
 func (d *Dispatcher) maybeEmitDeadEvent(entry store.WebhookOutboxEntry) {
 	if entry.RunID == "" || entry.RunID == "test" {
 		return
 	}
-	_ = d.store.AppendEvent(entry.RunID, store.Event{
+	_ = d.storeRef().AppendEvent(entry.RunID, store.Event{
 		Type:      "webhook.delivery_dead",
 		Timestamp: time.Now().UTC(),
 		Data: map[string]any{
@@ -264,7 +277,7 @@ func (d *Dispatcher) maybeEmitDeadEvent(entry store.WebhookOutboxEntry) {
 
 // RetryDelivery resets a dead/pending row for manual replay.
 func (d *Dispatcher) RetryDelivery(id string) error {
-	if err := d.store.ResetWebhookOutboxRetry(id); err != nil {
+	if err := d.storeRef().ResetWebhookOutboxRetry(id); err != nil {
 		return err
 	}
 	d.signalWake()

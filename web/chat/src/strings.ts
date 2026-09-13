@@ -161,7 +161,7 @@ export function identitySourceLabel(source: string): string {
 export const STORAGE = {
   title: '数据存储',
   description:
-    '选择助手数据的保存位置。更改并保存后服务会重启，且不会自动搬迁旧数据，请先自行备份。',
+    '选择助手数据的保存位置。更改后默认进程内热切换，不会自动搬迁旧数据；对象存储等仍需整进程重启。',
   driverField: '保存方式',
   sqlitePath: '数据库文件路径',
   sqliteHint: '默认 ./data/baize.db；换成新路径不会自动搬迁已有数据。',
@@ -169,11 +169,16 @@ export const STORAGE = {
   ack: '我了解：切换存储不会自动迁移数据，旧库中的数据需自行处理',
   ackRequired: '请先勾选确认：切换存储不会自动迁移数据',
   postgresRequiresDSN: '使用 PostgreSQL 需要填写连接地址（DSN）',
+  saveHotSwap: '保存并热切换',
   saveRestart: '保存并重启',
   saving: '正在保存…',
+  confirmHotTitle: '保存并热切换？',
+  confirmHotBody:
+    '将在不重启进程的情况下切换存储；进行中的对话可能失败，且不会从旧存储自动迁移。确认继续？',
   confirmRestartTitle: '保存并重启服务？',
   confirmRestartBody:
     '服务将立即重启，进行中的对话会中断；数据不会从旧存储自动迁移。确认继续？',
+  hotSwapped: '已热切换',
   restarting: '正在重启…',
   developer: '技术信息',
 } as const

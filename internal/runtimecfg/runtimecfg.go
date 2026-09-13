@@ -89,6 +89,18 @@ func New(base Snapshot) *Holder {
 	return h
 }
 
+// ReplaceBaseline swaps the YAML/config baseline and re-merges the current KV
+// overrides on top. Used by SIGHUP / POST settings/reload. Safe on a nil receiver.
+func (h *Holder) ReplaceBaseline(base Snapshot) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.base = base
+	h.swapLocked()
+}
+
 // Snapshot returns the current effective snapshot. Safe on a nil receiver.
 func (h *Holder) Snapshot() Snapshot {
 	if h == nil {

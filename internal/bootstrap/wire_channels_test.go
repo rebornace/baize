@@ -425,7 +425,7 @@ func channelDepsForTest(t *testing.T) channelDeps {
 	t.Cleanup(func() { _ = closer.Close() })
 	return channelDeps{
 		srv:            srv,
-		st:             st,
+		getStore:       func() store.Store { return st },
 		messages:       messages,
 		engine:         engine,
 		provider:       nil,

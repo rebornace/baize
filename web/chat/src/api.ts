@@ -388,6 +388,8 @@ export async function createRun(
 
 export interface StoreSettings {
   driver: string
+  effective_driver?: string
+  store_config_mismatch?: boolean
   sqlite_path?: string
   dsn?: string
   dsn_redacted?: string

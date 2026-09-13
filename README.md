@@ -483,7 +483,11 @@ The adapter and baize exchange HMAC-signed JSON over HTTP (`/outbound` for outbo
 
 **Weixin DM allowlist** — `allowlist` is a list of peer (`from_user_id`) ids. A non-empty list makes the channel drop direct messages from any peer not on it — before media download or run creation, with no auto-reply (prevents probing / outbound cost). An empty list (the default) means open DMs. It hot-applies on save and is re-applied at startup; group messages are always ignored.
 
-Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths. Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md). Secret-at-rest encryption is **F-KV** (see **Settings encryption** above).
+**Store driver hot-swap (F-HOT)** — `PUT /v0/settings/store` with `acknowledge_no_migrate: true` defaults to an **in-process** swap (open new DB → flip live refs → close old). Pass `restart: true` (or `POST /v0/settings/store/restart`) as an escape hatch. Data is **not** migrated. Blob / S3 / Redis still require a full process restart.
+
+**Config reload** — On Linux/macOS, `SIGHUP` re-reads base + local overlay YAML into the runtime settings baseline (engine knobs / control-plane token baselines). It does **not** auto-swap Store; if the overlay store section differs from the open driver, GET `/v0/settings/store` reports `store_config_mismatch: true`. On Windows (no SIGHUP), use admin `POST /v0/settings/reload` with the same semantics.
+
+Not hot-reloadable without restart: blob / object storage, middleware Redis reconnect, listen port / TLS / `data_dir`. Engine knobs & credentials: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md). Store hot-swap + SIGHUP: [`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`](docs/superpowers/specs/2026-09-13-f-production-hardening-design.md) §3 (**F-HOT**). Secret-at-rest encryption is **F-KV** (see **Settings encryption** above).
 
 ---
 

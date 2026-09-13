@@ -19,6 +19,8 @@ import { driverLabel, friendlyError, STORAGE } from '../strings'
 
 const FALLBACK_DRIVERS = ['memory', 'sqlite', 'postgres']
 
+type ConfirmMode = 'hot' | 'restart'
+
 export function StorageSettings() {
   const [info, setInfo] = useState<StoreSettings | null>(null)
   const [driver, setDriver] = useState('sqlite')
@@ -29,6 +31,7 @@ export function StorageSettings() {
   const [dsnError, setDsnError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmMode, setConfirmMode] = useState<ConfirmMode>('hot')
   const { toasts, push, dismiss } = useToast()
 
   const load = useCallback(async () => {
@@ -49,14 +52,24 @@ export function StorageSettings() {
 
   const drivers = info?.drivers?.length ? info.drivers : FALLBACK_DRIVERS
 
-  function requestSubmit(e: FormEvent) {
-    e.preventDefault()
-    // 两个错误来源分离：ack 行内错误对所有 driver 都展示；DSN 必填只挂 DSN Field
+  function validateForm(): boolean {
     const missingAck = !ack
     const missingDSN = driver === 'postgres' && !dsn.trim()
     setAckError(missingAck ? STORAGE.ackRequired : null)
     setDsnError(missingDSN ? STORAGE.postgresRequiresDSN : null)
-    if (missingAck || missingDSN) return
+    return !(missingAck || missingDSN)
+  }
+
+  function requestSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!validateForm()) return
+    setConfirmMode('hot')
+    setConfirmOpen(true)
+  }
+
+  function requestRestart() {
+    if (!validateForm()) return
+    setConfirmMode('restart')
     setConfirmOpen(true)
   }
 
@@ -68,10 +81,15 @@ export function StorageSettings() {
         sqlite_path: sqlitePath.trim(),
         dsn: dsn.trim(),
         acknowledge_no_migrate: true,
-        restart: true,
+        restart: confirmMode === 'restart',
       })
-      push({ tone: 'success', title: resp.message ?? STORAGE.restarting })
+      const title =
+        confirmMode === 'restart'
+          ? (resp.message ?? STORAGE.restarting)
+          : (resp.message ?? STORAGE.hotSwapped)
+      push({ tone: 'success', title })
       setConfirmOpen(false)
+      await load()
     } catch (e) {
       const f = friendlyError(e)
       push({ tone: 'error', title: f.title, detail: f.detail })
@@ -139,9 +157,14 @@ export function StorageSettings() {
             </p>
           )}
 
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? STORAGE.saving : STORAGE.saveRestart}
-          </Button>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy && confirmMode === 'hot' ? STORAGE.saving : STORAGE.saveHotSwap}
+            </Button>
+            <Button type="button" variant="secondary" disabled={busy} onClick={requestRestart}>
+              {STORAGE.saveRestart}
+            </Button>
+          </div>
         </form>
       </Card>
 
@@ -151,16 +174,18 @@ export function StorageSettings() {
           <p className="settings-meta">
             配置：{info.config_path}
             {info.overlay_path ? ` · 覆盖：${info.overlay_path}` : ''}
+            {info.effective_driver ? ` · 运行中：${info.effective_driver}` : ''}
+            {info.store_config_mismatch ? ' · 配置与运行中存储不一致' : ''}
           </p>
         </details>
       )}
 
       <ConfirmDialog
         open={confirmOpen}
-        danger
-        title={STORAGE.confirmRestartTitle}
-        body={STORAGE.confirmRestartBody}
-        confirmText={STORAGE.saveRestart}
+        danger={confirmMode === 'restart'}
+        title={confirmMode === 'restart' ? STORAGE.confirmRestartTitle : STORAGE.confirmHotTitle}
+        body={confirmMode === 'restart' ? STORAGE.confirmRestartBody : STORAGE.confirmHotBody}
+        confirmText={confirmMode === 'restart' ? STORAGE.saveRestart : STORAGE.saveHotSwap}
         busy={busy}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => void confirmAndSave()}

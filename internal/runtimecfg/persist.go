@@ -354,7 +354,13 @@ func (h *Holder) Load(ctx context.Context, st store.Store) error {
 // propagate. It blocks until ctx is cancelled; run it in a goroutine. Failures
 // keep the last good snapshot.
 func (h *Holder) StartRefresh(ctx context.Context, st store.Store, interval time.Duration) {
-	if h == nil || st == nil || interval <= 0 {
+	h.StartRefreshFunc(ctx, func() store.Store { return st }, interval)
+}
+
+// StartRefreshFunc is like StartRefresh but resolves the store on each tick so
+// callers can hot-swap the underlying store without restarting the loop.
+func (h *Holder) StartRefreshFunc(ctx context.Context, get func() store.Store, interval time.Duration) {
+	if h == nil || get == nil || interval <= 0 {
 		return
 	}
 	t := time.NewTicker(interval)
@@ -364,6 +370,10 @@ func (h *Holder) StartRefresh(ctx context.Context, st store.Store, interval time
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			st := get()
+			if st == nil {
+				continue
+			}
 			if err := h.Load(ctx, st); err != nil {
 				log.Printf("runtimecfg: refresh failed (keeping last snapshot): %v", err)
 			}

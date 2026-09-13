@@ -100,6 +100,9 @@ func Run(cfg config.Config, configPath string) error {
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
 	srv.Shutdown = httpSrv.Shutdown
 	srv.RestartProcess = Reexec
+	reloadCtx, stopReload := context.WithCancel(context.Background())
+	defer stopReload()
+	watchConfigReloadSignal(reloadCtx, srv.ReloadConfig)
 	sigCtx, stopSig := newShutdownSignalContext()
 	defer stopSig()
 	shutdownOnSignal(sigCtx, httpSrv)
@@ -125,6 +128,9 @@ func Serve(cfg config.Config, configPath string) error {
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
 	srv.Shutdown = httpSrv.Shutdown
 	srv.RestartProcess = Reexec
+	reloadCtx, stopReload := context.WithCancel(context.Background())
+	defer stopReload()
+	watchConfigReloadSignal(reloadCtx, srv.ReloadConfig)
 	sigCtx, stopSig := newShutdownSignalContext()
 	defer stopSig()
 	shutdownOnSignal(sigCtx, httpSrv)
@@ -285,6 +291,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	// from the YAML llm section on first boot and route through the Switch,
 	// which resolves providers from stored profiles and hot-reloads on edit.
 	provider := baseProvider
+	var profileSrc *llm.StoreProfileSource
 	switch strings.ToLower(cfg.LLM.Provider) {
 	case "", "mock":
 		// demo/test path: keep baseProvider as-is.
@@ -293,7 +300,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 			_ = closer.Close()
 			return nil, nil, err
 		}
-		provider = llm.NewSwitch(&llm.StoreProfileSource{Store: st})
+		profileSrc = &llm.StoreProfileSource{Store: st}
+		provider = llm.NewSwitch(profileSrc)
 	}
 
 	reg := tool.NewRegistry()
@@ -338,6 +346,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 
 	hub := eventbus.NewHub()
 	st = eventbus.Notify(st, hub)
+	if profileSrc != nil {
+		profileSrc.Store = st
+	}
 
 	webhookCfg, err := loadEventsWebhook(st, cfg)
 	if err != nil {
@@ -364,10 +375,13 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	// Build the compactor whenever deps exist; the on/off switch is the hot
 	// knob (baseline = cfg.CompactEnabled()), evaluated per-run in MaybeCompact.
 	if messages != nil && provider != nil {
+		if profileSrc == nil {
+			profileSrc = &llm.StoreProfileSource{Store: st}
+		}
 		compactor = &run.Compactor{
 			Messages:      messages,
 			LLM:           provider,
-			Profiles:      &llm.StoreProfileSource{Store: st},
+			Profiles:      profileSrc,
 			Threshold:     cfg.Conversation.CompactThreshold,
 			ReserveTokens: cfg.Conversation.CompactReserveOutput,
 			KeepRecent:    cfg.Conversation.CompactRecentMessages,
@@ -491,7 +505,35 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 	refreshCtx, refreshCancel := context.WithCancel(context.Background())
 	closer.stops = append(closer.stops, refreshCancel)
-	go runtimeHolder.StartRefresh(refreshCtx, st, runtimeRefreshInterval)
+
+	rt := &storeRuntime{
+		hub:         hub,
+		closer:      closer,
+		srv:         srv,
+		engine:      engine,
+		compactor:   compactor,
+		dispatcher:  dispatcher,
+		profiles:    profileSrc,
+		reg:         reg,
+		inboxReg:    inboxReg,
+		holder:      runtimeHolder,
+		callbackCfg: callbackCfg,
+		configPath:  configPath,
+		cfg:         srv.Config,
+		raw:         closer.inner,
+		effective: config.StoreOverlay{
+			Driver:     cfg.Store.Driver,
+			SQLitePath: cfg.Store.SQLitePath,
+			DSN:        cfg.Store.DSN,
+		},
+	}
+	rt.setWrapped(st)
+	srv.HotSwapStore = rt.HotSwap
+	srv.ReloadConfig = rt.ReloadLayeredConfig
+	srv.EffectiveStoreDriver = func() string { return rt.EffectiveStore().Driver }
+	srv.StoreConfigMismatch = rt.StoreConfigMismatch
+
+	go runtimeHolder.StartRefreshFunc(refreshCtx, rt.current, runtimeRefreshInterval)
 
 	if dir := dataDir(cfg); dir != "" {
 		srv.DataDir = dir
@@ -502,7 +544,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	closer.stops = append(closer.stops, runCancel)
 	if _, err := wireChannels(channelDeps{
 		srv:            srv,
-		st:             st,
+		getStore:       rt.current,
 		messages:       messages,
 		engine:         engine,
 		provider:       provider,
@@ -586,7 +628,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		b.Start(mwCtx)
 	}
 	stopWorkers := mw.StartWorkers(mwCtx, srv)
-	stopReconciler := mw.StartReconciler(mwCtx, st, time.Duration(cfg.Middleware.ReconcileIntervalSec)*time.Second)
+	stopReconciler := mw.StartReconciler(mwCtx, reconcileStoreProxy{rt: rt}, time.Duration(cfg.Middleware.ReconcileIntervalSec)*time.Second)
 	// closer.stops 逆序执行：本闭包最后追加、最先运行——先取消总线订阅并
 	// 停 worker/调和器（等待在飞 job 收尾），再关队列；随后才轮到 IM 渠道、
 	// webhook worker 与 store 的关闭，保证关停期间不再有新 job 入队/执行。
@@ -652,7 +694,7 @@ func s3CredFromEnv(env string) string {
 // these via channel.BuildDeps.
 type channelDeps struct {
 	srv            *api.Server
-	st             store.Store
+	getStore       func() store.Store
 	messages       conversation.Store
 	engine         *run.Engine
 	provider       llm.Provider
@@ -700,10 +742,14 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 	// model is configured at all. The policy is shared with the interactive web
 	// path via llm.ResolveModel.
 	resolveModel := func(sig llm.TaskSignals) (id string, visionOK, hasModels bool) {
-		if d.st == nil {
+		var st store.Store
+		if d.getStore != nil {
+			st = d.getStore()
+		}
+		if st == nil {
 			return "", false, false
 		}
-		list, err := d.st.ListModelProfiles()
+		list, err := st.ListModelProfiles()
 		if err != nil || len(list) == 0 {
 			return "", false, len(list) > 0
 		}
@@ -712,8 +758,12 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 	}
 
 	router := channel.NewRouter()
+	var liveStore store.Store
+	if d.getStore != nil {
+		liveStore = d.getStore()
+	}
 	deps := channel.BuildDeps{
-		Store:          d.st,
+		Store:          liveStore,
 		Meta:           meta,
 		Messages:       d.messages,
 		DefaultAgentID: d.defaultAgentID,
