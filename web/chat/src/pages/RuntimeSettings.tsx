@@ -7,28 +7,34 @@ import {
   type CredentialsView,
   type RuntimeKnobsView,
 } from '../api'
-import { ConfirmDialog } from '../components/ui'
-import { useGate } from '../gateContext'
-import { RUNTIME } from '../strings'
 import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  Field,
+  Input,
+  PageHeader,
+  ToastRegion,
+  useToast,
+  type ToastApi,
+} from '../components/ui'
+import { useGate } from '../gateContext'
+import { RUNTIME, friendlyError } from '../strings'
+import {
+  MAIN_KNOB_FIELDS,
+  COMPACT_ADV_FIELDS,
+  allKnobFieldSpecs,
   buildKnobsPatch,
   knobsToForm,
-  KNOB_FIELDS,
   validateKnobField,
   type KnobsForm,
 } from './runtimeSettingsHelpers'
 
-function apiErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
-function CredentialsSection() {
+function CredentialsSection({ push }: { push: ToastApi['push'] }) {
   const { role } = useGate()
   const [view, setView] = useState<CredentialsView | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
   const [operatorToken, setOperatorToken] = useState('')
   const [adminToken, setAdminToken] = useState('')
   const [newOpId, setNewOpId] = useState('')
@@ -42,15 +48,15 @@ function CredentialsSection() {
       return
     }
     setLoading(true)
-    setError(null)
     try {
       setView(await getCredentials())
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setLoading(false)
     }
-  }, [role])
+  }, [role, push])
 
   useEffect(() => {
     void load()
@@ -67,21 +73,20 @@ function CredentialsSection() {
   const rotateTokens = async (e: FormEvent) => {
     e.preventDefault()
     if (!operatorToken && !adminToken) {
-      setError('请至少填写一个要轮换的口令')
+      push({ tone: 'error', title: RUNTIME.rotateNeedOne })
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       const v = await patchCredentials({
         operator_token: operatorToken || undefined,
         admin_token: adminToken || undefined,
       })
       apply(v)
-      setStatus('口令已轮换；若改的是当前登录口令，请用新口令重新解锁。')
+      push({ tone: 'success', title: RUNTIME.toastRotated })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
@@ -91,17 +96,16 @@ function CredentialsSection() {
     e.preventDefault()
     const id = newOpId.trim()
     if (!id || !newOpToken) {
-      setError('新增 operator 需要 id 与 token')
+      push({ tone: 'error', title: RUNTIME.addNeedBoth })
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       apply(await patchCredentials({ add_operators: [{ id, token: newOpToken }] }))
-      setStatus(`已新增 operator：${id}`)
+      push({ tone: 'success', title: RUNTIME.toastAdded, detail: id })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
@@ -109,13 +113,12 @@ function CredentialsSection() {
 
   const removeOperator = async (id: string) => {
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       apply(await patchCredentials({ remove_operators: [id] }))
-      setStatus(`已移除 operator：${id}`)
+      push({ tone: 'success', title: RUNTIME.toastRemoved, detail: id })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
@@ -123,17 +126,16 @@ function CredentialsSection() {
 
   const resetAll = async () => {
     setBusy(true)
-    setError(null)
     setResetError(null)
-    setStatus(null)
     try {
       apply(await patchCredentials({ reset: true }))
-      setStatus('已重置：凭据回落至配置基线（引擎参数不受影响）。')
+      push({ tone: 'success', title: RUNTIME.toastReset })
       setPendingReset(false)
     } catch (err) {
-      const msg = apiErrorMessage(err)
-      setError(msg)
+      const f = friendlyError(err)
+      const msg = f.detail ?? f.title
       setResetError(msg)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
@@ -144,26 +146,22 @@ function CredentialsSection() {
 
   return (
     <section className="settings-form">
-      <h2 className="settings-subheading">控制面凭据</h2>
+      <h2 className="settings-subheading">{RUNTIME.sectionCreds}</h2>
       {loading && <p className="settings-muted">加载中…</p>}
-      {error && <p className="settings-error">{error}</p>}
-      {status && <p className="settings-muted">{status}</p>}
       {view && (
         <>
           <p className="settings-muted">
-            来源：{view.source === 'override' ? '热更新覆盖' : '配置基线（config）'} ·
-            operator 口令 {view.operator_set ? '已设置' : '未设置'} ·
-            admin 口令 {view.admin_set ? '已设置' : '未设置'}
+            {view.source === 'override' ? RUNTIME.credsSourceOverride : RUNTIME.credsSourceConfig}
+            {' · '}
+            {view.operator_set ? RUNTIME.credsOperatorSet : RUNTIME.credsOperatorUnset}
+            {' · '}
+            {view.admin_set ? RUNTIME.credsAdminSet : RUNTIME.credsAdminUnset}
           </p>
 
-          <div className="settings-meta">
-            <p>主口令轮换（留空表示不修改；明文经 HTTPS 提交，GET 永不返回口令）。</p>
-          </div>
+          <h3 className="settings-subheading">{RUNTIME.rotateTitle}</h3>
           <form onSubmit={(e) => void rotateTokens(e)}>
-            <label className="settings-field">
-              <span className="settings-field-label">operator token（留空不修改）</span>
-              <input
-                className="settings-input"
+            <Field label={RUNTIME.fieldOperatorToken} hint={RUNTIME.hintOperatorToken}>
+              <Input
                 type="password"
                 autoComplete="off"
                 value={operatorToken}
@@ -171,11 +169,9 @@ function CredentialsSection() {
                 disabled={busy}
                 placeholder="••••••"
               />
-            </label>
-            <label className="settings-field">
-              <span className="settings-field-label">admin token（留空不修改）</span>
-              <input
-                className="settings-input"
+            </Field>
+            <Field label={RUNTIME.fieldAdminToken} hint={RUNTIME.hintAdminToken}>
+              <Input
                 type="password"
                 autoComplete="off"
                 value={adminToken}
@@ -183,50 +179,50 @@ function CredentialsSection() {
                 disabled={busy}
                 placeholder="••••••"
               />
-            </label>
-            <button type="submit" className="btn primary" disabled={busy}>
-              {busy ? '提交中…' : '轮换主口令'}
-            </button>
+            </Field>
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? RUNTIME.saving : RUNTIME.rotateSubmit}
+            </Button>
           </form>
 
-          <h3 className="settings-subheading" style={{ marginTop: '1.25rem' }}>命名 operator</h3>
+          <h3 className="settings-subheading" style={{ marginTop: '1.25rem' }}>
+            {RUNTIME.namedOpsTitle}
+          </h3>
           {view.operators.length === 0 ? (
-            <p className="settings-muted">暂无 operator。</p>
+            <p className="settings-muted">{RUNTIME.namedOpsEmpty}</p>
           ) : (
             <ul className="cred-operator-list">
               {view.operators.map((op) => (
                 <li key={op.id} className="cred-operator-item">
                   <span className="cred-operator-id">{op.id}</span>
-                  <span className="settings-badge">{op.source === 'runtime' ? 'runtime' : 'config'}</span>
+                  <Badge>
+                    {op.source === 'runtime' ? RUNTIME.badgeRuntime : RUNTIME.badgeConfig}
+                  </Badge>
                   {op.source === 'runtime' && (
-                    <button
+                    <Button
                       type="button"
-                      className="btn ghost"
+                      variant="ghost"
                       disabled={busy}
                       onClick={() => void removeOperator(op.id)}
                     >
-                      移除
-                    </button>
+                      {RUNTIME.removeOperator}
+                    </Button>
                   )}
                 </li>
               ))}
             </ul>
           )}
           <form onSubmit={(e) => void addOperator(e)}>
-            <label className="settings-field">
-              <span className="settings-field-label">新增 operator id</span>
-              <input
-                className="settings-input"
+            <Field label={RUNTIME.fieldNewOpId}>
+              <Input
                 value={newOpId}
                 onChange={(e) => setNewOpId(e.target.value)}
                 disabled={busy}
                 placeholder="bob"
               />
-            </label>
-            <label className="settings-field">
-              <span className="settings-field-label">token</span>
-              <input
-                className="settings-input"
+            </Field>
+            <Field label={RUNTIME.fieldNewOpToken}>
+              <Input
                 type="password"
                 autoComplete="off"
                 value={newOpToken}
@@ -234,24 +230,24 @@ function CredentialsSection() {
                 disabled={busy}
                 placeholder="••••••"
               />
-            </label>
-            <button type="submit" className="btn primary" disabled={busy}>
-              {busy ? '提交中…' : '新增 operator'}
-            </button>
+            </Field>
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? RUNTIME.saving : RUNTIME.addOperator}
+            </Button>
           </form>
 
           <div style={{ marginTop: '1.25rem' }}>
-            <button
+            <Button
               type="button"
-              className="btn danger"
+              variant="danger"
               disabled={busy}
               onClick={() => {
                 setResetError(null)
                 setPendingReset(true)
               }}
             >
-              重置为基线口令（break-glass）
-            </button>
+              {RUNTIME.resetButton}
+            </Button>
           </div>
         </>
       )}
@@ -274,29 +270,37 @@ function CredentialsSection() {
   )
 }
 
+function knobFieldLabel(label: string, overridden: boolean) {
+  return (
+    <>
+      {label}
+      {overridden && <Badge>{RUNTIME.badgeOverridden}</Badge>}
+    </>
+  )
+}
+
 export function RuntimeSettings() {
   const { role } = useGate()
   const readOnly = role !== 'admin'
+  const { toasts, push, dismiss } = useToast()
   const [knobView, setKnobView] = useState<RuntimeKnobsView | null>(null)
   const [form, setForm] = useState<KnobsForm | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
       const v = await getRuntimeSettings()
       setKnobView(v)
       setForm(knobsToForm(v.effective))
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: RUNTIME.loadFailed, detail: f.detail ?? f.title })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [push])
 
   useEffect(() => {
     void load()
@@ -309,28 +313,27 @@ export function RuntimeSettings() {
   const onSubmitKnobs = async (e: FormEvent) => {
     e.preventDefault()
     if (!knobView || !form) return
-    for (const spec of KNOB_FIELDS) {
+    for (const spec of allKnobFieldSpecs()) {
       const msg = validateKnobField(spec, form[spec.key])
       if (msg) {
-        setError(msg)
+        push({ tone: 'error', title: msg })
         return
       }
     }
     const patch = buildKnobsPatch(form, knobView.effective)
     if (Object.keys(patch).length === 0) {
-      setStatus('没有改动')
+      push({ tone: 'info', title: RUNTIME.toastNoChange })
       return
     }
     setBusy(true)
-    setError(null)
-    setStatus(null)
     try {
       const v = await patchRuntimeSettings(patch)
       setKnobView(v)
       setForm(knobsToForm(v.effective))
-      setStatus('引擎参数已热更新，下一次运行立即生效（无需重启）。')
+      push({ tone: 'success', title: RUNTIME.toastKnobsSaved })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
@@ -338,32 +341,58 @@ export function RuntimeSettings() {
 
   return (
     <div className="settings-section">
-      <h1 className="settings-heading">运行时设置</h1>
-      <div className="settings-meta">
-        {readOnly ? (
-          <p>引擎参数保存后立即生效、跨重启保留、多副本约 20 秒内同步（仅管理员可修改）。</p>
-        ) : (
-          <p>引擎参数与控制面凭据可在线热更新：保存后立即生效、跨重启保留、多副本约 20 秒内同步。</p>
-        )}
-      </div>
+      <PageHeader
+        title={RUNTIME.title}
+        description={readOnly ? RUNTIME.descriptionOperator : RUNTIME.descriptionAdmin}
+      />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
       {loading && <p className="settings-muted">加载中…</p>}
-      {error && <p className="settings-error">{error}</p>}
-      {status && <p className="settings-muted">{status}</p>}
 
       {!loading && knobView && form && (
         <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
-          <h2 className="settings-subheading">引擎参数</h2>
-          {KNOB_FIELDS.map((spec) => {
-            const overridden = knobView.overridden[spec.key]
-            return (
-              <label className="settings-field" key={spec.key}>
-                <span className="settings-field-label">
-                  {spec.label}
-                  {overridden && <span className="settings-badge">已覆盖基线</span>}
-                </span>
-                <input
-                  className="settings-input"
+          <h2 className="settings-subheading">{RUNTIME.sectionBehavior}</h2>
+          {MAIN_KNOB_FIELDS.map((spec) => (
+            <Field
+              key={spec.key}
+              label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+              hint={spec.hint}
+            >
+              <Input
+                type="number"
+                step={spec.integer ? 1 : 'any'}
+                min={spec.min}
+                max={spec.max}
+                value={form[spec.key]}
+                onChange={(e) => setField(spec.key, e.target.value)}
+                disabled={busy || readOnly}
+              />
+            </Field>
+          ))}
+
+          <h2 className="settings-subheading">{RUNTIME.sectionCompact}</h2>
+          <p className="settings-muted">{RUNTIME.compactHint}</p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.compaction_enabled}
+              onChange={(e) => setField('compaction_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.compactEnabled}
+            {knobView.overridden.compaction_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <details>
+            <summary>{RUNTIME.compactAdvanced}</summary>
+            {COMPACT_ADV_FIELDS.map((spec) => (
+              <Field
+                key={spec.key}
+                label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+                hint={spec.hint}
+              >
+                <Input
                   type="number"
                   step={spec.integer ? 1 : 'any'}
                   min={spec.min}
@@ -372,31 +401,19 @@ export function RuntimeSettings() {
                   onChange={(e) => setField(spec.key, e.target.value)}
                   disabled={busy || readOnly}
                 />
-                <span className="settings-field-hint">{spec.hint}</span>
-              </label>
-            )
-          })}
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={form.compaction_enabled}
-              onChange={(e) => setField('compaction_enabled', e.target.checked)}
-              disabled={busy || readOnly}
-            />
-            启用上下文压缩
-            {knobView.overridden.compaction_enabled && (
-              <span className="settings-badge">已覆盖基线</span>
-            )}
-          </label>
+              </Field>
+            ))}
+          </details>
+
           {!readOnly && (
-            <button type="submit" className="btn primary" disabled={busy}>
-              {busy ? '保存中…' : '保存引擎参数'}
-            </button>
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? RUNTIME.saving : RUNTIME.saveKnobs}
+            </Button>
           )}
         </form>
       )}
 
-      <CredentialsSection />
+      <CredentialsSection push={push} />
     </div>
   )
 }

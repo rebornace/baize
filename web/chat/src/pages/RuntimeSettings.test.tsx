@@ -66,14 +66,17 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
     const confirmSpy = vi.spyOn(window, 'confirm')
     const { host, root } = await renderRuntime()
 
+    expect(host.textContent).toContain(RUNTIME.credsSourceOverride)
+
     const btn = [...host.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('重置为基线口令'),
+      b.textContent?.includes(RUNTIME.resetButton),
     )
     expect(btn).toBeTruthy()
     await act(async () => { btn!.click() })
 
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(host.textContent).toContain(RUNTIME.confirmResetTitle)
+    expect(host.textContent).toContain(RUNTIME.confirmResetOk)
     expect(patch).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -82,6 +85,42 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
       await new Promise((r) => setTimeout(r, 0))
     })
     expect(patch).toHaveBeenCalledWith({ reset: true })
+    expect(host.textContent).toContain(RUNTIME.toastReset)
+    root.unmount()
+    host.remove()
+  })
+})
+
+describe('RuntimeSettings humanize shell', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('shows PageHeader title and three section headings; compact adv collapsed', async () => {
+    const { host, root } = await renderRuntime()
+    expect(host.textContent).toContain(RUNTIME.title)
+    expect(host.textContent).not.toContain('运行时设置')
+    expect(host.textContent).toContain(RUNTIME.sectionBehavior)
+    expect(host.textContent).toContain(RUNTIME.sectionCompact)
+    expect(host.textContent).toContain(RUNTIME.sectionCreds)
+    // 高级区内字段默认不可见：details 未 open，或不在 DOM 可见区
+    const details = host.querySelector('details')
+    expect(details).toBeTruthy()
+    expect(details!.open).toBe(false)
+    expect(host.textContent).toContain(RUNTIME.fieldMaxMessages)
+    // 折叠未开时，高级 label 仍可能在 summary 旁；字段 input 应在 details 内
+    const advInputs = details!.querySelectorAll('input')
+    expect(advInputs.length).toBeGreaterThanOrEqual(4)
+    root.unmount()
+    host.remove()
+  })
+
+  it('credentials section uses humanized labels and empty named-ops copy', async () => {
+    const { host, root } = await renderRuntime()
+    expect(host.textContent).toContain(RUNTIME.fieldOperatorToken)
+    expect(host.textContent).toContain(RUNTIME.fieldAdminToken)
+    expect(host.textContent).toContain(RUNTIME.namedOpsEmpty)
+    expect(host.textContent).toContain(RUNTIME.namedOpsTitle)
+    expect(host.textContent).toContain(RUNTIME.rotateSubmit)
+    expect(host.textContent).toContain(RUNTIME.addOperator)
     root.unmount()
     host.remove()
   })
