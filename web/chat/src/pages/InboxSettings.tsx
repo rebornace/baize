@@ -23,7 +23,7 @@ import {
   ToastRegion,
   useToast,
 } from '../components/ui'
-import { INBOX, friendlyError } from '../strings'
+import { INBOX, friendlyError, inboxSecretHint } from '../strings'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 import { toggleSkillSelection } from './SkillsSettings'
 
@@ -306,12 +306,7 @@ export function InboxSettings() {
 
       <details className="settings-developer">
         <summary>{INBOX.techDetails}</summary>
-        <p className="settings-meta">
-          外部系统以 HMAC 签名 POST 到{' '}
-          <code>{'{origin}'}/v0/inbox/{'{channel_id}'}</code>
-          ，会创建对话运行。出站回调可在通道高级选项中覆盖全局消息回调。签名示例见仓库 README「生产集成：Webhook
-          Inbox」。
-        </p>
+        <p className="settings-meta">{INBOX.techDetailsBody}</p>
       </details>
 
       {loading && <p className="settings-muted">加载中…</p>}
@@ -343,7 +338,7 @@ export function InboxSettings() {
                 <legend className="settings-subheading">
                   {channelTitle(row, index)}
                   {row.secret_hint ? (
-                    <span className="settings-muted"> · secret …{row.secret_hint}</span>
+                    <span className="settings-muted"> · {inboxSecretHint(row.secret_hint)}</span>
                   ) : null}
                 </legend>
                 <Field label={INBOX.idLabel} hint={INBOX.idHint}>
@@ -424,7 +419,10 @@ export function InboxSettings() {
                       placeholder="https://example.com/hooks/baize"
                     />
                   </Field>
-                  <Field label={INBOX.overrideHeadersLabel}>
+                  <Field
+                    label={INBOX.overrideHeadersLabel}
+                    hint={INBOX.overrideHeadersHint}
+                  >
                     <Textarea
                       value={row.headersText}
                       onChange={(e) => updateRow(index, { headersText: e.target.value })}

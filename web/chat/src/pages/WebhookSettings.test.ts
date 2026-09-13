@@ -74,9 +74,17 @@ describe('validateWebhookForm', () => {
 
 describe('formatDeliveryStatus', () => {
   it('maps known statuses', () => {
-    expect(formatDeliveryStatus('dead')).toBe('死信')
-    expect(formatDeliveryStatus('pending')).toBe('待投递')
-    expect(formatDeliveryStatus('delivered')).toBe('已投递')
+    expect(formatDeliveryStatus('dead')).toBe(WEBHOOKS.statusDead)
+    expect(formatDeliveryStatus('pending')).toBe(WEBHOOKS.statusPending)
+    expect(formatDeliveryStatus('delivered')).toBe(WEBHOOKS.statusDelivered)
+  })
+
+  it('uses outcome-oriented labels without protocol jargon in main copy keys', () => {
+    expect(WEBHOOKS.statusDead).toBe('已停止（多次失败）')
+    expect(WEBHOOKS.description).not.toMatch(/引擎|HMAC|5xx|KEY=VALUE|白泽|Baize/i)
+    expect(WEBHOOKS.deliveriesHint).not.toMatch(/5xx|429|4xx|死信/)
+    expect(WEBHOOKS.headersHint).not.toMatch(/KEY=VALUE/)
+    expect(WEBHOOKS.errBadHeaderLine).not.toMatch(/KEY=VALUE/)
   })
 
   it('passes through unknown status', () => {

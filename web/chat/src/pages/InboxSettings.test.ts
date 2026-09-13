@@ -128,6 +128,16 @@ describe('validateChannelsForm', () => {
   })
 })
 
+describe('INBOX copy keys', () => {
+  it('avoids protocol jargon and product names in main-path strings', () => {
+    expect(INBOX.description).not.toMatch(/HMAC|POST|签名|白泽|Baize/i)
+    expect(INBOX.idHint).not.toMatch(/小写|64|_/)
+    expect(INBOX.overrideHeadersHint).not.toMatch(/KEY=VALUE/)
+    expect(INBOX.errIdRequired).toMatch(/通道名称/)
+    expect(INBOX.errBadHeaderLine).not.toMatch(/KEY=VALUE/)
+  })
+})
+
 describe('inboxUrlFor', () => {
   it('builds inbox path under origin', () => {
     expect(inboxUrlFor('https://baize.example', 'alerts')).toBe(

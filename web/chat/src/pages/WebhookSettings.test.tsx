@@ -60,4 +60,19 @@ describe('WebhookSettings UI', () => {
     root.unmount()
     host.remove()
   })
+
+  it('keeps protocol jargon out of the main path', async () => {
+    const { host, root } = await renderPage()
+    const main = host.cloneNode(true) as HTMLElement
+    main.querySelector('details.settings-developer')?.remove()
+    expect(main.textContent).toContain(WEBHOOKS.urlLabel)
+    expect(main.textContent).toContain(WEBHOOKS.deliveriesTitle)
+    expect(main.textContent).not.toMatch(/\bHMAC\b|\bPOST\b|5xx|KEY=VALUE/)
+    const details = host.querySelector('details.settings-developer')
+    expect(details).toBeTruthy()
+    expect(details!.querySelector('summary')?.textContent).toBe(WEBHOOKS.techDetails)
+    expect(details!.textContent).toContain('KEY=VALUE')
+    root.unmount()
+    host.remove()
+  })
 })

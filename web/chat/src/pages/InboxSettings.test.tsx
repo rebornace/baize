@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
-import { INBOX } from '../strings'
+import { INBOX, inboxSecretHint } from '../strings'
 import { InboxSettings } from './InboxSettings'
 
 const sampleChannel = {
@@ -125,6 +125,22 @@ describe('InboxSettings UI', () => {
     expect(host.querySelector('.settings-drawer')).toBeNull()
     expect(host.querySelector('.settings-drawer-backdrop')).toBeNull()
 
+    root.unmount()
+    host.remove()
+  })
+
+  it('hides protocol jargon on main path and shows human secret hint', async () => {
+    const { host, root } = await renderPage([sampleChannel])
+    const main = host.cloneNode(true) as HTMLElement
+    main.querySelector('details.settings-developer')?.remove()
+    expect(main.textContent).toContain(INBOX.description)
+    expect(main.textContent).not.toMatch(/\bHMAC\b/)
+    expect(main.textContent).not.toMatch(/白泽|Baize/)
+    expect(host.textContent).toContain(inboxSecretHint('abcd'))
+    expect(host.textContent).not.toMatch(/secret\s*\u2026/i)
+    const details = host.querySelector('details.settings-developer')
+    expect(details?.querySelector('summary')?.textContent).toBe(INBOX.techDetails)
+    expect(details!.textContent).toContain('KEY=VALUE')
     root.unmount()
     host.remove()
   })

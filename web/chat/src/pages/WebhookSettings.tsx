@@ -184,6 +184,11 @@ export function WebhookSettings() {
       <PageHeader title={WEBHOOKS.title} description={WEBHOOKS.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
+      <details className="settings-developer">
+        <summary>{WEBHOOKS.techDetails}</summary>
+        <p className="settings-meta">{WEBHOOKS.techDetailsBody}</p>
+      </details>
+
       {loading && <p className="settings-muted">加载中…</p>}
       {!loading && (
         <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>
