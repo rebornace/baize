@@ -35,6 +35,28 @@ func scanModelProfile(scanner interface{ Scan(...any) error }) (ModelProfile, er
 	return p, nil
 }
 
+// scanModelProfileStored reads a row without decrypting api_key (for migration).
+func scanModelProfileStored(scanner interface{ Scan(...any) error }) (ModelProfile, error) {
+	var p ModelProfile
+	var createdAt, updatedAt string
+	var disableThinking, supportsVision sql.NullBool
+	var autoTier sql.NullString
+	if err := scanner.Scan(&p.ID, &p.Name, &p.Provider, &p.BaseURL, &p.Model, &p.APIKey,
+		&p.APIKeyEnv, &disableThinking, &supportsVision, &p.ContextTokens, &autoTier, &createdAt, &updatedAt); err != nil {
+		return ModelProfile{}, err
+	}
+	p.DisableThinking = disableThinking.Bool
+	p.SupportsVision = supportsVision.Bool
+	p.AutoTier = NormalizeAutoTier(autoTier.String)
+	if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+		p.CreatedAt = t
+	}
+	if t, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
+		p.UpdatedAt = t
+	}
+	return p, nil
+}
+
 func (s *SQLStore) ListModelProfiles() ([]ModelProfile, error) {
 	rows, err := s.query(`SELECT id, ` + upsertModelProfileColumns + ` FROM model_profiles ORDER BY created_at`)
 	if err != nil {

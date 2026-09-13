@@ -268,6 +268,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 	closer := &storeAndMCPCloser{inner: storeCloser(st)}
 
+	if err := store.MigrateStore(st); err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("settings secrets: %w", err)
+	}
+
 	// Resolve the active LLM provider. The mock/demo path (provider unset or
 	// "mock", matching newLLM) keeps the YAML-built provider and neither seeds
 	// profiles nor builds a Switch. Real deployments seed a default profile
