@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { Inbox } from 'lucide-react'
 import {
   getInboxChannels,
   getUIConfig,
@@ -9,7 +10,20 @@ import {
   type InboxChannel,
   type SkillSummary,
 } from '../api'
-import { INBOX } from '../strings'
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+  Textarea,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
+import { INBOX, friendlyError } from '../strings'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 import { toggleSkillSelection } from './SkillsSettings'
 
@@ -106,10 +120,6 @@ export function inboxUrlFor(origin: string, channelId: string): string {
   return `${origin.replace(/\/$/, '')}/v0/inbox/${channelId}`
 }
 
-function apiErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
 function collectAgentOptions(defaultAgentId: string, rows: ChannelFormRow[]): string[] {
   const ordered: string[] = []
   const seen = new Set<string>()
@@ -124,16 +134,24 @@ function collectAgentOptions(defaultAgentId: string, rows: ChannelFormRow[]): st
   return ordered
 }
 
+function channelTitle(row: ChannelFormRow, index: number): string {
+  const id = row.id.trim()
+  if (id) return id
+  return `${INBOX.channelNew} #${index + 1}`
+}
+
 export function InboxSettings() {
   const [rows, setRows] = useState<ChannelFormRow[]>([])
   const [defaultAgentId, setDefaultAgentId] = useState('ticket-agent')
   const [skillCatalog, setSkillCatalog] = useState<SkillSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [rowBusy, setRowBusy] = useState<string | null>(null)
+  const [pendingRemoveIndex, setPendingRemoveIndex] = useState<number | null>(null)
+  const [pendingRotateId, setPendingRotateId] = useState<string | null>(null)
   const [secretModal, setSecretModal] = useState<{ id: string; secret: string } | null>(null)
+  const { toasts, push, dismiss } = useToast()
 
   const agents = useMemo(
     () => collectAgentOptions(defaultAgentId, rows),
@@ -151,13 +169,14 @@ export function InboxSettings() {
       if (cfg?.agent_id?.trim()) setDefaultAgentId(cfg.agent_id.trim())
       setSkillCatalog(skillsBody.skills ?? [])
       setRows(channelsToForm(channels))
-      setError(null)
+      setFormError(null)
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: INBOX.loadFailed, detail: f.detail ?? f.title })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [push])
 
   useEffect(() => {
     void load()
@@ -167,23 +186,31 @@ export function InboxSettings() {
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
+  const addRow = () => {
+    setRows((prev) => [
+      ...prev,
+      { ...emptyRow(), agent_id: defaultAgentId || agents[0] || '' },
+    ])
+    setFormError(null)
+  }
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     const validated = validateChannelsForm(rows)
     if (!validated.ok) {
-      setError(validated.message)
+      setFormError(validated.message)
       return
     }
     setSubmitting(true)
-    setError(null)
-    setStatus(null)
+    setFormError(null)
     try {
       await putInboxChannels(validated.channels)
       const refreshed = await getInboxChannels()
       setRows(channelsToForm(refreshed))
-      setStatus(`已保存 ${refreshed.length} 个 Inbox Channel`)
+      push({ tone: 'success', title: INBOX.toastSaved })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setSubmitting(false)
     }
@@ -192,35 +219,38 @@ export function InboxSettings() {
   const onCopyUrl = async (id: string) => {
     const trimmed = id.trim()
     if (!trimmed) {
-      setError('请先填写 channel id')
+      setFormError(INBOX.errIdRequired)
       return
     }
     const url = inboxUrlFor(window.location.origin, trimmed)
     try {
       await navigator.clipboard.writeText(url)
-      setStatus(`已复制入站 URL：${url}`)
-      setError(null)
+      push({ tone: 'success', title: INBOX.toastCopiedUrl, detail: url })
+      setFormError(null)
     } catch (err) {
-      setError(`复制失败：${apiErrorMessage(err)}`)
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     }
   }
 
-  const onRotate = async (id: string) => {
-    const trimmed = id.trim()
+  const confirmRotate = async () => {
+    const trimmed = pendingRotateId?.trim()
     if (!trimmed) {
-      setError('请先保存带 id 的 Channel')
+      setPendingRotateId(null)
       return
     }
     setRowBusy(`rotate:${trimmed}`)
-    setError(null)
-    setStatus(null)
     try {
       const { secret } = await rotateInboxSecret(trimmed)
+      setPendingRotateId(null)
       setSecretModal({ id: trimmed, secret })
       const refreshed = await getInboxChannels()
       setRows(channelsToForm(refreshed))
+      push({ tone: 'success', title: INBOX.toastRotateOk })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+      setPendingRotateId(null)
     } finally {
       setRowBusy(null)
     }
@@ -229,81 +259,104 @@ export function InboxSettings() {
   const onTest = async (id: string) => {
     const trimmed = id.trim()
     if (!trimmed) {
-      setError('请先保存带 id 的 Channel')
+      setFormError(INBOX.errIdRequired)
       return
     }
     setRowBusy(`test:${trimmed}`)
-    setError(null)
-    setStatus(null)
     try {
       const result = await testInboxChannel(trimmed)
-      setStatus(`测试投递成功：delivery=${result.delivery_id} run=${result.run_id}`)
+      push({
+        tone: 'success',
+        title: INBOX.toastTestOk,
+        detail: result.run_id || result.delivery_id || undefined,
+      })
     } catch (err) {
-      setError(`测试投递失败：${apiErrorMessage(err)}`)
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setRowBusy(null)
     }
   }
 
+  const onCopySecret = async () => {
+    if (!secretModal) return
+    try {
+      await navigator.clipboard.writeText(secretModal.secret)
+      push({ tone: 'success', title: INBOX.toastCopiedSecret })
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    }
+  }
+
+  const confirmRemove = () => {
+    if (pendingRemoveIndex === null) return
+    const index = pendingRemoveIndex
+    setRows((prev) => prev.filter((_, i) => i !== index))
+    setPendingRemoveIndex(null)
+    setFormError(null)
+  }
+
   const busy = submitting || rowBusy !== null
 
   return (
-    <div className="settings-section settings-inbox">
-      <h1 className="settings-heading">Inbox</h1>
-      <div className="settings-meta">
-        <p>
-          配置入站 Webhook Channel。外部系统以 HMAC 签名 POST 到{' '}
+    <div className="settings-panel settings-inbox">
+      <PageHeader title={INBOX.title} description={INBOX.description} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+
+      <details className="settings-developer">
+        <summary>{INBOX.techDetails}</summary>
+        <p className="settings-meta">
+          外部系统以 HMAC 签名 POST 到{' '}
           <code>{'{origin}'}/v0/inbox/{'{channel_id}'}</code>
-          ，Runtime 创建 Run（可选续聊）；与出站 Webhook 配对形成生产集成闭环。
+          ，会创建对话运行。出站回调可在通道高级选项中覆盖全局消息回调。签名示例见仓库 README「生产集成：Webhook
+          Inbox」。
         </p>
-        <p>
-          入站 URL 形如 <code>https://&lt;host&gt;/v0/inbox/{'{channel_id}'}</code>
-          。签名示例（curl / OpenSSL / Python）见仓库 README「生产集成：Webhook Inbox」。
-        </p>
-        <pre className="settings-muted">{`外部系统 --HMAC--> POST /v0/inbox/{id} --> Run
-                                         |
-                                         +--> 出站 Webhook（可选覆盖）`}</pre>
-      </div>
+      </details>
+
       {loading && <p className="settings-muted">加载中…</p>}
-      {!loading && error && <p className="settings-error">{error}</p>}
-      {!loading && status && <p className="settings-muted">{status}</p>}
+
       {!loading && (
         <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>
           {rows.length === 0 && (
-            <p className="settings-empty">尚未配置 Channel，点击下方「添加 Channel」。</p>
+            <EmptyState
+              icon={<Inbox size={28} aria-hidden="true" />}
+              title={INBOX.emptyTitle}
+              description={INBOX.emptyDesc}
+              action={
+                <Button type="button" variant="primary" onClick={addRow}>
+                  {INBOX.add}
+                </Button>
+              }
+            />
           )}
           {rows.map((row, index) => {
             const rowKey = row.id.trim() || `new-${index}`
             const rotating = rowBusy === `rotate:${row.id.trim()}`
             const testing = rowBusy === `test:${row.id.trim()}`
             const agentList = collectAgentOptions(defaultAgentId, [row, ...rows])
+            const selectedAgent = agentList.includes(row.agent_id.trim())
+              ? row.agent_id.trim()
+              : (agentList[0] ?? '')
             return (
               <fieldset key={rowKey} className="settings-inbox-row" disabled={busy}>
                 <legend className="settings-subheading">
-                  Channel {row.id.trim() || `#${index + 1}`}
+                  {channelTitle(row, index)}
                   {row.secret_hint ? (
                     <span className="settings-muted"> · secret …{row.secret_hint}</span>
                   ) : null}
                 </legend>
-                <label className="settings-field">
-                  <span className="settings-field-label">id</span>
-                  <input
-                    className="settings-input"
+                <Field label={INBOX.idLabel} hint={INBOX.idHint}>
+                  <Input
                     value={row.id}
                     onChange={(e) => updateRow(index, { id: e.target.value })}
                     placeholder="alerts"
                     required
                   />
-                </label>
-                <label className="settings-field">
-                  <span className="settings-field-label">agent_id</span>
-                  <select
-                    className="settings-select"
-                    value={
-                      agentList.includes(row.agent_id.trim())
-                        ? row.agent_id.trim()
-                        : (agentList[0] ?? '')
-                    }
+                </Field>
+                <Field label={INBOX.agentLabel}>
+                  <Select
+                    value={selectedAgent}
                     onChange={(e) => updateRow(index, { agent_id: e.target.value })}
                   >
                     {agentList.map((id) => (
@@ -314,29 +367,27 @@ export function InboxSettings() {
                     {row.agent_id.trim() && !agentList.includes(row.agent_id.trim()) ? (
                       <option value={row.agent_id.trim()}>{row.agent_id.trim()}</option>
                     ) : null}
-                  </select>
-                </label>
+                  </Select>
+                </Field>
                 <label className="settings-login-toggle">
                   <input
                     type="checkbox"
                     checked={row.enabled}
                     onChange={(e) => updateRow(index, { enabled: e.target.checked })}
                   />
-                  <span>启用</span>
+                  <span>{INBOX.enabledLabel}</span>
                 </label>
-                <label className="settings-field">
-                  <span className="settings-field-label">description</span>
-                  <input
-                    className="settings-input"
+                <Field label={INBOX.descriptionLabel}>
+                  <Input
                     value={row.description}
                     onChange={(e) => updateRow(index, { description: e.target.value })}
                     placeholder="运维告警入口"
                   />
-                </label>
+                </Field>
                 <div className="settings-field">
-                  <span className="settings-field-label">skills（多选）</span>
+                  <span className="settings-field-label">{INBOX.skillsLabel}</span>
                   {skillCatalog.length === 0 ? (
-                    <p className="settings-muted">无可用 Skill</p>
+                    <p className="settings-muted">{INBOX.skillsEmpty}</p>
                   ) : (
                     <ul className="settings-list">
                       {skillCatalog.map((s) => (
@@ -364,115 +415,126 @@ export function InboxSettings() {
                     </ul>
                   )}
                 </div>
-                <label className="settings-field">
-                  <span className="settings-field-label">出站 webhook_url（可选覆盖）</span>
-                  <input
-                    className="settings-input"
-                    value={row.webhook_url}
-                    onChange={(e) => updateRow(index, { webhook_url: e.target.value })}
-                    placeholder="https://example.com/hooks/baize"
-                  />
-                </label>
-                <label className="settings-field">
-                  <span className="settings-field-label">webhook headers（每行 KEY=VALUE）</span>
-                  <textarea
-                    className="settings-textarea"
-                    value={row.headersText}
-                    onChange={(e) => updateRow(index, { headersText: e.target.value })}
-                    rows={3}
-                    placeholder="Authorization=Bearer ${API_TOKEN}"
-                  />
-                </label>
+                <details className="settings-advanced">
+                  <summary>{INBOX.advanced}</summary>
+                  <Field label={INBOX.overrideUrlLabel} hint={INBOX.overrideUrlHint}>
+                    <Input
+                      value={row.webhook_url}
+                      onChange={(e) => updateRow(index, { webhook_url: e.target.value })}
+                      placeholder="https://example.com/hooks/baize"
+                    />
+                  </Field>
+                  <Field label={INBOX.overrideHeadersLabel}>
+                    <Textarea
+                      value={row.headersText}
+                      onChange={(e) => updateRow(index, { headersText: e.target.value })}
+                      rows={3}
+                      placeholder="Authorization=Bearer ${API_TOKEN}"
+                    />
+                  </Field>
+                </details>
                 <div className="settings-toolbar">
-                  <button
+                  <Button
                     type="button"
-                    className="btn ghost sm"
+                    variant="ghost"
+                    size="sm"
                     disabled={busy || !row.id.trim()}
                     onClick={() => void onCopyUrl(row.id)}
                   >
-                    复制入站 URL
-                  </button>
-                  <button
+                    {INBOX.copyUrl}
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn ghost sm"
+                    variant="ghost"
+                    size="sm"
                     disabled={busy || !row.id.trim()}
-                    onClick={() => void onRotate(row.id)}
+                    onClick={() => setPendingRotateId(row.id.trim())}
                   >
-                    {rotating ? '轮换中…' : '轮换 Secret'}
-                  </button>
-                  <button
+                    {rotating ? INBOX.rotating : INBOX.rotateSecret}
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn ghost sm"
+                    variant="ghost"
+                    size="sm"
                     disabled={busy || !row.id.trim()}
                     onClick={() => void onTest(row.id)}
                   >
-                    {testing ? '测试中…' : '发送测试'}
-                  </button>
-                  <button
+                    {testing ? INBOX.testing : INBOX.test}
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn danger sm"
+                    variant="danger"
+                    size="sm"
                     disabled={busy}
-                    onClick={() => setRows((prev) => prev.filter((_, i) => i !== index))}
+                    onClick={() => setPendingRemoveIndex(index)}
                   >
-                    删除
-                  </button>
+                    {INBOX.remove}
+                  </Button>
                 </div>
               </fieldset>
             )
           })}
+          {formError && (
+            <p className="ui-inline-error" role="alert">
+              {formError}
+            </p>
+          )}
           <div className="settings-toolbar">
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={busy}
-              onClick={() =>
-                setRows((prev) => [
-                  ...prev,
-                  { ...emptyRow(), agent_id: defaultAgentId || agents[0] || '' },
-                ])
-              }
-            >
-              添加 Channel
-            </button>
-            <button type="submit" className="btn primary" disabled={busy}>
-              {submitting ? '保存中…' : '保存'}
-            </button>
+            {rows.length > 0 && (
+              <Button type="button" variant="ghost" disabled={busy} onClick={addRow}>
+                {INBOX.add}
+              </Button>
+            )}
+            <Button type="submit" variant="primary" disabled={busy}>
+              {submitting ? INBOX.saving : INBOX.save}
+            </Button>
           </div>
         </form>
       )}
-      {secretModal && (
-        <div className="settings-drawer-backdrop" onClick={() => setSecretModal(null)}>
-          <aside
-            className="settings-drawer"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label="新 Secret"
-          >
-            <div className="settings-drawer-head">
-              <h2 className="settings-subheading">Channel {secretModal.id} 新 Secret</h2>
-              <button type="button" className="btn ghost sm" onClick={() => setSecretModal(null)}>
-                关闭
-              </button>
-            </div>
-            <p className="settings-meta">仅展示一次，请立即复制到外部系统配置。</p>
+
+      <ConfirmDialog
+        open={pendingRemoveIndex !== null}
+        danger
+        title={INBOX.confirmRemoveTitle}
+        body={INBOX.confirmRemoveBody}
+        confirmText={INBOX.confirmRemoveOk}
+        onCancel={() => setPendingRemoveIndex(null)}
+        onConfirm={confirmRemove}
+      />
+
+      <ConfirmDialog
+        open={pendingRotateId !== null}
+        danger
+        title={INBOX.confirmRotateTitle}
+        body={INBOX.confirmRotateBody}
+        confirmText={INBOX.confirmRotateOk}
+        busy={rowBusy?.startsWith('rotate:') ?? false}
+        onCancel={() => setPendingRotateId(null)}
+        onConfirm={() => void confirmRotate()}
+      />
+
+      <Modal
+        open={secretModal !== null}
+        title={INBOX.secretModalTitle}
+        onClose={() => setSecretModal(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSecretModal(null)}>
+              {INBOX.secretClose}
+            </Button>
+            <Button variant="primary" onClick={() => void onCopySecret()}>
+              {INBOX.secretCopy}
+            </Button>
+          </>
+        }
+      >
+        {secretModal && (
+          <>
+            <p className="settings-meta">{INBOX.secretModalBody}</p>
             <pre className="settings-muted">{secretModal.secret}</pre>
-            <div className="settings-toolbar">
-              <button
-                type="button"
-                className="btn primary sm"
-                onClick={() => {
-                  void navigator.clipboard.writeText(secretModal.secret).then(
-                    () => setStatus('已复制新 Secret'),
-                    (err) => setError(`复制失败：${apiErrorMessage(err)}`),
-                  )
-                }}
-              >
-                复制 Secret
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }
