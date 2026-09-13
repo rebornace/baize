@@ -9,6 +9,7 @@ import (
 )
 
 func TestResetCredentialsOverrideClearsCredsKeepsKnobs(t *testing.T) {
+	t.Setenv("BAIZE_SETTINGS_KEY", "test-settings-key-32bytes-ok!!")
 	st := store.NewMemory()
 	base := runtimecfg.Snapshot{}
 	h := runtimecfg.New(base)

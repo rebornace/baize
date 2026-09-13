@@ -177,6 +177,11 @@ func normalizeShutdownErr(err error) error {
 // cfg.Connector.BaseURL is overwritten with the actual ticket URL.
 func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string, shutdown func()) {
 	t.Helper()
+	// Inbox / credential persistence requires BAIZE_SETTINGS_KEY (F-KV). Integration
+	// suites often seed secrets via YAML; provide a disposable test key when unset.
+	if os.Getenv("BAIZE_SETTINGS_KEY") == "" {
+		t.Setenv("BAIZE_SETTINGS_KEY", "baize-test-settings-key-32bytes!!")
+	}
 
 	ticketLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
