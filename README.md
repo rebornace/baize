@@ -75,11 +75,11 @@ Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “Identities”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result
 - `waiting_human`: **Approve / Reject** on that card (no footer banner)
-- Settings → OpenAPI (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from OpenAPI, Plugins, or MCP settings (with confirmation); Settings → Tools (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; Identities page is available to operators; Settings → MCP (admin-only) registers MCP Servers; Settings → Plugins (admin-only) registers HTTP plugin sidecars
-- Settings → Models (admin-only): maintain multiple named model profiles (OpenAI-compatible) tagged with a tier (light/standard/power) that feeds task-aware Auto routing; any profile can be deleted, including the last one; operators can read the list for the chat dropdown (see **Multiple model profiles** below)
-- Settings → Skills (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
-- Settings → Webhook (admin-only): configure global run-event webhook URL and headers; send a test delivery
-- Settings → Channels / Weixin (admin-only): iLink QR login for a personal WeChat bot, default Agent, assignee, and allowlist (see **Weixin Channel** below)
+- Settings → 业务系统 (business systems) (admin-only): upload API documents (OpenAPI 3, Swagger 2, Postman v2.1) to register Connectors; admins can delete an entire Connector from 业务系统 (business systems), 插件 (plugins), or 外部工具服务 (external tool services) settings pages (with confirmation); Settings → 助手功能 (assistant capabilities) (admin-only): tools fold by Connector / path prefix, searchable; editable display name and description (human edits survive a re-PUT of the spec); add tools in a drawer; `extra` rows can be deleted; configure execution callback URL per OpenAPI / HTTP Connector; configure login capture (`auth.capture`) for OpenAPI / HTTP plugin Connectors; Identities page is available to operators; Settings → 外部工具服务 (external tool services) (admin-only) registers MCP Servers; Settings → 插件 (plugins) (admin-only) registers HTTP plugin sidecars
+- Settings → 模型 (models) (admin-only): maintain multiple named model profiles (OpenAI-compatible) tagged with a tier (light/standard/power) that feeds task-aware Auto routing; any profile can be deleted, including the last one; operators can read the list for the chat dropdown (see **Multiple model profiles** below)
+- Settings → 技能 (skills) (admin-only): list installed packs, upload `.md` / `.zip`, delete user packs, and tick default Agent skills
+- Settings → 消息回调 (message callbacks) (admin-only): configure global run-event webhook URL and headers; send a test delivery
+- Settings → 微信 (Weixin) (admin-only): iLink QR login for a personal WeChat bot, default Agent, assignee, and allowlist (see **Weixin Channel** below)
 - Chat **Advanced** (collapsible): optional per-run `webhook_url` override (empty uses global settings)
 - Live runs use SSE (`GET /v0/runs/{id}/stream`); outbound webhooks POST each event and a terminal `run.ended` payload; if the stream drops, the UI falls back to 700ms polling
 
@@ -138,10 +138,10 @@ Changing Connector / Tools requires the admin token. This is not the same key as
 
 Register your HTTP service as Tools by uploading an API document.
 
-1. Open `/ui` → **Settings → OpenAPI** (admin).
+1. Open `/ui` → **Settings → 业务系统 (business systems)** (admin).
 2. **Add Connector**: set `id`, `base_url`, upload your API document (`.json`, `.yaml`, `.yml`), or paste a document URL (direct `.json`/`yaml` link or Swagger UI page; Runtime fetches server-side).
 3. Save — the server detects the format, converts to OpenAPI 3, and discovers all operations.
-4. Manage tools under **Settings → Tools**; run via `/ui` or `POST /v0/runs`.
+4. Manage tools under **Settings → 助手功能 (assistant capabilities)**; run via `/ui` or `POST /v0/runs`.
 
 | Format | Extensions | Notes |
 |--------|------------|-------|
@@ -183,7 +183,7 @@ When your HTTP service has no usable OpenAPI spec, run a sidecar that implements
 go run ./examples/http-plugin/cmd/http-plugin
 ```
 
-Register with **Settings → Plugins** (admin) or `PUT /v0/connectors/{id}` (`type: http`):
+Register with **Settings → 插件 (plugins)** (admin) or `PUT /v0/connectors/{id}` (`type: http`):
 
 HITL still uses `require_approval`. Use `baize demo` for the repo’s demo OpenAPI Connector.
 
@@ -191,7 +191,7 @@ Set `runtime.public_base_url` (Runtime root URL reachable by the sidecar) to inj
 
 ### Enterprise execution callback (§4.3)
 
-When the legacy system exposes a single execution endpoint instead of per-operation HTTP, set `execution_callback_url` on the Connector. Tool discovery still comes from OpenAPI or the HTTP sidecar; invoke POSTs to your URL with `tool`, `arguments`, `run_id`, and `idempotency_key`. Edit per Connector under **Settings → Tools**, or via `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`.
+When the legacy system exposes a single execution endpoint instead of per-operation HTTP, set `execution_callback_url` on the Connector. Tool discovery still comes from OpenAPI or the HTTP sidecar; invoke POSTs to your URL with `tool`, `arguments`, `run_id`, and `idempotency_key`. Edit in the **业务系统 (business systems) / 插件 (plugins)** connection advanced settings, or via `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`.
 
 Reference server:
 
@@ -201,7 +201,7 @@ go run ./examples/enterprise-callback
 
 ### MCP connectors (optional)
 
-[MCP](https://modelcontextprotocol.io/) Servers expose tools over **stdio** (local subprocess) or **Streamable HTTP** (remote URL). Register one with `PUT /v0/connectors/{id}` (`type: mcp`) or **Settings → MCP** (admin). Discovered tools enter the catalog with `source: mcp`; enable/disable, HITL `require_approval`, and Run invoke behave like OpenAPI / HTTP plugin tools. The `auth` block on the Connector is **ignored** — pass secrets via `mcp.env` (stdio) or `mcp.headers` (HTTP). Production `baize start` does **not** pre-register any MCP Server.
+[MCP](https://modelcontextprotocol.io/) Servers expose tools over **stdio** (local subprocess) or **Streamable HTTP** (remote URL). Register one with `PUT /v0/connectors/{id}` (`type: mcp`) or **Settings → 外部工具服务 (external tool services)** (admin). Discovered tools enter the catalog with `source: mcp`; enable/disable, HITL `require_approval`, and Run invoke behave like OpenAPI / HTTP plugin tools. The `auth` block on the Connector is **ignored** — pass secrets via `mcp.env` (stdio) or `mcp.headers` (HTTP). Production `baize start` does **not** pre-register any MCP Server.
 
 **stdio — local subprocess** (needs Node.js on the **same host as Baize** for `npx` commands):
 
@@ -246,7 +246,7 @@ Prefer a read-only DSN in production; the compose credentials are for local tria
 
 #### Search / web MCP (documentation only)
 
-Baize does not proxy the public internet — the MCP Server calls search APIs. There is **no** search compose stack; add connectors yourself after `baize start` or via Settings → MCP.
+Baize does not proxy the public internet — the MCP Server calls search APIs. There is **no** search compose stack; add connectors yourself after `baize start` or via Settings → 外部工具服务 (external tool services).
 
 **Tavily (HTTP)** — remote Streamable HTTP, your API key in the URL:
 
@@ -273,12 +273,12 @@ The inverse of [MCP connectors](#mcp-connectors-optional): Baize acts as an **MC
 | | MCP connectors (client) | MCP export |
 |--|-------------------------|------------|
 | Direction | Baize → external MCP Server | Personal agent → Baize |
-| Settings | Settings → MCP (admin) | Settings → MCP export (admin) |
+| Settings | Settings → 外部工具服务 (external tool services) (admin) | Settings → 对外提供能力 (export capabilities) (admin) |
 | Auth | `mcp.env` / `mcp.headers` on Connector | Dedicated **export Key** (+ bound export identity) |
 | Control plane | Gate admin/operator token | **Separate** — Gate token ≠ export Key |
 
-1. Open `/ui` → **Settings → MCP export** (admin): create an **export identity** (prefer a read-only service account), then create an export Key (plaintext shown once; must bind an identity).
-2. Tune per-tool export policy under **Settings → Tools** (`default` / force allow / force deny). DB / MCP write tools are never exported.
+1. Open `/ui` → **Settings → 对外提供能力 (export capabilities)** (admin): create an **export identity** (prefer a read-only service account), then create an export Key (plaintext shown once; must bind an identity).
+2. Configure per-tool export policy under **Settings → 对外提供能力 (export capabilities)** (`default` / force allow / force deny). DB / MCP write tools are never exported.
 3. Point your MCP client at Baize over **HTTPS** in production.
 
 ```json
@@ -302,7 +302,7 @@ Each Connector owns a **tool catalog** persisted in the store (SQLite by default
 
 - **Display name / description** — catalog rows may carry a `title` (Settings UI only; never sent in the model tool list) and a `description`. `PATCH /v0/tools/{name}` can update `title` and/or `description`. A human-edited `description` is marked `description_custom`; a later re-`PUT` of the Connector spec does not overwrite it. `title` is always kept across merge.
 - **Enable / disable** — `PATCH /v0/tools/{name}` with `{"enabled": false}` (or `true`) unregisters (or re-registers) the tool immediately and persists the flag to the catalog. With SQLite, disabled rows and manually added rows survive a Runtime restart. The same `PATCH` can also flip `require_login` on the row. Group enable / disable on the Settings page is repeated per-tool `PATCH enabled` calls, not a separate API.
-- **Settings tree / search** — the Tools page groups by Connector and path prefix (collapsible) and supports search; it does not introduce a new catalog HTTP surface.
+- **Settings tree / search** — the 助手功能 (assistant capabilities) page groups by Connector and path prefix (collapsible) and supports search; it does not introduce a new catalog HTTP surface.
 - **Add a REST tool (OpenAPI only)** — `POST /v0/connectors/{id}/tools` adds an `extra` row on an `openapi` Connector, reusing that Connector’s `base_url`, auth, session identity, and HITL. Use it when the spec is missing an endpoint. Conflicting names return `409`.
 - **Plugin tools** — sidecar-discovered (`plugin`) rows can be enabled / disabled but **cannot** be added or deleted; the sidecar is the source of truth. Adding an `extra` row on an `http` Connector returns `400`.
 - **Delete** — `DELETE /v0/connectors/{id}/tools/{name}` only removes `source = extra` rows; `spec` / `plugin` rows return `400`.
@@ -320,7 +320,7 @@ Skills are an optional **configuration** layer (not a sixth Runtime abstract): a
 | Topic | Behavior |
 |-------|----------|
 | Disk layout | Builtin `./skills` (`skills.builtin_dir`) and user `./data/skills` (`skills.user_dir`); each subfolder is a pack id with `SKILL.md` |
-| Install / remove | Admin upload `.md` or `.zip` via `POST /v0/skills` or Settings → Skills; `DELETE /v0/skills/{id}` removes **user** packs only (builtin → `400`). Same id: user overrides builtin |
+| Install / remove | Admin upload `.md` or `.zip` via `POST /v0/skills` or Settings → 技能 (skills); `DELETE /v0/skills/{id}` removes **user** packs only (builtin → `400`). Same id: user overrides builtin |
 | Default activation | `agent.skills` (YAML / `PUT /v0/agents/{id}`) lists packs active at Run start |
 | Progressive activation | When any pack is installed, the model gets built-in `activate_skill` to expand the active set **for that Run** |
 | Empty `agent.skills` | Visible tools = all catalog-**enabled** tools (same as before Skills) |
@@ -340,7 +340,7 @@ Limits: up to 5 files, 8 MiB total decoded, 64 KiB extracted text per file (trun
 
 **Vision hard failure:** `llm.supports_vision` defaults to `false` (see sample YAML comments). If a Run includes image attachments while `supports_vision=false`, the server returns **`400 vision_unsupported`** and **does not create a Run** — images are never silently downgraded to filenames only. Set `supports_vision: true` when using a vision-capable model. `/ui` reads `GET /v0/ui-config` and blocks image sends locally; the server remains authoritative.
 
-Built-in Skills use two tiers: `skills/` for core packs (`minimal` scans only this; default `data-analytics`); `examples/skills/` for demo trials (`demo` / `docker-demo` add it via `builtin_dirs`). Clean deployments list only core packs under Settings → Skills.
+Built-in Skills use two tiers: `skills/` for core packs (`minimal` scans only this; default `data-analytics`); `examples/skills/` for demo trials (`demo` / `docker-demo` add it via `builtin_dirs`). Clean deployments list only core packs under Settings → 技能 (skills).
 
 This is **not** Cursor’s personal coding Skill marketplace, and Baize does **not** guarantee drop-in compatibility with upstream packs such as `grill-me` / `superpowers` — only the familiar `SKILL.md` frontmatter + body shape is intentionally similar.
 
@@ -348,7 +348,7 @@ Skill packs may include an optional `workflow.yaml` for a deterministic linear p
 
 ### Data analytics & reports
 
-For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Built-in Skill **`data-analytics`** (`skills/data-analytics`, default in `minimal.yaml`): toggle in Settings → Skills or via `activate_skill`. Works with only `create_analysis_page` before any Connector; `list_tickets` / `get_ticket` appear once those tools are registered.
+For multi-source statistics and interactive dashboards, Baize ships a built-in tool **`create_analysis_page`** (always registered; no HITL). Built-in Skill **`data-analytics`** (`skills/data-analytics`, default in `minimal.yaml`): toggle in Settings → 技能 (skills) or via `activate_skill`. Works with only `create_analysis_page` before any Connector; `list_tickets` / `get_ticket` appear once those tools are registered.
 
 **Recommended:** `create_analysis_page` → a self-contained analysis page with **filters**, chart **drilldown**, and in-browser **PDF export**. The tool returns `{ artifact_id, artifact_url, kind: "analysis_page" }`; `/ui` embeds the page in an iframe.
 
@@ -364,7 +364,7 @@ Pull JSON from your Connector tools and reshape into `datasets` in the model —
 
 **Optional — AntV MCP for static PNG:**
 
-Baize does **not** pre-register AntV. Admins may add MCP Server `@antv/mcp-server-chart` (stdio `npx`) under **Settings → MCP** for single-chart PNG URLs — useful for Office / slides, not a full analysis site. MCP results still appear as JSON tool cards in chat (no dedicated image embed).
+Baize does **not** pre-register AntV. Admins may add MCP Server `@antv/mcp-server-chart` (stdio `npx`) under **Settings → 外部工具服务 (external tool services)** for single-chart PNG URLs — useful for Office / slides, not a full analysis site. MCP results still appear as JSON tool cards in chat (no dedicated image embed).
 
 | | `create_analysis_page` | AntV MCP |
 |--|------------------------|----------|
@@ -423,7 +423,7 @@ For the trial stack, use `go run ./cmd/baize demo` (mock LLM, no key).
 
 ### Multiple model profiles
 
-Once a production Runtime is up, maintain multiple **named model profiles** under **Settings → Models** (`/settings/models`, admin-only) — no YAML edits, no restart:
+Once a production Runtime is up, maintain multiple **named model profiles** under **Settings → 模型 (models)** (`/settings/models`, admin-only) — no YAML edits, no restart:
 
 - Each profile holds: name, Provider (fixed to `openai_compatible` in this release), Base URL, model name, API Key (or the API Key **environment variable name**), `disable_thinking`, `supports_vision`, `context_tokens`, and an **Auto tier** (`light` / `standard` / `power`; pick "auto" to infer it from the model name). The tier tells the task-aware Auto router how capable the model is.
 - **API Keys are stored in the local store** (SQLite / Postgres — same trust tier as a DSN password). The UI and API responses always echo them **redacted** (first 3 / last 4 chars, middle elided). When editing, leaving the Key blank means **do not change it**; you may also store only the env-var name and let the Runtime read it at call time. **Any profile can be deleted — including the last one**; with zero models configured the chat blocks and prompts you to add a model before sending.
@@ -495,8 +495,8 @@ Successful login tools can **capture** tokens into a per-`conversation_id` ident
 
 Runs **with** a `conversation_id` (including `/ui`) use **only** session identities — never the connector’s configured default Token. Configured Tokens are optional and only apply to machine / curl Runs that omit `conversation_id`.
 
-- `/ui` → **Settings → Identities**: list accounts (redacted), set default, sign out
-- `/ui` → **Settings → Tools**: mark a tool as「需要登录」(default: public; not inferred from OpenAPI `security`)
+- `/ui` → **Settings → 账号 (accounts)**: list accounts (redacted), set default, sign out
+- `/ui` → **Settings → 助手功能 (assistant capabilities)**: mark a tool as「需要登录」(default: public; not inferred from OpenAPI `security`)
 - Sidebar **New chat** → new `conversation_id` (`localStorage` key `baize.conversation_id`)
 - For Runs **without** `conversation_id`, default HTTP headers come from `connector.auth.mode`:
   - `static` — `${ENV}` expanded at registration (e.g. `Bearer ${BAIZE_CONNECTOR_TOKEN}`)
@@ -562,7 +562,7 @@ Capability name is **Inbox v1**; HTTP routes stay under the **`/v0/`** protocol 
 
 ### Configure a channel
 
-1. Open `/ui` → **Settings → Inbox** (admin).
+1. Open `/ui` → **Settings → 外部来信 (external inbox)** (admin).
 2. Add a channel: `id` (URL slug, e.g. `alerts`), `agent_id`, optional **Skills** and per-channel outbound `webhook_url` / headers.
 3. Copy the inbound URL (`https://<host>/v0/inbox/{id}`) and the **secret** (shown once on create or **Rotate secret**).
 4. **Send test** from the settings page, or use the script below.
@@ -615,11 +615,11 @@ Omit both `external_id` and `conversation_id` for a stateless machine path (no c
 
 ### Pair with outbound Webhook
 
-- **Global:** Settings → Webhook — URL + headers for all runs (unless overridden).
+- **Global:** Settings → 消息回调 (message callbacks) — URL + headers for all runs (unless overridden).
 - **Per channel:** Inbox channel `webhook_url` / `webhook_headers` — used for runs started via that channel.
 - **Per run:** Chat **Advanced** `webhook_url` (UI / `POST /v0/runs` only; not on Inbox body in v1).
 
-Outbound delivery POSTs each run event and a terminal `run.ended` payload (see Settings → Webhook test). Inbox runs also emit `inbox.received` as the first event.
+Outbound delivery POSTs each run event and a terminal `run.ended` payload (see Settings → 消息回调 (message callbacks) test). Inbox runs also emit `inbox.received` as the first event.
 
 ### Security checklist (production)
 
@@ -666,7 +666,7 @@ control_plane:
 
 ### QR login (Settings)
 
-1. Open `/ui` → **Settings → Channels / Weixin** (admin).
+1. Open `/ui` → **Settings → 微信 (Weixin)** (admin).
 2. **Get QR code**, scan with WeChat; the page polls until `success`.
 3. Set `agent_id`, **assignee** (operator id), optional allowlist (one peer id per line), then save.
 4. Credentials land in `./data/channels/weixin/` (gitignored); a restart with valid creds resumes long-poll automatically.

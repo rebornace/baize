@@ -76,11 +76,11 @@ cd baize
 - 左侧：对话列表 + **新对话**；左下角 **设置**（操作员显示「账号」）
 - 主区：消息流；写工具以**卡片**展示（名称 + 状态），展开可见参数 / 结果
 - `waiting_human`：在卡片上 **批准 / 驳回**（没有底部大横幅）
-- 设置 → OpenAPI（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在 OpenAPI、插件、MCP 设置页整删 Connector（二次确认）；设置 → Tools（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → MCP（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
+- 设置 → 业务系统（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在业务系统、插件、外部工具服务设置页整删 Connector（二次确认）；设置 → 助手功能（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → 外部工具服务（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → 模型（仅管理员）：维护多个命名模型 profile（OpenAI 兼容），按档位（light/standard/power）参与任务感知 Auto 智能路由，任意 profile 均可删除；操作员可查看列表用于聊天下拉（详见下文「多模型配置与对话选模型」）
-- 设置 → Skills（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
-- 设置 → Webhook（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
-- 设置 → 渠道 / 微信（仅管理员）：iLink 扫码登录个人微信 Bot、配置默认 Agent、受理人与 allowlist（见下文「微信 Channel」）
+- 设置 → 技能（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
+- 设置 → 消息回调（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
+- 设置 → 微信（仅管理员）：iLink 扫码登录个人微信 Bot、配置默认 Agent、受理人与 allowlist（见下文「微信 Channel」）
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）
 - 进行中的 Run 走 SSE（`GET /v0/runs/{id}/stream`）；出站 Webhook 会 POST 每条事件与终态 `run.ended`；断流后 UI 回退为 700ms 轮询
 
@@ -139,10 +139,10 @@ curl -N http://127.0.0.1:8080/v0/runs/<run_id>/stream
 
 通过上传接口文档，把 HTTP 服务注册成 Tools。
 
-1. 打开 `/ui` → **设置 → OpenAPI**（管理员）。
+1. 打开 `/ui` → **设置 → 业务系统**（管理员）。
 2. **添加 Connector**：填写 `id`、`base_url`，上传接口文档（`.json`、`.yaml`、`.yml`），或填写线上文档 URL（支持直链与 Swagger UI 页面，服务端抓取）。
 3. 保存 — 服务端识别格式、转换为 OpenAPI 3，并发现全部 operation。
-4. 在 **设置 → Tools** 管理工具；通过 `/ui` 或 `POST /v0/runs` 运行。
+4. 在 **设置 → 助手功能** 管理工具；通过 `/ui` 或 `POST /v0/runs` 运行。
 
 | 格式 | 扩展名 | 说明 |
 |------|--------|------|
@@ -192,7 +192,7 @@ HITL 仍使用 `require_approval`。试用 OpenAPI Connector 请用 `baize demo`
 
 ### 企业执行回调（§4.3）
 
-遗留系统只暴露一个统一执行入口、不想被 Runtime 按 operation 直连时，在 Connector 上配置 `execution_callback_url`。工具清单仍来自 OpenAPI 或 HTTP 侧车发现；invoke 时 Runtime POST 到企业 URL（body 含 `tool`、`arguments`、`run_id`、`idempotency_key`）。可在 **设置 → Tools** 每个 Connector 组头编辑，或 `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`。
+遗留系统只暴露一个统一执行入口、不想被 Runtime 按 operation 直连时，在 Connector 上配置 `execution_callback_url`。工具清单仍来自 OpenAPI 或 HTTP 侧车发现；invoke 时 Runtime POST 到企业 URL（body 含 `tool`、`arguments`、`run_id`、`idempotency_key`）。可在 **业务系统 / 插件** 连接的高级设置中编辑，或 `PUT /v0/connectors/{id}` / YAML `connector.execution_callback_url`。
 
 参考样例：
 
@@ -202,7 +202,7 @@ go run ./examples/enterprise-callback
 
 ### MCP Connector（可选）
 
-[MCP](https://modelcontextprotocol.io/) Server 通过 **stdio**（本地子进程）或 **Streamable HTTP**（远程 URL）暴露工具。用 `PUT /v0/connectors/{id}`（`type: mcp`）或 **设置 → MCP**（管理员）注册；发现的工具写入目录 `source: mcp`，启停、HITL `require_approval`、Run 调用与 OpenAPI / HTTP 插件一致。Connector 上的 `auth` 块**忽略**，鉴权写在 `mcp.env`（stdio）或 `mcp.headers`（HTTP）。生产 `baize start` **不**预置任何 MCP Server。
+[MCP](https://modelcontextprotocol.io/) Server 通过 **stdio**（本地子进程）或 **Streamable HTTP**（远程 URL）暴露工具。用 `PUT /v0/connectors/{id}`（`type: mcp`）或 **设置 → 外部工具服务**（管理员）注册；发现的工具写入目录 `source: mcp`，启停、HITL `require_approval`、Run 调用与 OpenAPI / HTTP 插件一致。Connector 上的 `auth` 块**忽略**，鉴权写在 `mcp.env`（stdio）或 `mcp.headers`（HTTP）。生产 `baize start` **不**预置任何 MCP Server。
 
 **stdio — 本地子进程**（`npx` 命令需在 **与 Baize 同一台宿主机** 上执行）：
 
@@ -247,7 +247,7 @@ npx -y @bytebase/dbhub --transport stdio --dsn "postgres://baize:baize@127.0.0.1
 
 #### 搜索 / 联网 MCP（仅文档）
 
-白泽不代理公网 — 由 MCP Server 访问搜索 API。**无**搜索 compose；`baize start` 后自行在设置 → MCP 或 `PUT` 添加。
+白泽不代理公网 — 由 MCP Server 访问搜索 API。**无**搜索 compose；`baize start` 后自行在设置 → 外部工具服务 或 `PUT` 添加。
 
 **Tavily（HTTP）** — 远程 Streamable HTTP，API Key 写在 URL：
 
@@ -274,12 +274,12 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
 | | MCP Connector（客户端） | MCP 导出 |
 |--|-------------------------|----------|
 | 方向 | 白泽 → 外部 MCP Server | 个人 Agent → 白泽 |
-| 设置 | 设置 → MCP（管理员） | 设置 → MCP 导出（管理员） |
+| 设置 | 设置 → 外部工具服务（管理员） | 设置 → 对外提供能力（管理员） |
 | 鉴权 | Connector 上 `mcp.env` / `mcp.headers` | 专用 **导出 Key**（须绑定导出身份） |
 | 控制面 | Gate 管理员/操作员口令 | **分离** — Gate 口令 ≠ 导出 Key |
 
-1. 打开 `/ui` → **设置 → MCP 导出**（管理员）：先建 **导出身份**（建议只读服务账号），再创建导出 Key（明文仅创建时展示一次，且必须绑定身份）。
-2. 在 **设置 → Tools** 调整每工具导出策略（`default` / 强制允许 / 强制拒绝）。数据库 / MCP 写类工具永不导出。
+1. 打开 `/ui` → **设置 → 对外提供能力**（管理员）：先建 **导出身份**（建议只读服务账号），再创建导出 Key（明文仅创建时展示一次，且必须绑定身份）。
+2. 在 **设置 → 对外提供能力** 按工具配置导出策略（`default` / 强制允许 / 强制拒绝）。数据库 / MCP 写类工具永不导出。
 3. 生产环境请用 **HTTPS** 连接白泽。
 
 ```json
@@ -303,7 +303,7 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
 
 - **显示名 / 说明** — 目录行可带 `title`（只出现在设置页，不进模型 tool list）与 `description`。`PATCH /v0/tools/{name}` 可改 `title` / `description`；人改过的 `description` 带 `description_custom`，再 `PUT` spec 不覆盖。合并时 `title` 始终保留。
 - **启用 / 停用** — `PATCH /v0/tools/{name}` 带 `{"enabled": false}`（或 `true`）立即在 Registry 中卸下（或重新注册）该工具，并把标志落盘到目录。SQLite 下停用行与手加行重启后仍在。同一接口也可改行上的 `require_login`。设置页组启停是多次 `PATCH enabled`，不是新接口。
-- **设置页树与搜索** — Tools 页按 Connector 与路径前缀折叠，并支持搜索；不新增目录 HTTP 面。
+- **设置页树与搜索** — 助手功能页按 Connector 与路径前缀折叠，并支持搜索；不新增目录 HTTP 面。
 - **手加 REST 工具（仅 OpenAPI）** — `POST /v0/connectors/{id}/tools` 在 `openapi` Connector 上加一行 `extra`，复用该 Connector 的 `base_url`、鉴权、会话身份与 HITL。规格漏写的接口可由此补上。重名返回 `409`。
 - **插件工具** — 侧车发现的 `plugin` 行可启停，但**不能**手加或删除，侧车是唯一来源。对 `http` Connector 手加会返回 `400`。
 - **删除** — `DELETE /v0/connectors/{id}/tools/{name}` 仅对 `source = extra` 行生效；`spec` / `plugin` 行返回 `400`。
@@ -321,7 +321,7 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 | 主题 | 行为 |
 |------|------|
 | 落盘 | 内置 `./skills`（`skills.builtin_dir`）与用户 `./data/skills`（`skills.user_dir`）；一级子目录为包 id，内含 `SKILL.md` |
-| 上传 / 删除 | 管理员经 `POST /v0/skills` 或「设置 → Skills」上传 `.md` / `.zip`；`DELETE /v0/skills/{id}` 仅删 **user** 包（内置 → `400`）。同 id：用户覆盖内置 |
+| 上传 / 删除 | 管理员经 `POST /v0/skills` 或「设置 → 技能」上传 `.md` / `.zip`；`DELETE /v0/skills/{id}` 仅删 **user** 包（内置 → `400`）。同 id：用户覆盖内置 |
 | 默认激活 | `agent.skills`（YAML / `PUT /v0/agents/{id}`）列出 Run 开始时已激活的包 |
 | 渐进激活 | 安装集非空时，模型可见内置工具 `activate_skill`，可在**本 Run** 内扩大激活集 |
 | `agent.skills` 为空 | 可见工具 = 目录全部 **enabled**（与引入 Skill 前一致） |
@@ -341,7 +341,7 @@ Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL
 
 **Vision 硬失败：** `llm.supports_vision` 默认为 `false`（见示例 YAML 注释）。Run 含图片附件且 `supports_vision=false` 时，服务端返回 **`400 vision_unsupported`** 且**不创建 Run** — 禁止把图片静默降级为「仅文件名」后继续执行。换支持识图的模型时请显式设 `supports_vision: true`。`/ui` 会读取 `GET /v0/ui-config` 并在发送前拦截图片；服务端仍为权威。
 
-内置 Skill 分两层目录：`skills/` 为核心（`minimal` 仅扫描此目录，默认 `data-analytics`）；`examples/skills/` 为 demo 试用包（仅 `demo` / `docker-demo` 通过 `builtin_dirs` 额外扫描）。干净部署在设置 → Skills 只见核心包。
+内置 Skill 分两层目录：`skills/` 为核心（`minimal` 仅扫描此目录，默认 `data-analytics`）；`examples/skills/` 为 demo 试用包（仅 `demo` / `docker-demo` 通过 `builtin_dirs` 额外扫描）。干净部署在设置 → 技能 只见核心包。
 
 这**不是** Cursor 个人编码 Skill 市场，也不保证与上游包（如 `grill-me` / `superpowers`）原样子调度兼容——仅 `SKILL.md` 的 frontmatter + 正文形态尽量可对照。
 
@@ -349,7 +349,7 @@ Skill 包可附 `workflow.yaml` 定义确定性流水线：`{{input.text}}` 取�
 
 ### 数据分析与报表
 
-多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。开箱内置 Skill **`data-analytics`**（`skills/data-analytics`，`minimal.yaml` 默认激活）：在「设置 → Skills」可取消勾选，或由模型调用 `activate_skill`。无 Connector 时仍可用 `create_analysis_page`；注册 OpenAPI 后 Skill 中的 `list_tickets` / `get_ticket` 随目录启用而可见。
+多源统计与交互式看板可使用内置工具 **`create_analysis_page`**（始终注册，无需 HITL）。开箱内置 Skill **`data-analytics`**（`skills/data-analytics`，`minimal.yaml` 默认激活）：在「设置 → 技能」可取消勾选，或由模型调用 `activate_skill`。无 Connector 时仍可用 `create_analysis_page`；注册 OpenAPI 后 Skill 中的 `list_tickets` / `get_ticket` 随目录启用而可见。
 
 **推荐路径：** `create_analysis_page` → 自包含分析页，支持**筛选**、图表**下钻**、页内**导出 PDF**。工具返回 `{ artifact_id, artifact_url, kind: "analysis_page" }`；`/ui` 以 iframe 嵌入。
 
@@ -365,7 +365,7 @@ Skill 包可附 `workflow.yaml` 定义确定性流水线：`{{input.text}}` 取�
 
 **可选 — AntV MCP 静态 PNG：**
 
-白泽**不**开箱预置 AntV。管理员可在 **设置 → MCP** 自行注册 `@antv/mcp-server-chart`（stdio `npx`），得到单图 PNG URL — 适合 Office / 幻灯片，不是完整分析站。MCP 结果仍以 JSON 工具卡展示（无专用图片嵌入组件）。
+白泽**不**开箱预置 AntV。管理员可在 **设置 → 外部工具服务** 自行注册 `@antv/mcp-server-chart`（stdio `npx`），得到单图 PNG URL — 适合 Office / 幻灯片，不是完整分析站。MCP 结果仍以 JSON 工具卡展示（无专用图片嵌入组件）。
 
 | | `create_analysis_page` | AntV MCP |
 |--|------------------------|----------|
@@ -507,7 +507,7 @@ go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-a
 带 `conversation_id` 的 Run（含 `/ui`）**只用**会话身份，不会静默使用 Connector 配置里的默认 Token。配置 Token 可选，仅供**不带** `conversation_id` 的脚本 / curl 使用。
 
 - `/ui` → **设置 → 账号**：查看账号（脱敏）、设默认、退出
-- `/ui` → **设置 → Tools**：可标「需要登录」（默认公开，不读 OpenAPI `security`）
+- `/ui` → **设置 → 助手功能**：可标「需要登录」（默认公开，不读 OpenAPI `security`）
 - 左栏 **新对话** → 新的 `conversation_id`（`localStorage` 键 `baize.conversation_id`）
 - **不带** `conversation_id` 的 Run，默认 HTTP 头由 `connector.auth.mode` 决定：
   - `static` — 注册时展开 `${ENV}`（如 `Bearer ${BAIZE_CONNECTOR_TOKEN}`）
@@ -575,7 +575,7 @@ curl -s -X POST http://127.0.0.1:8080/v0/conversations/<conversation_id>/fork \
 
 ### 配置 Channel
 
-1. 打开 `/ui` → **设置 → Inbox**（管理员）。
+1. 打开 `/ui` → **设置 → 外部来信**（管理员）。
 2. 新建 Channel：`id`（URL 段，如 `alerts`）、`agent_id`、可选 **Skills** 与 Channel 级出站 `webhook_url` / headers。
 3. 复制入站 URL（`https://<host>/v0/inbox/{id}`）与 **Secret**（创建或 **轮换 Secret** 时明文展示一次）。
 4. 在设置页 **发送测试**，或使用下方脚本。
@@ -646,13 +646,13 @@ curl -s -X POST "$RUNTIME_URL/v0/inbox/alerts" \
 
 ### 与出站 Webhook 配对
 
-- **全局：** 设置 → Webhook — 所有 Run 的事件 URL（可被覆盖）。
+- **全局：** 设置 → 消息回调 — 所有 Run 的事件 URL（可被覆盖）。
 - **按 Channel：** Inbox 的 `webhook_url` / `webhook_headers` — 仅该 Channel 触发的 Run。
 - **按 Run：** 聊天页 **高级** `webhook_url`（仅 UI / `POST /v0/runs`；Inbox v1 请求体不含此字段）。
 
-出站投递会 POST 每条 Run 事件及终态 `run.ended`（可在设置 → Webhook 发测试）。Inbox 触发的 Run 首条事件为 `inbox.received`。
+出站投递会 POST 每条 Run 事件及终态 `run.ended`（可在设置 → 消息回调 发测试）。Inbox 触发的 Run 首条事件为 `inbox.received`。
 
-**出站可靠性（v0）：** 下游 **5xx / 网络错误 / 429** 时自动重试（最多 5 次 POST，退避 1s→2s→4s→8s→16s，单次间隔上限 60s）；其他 **4xx** 不重试，进入死信。SQLite `webhook_outbox` 持久化 pending，进程重启可续投。管理员在 **设置 → Webhook → 最近投递** 查看 pending / dead 并手动重投。
+**出站可靠性（v0）：** 下游 **5xx / 网络错误 / 429** 时自动重试（最多 5 次 POST，退避 1s→2s→4s→8s→16s，单次间隔上限 60s）；其他 **4xx** 不重试，进入死信。SQLite `webhook_outbox` 持久化 pending，进程重启可续投。管理员在 **设置 → 消息回调 → 最近投递** 查看 pending / dead 并手动重投。
 
 ### 安全清单（生产）
 
@@ -699,7 +699,7 @@ control_plane:
 
 ### 设置页扫码步骤
 
-1. 打开 `/ui` → **设置 → 渠道 / 微信**（管理员）。
+1. 打开 `/ui` → **设置 → 微信**（管理员）。
 2. **获取登录二维码**，用手机微信扫码；页面轮询至 `success`。
 3. 配置 `agent_id`、**受理人**（`assignee`，操作员 id）、可选 allowlist（每行一个 peer id），保存。
 4. 凭证写入 `./data/channels/weixin/`（`creds.json` 等，已 gitignore）；进程启动若凭证有效会自动恢复长轮询。
