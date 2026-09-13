@@ -92,7 +92,7 @@
 | **2** | **P4** PostgreSQL / SQL 驱动 | **已完成** |
 | **2b** | **微信 Channel（iLink）+ 会话归属** | **已交付**（`feat/channel-weixin-v0`；规格 `specs/2026-08-29-channel-weixin-v0-design.md`） |
 | **3** | **X1** MCP 导出 → **已交付**（`mcp-export-v0`）；**X2** 多模型配置 / 对话选模型 → **已交付**（`feat/multi-model-profiles-v0`）；**X4** 对话历史压缩 / 滚动摘要 → **已交付**（`feat/context-compaction-v0`）；**X3** 中间件多源 → **已交付**（`feat/middleware-multi-source-v0`） | 分里程碑 |
-| **4** | P1/P2 文档 + **F** 生产硬化 | 上述之后 |
+| **4** | P1/P2 文档 + **F** 生产硬化 | **仍欠**（详见 [`2026-09-13-spec-ledger.md`](2026-09-13-spec-ledger.md) §5；另有 WebUI 体验债/渠道阶段三等） |
 
 ---
 
