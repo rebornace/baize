@@ -135,6 +135,23 @@ func TestMemoryUpsertModelProfileAPIKeyRequiresSettingsKey(t *testing.T) {
 	}
 }
 
+func TestMemoryGetModelProfileSealedAPIKeyRequiresSettingsKey(t *testing.T) {
+	setTestSettingsKey(t)
+	s := NewMemory()
+	p, err := s.UpsertModelProfile(ModelProfile{
+		Name: "sealed", Provider: "openai_compatible", BaseURL: "https://x/v1",
+		Model: "m", APIKey: "sk-secret-1234",
+	})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	t.Setenv("BAIZE_SETTINGS_KEY", "")
+	_, err = s.GetModelProfile(p.ID)
+	if !errors.Is(err, settingscrypto.ErrCiphertext) {
+		t.Fatalf("get sealed api_key without BAIZE_SETTINGS_KEY: got %v want ErrCiphertext", err)
+	}
+}
+
 func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 	setTestSettingsKey(t)
 	s := newSQLiteProfileStore(t)
