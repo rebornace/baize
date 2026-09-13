@@ -173,6 +173,49 @@ export const startWeixinProcess = () => postWeixinProcess('start')
 export const stopWeixinProcess = () => postWeixinProcess('stop')
 export const restartWeixinProcess = () => postWeixinProcess('restart')
 
+export type ChannelOutboundDelivery = {
+  id: string
+  status: string
+  kind: string
+  peer_id?: string
+  conversation_id?: string
+  run_id?: string
+  attempt: number
+  max_attempts: number
+  last_error?: string
+  updated_at?: string
+}
+
+export async function getChannelOutboundDeliveries(
+  channel: string,
+  params?: { status?: string; limit?: number },
+): Promise<ChannelOutboundDelivery[]> {
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  const res = await fetch(
+    `/v0/settings/channels/${encodeURIComponent(channel)}/outbound-deliveries${suffix}`,
+    { headers: authInit() },
+  )
+  const body = await parseJSON<{ deliveries: ChannelOutboundDelivery[] }>(res)
+  return body.deliveries ?? []
+}
+
+export async function retryChannelOutboundDelivery(
+  channel: string,
+  id: string,
+): Promise<{ status: string }> {
+  const res = await fetch(
+    `/v0/settings/channels/${encodeURIComponent(channel)}/outbound-deliveries/${encodeURIComponent(id)}/retry`,
+    {
+      method: 'POST',
+      headers: authInit(),
+    },
+  )
+  return parseJSON<{ status: string }>(res)
+}
+
 // --- Runtime hot-reload settings (engine knobs + control-plane credentials) ---
 
 /** Effective engine knobs (duration expressed in seconds on the wire). */
