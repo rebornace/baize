@@ -76,44 +76,53 @@
 | `2026-09-13-messaging-settings-humanize-design.md` | 已交付 | 消息组原语/人话壳 | — |
 | `2026-09-13-messaging-copy-outcome-design.md` | 已交付 | 结果导向文案；已去掉技术折叠 | — |
 
-**WebUI 仍欠（体验债，非回归）：**
+**WebUI / 体验仍欠（产品已勾）：**
 
 | 项 | 来源 | 备注 |
 |----|------|------|
-| 运行参数页人话化 | P3-D / runtime 规格附注 | 功能已有，壳偏旧 |
-| MCP OAuth 交互登录 | P3-C 明确不做 | 独立里程碑 |
-| 技能可视化编辑器 | P3-D 明确不做 | 独立里程碑 |
-| Playwright E2E | 多规格非目标 / U2 | 工程后续 |
-| 登录入口 `@` 直达等 | P3-D 明确不做 | 体验后续 |
+| 运行参数页人话化（UI-RUNTIME） | P3-D | **规格已批准** `2026-09-13-runtime-settings-humanize-design.md`；待写计划 |
+| MCP OAuth 交互登录 | P3-C | **要做** |
+| 登录入口 `@` 直达 / `login_required` | P3-B/D | **要做**（上调） |
+| i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
+| 模型思考级别开关 | P1 非目标 → 上调 | **要做** |
+| `export_db_readonly` UI | P3-C → 上调 | **要做** |
+| 技能可视化编辑器 | P3-D | 确认不做 |
+| Playwright E2E | U2 | 确认不做 |
+| 对话自动标题 U1 | OSS defer | 确认不做 |
+| MCP capture UI | P3-C | **确认不做** |
 
 ---
 
-## 5. 文档与生产硬化（OSS 顺序 4）
+## 5. 文档、工程与运维（仍欠 · 产品确认要做）
 
-| 项 | 状态 | 对照 | 下一动作 |
-|----|------|------|----------|
-| P1 架构「开源含 SDK」表述 | **仍欠** | 公开 `docs/architecture-and-plugin-protocol.md` 仍写 SDK | 改文档 |
-| P2 工作流=线性流水线表述 | **待核验 / 可能部分已写** | architecture 已有线性 workflow 节；需与「完整状态机」旧表述对照 | 文档扫一遍 |
-| **F 生产硬化** | **仍欠** | 无独立已批准 F 切片规格 | 另开头脑风暴定切片 |
+| 项 | 状态 | 下一动作 |
+|----|------|----------|
+| **DOC**（P1+P2） | 要做 · 可开刀 | 一个文档计划 |
+| **F**（含 C1 + OPS-HOT） | 要做 · 先母篇脑暴 | 切片：C1 → KV 加密 → 热切换/SIGHUP |
+| **UI-RUNTIME**（+ i18n 文案抽离附录） | 要做 · 可开刀 | 人话化；完整多语言见 UI-I18N |
+| **UI-I18N** | 要做 · 先定范围 | 独立规格 |
+| **BLOB-CS** / **CH-PORT** / **CH-OUTBOX** | 要做 | 各开规格 |
+| **P6** Memory / **MCP OAuth** | 要做 · 先脑暴 | **不合并**进其他史诗 |
 
 ---
 
-## 6. 确认不做（本版）— 摘自 OSS backlog + 2026-09-13 产品确认
+## 6. 确认不做（本版）— 2026-09-13 产品确认
 
-**不做：** A1 多订阅 · B1 SDK 实现 · P3 OTel · P5 多 Agent · I2–I5 Inbox 增强 · W1/W2 工作流分支/画布 · P7 飞书钉钉真实适配器 · CH-SDK 公共 Go SDK · 技能可视化 · Playwright E2E · 微信群聊 · 商业 E1–E5（默认）。
+**不做 / 不新立项：** A1 · B1 · P3 OTel · P5 · I2–I5 · W1/W2 · P7 · CH-SDK · 技能可视化 · Playwright · 微信群聊/语音视频 · U1 · Agent↔Tool 白名单 · MCP capture · 商业 E1–E5 · CH-WL-FORCE（已有）。
 
-**要做（2026-09-13 上调，待开规格）：** P6 Memory 产品化 · MCP OAuth · 渠道 outbox · 适配器动态端口。详见 [`2026-09-13-v1-product-confirmation-checklist.md`](2026-09-13-v1-product-confirmation-checklist.md)。
+**要做史诗（合并策略 A，共 12）：** DOC · F(C1+OPS) · UI-RUNTIME(+文案抽离) · UI-I18N · UI-EXPORT-DB-RO · CH-PORT · CH-OUTBOX · UI-LOGIN-AT · LLM-THINK · BLOB-CS · MCP OAuth · P6 Memory。详见确认清单 §1。
 
 ---
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **DOC-P1/P2 公开架构文档**（待产品勾选；与 B1/W1=不做配套）  
-2. **运行参数页人话化**（可选）  
-3. **F 生产硬化**（待勾选 + 切片）  
-4. ~~渠道/supervisor DoD 核验~~（已完成）  
-5. ~~清理 sql-store worktree~~（已完成）  
-6. **CH-PORT** 动态端口 / **CH-OUTBOX** / **MCP OAuth** / **P6 Memory**（已确认要做，须排优先并各开规格）
+1. **DOC**  
+2. **UI-RUNTIME** 或 **UI-EXPORT-DB-RO**  
+3. **F 母篇头脑风暴** → 可先落地 C1  
+4. **CH-PORT** → **CH-OUTBOX**  
+5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
+6. **MCP OAuth** · **P6 Memory**  
+7. ~~渠道 DoD / sql-store worktree~~（已完成）
 
 ---
 

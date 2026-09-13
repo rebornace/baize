@@ -3,22 +3,13 @@
 > 日期：2026-09-13  
 > 用途：产品确认「第一版还要做什么 / 明确不做」  
 > 依据：`2026-08-28-oss-backlog`、`2026-09-13-spec-ledger`、各规格非目标/defer、近期 DoD 核验  
-> 状态：**部分已确认**（2026-09-13 产品回复）；A1 文档 / F / UI-RUNTIME / 商业 E 组仍待勾
+> 状态：**产品勾选已收口**；合并策略 **A（最小合并）** 已确认；史诗表见 §1
 
 ---
 
 ## 0. 已确认决策（2026-09-13）
 
-### 首版要做（新上调，须另开规格）
-
-| ID | 项 | 备注 |
-|----|-----|------|
-| **P6** | Memory 产品化 | 原归属「商业/企业」；产品改为开源首版要做 → **范围需头脑风暴切片**（插件形态？默认实现？存储？） |
-| **UI-MCP-OAUTH** | MCP OAuth 2.1 交互登录 | 远程 MCP 用户级授权；大项 |
-| **CH-OUTBOX** | 渠道出站持久化 outbox | 跨重启可靠投递 |
-| **CH-PORT** | 适配器动态端口发现 | 少手配端口 |
-
-### 首版不做（本次确认）
+### 首版不做
 
 | ID | 项 |
 |----|-----|
@@ -26,46 +17,62 @@
 | P3 | OTel |
 | P5 | 多 Agent |
 | A1 | Webhook 多订阅 |
-| I2 | Inbox 附件 / 多模态入站 |
-| I3 | Inbox JSONPath / 模板映射 |
-| I4 | Inbox 限速多副本一致 |
-| I5 | 多 Channel 广播 / 路由引擎 |
-| W1 | Workflow 分支 / 循环 / 表达式 |
-| W2 | Workflow 画布 |
+| I2–I5 | Inbox 增强 / 多 Channel 广播 |
+| W1 / W2 | Workflow 分支·画布 |
 | UI-SKILL-EDITOR | 技能可视化编辑器 |
-| U2 / UI-E2E | Playwright E2E |
+| U2 | Playwright E2E |
 | P7 | 飞书 / 钉钉真实适配器 |
 | CH-SDK | 公共 Go SDK |
-| CH-GROUP | 微信群聊（此前已确认） |
+| CH-GROUP / CH-AV | 微信群聊；语音/视频 |
+| U1 | 对话自动生成标题 |
+| AGENT-TOOL-WL | Agent↔Tool 白名单 |
+| UI-MCP-CAPTURE | MCP capture UI |
+| E1–E5 | 商业多租户/SSO/厂商连接器/画布/托管记忆等 |
+| CH-WL-FORCE | 白名单入站强制（**已有 / 不新立项**） |
 
-### 仍待产品勾选
+### 产品回复原文（节选）
 
-| ID | 项 | 建议默认 |
-|----|-----|----------|
-| **DOC-P1** | 架构去掉「开源含 SDK」 | 要做（改文档）；与 B1=不做配套 |
-| **DOC-P2** | 工作流仅线性表述 | 要做（改文档）；与 W1=不做配套 |
-| **F** | 生产硬化 | 要做但先定切片 |
-| **UI-RUNTIME** | 运行参数页人话化 | 可选 |
-| **CH-WL-FORCE** | 白名单强制（若与现 allowlist 重复） | 多半不做 |
-| **E1–E5** | 商业：多租户/SSO/厂商连接器等 | 默认不做 |
+完整原文见 §3。合并策略回复：**A（最小合并）**。
 
 ---
 
-## 1. 建议的下一刀顺序（仅「要做」四项 + 文档）
+## 1. 合并策略 A（已确认）→ 史诗表
 
-四项功能彼此独立，**不能塞进同一个实现计划**。建议产品再定优先：
+**原则：** 能挂进已有史诗的挂进去；OAuth / Memory 不硬塞；实现计划仍「一目标一计划」。
 
-1. **DOC-P1/P2**（若确认要做）— 半日级，对齐对外叙事  
-2. **CH-PORT** — 相对小、服务微信/webhook 部署体验  
-3. **CH-OUTBOX** — 中等，渠道可靠性  
-4. **UI-MCP-OAUTH** — 大，协议完整 OAuth  
-5. **P6 Memory 产品化** — 最大，须先头脑风暴「做什么算 Memory」  
+| 史诗 ID | 覆盖原勾选项 | 就绪 | 备注 |
+|---------|--------------|------|------|
+| **DOC** | DOC-P1 + DOC-P2 | 可开刀 | **一个**文档计划 |
+| **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | 先头脑风暴母篇 | 切片建议：C1 → KV 加密 → 热切换/SIGHUP；**勿**与 UI-RUNTIME 混计划 |
+| **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 可开刀 | 规格已批准：`specs/2026-09-13-runtime-settings-humanize-design.md`；待写计划 |
+| **UI-I18N** | i18n 框架（语言切换 / 英等） | 先定范围 | 可紧接 RUNTIME 后；独立规格 |
+| **UI-EXPORT-DB-RO** | export_db_readonly UI | 可开刀 | 小刀；**不**与 OAuth 并计划 |
+| **CH-PORT** | 动态端口 | 可开刀 | 与 OUTBOX 同域串行 |
+| **CH-OUTBOX** | 渠道 outbox | 可开刀 | PORT 之后 |
+| **UI-LOGIN-AT** | `@` 登录 / login_required | 可开刀（先规格） | 独立 |
+| **LLM-THINK** | 思考级别开关 | 可开刀（先规格） | 独立 |
+| **BLOB-CS** | Connector / Skill blob 化 | 可开刀（先规格） | 独立 |
+| **UI-MCP-OAUTH** | MCP OAuth 2.1 | 先头脑风暴 | **不合并** |
+| **P6** | Memory 产品化 | 先头脑风暴 | **不合并** |
+
+**计数：** 勾选能力仍是那些要做的点；**立项史诗 = 12**（上表 12 行）。相对「15 行清单」少掉的是：DOC 合一、C1/OPS 并入 F、i18n **抽离**挂 RUNTIME（完整 i18n 仍单独一行）。
+
+**明确不合并：** OAuth ↛ export_db_ro；Memory ↛ 任一现有项；F/OPS ↛ UI-RUNTIME；完整 i18n ↛ @登录 / OAuth。
+
+### 建议下一刀顺序
+
+1. **DOC**  
+2. **UI-RUNTIME**（含文案抽离附录）或 **UI-EXPORT-DB-RO**  
+3. **F 母篇头脑风暴**（定 C1 / KV / 热切换分期）→ 可先落地 **C1**  
+4. **CH-PORT** → **CH-OUTBOX**  
+5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**（完整多语言）  
+6. **UI-MCP-OAUTH** · **P6**  
 
 ---
 
-## 2. 历史盘点摘要（已交付 / 勿重复立项）
+## 2. 历史盘点摘要
 
-见 `2026-09-13-spec-ledger.md` §1–§4。Runtime、连接器、WebUI P0–P4、消息组、微信适配器+supervisor、Inbox resume、多模型、压缩、中间件、Blob、工作区、运行参数热更新（功能）等均已交付。
+见 `2026-09-13-spec-ledger.md` §1–§4。
 
 ---
 
@@ -90,4 +97,30 @@ Playwright E2E：不做
 公共 Go SDK：不做
 渠道 outbox：要做
 动态端口：要做
+```
+
+```
+DOC-P1/P2：要做
+F 生产硬化：要做
+UI-RUNTIME：要做
+商业 E1–E5：不做
+CH-WL-FORCE：已有 / 不做新立项
+```
+
+```
+U1 对话自动生成标题：不做
+C1 golangci / eslint：要做
+登录入口 @ 直达 / login_required 卡片：要做
+Connector / Skill blob 化：要做
+驱动热切换 · SIGHUP · 凭据 KV 加密：要做
+微信 语音 / 视频消息：不做
+i18n：要做
+模型「思考级别」开关：要做
+export_db_readonly UI：要做
+Agent↔Tool 白名单：不做
+MCP capture：不做
+```
+
+```
+合并策略：A（最小合并）
 ```

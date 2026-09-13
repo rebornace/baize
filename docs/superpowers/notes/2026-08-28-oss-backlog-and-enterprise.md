@@ -19,8 +19,8 @@
 | **已交付** | **BlobStore 对象存储多源**（分析报告产物可换 file/s3（AWS S3/MinIO/OSS/COS）；通用 `blob.Store` + 驱动注册表，代理读；规格 `2026-09-04-blob-object-storage-design.md`） |
 | **已交付** | **Agent 会话文件工作区**（附件文本/图片持久化到 blob、`list_files`/`read_file`/`write_file`/`delete_file`/`read_image` 五工具、多模态工具结果通道、按会话隔离路径安全；规格 `2026-09-04-agent-workspace-files-design.md`） |
 | **本版之后** | **F** 生产硬化（含 P1/P2 文档收口） |
-| **2026-09-13 产品上调（开源首版要做，待规格）** | **P6** Memory 产品化；**MCP OAuth**；渠道 **outbox**；适配器 **动态端口** |
-| **2026-09-13 产品确认不做** | B1 SDK 实现；P3 OTel；P5 多 Agent；A1；I2–I5；W1/W2；技能可视化；Playwright；P7 飞书钉钉适配器；公共 Go SDK；微信群聊 |
+| **2026-09-13 合并策略 A** | DOC 合一；F 含 C1+OPS-HOT；RUNTIME 可附 i18n 文案抽离；OAuth/Memory 不合并。史诗 12 条见确认清单 §1 |
+| **2026-09-13 产品确认不做** | B1；P3 OTel；P5；A1；I2–I5；W1/W2；技能可视化；Playwright；P7；公共 Go SDK；微信群聊；微信语音视频；**U1** 自动标题；**Agent↔Tool 白名单**；商业 E1–E5 |
 
 ---
 
@@ -54,7 +54,7 @@
 | P3 | 可选 **OTel** | 未实现 | 后续（运维向） | **否** |
 | P4 | 存储可换 **PostgreSQL** | 仅 SQLite / Memory | **本版开发** | **是** |
 | P5 | 多 Agent 协作 | 未做 | 后期 / 企业 | **否** |
-| P6 | 企业 Memory 插件 | 未产品化 | 商业 / 企业 | **否** |
+| P6 | Memory 产品化 | 未产品化 | **开源首版要做**（产品 2026-09-13 上调；原商业） | **是**（须另开规格切片） |
 | P7 | 企微 / 钉钉原生 Channel 样板 | 网关转发即可 | 样板后续 / 企业 | **否** |
 
 ---
@@ -70,8 +70,8 @@
 | I5 | 多 Channel 广播 / 路由引擎 | YAGNI | 不做 | **否** |
 | W1 | Workflow 分支 / 循环 / 表达式 | workflow 非目标 | 开源后续 | **否** |
 | W2 | Workflow 可视化编辑器 | 商业侧 | 企业 / 商业 | **否** |
-| C1 | golangci-lint / eslint 等 | CI v0 非目标 | 工程后续（可随 F） | **否** |
-| U1 | 对话自动生成标题 | 会话规格 | 体验后续 | **否** |
+| C1 | golangci-lint / eslint 等 | CI v0 非目标 | **开源首版要做**（产品 2026-09-13；可随 F） | **是** |
+| U1 | 对话自动生成标题 | 会话规格 | 体验后续 | **否**（产品确认） |
 | U2 | Playwright 全量 E2E | Demo B | 工程后续 | **否** |
 
 ---
@@ -94,7 +94,7 @@
 | **2** | **P4** PostgreSQL / SQL 驱动 | **已完成** |
 | **2b** | **微信 Channel（iLink）+ 会话归属** | **已交付**（`feat/channel-weixin-v0`；规格 `specs/2026-08-29-channel-weixin-v0-design.md`） |
 | **3** | **X1** MCP 导出 → **已交付**（`mcp-export-v0`）；**X2** 多模型配置 / 对话选模型 → **已交付**（`feat/multi-model-profiles-v0`）；**X4** 对话历史压缩 / 滚动摘要 → **已交付**（`feat/context-compaction-v0`）；**X3** 中间件多源 → **已交付**（`feat/middleware-multi-source-v0`） | 分里程碑 |
-| **4** | P1/P2 文档 + **F** 生产硬化 | **仍欠**（详见 [`2026-09-13-spec-ledger.md`](2026-09-13-spec-ledger.md) §5；另有 WebUI 体验债/渠道阶段三等） |
+| **4** | P1/P2 文档 + **F** 生产硬化 | **产品确认要做 · 仍欠实现**（详见 [`2026-09-13-spec-ledger.md`](2026-09-13-spec-ledger.md) §5；另有 UI-RUNTIME / Memory / MCP OAuth / outbox / 动态端口等，见确认清单） |
 
 ---
 
