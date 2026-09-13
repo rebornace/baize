@@ -1,7 +1,7 @@
 # 运行时设置热更新（Runtime Settings Hot-Reload）v0 设计规格
 
 > 日期：2026-09-05
-> 状态：已批准（分节头脑风暴 §1–§4 全部确认）
+> 状态：已交付（2026-09-13 账本对齐；API/UI 热更新已在 main；运行参数页人话化另计体验债）
 > 依赖：DB 设置 KV（`store.GetSetting/UpsertSetting`，已交付）；原子热切换模式（同 `llm.Switch`）
 > 归属里程碑：Agent 能力增强之后、F 生产硬化之前的体验增强
 

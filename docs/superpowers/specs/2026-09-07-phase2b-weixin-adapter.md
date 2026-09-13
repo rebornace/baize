@@ -1,6 +1,6 @@
 # 阶段二 2B 设计：微信适配器迁移与跨平台子进程托管
 
-> 状态：设计稿（仅私有仓 docs/superpowers，不导出公开仓）
+> 状态：已交付（2026-09-13 账本对齐；微信迁 cmd/weixin-adapter，进程内 weixin 已移除）
 > 日期：2026-09-07
 > 前置：阶段一「渠道注册表化」、阶段二 2A「通用 webhook 渠道」均已合并并推送双仓。
 > 关联：`docs/superpowers/specs/2026-09-06-phase2-webhook-channel-design.md`（阶段二总设计，§9b 为本节雏形）；`docs/superpowers/specs/2026-08-29-channel-weixin-v0-design.md`（微信 v0）。

@@ -1,6 +1,6 @@
 # P3-B 业务系统 / 插件设置页人话化设计（连接器外壳）
 
-> 状态：待批准
+> 状态：已交付（2026-09-13 账本对齐）
 > 日期：2026-09-11
 > 范围：WebUI 设置 →「业务系统（OpenAPI）」与「插件（HTTP 插件）」两页改版
 > 前置：P3-A 表单原语（PageHeader / Card / Field / Input / Select / Modal / ConfirmDialog / Toast / EmptyState / Badge）已落地

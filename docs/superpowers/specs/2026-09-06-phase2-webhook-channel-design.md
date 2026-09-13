@@ -1,6 +1,6 @@
 # 阶段二设计：进程外 webhook 渠道（统一渠道机制，微信也迁至适配器）
 
-> 状态：设计稿（仅私有仓 docs/superpowers，不导出公开仓）
+> 状态：已交付（2026-09-13 账本对齐；2A webhook 渠道已在 main）
 > 日期：2026-09-06
 > 前置：阶段一「渠道注册表化」已合并（Descriptor 注册表 / 出站 Router / api 渠道句柄表 / bootstrap 通用 `wireChannels` / config 声明式启用）。
 > 关联：`docs/superpowers/specs/2026-09-06-plugin-decoupling-architecture.md` 阶段二；`docs/superpowers/plans/2026-09-06-phase1-channel-registry.md`。

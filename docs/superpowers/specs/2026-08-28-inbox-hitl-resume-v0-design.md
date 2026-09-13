@@ -1,6 +1,6 @@
 # Inbox HITL resume（I1）设计规格
 
-> 状态：已批准（2026-08-28）  
+> 状态：已交付（2026-09-13 账本对齐）
 > 日期：2026-08-28  
 > 前置：Webhook Inbox v1、HITL `POST /v0/runs/{id}/resume`  
 > 依据：开源首版边界清单（I1 本版必做）；头脑风暴选定「同路径扩 action」（方案 1）  
