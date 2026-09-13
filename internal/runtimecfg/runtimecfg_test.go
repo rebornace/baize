@@ -57,6 +57,25 @@ func TestNilHolderSafe(t *testing.T) {
 	if got := h.Credentials(); got.OperatorToken != "" || len(got.Operators) != 0 {
 		t.Fatalf("nil holder creds must be zero: %+v", got)
 	}
+	h.ReplaceBaseline(baseSnapshot()) // must not panic
+}
+
+func TestReplaceBaselineKeepsOverrides(t *testing.T) {
+	h := New(Snapshot{Knobs: Knobs{MaxSteps: 10, MaxMessages: 40}})
+	steps := 20
+	h.mu.Lock()
+	h.ko = knobsOverride{MaxSteps: &steps}
+	h.swapLocked()
+	h.mu.Unlock()
+
+	h.ReplaceBaseline(Snapshot{Knobs: Knobs{MaxSteps: 50, MaxMessages: 99}})
+	k := h.Knobs()
+	if k.MaxSteps != 20 {
+		t.Fatalf("override lost: got %d", k.MaxSteps)
+	}
+	if k.MaxMessages != 99 {
+		t.Fatalf("baseline MaxMessages not applied: %d", k.MaxMessages)
+	}
 }
 
 func TestMergeSnapshotOverlaysOnlyProvided(t *testing.T) {
