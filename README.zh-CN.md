@@ -403,7 +403,7 @@ Remove-Item -Recurse -Force .\data\baize.db -ErrorAction SilentlyContinue
 **不要把密钥写进 YAML。**
 
 1. 生产默认已在 `configs/minimal.yaml` 使用 `openai_compatible`；`baize start` 在缺少 `BAIZE_API_KEY` 时会直接失败并提示。
-2. 复制 `.env.example` → `.env`，填写 `BAIZE_API_KEY`（以及可选的控制面 / Connector Token）
+2. 复制 `.env.example` → `.env`，填写 `BAIZE_API_KEY`；生产环境还应设置 `BAIZE_SETTINGS_KEY`（设置项秘密落库主密钥，见下文「设置项加密」）；可选填写控制面 / Connector Token
 3. 在 `configs/minimal.local.yaml` 中增加 `connector` 段，或启动后用 API 注册：
 
 ```yaml
@@ -437,7 +437,7 @@ go run ./cmd/baize start
 生产启动后，可在 **设置 → 模型**（`/settings/models`，仅管理员）维护多个**命名模型 profile**，无需改 YAML、无需重启：
 
 - 每个 profile 含：名称、Provider（本版固定 `openai_compatible`）、Base URL、模型名、API Key（或 API Key 环境变量名）、`disable_thinking`、`supports_vision`、`context_tokens`，以及 **Auto 路由档位**（`light` / `standard` / `power`，可选「auto」按模型名自动识别）。档位告诉任务感知 Auto 路由器该模型的能力级别。
-- **API Key 存本地库**（SQLite / Postgres，与 DSN 密码同级信任）；界面与 API 响应一律**脱敏**回显（前 3 后 4，中间省略）。编辑时 Key 留空表示**不修改**；也可只填环境变量名、由 Runtime 启动/调用时读取。**任何 profile 都可删除，包括最后一个**；当一个模型都没有时，聊天会被拦截并提示先添加模型。
+- **API Key 存本地库**（SQLite / Postgres，与 DSN 密码同级信任）。配置 `BAIZE_SETTINGS_KEY` 后，入库的 `api_key` **加密落库**（`bz1:` 信封）；`api_key_env` 不加密。界面与 API 响应一律**脱敏**回显（前 3 后 4，中间省略）。编辑时 Key 留空表示**不修改**；也可只填环境变量名、由 Runtime 启动/调用时读取。**任何 profile 都可删除，包括最后一个**；当一个模型都没有时，聊天会被拦截并提示先添加模型。
 - **热切换、不重启**：profile 增改后，下一次对话自动生效；底层按 Run 解析 / 缓存 Provider，配置更新即热重建。
 - **智能路由（Auto）**：聊天框模型下拉首项为「智能路由（Auto）」，也是默认与无人值守入口的行为。Auto 并非独立模型，而是一套确定性路由策略：根据每轮对话的**实际内容**（文本长度、推理类关键词、代码块、附件数量）判定难度档位，在该档位里挑选模型（普通文本优先用 `standard`），理想档位没有模型时向相邻档位降级；**带图片的消息只会使用勾选了 `supports_vision` 的模型**。也可在下拉里**手动指定**某条消息固定使用某个具体模型；手动选择会被严格遵守、**不会**自动改道（即便该模型不支持图片，也只会提示而不偷偷换模型）。**选择不记忆**——发送成功后下拉重置回 Auto，不写 `localStorage`。微信渠道、Inbox、MCP 导出等**无人值守入口**始终走 Auto。
 - **权限**：操作员可查看模型列表（供聊天下拉），仅管理员可增删改。
@@ -472,6 +472,8 @@ go run ./cmd/baize start
 
 **控制面凭据** — `GET /v0/settings/credentials` **绝不返回明文口令**：只回 `source`（`config`/`override`）、`operator_set` / `admin_set` 布尔，以及 `operators` 列表（每项仅含 `id` 与 `source`（`config`/`runtime`））。`PATCH` 支持：`operator_token` / `admin_token`（轮换主口令，下一个请求即刻生效）、`add_operators: [{id, token}]`（id 重复返回 `409`）、`remove_operators: [id]`（只能删运行时新增的；删 config 基线的返回 `400`）、`reset: true`（清空全部热更新凭据，回落到 YAML/env 基线口令；不能与其它字段同用）。YAML/env 配置的口令是永久 break-glass 基线，热更新为叠加覆盖。
 
+**设置项加密（`BAIZE_SETTINGS_KEY`）** — 生产请在 `.env` 中设置高熵主密钥（见 `.env.example`）。用于密封控制面口令、模型 profile `api_key`、Inbox channel `secret` 等落库秘密（AES-256-GCM，`bz1:` 前缀）。**有 key：** 写入加密、进程内解密使用；启动时自动把范围内遗留明文就地加密。**无 key：** 经 API 持久化上述秘密会返回 `400`（`settings_key_required`）；仍可读存量明文；若库中已是密文则**拒启**，须配置同一 key。`baize reset-credentials` 仅清空热更新凭据覆盖，与加密及 YAML/env break-glass **正交**。规格：[`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`](docs/superpowers/specs/2026-09-13-f-production-hardening-design.md) §2（**F-KV**）。
+
 **锁死恢复**：轮换后若丢失新的 admin 口令，在服务器本地执行（不走 HTTP 门禁）：
 
 ```bash
@@ -492,7 +494,7 @@ go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-a
 
 **微信私信白名单** — `allowlist` 为 peer（`from_user_id`）id 列表。非空时，渠道会在下载媒体 / 创建会话之前**丢弃名单外 peer 的私信**，且不自动回复（避免被探测 / 节省出站成本）；空列表（默认）表示不限制私信。保存即热生效、启动时也会重新应用；群消息始终忽略。
 
-非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径、凭据 KV 加密（凭据明文落库，与模型 `api_key` 同级信任）。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。
+非目标（不做热更新）：存储 / 中间件 / 数据库驱动切换、端口 / TLS / 目录路径。设计文档：[`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md)。落库秘密加密见 **F-KV**（上文「设置项加密」）。
 
 ---
 

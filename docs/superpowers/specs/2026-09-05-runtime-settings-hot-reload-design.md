@@ -38,7 +38,7 @@ Baize 的「业务配置面」（模型 profile、工具目录、连接器、技
 - 监听端口/TLS、`data_dir` 等目录路径、demo/start 运行模式热改；
 - 微信**白名单入站强制**（现状白名单只存不生效；作为独立安全特性另开）；
 - 配置文件 SIGHUP/watch 整体热重载；
-- 凭据 KV 加密（V0 明文落库，与模型 profile api_key / webhook secret 同级）。
+- 凭据 KV 加密（已由 **F-KV** 承接：`BAIZE_SETTINGS_KEY`、`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md` §2；实现计划 `docs/superpowers/plans/2026-09-13-f-kv-encrypt.md`）。
 
 ### 1.5 整体架构
 

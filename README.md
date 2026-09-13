@@ -392,7 +392,7 @@ The tool catalog is empty until you register a Connector (`PUT /v0/connectors/{i
 Do **not** put secrets in YAML.
 
 1. Production default `configs/minimal.yaml` already uses `openai_compatible`; `baize start` fails fast if `BAIZE_API_KEY` is missing.
-2. Copy `.env.example` → `.env` and set `BAIZE_API_KEY` (and optional control-plane / connector tokens).
+2. Copy `.env.example` → `.env` and set `BAIZE_API_KEY`; production should also set `BAIZE_SETTINGS_KEY` (settings secret encryption — see **Settings encryption** below). Optional: control-plane / connector tokens.
 3. Add a `connector` block in `configs/minimal.local.yaml`, or register after startup:
 
 ```yaml
@@ -426,7 +426,7 @@ For the trial stack, use `go run ./cmd/baize demo` (mock LLM, no key).
 Once a production Runtime is up, maintain multiple **named model profiles** under **Settings → 模型 (models)** (`/settings/models`, admin-only) — no YAML edits, no restart:
 
 - Each profile holds: name, Provider (fixed to `openai_compatible` in this release), Base URL, model name, API Key (or the API Key **environment variable name**), `disable_thinking`, `supports_vision`, `context_tokens`, and an **Auto tier** (`light` / `standard` / `power`; pick "auto" to infer it from the model name). The tier tells the task-aware Auto router how capable the model is.
-- **API Keys are stored in the local store** (SQLite / Postgres — same trust tier as a DSN password). The UI and API responses always echo them **redacted** (first 3 / last 4 chars, middle elided). When editing, leaving the Key blank means **do not change it**; you may also store only the env-var name and let the Runtime read it at call time. **Any profile can be deleted — including the last one**; with zero models configured the chat blocks and prompts you to add a model before sending.
+- **API Keys are stored in the local store** (SQLite / Postgres — same trust tier as a DSN password). With `BAIZE_SETTINGS_KEY` set, persisted `api_key` values are **encrypted at rest** (`bz1:` envelope); `api_key_env` is never encrypted. The UI and API responses always echo them **redacted** (first 3 / last 4 chars, middle elided). When editing, leaving the Key blank means **do not change it**; you may also store only the env-var name and let the Runtime read it at call time. **Any profile can be deleted — including the last one**; with zero models configured the chat blocks and prompts you to add a model before sending.
 - **Hot switch, no restart**: after adding or editing a profile, the next conversation picks it up automatically; the Runtime resolves/caches the Provider per Run and rebuilds it when the profile changes.
 - **Smart routing (Auto)**: the chat composer dropdown's first item is **“Smart routing (Auto)”**, which is also the default behavior and the only mode for unattended entry points. Auto is not a separate model but a deterministic routing policy: it classifies each turn from the actual content — text length, reasoning keywords, code blocks, number of attachments — into a difficulty tier and picks a model in that tier (preferring a `standard` model for ordinary text), falling back to a neighboring tier when the ideal one has no model. Turns carrying images are restricted to `supports_vision` profiles. You may instead **manually pin** a single message to a concrete model; a manual pick is always honored and **never** silently rerouted (if that model cannot see images, the UI warns rather than switching behind the scenes). The choice is **not remembered** — after a successful send the dropdown resets to Auto and nothing is written to `localStorage`. **Unattended entry points** (WeChat channel, Inbox, MCP export, …) always run under Auto.
 - **Permissions**: operators may list models (to populate the chat dropdown); only admins may create / edit / delete.
@@ -461,6 +461,8 @@ A set of settings that previously required YAML edits + a restart can now be cha
 
 **Control-plane credentials** — `GET /v0/settings/credentials` **never returns plaintext tokens**: only `source` (`config`/`override`), `operator_set` / `admin_set` booleans, and an `operators` list where each item carries just `id` + `source` (`config`/`runtime`). `PATCH` supports: `operator_token` / `admin_token` (rotate the main tokens — effective on the next request), `add_operators: [{id, token}]` (duplicate id → `409`), `remove_operators: [id]` (only runtime-added operators; removing a config-baseline one → `400`), and `reset: true` (clear all hot-updated credentials and fall back to the YAML/env baseline; cannot be combined with other fields). YAML/env tokens are a permanent break-glass baseline; hot updates overlay them.
 
+**Settings encryption (`BAIZE_SETTINGS_KEY`)** — copy `.env.example` and set a high-entropy master key for production. It seals control-plane tokens, model profile `api_key`, and Inbox channel `secret` values in the DB (AES-256-GCM, `bz1:` prefix). **With key:** writes encrypt; reads decrypt in-process; on startup, legacy plaintext secrets in scope are migrated automatically. **Without key:** API writes that would persist those secrets return `400` (`settings_key_required`); legacy plaintext rows still load; if the DB already holds ciphertext, **startup fails** until the key is set. `baize reset-credentials` only clears hot-updated credential overrides and remains **orthogonal** to encryption and YAML/env break-glass tokens. Spec: [`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`](docs/superpowers/specs/2026-09-13-f-production-hardening-design.md) §2 (**F-KV**).
+
 **Lockout recovery**: if a rotated admin token is lost, run on the server host (bypasses the HTTP gate):
 
 ```bash
@@ -481,7 +483,7 @@ The adapter and baize exchange HMAC-signed JSON over HTTP (`/outbound` for outbo
 
 **Weixin DM allowlist** — `allowlist` is a list of peer (`from_user_id`) ids. A non-empty list makes the channel drop direct messages from any peer not on it — before media download or run creation, with no auto-reply (prevents probing / outbound cost). An empty list (the default) means open DMs. It hot-applies on save and is re-applied at startup; group messages are always ignored.
 
-Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths, and KV credential encryption (credentials are stored plaintext, same trust tier as a model `api_key`). Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md).
+Not hot-reloadable: storage / middleware / DB-driver switching, port / TLS / directory paths. Design doc: [`docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md`](docs/superpowers/specs/2026-09-05-runtime-settings-hot-reload-design.md). Secret-at-rest encryption is **F-KV** (see **Settings encryption** above).
 
 ---
 
