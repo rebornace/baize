@@ -374,6 +374,15 @@ func applyDefaults(cfg *Config) {
 		v := true
 		cfg.MCPExport.Enabled = &v
 	}
+	applyListenEnv(cfg)
+}
+
+// applyListenEnv lets BAIZE_LISTEN override YAML listen after defaults
+// (non-empty trimmed value only). Empty/whitespace keeps YAML/default.
+func applyListenEnv(cfg *Config) {
+	if v := strings.TrimSpace(os.Getenv("BAIZE_LISTEN")); v != "" {
+		cfg.Listen = v
+	}
 }
 
 // MCPExportEnabled reports whether MCP export is on (default true).
