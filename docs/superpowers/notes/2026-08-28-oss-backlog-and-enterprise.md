@@ -19,6 +19,8 @@
 | **已交付** | **BlobStore 对象存储多源**（分析报告产物可换 file/s3（AWS S3/MinIO/OSS/COS）；通用 `blob.Store` + 驱动注册表，代理读；规格 `2026-09-04-blob-object-storage-design.md`） |
 | **已交付** | **Agent 会话文件工作区**（附件文本/图片持久化到 blob、`list_files`/`read_file`/`write_file`/`delete_file`/`read_image` 五工具、多模态工具结果通道、按会话隔离路径安全；规格 `2026-09-04-agent-workspace-files-design.md`） |
 | **本版之后** | **F** 生产硬化（含 P1/P2 文档收口） |
+| **2026-09-13 产品上调（开源首版要做，待规格）** | **P6** Memory 产品化；**MCP OAuth**；渠道 **outbox**；适配器 **动态端口** |
+| **2026-09-13 产品确认不做** | B1 SDK 实现；P3 OTel；P5 多 Agent；A1；I2–I5；W1/W2；技能可视化；Playwright；P7 飞书钉钉适配器；公共 Go SDK；微信群聊 |
 
 ---
 
