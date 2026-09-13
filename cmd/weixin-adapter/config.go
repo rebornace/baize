@@ -14,6 +14,7 @@ type Config struct {
 	Addr            string // adapter listen address (admin/outbound/healthz)
 	CredsDir        string // iLink creds.json directory (default ./data/channels/weixin)
 	ILinkBaseURL    string // override iLink API base (tests)
+	PortFile        string // optional path; after Listen write host:port for baize discovery
 }
 
 func parseFlags(args []string) (Config, error) {
@@ -24,6 +25,7 @@ func parseFlags(args []string) (Config, error) {
 	fs.StringVar(&cfg.Addr, "addr", "127.0.0.1:8090", "listen address")
 	fs.StringVar(&cfg.CredsDir, "creds", "./data/channels/weixin", "creds directory")
 	fs.StringVar(&cfg.ILinkBaseURL, "ilink-base", "", "iLink API base URL override")
+	fs.StringVar(&cfg.PortFile, "port-file", "", "write actual listen host:port after bind")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}

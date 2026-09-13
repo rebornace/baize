@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,10 +38,20 @@ func main() {
 		a.setCredentials(acct, tok)
 	}
 
-	srv := &http.Server{Addr: cfg.Addr, Handler: a.routes()}
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+	if cfg.PortFile != "" {
+		if err := writeListenPortFile(cfg.PortFile, ln.Addr().String()); err != nil {
+			_ = ln.Close()
+			log.Fatalf("port-file: %v", err)
+		}
+	}
+	srv := &http.Server{Handler: a.routes()}
 	go func() {
-		log.Printf("weixin-adapter listening on %s", cfg.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("weixin-adapter listening on %s", ln.Addr().String())
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
 	}()

@@ -28,6 +28,10 @@ type supervisor struct {
 	env        []string
 	healthzURL string
 	timeout    time.Duration
+	// portFile, when set, is polled after spawn (and before adopt) for the
+	// child's actual listen host:port; onListen is invoked to rewrite URLs.
+	portFile string
+	onListen func(addr string)
 
 	// compatible, when set, reports whether a listening adapter shares baize's
 	// secret (a signed management call succeeds). A bare /healthz cannot tell a
@@ -95,6 +99,16 @@ func (s *supervisor) spawn(ctx context.Context) (*exec.Cmd, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	if s.portFile != "" {
+		addr, err := waitPortFile(ctx, s.portFile, timeout)
+		if err != nil {
+			_ = killCmd(cmd)
+			return nil, fmt.Errorf("adapter port-file: %w", err)
+		}
+		if s.onListen != nil {
+			s.onListen(addr)
+		}
+	}
 	if err := waitHealthz(ctx, s.healthzURL, timeout); err != nil {
 		// No watch goroutine exists for this cmd yet, so kill+Wait here is
 		// safe (see killCmd's contract).
@@ -113,7 +127,20 @@ func (s *supervisor) start(ctx context.Context) error {
 	// it avoids spawning a second process that fails to bind the port. Only
 	// adopt when it is healthy AND (when checkable) shares our secret; a
 	// listener that fails auth is stale/foreign and must be reclaimed manually.
-	if s.adapterListening(ctx) {
+	//
+	// Dynamic port mode must not probe the config placeholder URL (often :8090):
+	// only attempt adopt after a prior listen.port names a real address.
+	canProbe := true
+	if s.portFile != "" {
+		canProbe = false
+		if addr, err := readListenPortFile(s.portFile); err == nil {
+			if s.onListen != nil {
+				s.onListen(addr)
+			}
+			canProbe = true
+		}
+	}
+	if canProbe && s.adapterListening(ctx) {
 		if s.compatible == nil || s.compatible(ctx) {
 			s.mu.Lock()
 			s.adopted = true

@@ -206,9 +206,14 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 			credsDir = "./data/channels/" + c.cfg.Name
 		}
 		// The adapter POSTs inbound messages back to baize's inbound route;
-		// its admin/outbound listeners live at AdminURL.
+		// its admin/outbound listeners live at AdminURL (or discovered port).
 		inboundURL := strings.TrimRight(baizeURL, "/") + "/v0/channels/" + c.cfg.Name + "/inbound"
 		args := append([]string(nil), c.cfg.AdapterArgs...)
+		portFile := filepath.Join(credsDir, "listen.port")
+		dynamic := !explicitFixedAddr(args)
+		if dynamic {
+			args = injectDynamicPortArgs(args, portFile)
+		}
 		args = append(args,
 			"-baize="+inboundURL,
 			"-secret="+c.cfg.Secret,
@@ -220,11 +225,21 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 			args:       args,
 			healthzURL: healthz,
 		}
+		if dynamic {
+			sup.portFile = portFile
+			sup.onListen = func(addr string) {
+				c.applyDiscoveredListen(addr)
+				sup.healthzURL = strings.TrimRight(c.cfg.AdminURL, "/") + "/healthz"
+			}
+		}
 		// Signed compatibility check for the adopt-orphan path: a listener that
 		// answers a signed /admin/status shares our secret; one that 401s is a
 		// stale/foreign process holding the port.
-		if c.admin != nil {
+		if c.admin != nil || dynamic {
 			sup.compatible = func(ctx context.Context) bool {
+				if c.admin == nil {
+					return false
+				}
 				probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 				defer cancel()
 				if _, _, err := c.admin.Status(probeCtx); err != nil {
@@ -238,10 +253,11 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		// before escalating to SIGTERM/force kill.
 		c.lifeCtx, c.lifeCancel = context.WithCancel(context.Background())
 		sup.lifecycleCtx = c.lifeCtx
-		if c.admin != nil {
-			sup.gracefulShutdown = func(ctx context.Context) error {
-				return c.admin.Shutdown(ctx)
+		sup.gracefulShutdown = func(ctx context.Context) error {
+			if c.admin == nil {
+				return nil
 			}
+			return c.admin.Shutdown(ctx)
 		}
 		c.sup = sup
 	}
@@ -268,6 +284,14 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// applyDiscoveredListen rewrites admin/outbound URLs after dynamic port discovery.
+func (c *Channel) applyDiscoveredListen(addr string) {
+	base := httpBaseFromListenAddr(addr)
+	c.cfg.AdminURL = base
+	c.cfg.OutboundURL = base + "/outbound"
+	c.admin = newHTTPAdminClient(base, c.cfg.OutboundSecret)
 }
 
 // SendText pushes a text message to the adapter for peerID.

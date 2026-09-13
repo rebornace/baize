@@ -66,7 +66,7 @@ Default sample:
 - Demo HTTP: `http://127.0.0.1:18080`
 - LLM: built-in `mock`
 
-If ports are busy, stop the previous `baize` process and retry.
+If ports are busy, stop the previous `baize` process and retry. Or set `BAIZE_LISTEN` (e.g. `:9080`) to override YAML `listen` — requires process restart.
 
 ### Operator UI (`/ui`)
 
@@ -471,7 +471,7 @@ baize reset-credentials -config <config-path>
 
 This clears credential overrides only (engine knobs are untouched); after a restart or TTL expiry the YAML/env baseline tokens apply again.
 
-**Weixin adapter (out-of-process)** — Weixin moved from an in-process channel to an out-of-process webhook adapter, `weixin-adapter`. baize can supervise the child process via `adapter_autostart` (the default config does this), or the adapter can be deployed independently. Build the adapter binary first (baize finds it via PATH or `./bin/`):
+**Weixin adapter (out-of-process)** — Weixin moved from an in-process channel to an out-of-process webhook adapter, `weixin-adapter`. baize can supervise the child process via `adapter_autostart` (the default config does this), or the adapter can be deployed independently. Autostart defaults to **dynamic ports** (`-addr=127.0.0.1:0` + `-port-file`); pin a fixed `-addr=host:port` (port ≠ 0) in `adapter_args` to opt out. Build the adapter binary first (baize finds it via PATH or `./bin/`):
 
 ```bash
 go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-adapter.exe

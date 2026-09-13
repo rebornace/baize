@@ -67,7 +67,7 @@ cd baize
 - 演示 HTTP：`http://127.0.0.1:18080`
 - LLM：内置 `mock`
 
-若端口被占用，先结束旧的 `baize` 进程再启动。
+若端口被占用，先结束旧的 `baize` 进程再启动；或设置 `BAIZE_LISTEN`（如 `:9080`）覆盖 YAML `listen`（需重启进程）。
 
 ### 操作员界面（`/ui`）
 
@@ -482,7 +482,7 @@ baize reset-credentials -config <配置路径>
 
 仅清空凭据覆盖、引擎参数不受影响；重启或等 TTL 过期后即回落 YAML/env 基线口令。
 
-**微信适配器（独立进程）** — 微信已从进程内渠道迁移为进程外 webhook 适配器 `weixin-adapter`。baize 可经 `adapter_autostart` 自动托管该子进程（默认配置即如此），也可独立部署。启用微信前需先构建适配器二进制（baize 经 PATH 或 `./bin/` 查找）：
+**微信适配器（独立进程）** — 微信已从进程内渠道迁移为进程外 webhook 适配器 `weixin-adapter`。baize 可经 `adapter_autostart` 自动托管该子进程（默认配置即如此），也可独立部署。Autostart 默认**动态端口**（`-addr=127.0.0.1:0` + `-port-file`）；若要固定端口，在 `adapter_args` 写非 0 的 `-addr=host:port`。启用微信前需先构建适配器二进制（baize 经 PATH 或 `./bin/` 查找）：
 
 ```bash
 go build -o bin/weixin-adapter ./cmd/weixin-adapter      # Windows: bin/weixin-adapter.exe
