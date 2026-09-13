@@ -5,7 +5,7 @@
 - 归属：开源首版史诗 **CH-OUTBOX**；确认清单「渠道 outbox」；接在 **CH-PORT** 之后
 - 承接：`2026-09-06-phase2-webhook-channel-design.md` §8「不做持久化 outbox」后续增强；Run 事件 outbox 见 `2026-08-28-webhook-outbound-retry-v0-design.md`
 - 产品决策来源：`docs/superpowers/notes/2026-09-13-v1-product-confirmation-checklist.md`
-- 实现计划：待 `writing-plans` 产出 `docs/superpowers/plans/2026-09-13-ch-outbox.md`
+- 实现计划：`docs/superpowers/plans/2026-09-13-ch-outbox.md`
 
 ## 1. 目标 / 非目标
 
