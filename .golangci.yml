@@ -1,4 +1,6 @@
 # F-C1：稳妥规则集；全仓清债不在本刀（CI 用 only-new-issues）。
+version: "2"
+
 run:
   timeout: 5m
 
@@ -9,10 +11,12 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-
-linters-settings:
-  govet:
-    enable-all: false
-
-issues:
-  exclude-use-default: true
+  settings:
+    govet:
+      enable-all: false
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling

@@ -37,9 +37,9 @@ jobs:
       - name: Format check
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.64.8
+          version: v2.4.0
           args: --timeout=5m
           only-new-issues: true
       - name: Build
