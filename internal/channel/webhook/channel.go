@@ -69,11 +69,12 @@ type Channel struct {
 	procMu sync.Mutex
 
 	// Channel outbox: durable async delivery to the adapter outbound URL.
-	persist    store.Store
-	blobs      blob.Store
-	outboxSeq  atomic.Uint64
-	outboxWake chan struct{}
-	outboxMu   sync.RWMutex // guards persist hot-swap
+	persist          store.Store
+	blobs            blob.Store
+	outboxSeq        atomic.Uint64
+	outboxWake       chan struct{}
+	outboxMu         sync.RWMutex // guards persist hot-swap
+	outboxWorkerOnce sync.Once    // Bootstrap may only start the worker once
 }
 
 // bgCtx returns the context for adapter management calls made outside of an
@@ -296,7 +297,9 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		if c.outboxWake == nil {
 			c.outboxWake = make(chan struct{}, 1)
 		}
-		go c.StartOutboxWorker(c.lifeCtx)
+		c.outboxWorkerOnce.Do(func() {
+			go c.StartOutboxWorker(c.lifeCtx)
+		})
 	}
 
 	// Only autostart, enabled instances need baize to launch their loop.
