@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { INBOX } from '../strings'
 import {
   channelsToForm,
   inboxUrlFor,
@@ -62,33 +63,40 @@ describe('channelsToForm', () => {
 })
 
 describe('validateChannelsForm', () => {
-  it('requires id and agent_id', () => {
+  it('requires id', () => {
     const r = validateChannelsForm([{ id: '', agent_id: 'a', enabled: true }])
     expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toContain(INBOX.errIdRequired)
   })
 
-  it('requires agent_id', () => {
+  it('requires agent', () => {
     const r = validateChannelsForm([{ ...baseRow(), agent_id: '' }])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.message).toContain('agent_id')
+    if (!r.ok) {
+      expect(r.message).not.toContain('agent_id')
+      expect(r.message).toMatch(/助手|绑定/)
+    }
   })
 
-  it('rejects invalid channel id slug', () => {
+  it('rejects invalid channel id slug without regex dump', () => {
     const r = validateChannelsForm([{ ...baseRow(), id: 'Bad ID' }])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.message).toContain('id')
+    if (!r.ok) {
+      expect(r.message).not.toMatch(/\^\[/)
+      expect(r.message).toContain(INBOX.errIdFormat)
+    }
   })
 
   it('rejects duplicate ids', () => {
     const r = validateChannelsForm([baseRow(), { ...baseRow() }])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.message).toContain('重复')
+    if (!r.ok) expect(r.message).toContain(INBOX.errIdDuplicate)
   })
 
   it('rejects invalid header lines', () => {
     const r = validateChannelsForm([{ ...baseRow(), headersText: 'badline' }])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.message).toMatch(/无效键值行/)
+    if (!r.ok) expect(r.message).toContain(INBOX.errBadHeaderLine)
   })
 
   it('accepts valid rows and trims fields', () => {

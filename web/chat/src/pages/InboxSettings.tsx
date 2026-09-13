@@ -9,6 +9,7 @@ import {
   type InboxChannel,
   type SkillSummary,
 } from '../api'
+import { INBOX } from '../strings'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 import { toggleSkillSelection } from './SkillsSettings'
 
@@ -60,26 +61,24 @@ export function validateChannelsForm(
     const row = rows[i]
     const id = (row.id ?? '').trim()
     const agentId = (row.agent_id ?? '').trim()
+    const rowPrefix = `第 ${i + 1} 条：`
     if (!id) {
-      return { ok: false, message: `第 ${i + 1} 行：id 不能为空` }
+      return { ok: false, message: `${rowPrefix}${INBOX.errIdRequired}` }
     }
     if (!CHANNEL_ID_RE.test(id)) {
-      return {
-        ok: false,
-        message: `第 ${i + 1} 行：id 须匹配 ^[a-z][a-z0-9_-]{0,63}$`,
-      }
+      return { ok: false, message: `${rowPrefix}${INBOX.errIdFormat}` }
     }
     if (!agentId) {
-      return { ok: false, message: `第 ${i + 1} 行：agent_id 不能为空` }
+      return { ok: false, message: `${rowPrefix}${INBOX.errAgentRequired}` }
     }
     if (seen.has(id)) {
-      return { ok: false, message: `重复的 channel id：${id}` }
+      return { ok: false, message: `${rowPrefix}${INBOX.errIdDuplicate}` }
     }
     seen.add(id)
 
     const headersParsed = parseKeyValueLines(row.headersText ?? '')
     if (!headersParsed.ok) {
-      return { ok: false, message: `第 ${i + 1} 行：${headersParsed.message}` }
+      return { ok: false, message: `${rowPrefix}${INBOX.errBadHeaderLine}` }
     }
 
     const description = (row.description ?? '').trim()
