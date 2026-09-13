@@ -43,7 +43,7 @@
 | 史诗 ID | 覆盖原勾选项 | 就绪 | 备注 |
 |---------|--------------|------|------|
 | **DOC** | DOC-P1 + DOC-P2 | 可开刀 | **一个**文档计划 |
-| **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | 先头脑风暴母篇 | 切片建议：C1 → KV 加密 → 热切换/SIGHUP；**勿**与 UI-RUNTIME 混计划 |
+| **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | F-C1 计划就绪 | 母规格已批准；`plans/2026-09-13-f-c1-lint.md` |
 | **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 已交付 | 已交付（2026-09-13）；`specs/2026-09-13-runtime-settings-humanize-design.md` |
 | **UI-I18N** | i18n 框架（语言切换 / 英等） | 先定范围 | 可紧接 RUNTIME 后；独立规格 |
 | **UI-EXPORT-DB-RO** | export_db_readonly UI | 可开刀 | 小刀；**不**与 OAuth 并计划 |
@@ -61,12 +61,14 @@
 
 ### 建议下一刀顺序
 
-1. **DOC**  
-2. **UI-RUNTIME**（含文案抽离附录）或 **UI-EXPORT-DB-RO**  
-3. **F 母篇头脑风暴**（定 C1 / KV / 热切换分期）→ 可先落地 **C1**  
+1. **DOC**（独立；**不**并入 F — 合并姿态 A1）  
+2. **F 母篇**（仅 C1 + KV 加密 + 驱动热切换/SIGHUP；**B1** 顺序已锁）→ 可先落地 **C1**  
+3. **UI-EXPORT-DB-RO**（小刀）  
 4. **CH-PORT** → **CH-OUTBOX**  
-5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**（完整多语言）  
+5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 6. **UI-MCP-OAUTH** · **P6**  
+
+**F 与现有待办：** 不吸收 OUTBOX/BLOB/PORT/OAuth/Memory/@登录/i18n/export_db_ro；DOC 保持独立（A1）。
 
 ---
 
@@ -123,4 +125,12 @@ MCP capture：不做
 
 ```
 合并策略：A（最小合并）
+F×待办合并：A1（DOC 独立；F 不吸收其它史诗）
+F 切片顺序：B1（C1 → KV 加密 → 热切换/SIGHUP）
+C1 完成标准：C1-a（配置+CI；只修改动路径必破规则，不清全仓债）
+KV 加密范围：K1（控制面口令 + 模型 api_key + webhook/inbox secret）
+主密钥：M1（仅 env；未设置则 fail-closed / 拒写秘密）
+热切换：H1（Store API 热切 + SIGHUP 刷 YAML；blob/S3 仍重启）
+明文迁移：P1（有 key 启动时自动就地加密 K1 范围明文）
+交付形态：S1（一篇母规格 + 三份独立实现计划）
 ```

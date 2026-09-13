@@ -302,6 +302,9 @@ Assignee/AgentID」扩展为**按 `Enabled` 调和实际运行态**（仍在 `we
 
 ### 4.6 范围边界
 
-不做：驱动热切换 / S3·Redis 热重连、端口/TLS/目录路径、微信白名单入站强制、
-SIGHUP 整体热重载、凭据 KV 加密。这些进入 backlog 作为后续候选（白名单强制为安全特性优先项）。
+不做（本规格 V0）：驱动热切换 / S3·Redis 热重连、端口/TLS/目录路径、微信白名单入站强制、
+SIGHUP 整体热重载、凭据 KV 加密。
+
+**后续承接：** 驱动热切换、SIGHUP（及 Windows 等价 reload）、凭据 KV 加密 → 见 F 母篇
+`2026-09-13-f-production-hardening-design.md`。S3/Redis 热重连、端口/TLS/`data_dir`、微信白名单强制仍不在 F 范围。
 

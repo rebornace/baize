@@ -98,7 +98,7 @@
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
 | **DOC**（P1+P2） | 要做 · 可开刀 | 一个文档计划 |
-| **F**（含 C1 + OPS-HOT） | 要做 · 先母篇脑暴 | 切片：C1 → KV 加密 → 热切换/SIGHUP |
+| **F**（含 C1 + OPS-HOT） | 要做 · F-C1 计划就绪 | 母规格已批准；计划 `plans/2026-09-13-f-c1-lint.md` → 再写 KV / HOT |
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **BLOB-CS** / **CH-PORT** / **CH-OUTBOX** | 要做 | 各开规格 |
@@ -118,7 +118,7 @@
 
 1. **DOC**  
 2. **UI-RUNTIME** 或 **UI-EXPORT-DB-RO**  
-3. **F 母篇头脑风暴** → 可先落地 C1  
+3. **F** 母规格待审 → 批准后按 B1 写三份计划（可先落地 C1）  
 4. **CH-PORT** → **CH-OUTBOX**  
 5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 6. **MCP OAuth** · **P6 Memory**  
