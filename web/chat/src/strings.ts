@@ -533,6 +533,9 @@ export const CONNECTORS = {
   errEnvLine: (row: string) => `环境变量存在无法识别的行：${row}`,
   errHeadersLine: (row: string) => `请求头存在无法识别的行：${row}`,
   errMcpConnect: '无法连接到这个外部工具服务，请检查配置后重试。',
+  exportDbReadonly: '对外导出时按数据库只读筛选',
+  exportDbReadonlyHint:
+    '仅影响「对外提供能力」MCP 导出；白泽自己对话仍可用该连接器已启用的工具。数据库类 MCP 建议开启。',
   permsIntroMcp: '勾选后，助手每次调用该工具前都会请你确认；不勾则直接执行。',
   mcpStdioSummary: (command: string) => `本地程序 · ${command}`,
   mcpHttpSummary: (url: string) => `远程服务 · ${url}`,

@@ -13,6 +13,7 @@ export interface McpFormValues {
   envText: string
   url: string
   headersText: string
+  exportDbReadonly: boolean
 }
 
 export type McpFieldErrors = Partial<Record<'id' | 'command' | 'url' | 'env' | 'headers', string>>
@@ -22,6 +23,11 @@ const HTTP_URL_RE = /^https?:\/\/\S+$/i
 export type McpValidationResult =
   | { ok: true; id: string; mcp: MCPConfig }
   | { ok: false; fieldErrors: McpFieldErrors }
+
+function withExportFlag(base: MCPConfig, exportDbReadonly: boolean): MCPConfig {
+  if (!exportDbReadonly) return base
+  return { ...base, export_db_readonly: true }
+}
 
 export function validateMcp(v: McpFormValues): McpValidationResult {
   const fieldErrors: McpFieldErrors = {}
@@ -37,11 +43,11 @@ export function validateMcp(v: McpFormValues): McpValidationResult {
     if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors }
     return {
       ok: true, id,
-      mcp: {
+      mcp: withExportFlag({
         transport: 'stdio', command,
         args: parseArgsText(v.argsText),
         env: envParsed.ok && Object.keys(envParsed.value).length > 0 ? envParsed.value : undefined,
-      },
+      }, v.exportDbReadonly),
     }
   }
 
@@ -53,10 +59,10 @@ export function validateMcp(v: McpFormValues): McpValidationResult {
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors }
   return {
     ok: true, id,
-    mcp: {
+    mcp: withExportFlag({
       transport: 'http', url,
       headers: headersParsed.ok && Object.keys(headersParsed.value).length > 0 ? headersParsed.value : undefined,
-    },
+    }, v.exportDbReadonly),
   }
 }
 
@@ -87,6 +93,7 @@ export function connectorToMcpForm(c: ConnectorInfo): McpFormValues {
     envText: formatKeyValueMap(mcp?.env),
     url: mcp?.url ?? '',
     headersText: formatKeyValueMap(mcp?.headers),
+    exportDbReadonly: !!mcp?.export_db_readonly,
   }
 }
 

@@ -833,6 +833,7 @@ export interface MCPConfig {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  export_db_readonly?: boolean
 }
 
 export interface ConnectorAuth {

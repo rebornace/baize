@@ -6,11 +6,11 @@ import {
 
 const stdio = (over: Partial<McpFormValues> = {}): McpFormValues => ({
   id: 'analytics', transport: 'stdio', command: 'npx', argsText: '-y srv', envText: 'A=1',
-  url: '', headersText: '', ...over,
+  url: '', headersText: '', exportDbReadonly: false, ...over,
 })
 const http = (over: Partial<McpFormValues> = {}): McpFormValues => ({
   id: 'remote', transport: 'http', command: '', argsText: '', envText: '',
-  url: 'https://mcp.example.com', headersText: 'Authorization=Bearer t', ...over,
+  url: 'https://mcp.example.com', headersText: 'Authorization=Bearer t', exportDbReadonly: false, ...over,
 })
 
 describe('validateMcp', () => {
@@ -57,6 +57,14 @@ describe('validateMcp', () => {
     if (!r.ok) expect(r.fieldErrors.headers).toContain('noequals')
     else throw new Error('expected failure')
   })
+  it('includes export_db_readonly only when checked', () => {
+    const off = validateMcp(stdio({ exportDbReadonly: false }))
+    const on = validateMcp(stdio({ exportDbReadonly: true }))
+    if (off.ok) expect(off.mcp.export_db_readonly).toBeUndefined()
+    else throw new Error('expected success')
+    if (on.ok) expect(on.mcp.export_db_readonly).toBe(true)
+    else throw new Error('expected success')
+  })
 })
 
 describe('mcpSummary', () => {
@@ -77,7 +85,14 @@ describe('connectorToMcpForm', () => {
       require_approval: ['t1'],
     }
     const f = connectorToMcpForm(c)
-    expect(f).toMatchObject({ id: 'a', transport: 'http', url: 'https://h', headersText: 'K=V' })
+    expect(f).toMatchObject({ id: 'a', transport: 'http', url: 'https://h', headersText: 'K=V', exportDbReadonly: false })
+  })
+  it('echoes export_db_readonly', () => {
+    const c: ConnectorInfo = {
+      id: 'db', type: 'mcp',
+      mcp: { transport: 'stdio', command: 'npx', export_db_readonly: true },
+    }
+    expect(connectorToMcpForm(c).exportDbReadonly).toBe(true)
   })
 })
 
