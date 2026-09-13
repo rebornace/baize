@@ -392,7 +392,6 @@ export function ChatPage() {
       cancelled = true
     }
     // toast.push is identity-stable (useCallback); effect runs once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
