@@ -45,7 +45,7 @@ func TestChannelOutboundDeliveriesListAndRetry(t *testing.T) {
 
 	now := time.Now().UTC()
 	created, id, err := mem.PutChannelOutboxIfAbsent(store.ChannelOutboxEntry{
-		DeliveryKey:    store.ChannelOutboxDeliveryKey("weixin", "weixin:a:p", store.ChannelOutboxKindText, "run_dead", 1),
+		DeliveryKey:    store.ChannelOutboxDeliveryKey("weixin", "weixin:a:p", store.ChannelOutboxKindText, "run_dead", "1"),
 		Channel:        "weixin",
 		Kind:           store.ChannelOutboxKindText,
 		PeerID:         "p",

@@ -65,16 +65,17 @@
 ### 2.1 幂等键
 
 ```
-{channel}:{conversation_id}:{kind}:{run_id}:{seq}
+{channel}:{conversation_id}:{kind}:{run_id}:{unique_id}
 ```
 
 - `run_id` 为空时用字面量 `_`（或与实现一致的占位）。
-- `seq`：同一次出站调用链内由入队层分配（同 reply 的多条 text/media 递增），保证重复 `Send*` 不双写。
-- `PutChannelOutboxIfAbsent`：已存在则返回 `(created=false, existingID)`，不覆盖。
+- `unique_id`：每次出站调用分配（UUID）。`PutChannelOutboxIfAbsent` 仅对**同一** `delivery_key` 的重复入队（同键重试）幂等；**不得**用进程内单调 `seq` 冒充 webhook eventIndex——重启归零后会与已 `delivered` 历史碰撞并静默丢消息。
+- `PutChannelOutboxIfAbsent`：已存在且 status 为 `pending|delivered` 则返回 `(created=false, existingID)`，不覆盖。`delivery_key` UNIQUE 仍合理：同键不双写；新调用因 UUID 自然避开 dead 行挡死同键 INSERT 的问题。
+- **Store 热切**：`channel_outbox` pending **不**随 Store 热切迁移拷贝；热切前宜排空，或接受旧库 due 丢弃（YAGNI：不做跨库迁移）。
 
 ### 2.2 Blob 约定
 
-- key 建议前缀：`channel-outbox/{channel}/{id}/{filename}`（或等价；实现计划锁定一种）。
+- key 建议前缀：`channel-outbox/{channel}/{id}/{filename}`（或等价；实现计划锁定一种）。`filename` 须经 `filepath.Base`（或拒绝含路径分隔符），防止路径穿越。
 - `SendMedia`：先 `blob.Put`，再入队；Put 失败则 `SendMedia` 返回 error，不写 outbox。
 - 死信保留 blob，便于重投；**本版不做自动删除**。
 
@@ -178,6 +179,7 @@ Worker（1s tick + wake channel）
 | 动态端口后旧 `target_url` 失效 | 入队快照是刻意选择；适配器重启后 pending 可能短暂失败并重试/死信；运营可重投（新 URL 需否在 retry 时刷新：本版 **retry 不改 URL**，与 Run outbox 一致；若 PORT 抖动频繁导致大量 dead，后续可另开「retry 刷新 URL」小刀） |
 | 双写与 Run outbox 行为漂移 | 状态机/退避/API 形状刻意镜像；代码可平行但不全量抽象（YAGNI，避免方案 3） |
 | 媒体重复占 blob | 本版无 GC；可接受；后续与 BLOB-CS 一并评估 |
+| Store 热切丢 pending | 渠道 outbox pending **不**随热切迁移；热切宜先排空或接受旧库 due 丢弃（本版不做拷贝） |
 
 ---
 

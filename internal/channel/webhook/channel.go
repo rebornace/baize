@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rebornace/baize/internal/blob"
@@ -71,7 +70,6 @@ type Channel struct {
 	// Channel outbox: durable async delivery to the adapter outbound URL.
 	persist          store.Store
 	blobs            blob.Store
-	outboxSeq        atomic.Uint64
 	outboxWake       chan struct{}
 	outboxMu         sync.RWMutex // guards persist hot-swap
 	outboxWorkerOnce sync.Once    // Bootstrap may only start the worker once

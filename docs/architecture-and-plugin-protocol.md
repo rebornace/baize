@@ -66,7 +66,7 @@
 | 查询轨迹 | `GET /v0/runs/{id}` · `GET /v0/runs/{id}/events` |
 | 恢复 HITL | `POST /v0/runs/{id}/resume` |
 | 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook 出站（已实现；UI：**设置 → Webhook**）· Run 事件出站失败自动退避重试与死信（`webhook_outbox` + 进程内 worker；admin 可列表重投） |
-| 渠道出站 | IM `SendText` / `SendMedia` 先入持久化 `channel_outbox`（SQLite / Postgres / Memory 三驱动），再由独立 worker 投递适配器；跨重启续投、指数退避与死信；UI：**设置 → 消息 → 微信** 可查看 pending/dead 并手动重投（与 Run `webhook_outbox` 分表） |
+| 渠道出站 | IM `SendText` / `SendMedia` 先入持久化 `channel_outbox`（SQLite / Postgres / Memory 三驱动），再由独立 worker 投递适配器；跨重启续投、指数退避与死信；UI：**设置 → 消息 → 微信** 可查看 pending/dead 并手动重投（与 Run `webhook_outbox` 分表）。**注：** 渠道 outbox pending **不**随 Store 热切迁移；热切前宜排空，或接受旧库 due 丢弃 |
 
 `Run` 状态机（最小）：`queued` → `running` → (`waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`。
 

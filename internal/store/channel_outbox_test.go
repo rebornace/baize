@@ -12,7 +12,7 @@ import (
 func TestMemoryChannelOutboxRoundTrip(t *testing.T) {
 	mem := store.NewMemory()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	key := store.ChannelOutboxDeliveryKey("weixin", "weixin:a:p", store.ChannelOutboxKindText, "run_1", 1)
+	key := store.ChannelOutboxDeliveryKey("weixin", "weixin:a:p", store.ChannelOutboxKindText, "run_1", "1")
 	entry := store.ChannelOutboxEntry{
 		DeliveryKey:    key,
 		Channel:        "weixin",
@@ -73,7 +73,7 @@ func TestSQLChannelOutboxRoundTrip(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	key := store.ChannelOutboxDeliveryKey("weixin", "weixin:a:p", store.ChannelOutboxKindText, "run_1", 1)
+	key := store.ChannelOutboxDeliveryKey("weixin", "weixin:a:p", store.ChannelOutboxKindText, "run_1", "1")
 	entry := store.ChannelOutboxEntry{
 		DeliveryKey:    key,
 		Channel:        "weixin",

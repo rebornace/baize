@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,8 +101,7 @@ func (c *Channel) enqueue(msg OutboundMessage, kind store.ChannelOutboxKind, blo
 	if st == nil {
 		return fmt.Errorf("webhook: channel outbox store not configured")
 	}
-	seq := c.outboxSeq.Add(1)
-	deliveryKey := store.ChannelOutboxDeliveryKey(c.cfg.Name, msg.ConversationID, kind, msg.RunID, seq)
+	deliveryKey := store.ChannelOutboxDeliveryKey(c.cfg.Name, msg.ConversationID, kind, msg.RunID, uuid.NewString())
 
 	payload := outboxPayload{
 		Kind:           msg.Kind,
@@ -255,11 +255,17 @@ func formatOutboundDeliveryError(statusCode int, err error) string {
 }
 
 // putMediaBlob stores media bytes and returns the blob key.
+// filename is sanitized with filepath.Base so path separators / ".." cannot
+// escape the channel-outbox/{channel}/{uuid}/ prefix.
 func (c *Channel) putMediaBlob(ctx context.Context, filename string, mime string, data []byte) (string, error) {
 	if c.blobs == nil {
 		return "", fmt.Errorf("webhook: channel outbox blob store not configured")
 	}
-	key := fmt.Sprintf("channel-outbox/%s/%s/%s", c.cfg.Name, uuid.NewString(), filename)
+	name := filepath.Base(filename)
+	if name == "." || name == ".." || name == "" {
+		name = "blob"
+	}
+	key := fmt.Sprintf("channel-outbox/%s/%s/%s", c.cfg.Name, uuid.NewString(), name)
 	if err := c.blobs.Put(ctx, key, data, mime); err != nil {
 		return "", err
 	}

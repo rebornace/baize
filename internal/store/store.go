@@ -223,11 +223,15 @@ type ChannelOutboxEntry struct {
 
 var ErrChannelOutboxNotFound = errors.New("channel outbox entry not found")
 
-func ChannelOutboxDeliveryKey(channel, conversationID string, kind ChannelOutboxKind, runID string, seq uint64) string {
+// ChannelOutboxDeliveryKey builds a unique outbox idempotency key.
+// uniqueID must be unique per outbound call (typically a UUID). It must not be a
+// process-local monotonic sequence: those reset on restart and collide with
+// delivered history under PutChannelOutboxIfAbsent (pending|delivered active).
+func ChannelOutboxDeliveryKey(channel, conversationID string, kind ChannelOutboxKind, runID, uniqueID string) string {
 	if runID == "" {
 		runID = "_"
 	}
-	return fmt.Sprintf("%s:%s:%s:%s:%d", channel, conversationID, kind, runID, seq)
+	return fmt.Sprintf("%s:%s:%s:%s:%s", channel, conversationID, kind, runID, uniqueID)
 }
 
 // InboxDeliveryTTL is the idempotency retention window. GetInboxDelivery treats
