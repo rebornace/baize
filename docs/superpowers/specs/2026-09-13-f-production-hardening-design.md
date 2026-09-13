@@ -180,7 +180,7 @@ blob / S3 / Redis 热重连；端口 / TLS / `data_dir` 热改；整配置无差
 
 1. 本稿：`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`
 2. 实现计划（按 writing-plans 另开，顺序 B1）：
-   - `docs/superpowers/plans/2026-09-13-f-c1-lint.md`（**已就绪**）
+   - `docs/superpowers/plans/2026-09-13-f-c1-lint.md`（**实现中**；C1 配置+CI 已落地）
    - `docs/superpowers/plans/2026-09-13-f-kv-encrypt.md`（待写）
    - `docs/superpowers/plans/2026-09-13-f-store-hot-swap.md`（待写）
 

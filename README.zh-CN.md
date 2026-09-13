@@ -798,6 +798,26 @@ npm ci
 npm run build
 ```
 
+## 本地检查（贡献）
+
+Go（需安装 [golangci-lint](https://golangci-lint.run/)）：
+
+```bash
+golangci-lint run ./...
+```
+
+CI 对 Go 使用「仅新增问题」门禁；本地可先全量跑，历史告警不要求本刀清零。
+
+Web：
+
+```bash
+cd web/chat
+npm ci
+npm run lint
+npm test
+npx tsc --noEmit
+```
+
 ---
 
 ## 命令
