@@ -98,6 +98,8 @@ inbox:
 # start_failed（而非 404），扫码/出站等能力等二进制就绪后可用。需要真实收发时先构建：
 #   go build -o bin/weixin-adapter ./cmd/weixin-adapter  （Windows 为 bin/weixin-adapter.exe）
 # demo 监听 :8080，适配器入站回推默认即 127.0.0.1:8080。
+# CH-PORT：autostart 默认动态端口（adapter_args 勿写固定 -addr）；outbound/admin 为占位，启动后由 credsDir/listen.port 覆盖。
+# 固定端口逃生口：adapter_args 含 -addr=127.0.0.1:8090（非 :0）。
 channels:
   - name: weixin
     type: webhook
@@ -110,5 +112,5 @@ channels:
       supports_vision: "true"
       adapter_autostart: "true"
       adapter_command: weixin-adapter
-      adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+      adapter_args: "-creds=./data/channels/weixin"
       adapter_creds_dir: ./data/channels/weixin

@@ -1,7 +1,7 @@
 # CH-PORT：Runtime 可配端口 + 适配器动态端口
 
 - 日期：2026-09-13
-- 状态：已批准（2026-09-13）
+- 状态：已交付（2026-09-13）
 - 归属：开源首版史诗 **CH-PORT**；确认清单「动态端口」；与 **CH-OUTBOX** 同域串行（PORT 先）
 - 承接：`2026-09-07-phase2b-weixin-adapter.md` §14「动态端口发现」后续增强；Runtime YAML `listen` 已有、缺 env 覆盖与 autostart 动态发现
 - 产品决策来源：`docs/superpowers/notes/2026-09-13-v1-product-confirmation-checklist.md`

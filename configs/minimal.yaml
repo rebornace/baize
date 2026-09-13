@@ -69,13 +69,14 @@ channels:
     config:
       source: weixin
       # secret 留空：adapter_autostart=true 时 baize 生成随机 HMAC 并经 -secret 注入
+      # CH-PORT：无固定 -addr 时动态端口；outbound/admin 为占位。逃生口：-addr=127.0.0.1:8090
       outbound_url: http://127.0.0.1:8090/outbound
       admin_url: http://127.0.0.1:8090
       assignee: channel:weixin
       supports_vision: "true"
       adapter_autostart: "true"
       adapter_command: weixin-adapter
-      adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+      adapter_args: "-creds=./data/channels/weixin"
       adapter_creds_dir: ./data/channels/weixin
       # allowlist 留空 = 放行全部私信；creds 复用 ./data/channels/weixin/creds.json 免重扫
       # baize 监听非 :8080 时，显式指定适配器回推入站地址：

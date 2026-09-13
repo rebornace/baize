@@ -253,7 +253,7 @@ channels:
 
 - **secret 注入**：autostart 模式下，若实例 config 未配 `secret`，baize 用 `crypto/rand` 生成随机 HMAC secret，经命令行参数 `-secret` 传给子进程（适配器不读 baize 配置）；回环 + 随机密钥，默认部署免手工配密钥。独立部署（`adapter_autostart:false`）时 `secret` 为必填，由运维在 baize config 与适配器启动参数双方约定。**相应放宽 2A 校验**：`parseConfig` 的"secret 必填"改为"`secret` 必填，除非 `adapter_autostart:true`（运行期生成并注入子进程）"；出站 `outbound_secret` 回落逻辑不变。
 - **legacy 裸部署**：weixin Descriptor 删除后，省略 `channels:` 段不再隐式装配微信。**采用方案 (a)**：`configs/minimal.yaml` 与 `demo.yaml` 显式声明 webhook-weixin 实例（`enabled:true` + `adapter_autostart:true` + 自动 secret），使"装 baize 即用微信"的开箱体验由**随附配置**提供（配置即文档，不引入隐式魔法）。完全省略 `channels:` 的裸部署 = 无 IM 渠道（引擎/UI/inbox 等其余能力不受影响），在 README/配置注释说明。
-- **端口分配**：v1 用固定/配置端口——适配器 `-addr` 默认 `127.0.0.1:8090`，baize config 的 `outbound_url`/`admin_url` 指向它；autostart 时 baize 经 `-addr` 显式传端口。多实例需配不同端口（文档注明）。动态端口发现（`-addr=127.0.0.1:0` + 适配器把实际端口写到 stdout/健康文件）列为后续增强。
+- **端口分配**：动态发现已由 CH-PORT 交付（-addr=127.0.0.1:0 + -port-file），见 [2026-09-13-ch-port-design.md](2026-09-13-ch-port-design.md)。显式固定 -addr（端口非 0）仍为逃生口。
 - **子进程崩溃**：v1 不自动重启（管理面状态归为 `start_failed`，日志记录）；自动重启/退避列为后续。
 - **适配器与 baize 同机假设**：autostart 模式下回环；独立部署时适配器可在远端（`outbound_url`/`admin_url` 指向远端，HMAC 保障）。
 
