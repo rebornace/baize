@@ -11,7 +11,7 @@ import (
 
 type migrateRuntimeSettings struct {
 	Knobs json.RawMessage `json:"knobs,omitempty"`
-	Creds migrateCreds      `json:"creds,omitempty"`
+	Creds migrateCreds    `json:"creds,omitempty"`
 }
 
 type migrateCreds struct {
