@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/memory"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channel/webhook"
 	"github.com/rebornace/baize/internal/config"
@@ -433,4 +435,55 @@ func channelDepsForTest(t *testing.T) channelDeps {
 		runCtx:         t.Context(),
 		closer:         closer,
 	}
+}
+
+// TestWireChannelsWebhookOutboxInjected proves Bootstrap receives Persist/Blobs
+// and that SendText enqueues a channel_outbox row (async delivery via worker).
+func TestWireChannelsWebhookOutboxInjected(t *testing.T) {
+	outbound := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(outbound.Close)
+
+	d := channelDepsForTest(t)
+	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatalf("open memory blob: %v", err)
+	}
+	d.blobs = blobs
+	d.cfg.Channels = []config.ChannelConfig{{
+		Name: "weixin", Type: "webhook", Enabled: true,
+		Config: map[string]string{
+			"source": "weixin", "account": "acc", "secret": "s",
+			"outbound_url": outbound.URL, "assignee": "u",
+		},
+	}}
+	if _, err := wireChannels(d); err != nil {
+		t.Fatalf("wireChannels: %v", err)
+	}
+	h, ok := d.srv.Channel("weixin")
+	if !ok || h.Channel == nil {
+		t.Fatal("weixin handle missing")
+	}
+	if err := h.Channel.SendText(context.Background(), "peer1", "hello", map[string]string{
+		channel.ExtraKind: channel.OutboundKindAssistant,
+		"run_id":          "run_wire",
+	}); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	st := d.getStore()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		list, err := st.ListChannelOutbox("weixin", []store.ChannelOutboxStatus{
+			store.ChannelOutboxPending, store.ChannelOutboxDelivered,
+		}, 5)
+		if err != nil {
+			t.Fatalf("ListChannelOutbox: %v", err)
+		}
+		if len(list) > 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("expected channel_outbox pending/delivered after SendText")
 }

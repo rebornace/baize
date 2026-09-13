@@ -149,15 +149,16 @@ func (c *Channel) Start(ctx context.Context) error {
 
 // Stop asks the adapter to stop its polling and gracefully terminates any
 // supervised child process (HMAC /admin/shutdown -> SIGTERM -> force kill).
-// Errors are best-effort: shutdown proceeds regardless.
+// It also cancels lifeCtx so the channel outbox worker (and supervisor
+// watchdog) exit. Errors are best-effort: shutdown proceeds regardless.
 func (c *Channel) Stop(ctx context.Context) error {
 	if c.admin != nil {
 		_ = c.admin.Stop(ctx)
 	}
+	if c.lifeCancel != nil {
+		c.lifeCancel()
+	}
 	if c.sup != nil {
-		if c.lifeCancel != nil {
-			c.lifeCancel()
-		}
 		_ = c.sup.terminate(ctx)
 	}
 	return nil
@@ -282,6 +283,22 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 	if c.sup == nil {
 		c.reconcileEnabled(c.GetSettings().Enabled)
 	}
+
+	// Channel outbox: inject durable store + blobs and start the delivery
+	// worker when Persist is configured. Reuse lifeCtx when the supervisor
+	// already created one; otherwise create a lifetime bound to Stop().
+	c.persist = deps.Persist
+	c.blobs = deps.Blobs
+	if deps.Persist != nil {
+		if c.lifeCtx == nil {
+			c.lifeCtx, c.lifeCancel = context.WithCancel(context.Background())
+		}
+		if c.outboxWake == nil {
+			c.outboxWake = make(chan struct{}, 1)
+		}
+		go c.StartOutboxWorker(c.lifeCtx)
+	}
+
 	// Only autostart, enabled instances need baize to launch their loop.
 	return rt, "", c.GetSettings().Enabled && c.cfg.AdapterAutostart, nil
 }

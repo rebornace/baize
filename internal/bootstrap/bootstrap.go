@@ -423,10 +423,13 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 
 	// channelMedia is set when a blob store is available (sqlBackend present)
 	// and feeds both the channel Runtime (persist inbound images) and the API
-	// (serve them back with the conversation ACL).
+	// (serve them back with the conversation ACL). blobStore is also passed to
+	// wireChannels for channel_outbox outbound media.
 	var channelMedia *channelmedia.Store
+	var blobStore blob.Store
 	if sqlBackend != nil {
-		blobStore, err := openBlobStore(context.Background(), cfg)
+		var err error
+		blobStore, err = openBlobStore(context.Background(), cfg)
 		if err != nil {
 			_ = closer.Close()
 			return nil, nil, fmt.Errorf("open blob store: %w", err)
@@ -550,6 +553,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		provider:       provider,
 		defaultAgentID: srv.DefaultAgentID,
 		channelMedia:   channelMedia,
+		blobs:          blobStore,
 		runCtx:         runCtx,
 		closer:         closer,
 		cfg:            cfg,
@@ -700,6 +704,7 @@ type channelDeps struct {
 	provider       llm.Provider
 	defaultAgentID string
 	channelMedia   *channelmedia.Store
+	blobs          blob.Store
 	runCtx         context.Context
 	closer         *storeAndMCPCloser
 	cfg            config.Config
@@ -786,6 +791,8 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		// webhook channel mount their own inbound HTTP routes during Bootstrap.
 		Routes:  d.srv,
 		DataDir: dataDir(d.cfg),
+		Persist: liveStore,
+		Blobs:   d.blobs,
 	}
 
 	// seenSource tracks the SourceSourced.Source() each successfully built

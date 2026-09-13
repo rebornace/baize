@@ -242,13 +242,20 @@ func (rt *storeRuntime) updateChannelRuntimesLocked(st store.Store, messages con
 		meta = m
 	}
 	rt.srv.ForEachChannel(func(h *api.ChannelHandle) {
-		if h == nil || h.Runtime == nil {
+		if h == nil {
 			return
 		}
-		h.Runtime.Runs = st
-		h.Runtime.Messages = messages
-		if meta != nil {
-			h.Runtime.Meta = meta
+		if h.Runtime != nil {
+			h.Runtime.Runs = st
+			h.Runtime.Messages = messages
+			if meta != nil {
+				h.Runtime.Meta = meta
+			}
+		}
+		// Option A: channels that hold a durable outbox (webhook) expose
+		// SetStore; hot-swap flips their persist pointer with the live store.
+		if setter, ok := h.Channel.(interface{ SetStore(store.Store) }); ok {
+			setter.SetStore(st)
 		}
 	})
 }

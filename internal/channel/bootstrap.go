@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
@@ -60,6 +61,14 @@ type BuildDeps struct {
 	// supervisor then falls back to config adapter_baize_url, then the
 	// loopback default http://127.0.0.1:8080.
 	SelfBaseURL string
+	// Persist is the full store used for channel_outbox durable delivery. It
+	// may equal Store when the concrete backend implements both RunStore and
+	// the channel outbox methods (typical production path). Named separately
+	// so RunStore stays narrow for inbound CreateRun.
+	Persist store.Store
+	// Blobs holds outbound media bytes for channel_outbox media rows. Optional
+	// for text-only channels; required for SendMedia.
+	Blobs blob.Store
 }
 
 // Bootstrapper is implemented by channels that participate in full assembly:
