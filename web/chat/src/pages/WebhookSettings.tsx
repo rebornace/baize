@@ -8,7 +8,18 @@ import {
   type EventsWebhookConfig,
   type EventsWebhookDelivery,
 } from '../api'
-import { WEBHOOKS } from '../strings'
+import {
+  Badge,
+  Button,
+  Field,
+  Input,
+  PageHeader,
+  Textarea,
+  ToastRegion,
+  useToast,
+  type BadgeTone,
+} from '../components/ui'
+import { WEBHOOKS, friendlyError } from '../strings'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
 
 export interface WebhookFormState {
@@ -31,6 +42,19 @@ export function formatDeliveryStatus(status: string): string {
       return WEBHOOKS.statusDelivered
     default:
       return status
+  }
+}
+
+function deliveryBadgeTone(status: string): BadgeTone {
+  switch (status) {
+    case 'dead':
+      return 'danger'
+    case 'pending':
+      return 'warning'
+    case 'delivered':
+      return 'success'
+    default:
+      return 'neutral'
   }
 }
 
@@ -63,21 +87,15 @@ export function validateWebhookForm(
   }
 }
 
-function apiErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  return String(err)
-}
-
 export function WebhookSettings() {
   const [form, setForm] = useState<WebhookFormState>(EMPTY_FORM)
   const [deliveries, setDeliveries] = useState<EventsWebhookDelivery[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<string | null>(null)
+  const [headersError, setHeadersError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [testing, setTesting] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const { toasts, push, dismiss } = useToast()
 
   const loadDeliveries = useCallback(async () => {
     try {
@@ -93,14 +111,15 @@ export function WebhookSettings() {
     try {
       const cfg = await getEventsWebhook()
       setForm(configToForm(cfg))
-      setError(null)
+      setHeadersError(null)
       await loadDeliveries()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: WEBHOOKS.loadFailed, detail: f.detail ?? f.title })
     } finally {
       setLoading(false)
     }
-  }, [loadDeliveries])
+  }, [loadDeliveries, push])
 
   useEffect(() => {
     void load()
@@ -110,19 +129,18 @@ export function WebhookSettings() {
     e.preventDefault()
     const validated = validateWebhookForm(form)
     if (!validated.ok) {
-      setError(validated.message)
+      setHeadersError(validated.message)
       return
     }
     setSubmitting(true)
-    setError(null)
-    setStatus(null)
-    setTestResult(null)
+    setHeadersError(null)
     try {
       await putEventsWebhook(validated.config)
       setForm(configToForm(validated.config))
-      setStatus('已保存 Webhook 配置')
+      push({ tone: 'success', title: WEBHOOKS.toastSaved })
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setSubmitting(false)
     }
@@ -130,14 +148,16 @@ export function WebhookSettings() {
 
   const onTest = async () => {
     setTesting(true)
-    setError(null)
-    setTestResult(null)
-    setStatus(null)
     try {
       const result = await testEventsWebhook()
-      setTestResult(`测试投递成功（${result.status}）`)
+      push({
+        tone: 'success',
+        title: WEBHOOKS.toastTestOk,
+        detail: String(result.status),
+      })
     } catch (err) {
-      setTestResult(`测试投递失败：${apiErrorMessage(err)}`)
+      const f = friendlyError(err)
+      push({ tone: 'error', title: WEBHOOKS.toastTestFail, detail: f.detail ?? f.title })
     } finally {
       setTesting(false)
     }
@@ -145,14 +165,13 @@ export function WebhookSettings() {
 
   const onRetry = async (id: string) => {
     setRetryingId(id)
-    setError(null)
-    setStatus(null)
     try {
       await retryEventsWebhookDelivery(id)
-      setStatus('已加入重投队列')
+      push({ tone: 'success', title: WEBHOOKS.toastRetryQueued })
       await loadDeliveries()
     } catch (err) {
-      setError(apiErrorMessage(err))
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setRetryingId(null)
     }
@@ -161,79 +180,70 @@ export function WebhookSettings() {
   const busy = submitting || testing || retryingId !== null
 
   return (
-    <div className="settings-section settings-webhook">
-      <h1 className="settings-heading">Webhook</h1>
-      <p className="settings-meta">
-        配置全局 Run 事件 Webhook。每条轨迹事件与终态 <code>run.ended</code> 会异步 POST
-        到目标 URL；与 SSE 流并列，不阻塞引擎。
-      </p>
+    <div className="settings-panel settings-webhook">
+      <PageHeader title={WEBHOOKS.title} description={WEBHOOKS.description} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+
       {loading && <p className="settings-muted">加载中…</p>}
-      {!loading && error && <p className="settings-error">{error}</p>}
-      {!loading && status && <p className="settings-muted">{status}</p>}
-      {!loading && testResult && (
-        <p className={testResult.startsWith('测试投递失败') ? 'settings-error' : 'settings-muted'}>
-          {testResult}
-        </p>
-      )}
       {!loading && (
-        <form className="settings-form" onSubmit={onSubmit}>
-          <label className="settings-field">
-            <span className="settings-field-label">Webhook URL</span>
-            <input
-              className="settings-input"
+        <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>
+          <Field label={WEBHOOKS.urlLabel} hint={WEBHOOKS.urlHint}>
+            <Input
               value={form.url}
               onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
               disabled={busy}
               placeholder="https://example.com/hooks/baize"
             />
-          </label>
-          <label className="settings-field">
-            <span className="settings-field-label">headers（每行 KEY=VALUE）</span>
-            <textarea
-              className="settings-textarea"
+          </Field>
+          <Field
+            label={WEBHOOKS.headersLabel}
+            hint={WEBHOOKS.headersHint}
+            error={headersError ?? undefined}
+          >
+            <Textarea
               value={form.headersText}
-              onChange={(e) => setForm((f) => ({ ...f, headersText: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, headersText: e.target.value }))
+                setHeadersError(null)
+              }}
               disabled={busy}
               rows={4}
               placeholder="Authorization=Bearer ${API_TOKEN}"
             />
-          </label>
+          </Field>
           <div className="settings-toolbar">
-            <button type="submit" className="btn primary" disabled={busy}>
-              {submitting ? '保存中…' : '保存'}
-            </button>
-            <button type="button" className="btn ghost" disabled={busy} onClick={() => void onTest()}>
-              {testing ? '测试中…' : '发送测试事件'}
-            </button>
+            <Button type="submit" variant="primary" disabled={busy}>
+              {submitting ? WEBHOOKS.saving : WEBHOOKS.save}
+            </Button>
+            <Button type="button" variant="ghost" disabled={busy} onClick={() => void onTest()}>
+              {testing ? WEBHOOKS.testing : WEBHOOKS.test}
+            </Button>
           </div>
         </form>
       )}
       {!loading && (
         <section className="settings-webhook-deliveries">
-          <h2 className="settings-subheading">最近投递</h2>
-          <p className="settings-meta">
-            展示最近 pending / dead 出站投递；5xx、网络错误或 429 会自动退避重试（最多 5 次），其他 4xx
-            直接死信。
-          </p>
+          <h2 className="settings-subheading">{WEBHOOKS.deliveriesTitle}</h2>
+          <p className="settings-meta">{WEBHOOKS.deliveriesHint}</p>
           {deliveries.length === 0 ? (
-            <p className="settings-muted">暂无待投递或死信记录。</p>
+            <p className="settings-muted">{WEBHOOKS.deliveriesEmpty}</p>
           ) : (
             <ul className="settings-list">
               {deliveries.map((d) => (
                 <li key={d.id} className="settings-list-item">
                   <div className="settings-tool-line">
-                    <span className="settings-badge">{formatDeliveryStatus(d.status)}</span>
+                    <Badge tone={deliveryBadgeTone(d.status)}>{formatDeliveryStatus(d.status)}</Badge>
                     <span>{deliverySummary(d)}</span>
                   </div>
                   {(d.status === 'dead' || d.status === 'pending') && (
-                    <button
+                    <Button
                       type="button"
-                      className="btn ghost"
+                      variant="ghost"
                       disabled={busy}
                       onClick={() => void onRetry(d.id)}
                     >
-                      {retryingId === d.id ? '重投中…' : '重投'}
-                    </button>
+                      {retryingId === d.id ? WEBHOOKS.retrying : WEBHOOKS.retry}
+                    </Button>
                   )}
                 </li>
               ))}
