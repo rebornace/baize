@@ -42,7 +42,7 @@
 
 | 史诗 ID | 覆盖原勾选项 | 就绪 | 备注 |
 |---------|--------------|------|------|
-| **DOC** | DOC-P1 + DOC-P2 | 可开刀 | **一个**文档计划 |
+| **DOC** | DOC-P1 + DOC-P2 | **已交付** | [`specs/2026-09-13-doc-p1-p2-design.md`](../specs/2026-09-13-doc-p1-p2-design.md) |
 | **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | **已交付** | F-HOT 计划 [`plans/2026-09-13-f-store-hot-swap.md`](../plans/2026-09-13-f-store-hot-swap.md)；DoD [`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md) |
 | **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 已交付 | 已交付（2026-09-13）；`specs/2026-09-13-runtime-settings-humanize-design.md` |
 | **UI-I18N** | i18n 框架（语言切换 / 英等） | 先定范围 | 可紧接 RUNTIME 后；独立规格 |

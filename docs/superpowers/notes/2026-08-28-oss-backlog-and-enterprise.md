@@ -10,7 +10,7 @@
 | 决策 | 项 |
 |------|-----|
 | **本版要开发** | **I1** Inbox → HITL resume；**P4** PostgreSQL 存储驱动；**微信 Channel（iLink）+ 会话归属**（规格已批准） |
-| **本版不开发、改文档** | **P1** SDK 表述；**P2** 工作流=线性流水线表述 |
+| **本版不开发、改文档** | **P1** SDK 表述；**P2** 工作流=线性流水线表述 → **DOC 已交付**（2026-09-13；`specs/2026-09-13-doc-p1-p2-design.md`） |
 | **本版不做** | **P3** OTel；A1 多订阅；B1 SDK 实现；其余 §3/§4 默认否 |
 | **已交付** | **X1** MCP 导出（`/v0/mcp/export`；规格 `2026-08-29-mcp-export-v0-design.md`） |
 | **已交付** | **X2** 多模型配置 / `/ui` 模型设置页 / 对话按消息选模型（profile 存库、`llm.Switch` 热切换；规格 `2026-08-30-multi-model-profiles-design.md`） |

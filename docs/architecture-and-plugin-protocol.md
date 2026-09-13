@@ -8,11 +8,11 @@
 ## 1. 一句话与边界
 
 **Baize** 是独立进程 Runtime（侧车 / 网关），把 LLM、Tool、遗留 HTTP API、人机卡点收成可审计的 `Run`。  
-平台团队用 REST / SDK 嵌入；集成商按同一产物交付。
+平台团队用 REST / HTTP 集成；集成商按同一产物交付。官方语言 SDK **不在**开源首版（后续 / 企业）。
 
 | 做 | 不做（v1） |
 |----|------------|
-| OpenAPI → Tool、执行回调、HITL、可选工作流 DSL | 桌面 App、个人 IM 全家桶、内置自我进化、人生记忆、重画布 |
+| OpenAPI → Tool、执行回调、HITL、可选**线性**工作流 DSL | 桌面 App、个人 IM 全家桶、内置自我进化、人生记忆、重画布、官方 TS/Python SDK |
 | 无必选 Redis/PG/K8s | 绑死单一云或单一 Agent 框架 |
 
 **五抽象：** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
@@ -25,13 +25,13 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     企业平台 / 集成方                          │
-│         REST 控制面 · SSE/Webhook 事件 · TS/Python SDK        │
+│         REST 控制面 · SSE/Webhook 事件 · Chat UI / HTTP        │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
 │                    Baize Runtime (Go)                         │
 │  Agent 定义 │ LLM 适配(OpenAI-compatible / 仅网关开关)         │
-│  Tool 注册  │ Run 引擎(ReAct 默认 · 可选状态机) · HITL        │
+│  Tool 注册  │ Run 引擎(ReAct 默认 · 可选线性 workflow) · HITL │
 │  Connector  │ 轨迹/Checkpoint · 结构化日志 · 可选 OTel        │
 └───────┬─────────────┬─────────────┬─────────────┬───────────┘
         │             │             │             │
@@ -175,8 +175,8 @@ HTTP 插件侧车在 `POST /v0/tools/{name}/invoke` 成功返回后，亦可按 
 | 模式 | 行为 |
 |------|------|
 | 默认 | 单 Agent ReAct：模型选 Tool → 执行 → 写轨迹 → 直至结束 |
-| 可选 | YAML / 等价 JSON 状态机：`step` / `tool` / `branch` / `wait_human` |
-| 多 Agent | 多个 Agent 配置 + Run 间消息（非默认） |
+| 可选 | Skill 包内线性 `workflow.yaml`：`step` / `tool` / 可选 HITL（见下「线性流水线」）；**无** `branch` / 循环（需分支请用 ReAct） |
+| 多 Agent | 多个 Agent 配置 + Run 间消息（非默认；本版不做） |
 | Skill 包 | **配置形态**（不升格为与 Runtime / Agent / Tool / Connector / Run 并列的第六抽象）：`SKILL.md` 流程正文 + `tools` 清单；无在线自闭环、无市场 |
 | Memory | Run 工作记忆内置；企业 Memory 插件默认关 |
 | Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，支持 `action=resume`（HITL 机器审批），见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；**微信个人号 Channel v0（已实现）** — iLink 扫码 + 长轮询私信、会话 `owner_id`、与 `/ui` 权限内双向同步，见 [README 微信 Channel](../README.zh-CN.md#微信-channel个人号-ilink)；企微 / 钉钉为后续同契约插件（非本版） |
@@ -208,8 +208,8 @@ Skill 包目录内可选 `workflow.yaml`（与 `SKILL.md` 并列）。激活该 
 
 ## 6. 开源 / 商业切分（提醒）
 
-**开源：** Runtime 内核、OpenAPI Connector、HITL、工作流 DSL、插件协议 v0、参考 Channel、TS/Python SDK。  
-**商业：** 多租户/SSO/审计加固、厂商连接器、可视化 UI、托管记忆/进化（若做）。
+**开源：** Runtime 内核、OpenAPI Connector、HITL、**线性**工作流 DSL（`workflow.yaml`）、插件协议 v0、参考 Channel、Chat UI / REST。  
+**后续 / 企业：** 官方 TS/Python SDK、workflow 分支与画布、多租户/SSO/审计加固、厂商连接器、托管记忆/进化（若做）。
 
 ---
 

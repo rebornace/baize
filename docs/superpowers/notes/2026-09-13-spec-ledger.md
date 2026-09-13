@@ -97,7 +97,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **DOC**（P1+P2） | 要做 · 可开刀 | 一个文档计划 |
+| **DOC**（P1+P2） | **已交付** | [`2026-09-13-doc-p1-p2-design.md`](../specs/2026-09-13-doc-p1-p2-design.md)；架构草案已收口 |
 | **F**（含 C1 + OPS-HOT） | **已交付** | F-C1 / F-KV / F-HOT；DoD：[`2026-09-13-f-kv-dod-audit.md`](2026-09-13-f-kv-dod-audit.md)、[`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md) |
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
