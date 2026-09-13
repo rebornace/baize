@@ -68,6 +68,42 @@ func TestCatalogPatchPreservesMutatingHITL(t *testing.T) {
 		t.Fatal("PATCH require_login must set Registry.RequiresLogin")
 	}
 
+	// PATCH require_approval=false on create_ticket → SetRequireApproval path; login stays.
+	patchApprovalOff := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBodyAPI(t, map[string]any{"require_approval": false}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchApprovalOff)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH require_approval=false status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if reg.RequiresApproval("create_ticket") {
+		t.Fatal("PATCH require_approval=false must clear Registry approval")
+	}
+	if !reg.RequiresLogin("create_ticket") {
+		t.Fatal("PATCH require_approval must not clear require_login")
+	}
+	c1, err := st.GetConnector("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range c1.RequireApproval {
+		if n == "create_ticket" {
+			t.Fatalf("connector require_approval list must drop create_ticket: %+v", c1.RequireApproval)
+		}
+	}
+
+	// PATCH require_approval=true again.
+	patchApprovalOn := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
+		jsonBodyAPI(t, map[string]any{"require_approval": true}))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, patchApprovalOn)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH require_approval=true status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !reg.RequiresApproval("create_ticket") {
+		t.Fatal("PATCH require_approval=true must set Registry approval")
+	}
+
 	// PATCH description only → SetDescription; must keep mutating HITL.
 	patchDesc := httptest.NewRequest(http.MethodPatch, "/v0/tools/create_ticket",
 		jsonBodyAPI(t, map[string]any{"description": "人改"}))

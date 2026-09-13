@@ -80,6 +80,28 @@ func TestRequireLoginRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRequireApprovalRoundTrip(t *testing.T) {
+	reg := tool.NewRegistry()
+	reg.RegisterMeta(tool.Meta{
+		Spec:        llm.ToolSpec{Name: "create_ticket"},
+		ConnectorID: "ticket-api",
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	}, true)
+	if !reg.RequiresApproval("create_ticket") {
+		t.Fatal("expected require_approval")
+	}
+	if err := reg.SetRequireApproval("create_ticket", false); err != nil {
+		t.Fatal(err)
+	}
+	if reg.RequiresApproval("create_ticket") {
+		t.Fatal("toggle off")
+	}
+	if err := reg.SetRequireApproval("missing", true); err == nil {
+		t.Fatal("expected unknown tool error")
+	}
+}
+
 func TestRegistrySetDescription(t *testing.T) {
 	r := tool.NewRegistry()
 	nop := func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {

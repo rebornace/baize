@@ -218,6 +218,19 @@ func (r *Registry) SetRequireLogin(name string, requireLogin bool) error {
 	return nil
 }
 
+// SetRequireApproval toggles require_approval for a registered tool.
+func (r *Registry) SetRequireApproval(name string, requireApproval bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.tools[name]
+	if !ok {
+		return fmt.Errorf("unknown tool: %s", name)
+	}
+	e.requireApproval = requireApproval
+	r.tools[name] = e
+	return nil
+}
+
 // SetDescription updates the description for a registered tool in place.
 func (r *Registry) SetDescription(name, description string) error {
 	r.mu.Lock()

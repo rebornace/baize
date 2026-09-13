@@ -266,6 +266,30 @@ export function ToolsSettings() {
     }
   }
 
+  const onRequireLoginChange = async (name: string, requireLogin: boolean) => {
+    setToggling(name)
+    try {
+      const updated = await patchTool(name, { require_login: requireLogin })
+      mergeTools([updated])
+    } catch (err) {
+      pushToolError(err, name)
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  const onRequireApprovalChange = async (name: string, requireApproval: boolean) => {
+    setToggling(name)
+    try {
+      const updated = await patchTool(name, { require_approval: requireApproval })
+      mergeTools([updated])
+    } catch (err) {
+      pushToolError(err, name)
+    } finally {
+      setToggling(null)
+    }
+  }
+
   const beginDelete = (t: ToolInfo) => {
     setDeleteError(null)
     setPendingDelete(t)
@@ -460,10 +484,6 @@ export function ToolsSettings() {
               </>
             ) : (
               <>
-                {t.require_login ? <Badge tone="info">{TOOLS.requireLogin}</Badge> : null}
-                {t.require_approval ? (
-                  <Badge tone="warning">{TOOLS.requireApprovalBadge}</Badge>
-                ) : null}
                 <label className="settings-login-toggle">
                   <input
                     type="checkbox"
@@ -474,6 +494,28 @@ export function ToolsSettings() {
                     }}
                   />
                   {TOOLS.enable}
+                </label>
+                <label className="settings-login-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(t.require_login)}
+                    disabled={rowBusy}
+                    onChange={(e) => {
+                      void onRequireLoginChange(t.name, e.target.checked)
+                    }}
+                  />
+                  {TOOLS.requireLogin}
+                </label>
+                <label className="settings-login-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(t.require_approval)}
+                    disabled={rowBusy}
+                    onChange={(e) => {
+                      void onRequireApprovalChange(t.name, e.target.checked)
+                    }}
+                  />
+                  {TOOLS.requireApprovalBadge}
                 </label>
                 {canDelete && (
                   <Button

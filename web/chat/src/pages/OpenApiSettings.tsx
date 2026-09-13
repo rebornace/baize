@@ -46,8 +46,6 @@ export function OpenApiSettings() {
   const [editor, setEditor] = useState<{ open: boolean; editing: boolean; initial: ConnectorEditorInitial }>({
     open: false, editing: false, initial: emptyInitial,
   })
-  // 缓存第一步的连接级负载：第二步 PUT 必须整表回传（后端每次 PUT 都重新探测）。
-  const [savedConn, setSavedConn] = useState<SavedConnection | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -71,7 +69,6 @@ export function OpenApiSettings() {
   useEffect(() => { void load() }, [load])
 
   const openCreate = () => {
-    setSavedConn(null)
     setEditor({ open: true, editing: false, initial: emptyInitial })
   }
   const openEdit = (id: string) => {
@@ -84,15 +81,6 @@ export function OpenApiSettings() {
       executionCallbackUrl: c.execution_callback_url ?? '',
       auth: c.auth,
     }
-    // 预构造连接级负载，使「直接进入工具权限」也能整表回传。
-    setSavedConn({
-      kind: 'openapi',
-      id: c.id,
-      baseUrl: c.base_url ?? '',
-      importFormat: 'auto',
-      executionCallbackUrl: c.execution_callback_url ?? '',
-      auth: c.auth,
-    })
     setEditor({ open: true, editing: true, initial })
   }
 
@@ -116,29 +104,6 @@ export function OpenApiSettings() {
     return toPermissionTools(c.tools)
   }
 
-  const handleSavePermissions = async (
-    id: string,
-    loginNames: string[],
-    approvalNames: string[],
-    advanced?: { executionCallbackUrl: string; auth?: ConnectorInfo['auth'] },
-  ) => {
-    // 不传文档：后端对编辑/已存在连接器复用已保存 spec；连接级字段整表回传。
-    // 缓存缺失属接线错误：显式抛出，由组件 finish 的 catch 提示用户，避免静默丢权限。
-    if (!savedConn || savedConn.kind !== 'openapi') {
-      throw new Error('saved connection missing before permissions save')
-    }
-    await putConnector(id, {
-      type: 'openapi',
-      base_url: savedConn.baseUrl,
-      require_login: loginNames,
-      require_approval: approvalNames,
-      execution_callback_url: advanced?.executionCallbackUrl ?? savedConn.executionCallbackUrl,
-      auth: advanced?.auth ?? savedConn.auth,
-    })
-    push({ tone: 'success', title: `${CONNECTORS.saved} ${id}` })
-    await load()
-  }
-
   return (
     <>
       <ConnectorShell kind="openapi" rows={rows} loading={loading} loadError={loadError}
@@ -146,8 +111,8 @@ export function OpenApiSettings() {
       <ConnectorEditorModal kind="openapi" open={editor.open} editing={editor.editing} initial={editor.initial}
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
         formatError={(e) => connectorErrorText(e).title}
-        onSaveInfo={handleSaveInfo} onSavePermissions={handleSavePermissions}
-        onSavedInfo={(c) => { setSavedConn(c); push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
+        onSaveInfo={handleSaveInfo}
+        onSavedInfo={(c) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </>
   )

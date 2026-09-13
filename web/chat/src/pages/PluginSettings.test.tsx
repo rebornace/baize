@@ -45,33 +45,25 @@ describe('PluginSettings page', () => {
     expect(host.textContent).toContain('1 个工具需本人登录')
   })
 
-  it('creates a plugin with id+base url then saves permissions in a second PUT', async () => {
+  it('creates a plugin with id+base url in a single saveInfo PUT then closes', async () => {
     await renderPlugin()
     await act(async () => { btn('接入插件服务').click(); await new Promise((r) => setTimeout(r, 0)) })
     const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
     await setValue(inputs[0], 'p1')
     await setValue(inputs[1], 'http://127.0.0.1:19090')
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
-    // 进入第二步
-    expect(host.textContent).toContain('工具权限')
-    await act(async () => {
-      const box = host.querySelector('input[data-flag="login"]') as HTMLInputElement
-      box.click(); await new Promise((r) => setTimeout(r, 0))
-    })
-    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
+    await flush(5)
     const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
-    expect(puts).toHaveLength(2)
+    expect(puts).toHaveLength(1)
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
-    const second = JSON.parse((puts[1][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'http', base_url: 'http://127.0.0.1:19090' })
     // 高级区默认回传空 capture（mode=static）
     expect(first.auth).toEqual({ mode: 'static', capture: {} })
-    expect(second.require_login).toEqual(['ping'])
+    expect(host.textContent).not.toContain('工具权限')
+    expect(host.textContent).toContain('已保存')
   })
 
-  it('refreshes the list and shows a success toast when skipping after step-1 save', async () => {
+  it('refreshes the list and shows a success toast after save closes the modal', async () => {
     let created = false
     const newPlugin = {
       id: 'p1', type: 'http', base_url: 'http://127.0.0.1:19090',
@@ -106,11 +98,6 @@ describe('PluginSettings page', () => {
     await setValue(inputs[0], 'p1')
     await setValue(inputs[1], 'http://127.0.0.1:19090')
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush(4)
-    expect(host.textContent).toContain('工具权限')
-
-    // 第一步已保存成功：点「暂不设置」关闭弹窗，也要提示并刷新列表。
-    await act(async () => { btn('暂不设置').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush(5)
     expect(host.textContent).toContain('已保存')
     expect(toolsGets()).toBeGreaterThanOrEqual(2)

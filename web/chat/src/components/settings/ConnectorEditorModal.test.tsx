@@ -37,7 +37,6 @@ const baseProps: Props = {
   onClose: vi.fn(),
   formatError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
   onSaveInfo: vi.fn(async () => [{ name: 'login' }, { name: 'list_tickets' }]),
-  onSavePermissions: vi.fn(async () => {}),
 }
 
 async function render(props: Partial<Props> = {}) {
@@ -70,7 +69,7 @@ const setFile = async (file: File) => {
   })
 }
 
-describe('ConnectorEditorModal step 1', () => {
+describe('ConnectorEditorModal', () => {
   it('validates required fields before saving', async () => {
     const onSaveInfo = vi.fn(async () => [])
     await render({ onSaveInfo })
@@ -91,22 +90,25 @@ describe('ConnectorEditorModal step 1', () => {
     expect(onSaveInfo).not.toHaveBeenCalled()
   })
 
-  it('plugin create saves with id + base url and moves to step 2', async () => {
+  it('plugin create saves then closes via onClose', async () => {
     const onSaveInfo = vi.fn(async () => [{ name: 'ping' }])
-    await render({ kind: 'plugin', onSaveInfo })
+    const onClose = vi.fn()
+    await render({ kind: 'plugin', onSaveInfo, onClose })
     const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
     await setValue(inputs[0], 'p1')
     await setValue(inputs[1], 'http://127.0.0.1:19090')
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSaveInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
-    expect(host.textContent).toContain('工具权限')
-    expect(host.textContent).toContain('ping')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(host.textContent).not.toContain('工具权限')
+    expect(btn('设置工具权限')).toBeUndefined()
   })
 
-  it('notifies onSavedInfo once with the new id after step-1 save succeeds', async () => {
+  it('notifies onSavedInfo once then closes after save succeeds', async () => {
     const onSavedInfo = vi.fn()
-    await render({ kind: 'plugin', onSavedInfo })
+    const onClose = vi.fn()
+    await render({ kind: 'plugin', onSavedInfo, onClose })
     const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
     await setValue(inputs[0], 'p1')
     await setValue(inputs[1], 'http://127.0.0.1:19090')
@@ -114,112 +116,32 @@ describe('ConnectorEditorModal step 1', () => {
     await flush()
     expect(onSavedInfo).toHaveBeenCalledTimes(1)
     expect(onSavedInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('does not notify onSavedInfo when step-1 save fails', async () => {
+  it('does not notify onSavedInfo or close when save fails', async () => {
     const onSaveInfo = vi.fn(async () => { throw new Error('boom') })
     const onSavedInfo = vi.fn()
-    await render({ kind: 'plugin', onSaveInfo, onSavedInfo, formatError: () => '保存失败' })
+    const onClose = vi.fn()
+    await render({ kind: 'plugin', onSaveInfo, onSavedInfo, onClose, formatError: () => '保存失败' })
     const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
     await setValue(inputs[0], 'p1')
     await setValue(inputs[1], 'http://127.0.0.1:19090')
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSavedInfo).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(host.querySelector('.ui-inline-error')?.textContent).toBe('保存失败')
   })
-})
 
-describe('ConnectorEditorModal step 2', () => {
-  it('opens directly at step 1 but can reach step 2 with saved tools and echoes checkboxes', async () => {
+  it('footer only has cancel and save (no permissions step buttons)', async () => {
     await render({ editing: true, initial: editInitial })
-    // 编辑既有连接：通过「下一步：设置工具权限」进入第二步（无需再次保存）
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    const boxes = [...host.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[]
-    const loginBox = boxes.find((b) => b.dataset.tool === 'login' && b.dataset.flag === 'login')!
-    const approvalBox = boxes.find((b) => b.dataset.tool === 'create_ticket' && b.dataset.flag === 'approval')!
-    expect(loginBox.checked).toBe(true)
-    expect(approvalBox.checked).toBe(true)
-  })
-
-  it('shows title/description and filters the permission list', async () => {
-    await render({ editing: true, initial: editInitial })
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    expect(host.textContent).toContain('登录')
-    expect(host.textContent).toContain('获取访问令牌')
-    expect(host.textContent).toContain('创建工单')
-    expect(host.querySelector('.connector-perm-id')?.textContent).toBe('login')
-
-    const search = host.querySelector('.connector-perms-search') as HTMLInputElement
-    expect(search).toBeTruthy()
-    await setValue(search, '工单')
-    expect(host.querySelector('input[data-tool="create_ticket"]')).toBeTruthy()
-    expect(host.querySelector('input[data-tool="login"]')).toBeNull()
-    expect(host.textContent).not.toContain('获取访问令牌')
-
-    await setValue(search, 'no-such-tool')
-    expect(host.textContent).toContain(CONNECTORS.permsNoMatch)
-  })
-
-  it('saves selected permission lists', async () => {
-    const onSavePermissions = vi.fn(async () => {})
-    await render({ editing: true, initial: editInitial, onSavePermissions })
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
-    expect(onSavePermissions).toHaveBeenCalledWith(
-      'o1',
-      ['login'],
-      ['create_ticket'],
-      expect.objectContaining({ executionCallbackUrl: '' }),
-    )
-  })
-
-  it('edit: navigating directly to permissions does not notify onSavedInfo', async () => {
-    const onSavedInfo = vi.fn()
-    await render({ editing: true, initial: editInitial, onSavedInfo })
-    // 纯导航（无 PUT、无第一步保存）：不应走「保存成功」通道。
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    expect(host.textContent).toContain('工具权限')
-    expect(onSavedInfo).not.toHaveBeenCalled()
-  })
-})
-
-describe('ConnectorEditorModal I-1 selection preservation', () => {
-  it('create: checkboxes survive back-then-save round trip', async () => {
-    const onSaveInfo = vi.fn(async () => [{ name: 'ping' }])
-    await render({ kind: 'plugin', onSaveInfo })
-    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
-    await setValue(inputs[0], 'p1')
-    await setValue(inputs[1], 'http://127.0.0.1:19090')
-    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
-    // 第 2 步勾选 ping 的 login
-    await act(async () => {
-      ;(host.querySelector('input[data-tool="ping"][data-flag="login"]') as HTMLInputElement).click()
-      await new Promise((r) => setTimeout(r, 0))
-    })
-    // 回到第 1 步再保存
-    await act(async () => { btn('上一步').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
-    const loginBox = host.querySelector('input[data-tool="ping"][data-flag="login"]') as HTMLInputElement
-    expect(loginBox.checked).toBe(true)
-  })
-
-  it('edit: toggled and echoed checkboxes survive back-then-next round trip', async () => {
-    await render({ editing: true, initial: editInitial })
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    // 勾一个初始未勾的 approval：login 工具的 approval
-    await act(async () => {
-      ;(host.querySelector('input[data-tool="login"][data-flag="approval"]') as HTMLInputElement).click()
-      await new Promise((r) => setTimeout(r, 0))
-    })
-    await act(async () => { btn('上一步').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    expect((host.querySelector('input[data-tool="login"][data-flag="approval"]') as HTMLInputElement).checked).toBe(true)
-    // 初始回显的勾仍在
-    expect((host.querySelector('input[data-tool="login"][data-flag="login"]') as HTMLInputElement).checked).toBe(true)
-    expect((host.querySelector('input[data-tool="create_ticket"][data-flag="approval"]') as HTMLInputElement).checked).toBe(true)
+    expect(btn('取消')).toBeTruthy()
+    expect(btn('保存连接')).toBeTruthy()
+    expect(btn('设置工具权限')).toBeUndefined()
+    expect(btn('上一步')).toBeUndefined()
+    expect(btn('暂不设置')).toBeUndefined()
+    expect(btn('完成')).toBeUndefined()
   })
 })
 
@@ -232,7 +154,8 @@ describe('ConnectorEditorModal I-2 spec file removal', () => {
 
   it('can remove chosen file, re-enabling the URL input', async () => {
     const onSaveInfo = vi.fn(async () => [{ name: 'ping' }])
-    await render({ onSaveInfo })
+    const onClose = vi.fn()
+    await render({ onSaveInfo, onClose })
     await setFile(new File(['{}'], 'openapi.json', { type: 'application/json' }))
     expect(host.textContent).toContain('移除已选文件')
     expect(urlInput().disabled).toBe(true)
@@ -245,12 +168,12 @@ describe('ConnectorEditorModal I-2 spec file removal', () => {
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     expect(host.textContent).toContain('请上传接口文档或填写文档链接')
     expect(onSaveInfo).not.toHaveBeenCalled()
-    // 填入 URL 后可保存
+    // 填入 URL 后可保存并关闭
     await setValue(urlInput(), 'https://api.example.com/openapi.json')
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSaveInfo).toHaveBeenCalledTimes(1)
-    expect(host.textContent).toContain('工具权限')
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('a non-empty URL change clears a previously chosen file (double insurance)', async () => {
@@ -295,34 +218,20 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     const onSaveInfo = vi.fn()
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce([{ name: 'ping' }])
-    await render({ onSaveInfo, formatError: () => '保存失败：网络错误' })
+    const onClose = vi.fn()
+    await render({ onSaveInfo, onClose, formatError: () => '保存失败：网络错误' })
     await setValue(urlInput(), 'https://api.example.com/openapi.json')
     await fillAndSaveOpenapi()
     await flush()
     const alert = host.querySelector('.ui-inline-error')
     expect(alert?.textContent).toBe('保存失败：网络错误')
-    // 弹窗仍开着：保存按钮还在，且未进入第 2 步
     expect(btn('保存连接')).toBeTruthy()
-    expect(host.textContent).not.toContain('工具权限')
-    // saving 已复位：可再次点击并成功
+    expect(onClose).not.toHaveBeenCalled()
+    // saving 已复位：可再次点击并成功关闭
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSaveInfo).toHaveBeenCalledTimes(2)
-    expect(host.textContent).toContain('工具权限')
-  })
-
-  it('shows inline error when onSavePermissions rejects and keeps modal open', async () => {
-    const onSavePermissions = vi.fn(async () => { throw new Error('boom2') })
-    await render({
-      editing: true, initial: editInitial, onSavePermissions,
-      formatError: () => '权限保存失败',
-    })
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
-    expect(host.querySelector('.ui-inline-error')?.textContent).toBe('权限保存失败')
-    expect(btn('完成')).toBeTruthy()
-    expect(onSavePermissions).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('cannot be closed via overlay click or Escape while saving', async () => {
@@ -342,10 +251,9 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
       await new Promise((r) => setTimeout(r, 0))
     })
     expect(onClose).not.toHaveBeenCalled()
-    expect(host.textContent).not.toContain('工具权限')
     await act(async () => { release(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
-    expect(host.textContent).toContain('工具权限')
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('openapi URL-only save sends spec.url without content', async () => {
@@ -432,15 +340,11 @@ describe('ConnectorEditorModal mcp', () => {
   const mcpProps = (over: Partial<Props> = {}): Props => ({
     ...baseProps, kind: 'mcp', onSaveInfo: vi.fn(async () => [{ name: 'query' }]), ...over,
   })
-  const mcpEditInitial = {
-    id: 'a1', baseUrl: '',
-    mcp: { transport: 'stdio' as const, command: 'npx', args: ['x'] },
-    tools: [{ name: 'query' }, { name: 'write' }], loginNames: [], approvalNames: ['write'],
-  }
 
-  it('stdio: requires command and submits mcp config, then step2 shows approval only', async () => {
+  it('stdio: requires command and submits mcp config then closes', async () => {
     const onSaveInfo = vi.fn(async () => [{ name: 'query' }])
-    await render(mcpProps({ onSaveInfo }))
+    const onClose = vi.fn()
+    await render(mcpProps({ onSaveInfo, onClose }))
     // 默认 stdio：不填命令先保存
     const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
     await setValue(inputs[0], 'a1')
@@ -453,10 +357,8 @@ describe('ConnectorEditorModal mcp', () => {
     await act(async () => { btn('保存连接').click(); await Promise.resolve() })
     await flush()
     expect(onSaveInfo).toHaveBeenCalledWith({ kind: 'mcp', id: 'a1', mcp: { transport: 'stdio', command: 'npx', args: [] } })
-    expect(host.textContent).toContain('工具权限')
-    // 第二步没有「需本人登录」复选框，只有审批
-    expect(host.querySelector('input[data-flag="login"]')).toBeNull()
-    expect(host.querySelector('input[data-tool="query"][data-flag="approval"]')).toBeTruthy()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(host.textContent).not.toContain('工具权限')
   })
 
   it('http: requires url and submits url+headers', async () => {
@@ -485,17 +387,6 @@ describe('ConnectorEditorModal mcp', () => {
     })
   })
 
-  it('finish permissions calls onSavePermissions with approval list only (no login flag)', async () => {
-    const onSavePermissions = vi.fn(async () => {})
-    await render(mcpProps({ editing: true, initial: mcpEditInitial, onSavePermissions }))
-    await act(async () => { btn('设置工具权限').click(); await Promise.resolve() })
-    const writeBox = host.querySelector('input[data-tool="write"][data-flag="approval"]') as HTMLInputElement
-    expect(writeBox.checked).toBe(true)
-    await act(async () => { btn('完成').click(); await Promise.resolve() })
-    await flush()
-    expect(onSavePermissions).toHaveBeenCalledWith('a1', [], ['write'], undefined)
-  })
-
   it('http: empty url shows inline error and does not save', async () => {
     const onSaveInfo = vi.fn(async () => [{ name: 'q' }])
     await render(mcpProps({ onSaveInfo }))
@@ -510,14 +401,6 @@ describe('ConnectorEditorModal mcp', () => {
     await act(async () => { btn('保存连接').click(); await Promise.resolve() })
     expect(host.textContent).toContain(CONNECTORS.errMcpUrlRequired)
     expect(onSaveInfo).not.toHaveBeenCalled()
-  })
-
-  it('edit: navigating directly to permissions does not notify onSavedInfo', async () => {
-    const onSavedInfo = vi.fn()
-    await render(mcpProps({ editing: true, initial: mcpEditInitial, onSavedInfo }))
-    await act(async () => { btn('设置工具权限').click(); await Promise.resolve() })
-    expect(host.textContent).toContain('工具权限')
-    expect(onSavedInfo).not.toHaveBeenCalled()
   })
 })
 
@@ -569,30 +452,5 @@ describe('ConnectorEditorModal advanced', () => {
         capture: expect.objectContaining({ tool_name_glob: '*login*' }),
       }),
     }))
-  })
-
-  it('permissions-only finish passes current advanced URL as 4th arg', async () => {
-    const onSavePermissions = vi.fn(async () => {})
-    await render({
-      editing: true,
-      initial: {
-        ...editInitial,
-        executionCallbackUrl: 'https://old.example/cb',
-      },
-      onSavePermissions,
-    })
-    const cb = [...host.querySelectorAll('input')].find(
-      (el) => (el as HTMLInputElement).placeholder === 'https://enterprise.example/baize/execute',
-    ) as HTMLInputElement
-    await setValue(cb, 'https://new.example/cb')
-    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await act(async () => { btn('完成').click(); await new Promise((r) => setTimeout(r, 0)) })
-    await flush()
-    expect(onSavePermissions).toHaveBeenCalledWith(
-      'o1',
-      ['login'],
-      ['create_ticket'],
-      expect.objectContaining({ executionCallbackUrl: 'https://new.example/cb' }),
-    )
   })
 })

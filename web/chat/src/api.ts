@@ -787,6 +787,7 @@ export async function patchTool(
   body: {
     enabled?: boolean
     require_login?: boolean
+    require_approval?: boolean
     title?: string
     description?: string
     export?: ToolExportMode

@@ -1190,18 +1190,19 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Enabled      *bool   `json:"enabled"`
-		RequireLogin *bool   `json:"require_login"`
-		Title        *string `json:"title"`
-		Description  *string `json:"description"`
-		Export       *string `json:"export"`
+		Enabled         *bool   `json:"enabled"`
+		RequireLogin    *bool   `json:"require_login"`
+		RequireApproval *bool   `json:"require_approval"`
+		Title           *string `json:"title"`
+		Description     *string `json:"description"`
+		Export          *string `json:"export"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	if body.Enabled == nil && body.RequireLogin == nil && body.Title == nil && body.Description == nil && body.Export == nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, title, description, or export is required")
+	if body.Enabled == nil && body.RequireLogin == nil && body.RequireApproval == nil && body.Title == nil && body.Description == nil && body.Export == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "at least one of enabled, require_login, require_approval, title, description, or export is required")
 		return
 	}
 	if body.Export != nil {
@@ -1221,10 +1222,10 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 
 	// Track whether enabled actually changes. Only an enabled transition
 	// (false→true) needs a full re-register to restore the invoker closure and
-	// mutating HITL. Toggling only require_login on an already-enabled row is
-	// served by Registry.SetRequireLogin so we don't drop the baked-in
-	// RequireApproval flag (RegisterOneFromConnector does not know
-	// RequireApprovalMutating and would otherwise lose mutating HITL).
+	// mutating HITL. Toggling only require_login / require_approval on an
+	// already-enabled row is served by Registry in-place setters so we don't
+	// drop the baked-in RequireApproval flag (RegisterOneFromConnector does not
+	// know RequireApprovalMutating and would otherwise lose mutating HITL).
 	// Export-only patches update the store catalog and never re-register.
 	enabledChanged := body.Enabled != nil && *body.Enabled != row.Enabled
 
@@ -1233,6 +1234,9 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.RequireLogin != nil {
 		row.RequireLogin = *body.RequireLogin
+	}
+	if body.RequireApproval != nil {
+		row.RequireApproval = *body.RequireApproval
 	}
 	if body.Title != nil {
 		row.Title = *body.Title
@@ -1283,6 +1287,14 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if body.RequireApproval != nil {
+			if err := s.Registry.SetRequireApproval(name, row.RequireApproval); err != nil {
+				if err := s.registerOne(c, row); err != nil {
+					writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+					return
+				}
+			}
+		}
 		if body.Description != nil {
 			if err := s.Registry.SetDescription(name, row.Description); err != nil {
 				if err := s.registerOne(c, row); err != nil {
@@ -1294,6 +1306,7 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c.RequireLogin = syncRequireLoginList(c.RequireLogin, name, row.RequireLogin)
+	c.RequireApproval = syncRequireLoginList(c.RequireApproval, name, row.RequireApproval)
 	s.Store.UpsertConnector(c)
 
 	writeJSON(w, http.StatusOK, row)

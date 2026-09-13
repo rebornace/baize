@@ -54,7 +54,7 @@ describe('McpSettings page', () => {
     expect(host.textContent).toContain('1 个需审批')
   })
 
-  it('creates an mcp connector then saves approval in a second PUT that resends mcp and omits require_login', async () => {
+  it('creates an mcp connector in a single saveInfo PUT then closes', async () => {
     const created = { ...existing, id: 'a1', mcp: { transport: 'stdio', command: 'npx', args: [] }, require_approval: [], tools: [{ name: 'query' }] }
     let made = false
     fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
@@ -72,20 +72,12 @@ describe('McpSettings page', () => {
     const cmd = [...host.querySelectorAll('input')].find((i) => i.placeholder === 'npx')!
     await setValue(cmd, 'npx')
     await act(async () => { btn('保存连接').click(); await Promise.resolve() }); await flush(4)
-    expect(host.textContent).toContain('工具权限')
-    await act(async () => {
-      (host.querySelector('input[data-tool="query"][data-flag="approval"]') as HTMLInputElement).click()
-      await Promise.resolve()
-    })
-    await act(async () => { btn('完成').click(); await Promise.resolve() }); await flush(4)
     const puts = fetchMock.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'PUT')
-    expect(puts).toHaveLength(2)
+    expect(puts).toHaveLength(1)
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
-    const second = JSON.parse((puts[1][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'mcp', mcp: { transport: 'stdio', command: 'npx' } })
     expect(first.require_login).toBeUndefined()
-    expect(second.mcp).toEqual({ transport: 'stdio', command: 'npx', args: [] })
-    expect(second.require_approval).toEqual(['query'])
-    expect(second.require_login).toBeUndefined()
+    expect(host.textContent).not.toContain('工具权限')
+    expect(host.textContent).toContain('已保存')
   })
 })

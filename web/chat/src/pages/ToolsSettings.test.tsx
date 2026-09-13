@@ -166,15 +166,18 @@ describe('ToolsSettings humanized shell', () => {
     host.remove()
   })
 
-  it('hides MCP export and require-login toggle; gates show as badges only', async () => {
-    vi.spyOn(api, 'listTools').mockResolvedValue([
-      {
-        ...extraTool,
-        require_login: true,
-        require_approval: true,
-        description: '探测连通性',
-      },
-    ])
+  it('admin can toggle enable, require-login and require-approval via checkboxes', async () => {
+    const gated = {
+      ...extraTool,
+      require_login: true,
+      require_approval: true,
+      description: '探测连通性',
+    }
+    vi.spyOn(api, 'listTools').mockResolvedValue([gated])
+    const patchSpy = vi.spyOn(api, 'patchTool').mockImplementation(async (_name, body) => ({
+      ...gated,
+      ...body,
+    }))
 
     const { host, root } = await renderTools('admin')
 
@@ -184,9 +187,26 @@ describe('ToolsSettings humanized shell', () => {
     expect(host.textContent).not.toContain('MCP 导出')
     expect(host.textContent).not.toContain('MCP 写类工具')
     expect(host.querySelectorAll('select').length).toBe(0)
-    // only the enable checkbox remains writable
-    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(1)
+    const boxes = [...host.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[]
+    expect(boxes.length).toBe(3)
+    expect(boxes[0].checked).toBe(true)
+    expect(boxes[1].checked).toBe(true)
+    expect(boxes[2].checked).toBe(true)
     expect(host.querySelector('.settings-tool-sub')).toBeNull()
+
+    await act(async () => {
+      boxes[1].click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(patchSpy).toHaveBeenCalledWith('extra_ping', { require_login: false })
+
+    await act(async () => {
+      boxes[2].click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(patchSpy).toHaveBeenCalledWith('extra_ping', { require_approval: false })
 
     const tech = [...host.querySelectorAll('details')].find(
       (d) => d.querySelector('summary')?.textContent === TOOLS.techDetails,

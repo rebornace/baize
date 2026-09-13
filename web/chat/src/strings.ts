@@ -280,7 +280,7 @@ export function skillErrorText(e: unknown): FriendlyError {
 // ---- 设置页：助手功能 ----
 export const TOOLS = {
   title: '助手功能',
-  description: '管理助手可调用的功能：启停与显示名。「需登录 / 需确认」在接入业务系统或插件时配置。',
+  description: '管理助手可调用的功能：启停、需登录、需确认与显示名。',
   enable: '启用',
   requireLogin: '需登录',
   requireApprovalBadge: '需确认',
