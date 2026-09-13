@@ -44,7 +44,7 @@
 |---------|--------------|------|------|
 | **DOC** | DOC-P1 + DOC-P2 | 可开刀 | **一个**文档计划 |
 | **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | 先头脑风暴母篇 | 切片建议：C1 → KV 加密 → 热切换/SIGHUP；**勿**与 UI-RUNTIME 混计划 |
-| **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 可开刀 | 规格已批准：`specs/2026-09-13-runtime-settings-humanize-design.md`；待写计划 |
+| **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 已交付 | 已交付（2026-09-13）；`specs/2026-09-13-runtime-settings-humanize-design.md` |
 | **UI-I18N** | i18n 框架（语言切换 / 英等） | 先定范围 | 可紧接 RUNTIME 后；独立规格 |
 | **UI-EXPORT-DB-RO** | export_db_readonly UI | 可开刀 | 小刀；**不**与 OAuth 并计划 |
 | **CH-PORT** | 动态端口 | 可开刀 | 与 OUTBOX 同域串行 |

@@ -55,7 +55,7 @@
 
 | 规格 | 状态 | 对照 | 下一动作 |
 |------|------|------|----------|
-| `2026-09-05-runtime-settings-hot-reload-design.md` | 已交付（功能） | `PATCH /v0/settings/runtime` + 设置页 | **运行参数页人话化**仍欠（体验债） |
+| `2026-09-05-runtime-settings-hot-reload-design.md` | 已交付 | `PATCH /v0/settings/runtime` + 设置页 | — |
 
 ---
 
@@ -75,12 +75,12 @@
 | `2026-09-13-assistant-tools-ia-cleanup-design.md` | 已交付 | 助手功能 IA | — |
 | `2026-09-13-messaging-settings-humanize-design.md` | 已交付 | 消息组原语/人话壳 | — |
 | `2026-09-13-messaging-copy-outcome-design.md` | 已交付 | 结果导向文案；已去掉技术折叠 | — |
+| `2026-09-13-runtime-settings-humanize-design.md` | 已交付 | UI-RUNTIME 运行参数人话 | — |
 
 **WebUI / 体验仍欠（产品已勾）：**
 
 | 项 | 来源 | 备注 |
 |----|------|------|
-| 运行参数页人话化（UI-RUNTIME） | P3-D | **规格已批准** `2026-09-13-runtime-settings-humanize-design.md`；待写计划 |
 | MCP OAuth 交互登录 | P3-C | **要做** |
 | 登录入口 `@` 直达 / `login_required` | P3-B/D | **要做**（上调） |
 | i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
@@ -99,7 +99,7 @@
 |----|------|----------|
 | **DOC**（P1+P2） | 要做 · 可开刀 | 一个文档计划 |
 | **F**（含 C1 + OPS-HOT） | 要做 · 先母篇脑暴 | 切片：C1 → KV 加密 → 热切换/SIGHUP |
-| **UI-RUNTIME**（+ i18n 文案抽离附录） | 要做 · 可开刀 | 人话化；完整多语言见 UI-I18N |
+| **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **BLOB-CS** / **CH-PORT** / **CH-OUTBOX** | 要做 | 各开规格 |
 | **P6** Memory / **MCP OAuth** | 要做 · 先脑暴 | **不合并**进其他史诗 |
