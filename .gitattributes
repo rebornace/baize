@@ -1,0 +1,6 @@
+# 保持 LF 行尾：Go 工具链与 CI gofmt 门禁要求 LF；
+# Windows 上任何编辑器/勾选 autocrlf 的检出都不得把 CRLF 带回仓库。
+*.go text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=auto

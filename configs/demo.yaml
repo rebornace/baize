@@ -1,0 +1,114 @@
+# 试用栈：mock LLM + 内嵌演示 HTTP。使用 baize demo（勿用于生产）。
+listen: ":8080"
+# runtime:
+#   public_base_url: "http://127.0.0.1:8080"  # demo/local; empty => no callback_urls injection
+#   callback_hmac_secret: ""
+#   callback_token_ttl_sec: 3600
+store:
+  driver: sqlite
+  sqlite_path: ./data/baize-demo.db
+ui:
+  enabled: true
+control_plane:
+  operator_token: ""   # 空=未配；可填 env:BAIZE_OPERATOR_TOKEN 或 file:/path 或明文；无 operators 时视为 id=operator
+  admin_token: ""      # 空=未配；可填 env:BAIZE_ADMIN_TOKEN 或 file:/path 或明文
+  # 具名操作员（多运营会话隔离）。Gate 全空（无 admin / operator_token / operators）= 开发态，无隐私隔离。
+  # operators:
+  #   - id: alice
+  #     token: env:BAIZE_OP_ALICE
+  #   - id: bob
+  #     token: env:BAIZE_OP_BOB
+
+llm:
+  provider: mock
+  # supports_vision: false   # default; set true when using a vision-capable model
+skills:
+  builtin_dirs:
+    - ./skills
+    - ./examples/skills
+  user_dir: ./data/skills
+agent:
+  id: ticket-agent
+  system: "你是企业工单助手，只能通过工具访问工单系统。"
+  skills:
+    - data-analytics
+    - ticket-triage
+connector:
+  id: ticket-api
+  type: openapi
+  spec: examples/mock-ticket/openapi.yaml
+  base_url: http://127.0.0.1:18080
+  require_approval:
+    - create_ticket
+    - update_ticket_status
+  auth:
+    mode: static
+    capture:
+      tool_name_glob: "*login*"
+      token_json_paths: ["accessToken", "data.accessToken", "data.token"]
+      label_json_paths: ["email", "data.email"]
+      header_template: "Bearer {{token}}"
+      default_scheme: ""
+run:
+  max_steps: 16
+  tool_timeout_sec: 60
+conversation:
+  max_messages: 40
+  persist_identities: true
+  # 上下文压缩（滚动摘要）：prompt 接近模型上下文上限时，把旧消息折叠成一段摘要再拼近期原文
+  # compact_enabled: true         # 总开关，默认 true
+  # compact_threshold: 0.8        # 估算 prompt 达到上下文长度的该比例时触发折叠
+  # compact_reserve_output: 8000  # 为回答/工具调用预留的 tokens
+  # compact_recent_messages: 8    # 始终保留原文、不折叠的最近消息条数
+# middleware:
+#   driver: memory          # memory（默认，零依赖，单机）| redis（多副本横向扩展/崩溃恢复）
+#   worker_concurrency: 8   # 每进程并发消费 worker 数
+#   lease_ttl_sec: 60       # run 认领租约 TTL
+#   reconcile_interval_sec: 15
+#   # driver=redis 时配置：
+#   # redis:
+#   #   addr: "127.0.0.1:6379"
+#   #   password_env: REDIS_PASSWORD
+#   #   stream: baize:runs
+#   #   consumer_group: baize-workers
+#   #   events_channel: baize:run-events
+#   # 不做 XAUTOCLAIM；崩溃恢复靠 DB reconciler 再 XADD。PEL 可能堆积，运维可 XTRIM/定期清理。
+# 对象存储：分析报告产物 HTML 字节存放位置。
+# driver: file（默认，本地磁盘 <dataDir>/artifacts）| s3（AWS S3/MinIO/OSS/COS 兼容）
+# storage:
+#   driver: file
+#   file:
+#     root_dir: ""          # 留空则用 dataDir
+#   s3:
+#     endpoint: "minio.local:9000"
+#     region: ""
+#     bucket: "baize"
+#     prefix: "baize"
+#     access_key_env: S3_ACCESS_KEY   # 密钥仅从环境变量读取
+#     secret_key_env: S3_SECRET_KEY
+#     use_ssl: false
+#     path_style: true                # MinIO/自建设 true；AWS 设 false
+#     auto_create_bucket: false
+mock_ticket:
+  listen: ":18080"
+inbox:
+  channels: []
+# 微信已迁移为进程外 webhook 适配器，demo 默认启用该渠道（与 minimal.yaml 一致）。
+# 适配器二进制缺失时 baize 不会启动失败：渠道仍注册，设置页显示 running=false /
+# start_failed（而非 404），扫码/出站等能力等二进制就绪后可用。需要真实收发时先构建：
+#   go build -o bin/weixin-adapter ./cmd/weixin-adapter  （Windows 为 bin/weixin-adapter.exe）
+# demo 监听 :8080，适配器入站回推默认即 127.0.0.1:8080。
+channels:
+  - name: weixin
+    type: webhook
+    enabled: true
+    config:
+      source: weixin
+      outbound_url: http://127.0.0.1:8090/outbound
+      admin_url: http://127.0.0.1:8090
+      assignee: channel:weixin
+      supports_vision: "true"
+      adapter_autostart: "true"
+      adapter_command: weixin-adapter
+      adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+      adapter_creds_dir: ./data/channels/weixin

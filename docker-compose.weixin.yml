@@ -1,0 +1,49 @@
+# 独立部署（生产）范本：baize 与 weixin-adapter 作为两个服务，适配器由
+# compose 负责重启（restart policy），baize 不再 autostart 子进程。
+# baize 默认挂载 configs/docker-weixin-standalone.yaml（含 weixin webhook
+# 渠道块，standalone 形态），因此直接
+#   docker compose -f docker-compose.weixin.yml up --build
+# 即可端到端跑通，无需再自行准备配置文件。
+#
+# 共享密钥：适配器的 -secret 取自 WEIXIN_ADAPTER_SECRET，baize 渠道块的
+# secret/outbound_secret 写在 docker-weixin-standalone.yaml 中。两者默认
+# 都是 dev-standalone-weixin-shared-secret（仅供本地试用）。
+# 生产环境必须把它们覆盖为同一个强随机值：
+#   1) 设环境变量 WEIXIN_ADAPTER_SECRET=<强随机值>（适配器侧）；
+#   2) 把 docker-weixin-standalone.yaml 里的 secret/outbound_secret 改成
+#      同一个值（或挂载你自己的配置文件覆盖 /app/configs/...）。
+services:
+  baize:
+    build: .
+    # 用自带 weixin 渠道块的 standalone 配置启动（覆盖镜像默认的
+    # docker-minimal.yaml；也可挂载自己的配置覆盖该路径）。
+    command:
+      - /app/baize
+      - serve
+      - -config
+      - /app/configs/docker-weixin-standalone.yaml
+    ports:
+      - "8080:8080"
+    environment:
+      BAIZE_API_KEY: ${BAIZE_API_KEY:?set BAIZE_API_KEY for production compose}
+    volumes:
+      - baize-data:/app/data
+      - ./configs/docker-weixin-standalone.yaml:/app/configs/docker-weixin-standalone.yaml:ro
+    restart: unless-stopped
+  weixin-adapter:
+    build: .
+    command:
+      - /app/weixin-adapter
+      - -baize=http://baize:8080/v0/channels/weixin/inbound
+      # 与 baize 渠道配置里的 secret 相同；默认值仅供本地试用，生产必须覆盖。
+      - -secret=${WEIXIN_ADAPTER_SECRET:-dev-standalone-weixin-shared-secret}
+      - -addr=:8090
+      - -creds=/data/channels/weixin
+    volumes:
+      - weixin-data:/data/channels/weixin
+    depends_on:
+      - baize
+    restart: unless-stopped
+volumes:
+  baize-data:
+  weixin-data:

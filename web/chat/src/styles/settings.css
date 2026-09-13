@@ -1,0 +1,51 @@
+/* 设置首页与分组导航（P2） */
+.settings-home { display: flex; flex-direction: column; gap: var(--space-6); }
+.settings-home-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.settings-home-title { margin: 0; font-size: 1.375rem; font-weight: 700; color: var(--text); }
+.settings-home-sub { margin: 4px 0 0; color: var(--text-muted); font-size: 0.875rem; }
+.settings-refresh-btn { display: inline-flex; align-items: center; gap: 6px; }
+.settings-refresh-btn.spinning svg { animation: settings-spin 1s linear infinite; }
+@keyframes settings-spin { to { transform: rotate(360deg); } }
+
+.settings-onboard {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  background: var(--warning-soft); border: 1px solid var(--warning);
+  color: var(--text); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+}
+
+.settings-home-group { display: flex; flex-direction: column; gap: var(--space-3); }
+.settings-group-title {
+  margin: 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--text-muted); text-transform: none;
+}
+.settings-card-grid {
+  display: grid; gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+}
+.settings-home-card .ui-card-desc {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.settings-card-trailing { display: inline-flex; align-items: center; gap: 6px; }
+.settings-card-locked { opacity: 0.72; cursor: default; }
+.settings-card-locked .ui-card-icon { color: var(--text-muted); }
+.settings-locked-label { font-size: 0.75rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+
+/* 侧边导航分组 */
+.settings-nav-overview {
+  font-weight: 600;
+  /* 规格 §5.1：总览与下方分组之间一条细分隔线 */
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.settings-nav-group + .settings-nav-group { margin-top: var(--space-3); }
+.settings-nav-group-title {
+  padding: 0 var(--space-2); margin-bottom: 2px;
+  font-size: 0.6875rem; color: var(--text-muted); letter-spacing: 0.04em;
+}
+
+@media (max-width: 720px) {
+  .settings-card-grid { grid-template-columns: 1fr; }
+}

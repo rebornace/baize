@@ -1,0 +1,1202 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/rebornace/baize/internal/dbutil"
+	_ "modernc.org/sqlite"
+)
+
+// SQLDialect selects placeholder and DDL behavior for SQLStore.
+type SQLDialect string
+
+const (
+	DialectSQLite   SQLDialect = "sqlite"
+	DialectPostgres SQLDialect = "postgres"
+)
+
+// SQLite is a backward-compatible alias for SQLStore.
+type SQLite = SQLStore
+
+const sqliteSchema = `
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
+  output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
+  conversation_id TEXT, identity_id TEXT,
+  lease_until TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT, type TEXT, timestamp TEXT, data_json TEXT
+);
+CREATE TABLE IF NOT EXISTS connectors (
+  id TEXT PRIMARY KEY,
+  type TEXT,
+  spec TEXT,
+  base_url TEXT,
+  require_approval_json TEXT,
+  require_login_json TEXT,
+  auth_json TEXT,
+  mcp_json TEXT,
+  execution_callback_url TEXT
+);
+CREATE TABLE IF NOT EXISTS tools (
+  name TEXT PRIMARY KEY,
+  connector_id TEXT,
+  source TEXT,
+  enabled INTEGER,
+  title TEXT,
+  description TEXT,
+  description_custom INTEGER,
+  method TEXT,
+  path TEXT,
+  input_schema_json TEXT,
+  require_login INTEGER,
+  require_approval INTEGER,
+  operation_id TEXT,
+  export_mode TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inbox_deliveries (
+  channel_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  delivery_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  body_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(channel_id, idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS inbox_threads (
+  channel_id TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  UNIQUE(channel_id, external_id)
+);
+CREATE TABLE IF NOT EXISTS webhook_outbox (
+  id TEXT PRIMARY KEY,
+  delivery_key TEXT NOT NULL UNIQUE,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  event_index INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  headers_json TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  status TEXT NOT NULL,
+  last_error TEXT,
+  next_retry_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS mcp_export_identities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scheme TEXT,
+  headers_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_export_keys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
+CREATE TABLE IF NOT EXISTS model_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  provider TEXT,
+  base_url TEXT,
+  model TEXT,
+  api_key TEXT,
+  api_key_env TEXT,
+  disable_thinking INTEGER,
+  supports_vision INTEGER,
+  context_tokens INTEGER NOT NULL DEFAULT 128000,
+  auto_tier TEXT NOT NULL DEFAULT 'standard',
+  created_at TEXT,
+  updated_at TEXT
+);
+`
+
+// SQLStore is a SQL-backed Store shared by sqlite and postgres drivers.
+type SQLStore struct {
+	db         *sql.DB
+	dialect    SQLDialect
+	mu         sync.RWMutex
+	agents     map[string]Agent
+	connectors map[string]Connector
+	tools      map[string]Tool
+}
+
+func (s *SQLStore) q(query string) string {
+	if s.dialect == DialectPostgres {
+		return dbutil.RebindPostgres(query)
+	}
+	return query
+}
+
+func (s *SQLStore) exec(query string, args ...any) (sql.Result, error) {
+	return s.db.Exec(s.q(query), args...)
+}
+
+func (s *SQLStore) query(query string, args ...any) (*sql.Rows, error) {
+	return s.db.Query(s.q(query), args...)
+}
+
+func (s *SQLStore) queryRow(query string, args ...any) *sql.Row {
+	return s.db.QueryRow(s.q(query), args...)
+}
+
+// runSelectColumns is the canonical runs column order scanned by scanRunRow;
+// GetRun and ListRunsForReconcile must select exactly these columns in order.
+const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until`
+
+// sqliteTimeLayout is a fixed-width (9 fractional digits) RFC3339 layout. SQLite
+// compares TEXT timestamps byte-wise, so variable-length fractions (RFC3339Nano
+// trims trailing zeros) invert order within the same whole second: e.g.
+// ".25Z" < ".2Z" even though 0.250s > 0.200s. Fixed width keeps lexicographic
+// order identical to chronological order and still parses back to time.Time.
+const sqliteTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// formatSQLiteTime renders t as a fixed-width RFC3339 string for TEXT/TIMESTAMP
+// columns compared lexicographically on SQLite.
+func formatSQLiteTime(t time.Time) string {
+	return t.UTC().Format(sqliteTimeLayout)
+}
+
+// timeArg binds a timestamp for the active dialect. Postgres columns are real
+// TIMESTAMPTZ (native time.Time); SQLite stores them as fixed-width RFC3339 text.
+func (s *SQLStore) timeArg(t time.Time) any {
+	if s.dialect == DialectPostgres {
+		return t
+	}
+	return formatSQLiteTime(t)
+}
+
+// scanRunRow decodes one runs row selected via runSelectColumns.
+func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
+	var r Run
+	var status, createdAt string
+	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID sql.NullString
+	var leaseUntil sql.NullTime
+	if err := sc.Scan(
+		&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt,
+		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil,
+	); err != nil {
+		return nil, err
+	}
+	r.Status = Status(status)
+	if conversationID.Valid {
+		r.ConversationID = conversationID.String
+	}
+	if identityID.Valid {
+		r.IdentityID = identityID.String
+	}
+	if modelProfileID.Valid {
+		r.ModelProfileID = modelProfileID.String
+	}
+	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
+		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
+			return nil, fmt.Errorf("parse passthrough_json: %w", err)
+		}
+	}
+	if webhookSQL.Valid && webhookSQL.String != "" && webhookSQL.String != "null" {
+		var wc WebhookConfig
+		if err := json.Unmarshal([]byte(webhookSQL.String), &wc); err != nil {
+			return nil, fmt.Errorf("parse webhook_json: %w", err)
+		}
+		r.WebhookConfig = &wc
+	}
+	ts, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		ts, err = time.Parse(time.RFC3339, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse created_at: %w", err)
+		}
+	}
+	r.CreatedAt = ts
+	if leaseUntil.Valid {
+		t := leaseUntil.Time.UTC()
+		r.LeaseUntil = &t
+	}
+	return &r, nil
+}
+
+func scanRuns(rows *sql.Rows) ([]*Run, error) {
+	defer rows.Close()
+	var out []*Run
+	for rows.Next() {
+		r, err := scanRunRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// OpenSQLite opens (or creates) a SQLite database at path.
+// Parent directories are created automatically (e.g. ./data/baize.db).
+func OpenSQLite(path string) (*SQLite, error) {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create sqlite dir %q: %w", dir, err)
+		}
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	// Serialize access: concurrent writers with modernc/sqlite otherwise hit
+	// "database is locked", leaving runs stuck in running with zero events.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("pragma busy_timeout: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("pragma journal_mode: %w", err)
+	}
+	if _, err := db.Exec(sqliteSchema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
+	if err := migrateRunsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs columns: %w", err)
+	}
+	if err := migrateToolsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tools columns: %w", err)
+	}
+	if err := migrateConnectorsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate connectors columns: %w", err)
+	}
+	if err := migrateMCPExportKeys(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
+	}
+	if err := migrateModelProfilesColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles columns: %w", err)
+	}
+	s := &SQLStore{
+		db:         db,
+		dialect:    DialectSQLite,
+		agents:     map[string]Agent{},
+		connectors: map[string]Connector{},
+		tools:      map[string]Tool{},
+	}
+	if err := s.loadConnectorsAndTools(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("load connectors and tools: %w", err)
+	}
+	return s, nil
+}
+
+// loadConnectorsAndTools reads existing connector and tool rows from the DB
+// into the in-memory maps so reads can stay lock-free and consistent with the
+// existing runs/events pattern.
+func (s *SQLStore) loadConnectorsAndTools() error {
+	rows, err := s.query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format FROM connectors`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var c Connector
+		var requireApproval, requireLogin, auth, mcp, execCallback, importFormat sql.NullString
+		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback, &importFormat); err != nil {
+			rows.Close()
+			return err
+		}
+		if requireApproval.Valid && requireApproval.String != "" && requireApproval.String != "null" {
+			if err := json.Unmarshal([]byte(requireApproval.String), &c.RequireApproval); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse require_approval_json: %w", err)
+			}
+		}
+		if requireLogin.Valid && requireLogin.String != "" && requireLogin.String != "null" {
+			if err := json.Unmarshal([]byte(requireLogin.String), &c.RequireLogin); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse require_login_json: %w", err)
+			}
+		}
+		if auth.Valid && auth.String != "" && auth.String != "null" {
+			if err := json.Unmarshal([]byte(auth.String), &c.Auth); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse auth_json: %w", err)
+			}
+		}
+		if mcp.Valid && mcp.String != "" && mcp.String != "null" {
+			if err := json.Unmarshal([]byte(mcp.String), &c.MCP); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse mcp_json: %w", err)
+			}
+		}
+		if execCallback.Valid {
+			c.ExecutionCallbackURL = execCallback.String
+		}
+		if importFormat.Valid {
+			c.ImportFormat = importFormat.String
+		}
+		s.connectors[c.ID] = c
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	trows, err := s.query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode FROM tools`)
+	if err != nil {
+		return err
+	}
+	for trows.Next() {
+		var t Tool
+		var enabled, requireLogin, requireApproval int
+		var descriptionCustom sql.NullInt64
+		var title, description, method, path, inputSchema, operationID, exportMode sql.NullString
+		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &title, &description, &descriptionCustom, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID, &exportMode); err != nil {
+			trows.Close()
+			return err
+		}
+		t.Enabled = enabled != 0
+		t.RequireLogin = requireLogin != 0
+		t.RequireApproval = requireApproval != 0
+		t.Title = title.String
+		t.Description = description.String
+		t.DescriptionCustom = descriptionCustom.Valid && descriptionCustom.Int64 != 0
+		t.Method = method.String
+		t.Path = path.String
+		t.OperationID = operationID.String
+		t.Export = exportMode.String
+		if inputSchema.Valid && inputSchema.String != "" && inputSchema.String != "null" {
+			if err := json.Unmarshal([]byte(inputSchema.String), &t.InputSchema); err != nil {
+				trows.Close()
+				return fmt.Errorf("parse input_schema_json: %w", err)
+			}
+		}
+		s.tools[t.Name] = t
+	}
+	trows.Close()
+	return trows.Err()
+}
+
+// migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
+// existing DBs. Duplicate-column errors from ALTER are ignored.
+func migrateRunsColumns(db *sql.DB) error {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id"} {
+		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
+		if err == nil || isDuplicateColumnErr(err) {
+			continue
+		}
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN lease_until TIMESTAMP`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	return nil
+}
+
+func migrateConnectorsColumns(db *sql.DB) error {
+	for _, q := range []string{
+		`ALTER TABLE connectors ADD COLUMN mcp_json TEXT`,
+		`ALTER TABLE connectors ADD COLUMN execution_callback_url TEXT`,
+		`ALTER TABLE connectors ADD COLUMN import_format TEXT`,
+	} {
+		_, err := db.Exec(q)
+		if err == nil || isDuplicateColumnErr(err) {
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+func migrateToolsColumns(db *sql.DB) error {
+	alters := []string{
+		`ALTER TABLE tools ADD COLUMN title TEXT`,
+		`ALTER TABLE tools ADD COLUMN description_custom INTEGER`,
+		`ALTER TABLE tools ADD COLUMN export_mode TEXT`,
+	}
+	for _, q := range alters {
+		_, err := db.Exec(q)
+		if err == nil || isDuplicateColumnErr(err) {
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+func migrateModelProfilesColumns(db *sql.DB) error {
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN auto_tier TEXT NOT NULL DEFAULT 'standard'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	return nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists")
+}
+
+// Close closes the underlying database.
+func (s *SQLStore) Close() error {
+	return s.db.Close()
+}
+
+// SQLBackend exposes the shared SQL database for sibling stores (conversation, identity, artifacts).
+type SQLBackend interface {
+	DB() *sql.DB
+	Dialect() SQLDialect
+}
+
+// DB returns the underlying *sql.DB so sibling stores (conversation / identity)
+// can share the same connection pool and pragmas configured by OpenSQLite.
+// Callers must not Close the returned handle; close the SQLStore instead.
+func (s *SQLStore) DB() *sql.DB {
+	return s.db
+}
+
+func (s *SQLStore) Dialect() SQLDialect {
+	return s.dialect
+}
+
+func (s *SQLStore) UpsertAgent(a Agent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a.Skills != nil {
+		a.Skills = append([]string(nil), a.Skills...)
+	}
+	s.agents[a.ID] = a
+}
+
+func (s *SQLStore) ListAgents() []Agent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.agents))
+	for id := range s.agents {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Agent, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, cloneAgent(s.agents[id]))
+	}
+	return out
+}
+
+func (s *SQLStore) GetAgent(id string) (Agent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a, ok := s.agents[id]
+	if !ok {
+		return Agent{}, fmt.Errorf("agent not found")
+	}
+	return cloneAgent(a), nil
+}
+
+func (s *SQLStore) UpsertConnector(c Connector) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.connectors[c.ID] = c
+	var requireApproval, requireLogin, auth, mcp sql.NullString
+	if len(c.RequireApproval) > 0 {
+		if b, err := json.Marshal(c.RequireApproval); err == nil {
+			requireApproval = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	if len(c.RequireLogin) > 0 {
+		if b, err := json.Marshal(c.RequireLogin); err == nil {
+			requireLogin = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	if c.Auth.Mode != "" {
+		if b, err := json.Marshal(c.Auth); err == nil {
+			auth = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	if c.MCP.Transport != "" {
+		if b, err := json.Marshal(c.MCP); err == nil {
+			mcp = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	_, _ = s.exec(
+		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET type=excluded.type, spec=excluded.spec, base_url=excluded.base_url,
+		   require_approval_json=excluded.require_approval_json,
+		   require_login_json=excluded.require_login_json,
+		   auth_json=excluded.auth_json,
+		   mcp_json=excluded.mcp_json,
+		   execution_callback_url=excluded.execution_callback_url,
+		   import_format=excluded.import_format`,
+		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL, c.ImportFormat,
+	)
+}
+
+func (s *SQLStore) GetConnector(id string) (Connector, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.connectors[id]
+	if !ok {
+		return Connector{}, fmt.Errorf("connector not found")
+	}
+	return c, nil
+}
+
+func (s *SQLStore) DeleteConnector(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM tools WHERE connector_id = ?`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM connectors WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("connector not found")
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	delete(s.connectors, id)
+	for name, t := range s.tools {
+		if t.ConnectorID == id {
+			delete(s.tools, name)
+		}
+	}
+	return nil
+}
+
+func (s *SQLStore) ListConnectors() []Connector {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.connectors))
+	for id := range s.connectors {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Connector, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, s.connectors[id])
+	}
+	return out
+}
+
+func (s *SQLStore) UpsertTool(t Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tools[t.Name] = t
+	var inputSchema sql.NullString
+	if t.InputSchema != nil {
+		if b, err := json.Marshal(t.InputSchema); err == nil {
+			inputSchema = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	enabled := 0
+	if t.Enabled {
+		enabled = 1
+	}
+	requireLogin := 0
+	if t.RequireLogin {
+		requireLogin = 1
+	}
+	requireApproval := 0
+	if t.RequireApproval {
+		requireApproval = 1
+	}
+	descriptionCustom := 0
+	if t.DescriptionCustom {
+		descriptionCustom = 1
+	}
+	_, _ = s.exec(
+		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
+		   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
+		   description_custom=excluded.description_custom, method=excluded.method,
+		   path=excluded.path, input_schema_json=excluded.input_schema_json,
+		   require_login=excluded.require_login, require_approval=excluded.require_approval,
+		   operation_id=excluded.operation_id, export_mode=excluded.export_mode`,
+		t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export,
+	)
+}
+
+func (s *SQLStore) GetTool(name string) (Tool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tools[name]
+	if !ok {
+		return Tool{}, fmt.Errorf("tool not found")
+	}
+	return t, nil
+}
+
+func (s *SQLStore) ListTools() []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.tools))
+	for n := range s.tools {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, s.tools[n])
+	}
+	return out
+}
+
+func (s *SQLStore) ListToolsByConnector(id string) []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.tools))
+	for n, t := range s.tools {
+		if t.ConnectorID == id {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	out := make([]Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, s.tools[n])
+	}
+	return out
+}
+
+func (s *SQLStore) DeleteTool(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tools[name]; !ok {
+		return fmt.Errorf("tool not found")
+	}
+	delete(s.tools, name)
+	_, _ = s.exec(`DELETE FROM tools WHERE name = ?`, name)
+	return nil
+}
+
+func (s *SQLStore) ReplaceConnectorTools(connectorID string, tools []Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, t := range s.tools {
+		if t.ConnectorID == connectorID {
+			delete(s.tools, name)
+		}
+	}
+	_, _ = s.exec(`DELETE FROM tools WHERE connector_id = ?`, connectorID)
+	for _, t := range tools {
+		if t.ConnectorID == "" {
+			t.ConnectorID = connectorID
+		}
+		s.tools[t.Name] = t
+		var inputSchema sql.NullString
+		if t.InputSchema != nil {
+			if b, err := json.Marshal(t.InputSchema); err == nil {
+				inputSchema = sql.NullString{String: string(b), Valid: true}
+			}
+		}
+		enabled := 0
+		if t.Enabled {
+			enabled = 1
+		}
+		requireLogin := 0
+		if t.RequireLogin {
+			requireLogin = 1
+		}
+		requireApproval := 0
+		if t.RequireApproval {
+			requireApproval = 1
+		}
+		descriptionCustom := 0
+		if t.DescriptionCustom {
+			descriptionCustom = 1
+		}
+		_, _ = s.exec(
+			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
+			   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
+			   description_custom=excluded.description_custom, method=excluded.method,
+			   path=excluded.path, input_schema_json=excluded.input_schema_json,
+			   require_login=excluded.require_login, require_approval=excluded.require_approval,
+			   operation_id=excluded.operation_id, export_mode=excluded.export_mode`,
+			t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export,
+		)
+	}
+}
+
+func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
+	id := "run_" + uuid.NewString()
+	now := time.Now().UTC()
+	r := &Run{
+		ID:                 id,
+		AgentID:            in.AgentID,
+		Input:              in.Input,
+		Status:             StatusRunning,
+		CreatedAt:          now,
+		ConversationID:     in.ConversationID,
+		IdentityID:         in.IdentityID,
+		ModelProfileID:     in.ModelProfileID,
+		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
+		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
+	}
+	var passthroughSQL, webhookSQL sql.NullString
+	if len(r.PassthroughHeaders) > 0 {
+		b, err := json.Marshal(r.PassthroughHeaders)
+		if err != nil {
+			return nil, err
+		}
+		passthroughSQL = sql.NullString{String: string(b), Valid: true}
+	}
+	if r.WebhookConfig != nil {
+		b, err := json.Marshal(r.WebhookConfig)
+		if err != nil {
+			return nil, err
+		}
+		webhookSQL = sql.NullString{String: string(b), Valid: true}
+	}
+	_, err := s.exec(
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?)`,
+		r.ID, r.AgentID, r.Input, string(r.Status), formatSQLiteTime(r.CreatedAt),
+		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (s *SQLStore) GetRun(id string) (*Run, error) {
+	r, err := scanRunRow(s.queryRow(
+		`SELECT `+runSelectColumns+` FROM runs WHERE id = ?`, id,
+	))
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("run not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (s *SQLStore) SetPassthroughHeaders(id string, headers map[string]string) error {
+	var passthroughSQL sql.NullString
+	if len(headers) > 0 {
+		b, err := json.Marshal(headers)
+		if err != nil {
+			return err
+		}
+		passthroughSQL = sql.NullString{String: string(b), Valid: true}
+	}
+	res, err := s.exec(
+		`UPDATE runs SET passthrough_json = ? WHERE id = ?`,
+		passthroughSQL, id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("run not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) UpdateRun(id string, status Status, output, errMsg string) error {
+	res, err := s.exec(
+		`UPDATE runs SET status = ?, output = ?, error = ? WHERE id = ?`,
+		string(status), output, errMsg, id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("run not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) LeaseRun(id string, ttl time.Duration) (bool, error) {
+	now := time.Now().UTC()
+	res, err := s.exec(
+		`UPDATE runs SET lease_until = ?
+		 WHERE id = ? AND status IN ('queued','running')
+		   AND (lease_until IS NULL OR lease_until < ?)`,
+		s.timeArg(now.Add(ttl)), id, s.timeArg(now),
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *SQLStore) HeartbeatRun(id string, ttl time.Duration) (bool, error) {
+	res, err := s.exec(
+		`UPDATE runs SET lease_until = ? WHERE id = ?`,
+		s.timeArg(time.Now().UTC().Add(ttl)), id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (s *SQLStore) ClearRunLease(id string) error {
+	_, err := s.exec(`UPDATE runs SET lease_until = NULL WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLStore) ListRunsForReconcile(limit int) ([]*Run, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	now := time.Now().UTC()
+	// Both columns are compared as TEXT on SQLite (fixed-width format above);
+	// on postgres lease_until is native TIMESTAMPTZ while created_at stays TEXT,
+	// so the grace cutoff is bound as an RFC3339 string either way.
+	rows, err := s.query(
+		`SELECT `+runSelectColumns+`
+		 FROM runs
+		 WHERE status IN ('queued','running')
+		   AND (lease_until < ? OR (lease_until IS NULL AND created_at < ?))
+		 ORDER BY created_at ASC LIMIT ?`,
+		s.timeArg(now), formatSQLiteTime(now.Add(-reconcileGrace)), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanRuns(rows)
+}
+
+func (s *SQLStore) AppendEvent(runID string, ev Event) error {
+	if _, err := s.GetRun(runID); err != nil {
+		return err
+	}
+	ev.Timestamp = time.Now().UTC()
+	dataJSON, err := json.Marshal(ev.Data)
+	if err != nil {
+		return err
+	}
+	_, err = s.exec(
+		`INSERT INTO events (run_id, type, timestamp, data_json) VALUES (?, ?, ?, ?)`,
+		runID, ev.Type, ev.Timestamp.Format(time.RFC3339Nano), string(dataJSON),
+	)
+	return err
+}
+
+func (s *SQLStore) ListEvents(runID string) ([]Event, error) {
+	if _, err := s.GetRun(runID); err != nil {
+		return nil, err
+	}
+	rows, err := s.query(
+		`SELECT type, timestamp, data_json FROM events WHERE run_id = ? ORDER BY id ASC`,
+		runID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Event
+	for rows.Next() {
+		var ev Event
+		var ts, dataJSON string
+		if err := rows.Scan(&ev.Type, &ts, &dataJSON); err != nil {
+			return nil, err
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			parsed, err = time.Parse(time.RFC3339, ts)
+			if err != nil {
+				return nil, fmt.Errorf("parse event timestamp: %w", err)
+			}
+		}
+		ev.Timestamp = parsed
+		if dataJSON != "" && dataJSON != "null" {
+			if err := json.Unmarshal([]byte(dataJSON), &ev.Data); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, ev)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []Event{}
+	}
+	return out, nil
+}
+
+func (s *SQLStore) SetHITL(runID string, payload *HITLPayload) error {
+	if _, err := s.GetRun(runID); err != nil {
+		return err
+	}
+	var hitlSQL sql.NullString
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		hitlSQL = sql.NullString{String: string(b), Valid: true}
+	}
+	_, err := s.exec(`UPDATE runs SET hitl_json = ? WHERE id = ?`, hitlSQL, runID)
+	return err
+}
+
+func (s *SQLStore) GetHITL(runID string) (*HITLPayload, error) {
+	var hitlSQL sql.NullString
+	err := s.queryRow(`SELECT hitl_json FROM runs WHERE id = ?`, runID).Scan(&hitlSQL)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("run not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !hitlSQL.Valid || hitlSQL.String == "" || hitlSQL.String == "null" {
+		return nil, nil
+	}
+	var p HITLPayload
+	if err := json.Unmarshal([]byte(hitlSQL.String), &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *SQLStore) GetSetting(key string) ([]byte, bool, error) {
+	var value sql.NullString
+	err := s.queryRow(`SELECT value_json FROM settings WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if !value.Valid || value.String == "" {
+		return nil, false, nil
+	}
+	return []byte(value.String), true, nil
+}
+
+func (s *SQLStore) UpsertSetting(key string, jsonRaw []byte) error {
+	_, err := s.exec(
+		`INSERT INTO settings (key, value_json) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`,
+		key, string(jsonRaw),
+	)
+	return err
+}
+
+func (s *SQLStore) HasActiveRun(conversationID string) (bool, error) {
+	if conversationID == "" {
+		return false, nil
+	}
+	var one int
+	err := s.queryRow(
+		`SELECT 1 FROM runs WHERE conversation_id = ? AND status IN ('queued','running','waiting_human') LIMIT 1`,
+		conversationID,
+	).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *SQLStore) WaitingHumanRun(conversationID string) (*Run, error) {
+	if conversationID == "" {
+		return nil, nil
+	}
+	var id string
+	err := s.queryRow(
+		`SELECT id FROM runs WHERE conversation_id = ? AND status = ? ORDER BY created_at DESC LIMIT 1`,
+		conversationID, string(StatusWaitingHuman),
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetRun(id)
+}
+
+func (s *SQLStore) getInboxDeliveryRaw(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+	var d InboxDelivery
+	var createdAt string
+	err := s.queryRow(
+		`SELECT channel_id, idempotency_key, delivery_id, run_id, body_hash, created_at
+		 FROM inbox_deliveries WHERE channel_id = ? AND idempotency_key = ?`,
+		channelID, idempotencyKey,
+	).Scan(&d.ChannelID, &d.IdempotencyKey, &d.DeliveryID, &d.RunID, &d.BodyHash, &createdAt)
+	if err == sql.ErrNoRows {
+		return InboxDelivery{}, false, nil
+	}
+	if err != nil {
+		return InboxDelivery{}, false, err
+	}
+	ts, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		ts, err = time.Parse(time.RFC3339, createdAt)
+		if err != nil {
+			return InboxDelivery{}, false, fmt.Errorf("parse created_at: %w", err)
+		}
+	}
+	d.CreatedAt = ts
+	return d, true, nil
+}
+
+func (s *SQLStore) GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error) {
+	d, ok, err := s.getInboxDeliveryRaw(channelID, idempotencyKey)
+	if err != nil || !ok {
+		return d, ok, err
+	}
+	// Rows older than InboxDeliveryTTL are treated as misses so the same key
+	// may be claimed again after the window.
+	if !InboxDeliveryFresh(d, time.Now()) {
+		return InboxDelivery{}, false, nil
+	}
+	return d, true, nil
+}
+
+func (s *SQLStore) PutInboxDelivery(d InboxDelivery) error {
+	if d.CreatedAt.IsZero() {
+		d.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.exec(
+		`INSERT INTO inbox_deliveries (channel_id, idempotency_key, delivery_id, run_id, body_hash, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		d.ChannelID, d.IdempotencyKey, d.DeliveryID, d.RunID, d.BodyHash,
+		d.CreatedAt.Format(time.RFC3339Nano),
+	)
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "unique") &&
+		!strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+		return err
+	}
+	existing, ok, getErr := s.getInboxDeliveryRaw(d.ChannelID, d.IdempotencyKey)
+	if getErr != nil {
+		return getErr
+	}
+	if !ok || InboxDeliveryFresh(existing, time.Now()) {
+		return ErrInboxDeliveryExists
+	}
+	// Overwrite expired row for the same (channel_id, idempotency_key).
+	_, err = s.exec(
+		`UPDATE inbox_deliveries
+		 SET delivery_id = ?, run_id = ?, body_hash = ?, created_at = ?
+		 WHERE channel_id = ? AND idempotency_key = ?`,
+		d.DeliveryID, d.RunID, d.BodyHash, d.CreatedAt.Format(time.RFC3339Nano),
+		d.ChannelID, d.IdempotencyKey,
+	)
+	return err
+}
+
+func (s *SQLStore) UpdateInboxDelivery(channelID, idempotencyKey, runID string) error {
+	res, err := s.exec(
+		`UPDATE inbox_deliveries SET run_id = ? WHERE channel_id = ? AND idempotency_key = ?`,
+		runID, channelID, idempotencyKey,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("inbox delivery not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) GetInboxThread(channelID, externalID string) (string, bool, error) {
+	var conversationID string
+	err := s.queryRow(
+		`SELECT conversation_id FROM inbox_threads WHERE channel_id = ? AND external_id = ?`,
+		channelID, externalID,
+	).Scan(&conversationID)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return conversationID, true, nil
+}
+
+func (s *SQLStore) PutInboxThread(channelID, externalID, conversationID string) error {
+	_, err := s.exec(
+		`INSERT INTO inbox_threads (channel_id, external_id, conversation_id)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(channel_id, external_id) DO UPDATE SET conversation_id = excluded.conversation_id`,
+		channelID, externalID, conversationID,
+	)
+	return err
+}

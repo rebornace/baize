@@ -1,0 +1,18 @@
+[Unit]
+Description=Baize WeChat (iLink) adapter (independent deployment)
+After=network-online.target baize.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/baize
+ExecStart=/opt/baize/weixin-adapter \
+  -baize=http://127.0.0.1:8080/v0/channels/weixin/inbound \
+  -secret=REPLACE_WITH_SHARED_SECRET \
+  -addr=127.0.0.1:8090 \
+  -creds=/opt/baize/data/channels/weixin
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
