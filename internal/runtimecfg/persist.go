@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -235,12 +236,73 @@ func (h *Holder) swapLocked() {
 	h.cur.Store(&snap)
 }
 
+func sealCreds(key settingscrypto.Key, c *credsOverride) error {
+	if c.OperatorToken != "" {
+		sealed, err := settingscrypto.Seal(key, c.OperatorToken)
+		if err != nil {
+			return err
+		}
+		c.OperatorToken = sealed
+	}
+	if c.AdminToken != "" {
+		sealed, err := settingscrypto.Seal(key, c.AdminToken)
+		if err != nil {
+			return err
+		}
+		c.AdminToken = sealed
+	}
+	for i := range c.Operators {
+		if c.Operators[i].Token == "" {
+			continue
+		}
+		sealed, err := settingscrypto.Seal(key, c.Operators[i].Token)
+		if err != nil {
+			return err
+		}
+		c.Operators[i].Token = sealed
+	}
+	return nil
+}
+
+func openCreds(key settingscrypto.Key, c *credsOverride) error {
+	if c.OperatorToken != "" {
+		plain, err := settingscrypto.Open(key, c.OperatorToken)
+		if err != nil {
+			return err
+		}
+		c.OperatorToken = plain
+	}
+	if c.AdminToken != "" {
+		plain, err := settingscrypto.Open(key, c.AdminToken)
+		if err != nil {
+			return err
+		}
+		c.AdminToken = plain
+	}
+	for i := range c.Operators {
+		if c.Operators[i].Token == "" {
+			continue
+		}
+		plain, err := settingscrypto.Open(key, c.Operators[i].Token)
+		if err != nil {
+			return err
+		}
+		c.Operators[i].Token = plain
+	}
+	return nil
+}
+
 // persistLocked writes the merged delta to the KV. Caller holds h.mu.
 func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOverride, co credsOverride) error {
 	if st == nil {
 		return nil // tests / no-store: swap in-memory only
 	}
-	raw, err := json.Marshal(persisted{Knobs: ko, Creds: co})
+	coPersist := co
+	key, _ := settingscrypto.KeyFromEnv()
+	if err := sealCreds(key, &coPersist); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(persisted{Knobs: ko, Creds: coPersist})
 	if err != nil {
 		return err
 	}
@@ -261,6 +323,10 @@ func (h *Holder) Load(ctx context.Context, st store.Store) error {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		log.Printf("runtimecfg: ignoring corrupt runtime_settings KV: %v", err)
 		return nil
+	}
+	key, _ := settingscrypto.KeyFromEnv()
+	if err := openCreds(key, &p.Creds); err != nil {
+		return err
 	}
 	h.mu.Lock()
 	h.ko = p.Knobs
