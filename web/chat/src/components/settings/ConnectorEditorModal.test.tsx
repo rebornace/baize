@@ -20,7 +20,10 @@ const btn = (txt: string) => [...host.querySelectorAll('button')].find((b) => b.
 const emptyInitial = { id: '', baseUrl: '', tools: [], loginNames: [], approvalNames: [] }
 const editInitial = {
   id: 'o1', baseUrl: 'https://x',
-  tools: [{ name: 'login' }, { name: 'create_ticket' }],
+  tools: [
+    { name: 'login', title: '登录', description: '获取访问令牌' },
+    { name: 'create_ticket', title: '创建工单', description: '新建一张工单' },
+  ],
   loginNames: ['login'], approvalNames: ['create_ticket'],
 }
 
@@ -136,6 +139,25 @@ describe('ConnectorEditorModal step 2', () => {
     const approvalBox = boxes.find((b) => b.dataset.tool === 'create_ticket' && b.dataset.flag === 'approval')!
     expect(loginBox.checked).toBe(true)
     expect(approvalBox.checked).toBe(true)
+  })
+
+  it('shows title/description and filters the permission list', async () => {
+    await render({ editing: true, initial: editInitial })
+    await act(async () => { btn('设置工具权限').click(); await new Promise((r) => setTimeout(r, 0)) })
+    expect(host.textContent).toContain('登录')
+    expect(host.textContent).toContain('获取访问令牌')
+    expect(host.textContent).toContain('创建工单')
+    expect(host.querySelector('.connector-perm-id')?.textContent).toBe('login')
+
+    const search = host.querySelector('.connector-perms-search') as HTMLInputElement
+    expect(search).toBeTruthy()
+    await setValue(search, '工单')
+    expect(host.querySelector('input[data-tool="create_ticket"]')).toBeTruthy()
+    expect(host.querySelector('input[data-tool="login"]')).toBeNull()
+    expect(host.textContent).not.toContain('获取访问令牌')
+
+    await setValue(search, 'no-such-tool')
+    expect(host.textContent).toContain(CONNECTORS.permsNoMatch)
   })
 
   it('saves selected permission lists', async () => {

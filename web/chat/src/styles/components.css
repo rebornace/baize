@@ -464,7 +464,47 @@
 .connector-perm { margin: var(--space-1) 0 0; color: var(--text-muted); font-size: 0.875rem; }
 .connector-form { display: flex; flex-direction: column; gap: var(--space-3); }
 .connector-perms-intro { color: var(--text-muted); font-size: 0.875rem; margin: 0 0 var(--space-3); }
-.connector-perm-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.connector-perms-search { margin: 0 0 var(--space-3); }
+.connector-perm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.connector-perm-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.connector-perm-title {
+  font-size: 0.9rem;
+  font-weight: 550;
+  color: var(--text);
+  word-break: break-word;
+}
+.connector-perm-id {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.connector-perm-desc {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+.connector-perm-flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
 .connector-perm-name { font-family: var(--font-mono, monospace); font-size: 0.875rem; min-width: 8rem; }
 .connector-perms-title { margin: 0 0 var(--space-2); font-size: 15px; font-weight: 600; color: var(--text); }
 .connector-spec-file-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

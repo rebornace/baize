@@ -391,6 +391,8 @@ export const CONNECTORS = {
     'POST {统一执行地址}\n{\n  "tool": "create_ticket",\n  "arguments": { "title": "..." },\n  "run_id": "run_...",\n  "...": "..."\n}',
   permsIntro:
     '在此配置工具门闸：勾选「需登录」后，运营需先完成本人登录；勾选「需确认」后，每次调用前需人工确认。启停请到「助手功能」。',
+  permsSearch: '搜索工具（名称 / 说明）',
+  permsNoMatch: '无匹配工具',
   permLogin: '需登录',
   permApproval: '需确认',
   nextToPermissions: '下一步：设置工具权限',

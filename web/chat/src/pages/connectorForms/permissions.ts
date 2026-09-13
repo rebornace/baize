@@ -1,17 +1,43 @@
 import type { PermissionFlag, PermissionSelection } from './types'
 
-interface NamedTool {
+/** 权限步展示用的工具摘要（至少有 name）。 */
+export interface PermissionTool {
   name: string
+  title?: string
+  description?: string
 }
 
-export function emptySelection(tools: NamedTool[]): PermissionSelection {
+export function toPermissionTools(
+  tools: Array<{ name: string; title?: string; description?: string }> | undefined,
+): PermissionTool[] {
+  return (tools ?? []).map((t) => {
+    const title = t.title?.trim()
+    const description = t.description?.trim()
+    return {
+      name: t.name,
+      title: title || undefined,
+      description: description || undefined,
+    }
+  })
+}
+
+export function filterPermissionTools(tools: PermissionTool[], query: string): PermissionTool[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return tools
+  return tools.filter((t) => {
+    const hay = `${t.name}\n${t.title ?? ''}\n${t.description ?? ''}`.toLowerCase()
+    return hay.includes(q)
+  })
+}
+
+export function emptySelection(tools: PermissionTool[]): PermissionSelection {
   const sel: PermissionSelection = {}
   for (const t of tools) sel[t.name] = { login: false, approval: false }
   return sel
 }
 
 export function selectionFromLists(
-  tools: NamedTool[],
+  tools: PermissionTool[],
   loginNames: readonly string[],
   approvalNames: readonly string[],
 ): PermissionSelection {

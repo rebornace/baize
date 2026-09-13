@@ -18,9 +18,12 @@ import {
 } from '../../pages/connectorForms/mcp'
 import {
   emptySelection,
+  filterPermissionTools,
   selectionFromLists,
   toNameLists,
+  toPermissionTools,
   toggleTool,
+  type PermissionTool,
 } from '../../pages/connectorForms/permissions'
 import type {
   ConnectorKind,
@@ -32,7 +35,7 @@ import type {
 export interface ConnectorEditorInitial {
   id: string
   baseUrl: string
-  tools: { name: string }[]
+  tools: PermissionTool[]
   loginNames: string[]
   approvalNames: string[]
   mcp?: MCPConfig
@@ -52,7 +55,7 @@ export interface ConnectorEditorModalProps {
   initial: ConnectorEditorInitial
   onClose: () => void
   formatError: (e: unknown) => string
-  onSaveInfo: (conn: SavedConnection) => Promise<{ name: string }[]>
+  onSaveInfo: (conn: SavedConnection) => Promise<PermissionTool[]>
   onSavePermissions: (
     id: string,
     loginNames: string[],
@@ -68,15 +71,11 @@ const EMPTY_INITIAL: ConnectorEditorInitial = {
   id: '', baseUrl: '', tools: [], loginNames: [], approvalNames: [],
 }
 
-interface NamedTool {
-  name: string
-}
-
 /**
  * 重建第 2 步的权限选择：保留 prev 中同名工具已有的勾选，
  * 仅对新出现的工具使用 fallback（编辑回显 / 新建全不勾）。
  */
-const reselect = (tools: NamedTool[], fallback: PermissionSelection) =>
+const reselect = (tools: PermissionTool[], fallback: PermissionSelection) =>
   (prev: PermissionSelection): PermissionSelection => {
     const out: PermissionSelection = {}
     for (const t of tools) {
@@ -100,7 +99,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [specUrl, setSpecUrl] = useState('')
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
-  const [tools, setTools] = useState<{ name: string }[]>([])
+  const [tools, setTools] = useState<PermissionTool[]>([])
+  const [toolQuery, setToolQuery] = useState('')
   const [selection, setSelection] = useState<PermissionSelection>({})
   const [saving, setSaving] = useState(false)
   const [mcpForm, setMcpForm] = useState<McpFormValues>(EMPTY_MCP_FORM)
@@ -123,7 +123,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setFieldErrors({})
     setFormError(null)
     setSaving(false)
-    setTools(init.tools)
+    setTools(toPermissionTools(init.tools))
+    setToolQuery('')
     setSelection(selectionFromLists(init.tools, init.loginNames, init.approvalNames))
     setMcpForm(init.mcp
       ? connectorToMcpForm({ id: init.id, type: 'mcp', mcp: init.mcp })
@@ -134,6 +135,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   }, [open])
 
   if (!open) return null
+
+  const visibleTools = filterPermissionTools(tools, toolQuery)
 
   const title = editing
     ? { openapi: CONNECTORS.editOpenapi, plugin: CONNECTORS.editPlugin, mcp: CONNECTORS.editMcp }[kind]
@@ -209,11 +212,12 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setSaving(true)
     try {
       const discovered = await props.onSaveInfo(conn)
-      const nextTools = discovered.length > 0 ? discovered : initial.tools
+      const nextTools = discovered.length > 0 ? toPermissionTools(discovered) : initial.tools
       const fallback = editing
         ? selectionFromLists(nextTools, isMcp ? [] : initial.loginNames, initial.approvalNames)
         : emptySelection(nextTools)
       setTools(nextTools)
+      setToolQuery('')
       // 保留本次打开期间已勾选过的同名工具权限（I-1）
       setSelection(reselect(nextTools, fallback))
       setStep(2)
@@ -235,7 +239,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       isMcp ? [] : initial.loginNames,
       initial.approvalNames,
     )
-    setTools(initial.tools)
+    setTools(toPermissionTools(initial.tools))
+    setToolQuery('')
     // 保留本次打开期间已勾选过的同名工具权限（I-1）
     setSelection(reselect(initial.tools, fallback))
     setStep(2)
@@ -442,36 +447,59 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         <div className="connector-permissions">
           <h3 className="connector-perms-title">{CONNECTORS.stepPermissions}</h3>
           <p className="connector-perms-intro">{isMcp ? CONNECTORS.permsIntroMcp : CONNECTORS.permsIntro}</p>
+          {tools.length > 0 && (
+            <Input
+              className="connector-perms-search"
+              value={toolQuery}
+              disabled={saving}
+              placeholder={CONNECTORS.permsSearch}
+              aria-label={CONNECTORS.permsSearch}
+              onChange={(e) => setToolQuery(e.target.value)}
+            />
+          )}
           {tools.length === 0 && <p className="settings-muted">{CONNECTORS.noToolsDiscovered}</p>}
-          {tools.map((t) => (
-            <div key={t.name} className="connector-perm-row">
-              <span className="connector-perm-name">{t.name}</span>
-              {!isMcp && (
-                <label className="ui-checkbox-row">
-                  <input
-                    type="checkbox"
-                    data-tool={t.name}
-                    data-flag="login"
-                    checked={selection[t.name]?.login ?? false}
-                    disabled={saving}
-                    onChange={() => setSelection((s) => toggleTool(s, t.name, 'login'))}
-                  />
-                  <span>{CONNECTORS.permLogin}</span>
-                </label>
-              )}
-              <label className="ui-checkbox-row">
-                <input
-                  type="checkbox"
-                  data-tool={t.name}
-                  data-flag="approval"
-                  checked={selection[t.name]?.approval ?? false}
-                  disabled={saving}
-                  onChange={() => setSelection((s) => toggleTool(s, t.name, 'approval'))}
-                />
-                <span>{CONNECTORS.permApproval}</span>
-              </label>
-            </div>
-          ))}
+          {tools.length > 0 && visibleTools.length === 0 && (
+            <p className="settings-muted">{CONNECTORS.permsNoMatch}</p>
+          )}
+          {visibleTools.map((t) => {
+            const label = t.title || t.name
+            const showId = Boolean(t.title && t.title !== t.name)
+            return (
+              <div key={t.name} className="connector-perm-row">
+                <div className="connector-perm-meta">
+                  <span className="connector-perm-title">{label}</span>
+                  {showId ? <span className="connector-perm-id">{t.name}</span> : null}
+                  {t.description ? <span className="connector-perm-desc">{t.description}</span> : null}
+                </div>
+                <div className="connector-perm-flags">
+                  {!isMcp && (
+                    <label className="ui-checkbox-row">
+                      <input
+                        type="checkbox"
+                        data-tool={t.name}
+                        data-flag="login"
+                        checked={selection[t.name]?.login ?? false}
+                        disabled={saving}
+                        onChange={() => setSelection((s) => toggleTool(s, t.name, 'login'))}
+                      />
+                      <span>{CONNECTORS.permLogin}</span>
+                    </label>
+                  )}
+                  <label className="ui-checkbox-row">
+                    <input
+                      type="checkbox"
+                      data-tool={t.name}
+                      data-flag="approval"
+                      checked={selection[t.name]?.approval ?? false}
+                      disabled={saving}
+                      onChange={() => setSelection((s) => toggleTool(s, t.name, 'approval'))}
+                    />
+                    <span>{CONNECTORS.permApproval}</span>
+                  </label>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </Modal>

@@ -11,6 +11,7 @@ import { ToastRegion, useToast } from '../components/ui'
 import { ConnectorShell, type ConnectorRowData } from '../components/settings/ConnectorShell'
 import { ConnectorEditorModal, type ConnectorEditorInitial } from '../components/settings/ConnectorEditorModal'
 import type { SavedConnection } from './connectorForms/types'
+import { toPermissionTools } from './connectorForms/permissions'
 import { CONNECTORS, connectorErrorText } from '../strings'
 
 export function pluginConnectorIds(tools: ToolInfo[]): string[] {
@@ -85,7 +86,7 @@ export function PluginSettings() {
       open: true, editing: true,
       initial: {
         id: c.id, baseUrl: c.base_url ?? '',
-        tools: (c.tools ?? []).map((t) => ({ name: t.name })),
+        tools: toPermissionTools(c.tools),
         loginNames: c.require_login ?? [], approvalNames: c.require_approval ?? [],
         executionCallbackUrl: c.execution_callback_url ?? '',
         auth: c.auth,
@@ -107,7 +108,7 @@ export function PluginSettings() {
       execution_callback_url: conn.executionCallbackUrl,
       auth: conn.auth,
     })
-    return (c.tools ?? []).map((t) => ({ name: t.name }))
+    return toPermissionTools(c.tools)
   }
   const handleSavePermissions = async (
     id: string,

@@ -11,6 +11,7 @@ import { ConnectorShell, type ConnectorRowData } from '../components/settings/Co
 import { ConnectorEditorModal, type ConnectorEditorInitial } from '../components/settings/ConnectorEditorModal'
 import { CONNECTORS, connectorErrorText } from '../strings'
 import { mcpConnectorIds, mcpSummary } from './connectorForms/mcp'
+import { toPermissionTools } from './connectorForms/permissions'
 import type { SavedConnection } from './connectorForms/types'
 
 function toRow(info: ConnectorInfo, fallbackCount: number): ConnectorRowData {
@@ -70,7 +71,7 @@ export function McpSettings() {
       open: true, editing: true,
       initial: {
         id: c.id, baseUrl: '',
-        tools: (c.tools ?? []).map((t) => ({ name: t.name })),
+        tools: toPermissionTools(c.tools),
         loginNames: [], approvalNames: c.require_approval ?? [], mcp: c.mcp,
       },
     })
@@ -87,7 +88,7 @@ export function McpSettings() {
     if (conn.kind !== 'mcp') return []
     const c = await putConnector(conn.id, { type: 'mcp', mcp: conn.mcp })
     setSavedConn(conn)
-    return (c.tools ?? []).map((t) => ({ name: t.name }))
+    return toPermissionTools(c.tools)
   }
   const handleSavePermissions = async (_id: string, _login: string[], approvalNames: string[]) => {
     // 连接级字段整表回传（后端每次 PUT 都重新探测）；MCP 无 login 位，不带 require_login。
