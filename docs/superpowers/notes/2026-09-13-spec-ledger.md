@@ -101,7 +101,8 @@
 | **F**（含 C1 + OPS-HOT） | **已交付** | F-C1 / F-KV / F-HOT；DoD：[`2026-09-13-f-kv-dod-audit.md`](2026-09-13-f-kv-dod-audit.md)、[`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md) |
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
-| **BLOB-CS** / **CH-OUTBOX** | 要做 | 各开规格 |
+| **CH-OUTBOX** | 规格已批准 · 待实现 | [`2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md) |
+| **BLOB-CS** | 要做 | 各开规格 |
 | **CH-PORT** | **已交付** | 规格 [`2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md)；`BAIZE_LISTEN` + autostart 端口文件 |
 | **P6** Memory / **MCP OAuth** | 要做 · 先脑暴 | **不合并**进其他史诗 |
 
@@ -118,7 +119,7 @@
 ## 7. 建议的下一刀候选（选题用）
 
 1. ~~**DOC**~~（已交付）  
-2. ~~**CH-PORT**~~（已交付）→ **CH-OUTBOX**  
+2. ~~**CH-PORT**~~（已交付）→ **CH-OUTBOX**（规格已批准 · 待实现）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
 4. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 5. **MCP OAuth** · **P6 Memory**  
