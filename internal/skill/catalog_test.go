@@ -18,13 +18,90 @@ func TestCatalogUserOverridesBuiltin(t *testing.T) {
 	user := filepath.Join(root, "user")
 	mustWriteSkill(t, filepath.Join(builtin, "demo"), "demo", "from-builtin", []string{"a"})
 	mustWriteSkill(t, filepath.Join(user, "demo"), "demo", "from-user", []string{"b"})
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, ok := cat.Get("demo")
 	if !ok || p.Description != "from-user" || p.Source != "user" {
 		t.Fatalf("%+v ok=%v", p, ok)
+	}
+}
+
+func TestCatalogLoadsManaged(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	managed := filepath.Join(root, "managed")
+	mustWriteManagedSkill(t, filepath.Join(managed, "login-auth"), "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("login-auth")
+	if !ok {
+		t.Fatal("managed skill missing from Get")
+	}
+	if p.Source != skill.SourceManaged {
+		t.Fatalf("source=%q want managed", p.Source)
+	}
+	if !p.Managed || p.ManagedKind != "connector_login" || p.ManagedConnectorID != "auth" {
+		t.Fatalf("managed fields: %+v", p)
+	}
+	list := cat.List()
+	found := false
+	for _, x := range list {
+		if x.ID == "login-auth" && x.Source == skill.SourceManaged {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("List missing managed skill: %+v", list)
+	}
+}
+
+func TestCatalogManagedOverridesUser(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	managed := filepath.Join(root, "managed")
+	mustWriteSkill(t, filepath.Join(user, "login-auth"), "login-auth", "from-user", []string{"a"})
+	mustWriteManagedSkill(t, filepath.Join(managed, "login-auth"), "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("login-auth")
+	if !ok || p.Source != skill.SourceManaged || p.Description == "from-user" {
+		t.Fatalf("want managed override, got %+v ok=%v", p, ok)
+	}
+	if !strings.Contains(p.Description, "auth") {
+		t.Fatalf("description=%q", p.Description)
+	}
+}
+
+func TestParseSKILLMDManagedFields(t *testing.T) {
+	raw := []byte(`---
+name: login-auth
+description: managed login
+tools:
+  - phoneLogin
+managed: true
+managed_kind: connector_login
+managed_connector_id: auth
+---
+
+body
+`)
+	pkg, err := skill.ParseSKILLMD(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pkg.Managed || pkg.ManagedKind != "connector_login" || pkg.ManagedConnectorID != "auth" {
+		t.Fatalf("%+v", pkg)
 	}
 }
 
@@ -36,7 +113,7 @@ func TestCatalogSkipsDirWithoutSkillMD(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(builtin, "empty"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +138,7 @@ func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("no frontmatter\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
+		if _, err := skill.LoadCatalog([]string{builtin}, user, ""); err == nil {
 			t.Fatal("expected error for missing frontmatter")
 		}
 	})
@@ -78,7 +155,7 @@ func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(raw), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := skill.LoadCatalog([]string{builtin2}, user2); err == nil {
+		if _, err := skill.LoadCatalog([]string{builtin2}, user2, ""); err == nil {
 			t.Fatal("expected error for missing name")
 		}
 	})
@@ -88,10 +165,12 @@ func TestDeleteUser(t *testing.T) {
 	root := t.TempDir()
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
+	managed := filepath.Join(root, "managed")
 	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "x", []string{"a"})
 	mustWriteSkill(t, filepath.Join(user, "user-skill"), "user-skill", "y", []string{"b"})
+	mustWriteManagedSkill(t, filepath.Join(managed, "login-auth"), "login-auth", "auth", []string{"phoneLogin"})
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, managed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +180,9 @@ func TestDeleteUser(t *testing.T) {
 	}
 	if err := cat.DeleteUser("builtin-only"); !errors.Is(err, skill.ErrBuiltin) {
 		t.Fatalf("builtin: want ErrBuiltin, got %v", err)
+	}
+	if err := cat.DeleteUser("login-auth"); !errors.Is(err, skill.ErrManaged) {
+		t.Fatalf("managed: want ErrManaged, got %v", err)
 	}
 	if err := cat.DeleteUser("user-skill"); err != nil {
 		t.Fatal(err)
@@ -112,7 +194,7 @@ func TestDeleteUser(t *testing.T) {
 
 func TestInstallMDRejectsUnsafeName(t *testing.T) {
 	root := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"))
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +219,7 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"))
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +245,7 @@ func TestLoadCatalogReadsWorkflowYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
 	if err != nil {
 		t.Fatalf("LoadCatalog: %v", err)
 	}
@@ -190,7 +272,7 @@ func TestLoadCatalogInvalidWorkflowFails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte("name:\nsteps: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
+	if _, err := skill.LoadCatalog([]string{builtin}, user, ""); err == nil {
 		t.Fatal("want invalid workflow to fail load")
 	}
 }
@@ -200,7 +282,7 @@ func TestLoadCatalogWithoutWorkflowYAML(t *testing.T) {
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
 	mustWriteSkill(t, filepath.Join(builtin, "plain"), "plain", "no pipeline", []string{"a"})
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +310,7 @@ func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "workflow.yaml"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := skill.LoadCatalog([]string{builtin}, user); err == nil {
+	if _, err := skill.LoadCatalog([]string{builtin}, user, ""); err == nil {
 		t.Fatal("want workflow.yaml read error to fail load")
 	}
 }
@@ -236,7 +318,7 @@ func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
 func TestLoadRepoTicketTriage(t *testing.T) {
 	builtin := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +350,7 @@ func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 	core := filepath.Join("..", "..", "skills")
 	demo := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{core, demo}, user)
+	cat, err := skill.LoadCatalog([]string{core, demo}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +360,7 @@ func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 	if _, ok := cat.Get("ticket-triage"); !ok {
 		t.Fatal("ticket-triage not found")
 	}
-	catMinimal, err := skill.LoadCatalog([]string{core}, user)
+	catMinimal, err := skill.LoadCatalog([]string{core}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +372,7 @@ func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 func TestLoadRepoDataAnalytics(t *testing.T) {
 	builtin := filepath.Join("..", "..", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{builtin}, user)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,6 +407,23 @@ func mustWriteSkill(t *testing.T, dir, name, desc string, tools []string) {
 	for _, x := range tools {
 		b.WriteString("  - " + x + "\n")
 	}
+	b.WriteString("---\n\nbody\n")
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustWriteManagedSkill(t *testing.T, dir, name, connectorID string, tools []string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	b.WriteString("---\nname: " + name + "\ndescription: connector " + connectorID + " login\ntools:\n")
+	for _, x := range tools {
+		b.WriteString("  - " + x + "\n")
+	}
+	b.WriteString("managed: true\nmanaged_kind: connector_login\nmanaged_connector_id: " + connectorID + "\n")
 	b.WriteString("---\n\nbody\n")
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)

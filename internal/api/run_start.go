@@ -77,14 +77,15 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	s.Dispatch(ctx, middleware.Job{
+	job := middleware.Job{
 		RunID:     runRec.ID,
 		Kind:      middleware.KindRun,
 		AgentID:   def.ID,
 		Input:     in.Input,
 		Skills:    runOpts.Skills,
 		UserParts: PartsToMiddleware(runOpts.UserParts),
-	})
+	}
+	s.Dispatch(ctx, job)
 
 	return s.Store.GetRun(runRec.ID)
 }

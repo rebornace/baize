@@ -63,7 +63,8 @@ import {
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
-import { ACTIONS, CHAT, friendlyError, WELCOME } from '../strings'
+import { ACTIONS, CHAT, friendlyError, LOGIN_AT, WELCOME } from '../strings'
+import { replaceMention } from '../skillMention'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { uuid } from '../uuid'
@@ -319,6 +320,18 @@ export function ChatPage() {
     [finishLiveRun, startPoll, stopPoll, stopStream],
   )
 
+  /** Subscribe to a run via the same SSE → poll fallback path as createRun. */
+  const attachRun = useCallback(
+    (runId: string, forConversationId: string, status: string) => {
+      setBusy(true)
+      setLiveEvents([])
+      lastEventIndexRef.current = -1
+      setStatus(statusLabel(status))
+      startStream(runId, forConversationId, -1)
+    },
+    [startStream],
+  )
+
   const restoreLiveRun = useCallback(
     async (id: string, msgs: ChatMessage[]) => {
       const candidate = findLiveRunCandidate(msgs)
@@ -326,13 +339,9 @@ export function ChatPage() {
       const run = await getRun(candidate)
       if (conversationIdRef.current !== id) return
       if (!isActiveRunStatus(run.status)) return
-      setBusy(true)
-      setStatus(statusLabel(run.status))
-      setLiveEvents([])
-      lastEventIndexRef.current = -1
-      startStream(candidate, id, -1)
+      attachRun(candidate, id, run.status)
     },
-    [startStream],
+    [attachRun],
   )
 
   useEffect(() => {
@@ -384,7 +393,12 @@ export function ChatPage() {
       .then((tools: ToolInfo[]) => {
         if (cancelled) return
         setToolCatalog(
-          tools.map((t) => ({ name: t.name, title: t.title, description: t.description })),
+          tools.map((t) => ({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            connector_id: t.connector_id,
+          })),
         )
       })
       .catch(() => { /* catalog missing is non-blocking */ })
@@ -678,9 +692,7 @@ export function ChatPage() {
       // The conversation switched mid-flight: the message was already accepted,
       // so report acceptance even though this view no longer tracks the run.
       if (conversationIdRef.current !== sentConversationId) return true
-      setStatus(statusLabel(created.status))
-      setLiveRunId(created.run_id)
-      startStream(created.run_id, sentConversationId, -1)
+      attachRun(created.run_id, sentConversationId, created.status)
     } catch (err) {
       // Post-acceptance failure (vision_unsupported / 5xx / network): the
       // Composer still clears; reconcile messages with the server below.
@@ -698,6 +710,24 @@ export function ChatPage() {
       }
     }
     return true
+  }
+
+  /** login_required「去登录」→ 刷新 skills 后写入 @login-<id>，聚焦输入框，不自动发送。 */
+  const onGoLoginSkill = async (skillId: string) => {
+    let list = skills
+    try {
+      const res = await listSkills()
+      list = res.skills ?? []
+      setSkills(list)
+    } catch {
+      /* keep cached skills; still validate below */
+    }
+    if (!list.some((s) => s.id === skillId)) {
+      toast.push({ tone: 'error', title: LOGIN_AT.skillMissing })
+      return
+    }
+    const { text } = replaceMention('', 0, 0, skillId)
+    setComposerDraft(text)
   }
 
   const onRollbackUser = async (m: ChatMessage) => {
@@ -732,11 +762,7 @@ export function ChatPage() {
         return
       }
       const runId = res.regenerated_run.run_id
-      setStatus(statusLabel(res.regenerated_run.status))
-      setLiveRunId(runId)
-      setLiveEvents([])
-      lastEventIndexRef.current = -1
-      startStream(runId, conversationId, -1)
+      attachRun(runId, conversationId, res.regenerated_run.status)
     } catch (e) {
       setBusy(false)
       reportError(e)
@@ -1091,7 +1117,12 @@ export function ChatPage() {
                 case 'tool':
                   return (
                     <div key={`live-t-${i}`} className="msg-row tool">
-                      <ToolCard block={block} catalog={toolCatalog} onError={reportError} />
+                      <ToolCard
+                        block={block}
+                        catalog={toolCatalog}
+                        onError={reportError}
+                        onGoLoginSkill={onGoLoginSkill}
+                      />
                     </div>
                   )
                 case 'workflow':

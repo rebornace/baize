@@ -50,6 +50,7 @@ import (
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/skill"
+	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/webhook"
@@ -306,7 +307,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 
 	reg := tool.NewRegistry()
 
-	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir)
+	managedDir := filepath.Join(cfg.Skills.UserDir, "managed")
+	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir, managedDir)
 	if err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("load skill catalog: %w", err)
@@ -329,6 +331,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		return nil, nil, err
 	}
 	loadStoredConnectors(st, reg, cfg, identities, callbackCfg)
+	if err := loginmanage.SyncAll(st, managedDir, cfg.Skills.UserDir); err != nil {
+		log.Printf("loginmanage: SyncAll: %v", err)
+	} else if err := skillCat.Reload(); err != nil {
+		log.Printf("loginmanage: reload skills after SyncAll: %v", err)
+	}
 	if n := len(st.ListConnectors()); n > 0 {
 		ids := make([]string, 0, n)
 		for _, c := range st.ListConnectors() {

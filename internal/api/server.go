@@ -39,6 +39,7 @@ import (
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/skill"
+	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -982,7 +983,28 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	if c.Type == "mcp" {
 		resp["mcp"] = c.MCP
 	}
+	s.syncLoginManagedSkill(id)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// syncLoginManagedSkill refreshes the managed login skill for one connector
+// then reloads the skill catalog. Sync/Reload failures are logged only so the
+// connector mutation HTTP response stays successful.
+func (s *Server) syncLoginManagedSkill(connectorID string) {
+	if s == nil || s.SkillCatalog == nil {
+		return
+	}
+	managedDir := s.SkillCatalog.ManagedDir()
+	if strings.TrimSpace(managedDir) == "" {
+		return
+	}
+	if err := loginmanage.SyncConnector(s.Store, managedDir, s.SkillCatalog.UserDir(), connectorID); err != nil {
+		log.Printf("loginmanage: sync connector %q: %v", connectorID, err)
+		return
+	}
+	if err := s.SkillCatalog.Reload(); err != nil {
+		log.Printf("loginmanage: reload skills after sync %q: %v", connectorID, err)
+	}
 }
 
 func validImportFormat(format string) bool {
@@ -1422,6 +1444,7 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	c.RequireApproval = syncRequireLoginList(c.RequireApproval, name, row.RequireApproval)
 	s.Store.UpsertConnector(c)
 
+	s.syncLoginManagedSkill(row.ConnectorID)
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -1523,6 +1546,7 @@ func (s *Server) handlePostConnectorTool(w http.ResponseWriter, r *http.Request)
 	}
 	s.Store.UpsertConnector(c)
 
+	s.syncLoginManagedSkill(id)
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -1550,6 +1574,7 @@ func (s *Server) handleDeleteConnectorTool(w http.ResponseWriter, r *http.Reques
 		s.Store.UpsertConnector(c)
 	}
 
+	s.syncLoginManagedSkill(row.ConnectorID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1573,6 +1598,7 @@ func (s *Server) handleDeleteConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	s.syncLoginManagedSkill(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1759,6 +1785,12 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// any explicit input (non-nil body.skills or a mention) overrides for this
 	// run, with an empty merged set meaning "no default skill active".
 	cleanedInput, mentionIDs := skillparse.Parse(runInput)
+	originalInput := strings.TrimSpace(runInput)
+	mentionOnly := cleanedInput == "" && len(mentionIDs) > 0
+	modelInput := cleanedInput
+	if mentionOnly {
+		modelInput = skillparse.MentionOnlyFallback
+	}
 	var runSkills []string
 	if body.Skills != nil || len(mentionIDs) > 0 {
 		merged := mergeSkillIDs(mentionIDs, body.Skills)
@@ -1781,11 +1813,11 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// Build the LLM-bound user content (cleaned text + text-attachment blocks)
 	// and the multimodal Parts payload when any attachments are present. The
 	// persisted bubble stores only the visible text + filenames (no base64).
-	llmText := cleanedInput
+	llmText := modelInput
 	var userParts []llm.ContentPart
 	if len(textExts) > 0 || len(imageExts) > 0 {
 		var b strings.Builder
-		b.WriteString(cleanedInput)
+		b.WriteString(modelInput)
 		for _, t := range textExts {
 			b.WriteString("\n\n【附件: ")
 			b.WriteString(t.Filename)
@@ -1818,10 +1850,12 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// not via the input string). The persisted bubble appends renderable
 	// attachment reference lines (inline images / download cards), so the UI
 	// shows exactly what was sent with no redundant "（附件：…）" note.
-	displayText := cleanedInput
-	bubbleContent := displayText
+	displayText := modelInput
+	bubbleContent := cleanedInput
+	if mentionOnly {
+		bubbleContent = originalInput
+	}
 	if len(bubbleMarkers) > 0 {
-		bubbleContent = strings.TrimSpace(cleanedInput)
 		if bubbleContent != "" {
 			bubbleContent += "\n"
 		}

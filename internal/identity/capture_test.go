@@ -70,6 +70,40 @@ func TestCaptureTokenAlreadyBearer(t *testing.T) {
 	}
 }
 
+func TestCaptureTokenValueAndNestedObject(t *testing.T) {
+	cfg := identity.CaptureConfig{HeaderTemplate: "Bearer {{token}}"}
+	headers, label, _, _, ok := identity.ExtractCredential(cfg, map[string]any{
+		"code": 200,
+		"data": map[string]any{
+			"tokenName":  "satoken",
+			"tokenValue": testJWT,
+			"user":       map[string]any{"email": "admin@x.com"},
+		},
+	})
+	if !ok || headers["Authorization"] != "Bearer "+testJWT {
+		t.Fatalf("tokenValue extract: headers=%+v ok=%v", headers, ok)
+	}
+	if label != "admin@x.com" {
+		t.Fatalf("label=%q", label)
+	}
+
+	headers, _, _, _, ok = identity.ExtractCredential(cfg, map[string]any{
+		"data": map[string]any{
+			"token": map[string]any{"accessToken": testJWT},
+		},
+	})
+	if !ok || headers["Authorization"] != "Bearer "+testJWT {
+		t.Fatalf("nested token object: headers=%+v ok=%v", headers, ok)
+	}
+
+	headers, _, _, _, ok = identity.ExtractCredential(cfg, map[string]any{
+		"access_token": testJWT,
+	})
+	if !ok || headers["Authorization"] != "Bearer "+testJWT {
+		t.Fatalf("access_token: headers=%+v ok=%v", headers, ok)
+	}
+}
+
 func TestCaptureNoToken(t *testing.T) {
 	cfg := identity.CaptureConfig{
 		TokenJSONPaths: []string{"accessToken"},
@@ -94,6 +128,13 @@ func TestMatchToolName(t *testing.T) {
 	}
 	if identity.MatchToolName("*login*", "AdminAuthController_logout") {
 		t.Fatal("expected no match")
+	}
+	// OpenAPI-style PascalCase *Login* must match default *login* glob.
+	if !identity.MatchToolName("*login*", "AuthController_phoneLogin") {
+		t.Fatal("expected case-insensitive match for phoneLogin")
+	}
+	if !identity.MatchToolName("*login*", "AuthController_phonePasswordLogin") {
+		t.Fatal("expected case-insensitive match for phonePasswordLogin")
 	}
 }
 

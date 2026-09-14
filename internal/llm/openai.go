@@ -116,7 +116,7 @@ type openAIThinking struct {
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    any              `json:"content,omitempty"` // string or []openAIContentPart
+	Content    any              `json:"content"` // string or []openAIContentPart; always set (strict gateways require the field)
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 }
@@ -166,10 +166,13 @@ func toOpenAIMessages(messages []Message) []openAIMessage {
 		om := openAIMessage{
 			Role:       string(m.Role),
 			ToolCallID: m.ToolCallID,
+			Content:    "",
 		}
 		if len(m.Parts) > 0 {
-			om.Content = toOpenAIContentParts(m.Parts)
-		} else if m.Content != "" {
+			if parts := toOpenAIContentParts(m.Parts); len(parts) > 0 {
+				om.Content = parts
+			}
+		} else {
 			om.Content = m.Content
 		}
 		for _, tc := range m.ToolCalls {

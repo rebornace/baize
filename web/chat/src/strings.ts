@@ -378,6 +378,12 @@ export function skillErrorText(e: unknown): FriendlyError {
   return friendlyError(e)
 }
 
+// ---- Chat：login_required → login skill ----
+export const LOGIN_AT = {
+  goLogin: '去登录',
+  skillMissing: '暂无可用的登录技能（请确认连接器已启用登录相关工具）',
+} as const
+
 // ---- 设置页：助手功能 ----
 export const TOOLS = {
   title: '助手功能',

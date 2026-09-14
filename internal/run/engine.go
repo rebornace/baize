@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
+	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/workflow"
@@ -298,8 +300,21 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 	}
 	if len(messages) > 0 {
 		last := messages[len(messages)-1]
-		if last.Role == llm.RoleUser && last.Content == input {
-			return messages
+		if last.Role == llm.RoleUser {
+			if last.Content == input {
+				return messages
+			}
+			// Mention-only bubbles keep @id for display; model-facing input is
+			// a fallback instruction. Replace this turn instead of appending a
+			// second user message.
+			if skillparse.IsMentionOnly(last.Content) {
+				messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Content: input}
+				return messages
+			}
+			if strings.TrimSpace(last.Content) == "" {
+				messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Content: input}
+				return messages
+			}
 		}
 	}
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
@@ -793,8 +808,8 @@ func workflowInterrupted(evs []store.Event) bool {
 // event/data shapes as before. A rejection returns ErrHITLRejected and the run
 // has already been finalized as rejected (with a humanized note); the caller
 // must stop instead of appending further results. Transient failures inside
-// one interaction keep the last-known return shape so the value/error
-// contract stays uniform.
+// one interaction keep the last-known return shape so the value/error contract
+// stays uniform.
 func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval bool) (map[string]any, bool, error) {
 	isError := false
 	content := map[string]any{}
@@ -802,7 +817,7 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 	rejected, rerr := func() (bool, error) {
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMToolCall,
-			Data: map[string]any{"id": callID, "name": name, "arguments": args},
+			Data: map[string]any{"id": callID, "name": name, "arguments": redactToolArgs(args)},
 		})
 
 		if e.blockedByLogin(ctx, name) {
@@ -828,8 +843,9 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 
 		invokeCtx := identity.WithToolCallID(ctx, callID)
 		toolCtx, cancel := context.WithTimeout(invokeCtx, e.toolTimeout())
-		c, _, ierr := e.Tools.Invoke(toolCtx, name, args)
+		c, toolIsErr, ierr := e.Tools.Invoke(toolCtx, name, args)
 		cancel()
+		isError = toolIsErr
 		if ierr != nil {
 			isError = true
 			if c == nil {
@@ -1079,4 +1095,22 @@ func asString(v any) string {
 func asMap(v any) map[string]any {
 	m, _ := v.(map[string]any)
 	return m
+}
+
+var sensitiveToolArgKey = regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key)`)
+
+// redactToolArgs returns a copy of args with sensitive keys masked for events.
+func redactToolArgs(args map[string]any) map[string]any {
+	if len(args) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		if sensitiveToolArgKey.MatchString(k) {
+			out[k] = "***"
+		} else {
+			out[k] = v
+		}
+	}
+	return out
 }

@@ -23,11 +23,17 @@ interface Completion {
   start: number
   end: number
   query: string
-  matches: SkillSummary[]
+  skillMatches: SkillSummary[]
   activeIndex: number
 }
 
-export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerProps) {
+export function Composer({
+  disabled,
+  onSend,
+  draft,
+  skills,
+  toolbar,
+}: ComposerProps) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [completion, setCompletion] = useState<Completion | null>(null)
@@ -37,6 +43,10 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
   useEffect(() => {
     if (draft !== undefined) {
       setText(draft)
+      // Spec §7.2: after「去登录」writes @login-<id>, focus the composer.
+      requestAnimationFrame(() => {
+        taRef.current?.focus()
+      })
     }
   }, [draft])
 
@@ -54,7 +64,8 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
   }, [skills])
 
   const updateCompletion = (value: string, caret: number) => {
-    if (!skills || skills.length === 0) {
+    const skillList = skills ?? []
+    if (skillList.length === 0) {
       setCompletion(null)
       return
     }
@@ -64,8 +75,8 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
       return
     }
     const q = active.query.toLowerCase()
-    const matches = skills.filter((s) => s.id.toLowerCase().startsWith(q))
-    if (matches.length === 0) {
+    const skillMatches = skillList.filter((s) => s.id.toLowerCase().startsWith(q))
+    if (skillMatches.length === 0) {
       setCompletion(null)
       return
     }
@@ -73,12 +84,12 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
       start: active.start,
       end: active.end,
       query: active.query,
-      matches,
+      skillMatches,
       activeIndex: 0,
     })
   }
 
-  const applyCompletion = (pick: SkillSummary) => {
+  const applySkill = (pick: SkillSummary) => {
     if (!completion) return
     const { text: next, caret } = replaceMention(text, completion.start, completion.end, pick.id)
     setText(next)
@@ -89,6 +100,12 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
       el.focus()
       el.setSelectionRange(caret, caret)
     })
+  }
+
+  const pickActive = () => {
+    if (!completion) return
+    const pick = completion.skillMatches[completion.activeIndex]
+    if (pick) applySkill(pick)
   }
 
   const submit = async () => {
@@ -105,29 +122,26 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (completion) {
+      const total = completion.skillMatches.length
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setCompletion((c) =>
-          c ? { ...c, activeIndex: (c.activeIndex + 1) % c.matches.length } : c,
+          c && total > 0 ? { ...c, activeIndex: (c.activeIndex + 1) % total } : c,
         )
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         setCompletion((c) =>
-          c
-            ? {
-                ...c,
-                activeIndex: (c.activeIndex - 1 + c.matches.length) % c.matches.length,
-              }
+          c && total > 0
+            ? { ...c, activeIndex: (c.activeIndex - 1 + total) % total }
             : c,
         )
         return
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
-        const pick = completion.matches[completion.activeIndex]
-        if (pick) applyCompletion(pick)
+        pickActive()
         return
       }
       if (e.key === 'Escape') {
@@ -166,6 +180,8 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
   const openFilePicker = () => {
     fileInputRef.current?.click()
   }
+
+  const showPopup = completion != null && completion.skillMatches.length > 0
 
   return (
     <div className="composer">
@@ -255,17 +271,21 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
         >
           发送
         </button>
-        {completion && completion.matches.length > 0 && (
-          <ul className="composer-complete" role="listbox" aria-label="Skill 补全">
-            {completion.matches.map((s, i) => (
+        {showPopup && completion && (
+          <ul className="composer-complete" role="listbox" aria-label="技能补全">
+            {completion.skillMatches.map((s, i) => (
               <li
-                key={s.id}
+                key={`skill:${s.id}`}
                 role="option"
                 aria-selected={i === completion.activeIndex}
-                className={i === completion.activeIndex ? 'composer-complete-item active' : 'composer-complete-item'}
+                className={
+                  i === completion.activeIndex
+                    ? 'composer-complete-item active'
+                    : 'composer-complete-item'
+                }
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  applyCompletion(s)
+                  applySkill(s)
                 }}
                 onMouseEnter={() =>
                   setCompletion((c) => (c ? { ...c, activeIndex: i } : c))

@@ -1490,6 +1490,16 @@
   overflow-y: auto;
 }
 
+.composer-complete-section {
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  cursor: default;
+  list-style: none;
+}
+
 .composer-complete-item {
   display: flex;
   flex-direction: column;
@@ -1504,9 +1514,18 @@
 }
 
 .composer-complete-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-weight: 600;
   font-size: 0.875rem;
   color: var(--text);
+}
+
+.composer-complete-badge {
+  font-weight: 500;
+  font-size: 0.7rem;
+  color: var(--success, var(--text-muted));
 }
 
 .composer-complete-desc {
@@ -1515,6 +1534,78 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.login-params-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.login-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.login-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.login-picker-item:hover:not(:disabled),
+.login-picker-item:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.login-picker-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-picker-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.login-picker-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.login-picker-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.tool-card-login-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tool-card-login-msg {
+  margin: 0;
+  flex: 1 1 100%;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
 .composer-hint {

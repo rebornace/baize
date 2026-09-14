@@ -33,6 +33,22 @@ func TestParseDedupPreservesOrder(t *testing.T) {
 	}
 }
 
+func TestParseMentionOnly(t *testing.T) {
+	cleaned, ids := skillparse.Parse("@login-crm")
+	if cleaned != "" {
+		t.Fatalf("cleaned = %q, want empty", cleaned)
+	}
+	if !reflect.DeepEqual(ids, []string{"login-crm"}) {
+		t.Fatalf("ids = %v", ids)
+	}
+	if !skillparse.IsMentionOnly("@login-crm ") {
+		t.Fatal("expected mention-only")
+	}
+	if skillparse.IsMentionOnly("@login-crm 帮我登录") {
+		t.Fatal("text plus mention is not mention-only")
+	}
+}
+
 func TestParseAtStart(t *testing.T) {
 	cleaned, ids := skillparse.Parse("@data-analytics 分析数据")
 	if cleaned != "分析数据" {

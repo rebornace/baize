@@ -56,6 +56,15 @@ function clickSend() {
 }
 
 describe('Composer submit acceptance contract', () => {
+  it('focuses the textarea when draft is applied', async () => {
+    render(<Composer onSend={() => true} draft="@login-crm " />)
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)))
+    })
+    expect(textarea().value).toBe('@login-crm ')
+    expect(document.activeElement).toBe(textarea())
+  })
+
   it('keeps text and attachments when onSend resolves to false (rejected)', async () => {
     const onSend = vi.fn().mockResolvedValue(false)
     render(<Composer onSend={onSend} />)
