@@ -129,8 +129,8 @@ func TestOpenAIAssistantToolCallsAlwaysIncludesContent(t *testing.T) {
 		{
 			Role: llm.RoleAssistant,
 			ToolCalls: []llm.ToolCall{{
-				ID:   "call_1",
-				Name: "activate_skill",
+				ID:        "call_1",
+				Name:      "activate_skill",
 				Arguments: map[string]any{"skill_id": "login-crm"},
 			}},
 		},
