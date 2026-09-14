@@ -10,7 +10,6 @@ import (
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channel/webhook"
-	_ "github.com/rebornace/baize/internal/channel/webhook"
 	"github.com/rebornace/baize/internal/store"
 )
 
