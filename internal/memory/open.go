@@ -16,6 +16,11 @@ func Open(driver string, db *sql.DB) (Store, error) {
 			return nil, fmt.Errorf("sqlite memory store requires db")
 		}
 		return OpenSQLite(db)
+	case "postgres":
+		if db == nil {
+			return nil, fmt.Errorf("postgres memory store requires db")
+		}
+		return OpenPostgres(db)
 	default:
 		return nil, fmt.Errorf("unsupported memory driver %q", driver)
 	}
