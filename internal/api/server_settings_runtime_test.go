@@ -23,7 +23,10 @@ func runtimeSettingsServer(t *testing.T) (*api.Server, store.Store) {
 	// The settings/credentials endpoints never touch the runner; pass nil.
 	srv := api.NewServer(st, tool.NewRegistry(), nil)
 	base := runtimecfg.Snapshot{
-		Knobs: runtimecfg.Knobs{MaxMessages: 40, MaxSteps: 16, CompactionEnabled: true, CompactThreshold: 0.8},
+		Knobs: runtimecfg.Knobs{
+			MaxMessages: 40, MaxSteps: 16, CompactionEnabled: true, CompactThreshold: 0.8,
+			MemoryEnabled: true, MemoryAutoExtract: true,
+		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: "op", AdminToken: "adm",
 			Operators: []controlplane.Operator{{ID: "alice", Token: "ta"}},
@@ -86,6 +89,33 @@ func TestPatchRuntimeSettingsHot(t *testing.T) {
 	}
 	if h2.Knobs().MaxSteps != 32 || h2.Knobs().CompactionEnabled {
 		t.Fatalf("override must survive reload: %+v", h2.Knobs())
+	}
+}
+
+func TestPatchRuntimeMemorySwitchesHot(t *testing.T) {
+	srv, st := runtimeSettingsServer(t)
+	rr := doJSON(t, srv, http.MethodGet, "/v0/settings/runtime", "op", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"memory_enabled":true`) ||
+		!strings.Contains(rr.Body.String(), `"memory_auto_extract":true`) {
+		t.Fatalf("expected memory knobs default true, body=%s", rr.Body.String())
+	}
+	rr = doJSON(t, srv, http.MethodPatch, "/v0/settings/runtime", "adm",
+		map[string]any{"memory_enabled": false, "memory_auto_extract": false})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if srv.Settings.Knobs().MemoryEnabled || srv.Settings.Knobs().MemoryAutoExtract {
+		t.Fatalf("memory knobs not applied: %+v", srv.Settings.Knobs())
+	}
+	h2 := runtimecfg.New(runtimecfg.Snapshot{Knobs: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: true}})
+	if err := h2.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if h2.Knobs().MemoryEnabled || h2.Knobs().MemoryAutoExtract {
+		t.Fatalf("memory overrides must survive reload: %+v", h2.Knobs())
 	}
 }
 

@@ -27,6 +27,9 @@ func TestBuildRuntimeHolderBaselineAndOverride(t *testing.T) {
 	if !h.Knobs().CompactionEnabled {
 		t.Fatalf("baseline CompactionEnabled must default to true: %+v", h.Knobs())
 	}
+	if !h.Knobs().MemoryEnabled || !h.Knobs().MemoryAutoExtract {
+		t.Fatalf("baseline memory knobs must default to true: %+v", h.Knobs())
+	}
 
 	// persist an override, then rebuild (simulates restart) -> override loaded
 	steps := 33
@@ -39,5 +42,16 @@ func TestBuildRuntimeHolderBaselineAndOverride(t *testing.T) {
 	}
 	if h2.Knobs().MaxMessages != 40 {
 		t.Fatalf("unset knob must keep config baseline: %d", h2.Knobs().MaxMessages)
+	}
+	off := false
+	if err := h2.ApplyKnobs(context.Background(), st, runtimecfg.KnobsPatch{MemoryEnabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	h3 := buildRuntimeHolder(cfg, st, "op", "adm", ops)
+	if h3.Knobs().MemoryEnabled {
+		t.Fatalf("MemoryEnabled override must survive rebuild: %+v", h3.Knobs())
+	}
+	if !h3.Knobs().MemoryAutoExtract {
+		t.Fatalf("unset MemoryAutoExtract must keep baseline true: %+v", h3.Knobs())
 	}
 }

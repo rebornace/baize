@@ -327,6 +327,8 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 			CompactReserveTokens:  cfg.Conversation.CompactReserveOutput,
 			CompactKeepRecent:     cfg.Conversation.CompactRecentMessages,
 			CompactSummaryTimeout: 60 * time.Second,
+			MemoryEnabled:         true,
+			MemoryAutoExtract:     true,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: op,
