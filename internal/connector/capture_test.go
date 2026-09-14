@@ -20,6 +20,16 @@ func TestCaptureDefaultsFillsEmpty(t *testing.T) {
 	}
 }
 
+func TestCaptureDefaultsFillsPathsWhenGlobAlreadySet(t *testing.T) {
+	got := connector.CaptureDefaults(identity.CaptureConfig{ToolNameGlob: "*login*"})
+	if got.ToolNameGlob != "*login*" {
+		t.Fatalf("glob=%q", got.ToolNameGlob)
+	}
+	if len(got.TokenJSONPaths) == 0 || got.HeaderTemplate == "" {
+		t.Fatalf("paths/template should fill even when glob is set: %+v", got)
+	}
+}
+
 func TestCaptureDefaultsKeepsNone(t *testing.T) {
 	got := connector.CaptureDefaults(identity.CaptureConfig{
 		ToolNameGlob:   "__none__",

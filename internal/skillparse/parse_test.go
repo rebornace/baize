@@ -33,6 +33,22 @@ func TestParseDedupPreservesOrder(t *testing.T) {
 	}
 }
 
+func TestParseMentionOnly(t *testing.T) {
+	cleaned, ids := skillparse.Parse("@login-doctor-miao")
+	if cleaned != "" {
+		t.Fatalf("cleaned = %q, want empty", cleaned)
+	}
+	if !reflect.DeepEqual(ids, []string{"login-doctor-miao"}) {
+		t.Fatalf("ids = %v", ids)
+	}
+	if !skillparse.IsMentionOnly("@login-doctor-miao ") {
+		t.Fatal("expected mention-only")
+	}
+	if skillparse.IsMentionOnly("@login-doctor-miao 帮我登录") {
+		t.Fatal("text plus mention is not mention-only")
+	}
+}
+
 func TestParseAtStart(t *testing.T) {
 	cleaned, ids := skillparse.Parse("@data-analytics 分析数据")
 	if cleaned != "分析数据" {

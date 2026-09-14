@@ -704,6 +704,58 @@ func TestPostRunSkillMentionOverridesAgentDefaults(t *testing.T) {
 	}
 }
 
+func TestPostRunMentionOnlyKeepsBubbleAndInstructsModel(t *testing.T) {
+	_, _, llmMock, h, _ := attachmentsServer(t, false)
+	putAgent(t, h, "a1")
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "@data-analytics",
+		"conversation_id": "c-mention-only",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := created["run_id"].(string)
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+
+	getMsgs := httptest.NewRequest(http.MethodGet, "/v0/conversations/c-mention-only/messages", nil)
+	mr := httptest.NewRecorder()
+	h.ServeHTTP(mr, getMsgs)
+	if mr.Code != http.StatusOK {
+		t.Fatalf("messages status=%d body=%s", mr.Code, mr.Body.String())
+	}
+	var msgs []conversation.Message
+	if err := json.NewDecoder(mr.Body).Decode(&msgs); err != nil {
+		t.Fatal(err)
+	}
+	var userBubble string
+	for _, m := range msgs {
+		if m.Role == conversation.RoleUser {
+			userBubble = m.Content
+		}
+	}
+	if userBubble != "@data-analytics" {
+		t.Fatalf("mention-only bubble = %q, want original mention", userBubble)
+	}
+
+	userText, _, _ := llmMock.snapshot()
+	if strings.TrimSpace(userText) == "" {
+		t.Fatal("model-facing user text must not be empty for mention-only turns")
+	}
+	if !strings.Contains(userText, "已激活技能") {
+		t.Fatalf("model-facing text missing mention-only fallback: %q", userText)
+	}
+	sys := llmMock.systemSnapshot()
+	if !strings.Contains(sys, "## Skill: data-analytics") {
+		t.Fatalf("mention-only must still activate skill; system=%q", sys)
+	}
+}
+
 // TestPostRunEmptySkillsClearsAgentDefaults asserts that an explicit
 // "skills": [] in the request body deactivates the agent's default skills for
 // this run. The observation point is the composed system prompt: when no skill

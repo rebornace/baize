@@ -108,6 +108,56 @@ func TestOpenAIDataURLPassthrough(t *testing.T) {
 	}
 }
 
+// TestOpenAIAssistantToolCallsAlwaysIncludesContent ensures assistant messages
+// that only carry tool_calls still serialize a content field. Strict
+// openai-compatible gateways reject requests when content is omitted
+// (omitempty on empty string), e.g. after activate_skill on a skill-only turn.
+func TestOpenAIAssistantToolCallsAlwaysIncludesContent(t *testing.T) {
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = b
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	_, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleSystem, Content: "sys"},
+		{Role: llm.RoleUser, Content: "@login-doctor-miao"},
+		{
+			Role: llm.RoleAssistant,
+			ToolCalls: []llm.ToolCall{{
+				ID:   "call_1",
+				Name: "activate_skill",
+				Arguments: map[string]any{"skill_id": "login-doctor-miao"},
+			}},
+		},
+		{Role: llm.RoleTool, ToolCallID: "call_1", Content: `{"ok":true}`},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+
+	var req struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, capturedBody)
+	}
+	if len(req.Messages) < 3 {
+		t.Fatalf("expected >=3 messages, got %d body=%s", len(req.Messages), capturedBody)
+	}
+	asst := req.Messages[2]
+	if _, ok := asst["content"]; !ok {
+		t.Fatalf("assistant tool_calls message missing content field: %s", capturedBody)
+	}
+	if _, ok := asst["tool_calls"]; !ok {
+		t.Fatalf("assistant message missing tool_calls: %s", capturedBody)
+	}
+}
+
 // TestOpenAIPlainTextContentIsString verifies backward compatibility: a
 // message without Parts is encoded with content as a plain string, not an array.
 func TestOpenAIPlainTextContentIsString(t *testing.T) {

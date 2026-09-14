@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
+	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/workflow"
@@ -299,8 +300,21 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 	}
 	if len(messages) > 0 {
 		last := messages[len(messages)-1]
-		if last.Role == llm.RoleUser && last.Content == input {
-			return messages
+		if last.Role == llm.RoleUser {
+			if last.Content == input {
+				return messages
+			}
+			// Mention-only bubbles keep @id for display; model-facing input is
+			// a fallback instruction. Replace this turn instead of appending a
+			// second user message.
+			if skillparse.IsMentionOnly(last.Content) {
+				messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Content: input}
+				return messages
+			}
+			if strings.TrimSpace(last.Content) == "" {
+				messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Content: input}
+				return messages
+			}
 		}
 	}
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
