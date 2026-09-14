@@ -3,6 +3,7 @@ package conversation
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/rebornace/baize/internal/dbutil"
 	"github.com/rebornace/baize/internal/store"
@@ -14,6 +15,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 	}
 	if dialect == store.DialectSQLite || dialect == "" {
 		if _, err := db.Exec(sqliteMessagesSchema); err != nil {
+			return nil, err
+		}
+		if err := migrateMessagesThinkingColumns(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
 	} else if dialect == store.DialectPostgres {
@@ -41,8 +45,42 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 		if _, err := db.Exec(pgSummaries); err != nil {
 			return nil, err
 		}
+		if err := migrateMessagesThinkingColumns(db, store.DialectPostgres); err != nil {
+			return nil, err
+		}
 	}
 	return &SQLiteStore{db: db, dialect: dialect}, nil
+}
+
+// migrateMessagesThinkingColumns adds thinking / thinking_redacted for DBs created
+// before those columns existed. SQLite lacks IF NOT EXISTS on ADD COLUMN.
+func migrateMessagesThinkingColumns(db *sql.DB, dialect store.SQLDialect) error {
+	if dialect == store.DialectPostgres {
+		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS thinking TEXT`); err != nil {
+			return fmt.Errorf("migrate messages thinking: %w", err)
+		}
+		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS thinking_redacted BOOLEAN NOT NULL DEFAULT false`); err != nil {
+			return fmt.Errorf("migrate messages thinking_redacted: %w", err)
+		}
+		return nil
+	}
+	for _, q := range []string{
+		`ALTER TABLE messages ADD COLUMN thinking TEXT`,
+		`ALTER TABLE messages ADD COLUMN thinking_redacted INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := db.Exec(q); err != nil && !isDuplicateColumnErr(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists")
 }
 
 func (s *SQLiteStore) q(query string) string {

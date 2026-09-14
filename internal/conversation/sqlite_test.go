@@ -55,6 +55,25 @@ func TestSQLiteMessageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSQLiteAppendThinking(t *testing.T) {
+	db, _ := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Append("c1", conversation.Message{
+		Role: conversation.RoleAssistant, Content: "答", Thinking: "想", ThinkingRedacted: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = got
+	list := s.List("c1")
+	if list[0].Thinking != "想" {
+		t.Fatalf("%+v", list[0])
+	}
+}
+
 func TestSQLiteAppendListClearWindow(t *testing.T) {
 	db, _ := openTestDB(t)
 	s, err := conversation.OpenSQLite(db)

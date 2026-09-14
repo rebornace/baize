@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
+  thinking TEXT,
+  thinking_redacted INTEGER NOT NULL DEFAULT 0,
   run_id TEXT,
   created_at TEXT NOT NULL
 );
@@ -68,8 +70,8 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 	}
 
 	_, err := s.exec(
-		`INSERT INTO messages (id, conversation_id, role, content, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		msg.ID, msg.ConversationID, msg.Role, msg.Content, runID, msg.CreatedAt.Format(time.RFC3339Nano),
+		`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.ConversationID, msg.Role, msg.Content, nullIfEmpty(msg.Thinking), msg.ThinkingRedacted, runID, msg.CreatedAt.Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return Message{}, err
@@ -79,7 +81,7 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 
 func (s *SQLiteStore) List(conversationID string) []Message {
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, run_id, created_at
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at
 		 FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,
 		conversationID,
 	)
@@ -188,7 +190,7 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 		return "", 0, err
 	}
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, run_id, created_at
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at
 		 FROM messages WHERE conversation_id = ? AND created_at <= ? ORDER BY created_at ASC`,
 		srcConversationID, createdAt,
 	)
@@ -222,8 +224,8 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 			runID = newMsg.RunID
 		}
 		_, err := s.exec(
-			`INSERT INTO messages (id, conversation_id, role, content, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, runID, newMsg.CreatedAt.Format(time.RFC3339Nano),
+			`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, nullIfEmpty(newMsg.Thinking), newMsg.ThinkingRedacted, runID, newMsg.CreatedAt.Format(time.RFC3339Nano),
 		)
 		if err != nil {
 			return "", 0, err
@@ -355,10 +357,15 @@ func scanMessage(scanner interface {
 }) (Message, error) {
 	var m Message
 	var createdAt string
-	var runID sql.NullString
-	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &runID, &createdAt); err != nil {
+	var thinking, runID sql.NullString
+	var redacted bool
+	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &thinking, &redacted, &runID, &createdAt); err != nil {
 		return Message{}, err
 	}
+	if thinking.Valid {
+		m.Thinking = thinking.String
+	}
+	m.ThinkingRedacted = redacted
 	if runID.Valid {
 		m.RunID = runID.String
 	}
