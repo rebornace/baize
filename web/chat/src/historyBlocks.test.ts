@@ -23,9 +23,9 @@ describe('foldToolBlocks', () => {
     const tool = blocks[0]
     expect(tool.kind === 'tool' && tool.name).toBe('a')
     expect(tool.kind === 'tool' && tool.status).toBe('succeeded')
-    expect(blocks.every((b) => b.runId === 'run-1')).toBe(true)
+    expect(blocks.every((b) => b.kind === 'thinking' || b.runId === 'run-1')).toBe(true)
   })
-  it('returns [] when there are no tool/workflow events', () => {
+  it('returns [] when there are no tool/workflow/thinking events', () => {
     expect(foldToolBlocks('r', [ev('llm.message', { content: 'hi' })])).toEqual([])
   })
   it('folds HITL waiting into a tool block for read-only rendering', () => {
@@ -35,6 +35,20 @@ describe('foldToolBlocks', () => {
     ])
     expect(blocks).toHaveLength(1)
     expect(blocks[0].kind === 'tool' && blocks[0].status).toBe('waiting_human')
+  })
+  it('keeps thinking blocks and still drops assistant text', () => {
+    const blocks = foldToolBlocks('run-t', [
+      ev('llm.thinking.delta', { turn: 0, text: '想' }),
+      ev('llm.thinking', { turn: 0, text: '想' }),
+      ev('llm.tool_call', { name: 'a' }),
+      ev('tool.result', { name: 'a', content: 'ok' }),
+      ev('llm.thinking.delta', { turn: 1, text: '再想' }),
+      ev('llm.content.delta', { turn: 1, text: '答' }),
+      ev('llm.message', { content: '答', thinking: '想\n\n再想' }),
+    ])
+    expect(blocks.map((b) => b.kind)).toEqual(['thinking', 'tool', 'thinking'])
+    expect(blocks[0]).toMatchObject({ kind: 'thinking', turn: 0, text: '想' })
+    expect(blocks[2]).toMatchObject({ kind: 'thinking', turn: 1, text: '再想', collapsed: true })
   })
 })
 

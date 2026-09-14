@@ -80,6 +80,11 @@ export const CHAT = {
   // 本会话思考级别覆盖
   thinkingChip: '思考级别',
   thinkingDefault: '默认',
+  // 思考块展示（实时打字机 / 历史折叠）
+  thinking: '思考中',
+  thoughtDone: '已思考',
+  viewThinking: '查看思考',
+  thinkingRedacted: '模型未返回可展示的思考',
 } as const
 
 export interface FriendlyError {

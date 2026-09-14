@@ -198,4 +198,93 @@ describe('foldEvents', () => {
       },
     ])
   })
+
+  it('folds thinking.delta into a streaming uncollapsed block', () => {
+    const blocks = foldEvents('run_think', [
+      ev('llm.thinking.delta', { turn: 0, text: '先想一步' }),
+    ])
+    expect(blocks).toEqual([
+      {
+        kind: 'thinking',
+        turn: 0,
+        text: '先想一步',
+        status: 'streaming',
+        collapsed: false,
+      },
+    ])
+  })
+
+  it('collapses thinking and streams assistant text on content.delta', () => {
+    const blocks = foldEvents('run_think', [
+      ev('llm.thinking.delta', { turn: 0, text: '推理中' }),
+      ev('llm.thinking.delta', { turn: 0, text: '推理中…完成' }),
+      ev('llm.content.delta', { turn: 0, text: '你好' }),
+      ev('llm.content.delta', { turn: 0, text: '你好，世界' }),
+    ])
+    expect(blocks).toEqual([
+      {
+        kind: 'thinking',
+        turn: 0,
+        text: '推理中…完成',
+        status: 'done',
+        collapsed: true,
+      },
+      { kind: 'assistant', text: '你好，世界' },
+    ])
+  })
+
+  it('marks llm.thinking redacted without creating an assistant', () => {
+    const blocks = foldEvents('run_redact', [
+      ev('llm.thinking', { turn: 0, text: '', thinking_redacted: true }),
+      ev('llm.message', { content: '最终回答', thinking: '' }),
+    ])
+    expect(blocks).toEqual([
+      {
+        kind: 'thinking',
+        turn: 0,
+        text: '',
+        status: 'redacted',
+        collapsed: true,
+      },
+      { kind: 'assistant', text: '最终回答' },
+    ])
+  })
+
+  it('does not emit an extra assistant from thinking on llm.message', () => {
+    const blocks = foldEvents('run_msg', [
+      ev('llm.thinking.delta', { turn: 0, text: '内部思考' }),
+      ev('llm.thinking', { turn: 0, text: '内部思考', thinking_redacted: false }),
+      ev('llm.message', { content: '对外回答', thinking: '内部思考' }),
+    ])
+    expect(blocks.filter((b) => b.kind === 'assistant')).toEqual([
+      { kind: 'assistant', text: '对外回答' },
+    ])
+    expect(blocks.filter((b) => b.kind === 'thinking')).toHaveLength(1)
+  })
+
+  it('keeps per-turn thinking blocks before tool cards', () => {
+    const blocks = foldEvents('run_multi', [
+      ev('llm.thinking.delta', { turn: 0, text: 'T0' }),
+      ev('llm.thinking', { turn: 0, text: 'T0' }),
+      ev('llm.tool_call', { name: 'search', arguments: { q: 'x' } }),
+      ev('tool.result', { name: 'search', content: 'hit', is_error: false }),
+      ev('llm.thinking.delta', { turn: 1, text: 'T1' }),
+      ev('llm.content.delta', { turn: 1, text: '结论' }),
+    ])
+    expect(blocks.map((b) => b.kind)).toEqual([
+      'thinking',
+      'tool',
+      'thinking',
+      'assistant',
+    ])
+    expect(blocks[0]).toMatchObject({ kind: 'thinking', turn: 0, text: 'T0', status: 'done' })
+    expect(blocks[2]).toMatchObject({
+      kind: 'thinking',
+      turn: 1,
+      text: 'T1',
+      status: 'done',
+      collapsed: true,
+    })
+    expect(blocks[3]).toEqual({ kind: 'assistant', text: '结论' })
+  })
 })

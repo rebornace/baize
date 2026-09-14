@@ -1171,6 +1171,9 @@ export interface ChatMessage {
   content: string
   run_id?: string
   created_at: string
+  /** Persisted model thinking for this assistant turn (optional). */
+  thinking?: string
+  thinking_redacted?: boolean
 }
 
 export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
