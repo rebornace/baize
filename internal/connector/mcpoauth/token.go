@@ -56,9 +56,9 @@ func ExchangeCode(
 	tokenURL, clientID, clientSecret, code, redirectURI, verifier string,
 ) (TokenBundle, error) {
 	form := url.Values{
-		"grant_type":   {"authorization_code"},
-		"code":         {code},
-		"redirect_uri": {redirectURI},
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
 		"code_verifier": {verifier},
 	}
 	return requestToken(ctx, client, tokenURL, clientID, clientSecret, form)

@@ -293,4 +293,3 @@ func TestApplyHTTPMCPUnauthorizedAllowsEmptyCatalog(t *testing.T) {
 		t.Fatalf("connector should be persisted: %v", err)
 	}
 }
-
