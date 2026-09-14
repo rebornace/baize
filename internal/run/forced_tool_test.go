@@ -216,3 +216,49 @@ func TestExecuteForcedToolRedactsArgsInEvent(t *testing.T) {
 		t.Fatal("caller args must not be mutated")
 	}
 }
+
+// TestExecuteForcedToolIsErrorStillSucceeded: tool is_error must not fail the run;
+// ForcedTool settles StatusSucceeded and persists tool.result with is_error=true.
+func TestExecuteForcedToolIsErrorStillSucceeded(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	reg.Register("login", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"error": "bad credentials"}, true, nil
+	})
+
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "login", ConversationID: "conv-is-error",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AppendEvent(r.ID, store.Event{Type: EventRunStarted})
+
+	eng := &Engine{Store: st, LLM: &fatalLLM{t: t}, Tools: reg, Gate: NewGate()}
+	if err := eng.ExecuteForcedTool(context.Background(), r.ID, "login", map[string]any{"u": "a"}); err != nil {
+		t.Fatalf("ExecuteForcedTool: %v", err)
+	}
+
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s want succeeded (tool is_error must not fail the run)", got.Status)
+	}
+
+	evs, err := st.ListEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawResult bool
+	for _, ev := range evs {
+		if ev.Type != EventToolResult {
+			continue
+		}
+		sawResult = true
+		if ev.Data["is_error"] != true {
+			t.Fatalf("tool.result is_error=%v want true; data=%+v", ev.Data["is_error"], ev.Data)
+		}
+	}
+	if !sawResult {
+		t.Fatal("missing tool.result")
+	}
+}

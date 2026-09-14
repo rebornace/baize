@@ -830,8 +830,9 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 
 		invokeCtx := identity.WithToolCallID(ctx, callID)
 		toolCtx, cancel := context.WithTimeout(invokeCtx, e.toolTimeout())
-		c, _, ierr := e.Tools.Invoke(toolCtx, name, args)
+		c, toolIsErr, ierr := e.Tools.Invoke(toolCtx, name, args)
 		cancel()
+		isError = toolIsErr
 		if ierr != nil {
 			isError = true
 			if c == nil {
