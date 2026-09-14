@@ -35,7 +35,7 @@ async function settle() {
 }
 
 describe('SettingsHome', () => {
-  it('admin renders all 13 cards grouped under four group titles', async () => {
+  it('admin renders all 14 cards grouped under four group titles', async () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
       const u = String(url)
       if (u === '/v0/tools') return jsonResponse({ tools: [{ name: 't', connector_id: 'oa1', source: 'spec', enabled: true }] })
@@ -50,11 +50,11 @@ describe('SettingsHome', () => {
     })
     render('admin')
     await settle()
-    for (const name of ['模型', '助手功能', '技能', '业务系统', '外部工具服务', '插件', '对外提供能力', '微信', '消息回调', '外部来信', '账号', '存储', '运行参数']) {
+    for (const name of ['模型', '助手功能', '技能', '账号记忆', '业务系统', '外部工具服务', '插件', '对外提供能力', '微信', '消息回调', '外部来信', '账号', '存储', '运行参数']) {
       expect(host.textContent).toContain(name)
     }
     for (const g of ['助手', '连接', '消息', '系统']) expect(host.textContent).toContain(g)
-    expect(host.querySelectorAll('[data-testid="ui-card"]')).toHaveLength(13)
+    expect(host.querySelectorAll('[data-testid="ui-card"]')).toHaveLength(14)
   })
 
   it('admin with zero models shows the go-add CTA linking to models', async () => {
@@ -90,8 +90,8 @@ describe('SettingsHome', () => {
     await settle()
     const cards = Array.from(host.querySelectorAll('[data-testid="ui-card"]'))
     const buttons = cards.filter((c) => c.getAttribute('role') === 'button')
-    // 6 reachable cards: 模型/助手功能/技能/微信/账号/运行参数
-    expect(buttons).toHaveLength(6)
+    // 7 reachable cards: 模型/助手功能/技能/账号记忆/微信/账号/运行参数
+    expect(buttons).toHaveLength(7)
     const locked = cards.filter((c) => c.getAttribute('role') !== 'button')
     expect(locked.length).toBe(7)
     for (const c of locked) expect(c.getAttribute('tabindex')).toBeNull()

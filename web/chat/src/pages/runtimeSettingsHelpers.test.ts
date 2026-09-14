@@ -20,6 +20,8 @@ const baseKnobs: RuntimeKnobs = {
   compact_reserve_tokens: 8000,
   compact_keep_recent: 8,
   compact_summary_timeout_seconds: 60,
+  memory_enabled: true,
+  memory_auto_extract: true,
 }
 
 describe('knobsToForm', () => {
@@ -96,6 +98,18 @@ describe('buildKnobsPatch', () => {
   it('includes compaction toggle', () => {
     const form: KnobsForm = { ...knobsToForm(baseKnobs), compaction_enabled: false }
     expect(buildKnobsPatch(form, baseKnobs)).toEqual({ compaction_enabled: false })
+  })
+
+  it('includes memory toggles', () => {
+    const form: KnobsForm = {
+      ...knobsToForm(baseKnobs),
+      memory_enabled: false,
+      memory_auto_extract: false,
+    }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({
+      memory_enabled: false,
+      memory_auto_extract: false,
+    })
   })
 
   it('includes summary timeout change', () => {

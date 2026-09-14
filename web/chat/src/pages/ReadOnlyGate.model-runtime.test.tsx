@@ -66,6 +66,8 @@ describe('RuntimeSettings read-only for operator', () => {
             compact_reserve_tokens: 8000,
             compact_keep_recent: 8,
             compact_summary_timeout_seconds: 60,
+            memory_enabled: true,
+            memory_auto_extract: true,
           },
           overridden: {},
         })
