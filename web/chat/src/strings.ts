@@ -77,6 +77,9 @@ export const CHAT = {
   noModelConfigured: '暂未配置模型',
   // SSE 降级轮询提示
   reconnecting: '正在重新连接…',
+  // 本会话思考级别覆盖
+  thinkingChip: '思考级别',
+  thinkingDefault: '默认',
 } as const
 
 export interface FriendlyError {

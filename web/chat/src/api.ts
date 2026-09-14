@@ -399,6 +399,8 @@ export interface CreateRunOptions {
   skills?: string[]
   attachments?: Attachment[]
   modelProfileId?: string
+  /** Chat per-conversation override; omit to use the model profile default. */
+  thinkingLevel?: ThinkingLevel
 }
 
 export async function createRun(
@@ -425,6 +427,7 @@ export async function createRun(
     body.attachments = options.attachments
   }
   if (options?.modelProfileId) body.model_profile_id = options.modelProfileId
+  if (options?.thinkingLevel) body.thinking_level = options.thinkingLevel
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: authInit({ 'Content-Type': 'application/json' }),

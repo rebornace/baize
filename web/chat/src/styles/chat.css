@@ -1682,7 +1682,7 @@
   font-size: 0.75rem;
 }
 
-.composer-toolbar { display: inline-flex; align-items: center; flex: 0 0 auto; margin-right: var(--space-1); }
+.composer-toolbar { display: inline-flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; margin-right: var(--space-1); }
 .model-chip, .model-chip-inner { display: inline-flex; align-items: center; gap: 4px; }
 .model-chip-inner {
   font-size: 13px;

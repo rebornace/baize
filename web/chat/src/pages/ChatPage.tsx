@@ -27,6 +27,7 @@ import {
   type ModelProfile,
   type RunStatus,
   type SkillSummary,
+  type ThinkingLevel,
   type ToolInfo,
 } from '../api'
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
@@ -35,6 +36,7 @@ import { Composer } from '../components/Composer'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
+import { ThinkingChip } from '../components/ThinkingChip'
 import { ToolCard } from '../components/ToolCard'
 import { UserBubble } from '../components/UserBubble'
 import { WorkflowCard } from '../components/WorkflowCard'
@@ -61,6 +63,7 @@ import {
   type ToolOrWorkflowBlock,
 } from '../historyBlocks'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
+import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
 import { ACTIONS, CHAT, friendlyError, LOGIN_AT, WELCOME } from '../strings'
@@ -116,6 +119,8 @@ export function ChatPage() {
   // Persisted model choice (localStorage via modelChoice.ts); "" only until the
   // lazy initializer runs. Auto is the server-side smart router.
   const [selectedModelId, setSelectedModelId] = useState(loadModelChoice)
+  // Per-conversation thinking override (sessionStorage); '' = follow model default.
+  const [thinkingLevel, setThinkingLevel] = useState(() => loadThinkingChoice(conversationId))
   /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
   const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
   /** run_id → folded historical tool/workflow blocks (read-only replay). */
@@ -446,6 +451,12 @@ export function ChatPage() {
     }
   }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
 
+  // Sticky thinking override is keyed by conversationId; switching chats resets
+  // to that chat's stored choice (or '' = follow model default).
+  useEffect(() => {
+    setThinkingLevel(loadThinkingChoice(conversationId))
+  }, [conversationId])
+
   // Idle sync: weixin (and other external) inbound turns append messages / create
   // runs without this tab knowing. Poll while a conversation is open so /ui
   // picks them up without a manual refresh.
@@ -685,6 +696,7 @@ export function ChatPage() {
     try {
       const runOptions = buildRunOptions(selectedModelId, {
         attachments,
+        ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
       })
       const created = await createRun(agentId, text, sentConversationId, runOptions)
       // Model choice is persisted via onChooseModel; do not reset after send.
@@ -825,6 +837,11 @@ export function ChatPage() {
   const onChooseModel = (id: string) => {
     setSelectedModelId(id)
     saveModelChoice(id)
+  }
+
+  const onChooseThinking = (level: string) => {
+    setThinkingLevel(level)
+    saveThinkingChoice(conversationId, level)
   }
 
   // Copy with a legacy fallback for non-secure (HTTP/LAN) contexts without
@@ -1168,12 +1185,19 @@ export function ChatPage() {
             onSend={onSend}
             toolbar={
               modelProfiles.length > 0 ? (
-                <ModelChip
-                  profiles={modelProfiles}
-                  value={selectedModelId}
-                  onChange={onChooseModel}
-                  disabled={composerDisabled}
-                />
+                <>
+                  <ModelChip
+                    profiles={modelProfiles}
+                    value={selectedModelId}
+                    onChange={onChooseModel}
+                    disabled={composerDisabled}
+                  />
+                  <ThinkingChip
+                    value={thinkingLevel}
+                    onChange={onChooseThinking}
+                    disabled={composerDisabled}
+                  />
+                </>
               ) : role === 'admin' ? (
                 <Link to="/settings/models" className="model-chip model-chip-empty">
                   {CHAT.addModel}
