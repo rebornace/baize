@@ -26,6 +26,10 @@ type startRunInput struct {
 	// (![图片](…)/[file:…](…)) that must not reach the model or a mirrored
 	// channel peer. When empty, Input is persisted.
 	BubbleContent string
+	// ForcedToolName / ForcedToolArgs, when set, dispatch KindForcedTool
+	// instead of a normal LLM KindRun.
+	ForcedToolName string
+	ForcedToolArgs map[string]any
 }
 
 func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, error) {
@@ -77,14 +81,20 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
 	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
-	s.Dispatch(ctx, middleware.Job{
+	job := middleware.Job{
 		RunID:     runRec.ID,
 		Kind:      middleware.KindRun,
 		AgentID:   def.ID,
 		Input:     in.Input,
 		Skills:    runOpts.Skills,
 		UserParts: PartsToMiddleware(runOpts.UserParts),
-	})
+	}
+	if name := strings.TrimSpace(in.ForcedToolName); name != "" {
+		job.Kind = middleware.KindForcedTool
+		job.ToolName = name
+		job.ToolArgs = in.ForcedToolArgs
+	}
+	s.Dispatch(ctx, job)
 
 	return s.Store.GetRun(runRec.ID)
 }

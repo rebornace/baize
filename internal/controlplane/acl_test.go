@@ -25,6 +25,8 @@ func TestMinRoleTable(t *testing.T) {
 		{"POST", "/v0/conversations/c1/identities/i1/default", RoleOperator},
 		{"DELETE", "/v0/conversations/c1/identities/i1", RoleOperator},
 		{"DELETE", "/v0/conversations/c1/identities", RoleOperator},
+		{"GET", "/v0/conversations/c1/login-entries", RoleOperator},
+		{"POST", "/v0/conversations/c1/login-invoke", RoleOperator},
 		{"PUT", "/v0/agents/a1", RoleAdmin},
 		{"PUT", "/v0/connectors/c1", RoleAdmin},
 		{"GET", "/v0/connectors/c1", RoleAdmin},
