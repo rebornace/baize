@@ -43,6 +43,10 @@ export function Composer({
   useEffect(() => {
     if (draft !== undefined) {
       setText(draft)
+      // Spec §7.2: after「去登录」writes @login-<id>, focus the composer.
+      requestAnimationFrame(() => {
+        taRef.current?.focus()
+      })
     }
   }, [draft])
 

@@ -4,7 +4,7 @@ import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
-import { isLoginRequiredContent, resolveConnectorId } from '../loginEntry'
+import { isLoginRequiredContent, loginSkillID, resolveConnectorId } from '../loginEntry'
 import { HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
 import { Button } from './ui'
@@ -73,7 +73,9 @@ export function ToolCard({
       catalog.find((t) => t.name === block.name)?.connector_id,
     )
     if (!connectorId) return
-    onGoLoginSkill?.(`login-${connectorId}`)
+    const skillId = loginSkillID(connectorId)
+    if (!skillId) return
+    onGoLoginSkill?.(skillId)
   }
 
   const icon =

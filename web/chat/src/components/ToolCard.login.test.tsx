@@ -95,6 +95,25 @@ describe('ToolCard onGoLoginSkill', () => {
     expect(onGoLoginSkill).toHaveBeenCalledWith('login-crm')
   })
 
+  it('normalizes connector_id the same way as backend SkillID', () => {
+    const onGoLoginSkill = vi.fn()
+    render(
+      <ToolCard
+        block={tool()}
+        catalog={[{ name: 'order_query', title: '查询订单', connector_id: 'a/b' }]}
+        onGoLoginSkill={onGoLoginSkill}
+      />,
+    )
+    const btn = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === LOGIN_AT.goLogin,
+    )
+    expect(btn).toBeTruthy()
+    act(() => {
+      btn!.click()
+    })
+    expect(onGoLoginSkill).toHaveBeenCalledWith('login-ab')
+  })
+
   it('does not call onGoLoginSkill when connector_id is missing', () => {
     const onGoLoginSkill = vi.fn()
     render(

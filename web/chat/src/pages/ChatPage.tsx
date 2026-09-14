@@ -712,9 +712,17 @@ export function ChatPage() {
     return true
   }
 
-  /** login_required「去登录」→ 写入 @login-<id>，不自动发送。 */
-  const onGoLoginSkill = (skillId: string) => {
-    if (!skills.some((s) => s.id === skillId)) {
+  /** login_required「去登录」→ 刷新 skills 后写入 @login-<id>，聚焦输入框，不自动发送。 */
+  const onGoLoginSkill = async (skillId: string) => {
+    let list = skills
+    try {
+      const res = await listSkills()
+      list = res.skills ?? []
+      setSkills(list)
+    } catch {
+      /* keep cached skills; still validate below */
+    }
+    if (!list.some((s) => s.id === skillId)) {
       toast.push({ tone: 'error', title: LOGIN_AT.skillMissing })
       return
     }

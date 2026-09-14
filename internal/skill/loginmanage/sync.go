@@ -12,20 +12,18 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
-// SyncAll refreshes managed login skills for all openapi/http connectors.
+// SyncAll refreshes managed login skills for all connectors, then removes orphan
+// connector_login packages (connector missing or not openapi/http).
 func SyncAll(st store.Store, managedDir, userDir string) error {
 	if st == nil {
 		return nil
 	}
 	for _, c := range st.ListConnectors() {
-		if !isLoginSkillConnectorType(c.Type) {
-			continue
-		}
 		if err := SyncConnector(st, managedDir, userDir, c.ID); err != nil {
 			return err
 		}
 	}
-	return nil
+	return cleanupOrphanManagedLoginSkills(st, managedDir)
 }
 
 // SyncConnector writes, updates, or deletes the managed login skill for one connector.
@@ -39,18 +37,18 @@ func SyncConnector(st store.Store, managedDir, userDir, connectorID string) erro
 		return nil
 	}
 
-	tools, skip := selectToolsForSync(st, connectorID)
-	if skip {
-		return nil
-	}
+	tools := selectToolsForSync(st, connectorID)
 
 	pkgName := skillID
 	managedPkg := filepath.Join(managedDir, pkgName)
 	userPkg := filepath.Join(userDir, pkgName)
 
+	// Non-managed conflict: do not overwrite user (or non-managed) package.
+	// Delete residual managed connector_login so Catalog managed-over-user
+	// load order cannot shadow the user fork.
 	if conflictNonManaged(userPkg) || conflictNonManaged(managedPkg) {
 		log.Printf("loginmanage: skip %s: non-managed package occupies skill id", skillID)
-		return nil
+		return deleteManagedPackage(managedPkg)
 	}
 
 	if len(tools) == 0 {
@@ -64,16 +62,18 @@ func SyncConnector(st store.Store, managedDir, userDir, connectorID string) erro
 	return writeManagedPackage(managedPkg, content)
 }
 
-func selectToolsForSync(st store.Store, connectorID string) (tools []string, skip bool) {
+// selectToolsForSync returns login tools for openapi/http connectors.
+// Missing connectors and non-target types yield an empty slice so callers delete
+// any existing managed connector_login package.
+func selectToolsForSync(st store.Store, connectorID string) []string {
 	c, err := st.GetConnector(connectorID)
 	if err != nil {
-		// Connector gone: treat as empty tools so managed package can be removed.
-		return nil, false
+		return nil
 	}
 	if !isLoginSkillConnectorType(c.Type) {
-		return nil, true
+		return nil
 	}
-	return SelectTools(st, connectorID), false
+	return SelectTools(st, connectorID)
 }
 
 func isLoginSkillConnectorType(typ string) bool {
@@ -83,6 +83,46 @@ func isLoginSkillConnectorType(typ string) bool {
 	default:
 		return false
 	}
+}
+
+func cleanupOrphanManagedLoginSkills(st store.Store, managedDir string) error {
+	entries, err := os.ReadDir(managedDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pkgDir := filepath.Join(managedDir, e.Name())
+		raw, err := os.ReadFile(filepath.Join(pkgDir, "SKILL.md"))
+		if err != nil {
+			continue
+		}
+		fm, ok := parseManagedFrontmatter(raw)
+		if !ok || !fm.Managed || fm.ManagedKind != managedKindConnectorLogin {
+			continue
+		}
+		connectorID := strings.TrimSpace(fm.ManagedConnectorID)
+		keep := false
+		if connectorID != "" {
+			if c, err := st.GetConnector(connectorID); err == nil && isLoginSkillConnectorType(c.Type) {
+				if SkillID(connectorID) == e.Name() {
+					keep = true
+				}
+			}
+		}
+		if keep {
+			continue
+		}
+		if err := deleteManagedPackage(pkgDir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func conflictNonManaged(pkgDir string) bool {

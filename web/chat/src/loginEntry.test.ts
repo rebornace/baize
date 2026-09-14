@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isLoginRequiredContent, resolveConnectorId } from './loginEntry'
+import {
+  isLoginRequiredContent,
+  loginSkillID,
+  normalizeConnectorID,
+  resolveConnectorId,
+} from './loginEntry'
 
 describe('isLoginRequiredContent', () => {
   it('detects login_required code on tool result content', () => {
@@ -20,5 +25,18 @@ describe('resolveConnectorId', () => {
     expect(resolveConnectorId('   ')).toBeUndefined()
     expect(resolveConnectorId(undefined)).toBeUndefined()
     expect(resolveConnectorId(null)).toBeUndefined()
+  })
+})
+
+describe('normalizeConnectorID / loginSkillID', () => {
+  it('matches backend [a-zA-Z0-9_-] normalization', () => {
+    expect(normalizeConnectorID('crm')).toBe('crm')
+    expect(normalizeConnectorID('a/b')).toBe('ab')
+    expect(normalizeConnectorID('my.conn_1-x')).toBe('myconn_1-x')
+    expect(normalizeConnectorID('///')).toBe('')
+    expect(loginSkillID('crm')).toBe('login-crm')
+    expect(loginSkillID('a/b')).toBe('login-ab')
+    expect(loginSkillID('///')).toBeUndefined()
+    expect(loginSkillID('  a/b  ')).toBe('login-ab')
   })
 })
