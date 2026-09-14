@@ -224,6 +224,8 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 		ModelProfileID:     in.ModelProfileID,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
+		ForcedToolName:     in.ForcedToolName,
+		ForcedToolArgs:     cloneAnyMap(in.ForcedToolArgs),
 	}
 	s.runs[id] = r
 	s.events[id] = nil
@@ -240,6 +242,7 @@ func (s *Memory) GetRun(id string) (*Run, error) {
 	cp := *r
 	cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
 	cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+	cp.ForcedToolArgs = cloneAnyMap(r.ForcedToolArgs)
 	if until, held := s.leaseUntil[id]; held {
 		lease := until
 		cp.LeaseUntil = &lease
@@ -281,6 +284,19 @@ func cloneWebhookConfig(w *WebhookConfig) *WebhookConfig {
 		for k, v := range w.Headers {
 			cp.Headers[k] = v
 		}
+	}
+	return cp
+}
+
+// cloneAnyMap returns a shallow copy of m so callers cannot mutate stored
+// state through the input map. Returns nil for nil input.
+func cloneAnyMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]any, len(m))
+	for k, v := range m {
+		cp[k] = v
 	}
 	return cp
 }
@@ -371,6 +387,7 @@ func (s *Memory) ListRunsForReconcile(limit int) ([]*Run, error) {
 			cp := *r
 			cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
 			cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+			cp.ForcedToolArgs = cloneAnyMap(r.ForcedToolArgs)
 			if held {
 				lease := until
 				cp.LeaseUntil = &lease

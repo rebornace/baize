@@ -28,6 +28,67 @@ func (s *reconcileStore) ListRunsForReconcile(limit int) ([]*store.Run, error) {
 	return out, nil
 }
 
+func TestReconcileEnqueuesForcedToolWithArgs(t *testing.T) {
+	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{WorkerConcurrency: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mw.Close()
+
+	var mu sync.Mutex
+	var got middleware.Job
+	var saw bool
+	ex := executorFunc(func(_ context.Context, j middleware.Job) error {
+		mu.Lock()
+		got = j
+		saw = true
+		mu.Unlock()
+		return nil
+	})
+	stop := mw.StartWorkers(context.Background(), ex)
+	defer stop()
+
+	rs := &reconcileStore{runs: []*store.Run{
+		{
+			ID:             "run_forced",
+			AgentID:        "a",
+			Input:          "已发起登录 · login",
+			Status:         store.StatusRunning,
+			ForcedToolName: "login",
+			ForcedToolArgs: map[string]any{"password": "s3cret", "email": "a@x.com"},
+		},
+	}}
+	mw.Reconcile(context.Background(), rs)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		ok := saw
+		mu.Unlock()
+		if ok {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !saw {
+		t.Fatal("forced orphan was not re-enqueued")
+	}
+	if got.Kind != middleware.KindForcedTool {
+		t.Fatalf("kind=%q want %q", got.Kind, middleware.KindForcedTool)
+	}
+	if got.ToolName != "login" {
+		t.Fatalf("tool_name=%q", got.ToolName)
+	}
+	if got.ToolArgs["password"] != "s3cret" || got.ToolArgs["email"] != "a@x.com" {
+		t.Fatalf("tool_args=%v", got.ToolArgs)
+	}
+	if got.RunID != "run_forced" {
+		t.Fatalf("run_id=%q", got.RunID)
+	}
+}
+
 func TestReconcileEnqueuesOrphans(t *testing.T) {
 	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{WorkerConcurrency: 1})
 	if err != nil {

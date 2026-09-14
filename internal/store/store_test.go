@@ -120,6 +120,35 @@ func TestGetHITLMissingRun(t *testing.T) {
 	}
 }
 
+func TestCreateRunPersistsForcedTool(t *testing.T) {
+	s := store.NewMemory()
+	args := map[string]any{"password": "s3cret"}
+	r, err := s.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "login",
+		ForcedToolName: "login",
+		ForcedToolArgs: args,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ForcedToolName != "login" {
+		t.Fatalf("name=%q", got.ForcedToolName)
+	}
+	if got.ForcedToolArgs["password"] != "s3cret" {
+		t.Fatalf("args=%v", got.ForcedToolArgs)
+	}
+	// Mutating the caller's map must not affect stored state.
+	args["password"] = "mutated"
+	got2, _ := s.GetRun(r.ID)
+	if got2.ForcedToolArgs["password"] != "s3cret" {
+		t.Fatalf("stored args mutated: %v", got2.ForcedToolArgs)
+	}
+}
+
 func TestCreateRunPersistsPassthroughHeaders(t *testing.T) {
 	s := store.NewMemory()
 	r, err := s.CreateRun(store.CreateRunInput{

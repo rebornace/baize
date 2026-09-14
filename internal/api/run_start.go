@@ -51,6 +51,8 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		PassthroughHeaders: in.Passthrough,
 		WebhookConfig:      in.Webhook,
 		ModelProfileID:     in.ModelProfileID,
+		ForcedToolName:     in.ForcedToolName,
+		ForcedToolArgs:     in.ForcedToolArgs,
 	}
 
 	runRec, err := s.Store.CreateRun(createIn)

@@ -190,7 +190,7 @@ func (s *SQLStore) queryRow(query string, args ...any) *sql.Row {
 
 // runSelectColumns is the canonical runs column order scanned by scanRunRow;
 // GetRun and ListRunsForReconcile must select exactly these columns in order.
-const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until`
+const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until, forced_tool_name, forced_tool_args_json`
 
 // sqliteTimeLayout is a fixed-width (9 fractional digits) RFC3339 layout. SQLite
 // compares TEXT timestamps byte-wise, so variable-length fractions (RFC3339Nano
@@ -219,10 +219,12 @@ func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	var r Run
 	var status, createdAt string
 	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID sql.NullString
+	var forcedName, forcedArgsSQL sql.NullString
 	var leaseUntil sql.NullTime
 	if err := sc.Scan(
 		&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt,
 		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil,
+		&forcedName, &forcedArgsSQL,
 	); err != nil {
 		return nil, err
 	}
@@ -247,6 +249,14 @@ func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 			return nil, fmt.Errorf("parse webhook_json: %w", err)
 		}
 		r.WebhookConfig = &wc
+	}
+	if forcedName.Valid {
+		r.ForcedToolName = forcedName.String
+	}
+	if forcedArgsSQL.Valid && forcedArgsSQL.String != "" && forcedArgsSQL.String != "null" {
+		if err := json.Unmarshal([]byte(forcedArgsSQL.String), &r.ForcedToolArgs); err != nil {
+			return nil, fmt.Errorf("parse forced_tool_args_json: %w", err)
+		}
 	}
 	ts, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
@@ -432,7 +442,7 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
 // existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id", "forced_tool_name", "forced_tool_args_json"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
@@ -807,8 +817,10 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		ModelProfileID:     in.ModelProfileID,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
+		ForcedToolName:     in.ForcedToolName,
+		ForcedToolArgs:     cloneAnyMap(in.ForcedToolArgs),
 	}
-	var passthroughSQL, webhookSQL sql.NullString
+	var passthroughSQL, webhookSQL, forcedArgsSQL sql.NullString
 	if len(r.PassthroughHeaders) > 0 {
 		b, err := json.Marshal(r.PassthroughHeaders)
 		if err != nil {
@@ -823,11 +835,19 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		}
 		webhookSQL = sql.NullString{String: string(b), Valid: true}
 	}
+	if len(r.ForcedToolArgs) > 0 {
+		b, err := json.Marshal(r.ForcedToolArgs)
+		if err != nil {
+			return nil, err
+		}
+		forcedArgsSQL = sql.NullString{String: string(b), Valid: true}
+	}
 	_, err := s.exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, forced_tool_name, forced_tool_args_json)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), formatSQLiteTime(r.CreatedAt),
 		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID,
+		r.ForcedToolName, forcedArgsSQL,
 	)
 	if err != nil {
 		return nil, err

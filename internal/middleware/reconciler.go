@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,11 @@ func (mw *Middleware) Reconcile(ctx context.Context, rs ReconcileStore) {
 			AgentID:    r.AgentID,
 			Input:      r.Input,
 			EnqueuedAt: time.Now().UTC(),
+		}
+		if name := strings.TrimSpace(r.ForcedToolName); name != "" {
+			job.Kind = KindForcedTool
+			job.ToolName = name
+			job.ToolArgs = r.ForcedToolArgs
 		}
 		// 用调和循环自己的 ctx：关停时不再入队，避免向已关闭/关停中的队列投递。
 		if err := mw.Queue.Enqueue(ctx, job); err != nil {

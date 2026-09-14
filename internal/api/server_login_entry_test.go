@@ -88,6 +88,19 @@ func TestLoginEntriesAndInvoke(t *testing.T) {
 		t.Fatalf("entry=%v", entry)
 	}
 
+	// Ensure login tool has required args so ValidateArgs can be exercised.
+	loginTool, err := st.GetTool("login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := loginTool.InputSchema
+	if schema == nil {
+		schema = map[string]any{"type": "object"}
+	}
+	schema["required"] = []any{"email", "password"}
+	loginTool.InputSchema = schema
+	st.UpsertTool(loginTool)
+
 	// GET ?connector_id=other → entries:[]
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/login-entries?connector_id=other", nil))
@@ -114,6 +127,19 @@ func TestLoginEntriesAndInvoke(t *testing.T) {
 		})))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("missing agent_id status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// POST login-invoke missing required args → 400
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v0/conversations/c1/login-invoke",
+		jsonBody(t, map[string]any{
+			"agent_id":     "default-agent",
+			"connector_id": "auth",
+			"tool_name":    "login",
+			"arguments":    map[string]any{"email": "a@x.com"},
+		})))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("ValidateArgs status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
 	// POST valid → 200 {run_id}; poll events have tool.result; GET identities have login_capture

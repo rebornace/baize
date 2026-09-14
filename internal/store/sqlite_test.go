@@ -155,6 +155,59 @@ func TestSQLitePersistenceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSQLiteCreateRunPersistsForcedTool(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "baize.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	r, err := s.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "login",
+		ForcedToolName: "login",
+		ForcedToolArgs: map[string]any{"password": "s3cret", "email": "a@x.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ForcedToolName != "login" {
+		t.Fatalf("name=%q", got.ForcedToolName)
+	}
+	if got.ForcedToolArgs["password"] != "s3cret" || got.ForcedToolArgs["email"] != "a@x.com" {
+		t.Fatalf("args=%v", got.ForcedToolArgs)
+	}
+
+	// Re-open to prove columns survive on disk.
+	if c, ok := s.(io.Closer); ok {
+		_ = c.Close()
+	}
+	s2, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s2.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	got2, err := s2.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.ForcedToolName != "login" || got2.ForcedToolArgs["password"] != "s3cret" {
+		t.Fatalf("after reopen: name=%q args=%v", got2.ForcedToolName, got2.ForcedToolArgs)
+	}
+}
+
 func TestSQLiteCreateRunPersistsPassthroughHeaders(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baize.db")
 	s, err := store.Open("sqlite", path)
