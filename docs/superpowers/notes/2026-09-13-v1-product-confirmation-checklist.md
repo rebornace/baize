@@ -50,7 +50,7 @@
 | **CH-PORT** | 动态端口 | **已交付** | 规格 [`specs/2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`plans/2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md) |
 | **CH-OUTBOX** | 渠道 outbox | **已交付** | [`specs/2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`plans/2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md) |
 | **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | 连接器自动登录 Skill / login_required「去登录」 | **已交付（待合入）** | 规格 [`specs/2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`plans/2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；分支 `feat/login-skill`；UI-LOGIN-AT 直达（login-entries / login-invoke / 登录专用区）已拆除 |
-| **LLM-THINK** | 思考级别开关 | 可开刀（先规格） | 独立 |
+| **LLM-THINK** | 思考级别开关 | **范围已确认** | [`specs/2026-09-14-llm-think-design.md`](../specs/2026-09-14-llm-think-design.md)；级别 + 方言 + 真流式展示；**不合并** |
 | **BLOB-CS** | Connector / Skill blob 化 | 可开刀（先规格） | 独立 |
 | **UI-MCP-OAUTH** | MCP OAuth 2.1 | **已交付** | 规格 [`specs/2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；计划 [`plans/2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md) |
 | **P6** | Memory 产品化 | **范围已确认** | [`specs/2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)；控制面账号级事实+本地检索；**不合并** |
