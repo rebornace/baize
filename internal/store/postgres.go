@@ -133,6 +133,8 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   api_key TEXT,
   api_key_env TEXT,
   disable_thinking BOOLEAN,
+  thinking_level TEXT NOT NULL DEFAULT 'medium',
+  thinking_dialect TEXT NOT NULL DEFAULT 'auto',
   supports_vision BOOLEAN,
   context_tokens INTEGER NOT NULL DEFAULT 128000,
   auto_tier TEXT NOT NULL DEFAULT 'standard',
@@ -218,6 +220,19 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS auto_tier TEXT NOT NULL DEFAULT 'standard'`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles auto_tier: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS thinking_level TEXT NOT NULL DEFAULT 'medium'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles thinking_level: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS thinking_dialect TEXT NOT NULL DEFAULT 'auto'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles thinking_dialect: %w", err)
+	}
+	// Backfill: legacy disable_thinking=true → off; ALTER DEFAULT already set medium/auto.
+	if _, err := db.Exec(`UPDATE model_profiles SET thinking_level='off' WHERE disable_thinking=true`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("backfill model_profiles thinking_level: %w", err)
 	}
 	if err := migrateToolsColumns(db); err != nil {
 		_ = db.Close()

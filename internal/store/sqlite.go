@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   api_key TEXT,
   api_key_env TEXT,
   disable_thinking INTEGER,
+  thinking_level TEXT NOT NULL DEFAULT 'medium',
+  thinking_dialect TEXT NOT NULL DEFAULT 'auto',
   supports_vision INTEGER,
   context_tokens INTEGER NOT NULL DEFAULT 128000,
   auto_tier TEXT NOT NULL DEFAULT 'standard',
@@ -481,6 +483,16 @@ func migrateModelProfilesColumns(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN auto_tier TEXT NOT NULL DEFAULT 'standard'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN thinking_level TEXT NOT NULL DEFAULT 'medium'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN thinking_dialect TEXT NOT NULL DEFAULT 'auto'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	// Backfill: legacy disable_thinking=1 → off; ALTER DEFAULT already set medium/auto.
+	if _, err := db.Exec(`UPDATE model_profiles SET thinking_level='off' WHERE disable_thinking=1`); err != nil {
 		return err
 	}
 	return nil

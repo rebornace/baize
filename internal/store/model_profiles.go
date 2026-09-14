@@ -62,6 +62,7 @@ func openModelProfileAPIKey(p *ModelProfile) error {
 }
 
 func (s *Memory) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
+	SyncProfileThinking(&p)
 	if strings.TrimSpace(p.Name) == "" {
 		return ModelProfile{}, fmt.Errorf("model profile name is required")
 	}
