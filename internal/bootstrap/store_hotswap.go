@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
@@ -148,6 +149,11 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 		_ = newCloser.Close()
 		return fmt.Errorf("open conversation/identity: %w", err)
 	}
+	mem, err := openMemory(newRaw, cfgSnap)
+	if err != nil {
+		_ = newCloser.Close()
+		return fmt.Errorf("open memory: %w", err)
+	}
 
 	newRaw.UpsertAgent(store.Agent{
 		ID:     cfgSnap.Agent.ID,
@@ -178,12 +184,19 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	rt.srv.Store = wrapped
 	rt.srv.Messages = messages
 	rt.srv.Identities = identities
+	rt.srv.Memory = mem
 
 	rt.engine.Store = wrapped
 	rt.engine.Messages = messages
 	rt.engine.Identities = identities
+	rt.engine.Memory = mem
 	if meta, ok := messages.(conversation.MetaStore); ok {
 		rt.engine.Meta = meta
+		for _, tm := range memory.Tools(mem, meta) {
+			rt.reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+		}
+	} else {
+		rt.engine.Meta = nil
 	}
 
 	if rt.compactor != nil {
@@ -315,6 +328,8 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 			CompactReserveTokens:  cfg.Conversation.CompactReserveOutput,
 			CompactKeepRecent:     cfg.Conversation.CompactRecentMessages,
 			CompactSummaryTimeout: 60 * time.Second,
+			MemoryEnabled:         true,
+			MemoryAutoExtract:     true,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: op,

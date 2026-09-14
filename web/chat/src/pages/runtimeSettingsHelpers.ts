@@ -11,11 +11,13 @@ export interface KnobsForm {
   compact_reserve_tokens: string
   compact_keep_recent: string
   compact_summary_timeout_seconds: string
+  memory_enabled: boolean
+  memory_auto_extract: boolean
 }
 
 /** Field metadata for rendering + validation. */
 export interface KnobFieldSpec {
-  key: keyof Omit<KnobsForm, 'compaction_enabled'>
+  key: keyof Omit<KnobsForm, 'compaction_enabled' | 'memory_enabled' | 'memory_auto_extract'>
   label: string
   hint: string
   min: number
@@ -102,6 +104,8 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     compact_reserve_tokens: String(k.compact_reserve_tokens),
     compact_keep_recent: String(k.compact_keep_recent),
     compact_summary_timeout_seconds: String(k.compact_summary_timeout_seconds),
+    memory_enabled: k.memory_enabled,
+    memory_auto_extract: k.memory_auto_extract,
   }
 }
 
@@ -140,6 +144,12 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   }
   if (form.compaction_enabled !== effective.compaction_enabled) {
     patch.compaction_enabled = form.compaction_enabled
+  }
+  if (form.memory_enabled !== effective.memory_enabled) {
+    patch.memory_enabled = form.memory_enabled
+  }
+  if (form.memory_auto_extract !== effective.memory_auto_extract) {
+    patch.memory_auto_extract = form.memory_auto_extract
   }
   const threshold = Number(form.compact_threshold)
   if (Number.isFinite(threshold) && threshold !== effective.compact_threshold) {

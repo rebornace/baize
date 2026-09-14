@@ -16,6 +16,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
@@ -80,6 +81,8 @@ type Engine struct {
 	// Meta is optional. When set with Outbound, succeeded assistant replies
 	// for weixin conversations are delivered to the channel peer.
 	Meta conversation.MetaStore
+	// Memory is optional account-scoped fact store (P6). nil disables memory.
+	Memory memory.Store
 	// Outbound is optional channel used for UI→peer sync after a succeeded run.
 	Outbound channel.Channel
 	// OutboundExtras optionally supplies per-conversation extras (e.g. context_token).
@@ -240,15 +243,15 @@ func (e *Engine) toolTimeout() time.Duration {
 	return DefaultToolTimeout
 }
 
-// buildMessages assembles the LLM prompt: system + (when a rolling summary
-// exists) a summary system message + verbatim conversation history + current
-// user input. When a summary exists, the verbatim history starts AFTER the
-// summary cursor (CoversThroughOrder): folded messages are delivered only via
-// the summary and must never be repeated verbatim. Without a summary the hard
-// sliding window (ListWindow) is used unchanged. When the most recent history
-// entry is already a user message with the same content as input (the API
-// appends the user message before calling Execute), the current input is not
-// appended again to avoid a duplicate turn.
+// buildMessages assembles the LLM prompt: system + optional account-memory
+// block + (when a rolling summary exists) a summary system message + verbatim
+// conversation history + current user input. When a summary exists, the
+// verbatim history starts AFTER the summary cursor (CoversThroughOrder): folded
+// messages are delivered only via the summary and must never be repeated
+// verbatim. Without a summary the hard sliding window (ListWindow) is used
+// unchanged. When the most recent history entry is already a user message with
+// the same content as input (the API appends the user message before calling
+// Execute), the current input is not appended again to avoid a duplicate turn.
 //
 // When userParts is non-empty, the trailing persisted user message (which carries
 // only the display text, without attachment content or image bytes) is replaced
@@ -257,6 +260,9 @@ func (e *Engine) toolTimeout() time.Duration {
 // are never persisted to SQLite.
 func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
+	if block := e.memoryBlock(e.memoryOwner(conversationID), input); block != "" {
+		messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: block})
+	}
 	if e.Messages != nil && conversationID != "" {
 		hist := e.Messages.ListWindow(conversationID, e.effectiveMaxMessages())
 		var sum conversation.RollingSummary
@@ -708,6 +714,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			return err
 		}
 		e.recordTerminalMessage(runID)
+		e.triggerMemoryExtract(ctx, runID, msg.Content)
 		return nil
 	}
 
@@ -817,7 +824,17 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 		return err
 	}
 	e.recordTerminalMessage(runID)
+	e.triggerMemoryExtract(ctx, runID, content)
 	return nil
+}
+
+func (e *Engine) triggerMemoryExtract(ctx context.Context, runID, output string) {
+	runRec, err := e.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		return
+	}
+	owner := e.memoryOwner(runRec.ConversationID)
+	e.maybeExtractMemory(ctx, runID, owner, runRec.Input, output)
 }
 
 func (e *Engine) finalizeFailedRun(runID string, cause error) error {

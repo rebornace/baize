@@ -17,6 +17,8 @@ const baseKnobs: RuntimeKnobs = {
   compact_reserve_tokens: 8000,
   compact_keep_recent: 8,
   compact_summary_timeout_seconds: 60,
+  memory_enabled: true,
+  memory_auto_extract: true,
 }
 
 const overridden = Object.fromEntries(
@@ -103,6 +105,9 @@ describe('RuntimeSettings humanize shell', () => {
     expect(host.textContent).toContain(RUNTIME.sectionPublicBase)
     expect(host.textContent).toContain(RUNTIME.sectionBehavior)
     expect(host.textContent).toContain(RUNTIME.sectionCompact)
+    expect(host.textContent).toContain(RUNTIME.sectionMemory)
+    expect(host.textContent).toContain(RUNTIME.memoryEnabled)
+    expect(host.textContent).toContain(RUNTIME.memoryAutoExtract)
     expect(host.textContent).toContain(RUNTIME.sectionCreds)
     // 高级区内字段默认不可见：details 未 open，或不在 DOM 可见区
     const details = host.querySelector('details')

@@ -26,6 +26,7 @@ func baseSnapshot() Snapshot {
 			MaxMessages: 40, MaxSteps: 16,
 			ToolTimeout: 60 * time.Second, CompactionEnabled: true,
 			CompactThreshold: 0.8, CompactReserveTokens: 8000, CompactKeepRecent: 8,
+			MemoryEnabled: true, MemoryAutoExtract: true,
 		},
 		Creds: Credentials{
 			OperatorToken: "base-op", AdminToken: "base-adm",
@@ -42,6 +43,9 @@ func TestNewHolderExposesBaseline(t *testing.T) {
 	}
 	if !k.CompactionEnabled {
 		t.Fatal("compaction should default to enabled from baseline")
+	}
+	if !k.MemoryEnabled || !k.MemoryAutoExtract {
+		t.Fatalf("memory knobs should default to enabled from baseline: %+v", k)
 	}
 	c := h.Credentials()
 	if c.OperatorToken != "base-op" || c.AdminToken != "base-adm" || len(c.Operators) != 1 {
@@ -140,6 +144,7 @@ func TestApplyKnobsPatchValidates(t *testing.T) {
 		{"valid steps", KnobsPatch{MaxSteps: ptr(32)}, true},
 		{"valid threshold", KnobsPatch{CompactThreshold: ptr(0.7)}, true},
 		{"compaction off", KnobsPatch{CompactionEnabled: ptr(false)}, true},
+		{"memory off", KnobsPatch{MemoryEnabled: ptr(false), MemoryAutoExtract: ptr(false)}, true},
 		{"empty patch", KnobsPatch{}, true},
 	}
 	for _, tc := range cases {
@@ -174,6 +179,42 @@ func TestApplyKnobsPatchOverlaysAndReports(t *testing.T) {
 	ov := h.KnobsOverride()
 	if ov.MaxSteps == nil || *ov.MaxSteps != 32 || ov.CompactionEnabled == nil || *ov.CompactionEnabled {
 		t.Fatalf("override state wrong: %+v", ov)
+	}
+}
+
+func TestApplyKnobsMemorySwitchesPersistRoundtrip(t *testing.T) {
+	st := store.NewMemory()
+	h := New(baseSnapshot())
+	ctx := context.Background()
+	off := false
+	if err := h.ApplyKnobs(ctx, st, KnobsPatch{
+		MemoryEnabled: &off, MemoryAutoExtract: &off,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	k := h.Knobs()
+	if k.MemoryEnabled || k.MemoryAutoExtract {
+		t.Fatalf("memory switches not applied: %+v", k)
+	}
+	view := h.KnobsView()
+	if !view.Overridden.MemoryEnabled || !view.Overridden.MemoryAutoExtract {
+		t.Fatalf("override flags wrong: %+v", view.Overridden)
+	}
+
+	h2 := New(baseSnapshot())
+	if err := h2.Load(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	k2 := h2.Knobs()
+	if k2.MemoryEnabled || k2.MemoryAutoExtract {
+		t.Fatalf("memory switches must survive reload: %+v", k2)
+	}
+	if !h2.KnobsView().Overridden.MemoryEnabled || !h2.KnobsView().Overridden.MemoryAutoExtract {
+		t.Fatalf("override flags must survive reload: %+v", h2.KnobsView().Overridden)
+	}
+	// Unset fields keep baseline (compaction still on).
+	if !k2.CompactionEnabled || k2.MaxSteps != 16 {
+		t.Fatalf("unrelated knobs must keep baseline: %+v", k2)
 	}
 }
 

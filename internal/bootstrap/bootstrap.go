@@ -41,6 +41,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/middleware"
 	// 内置默认 middleware 驱动（memory）随 bootstrap 一起注册：它是零配置
 	// 默认驱动，且 bootstrap 包自身的测试/StartForTest 集成测试不经 main。
@@ -325,6 +326,18 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("open conversation/identity stores: %w", err)
 	}
+	mem, err := openMemory(st, cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open memory store: %w", err)
+	}
+	var metaStore conversation.MetaStore
+	if m, ok := messages.(conversation.MetaStore); ok {
+		metaStore = m
+	}
+	for _, tm := range memory.Tools(mem, metaStore) {
+		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+	}
 
 	if err := registerConnector(st, reg, cfg, identities, callbackCfg); err != nil {
 		_ = closer.Close()
@@ -407,6 +420,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		Compactor:   compactor,
 		Identities:  identities,
 		Skills:      skillCat,
+		Memory:      mem,
+	}
+	if meta, ok := messages.(conversation.MetaStore); ok {
+		engine.Meta = meta
 	}
 	srv := api.NewServer(st, reg, engine)
 	cfgCopy := cfg
@@ -420,6 +437,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages
+	srv.Memory = mem
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
 	srv.CallbackSecret = callbackSecret
@@ -1064,6 +1082,24 @@ func openConversationAndIdentities(st store.Store, cfg config.Config) (conversat
 		return nil, nil, err
 	}
 	return msgs, identities, nil
+}
+
+// openMemory opens the account-memory Store using the same persistence driver
+// as the primary store. sqlite/postgres share the SQL DB (CREATE IF NOT EXISTS
+// so hot-swap onto the same file/DSN keeps existing tables).
+func openMemory(st store.Store, cfg config.Config) (memory.Store, error) {
+	driver := strings.ToLower(cfg.Store.Driver)
+	if driver == "" {
+		driver = "memory"
+	}
+	if driver == "memory" {
+		return memory.NewMemoryStore(), nil
+	}
+	sqlBackend, ok := st.(store.SQLBackend)
+	if !ok {
+		return memory.NewMemoryStore(), nil
+	}
+	return memory.Open(driver, sqlBackend.DB())
 }
 
 type nopCloser struct{}

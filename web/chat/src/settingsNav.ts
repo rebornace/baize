@@ -1,5 +1,6 @@
 import {
   Boxes,
+  Brain,
   Cpu,
   Database,
   Inbox,
@@ -64,6 +65,10 @@ const ITEMS: SettingsNavItem[] = [
     badge: 'skills',
     desc: '可复用的操作流程，对话里输入 @ 或 / 即可调用',
   },
+  {
+    to: '/settings/memory', label: '账号记忆', group: 'assistant', icon: Brain, operator: 'full',
+    desc: '查看与管理本账号跨会话记住的事实；仅本人可见，运行开关在「运行参数」',
+  },
   // 连接
   {
     to: '/settings/openapi', label: '业务系统', group: 'connect', icon: Network, operator: 'locked',
@@ -118,7 +123,7 @@ const ITEMS: SettingsNavItem[] = [
   },
 ]
 
-/** Full catalog; admin sees all 13, operator items carry their access level. */
+/** Full catalog; admin sees all 14, operator items carry their access level. */
 export function settingsNavItems(_role: SettingsRole): SettingsNavItem[] {
   return ITEMS
 }

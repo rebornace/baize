@@ -17,6 +17,8 @@ type runtimeKnobsJSON struct {
 	CompactReserveTokens         int     `json:"compact_reserve_tokens"`
 	CompactKeepRecent            int     `json:"compact_keep_recent"`
 	CompactSummaryTimeoutSeconds int     `json:"compact_summary_timeout_seconds"`
+	MemoryEnabled                bool    `json:"memory_enabled"`
+	MemoryAutoExtract            bool    `json:"memory_auto_extract"`
 }
 
 func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
@@ -29,6 +31,8 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		CompactReserveTokens:         k.CompactReserveTokens,
 		CompactKeepRecent:            k.CompactKeepRecent,
 		CompactSummaryTimeoutSeconds: int(k.CompactSummaryTimeout.Seconds()),
+		MemoryEnabled:                k.MemoryEnabled,
+		MemoryAutoExtract:            k.MemoryAutoExtract,
 	}
 }
 

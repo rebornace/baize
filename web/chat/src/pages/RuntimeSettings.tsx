@@ -460,6 +460,34 @@ export function RuntimeSettings() {
             ))}
           </details>
 
+          <h2 className="settings-subheading">{RUNTIME.sectionMemory}</h2>
+          <p className="settings-muted">{RUNTIME.memoryEnabledHint}</p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.memory_enabled}
+              onChange={(e) => setField('memory_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.memoryEnabled}
+            {knobView.overridden.memory_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.memory_auto_extract}
+              onChange={(e) => setField('memory_auto_extract', e.target.checked)}
+              disabled={busy || readOnly || !form.memory_enabled}
+            />
+            {RUNTIME.memoryAutoExtract}
+            {knobView.overridden.memory_auto_extract && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.memoryAutoExtractHint}</p>
+
           {!readOnly && (
             <Button type="submit" variant="primary" disabled={busy}>
               {busy ? RUNTIME.saving : RUNTIME.saveKnobs}

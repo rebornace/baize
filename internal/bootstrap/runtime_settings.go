@@ -34,6 +34,9 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			// Not exposed in config; mirrors run.defaultCompactSummaryWait. Kept
 			// non-zero so GET reports the real effective default (60s).
 			CompactSummaryTimeout: 60 * time.Second,
+			// Memory knobs: no YAML yet; baseline always on (KV can override).
+			MemoryEnabled:     true,
+			MemoryAutoExtract: true,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: operatorToken,

@@ -26,6 +26,8 @@ type KnobsPatch struct {
 	CompactReserveTokens         *int     `json:"compact_reserve_tokens,omitempty"`
 	KeepRecent                   *int     `json:"compact_keep_recent,omitempty"`
 	CompactSummaryTimeoutSeconds *int     `json:"compact_summary_timeout_seconds,omitempty"`
+	MemoryEnabled                *bool    `json:"memory_enabled,omitempty"`
+	MemoryAutoExtract            *bool    `json:"memory_auto_extract,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 }
 
@@ -169,6 +171,12 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.CompactSummaryTimeoutSeconds != nil {
 		next.CompactSummaryTimeoutSec = p.CompactSummaryTimeoutSeconds
+	}
+	if p.MemoryEnabled != nil {
+		next.MemoryEnabled = p.MemoryEnabled
+	}
+	if p.MemoryAutoExtract != nil {
+		next.MemoryAutoExtract = p.MemoryAutoExtract
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

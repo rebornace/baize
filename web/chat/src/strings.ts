@@ -132,6 +132,34 @@ export function friendlyError(e: unknown): FriendlyError {
   return { title: '出现了未知问题。', detail: detail || undefined }
 }
 
+// ---- 设置页：账号记忆 ----
+export const MEMORY = {
+  title: '账号记忆',
+  description:
+    '跨会话保留的个人事实，仅对本账号可见。对话中可显式记/忘，也可在此手动增改删。运行开关在「运行参数」。',
+  emptyTitle: '还没有记忆',
+  emptyDesc: '对话里让助手记住事实，或在下方手动添加一条。',
+  textLabel: '记忆内容',
+  textHint: '最多约 500 字的短事实',
+  keyLabel: '键（可选）',
+  keyHint: '同键写入会覆盖旧值；留空则每次新建',
+  add: '添加记忆',
+  save: '保存',
+  cancel: '取消',
+  edit: '编辑',
+  delete: '删除',
+  confirmDeleteTitle: '删除这条记忆？',
+  confirmDeleteBody: '删除后助手将不再引用该事实；需要时可重新添加。',
+  confirmDeleteOk: '删除',
+  sourceExplicit: '手动/显式',
+  sourceAuto: '自动抽取',
+  toastCreated: '已添加记忆',
+  toastUpdated: '已更新记忆',
+  toastDeleted: '已删除记忆',
+  toastNeedText: '请填写记忆内容',
+  loadFailed: '无法加载账号记忆',
+} as const
+
 // ---- 设置页：账号 ----
 export const ACCOUNTS = {
   title: '账号',
@@ -249,10 +277,15 @@ export const RUNTIME = {
   errPublicBaseInvalid: '请填写以 http:// 或 https:// 开头的完整地址',
   sectionBehavior: '对话与工具行为',
   sectionCompact: '历史压缩',
+  sectionMemory: '账号记忆',
   sectionCreds: '控制面口令',
   compactEnabled: '对话过长时自动压缩历史',
   compactHint: '压缩会把旧消息收成摘要以省上下文；细参多数保持默认即可。',
   compactAdvanced: '高级压缩设置',
+  memoryEnabled: '启用账号记忆',
+  memoryEnabledHint: '关闭后不再注入记忆，显式记/忘与自动抽取一并停用。',
+  memoryAutoExtract: '自动抽取记忆',
+  memoryAutoExtractHint: '对话成功结束后尝试抽出短事实；总开关关闭时无效。',
   fieldMaxMessages: '送入模型的最近消息数',
   hintMaxMessages: 'max_messages · 1–500',
   fieldMaxSteps: '单次运行最多工具步数',

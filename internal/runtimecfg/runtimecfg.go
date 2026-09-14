@@ -24,6 +24,8 @@ type Knobs struct {
 	CompactReserveTokens  int
 	CompactKeepRecent     int
 	CompactSummaryTimeout time.Duration
+	MemoryEnabled         bool // account memory inject + tools gate
+	MemoryAutoExtract     bool // post-run auto extract (also requires MemoryEnabled)
 }
 
 // Credentials is the effective control-plane credential set.
@@ -58,6 +60,8 @@ type knobsOverride struct {
 	CompactReserveTokens     *int     `json:"compact_reserve_tokens,omitempty"`
 	CompactKeepRecent        *int     `json:"compact_keep_recent,omitempty"`
 	CompactSummaryTimeoutSec *int     `json:"compact_summary_timeout_seconds,omitempty"`
+	MemoryEnabled            *bool    `json:"memory_enabled,omitempty"`
+	MemoryAutoExtract        *bool    `json:"memory_auto_extract,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -166,6 +170,12 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.CompactSummaryTimeoutSec != nil {
 		k.CompactSummaryTimeout = time.Duration(*ko.CompactSummaryTimeoutSec) * time.Second
 	}
+	if ko.MemoryEnabled != nil {
+		k.MemoryEnabled = *ko.MemoryEnabled
+	}
+	if ko.MemoryAutoExtract != nil {
+		k.MemoryAutoExtract = *ko.MemoryAutoExtract
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -200,6 +210,8 @@ type KnobsFieldFlags struct {
 	CompactReserveTokens  bool `json:"compact_reserve_tokens"`
 	CompactKeepRecent     bool `json:"compact_keep_recent"`
 	CompactSummaryTimeout bool `json:"compact_summary_timeout_seconds"`
+	MemoryEnabled         bool `json:"memory_enabled"`
+	MemoryAutoExtract     bool `json:"memory_auto_extract"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -227,6 +239,8 @@ func (h *Holder) KnobsView() KnobsView {
 			CompactReserveTokens:  ko.CompactReserveTokens != nil,
 			CompactKeepRecent:     ko.CompactKeepRecent != nil,
 			CompactSummaryTimeout: ko.CompactSummaryTimeoutSec != nil,
+			MemoryEnabled:         ko.MemoryEnabled != nil,
+			MemoryAutoExtract:     ko.MemoryAutoExtract != nil,
 		},
 	}
 }
