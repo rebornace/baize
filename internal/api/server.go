@@ -35,6 +35,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
@@ -107,12 +108,14 @@ type Server struct {
 	ChatMedia ChatMediaSaver
 	// Workspace optionally persists chat attachments to the per-conversation
 	// file workspace. nil = attachments are not persisted (in-turn only).
-	Workspace      UploadSaver
-	Runner         Runner
-	SkillCatalog   *skill.Catalog
-	Identities     identity.Store
-	Messages       conversation.Store // optional; nil = no message persistence
-	Hub            *eventbus.Hub      // optional; nil = SSE replay only (no live fan-out)
+	Workspace    UploadSaver
+	Runner       Runner
+	SkillCatalog *skill.Catalog
+	Identities   identity.Store
+	Messages     conversation.Store // optional; nil = no message persistence
+	// Memory is the account-scoped fact store (P6 settings CRUD). nil = routes unavailable.
+	Memory         memory.Store
+	Hub            *eventbus.Hub // optional; nil = SSE replay only (no live fan-out)
 	DefaultAgentID string
 	// Queue optionally dispatches runs to competing workers. nil = in-process
 	// goroutine execution (legacy single-instance behavior).
@@ -498,6 +501,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/models", s.handlePostModelProfile)
 	s.mux.HandleFunc("PATCH /v0/settings/models/{id}", s.handlePatchModelProfile)
 	s.mux.HandleFunc("DELETE /v0/settings/models/{id}", s.handleDeleteModelProfile)
+	s.mux.HandleFunc("GET /v0/settings/memory", s.handleListMemory)
+	s.mux.HandleFunc("POST /v0/settings/memory", s.handlePostMemory)
+	s.mux.HandleFunc("PATCH /v0/settings/memory/{id}", s.handlePatchMemory)
+	s.mux.HandleFunc("DELETE /v0/settings/memory/{id}", s.handleDeleteMemory)
 }
 
 type apiError struct {

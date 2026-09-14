@@ -184,6 +184,7 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	rt.srv.Store = wrapped
 	rt.srv.Messages = messages
 	rt.srv.Identities = identities
+	rt.srv.Memory = mem
 
 	rt.engine.Store = wrapped
 	rt.engine.Messages = messages

@@ -437,6 +437,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.SkillCatalog = skillCat
 	srv.Identities = identities
 	srv.Messages = messages
+	srv.Memory = mem
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
 	srv.CallbackSecret = callbackSecret
