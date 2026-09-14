@@ -49,7 +49,7 @@
 | **UI-EXPORT-DB-RO** | export_db_readonly UI | **已交付** | [`specs/2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
 | **CH-PORT** | 动态端口 | **已交付** | 规格 [`specs/2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`plans/2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md) |
 | **CH-OUTBOX** | 渠道 outbox | **已交付** | [`specs/2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`plans/2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md) |
-| **UI-LOGIN-AT** | `@` 登录 / login_required | 可开刀（先规格） | 独立 |
+| **UI-LOGIN-AT** | `@` 登录 / login_required | **实现完成（待合入）** | 规格 [`specs/2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md)；计划 [`plans/2026-09-14-ui-login-at.md`](../plans/2026-09-14-ui-login-at.md)；分支 `feat/ui-login-at` |
 | **LLM-THINK** | 思考级别开关 | 可开刀（先规格） | 独立 |
 | **BLOB-CS** | Connector / Skill blob 化 | 可开刀（先规格） | 独立 |
 | **UI-MCP-OAUTH** | MCP OAuth 2.1 | 先头脑风暴 | **不合并** |

@@ -1,6 +1,6 @@
 # UI-LOGIN-AT：登录入口 `@`/`/` 直达与 `login_required` 补救
 
-> 状态：已批准设计（待实现）
+> 状态：实现完成（待合入）
 > 日期：2026-09-14
 > 史诗：UI-LOGIN-AT（开源 v1 确认清单）
 > 前置：会话身份库与登录捕获（`2026-08-15-session-login-tool-gate`）、HTTP 插件 capture、P3-B 连接器页（后继项上调）

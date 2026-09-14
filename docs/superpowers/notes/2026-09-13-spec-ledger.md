@@ -82,7 +82,7 @@
 | 项 | 来源 | 备注 |
 |----|------|------|
 | MCP OAuth 交互登录 | P3-C | **要做** |
-| 登录入口 `@` 直达 / `login_required` | P3-B/D | **要做**（上调） |
+| 登录入口 `@` 直达 / `login_required` | P3-B/D → **UI-LOGIN-AT** | **实现完成（待合入）**；[`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
 | i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
 | 模型思考级别开关 | P1 非目标 → 上调 | **要做** |
 | `export_db_readonly` UI | P3-C → **已交付** | [`2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
@@ -102,6 +102,7 @@
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **CH-OUTBOX** | **已交付** | [`2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md)；`channel_outbox` + worker；设置 → 微信可重投 |
+| **UI-LOGIN-AT** | **实现完成（待合入）** | 规格 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md)；计划 [`2026-09-14-ui-login-at.md`](../plans/2026-09-14-ui-login-at.md)；`loginentry` + `login-invoke` + WebUI `@`/`/` 与「去登录」 |
 | **BLOB-CS** | 要做 | 各开规格 |
 | **CH-PORT** | **已交付** | 规格 [`2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md)；`BAIZE_LISTEN` + autostart 端口文件 |
 | **P6** Memory / **MCP OAuth** | 要做 · 先脑暴 | **不合并**进其他史诗 |
@@ -121,7 +122,7 @@
 1. ~~**DOC**~~（已交付）  
 2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
-4. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
+4. ~~**UI-LOGIN-AT**~~（实现完成，待合入） · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 5. **MCP OAuth** · **P6 Memory**  
 6. ~~渠道 DoD / sql-store worktree~~（已完成）
 
