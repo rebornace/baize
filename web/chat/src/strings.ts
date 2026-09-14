@@ -80,6 +80,9 @@ export const CHAT = {
   // 本会话思考级别覆盖
   thinkingChip: '思考级别',
   thinkingDefault: '默认',
+  // 输入框：短 placeholder（芯片占宽后不宜长句换行）；完整快捷键放 title
+  composerPlaceholder: '输入消息…',
+  composerTitle: 'Enter 发送 · Shift+Enter 换行 · @ 或 / 选择技能',
   // 思考块展示（实时打字机 / 历史折叠）
   thinking: '思考中',
   thoughtDone: '已思考',
