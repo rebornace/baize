@@ -148,4 +148,47 @@ describe('McpSettings page', () => {
     expect(startCalls).toHaveLength(1)
     expect(openSpy).toHaveBeenCalledWith('https://auth.example/authorize?x=1', '_blank', 'noopener,noreferrer')
   })
+
+  it('clicks 断开授权 then POSTs disconnect, toasts, and reloads', async () => {
+    let disconnected = false
+    const authorized = {
+      id: 'authz', type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example/mcp', oauth: { status: 'authorized', client_id: 'c1' } },
+      require_approval: [], tools: [],
+    }
+    const after = {
+      ...authorized,
+      mcp: { transport: 'http', url: 'https://mcp.example/mcp', oauth: { status: '', client_id: 'c1' } },
+    }
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+      const u = String(url)
+      if (u.endsWith('/v0/tools')) return json({ tools: [{ name: 't', connector_id: 'authz', source: 'mcp' }] })
+      if (u.includes('/mcp/oauth/disconnect') && init?.method === 'POST') {
+        disconnected = true
+        return json({ id: 'authz', status: '' })
+      }
+      if (u.includes('/v0/connectors/authz')) return json(disconnected ? after : authorized)
+      return json({})
+    })
+    await act(async () => { createRoot(host).render(<MemoryRouter><McpSettings /></MemoryRouter>); await Promise.resolve() })
+    await flush()
+    expect(host.textContent).toContain('已授权')
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')]
+        .find((i) => i.textContent!.includes('断开授权'))!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flush(6)
+    const disconnectCalls = fetchMock.mock.calls.filter(
+      ([u, i]) => String(u).includes('/v0/connectors/authz/mcp/oauth/disconnect') && (i as RequestInit)?.method === 'POST',
+    )
+    expect(disconnectCalls).toHaveLength(1)
+    expect(host.textContent).toContain('已断开授权')
+    expect(host.textContent).not.toContain('已授权')
+  })
 })
