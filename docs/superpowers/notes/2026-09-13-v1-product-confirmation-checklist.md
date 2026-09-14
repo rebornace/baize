@@ -49,7 +49,7 @@
 | **UI-EXPORT-DB-RO** | export_db_readonly UI | **已交付** | [`specs/2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
 | **CH-PORT** | 动态端口 | **已交付** | 规格 [`specs/2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`plans/2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md) |
 | **CH-OUTBOX** | 渠道 outbox | **已交付** | [`specs/2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`plans/2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md) |
-| **UI-LOGIN-AT** | `@` 登录 / login_required | **实现完成（待合入）** | 规格 [`specs/2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md)；计划 [`plans/2026-09-14-ui-login-at.md`](../plans/2026-09-14-ui-login-at.md)；分支 `feat/ui-login-at` |
+| **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | 连接器自动登录 Skill / login_required「去登录」 | **已交付（待合入）** | 规格 [`specs/2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`plans/2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；分支 `feat/login-skill`；UI-LOGIN-AT 直达（login-entries / login-invoke / 登录专用区）已拆除 |
 | **LLM-THINK** | 思考级别开关 | 可开刀（先规格） | 独立 |
 | **BLOB-CS** | Connector / Skill blob 化 | 可开刀（先规格） | 独立 |
 | **UI-MCP-OAUTH** | MCP OAuth 2.1 | 先头脑风暴 | **不合并** |
@@ -65,7 +65,7 @@
 2. **F 母篇**（仅 C1 + KV 加密 + 驱动热切换/SIGHUP；**B1** 顺序已锁）→ 可先落地 **C1**  
 3. **UI-EXPORT-DB-RO**（小刀）  
 4. **CH-PORT** → **CH-OUTBOX**  
-5. **UI-LOGIN-AT** · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
+5. ~~**LOGIN-SKILL**~~（已交付，待合入） · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 6. **UI-MCP-OAUTH** · **P6**  
 
 **F 与现有待办：** 不吸收 OUTBOX/BLOB/PORT/OAuth/Memory/@登录/i18n/export_db_ro；DOC 保持独立（A1）。

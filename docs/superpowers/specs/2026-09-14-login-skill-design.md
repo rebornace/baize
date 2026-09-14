@@ -1,10 +1,10 @@
 # LOGIN-SKILL：连接器自动维护的登录 Skill（取代登录直达）
 
-> 状态：已批准设计（待实现）
+> 状态：**已交付（待合入）**（2026-09-14；分支 `feat/login-skill`）
 > 日期：2026-09-14
 > 史诗：LOGIN-SKILL（承接并收敛 UI-LOGIN-AT）
 > 前置：会话登录捕获与 `MatchToolName`（含大小写无关）、Agent Skills / Catalog、`activate_skill`、线性 `workflow.yaml`（本批不自动生成）
-> 备注：开源开发阶段不保留双轨；产品入口仅为 Skill，可读可控
+> 备注：开源开发阶段不保留双轨；产品入口仅为 Skill，可读可控；UI-LOGIN-AT 直达已拆除
 
 ---
 

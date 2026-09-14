@@ -1,10 +1,10 @@
 # UI-LOGIN-AT：登录入口 `@`/`/` 直达与 `login_required` 补救
 
-> 状态：**已由 LOGIN-SKILL 取代**（直达路径将拆除）——见 `2026-09-14-login-skill-design.md`
+> 状态：**已由 LOGIN-SKILL 取代**（直达路径**已拆除**）——见 `2026-09-14-login-skill-design.md`
 > 日期：2026-09-14
 > 史诗：UI-LOGIN-AT（开源 v1；产品入口已收敛为自动登录 Skill）
 > 前置：会话身份库与登录捕获（`2026-08-15-session-login-tool-gate`）、HTTP 插件 capture、P3-B 连接器页（后继项上调）
-> 备注：原「强制 login-invoke」实现将随 LOGIN-SKILL 拆除；本文仅作历史对照
+> 备注：原「强制 login-invoke」与登录专用区已随 LOGIN-SKILL 拆除；本文仅作历史对照
 
 ---
 

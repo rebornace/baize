@@ -82,7 +82,7 @@
 | 项 | 来源 | 备注 |
 |----|------|------|
 | MCP OAuth 交互登录 | P3-C | **要做** |
-| 登录入口 `@` 直达 / `login_required` | P3-B/D → **UI-LOGIN-AT** | **实现完成（待合入）**；[`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
+| 登录入口 / `login_required` | P3-B/D → **LOGIN-SKILL**（原 UI-LOGIN-AT 直达已拆除） | **已交付（待合入）**；[`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md) |
 | i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
 | 模型思考级别开关 | P1 非目标 → 上调 | **要做** |
 | `export_db_readonly` UI | P3-C → **已交付** | [`2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
@@ -102,7 +102,7 @@
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **CH-OUTBOX** | **已交付** | [`2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md)；`channel_outbox` + worker；设置 → 微信可重投 |
-| **UI-LOGIN-AT** | **实现完成（待合入）** | 规格 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md)；计划 [`2026-09-14-ui-login-at.md`](../plans/2026-09-14-ui-login-at.md)；`loginentry` + `login-invoke` + WebUI `@`/`/` 与「去登录」 |
+| **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | **已交付（待合入）** | 规格 [`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；managed `login-<id>` +「去登录」→ `@login-`；`login-entries` / `login-invoke` 直达已拆除；历史对照 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
 | **BLOB-CS** | 要做 | 各开规格 |
 | **CH-PORT** | **已交付** | 规格 [`2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md)；`BAIZE_LISTEN` + autostart 端口文件 |
 | **P6** Memory / **MCP OAuth** | 要做 · 先脑暴 | **不合并**进其他史诗 |
@@ -113,7 +113,7 @@
 
 **不做 / 不新立项：** A1 · B1 · P3 OTel · P5 · I2–I5 · W1/W2 · P7 · CH-SDK · 技能可视化 · Playwright · 微信群聊/语音视频 · U1 · Agent↔Tool 白名单 · MCP capture · 商业 E1–E5 · CH-WL-FORCE（已有）。
 
-**要做史诗（合并策略 A，共 12）：** DOC · F(C1+OPS) · UI-RUNTIME(+文案抽离) · UI-I18N · UI-EXPORT-DB-RO · CH-PORT · CH-OUTBOX · UI-LOGIN-AT · LLM-THINK · BLOB-CS · MCP OAuth · P6 Memory。详见确认清单 §1。
+**要做史诗（合并策略 A，共 12）：** DOC · F(C1+OPS) · UI-RUNTIME(+文案抽离) · UI-I18N · UI-EXPORT-DB-RO · CH-PORT · CH-OUTBOX · LOGIN-SKILL（承接 UI-LOGIN-AT） · LLM-THINK · BLOB-CS · MCP OAuth · P6 Memory。详见确认清单 §1。
 
 ---
 
@@ -122,7 +122,7 @@
 1. ~~**DOC**~~（已交付）  
 2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
-4. ~~**UI-LOGIN-AT**~~（实现完成，待合入） · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
+4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
 5. **MCP OAuth** · **P6 Memory**  
 6. ~~渠道 DoD / sql-store worktree~~（已完成）
 
