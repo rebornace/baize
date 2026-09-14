@@ -113,6 +113,37 @@ func TestRefreshIfNeeded(t *testing.T) {
 	}
 }
 
+func TestEnsureAccessTokenSkewRefreshWindow(t *testing.T) {
+	const skewAccess = "skew-refreshed-access"
+	var refreshCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshCalls++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  skewAccess,
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+			"refresh_token": "rt-kept",
+		})
+	}))
+	defer srv.Close()
+
+	bundle := TokenBundle{
+		AccessToken:  "still-valid",
+		RefreshToken: "rt-1",
+		ExpiresAt:    time.Now().Add(30 * time.Second),
+	}
+	got, err := EnsureAccessToken(context.Background(), http.DefaultClient, srv.URL, "cid", "", bundle, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AccessToken != skewAccess {
+		t.Fatalf("access=%q want %q", got.AccessToken, skewAccess)
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("refresh calls=%d want 1", refreshCalls)
+	}
+}
+
 func TestExchangeCode(t *testing.T) {
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
