@@ -21,3 +21,12 @@ func GeneratePKCE() (verifier string, challenge string, err error) {
 	challenge = base64.RawURLEncoding.EncodeToString(sum[:])
 	return verifier, challenge, nil
 }
+
+// GenerateState returns a high-entropy opaque OAuth state value (base64url, no padding).
+func GenerateState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("oauth state random: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}

@@ -25,6 +25,7 @@ import (
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
+	"github.com/rebornace/baize/internal/connector/mcpoauth"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/connector/specimport"
 	"github.com/rebornace/baize/internal/connector/specstore"
@@ -176,6 +177,9 @@ type Server struct {
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
 
+	// OAuthSessions holds in-flight MCP OAuth PKCE state (single-process).
+	OAuthSessions *mcpoauth.SessionStore
+
 	// Outbound is the channel used to deliver mirrored UI/API user turns and
 	// succeeded assistant replies to channel peers. It is normally a
 	// *channel.Router that dispatches by conversation meta.Source (tests may
@@ -200,6 +204,7 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 		Runner:           runner,
 		Identities:       identity.NewMemoryStore(),
 		MCPExportEnabled: true,
+		OAuthSessions:    mcpoauth.NewSessionStore(),
 		mux:              http.NewServeMux(),
 	}
 	s.routes()
@@ -399,6 +404,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/agents/{id}", s.handleGetAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
+	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/start", s.handleMCPOAuthStart)
+	s.mux.HandleFunc("GET /v0/connectors/{id}/mcp/oauth/callback", s.handleMCPOAuthCallback)
+	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/disconnect", s.handleMCPOAuthDisconnect)
+	s.mux.HandleFunc("GET /v0/connectors/{id}/mcp/oauth/status", s.handleMCPOAuthStatus)
 	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
 	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/tools", s.handlePostConnectorTool)
