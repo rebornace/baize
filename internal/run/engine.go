@@ -24,17 +24,20 @@ import (
 )
 
 const (
-	EventInboxReceived = "inbox.received"
-	EventInboxResumed  = "inbox.resumed"
-	EventRunStarted    = "run.started"
-	EventLLMToolCall   = "llm.tool_call"
-	EventToolResult    = "tool.result"
-	EventLLMMessage    = "llm.message"
-	EventLLMError      = "llm.error"
-	EventHITLWaiting   = "hitl.waiting"
-	EventHITLResumed   = "hitl.resumed"
-	EventHITLRejected  = "hitl.rejected"
-	EventRunCancelled  = "run.cancelled"
+	EventInboxReceived    = "inbox.received"
+	EventInboxResumed     = "inbox.resumed"
+	EventRunStarted       = "run.started"
+	EventLLMToolCall      = "llm.tool_call"
+	EventToolResult       = "tool.result"
+	EventLLMThinkingDelta = "llm.thinking.delta"
+	EventLLMContentDelta  = "llm.content.delta"
+	EventLLMThinking      = "llm.thinking"
+	EventLLMMessage       = "llm.message"
+	EventLLMError         = "llm.error"
+	EventHITLWaiting      = "hitl.waiting"
+	EventHITLResumed      = "hitl.resumed"
+	EventHITLRejected     = "hitl.rejected"
+	EventRunCancelled     = "run.cancelled"
 	// EventContextCompacted records a rolling-summary compaction before a run.
 	EventContextCompacted = "context.compacted"
 	EventWorkflowPrefix   = "workflow."
@@ -563,6 +566,8 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	// Read once at loop start so the step bound is stable for the whole run
 	// even if an operator hot-patches knobs mid-run.
 	maxSteps := e.effectiveMaxSteps()
+	var turnThinking []string
+	anyRedacted := false
 
 	for step := 0; step < maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
@@ -571,12 +576,39 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		if e.isCancelled(runID) {
 			return context.Canceled
 		}
+		turn := step
 		specs := e.specsForRun(runID)
 		chatCtx := ctx
-		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil && rec.ModelProfileID != "" {
-			chatCtx = llm.WithModelProfileID(ctx, rec.ModelProfileID)
+		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
+			if rec.ModelProfileID != "" {
+				chatCtx = llm.WithModelProfileID(ctx, rec.ModelProfileID)
+			}
+			if rec.ThinkingLevel != "" {
+				chatCtx = llm.WithThinkingLevel(chatCtx, rec.ThinkingLevel)
+			}
 		}
-		msg, err := e.LLM.Chat(chatCtx, messages, specs)
+		co := llm.NewCoalescer(100*time.Millisecond, func(s string) {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventLLMThinkingDelta,
+				Data: map[string]any{"turn": turn, "text": s},
+			})
+		}, func(s string) {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventLLMContentDelta,
+				Data: map[string]any{"turn": turn, "text": s},
+			})
+		})
+		var msg llm.Message
+		var err error
+		if st, ok := e.LLM.(llm.Streamer); ok {
+			msg, err = st.ChatStream(chatCtx, messages, specs, co.Think, co.Content)
+			if err != nil {
+				msg, err = e.LLM.Chat(chatCtx, messages, specs)
+			}
+		} else {
+			msg, err = e.LLM.Chat(chatCtx, messages, specs)
+		}
+		co.Flush()
 		if err != nil {
 			if ctx.Err() != nil || e.isCancelled(runID) {
 				return context.Canceled
@@ -589,8 +621,28 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			e.recordTerminalMessage(runID)
 			return err
 		}
+		if strings.TrimSpace(msg.Thinking) != "" || msg.ThinkingRedacted {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventLLMThinking,
+				Data: map[string]any{
+					"turn":              turn,
+					"text":              msg.Thinking,
+					"thinking_redacted": msg.ThinkingRedacted,
+				},
+			})
+		}
+		if strings.TrimSpace(msg.Thinking) != "" {
+			turnThinking = append(turnThinking, msg.Thinking)
+		}
+		if msg.ThinkingRedacted {
+			anyRedacted = true
+		}
 
 		if len(msg.ToolCalls) > 0 {
+			// Strip thinking so in-run history never re-feeds it to the model
+			// (eventsAfterInput / buildMessages already omit it).
+			msg.Thinking = ""
+			msg.ThinkingRedacted = false
 			messages = append(messages, msg)
 			for _, tc := range msg.ToolCalls {
 				if err := ctx.Err(); err != nil {
@@ -640,9 +692,17 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		if e.isCancelled(runID) {
 			return context.Canceled
 		}
+		joined := llm.JoinThinking(turnThinking)
+		msgData := map[string]any{"content": msg.Content}
+		if joined != "" || anyRedacted {
+			msgData["thinking"] = joined
+			if anyRedacted && joined == "" {
+				msgData["thinking_redacted"] = true
+			}
+		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMMessage,
-			Data: map[string]any{"content": msg.Content},
+			Data: msgData,
 		})
 		if err := e.Store.UpdateRun(runID, store.StatusSucceeded, msg.Content, ""); err != nil {
 			return err
@@ -968,10 +1028,13 @@ func (e *Engine) recordTerminalMessage(runID string) {
 		if strings.TrimSpace(runRec.Output) == "" {
 			return
 		}
+		thinking, redacted := e.terminalThinkingFromEvents(runID)
 		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
-			Role:    conversation.RoleAssistant,
-			Content: runRec.Output,
-			RunID:   runID,
+			Role:             conversation.RoleAssistant,
+			Content:          runRec.Output,
+			Thinking:         thinking,
+			ThinkingRedacted: redacted,
+			RunID:            runID,
 		})
 		e.deliverOutbound(runID, runRec.ConversationID, runRec.Output)
 	case store.StatusFailed:
@@ -1087,9 +1150,32 @@ func lastToolCallID(st store.Store, runID string) string {
 	return ""
 }
 
+// terminalThinkingFromEvents reads thinking fields from the final llm.message
+// event for this run. Used when persisting the conversation assistant row.
+func (e *Engine) terminalThinkingFromEvents(runID string) (thinking string, redacted bool) {
+	evs, err := e.Store.ListEvents(runID)
+	if err != nil {
+		return "", false
+	}
+	for i := len(evs) - 1; i >= 0; i-- {
+		if evs[i].Type != EventLLMMessage {
+			continue
+		}
+		thinking = asString(evs[i].Data["thinking"])
+		redacted = asBool(evs[i].Data["thinking_redacted"])
+		return thinking, redacted
+	}
+	return "", false
+}
+
 func asString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+func asBool(v any) bool {
+	b, _ := v.(bool)
+	return b
 }
 
 func asMap(v any) map[string]any {
