@@ -2,7 +2,7 @@ export interface ToolCatalogEntry {
   name: string
   title?: string
   description?: string
-  /** Connector owning this tool; used for login_required → filtered LoginPicker. */
+  /** Connector owning this tool; used for login_required → login-<id> skill. */
   connector_id?: string
 }
 export type ToolCatalog = ToolCatalogEntry[]

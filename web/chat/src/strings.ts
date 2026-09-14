@@ -378,38 +378,11 @@ export function skillErrorText(e: unknown): FriendlyError {
   return friendlyError(e)
 }
 
-// ---- Chat：登录直达（@ / 与 login_required） ----
+// ---- Chat：login_required → login skill ----
 export const LOGIN_AT = {
-  sectionLogin: '登录',
-  sectionSkills: '技能',
-  loggedInBadge: '已登录',
   goLogin: '去登录',
-  paramsTitle: '填写登录信息',
-  paramsSubmit: '开始登录',
-  paramsCancel: '取消',
-  startedNote: '登录已发起，可在对话中查看进度。',
-  pickerEmpty: '没有匹配的登录入口',
-  pickerNoConnector: '无法确定该工具所属连接器，请改用输入框 @ 选择登录入口。',
-  errBusy: '上一条还在处理中，请稍候再试。',
-  errNotEntry: '该工具不是可用的登录入口。',
-  errGeneric: '登录未能发起，请稍后重试。',
+  skillMissing: '暂无可用的登录技能（请确认连接器已启用登录相关工具）',
 } as const
-
-/** 把 login-invoke / 登录选择相关异常翻译为人话标题。 */
-export function loginAtErrorText(e: unknown): FriendlyError {
-  if (e instanceof ApiError) {
-    if (e.code === 'conversation_busy') return { title: LOGIN_AT.errBusy }
-    if (e.code === 'not_a_login_entry') return { title: LOGIN_AT.errNotEntry }
-    if (e.code === 'invalid_request') {
-      return { title: LOGIN_AT.errGeneric, detail: e.message }
-    }
-    if (e.code === 'internal_error' || e.status >= 500) {
-      return { title: LOGIN_AT.errGeneric, detail: `${e.code}: ${e.message}` }
-    }
-    return { title: LOGIN_AT.errGeneric, detail: `${e.code}: ${e.message}` }
-  }
-  return friendlyError(e)
-}
 
 // ---- 设置页：助手功能 ----
 export const TOOLS = {

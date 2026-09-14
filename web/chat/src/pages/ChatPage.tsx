@@ -13,12 +13,10 @@ import {
   isTerminal,
   listConversations,
   listEvents,
-  listLoginEntries,
   listMessages,
   listModelProfiles,
   listSkills,
   listTools,
-  loginInvoke,
   openRunStream,
   rollbackMessages,
   type Attachment,
@@ -26,7 +24,6 @@ import {
   type ConversationScope,
   type ConversationSummary,
   type Event,
-  type LoginEntry,
   type ModelProfile,
   type RunStatus,
   type SkillSummary,
@@ -35,7 +32,6 @@ import {
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
 import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
-import { LoginPicker } from '../components/LoginPicker'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
@@ -64,11 +60,11 @@ import {
   isFirstAssistantMessageOfRun,
   type ToolOrWorkflowBlock,
 } from '../historyBlocks'
-import { loginPickerEntriesForConnector, resolveConnectorId } from '../loginEntry'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
-import { ACTIONS, CHAT, friendlyError, LOGIN_AT, loginAtErrorText, WELCOME } from '../strings'
+import { ACTIONS, CHAT, friendlyError, LOGIN_AT, WELCOME } from '../strings'
+import { replaceMention } from '../skillMention'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { uuid } from '../uuid'
@@ -125,10 +121,6 @@ export function ChatPage() {
   /** run_id → folded historical tool/workflow blocks (read-only replay). */
   const [historyBlocks, setHistoryBlocks] = useState<Record<string, ToolOrWorkflowBlock[]>>({})
   const [toolCatalog, setToolCatalog] = useState<ToolCatalog>([])
-  const [loginEntries, setLoginEntries] = useState<LoginEntry[]>([])
-  const [loginPickerOpen, setLoginPickerOpen] = useState(false)
-  const [loginPickerConnectorId, setLoginPickerConnectorId] = useState<string | undefined>()
-  const [loginPickerEntries, setLoginPickerEntries] = useState<LoginEntry[]>([])
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [visionWarning, setVisionWarning] = useState<string | null>(null)
   const toast = useToast()
@@ -234,16 +226,6 @@ export function ChatPage() {
     })
   }, [])
 
-  const refreshLoginEntries = useCallback(async (id: string) => {
-    try {
-      const entries = await listLoginEntries(id)
-      if (conversationIdRef.current !== id) return
-      setLoginEntries(entries)
-    } catch {
-      if (conversationIdRef.current === id) setLoginEntries([])
-    }
-  }, [])
-
   const finishLiveRun = useCallback(
     async (id: string) => {
       stopStream()
@@ -271,9 +253,8 @@ export function ChatPage() {
         // and conversation switch effects will reload messages on retry.
       }
       await refreshConversations()
-      await refreshLoginEntries(id)
     },
-    [mergeHistoryPages, refreshConversations, refreshLoginEntries, stopPoll, stopStream],
+    [mergeHistoryPages, refreshConversations, stopPoll, stopStream],
   )
 
   const applyEvents = useCallback((events: Event[]) => {
@@ -443,9 +424,6 @@ export function ChatPage() {
     lastEventIndexRef.current = -1
     setBusy(false)
     setStatus('')
-    setLoginPickerOpen(false)
-    setLoginPickerConnectorId(undefined)
-    setLoginPickerEntries([])
 
     const id = conversationId
     void (async () => {
@@ -460,14 +438,13 @@ export function ChatPage() {
         // the idle sync retries listMessages every 2s.
       }
     })()
-    void refreshLoginEntries(id)
 
     return () => {
       cancelled = true
       stopStream()
       stopPoll()
     }
-  }, [conversationId, refreshLoginEntries, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
+  }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
 
   // Idle sync: weixin (and other external) inbound turns append messages / create
   // runs without this tab knowing. Poll while a conversation is open so /ui
@@ -735,69 +712,15 @@ export function ChatPage() {
     return true
   }
 
-  /** Forced login invoke: never write arguments into a user bubble. */
-  const onPickLogin = async (entry: LoginEntry, args?: Record<string, unknown>) => {
-    const sentConversationId = conversationId
-    setBusy(true)
-    setStatus('发送中…')
-    setLoginPickerOpen(false)
-    setLoginPickerConnectorId(undefined)
-    setLoginPickerEntries([])
-    try {
-      const created = await loginInvoke(sentConversationId, {
-        agent_id: agentId,
-        connector_id: entry.connector_id,
-        tool_name: entry.tool_name,
-        ...(args !== undefined ? { arguments: args } : {}),
-      })
-      await refreshConversations()
-      if (conversationIdRef.current !== sentConversationId) return
-      toast.push({ tone: 'info', title: LOGIN_AT.startedNote })
-      attachRun(created.run_id, sentConversationId, created.status)
-    } catch (err) {
-      if (conversationIdRef.current !== sentConversationId) return
-      setBusy(false)
-      setLiveRunId(null)
-      const f = loginAtErrorText(err)
-      pushToast({ tone: 'error', title: f.title, detail: f.detail })
-      setStatus('')
-    }
-  }
-
-  const onGoLogin = (block: Extract<ChatBlock, { kind: 'tool' }>) => {
-    const connectorId = resolveConnectorId(
-      toolCatalog.find((t) => t.name === block.name)?.connector_id,
-    )
-    setLoginPickerConnectorId(connectorId)
-    // Never fall back to all connectors: missing id → empty list + 空态文案.
-    setLoginPickerEntries(
-      connectorId ? loginPickerEntriesForConnector(loginEntries, connectorId) : [],
-    )
-    setLoginPickerOpen(true)
-  }
-
-  // When opening「去登录」with a known connector, re-fetch filtered entries.
-  useEffect(() => {
-    if (!loginPickerOpen) return
-    const connectorId = resolveConnectorId(loginPickerConnectorId)
-    if (!connectorId) {
-      setLoginPickerEntries([])
+  /** login_required「去登录」→ 写入 @login-<id>，不自动发送。 */
+  const onGoLoginSkill = (skillId: string) => {
+    if (!skills.some((s) => s.id === skillId)) {
+      toast.push({ tone: 'error', title: LOGIN_AT.skillMissing })
       return
     }
-    const id = conversationId
-    let cancelled = false
-    void listLoginEntries(id, connectorId)
-      .then((entries) => {
-        if (cancelled || conversationIdRef.current !== id) return
-        setLoginPickerEntries(loginPickerEntriesForConnector(entries, connectorId))
-      })
-      .catch(() => {
-        if (!cancelled && conversationIdRef.current === id) setLoginPickerEntries([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [loginPickerOpen, loginPickerConnectorId, conversationId])
+    const { text } = replaceMention('', 0, 0, skillId)
+    setComposerDraft(text)
+  }
 
   const onRollbackUser = async (m: ChatMessage) => {
     if (busy || liveRunId || historyMutating) return
@@ -1186,7 +1109,12 @@ export function ChatPage() {
                 case 'tool':
                   return (
                     <div key={`live-t-${i}`} className="msg-row tool">
-                      <ToolCard block={block} catalog={toolCatalog} onError={reportError} onGoLogin={onGoLogin} />
+                      <ToolCard
+                        block={block}
+                        catalog={toolCatalog}
+                        onError={reportError}
+                        onGoLoginSkill={onGoLoginSkill}
+                      />
                     </div>
                   )
                 case 'workflow':
@@ -1229,8 +1157,6 @@ export function ChatPage() {
             disabled={composerDisabled}
             draft={composerDraft}
             skills={skills}
-            loginEntries={loginEntries}
-            onPickLogin={onPickLogin}
             onSend={onSend}
             toolbar={
               modelProfiles.length > 0 ? (
@@ -1275,21 +1201,6 @@ export function ChatPage() {
       >
         <p className="vision-warning-body">{visionWarning}</p>
       </Modal>
-      <LoginPicker
-        open={loginPickerOpen}
-        entries={loginPickerEntries}
-        emptyMessage={
-          resolveConnectorId(loginPickerConnectorId)
-            ? LOGIN_AT.pickerEmpty
-            : LOGIN_AT.pickerNoConnector
-        }
-        onClose={() => {
-          setLoginPickerOpen(false)
-          setLoginPickerConnectorId(undefined)
-          setLoginPickerEntries([])
-        }}
-        onPick={onPickLogin}
-      />
       <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss} />
     </div>
   )

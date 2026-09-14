@@ -4,7 +4,7 @@ import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
-import { isLoginRequiredContent } from '../loginEntry'
+import { isLoginRequiredContent, resolveConnectorId } from '../loginEntry'
 import { HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
 import { Button } from './ui'
@@ -18,8 +18,8 @@ export interface ToolCardProps {
   readOnly?: boolean
   /** 决议失败时回调父级弹 toast；卡片自身只显通用提示。 */
   onError?: (e: unknown) => void
-  /** login_required 时「去登录」；父级按 catalog.connector_id 打开 LoginPicker。 */
-  onGoLogin?: (block: ToolBlock) => void
+  /** login_required 时「去登录」；传入 `login-<connector_id>` skill id。 */
+  onGoLoginSkill?: (skillId: string) => void
 }
 
 export function ToolCard({
@@ -27,7 +27,7 @@ export function ToolCard({
   catalog = [],
   readOnly = false,
   onError,
-  onGoLogin,
+  onGoLoginSkill,
 }: ToolCardProps) {
   const waiting = block.status === 'waiting_human' && !readOnly
   const loginRequired = !readOnly && isLoginRequiredContent(block.result)
@@ -66,6 +66,14 @@ export function ToolCard({
     } finally {
       setBusy(false)
     }
+  }
+
+  const goLoginSkill = () => {
+    const connectorId = resolveConnectorId(
+      catalog.find((t) => t.name === block.name)?.connector_id,
+    )
+    if (!connectorId) return
+    onGoLoginSkill?.(`login-${connectorId}`)
   }
 
   const icon =
@@ -169,7 +177,7 @@ export function ToolCard({
       {loginRequired && (
         <div className="tool-card-actions tool-card-login-actions">
           {loginMessage ? <p className="tool-card-login-msg">{loginMessage}</p> : null}
-          <Button size="sm" variant="primary" onClick={() => onGoLogin?.(block)}>
+          <Button size="sm" variant="primary" onClick={goLoginSkill}>
             {LOGIN_AT.goLogin}
           </Button>
         </div>

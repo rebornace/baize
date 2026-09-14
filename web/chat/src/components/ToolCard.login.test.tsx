@@ -54,7 +54,7 @@ describe('ToolCard login_required', () => {
   })
 })
 
-describe('ToolCard onGoLogin', () => {
+describe('ToolCard onGoLoginSkill', () => {
   let host: HTMLDivElement
   let root: Root
 
@@ -80,10 +80,9 @@ describe('ToolCard onGoLogin', () => {
     })
   }
 
-  it('click 去登录 calls onGoLogin with the tool block', () => {
-    const onGoLogin = vi.fn()
-    const block = tool()
-    render(<ToolCard block={block} catalog={catalog} onGoLogin={onGoLogin} />)
+  it('click 去登录 calls onGoLoginSkill with login-<connector_id>', () => {
+    const onGoLoginSkill = vi.fn()
+    render(<ToolCard block={tool()} catalog={catalog} onGoLoginSkill={onGoLoginSkill} />)
 
     const btn = Array.from(host.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === LOGIN_AT.goLogin,
@@ -92,7 +91,26 @@ describe('ToolCard onGoLogin', () => {
     act(() => {
       btn!.click()
     })
-    expect(onGoLogin).toHaveBeenCalledTimes(1)
-    expect(onGoLogin).toHaveBeenCalledWith(block)
+    expect(onGoLoginSkill).toHaveBeenCalledTimes(1)
+    expect(onGoLoginSkill).toHaveBeenCalledWith('login-crm')
+  })
+
+  it('does not call onGoLoginSkill when connector_id is missing', () => {
+    const onGoLoginSkill = vi.fn()
+    render(
+      <ToolCard
+        block={tool()}
+        catalog={[{ name: 'order_query', title: '查询订单' }]}
+        onGoLoginSkill={onGoLoginSkill}
+      />,
+    )
+    const btn = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === LOGIN_AT.goLogin,
+    )
+    expect(btn).toBeTruthy()
+    act(() => {
+      btn!.click()
+    })
+    expect(onGoLoginSkill).not.toHaveBeenCalled()
   })
 })
