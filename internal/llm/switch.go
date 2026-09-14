@@ -147,6 +147,18 @@ func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	return prov.Chat(ctx, messages, tools)
 }
 
+// ChatStream implements Streamer: prefers a streaming provider, otherwise Chat.
+func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
+	p, err := s.providerFor(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	if st, ok := p.(Streamer); ok {
+		return st.ChatStream(ctx, messages, tools, onThink, onContent)
+	}
+	return p.Chat(ctx, messages, tools)
+}
+
 // SupportsVision reports whether ANY configured model can accept image parts.
 // Under task-aware Auto an image turn is routed to a vision-capable model when
 // one exists, so this is the meaningful capability signal for attachment

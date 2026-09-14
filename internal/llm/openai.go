@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -40,39 +41,10 @@ func NewOpenAI(baseURL, apiKey, model string) *OpenAI {
 }
 
 func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (Message, error) {
-	if strings.TrimSpace(o.APIKey) == "" {
-		return Message{}, fmt.Errorf("openai_compatible: api_key is required")
+	client, reqBody, err := o.prepareChat(ctx, messages, tools, false)
+	if err != nil {
+		return Message{}, err
 	}
-	if o.BaseURL == "" {
-		return Message{}, fmt.Errorf("openai_compatible: base_url is required")
-	}
-	if o.Model == "" {
-		return Message{}, fmt.Errorf("openai_compatible: model is required")
-	}
-
-	client := o.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	level := ThinkingLevelFromContext(ctx)
-	if level == "" {
-		level = o.ThinkingLevel
-	}
-	if level == "" && o.DisableThinking {
-		level = ThinkingOff
-	}
-	d := InferDialect(o.ThinkingDialect, o.Model, o.BaseURL)
-	f := ApplyThinking(d, level)
-
-	reqBody := openAIRequest{
-		Model:    o.Model,
-		Messages: toOpenAIMessages(messages),
-	}
-	if len(tools) > 0 {
-		reqBody.Tools = toOpenAITools(tools)
-	}
-	applyThinkingToRequest(&reqBody, f)
 
 	body, status, err := o.postChat(ctx, client, reqBody)
 	if err != nil {
@@ -98,6 +70,201 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	}
 
 	return fromOpenAIMessage(parsed.Choices[0].Message)
+}
+
+// ChatStream posts stream:true and parses SSE deltas. Callbacks receive cumulative
+// thinking/content. Errors (4xx, non-SSE, timeout) are returned; callers may fall
+// back to Chat — this method does not silently downgrade.
+func (o *OpenAI) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
+	client, reqBody, err := o.prepareChat(ctx, messages, tools, true)
+	if err != nil {
+		return Message{}, err
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return Message{}, fmt.Errorf("openai_compatible: marshal request: %w", err)
+	}
+
+	url := o.BaseURL + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return Message{}, fmt.Errorf("openai_compatible: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.APIKey)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return Message{}, fmt.Errorf("openai_compatible: http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return Message{}, fmt.Errorf("openai_compatible: status %d: %s", resp.StatusCode, truncateBytes(body, 512))
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.Contains(ct, "text/event-stream") {
+		body, _ := io.ReadAll(resp.Body)
+		return Message{}, fmt.Errorf("openai_compatible: non-SSE response (%s): %s", ct, truncateBytes(body, 512))
+	}
+
+	return o.readChatSSE(resp.Body, onThink, onContent)
+}
+
+func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []ToolSpec, stream bool) (*http.Client, openAIRequest, error) {
+	if strings.TrimSpace(o.APIKey) == "" {
+		return nil, openAIRequest{}, fmt.Errorf("openai_compatible: api_key is required")
+	}
+	if o.BaseURL == "" {
+		return nil, openAIRequest{}, fmt.Errorf("openai_compatible: base_url is required")
+	}
+	if o.Model == "" {
+		return nil, openAIRequest{}, fmt.Errorf("openai_compatible: model is required")
+	}
+
+	client := o.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	level := ThinkingLevelFromContext(ctx)
+	if level == "" {
+		level = o.ThinkingLevel
+	}
+	if level == "" && o.DisableThinking {
+		level = ThinkingOff
+	}
+	d := InferDialect(o.ThinkingDialect, o.Model, o.BaseURL)
+	f := ApplyThinking(d, level)
+
+	reqBody := openAIRequest{
+		Model:    o.Model,
+		Messages: toOpenAIMessages(messages),
+		Stream:   stream,
+	}
+	if len(tools) > 0 {
+		reqBody.Tools = toOpenAITools(tools)
+	}
+	applyThinkingToRequest(&reqBody, f)
+	return client, reqBody, nil
+}
+
+func (o *OpenAI) readChatSSE(r io.Reader, onThink, onContent func(string)) (Message, error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	var thinkBuf, contentBuf strings.Builder
+	toolAcc := map[int]*openAIToolCall{}
+	maxToolIdx := -1
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+
+		var chunk openAIStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return Message{}, fmt.Errorf("openai_compatible: decode SSE: %w", err)
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta
+
+		if piece := streamThinkingDelta(delta); piece != "" {
+			thinkBuf.WriteString(piece)
+			if onThink != nil {
+				onThink(thinkBuf.String())
+			}
+		}
+		if piece := contentString(delta.Content); piece != "" {
+			contentBuf.WriteString(piece)
+			if onContent != nil {
+				onContent(contentBuf.String())
+			}
+		}
+		for _, tc := range delta.ToolCalls {
+			idx := tc.Index
+			acc, ok := toolAcc[idx]
+			if !ok {
+				acc = &openAIToolCall{Type: "function"}
+				toolAcc[idx] = acc
+			}
+			if idx > maxToolIdx {
+				maxToolIdx = idx
+			}
+			if tc.ID != "" {
+				acc.ID = tc.ID
+			}
+			if tc.Type != "" {
+				acc.Type = tc.Type
+			}
+			if tc.Function.Name != "" {
+				acc.Function.Name = tc.Function.Name
+			}
+			if tc.Function.Arguments != "" {
+				acc.Function.Arguments += tc.Function.Arguments
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Message{}, fmt.Errorf("openai_compatible: read SSE: %w", err)
+	}
+
+	om := openAIMessage{
+		Role:             string(RoleAssistant),
+		Content:          contentBuf.String(),
+		ReasoningContent: thinkBuf.String(),
+	}
+	for i := 0; i <= maxToolIdx; i++ {
+		if acc, ok := toolAcc[i]; ok {
+			om.ToolCalls = append(om.ToolCalls, *acc)
+		}
+	}
+	return fromOpenAIMessage(om)
+}
+
+type openAIStreamChunk struct {
+	Choices []struct {
+		Delta openAIStreamDelta `json:"delta"`
+	} `json:"choices"`
+}
+
+type openAIStreamDelta struct {
+	Role             string                 `json:"role"`
+	Content          any                    `json:"content"`
+	ReasoningContent string                 `json:"reasoning_content"`
+	Reasoning        json.RawMessage        `json:"reasoning"`
+	ToolCalls        []openAIStreamToolCall `json:"tool_calls"`
+}
+
+type openAIStreamToolCall struct {
+	Index    int                `json:"index"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function openAIFunctionCall `json:"function"`
+}
+
+func streamThinkingDelta(d openAIStreamDelta) string {
+	if strings.TrimSpace(d.ReasoningContent) != "" {
+		return d.ReasoningContent
+	}
+	if len(d.Reasoning) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(d.Reasoning, &s); err == nil {
+		return s
+	}
+	return ""
 }
 
 func (o *OpenAI) postChat(ctx context.Context, client *http.Client, reqBody openAIRequest) ([]byte, int, error) {
