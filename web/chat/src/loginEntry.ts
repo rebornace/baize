@@ -31,6 +31,25 @@ export function filterLoginEntries(entries: LoginEntry[], query: string): LoginE
   )
 }
 
+/**
+ * Entries for login_required「去登录」picker.
+ * Missing/blank connector_id must NOT fall back to all connectors — returns [].
+ */
+export function loginPickerEntriesForConnector(
+  entries: LoginEntry[],
+  connectorId: string | undefined | null,
+): LoginEntry[] {
+  const id = typeof connectorId === 'string' ? connectorId.trim() : ''
+  if (!id) return []
+  return entries.filter((e) => e.connector_id === id)
+}
+
+/** Non-empty trimmed connector id, or undefined. */
+export function resolveConnectorId(raw: string | undefined | null): string | undefined {
+  const id = typeof raw === 'string' ? raw.trim() : ''
+  return id || undefined
+}
+
 /** Derive modal inputs from a catalog entry (required names only). */
 export function fieldsFromEntry(
   entry: Pick<LoginEntry, 'required' | 'parameters'>,

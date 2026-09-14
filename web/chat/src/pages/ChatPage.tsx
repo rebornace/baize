@@ -64,6 +64,7 @@ import {
   isFirstAssistantMessageOfRun,
   type ToolOrWorkflowBlock,
 } from '../historyBlocks'
+import { loginPickerEntriesForConnector, resolveConnectorId } from '../loginEntry'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
@@ -127,6 +128,7 @@ export function ChatPage() {
   const [loginEntries, setLoginEntries] = useState<LoginEntry[]>([])
   const [loginPickerOpen, setLoginPickerOpen] = useState(false)
   const [loginPickerConnectorId, setLoginPickerConnectorId] = useState<string | undefined>()
+  const [loginPickerEntries, setLoginPickerEntries] = useState<LoginEntry[]>([])
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [visionWarning, setVisionWarning] = useState<string | null>(null)
   const toast = useToast()
@@ -443,6 +445,7 @@ export function ChatPage() {
     setStatus('')
     setLoginPickerOpen(false)
     setLoginPickerConnectorId(undefined)
+    setLoginPickerEntries([])
 
     const id = conversationId
     void (async () => {
@@ -739,6 +742,7 @@ export function ChatPage() {
     setStatus('发送中…')
     setLoginPickerOpen(false)
     setLoginPickerConnectorId(undefined)
+    setLoginPickerEntries([])
     try {
       const created = await loginInvoke(sentConversationId, {
         agent_id: agentId,
@@ -761,10 +765,39 @@ export function ChatPage() {
   }
 
   const onGoLogin = (block: Extract<ChatBlock, { kind: 'tool' }>) => {
-    const connectorId = toolCatalog.find((t) => t.name === block.name)?.connector_id
+    const connectorId = resolveConnectorId(
+      toolCatalog.find((t) => t.name === block.name)?.connector_id,
+    )
     setLoginPickerConnectorId(connectorId)
+    // Never fall back to all connectors: missing id → empty list + 空态文案.
+    setLoginPickerEntries(
+      connectorId ? loginPickerEntriesForConnector(loginEntries, connectorId) : [],
+    )
     setLoginPickerOpen(true)
   }
+
+  // When opening「去登录」with a known connector, re-fetch filtered entries.
+  useEffect(() => {
+    if (!loginPickerOpen) return
+    const connectorId = resolveConnectorId(loginPickerConnectorId)
+    if (!connectorId) {
+      setLoginPickerEntries([])
+      return
+    }
+    const id = conversationId
+    let cancelled = false
+    void listLoginEntries(id, connectorId)
+      .then((entries) => {
+        if (cancelled || conversationIdRef.current !== id) return
+        setLoginPickerEntries(loginPickerEntriesForConnector(entries, connectorId))
+      })
+      .catch(() => {
+        if (!cancelled && conversationIdRef.current === id) setLoginPickerEntries([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loginPickerOpen, loginPickerConnectorId, conversationId])
 
   const onRollbackUser = async (m: ChatMessage) => {
     if (busy || liveRunId || historyMutating) return
@@ -1244,14 +1277,16 @@ export function ChatPage() {
       </Modal>
       <LoginPicker
         open={loginPickerOpen}
-        entries={
-          loginPickerConnectorId
-            ? loginEntries.filter((e) => e.connector_id === loginPickerConnectorId)
-            : loginEntries
+        entries={loginPickerEntries}
+        emptyMessage={
+          resolveConnectorId(loginPickerConnectorId)
+            ? LOGIN_AT.pickerEmpty
+            : LOGIN_AT.pickerNoConnector
         }
         onClose={() => {
           setLoginPickerOpen(false)
           setLoginPickerConnectorId(undefined)
+          setLoginPickerEntries([])
         }}
         onPick={onPickLogin}
       />

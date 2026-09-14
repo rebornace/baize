@@ -389,6 +389,7 @@ export const LOGIN_AT = {
   paramsCancel: '取消',
   startedNote: '登录已发起，可在对话中查看进度。',
   pickerEmpty: '没有匹配的登录入口',
+  pickerNoConnector: '无法确定该工具所属连接器，请改用输入框 @ 选择登录入口。',
   errBusy: '上一条还在处理中，请稍候再试。',
   errNotEntry: '该工具不是可用的登录入口。',
   errGeneric: '登录未能发起，请稍后重试。',

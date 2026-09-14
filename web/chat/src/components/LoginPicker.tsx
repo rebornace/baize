@@ -10,6 +10,8 @@ export interface LoginPickerProps {
   onClose: () => void
   onPick: (entry: LoginEntry, args?: Record<string, unknown>) => void | Promise<void>
   title?: string
+  /** Shown when entries is empty (e.g. no connector vs no matches). */
+  emptyMessage?: string
 }
 
 export function LoginPicker({
@@ -18,6 +20,7 @@ export function LoginPicker({
   onClose,
   onPick,
   title = LOGIN_AT.sectionLogin,
+  emptyMessage = LOGIN_AT.pickerEmpty,
 }: LoginPickerProps) {
   const [paramsEntry, setParamsEntry] = useState<LoginEntry | null>(null)
   const [busy, setBusy] = useState(false)
@@ -61,7 +64,7 @@ export function LoginPicker({
         }
       >
         {entries.length === 0 ? (
-          <p className="login-picker-empty">{LOGIN_AT.pickerEmpty}</p>
+          <p className="login-picker-empty">{emptyMessage}</p>
         ) : (
           <ul className="login-picker-list" role="listbox" aria-label={title}>
             {entries.map((entry) => (
