@@ -870,7 +870,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	// omitted so both preserve-on-omit paths share one store read.
 	var existingConn store.Connector
 	var hasExisting bool
-	needExisting := body.ExecutionCallbackURL == nil || (body.Type != "mcp" && body.Auth.Capture == nil)
+	needExisting := body.ExecutionCallbackURL == nil || (body.Type != "mcp" && body.Auth.Capture == nil) || (body.Type == "mcp" && body.MCP.OAuth != nil)
 	if needExisting {
 		if existing, err := s.Store.GetConnector(id); err == nil {
 			existingConn = existing
@@ -914,6 +914,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		callbackURL = strings.TrimSpace(*body.ExecutionCallbackURL)
 	} else if hasExisting {
 		callbackURL = existingConn.ExecutionCallbackURL
+	}
+
+	if body.Type == "mcp" {
+		mergeMCPOAuthPreserveSecrets(&body.MCP, existingConn, hasExisting)
 	}
 
 	c, infos, err := connector.Apply(connector.ApplyInput{
@@ -981,7 +985,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"tools":                  infos,
 	}
 	if c.Type == "mcp" {
-		resp["mcp"] = c.MCP
+		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
 	s.syncLoginManagedSkill(id)
 	writeJSON(w, http.StatusOK, resp)
@@ -1063,7 +1067,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"tools":                  tools,
 	}
 	if c.Type == "mcp" {
-		resp["mcp"] = c.MCP
+		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

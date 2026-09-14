@@ -55,6 +55,19 @@ type MCPConfig struct {
 	URL              string            `json:"url,omitempty"`
 	Headers          map[string]string `json:"headers,omitempty"`
 	ExportDBReadonly bool              `json:"export_db_readonly,omitempty"`
+	OAuth            *MCPOAuthConfig   `json:"oauth,omitempty"`
+}
+
+// MCPOAuthConfig holds OAuth settings and sealed tokens on an MCP connector.
+type MCPOAuthConfig struct {
+	Status                string `json:"status,omitempty"`
+	ClientID              string `json:"client_id,omitempty"`
+	ClientSecretSealed    string `json:"client_secret,omitempty"`
+	TokenBundleSealed     string `json:"token_bundle,omitempty"`
+	AuthorizationEndpoint string `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint         string `json:"token_endpoint,omitempty"`
+	RegistrationEndpoint  string `json:"registration_endpoint,omitempty"`
+	ResourceMetadataURL   string `json:"resource_metadata_url,omitempty"`
 }
 
 // Tool source constants describing how a tool row entered the catalog.

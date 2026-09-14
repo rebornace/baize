@@ -34,6 +34,29 @@ func redactedProfile(p store.ModelProfile) store.ModelProfile {
 	return p
 }
 
+func redactMCPForAPI(cfg store.MCPConfig) store.MCPConfig {
+	if cfg.OAuth == nil {
+		return cfg
+	}
+	o := *cfg.OAuth
+	o.TokenBundleSealed = ""
+	o.ClientSecretSealed = ""
+	cfg.OAuth = &o
+	return cfg
+}
+
+func mergeMCPOAuthPreserveSecrets(mcp *store.MCPConfig, existing store.Connector, hasExisting bool) {
+	if mcp == nil || mcp.OAuth == nil || !hasExisting || existing.MCP.OAuth == nil {
+		return
+	}
+	if strings.TrimSpace(mcp.OAuth.ClientSecretSealed) == "" {
+		mcp.OAuth.ClientSecretSealed = existing.MCP.OAuth.ClientSecretSealed
+	}
+	if strings.TrimSpace(mcp.OAuth.TokenBundleSealed) == "" {
+		mcp.OAuth.TokenBundleSealed = existing.MCP.OAuth.TokenBundleSealed
+	}
+}
+
 func strVal(p *string) string {
 	if p == nil {
 		return ""
