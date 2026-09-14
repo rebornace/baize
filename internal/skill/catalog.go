@@ -70,6 +70,20 @@ func (c *Catalog) List() []Package {
 	return out
 }
 
+func (c *Catalog) UserDir() string {
+	if c == nil {
+		return ""
+	}
+	return c.userDir
+}
+
+func (c *Catalog) ManagedDir() string {
+	if c == nil {
+		return ""
+	}
+	return c.managedDir
+}
+
 func (c *Catalog) Reload() error {
 	byID := make(map[string]Package)
 	for _, dir := range c.builtinDirs {

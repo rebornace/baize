@@ -39,6 +39,7 @@ import (
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/skill"
+	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -990,7 +991,28 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	if c.Type == "mcp" {
 		resp["mcp"] = c.MCP
 	}
+	s.syncLoginManagedSkill(id)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// syncLoginManagedSkill refreshes the managed login skill for one connector
+// then reloads the skill catalog. Sync/Reload failures are logged only so the
+// connector mutation HTTP response stays successful.
+func (s *Server) syncLoginManagedSkill(connectorID string) {
+	if s == nil || s.SkillCatalog == nil {
+		return
+	}
+	managedDir := s.SkillCatalog.ManagedDir()
+	if strings.TrimSpace(managedDir) == "" {
+		return
+	}
+	if err := loginmanage.SyncConnector(s.Store, managedDir, s.SkillCatalog.UserDir(), connectorID); err != nil {
+		log.Printf("loginmanage: sync connector %q: %v", connectorID, err)
+		return
+	}
+	if err := s.SkillCatalog.Reload(); err != nil {
+		log.Printf("loginmanage: reload skills after sync %q: %v", connectorID, err)
+	}
 }
 
 func validImportFormat(format string) bool {
@@ -1430,6 +1452,7 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 	c.RequireApproval = syncRequireLoginList(c.RequireApproval, name, row.RequireApproval)
 	s.Store.UpsertConnector(c)
 
+	s.syncLoginManagedSkill(row.ConnectorID)
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -1531,6 +1554,7 @@ func (s *Server) handlePostConnectorTool(w http.ResponseWriter, r *http.Request)
 	}
 	s.Store.UpsertConnector(c)
 
+	s.syncLoginManagedSkill(id)
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -1558,6 +1582,7 @@ func (s *Server) handleDeleteConnectorTool(w http.ResponseWriter, r *http.Reques
 		s.Store.UpsertConnector(c)
 	}
 
+	s.syncLoginManagedSkill(row.ConnectorID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1581,6 +1606,7 @@ func (s *Server) handleDeleteConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	s.syncLoginManagedSkill(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
