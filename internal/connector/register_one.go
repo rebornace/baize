@@ -16,6 +16,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -45,6 +46,10 @@ type registerOneContext struct {
 	mcpSession     *mcp.ClientSession
 	mcpHTTPURL     string
 	mcpHTTPHeaders map[string]string
+
+	// settingsKey + store: HTTP MCP OAuth Bearer inject / refresh write-back.
+	settingsKey settingscrypto.Key
+	store       store.Store
 
 	// enterprise execution callback (openapi / http plugin invoke path):
 	callbackURL string
@@ -333,7 +338,16 @@ func mcpInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		if ctx.mcpSession != nil {
 			result, err = mcpbridge.CallToolWithOpts(c, ctx.mcpSession, name, args, opts)
 		} else if ctx.mcpHTTPURL != "" {
-			session, connErr := mcpbridge.ConnectHTTP(c, ctx.mcpHTTPURL, ctx.mcpHTTPHeaders)
+			headers, reauth, hdrErr := resolveMCPHTTPOAuthHeaders(
+				c, ctx.store, ctx.id, ctx.settingsKey, ctx.mcpHTTPHeaders, nil,
+			)
+			if hdrErr != nil {
+				return nil, true, hdrErr
+			}
+			if reauth != nil {
+				return reauth, true, nil
+			}
+			session, connErr := mcpbridge.ConnectHTTP(c, ctx.mcpHTTPURL, headers)
 			if connErr != nil {
 				return nil, true, connErr
 			}
@@ -513,6 +527,8 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 		mcpSession:         mcpSession,
 		mcpHTTPURL:         mcpHTTPURL,
 		mcpHTTPHeaders:     mcpHTTPHeaders,
+		settingsKey:        ensureSettingsKey(nil),
+		store:              st,
 		callbackURL:        strings.TrimSpace(c.ExecutionCallbackURL),
 		callbackSigner:     cb.Signer,
 		callbackSecret:     cb.Secret,

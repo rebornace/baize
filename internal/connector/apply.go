@@ -13,6 +13,7 @@ import (
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -32,6 +33,10 @@ type ApplyInput struct {
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
 	Auth                    store.ConnectorAuth
 	MCP                     store.MCPConfig
+
+	// SettingsKey seals/opens MCP OAuth token bundles. Optional; when empty,
+	// callers may rely on BAIZE_SETTINGS_KEY via settingscrypto.KeyFromEnv.
+	SettingsKey settingscrypto.Key
 
 	// Callback injection (Phase 2). When all four are usable and the
 	// per-invoke ctx carries a RunID, the plugin invoker issues a short-lived
@@ -191,13 +196,30 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			if err != nil {
 				return store.Connector{}, nil, err
 			}
+			key := ensureSettingsKey(in.SettingsKey)
+			headers, reauth, oauthErr := resolveMCPHTTPOAuthHeaders(
+				context.Background(), in.Store, in.ID, key, headers, cfg.OAuth,
+			)
+			if oauthErr != nil {
+				return store.Connector{}, nil, oauthErr
+			}
+			if reauth != nil {
+				return store.Connector{}, nil, fmt.Errorf("%w: oauth_reauth_required", mcpbridge.ErrInvalidMCP)
+			}
+			// Keep refreshed sealed bundle on input so phase-4 Upsert persists it.
+			in.MCP.OAuth = cfg.OAuth
 			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
 			if err != nil {
 				return store.Connector{}, nil, err
 			}
 			discovered = tools
 			mcpHTTPURL = cfg.URL
-			mcpHTTPHeaders = headers
+			// Invoker keeps static headers only; OAuth is re-resolved per call from store.
+			staticHeaders, err := mcpbridge.ResolveHeaders(cfg.Headers)
+			if err != nil {
+				return store.Connector{}, nil, err
+			}
+			mcpHTTPHeaders = staticHeaders
 		default:
 			return store.Connector{}, nil, fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
 		}
@@ -326,6 +348,8 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		mcpSession:              mcpSession,
 		mcpHTTPURL:              mcpHTTPURL,
 		mcpHTTPHeaders:          mcpHTTPHeaders,
+		settingsKey:             ensureSettingsKey(in.SettingsKey),
+		store:                   in.Store,
 		callbackURL:             strings.TrimSpace(in.ExecutionCallbackURL),
 		callbackSigner:          in.CallbackSigner,
 		callbackSecret:          in.CallbackSecret,
