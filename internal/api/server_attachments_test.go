@@ -94,7 +94,7 @@ func attachmentsServer(t *testing.T, vision bool) (*api.Server, store.Store, *ca
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"))
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

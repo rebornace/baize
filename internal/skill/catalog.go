@@ -18,11 +18,13 @@ import (
 const (
 	SourceBuiltin = "builtin"
 	SourceUser    = "user"
+	SourceManaged = "managed"
 )
 
 var (
 	ErrNotFound = errors.New("skill not found")
 	ErrBuiltin  = errors.New("cannot delete builtin skill")
+	ErrManaged  = errors.New("cannot delete managed skill")
 )
 
 type Catalog struct {
@@ -30,13 +32,15 @@ type Catalog struct {
 	byID        map[string]Package
 	builtinDirs []string
 	userDir     string
+	managedDir  string
 }
 
-func LoadCatalog(builtinDirs []string, user string) (*Catalog, error) {
+func LoadCatalog(builtinDirs []string, userDir, managedDir string) (*Catalog, error) {
 	c := &Catalog{
 		byID:        make(map[string]Package),
 		builtinDirs: append([]string(nil), builtinDirs...),
-		userDir:     user,
+		userDir:     userDir,
+		managedDir:  managedDir,
 	}
 	if err := c.Reload(); err != nil {
 		return nil, err
@@ -74,6 +78,9 @@ func (c *Catalog) Reload() error {
 		}
 	}
 	if err := scanDir(c.userDir, SourceUser, byID); err != nil {
+		return err
+	}
+	if err := scanDir(c.managedDir, SourceManaged, byID); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -253,6 +260,9 @@ func (c *Catalog) DeleteUser(id string) error {
 	p, ok := c.Get(id)
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	if p.Source == SourceManaged {
+		return fmt.Errorf("%w: %q", ErrManaged, id)
 	}
 	if p.Source != SourceUser {
 		return fmt.Errorf("%w: %q", ErrBuiltin, id)

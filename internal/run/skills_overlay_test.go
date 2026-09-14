@@ -10,7 +10,7 @@ import (
 )
 
 func TestSpecsForRunIncludesConnectorToolsOutsideSkill(t *testing.T) {
-	cat, err := skill.LoadCatalog([]string{"../../skills", "../../examples/skills"}, t.TempDir())
+	cat, err := skill.LoadCatalog([]string{"../../skills", "../../examples/skills"}, t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,20 +10,26 @@ import (
 )
 
 type Package struct {
-	ID          string
-	Name        string
-	Description string
-	Tools       []string
-	Body        string
-	Source      string // builtin | user
-	Dir         string
-	Workflow    *workflow.Workflow // optional pipeline from workflow.yaml
+	ID                 string
+	Name               string
+	Description        string
+	Tools              []string
+	Body               string
+	Source             string // builtin | user | managed
+	Dir                string
+	Workflow           *workflow.Workflow // optional pipeline from workflow.yaml
+	Managed            bool
+	ManagedKind        string
+	ManagedConnectorID string
 }
 
 type frontmatter struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Tools       []string `yaml:"tools"`
+	Name               string   `yaml:"name"`
+	Description        string   `yaml:"description"`
+	Tools              []string `yaml:"tools"`
+	Managed            bool     `yaml:"managed"`
+	ManagedKind        string   `yaml:"managed_kind"`
+	ManagedConnectorID string   `yaml:"managed_connector_id"`
 }
 
 func ParseSKILLMD(raw []byte) (Package, error) {
@@ -48,9 +54,12 @@ func ParseSKILLMD(raw []byte) (Package, error) {
 		return Package{}, fmt.Errorf("name required")
 	}
 	return Package{
-		Name:        strings.TrimSpace(fm.Name),
-		Description: strings.TrimSpace(fm.Description),
-		Tools:       fm.Tools,
-		Body:        body,
+		Name:               strings.TrimSpace(fm.Name),
+		Description:        strings.TrimSpace(fm.Description),
+		Tools:              fm.Tools,
+		Body:               body,
+		Managed:            fm.Managed,
+		ManagedKind:        strings.TrimSpace(fm.ManagedKind),
+		ManagedConnectorID: strings.TrimSpace(fm.ManagedConnectorID),
 	}, nil
 }

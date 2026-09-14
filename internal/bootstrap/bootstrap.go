@@ -306,7 +306,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 
 	reg := tool.NewRegistry()
 
-	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir)
+	managedDir := filepath.Join(cfg.Skills.UserDir, "managed")
+	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir, managedDir)
 	if err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("load skill catalog: %w", err)
