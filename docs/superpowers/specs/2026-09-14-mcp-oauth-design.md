@@ -1,6 +1,7 @@
 # UI-MCP-OAUTH：远程 HTTP MCP 的 OAuth 2.1 交互登录
 
-> 状态：**范围已确认**（2026-09-14 头脑风暴；待写实现计划）  
+> 状态：**实现计划已就绪**（计划：[`plans/2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md)）  
+
 > 日期：2026-09-14  
 > 史诗：UI-MCP-OAUTH  
 > 前置：P3-C MCP 连接器页（静态 Bearer / headers）；设置页 ACL 仅 admin；stdio MCP 凭 env  
