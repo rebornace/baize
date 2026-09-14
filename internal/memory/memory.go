@@ -59,6 +59,7 @@ func (s *MemoryStore) Upsert(e Entry) (Entry, error) {
 			if prev.OwnerID != e.OwnerID {
 				return Entry{}, fmt.Errorf("owner mismatch")
 			}
+			oldKey := prev.Key
 			prev.Text = e.Text
 			prev.Key = e.Key
 			if e.Source != "" {
@@ -66,8 +67,13 @@ func (s *MemoryStore) Upsert(e Entry) (Entry, error) {
 			}
 			prev.UpdatedAt = now
 			s.byID[e.ID] = prev
-			if e.Key != "" {
-				s.ownerKeyID[ownerKey(e.OwnerID, e.Key)] = e.ID
+			if oldKey != e.Key {
+				if oldKey != "" {
+					delete(s.ownerKeyID, ownerKey(e.OwnerID, oldKey))
+				}
+				if e.Key != "" {
+					s.ownerKeyID[ownerKey(e.OwnerID, e.Key)] = e.ID
+				}
 			}
 			return prev, nil
 		}
