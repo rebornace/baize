@@ -193,3 +193,48 @@ func TestSupervisorDynamicPortFile(t *testing.T) {
 		t.Fatalf("status=%d", resp.StatusCode)
 	}
 }
+
+// Stale listen.port from a previous run must not be treated as the new child's
+// address: waitPortFile would otherwise return immediately and healthz the
+// dead port while the child listens elsewhere (CH-PORT race).
+func TestSupervisorIgnoresStalePortFileOnSpawn(t *testing.T) {
+	exe := buildFakeDynamicAdapter(t)
+	portFile := filepath.Join(t.TempDir(), "listen.port")
+	stale := "127.0.0.1:59818"
+	if err := os.WriteFile(portFile, []byte(stale+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sup := &supervisor{
+		command:    exe,
+		healthzURL: "http://127.0.0.1:1/healthz",
+		portFile:   portFile,
+		env:        []string{"FAKE_ADDR=127.0.0.1:0", "PORT_FILE=" + portFile},
+		timeout:    10 * time.Second,
+	}
+	sup.onListen = func(addr string) {
+		sup.healthzURL = "http://" + addr + "/healthz"
+	}
+	ctx := context.Background()
+	if err := sup.start(ctx); err != nil {
+		t.Fatalf("start with stale port-file: %v", err)
+	}
+	defer func() { _ = sup.stop(ctx) }()
+	got, err := readListenPortFile(portFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == stale {
+		t.Fatalf("healthz still on stale addr %q", got)
+	}
+	if !strings.HasPrefix(sup.healthzURL, "http://"+got) {
+		t.Fatalf("healthzURL=%q want host %q", sup.healthzURL, got)
+	}
+	resp, err := http.Get(sup.healthzURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+}
