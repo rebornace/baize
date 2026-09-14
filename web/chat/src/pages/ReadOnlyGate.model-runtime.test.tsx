@@ -37,7 +37,7 @@ describe('ModelSettings read-only for operator', () => {
   it('lists profiles but hides create form, edit and delete buttons', async () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) =>
       String(url) === '/v0/settings/models'
-        ? jsonResponse({ profiles: [{ id: 'm1', name: '标准模型', model: 'gpt', base_url: 'u', provider: 'openai_compatible', supports_vision: false, disable_thinking: false, context_tokens: 1, auto_tier: 'standard' }] })
+        ? jsonResponse({ profiles: [{ id: 'm1', name: '标准模型', model: 'gpt', base_url: 'u', provider: 'openai_compatible', supports_vision: false, disable_thinking: false, thinking_level: 'medium', thinking_dialect: 'auto', context_tokens: 1, auto_tier: 'standard' }] })
         : jsonResponse(null))
     await renderOperator(<ModelSettings />)
     expect(host.textContent).toContain(MODELS.title)

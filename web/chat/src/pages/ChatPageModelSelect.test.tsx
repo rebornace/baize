@@ -10,6 +10,8 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   base_url: 'https://api.example.com/v1',
   model: 'gpt-4o',
   disable_thinking: false,
+  thinking_level: 'medium',
+  thinking_dialect: 'auto',
   supports_vision: false,
   context_tokens: 128000,
   auto_tier: 'standard',

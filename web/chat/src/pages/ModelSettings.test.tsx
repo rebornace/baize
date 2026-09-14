@@ -34,6 +34,8 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   base_url: 'https://api.example.com/v1',
   model: 'gpt-4o',
   disable_thinking: false,
+  thinking_level: 'medium',
+  thinking_dialect: 'auto',
   supports_vision: false,
   context_tokens: 128000,
   auto_tier: 'standard',
@@ -123,7 +125,8 @@ describe('buildCreatePayload', () => {
     apiKey: 'sk-secret',
     apiKeyEnv: '',
     supportsVision: true,
-    disableThinking: false,
+    thinkingLevel: 'medium',
+    thinkingDialect: 'auto',
     contextTokens: 128000,
     tier: 'standard',
   }
@@ -160,11 +163,25 @@ describe('buildCreatePayload', () => {
         model: 'gpt-4o',
         api_key_env: 'OPENAI_API_KEY',
         supports_vision: true,
-        disable_thinking: false,
+        thinking_level: 'medium',
+        thinking_dialect: 'auto',
         context_tokens: 128000,
         auto_tier: 'standard',
       },
     })
+  })
+
+  it('includes thinking_level and thinking_dialect from the form', () => {
+    const r = buildCreatePayload({
+      ...valid,
+      thinkingLevel: 'off',
+      thinkingDialect: 'deepseek',
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.payload.thinking_level).toBe('off')
+      expect(r.payload.thinking_dialect).toBe('deepseek')
+    }
   })
 
   it('includes context_tokens from the form', () => {
@@ -206,10 +223,18 @@ describe('buildPatchPayload', () => {
   it('sends changed booleans', () => {
     const form = profileToForm(original)
     form.supportsVision = true
-    form.disableThinking = true
     expect(buildPatchPayload(form, original)).toEqual({
       supports_vision: true,
-      disable_thinking: true,
+    })
+  })
+
+  it('sends thinking_level and thinking_dialect when changed', () => {
+    const form = profileToForm(original)
+    form.thinkingLevel = 'high'
+    form.thinkingDialect = 'openai'
+    expect(buildPatchPayload(form, original)).toEqual({
+      thinking_level: 'high',
+      thinking_dialect: 'openai',
     })
   })
 
@@ -259,6 +284,19 @@ describe('profileToForm', () => {
     expect(form.apiKeyEnv).toBe('K')
     expect(form.tier).toBe('power')
   })
+
+  it('maps thinking_level and thinking_dialect', () => {
+    const form = profileToForm(
+      profile({
+        id: 'mp_1',
+        name: 'p',
+        thinking_level: 'low',
+        thinking_dialect: 'qwen',
+      }),
+    )
+    expect(form.thinkingLevel).toBe('low')
+    expect(form.thinkingDialect).toBe('qwen')
+  })
 })
 
 describe('ModelProfileList', () => {
@@ -292,6 +330,21 @@ describe('ModelProfileList', () => {
     const visionBadges = html.match(/视觉/g)?.length ?? 0
     expect(visionBadges).toBeGreaterThanOrEqual(1)
     expect(html).toContain('ui-badge')
+  })
+
+  it('shows 关思考 when thinking_level is off, not 禁用思考', () => {
+    const html = renderToStaticMarkup(
+      createElement(ModelProfileList, {
+        profiles: [
+          profile({ id: 'mp_off', name: '关思考模型', thinking_level: 'off', disable_thinking: true }),
+        ],
+        busy: false,
+        onEdit: () => {},
+        onDelete: () => {},
+      }),
+    )
+    expect(html).toContain(MODELS.listThinkingOff)
+    expect(html).not.toContain('禁用思考')
   })
 
   it('offers an enabled delete button for every profile (no default lock)', () => {
@@ -406,17 +459,74 @@ describe('ModelSettings create modal', () => {
     expect(host.querySelector('[role="dialog"]')).toBeTruthy()
     expect(host.textContent).toContain(MODELS.fieldBaseUrl)
     expect(host.textContent).toContain(MODELS.fieldTier)
+    expect(host.textContent).toContain(MODELS.fieldThinkingLevel)
+    expect(host.textContent).not.toContain('禁用思考')
     const keyInput = host.querySelector('[role="dialog"] input[type="password"]') as HTMLInputElement
     expect(keyInput.placeholder).toBe('留空则使用环境变量')
     const details = host.querySelector('details.settings-advanced') as HTMLDetailsElement | null
     expect(details).toBeTruthy()
     expect(details?.open).toBe(false)
-    expect(details?.textContent).toContain(MODELS.fieldDisableThinking)
+    expect(details?.textContent).toContain(MODELS.fieldThinkingDialect)
     const summary = details!.querySelector('summary')
     await act(async () => {
       summary!.click()
     })
     expect(details!.open).toBe(true)
+    root.unmount()
+    host.remove()
+  })
+
+  it('PATCHes thinking_level and thinking_dialect from the edit form', async () => {
+    const existing = profile({
+      id: 'mp_1',
+      name: '标准模型',
+      thinking_level: 'medium',
+      thinking_dialect: 'auto',
+    })
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([existing])
+    const updateSpy = vi.spyOn(api, 'updateModelProfile').mockResolvedValue({
+      ...existing,
+      thinking_level: 'high',
+      thinking_dialect: 'deepseek',
+    })
+    const { host, root } = await renderModelSettings()
+    const editBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.edit),
+    )
+    await act(async () => {
+      editBtn!.click()
+    })
+    const dialog = host.querySelector('[role="dialog"]')!
+    const selects = [...dialog.querySelectorAll('select')] as HTMLSelectElement[]
+    const levelSelect = selects.find((s) =>
+      [...s.options].some((o) => o.value === 'high' && o.textContent === MODELS.thinkingLevelHigh),
+    )!
+    const dialectSelect = selects.find((s) =>
+      [...s.options].some((o) => o.value === 'deepseek'),
+    )!
+    expect(levelSelect).toBeTruthy()
+    expect(dialectSelect).toBeTruthy()
+    await act(async () => {
+      levelSelect.value = 'high'
+      levelSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      dialectSelect.value = 'deepseek'
+      dialectSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const saveBtn = [...dialog.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.save),
+    )
+    await act(async () => {
+      saveBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(updateSpy).toHaveBeenCalledWith(
+      'mp_1',
+      expect.objectContaining({
+        thinking_level: 'high',
+        thinking_dialect: 'deepseek',
+      }),
+    )
     root.unmount()
     host.remove()
   })

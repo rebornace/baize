@@ -7,6 +7,8 @@ import {
   updateModelProfile,
   type ModelProfile,
   type ModelTier,
+  type ThinkingDialect,
+  type ThinkingLevel,
 } from '../api'
 import {
   Badge,
@@ -36,6 +38,21 @@ const TIER_OPTIONS: { value: ModelTier | 'auto'; label: string }[] = [
   { value: 'power', label: '深度思考（复杂推理、长任务）' },
 ]
 
+const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
+  { value: 'off', label: MODELS.thinkingLevelOff },
+  { value: 'low', label: MODELS.thinkingLevelLow },
+  { value: 'medium', label: MODELS.thinkingLevelMedium },
+  { value: 'high', label: MODELS.thinkingLevelHigh },
+]
+
+const THINKING_DIALECT_OPTIONS: { value: ThinkingDialect; label: string }[] = [
+  { value: 'auto', label: MODELS.thinkingDialectAuto },
+  { value: 'openai', label: MODELS.thinkingDialectOpenai },
+  { value: 'deepseek', label: MODELS.thinkingDialectDeepseek },
+  { value: 'qwen', label: MODELS.thinkingDialectQwen },
+  { value: 'omit', label: MODELS.thinkingDialectOmit },
+]
+
 export interface ProfileFormState {
   name: string
   baseUrl: string
@@ -43,7 +60,8 @@ export interface ProfileFormState {
   apiKey: string
   apiKeyEnv: string
   supportsVision: boolean
-  disableThinking: boolean
+  thinkingLevel: ThinkingLevel
+  thinkingDialect: ThinkingDialect
   contextTokens: number
   tier: ModelTier | 'auto'
 }
@@ -55,7 +73,8 @@ export const EMPTY_PROFILE_FORM: ProfileFormState = {
   apiKey: '',
   apiKeyEnv: '',
   supportsVision: false,
-  disableThinking: false,
+  thinkingLevel: 'medium',
+  thinkingDialect: 'auto',
   contextTokens: 128000,
   tier: 'auto',
 }
@@ -68,8 +87,15 @@ export interface ModelProfilePayload {
   api_key_env?: string
   supports_vision?: boolean
   disable_thinking?: boolean
+  thinking_level?: ThinkingLevel
+  thinking_dialect?: ThinkingDialect
   context_tokens?: number
   auto_tier?: ModelTier | 'auto'
+}
+
+function resolveThinkingLevel(p: ModelProfile): ThinkingLevel {
+  if (p.thinking_level) return p.thinking_level
+  return p.disable_thinking ? 'off' : 'medium'
 }
 
 export function profileToForm(p: ModelProfile): ProfileFormState {
@@ -82,7 +108,8 @@ export function profileToForm(p: ModelProfile): ProfileFormState {
     apiKey: '',
     apiKeyEnv: p.api_key_env ?? '',
     supportsVision: p.supports_vision,
-    disableThinking: p.disable_thinking,
+    thinkingLevel: resolveThinkingLevel(p),
+    thinkingDialect: p.thinking_dialect ?? 'auto',
     contextTokens: p.context_tokens > 0 ? p.context_tokens : 128000,
     tier: p.auto_tier ?? 'standard',
   }
@@ -111,7 +138,8 @@ export function buildCreatePayload(form: ProfileFormState):
       ...(apiKey ? { api_key: apiKey } : {}),
       ...(apiKeyEnv ? { api_key_env: apiKeyEnv } : {}),
       supports_vision: form.supportsVision,
-      disable_thinking: form.disableThinking,
+      thinking_level: form.thinkingLevel,
+      thinking_dialect: form.thinkingDialect,
       context_tokens: form.contextTokens > 0 ? form.contextTokens : 128000,
       auto_tier: form.tier,
     },
@@ -139,8 +167,11 @@ export function buildPatchPayload(
   if (form.supportsVision !== original.supports_vision) {
     payload.supports_vision = form.supportsVision
   }
-  if (form.disableThinking !== original.disable_thinking) {
-    payload.disable_thinking = form.disableThinking
+  if (form.thinkingLevel !== resolveThinkingLevel(original)) {
+    payload.thinking_level = form.thinkingLevel
+  }
+  if (form.thinkingDialect !== (original.thinking_dialect ?? 'auto')) {
+    payload.thinking_dialect = form.thinkingDialect
   }
   const contextTokens = Math.floor(Number(form.contextTokens))
   if (contextTokens > 0 && contextTokens !== original.context_tokens) {
@@ -220,6 +251,24 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           ))}
         </Select>
       </Field>
+      <Field label={MODELS.fieldThinkingLevel}>
+        <Select
+          value={form.thinkingLevel}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              thinkingLevel: e.target.value as ThinkingLevel,
+            }))
+          }
+          disabled={busy}
+        >
+          {THINKING_LEVEL_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
       <details className="settings-advanced">
         <summary>{MODELS.advanced}</summary>
         <label className="ui-checkbox-row">
@@ -231,15 +280,24 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           />
           <span>{MODELS.fieldVision}</span>
         </label>
-        <label className="ui-checkbox-row">
-          <input
-            type="checkbox"
-            checked={form.disableThinking}
-            onChange={(e) => setForm((f) => ({ ...f, disableThinking: e.target.checked }))}
+        <Field label={MODELS.fieldThinkingDialect}>
+          <Select
+            value={form.thinkingDialect}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                thinkingDialect: e.target.value as ThinkingDialect,
+              }))
+            }
             disabled={busy}
-          />
-          <span>{MODELS.fieldDisableThinking}</span>
-        </label>
+          >
+            {THINKING_DIALECT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <Field label={MODELS.fieldContextTokens} hint="tokens，留空/0 用默认 128000">
           <Input
             type="number"
@@ -295,7 +353,7 @@ export function ModelProfileList({
         >
           <p className="settings-muted">
             {credentialHint(p)}
-            {p.disable_thinking ? ' · 禁用思考' : ''}
+            {resolveThinkingLevel(p) === 'off' ? ` · ${MODELS.listThinkingOff}` : ''}
             {p.context_tokens > 0 ? ` · ${p.context_tokens} ctx` : ''}
           </p>
           {!readOnly && (

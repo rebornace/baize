@@ -688,6 +688,12 @@ export async function revokeMCPExportKey(id: string): Promise<void> {
   await parseJSON<{ status: string }>(res)
 }
 
+/** Default thinking intensity for a model profile. */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
+
+/** Wire dialect for thinking fields; `auto` lets the server infer. */
+export type ThinkingDialect = 'auto' | 'openai' | 'deepseek' | 'qwen' | 'omit'
+
 export interface ModelProfile {
   id: string
   name: string
@@ -697,7 +703,10 @@ export interface ModelProfile {
   /** Redacted mask in list/detail responses; never sent verbatim by the server. */
   api_key?: string
   api_key_env?: string
+  /** Derived: thinking_level === 'off'. Kept for older clients. */
   disable_thinking: boolean
+  thinking_level: ThinkingLevel
+  thinking_dialect: ThinkingDialect
   supports_vision: boolean
   context_tokens: number
   /** Auto-routing capability tier: "light" | "standard" | "power". */
@@ -719,6 +728,8 @@ export type ModelProfileInput = Partial<{
   api_key: string
   api_key_env: string
   disable_thinking: boolean
+  thinking_level: ThinkingLevel
+  thinking_dialect: ThinkingDialect
   supports_vision: boolean
   context_tokens: number
   auto_tier: ModelTier | 'auto'
