@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rebornace/baize/internal/memory"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/rebornace/baize/internal/memory"
 )
 
 func openPostgresMemory(t *testing.T) memory.Store {
