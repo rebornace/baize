@@ -220,6 +220,8 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/tavily \
   -d "{\"type\":\"mcp\",\"mcp\":{\"transport\":\"http\",\"url\":\"https://mcp.tavily.com/mcp/?tavilyApiKey=YOUR_KEY\"}}"
 ```
 
+**HTTP — OAuth 2.1（交互登录）** — 部分远程 MCP 需 OAuth，不能只靠 `mcp.headers` 里静态 API Key。请配置 **`runtime.public_base_url`** 为管理员浏览器可访问的 Runtime 根 URL（OAuth 回调）。在 **设置 → 外部工具服务**（管理员）注册 HTTP 连接器，可选填预登记的 `client_id`，再在连接器行点击 **去授权** / **重新授权**（仅 admin）。access / refresh 令牌密封保存在连接器 `mcp.oauth` 上，生产环境须设置 **`BAIZE_SETTINGS_KEY`**（与下文「设置项加密」同一落库路径）。调用时 OAuth 注入的 **`Authorization` 覆盖** 同名的静态请求头。**stdio MCP 不变**（仍仅 `mcp.env`）。
+
 配置错误或 Server 不可达 → `400 invalid_mcp`（Registry 不变）。工具名全局冲突 → `409 tool_conflict`。
 
 #### MCP + Postgres 试用（`docker-compose.mcp-demo.yml`）
@@ -472,7 +474,7 @@ go run ./cmd/baize start
 
 **控制面凭据** — `GET /v0/settings/credentials` **绝不返回明文口令**：只回 `source`（`config`/`override`）、`operator_set` / `admin_set` 布尔，以及 `operators` 列表（每项仅含 `id` 与 `source`（`config`/`runtime`））。`PATCH` 支持：`operator_token` / `admin_token`（轮换主口令，下一个请求即刻生效）、`add_operators: [{id, token}]`（id 重复返回 `409`）、`remove_operators: [id]`（只能删运行时新增的；删 config 基线的返回 `400`）、`reset: true`（清空全部热更新凭据，回落到 YAML/env 基线口令；不能与其它字段同用）。YAML/env 配置的口令是永久 break-glass 基线，热更新为叠加覆盖。
 
-**设置项加密（`BAIZE_SETTINGS_KEY`）** — 生产请在 `.env` 中设置高熵主密钥（见 `.env.example`）。用于密封控制面口令、模型 profile `api_key`、Inbox channel `secret` 等落库秘密（AES-256-GCM，`bz1:` 前缀）。**有 key：** 写入加密、进程内解密使用；启动时自动把范围内遗留明文就地加密。**无 key：** 经 API 持久化上述秘密会返回 `400`（`settings_key_required`）；仍可读存量明文；若库中已是密文则**拒启**，须配置同一 key。`baize reset-credentials` 仅清空热更新凭据覆盖，与加密及 YAML/env break-glass **正交**。规格：[`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`](docs/superpowers/specs/2026-09-13-f-production-hardening-design.md) §2（**F-KV**）。
+**设置项加密（`BAIZE_SETTINGS_KEY`）** — 生产请在 `.env` 中设置高熵主密钥（见 `.env.example`）。用于密封控制面口令、模型 profile `api_key`、Inbox channel `secret`、**HTTP MCP OAuth 令牌包**（连接器 `mcp.oauth`）等落库秘密（AES-256-GCM，`bz1:` 前缀）。**有 key：** 写入加密、进程内解密使用；启动时自动把范围内遗留明文就地加密。**无 key：** 经 API 持久化上述秘密会返回 `400`（`settings_key_required`）；仍可读存量明文；若库中已是密文则**拒启**，须配置同一 key。`baize reset-credentials` 仅清空热更新凭据覆盖，与加密及 YAML/env break-glass **正交**。规格：[`docs/superpowers/specs/2026-09-13-f-production-hardening-design.md`](docs/superpowers/specs/2026-09-13-f-production-hardening-design.md) §2（**F-KV**）。
 
 **锁死恢复**：轮换后若丢失新的 admin 口令，在服务器本地执行（不走 HTTP 门禁）：
 

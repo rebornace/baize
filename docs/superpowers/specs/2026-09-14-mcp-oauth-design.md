@@ -1,6 +1,6 @@
 # UI-MCP-OAUTH：远程 HTTP MCP 的 OAuth 2.1 交互登录
 
-> 状态：**实现计划已就绪**（计划：[`plans/2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md)）  
+> 状态：**已交付**（计划：[`plans/2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md)）
 
 > 日期：2026-09-14  
 > 史诗：UI-MCP-OAUTH  
@@ -86,5 +86,5 @@ MCP HTTP 调用 ← 解析 access（可 refresh）← 存库令牌
 
 ## 9. 文档与账本
 
-- 账本 / 确认清单：UI-MCP-OAUTH 从「先头脑风暴」改为「范围已确认」。  
-- P3-C 规格可链到本文为 OAuth 承接项。
+- 账本 / 确认清单：UI-MCP-OAUTH **已交付**。  
+- P3-C §11 defer 的 OAuth 交互登录由本文承接（[`2026-09-12-webui-refresh-p3c-mcp-pages-design.md`](2026-09-12-webui-refresh-p3c-mcp-pages-design.md)）。

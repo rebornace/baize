@@ -23,7 +23,7 @@ P3-B 抽出了可复用的连接器列表外壳 `ConnectorShell` 与两步编辑
 1. 范围：MCP 接入迁入外壳；导出页保留独立、全面人话化；不把两者合并进同一外壳。
 2. 鉴权遵循 MCP 规范与主流 agent 统一做法，分传输方式：
    - stdio（本地子进程）：不用 OAuth，凭证走环境变量 `env`（白泽已支持占位符 `${VAR}` / `env:VAR` / `file:`）。
-   - Streamable HTTP（远程）：本批支持静态请求头 / API Key（`headers`，常见 `Authorization=Bearer ...`）；规范的 OAuth 2.1 交互登录（401 发现、PKCE、DCR、浏览器回调、令牌存储刷新）单独立项，本批不做，仅在需要鉴权失败时给人话提示。
+   - Streamable HTTP（远程）：本批支持静态请求头 / API Key（`headers`，常见 `Authorization=Bearer ...`）；规范的 OAuth 2.1 交互登录单独立项 **UI-MCP-OAUTH**（已交付，见 [`2026-09-14-mcp-oauth-design.md`](2026-09-14-mcp-oauth-design.md)）；本批仅在需要鉴权失败时给人话提示。
 3. 工具级权限：保留「使用前需人工审批」（`require_approval`），对齐 Claude Code / Cursor / VS Code 对 MCP 工具的执行前人工确认惯例；MCP 不显示对其无效的「需本人登录」（白泽 capture 仅支持 openapi/http，MCP 无后端支撑，且它不属于 MCP 标准）。
 4. 字段录入沿用多行文本框（新增共享 `Textarea` 原语），保留 `KEY=VALUE` / 每行一个格式与保存时解析，不做结构化行编辑器。
 5. 命名：`mcp` 页显示「外部工具服务」（描述保留「标准 MCP」）；`mcp-export` 页显示「对外提供能力」。
@@ -175,7 +175,7 @@ P3-B 抽出了可复用的连接器列表外壳 `ConnectorShell` 与两步编辑
 
 ## 11. 明确不做
 
-- 远程 HTTP MCP 的 OAuth 2.1 交互登录（401 + PRM 发现、PKCE、DCR、浏览器回调、令牌存储与刷新、按连接器/按用户身份）：独立工作流单独立项；本批仅静态请求头与鉴权失败人话提示。
+- 远程 HTTP MCP 的 OAuth 2.1 交互登录（401 + PRM 发现、PKCE、DCR、浏览器回调、令牌存储与刷新、按连接器/按用户身份）：**已由 UI-MCP-OAUTH 承接**（[`docs/superpowers/specs/2026-09-14-mcp-oauth-design.md`](2026-09-14-mcp-oauth-design.md)）；本批仅静态请求头与鉴权失败人话提示。
 - MCP 工具的「需本人登录」与 capture：白泽 capture 仅支持 openapi/http，MCP 无后端链路，且非 MCP 标准，UI 不暴露。
 - `export_db_readonly` 的任何 UI 写入 —— **已由 UI-EXPORT-DB-RO 承接**（`docs/superpowers/specs/2026-09-13-ui-export-db-readonly-design.md`；MCP 连接编辑弹窗）。
 - 后端既有问题：DELETE 连接器不关闭 stdio 池会话的潜在泄漏；本批不改后端，仅在计划/风险中记录。
