@@ -1,6 +1,6 @@
 # LLM-THINK：思考级别、方言映射与流式思考展示
 
-> 状态：**实现计划已就绪**（计划：[`plans/2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)）  
+> 状态：**已交付**（计划：[`plans/2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)）  
 > 日期：2026-09-14  
 > 史诗：LLM-THINK  
 > 前置：多模型档案（`disable_thinking`）、P1 聊天（模型芯片，明确 defer 本能力）、Run SSE（`GET /v0/runs/{id}/stream`）、`openai_compatible` Chat Completions  
