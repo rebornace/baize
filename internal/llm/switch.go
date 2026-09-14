@@ -18,6 +18,8 @@ type ModelProfileView struct {
 	APIKey          string
 	APIKeyEnv       string
 	DisableThinking bool
+	ThinkingLevel   string
+	ThinkingDialect string
 	SupportsVision  bool
 	ContextTokens   int
 	Tier            string
@@ -80,6 +82,8 @@ func (s *Switch) defaultBuild(v ModelProfileView) Provider {
 	}
 	p := NewOpenAI(v.BaseURL, key, v.Model)
 	p.DisableThinking = v.DisableThinking
+	p.ThinkingLevel = v.ThinkingLevel
+	p.ThinkingDialect = v.ThinkingDialect
 	p.VisionSupported = v.SupportsVision
 	return p
 }

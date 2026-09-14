@@ -1212,6 +1212,8 @@ func seedModelProfile(st store.Store, cfg config.Config) error {
 		Model:           cfg.LLM.Model,
 		APIKeyEnv:       env,
 		DisableThinking: cfg.LLM.DisableThinking,
+		ThinkingLevel:   cfg.LLM.ThinkingLevel,
+		ThinkingDialect: cfg.LLM.ThinkingDialect,
 		SupportsVision:  cfg.LLM.SupportsVision,
 		ContextTokens:   128000,
 		AutoTier:        llm.InferTier(cfg.LLM.Model),
@@ -1234,6 +1236,8 @@ func newLLM(cfg config.Config) (llm.Provider, error) {
 		}
 		p := llm.NewOpenAI(cfg.LLM.BaseURL, os.Getenv(env), cfg.LLM.Model)
 		p.DisableThinking = cfg.LLM.DisableThinking
+		p.ThinkingLevel = cfg.LLM.ThinkingLevel
+		p.ThinkingDialect = cfg.LLM.ThinkingDialect
 		p.VisionSupported = cfg.LLM.SupportsVision
 		return p, nil
 	default:

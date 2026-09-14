@@ -18,6 +18,8 @@ type OpenAI struct {
 	APIKey          string
 	Model           string
 	DisableThinking bool
+	ThinkingLevel   string
+	ThinkingDialect string
 	// VisionSupported reports whether the backing model accepts image parts.
 	// When false, callers should fall back to text-only. Defaults to false.
 	// Exposed as SupportsVision() through the Provider interface.

@@ -356,3 +356,123 @@ func TestModelProfilesNotFoundReturns404(t *testing.T) {
 		t.Fatalf("delete missing must be 404, got %d", delRR.Code)
 	}
 }
+
+func TestModelProfilesThinkingLevelAndDialect(t *testing.T) {
+	srv := modelProfilesServer(t)
+	h := srv.Handler()
+
+	createBody := `{"name":"think","base_url":"https://x/v1","model":"m1","api_key":"sk-secret-1234","thinking_level":"high","thinking_dialect":"deepseek"}`
+	req := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models", strings.NewReader(createBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var created struct {
+		Profile store.ModelProfile `json:"profile"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Profile.ThinkingLevel != "high" {
+		t.Fatalf("thinking_level=%q want high", created.Profile.ThinkingLevel)
+	}
+	if created.Profile.ThinkingDialect != "deepseek" {
+		t.Fatalf("thinking_dialect=%q want deepseek", created.Profile.ThinkingDialect)
+	}
+	if created.Profile.DisableThinking {
+		t.Fatal("disable_thinking must be false when thinking_level=high")
+	}
+	id := created.Profile.ID
+
+	listReq := withAdmin(httptest.NewRequest(http.MethodGet, "/v0/settings/models", nil))
+	listRR := httptest.NewRecorder()
+	h.ServeHTTP(listRR, listReq)
+	var list struct {
+		Profiles []store.ModelProfile `json:"profiles"`
+	}
+	if err := json.Unmarshal(listRR.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	var got *store.ModelProfile
+	for i := range list.Profiles {
+		if list.Profiles[i].ID == id {
+			got = &list.Profiles[i]
+		}
+	}
+	if got == nil {
+		t.Fatal("created profile missing from list")
+	}
+	if got.ThinkingLevel != "high" || got.ThinkingDialect != "deepseek" || got.DisableThinking {
+		t.Fatalf("list echo wrong: %+v", got)
+	}
+
+	// PATCH only disable_thinking → thinking_level=off
+	patchDisable := `{"disable_thinking":true}`
+	patchReq := withAdmin(httptest.NewRequest(http.MethodPatch, "/v0/settings/models/"+id, strings.NewReader(patchDisable)))
+	patchReq.Header.Set("Content-Type", "application/json")
+	patchRR := httptest.NewRecorder()
+	h.ServeHTTP(patchRR, patchReq)
+	if patchRR.Code != http.StatusOK {
+		t.Fatalf("patch disable: code=%d body=%s", patchRR.Code, patchRR.Body.String())
+	}
+	var patched struct {
+		Profile store.ModelProfile `json:"profile"`
+	}
+	if err := json.Unmarshal(patchRR.Body.Bytes(), &patched); err != nil {
+		t.Fatal(err)
+	}
+	if patched.Profile.ThinkingLevel != "off" || !patched.Profile.DisableThinking {
+		t.Fatalf("disable_thinking patch: level=%q disable=%v", patched.Profile.ThinkingLevel, patched.Profile.DisableThinking)
+	}
+
+	// PATCH both: thinking_level wins over disable_thinking
+	patchBoth := `{"thinking_level":"low","disable_thinking":true}`
+	bothReq := withAdmin(httptest.NewRequest(http.MethodPatch, "/v0/settings/models/"+id, strings.NewReader(patchBoth)))
+	bothReq.Header.Set("Content-Type", "application/json")
+	bothRR := httptest.NewRecorder()
+	h.ServeHTTP(bothRR, bothReq)
+	if bothRR.Code != http.StatusOK {
+		t.Fatalf("patch both: code=%d body=%s", bothRR.Code, bothRR.Body.String())
+	}
+	if err := json.Unmarshal(bothRR.Body.Bytes(), &patched); err != nil {
+		t.Fatal(err)
+	}
+	if patched.Profile.ThinkingLevel != "low" || patched.Profile.DisableThinking {
+		t.Fatalf("thinking_level must win: level=%q disable=%v", patched.Profile.ThinkingLevel, patched.Profile.DisableThinking)
+	}
+
+	// Illegal values → 400 invalid_profile
+	for _, body := range []string{
+		`{"name":"bad","base_url":"https://x/v1","model":"m","api_key":"k","thinking_level":"ultra"}`,
+		`{"name":"bad2","base_url":"https://x/v1","model":"m","api_key":"k","thinking_dialect":"foo"}`,
+	} {
+		badReq := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/models", strings.NewReader(body)))
+		badReq.Header.Set("Content-Type", "application/json")
+		badRR := httptest.NewRecorder()
+		h.ServeHTTP(badRR, badReq)
+		if badRR.Code != http.StatusBadRequest {
+			t.Fatalf("illegal create must be 400, got %d body=%s", badRR.Code, badRR.Body.String())
+		}
+		if !strings.Contains(badRR.Body.String(), `"invalid_profile"`) {
+			t.Fatalf("want invalid_profile, body=%s", badRR.Body.String())
+		}
+	}
+	badPatch := withAdmin(httptest.NewRequest(http.MethodPatch, "/v0/settings/models/"+id, strings.NewReader(`{"thinking_level":"ultra"}`)))
+	badPatch.Header.Set("Content-Type", "application/json")
+	badPatchRR := httptest.NewRecorder()
+	h.ServeHTTP(badPatchRR, badPatch)
+	if badPatchRR.Code != http.StatusBadRequest || !strings.Contains(badPatchRR.Body.String(), `"invalid_profile"`) {
+		t.Fatalf("illegal patch: code=%d body=%s", badPatchRR.Code, badPatchRR.Body.String())
+	}
+
+	// Operator PATCH still 403
+	opPatch := withOperator(httptest.NewRequest(http.MethodPatch, "/v0/settings/models/"+id, strings.NewReader(`{"thinking_level":"medium"}`)))
+	opPatch.Header.Set("Content-Type", "application/json")
+	opRR := httptest.NewRecorder()
+	h.ServeHTTP(opRR, opPatch)
+	if opRR.Code != http.StatusForbidden {
+		t.Fatalf("operator PATCH must be 403, got %d", opRR.Code)
+	}
+}
