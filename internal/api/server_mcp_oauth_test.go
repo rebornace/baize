@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/connector/mcpoauth"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -253,5 +254,78 @@ func TestMCPOAuthStartRequiresClientWhenNoDCR(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "oauth_client_required") {
 		t.Fatalf("want oauth_client_required: %s", rr.Body.String())
+	}
+}
+
+func TestMCPOAuthStartRequiresSettingsKey(t *testing.T) {
+	t.Setenv("BAIZE_SETTINGS_KEY", "")
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{
+		ID:   "need-key",
+		Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       "http://127.0.0.1:9/mcp",
+			OAuth:     &store.MCPOAuthConfig{ClientID: "pre-cid"},
+		},
+	})
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	srv.CallbackPublicBase = "http://localhost:18080"
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/connectors/need-key/mcp/oauth/start", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "settings_key_required") {
+		t.Fatalf("want settings_key_required: %s", rr.Body.String())
+	}
+}
+
+func TestMCPOAuthCallbackClientSecretRequiresSettingsKey(t *testing.T) {
+	setTestSettingsKey(t)
+	key, err := settingscrypto.KeyFromEnv()
+	if err != nil || len(key) == 0 {
+		t.Fatalf("KeyFromEnv: %v key_len=%d", err, len(key))
+	}
+	sealed, err := settingscrypto.Seal(key, "client-secret-plain")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{
+		ID:   "cb-secret",
+		Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       "http://127.0.0.1:9/mcp",
+			OAuth: &store.MCPOAuthConfig{
+				ClientID:           "cid",
+				ClientSecretSealed: sealed,
+				TokenEndpoint:      "http://127.0.0.1:9/token",
+			},
+		},
+	})
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	srv.OAuthSessions.Put("st-1", mcpoauth.Pending{
+		ConnectorID: "cb-secret",
+		Verifier:    "verifier",
+		RedirectURI: "http://localhost:18080/v0/connectors/cb-secret/mcp/oauth/callback",
+	})
+
+	t.Setenv("BAIZE_SETTINGS_KEY", "")
+	req := httptest.NewRequest(http.MethodGet, "/v0/connectors/cb-secret/mcp/oauth/callback?code=c1&state=st-1", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s want 400", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "settings_key_required") {
+		t.Fatalf("want settings_key_required: %s", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `"internal"`) {
+		t.Fatalf("must not map missing key to internal: %s", rr.Body.String())
 	}
 }

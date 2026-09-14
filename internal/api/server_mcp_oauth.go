@@ -30,6 +30,15 @@ func (s *Server) handleMCPOAuthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	key, keyErr := settingscrypto.KeyFromEnv()
+	if writeIfSettingsKeyRequired(w, keyErr) {
+		return
+	}
+	if len(key) == 0 {
+		writeError(w, http.StatusBadRequest, "settings_key_required", settingsKeyRequiredMsg)
+		return
+	}
+
 	c, err := s.Store.GetConnector(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
@@ -67,14 +76,6 @@ func (s *Server) handleMCPOAuthStart(w http.ResponseWriter, r *http.Request) {
 		clientID = reg.ClientID
 		oauth.ClientID = clientID
 		if reg.ClientSecret != "" {
-			key, keyErr := settingscrypto.KeyFromEnv()
-			if writeIfSettingsKeyRequired(w, keyErr) {
-				return
-			}
-			if len(key) == 0 {
-				writeError(w, http.StatusBadRequest, "settings_key_required", settingsKeyRequiredMsg)
-				return
-			}
 			sealed, sealErr := settingscrypto.Seal(key, reg.ClientSecret)
 			if writeIfSettingsKeyRequired(w, sealErr) {
 				return
@@ -177,8 +178,12 @@ func (s *Server) handleMCPOAuthCallback(w http.ResponseWriter, r *http.Request) 
 		if writeIfSettingsKeyRequired(w, keyErr) {
 			return
 		}
+		if len(key) == 0 {
+			writeError(w, http.StatusBadRequest, "settings_key_required", settingsKeyRequiredMsg)
+			return
+		}
 		plain, openErr := settingscrypto.Open(key, sealed)
-		if writeIfSettingsKeyRequired(w, openErr) {
+		if writeIfSealedSecretError(w, openErr) {
 			return
 		}
 		if openErr != nil {
