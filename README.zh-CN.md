@@ -79,6 +79,7 @@ cd baize
 - 设置 → 业务系统（仅管理员）：上传接口文档（OpenAPI 3、Swagger 2、Postman v2.1）注册 Connector；管理员可在业务系统、插件、外部工具服务设置页整删 Connector（二次确认）；设置 → 助手功能（仅管理员）：按 Connector / 路径前缀折叠，可搜索；可改显示名和说明（换 spec 保留人改）；添加在抽屉；`extra` 可删；可为 OpenAPI / HTTP Connector 配置执行回调 URL；OpenAPI / HTTP 插件 Connector 可配置登录捕获（`auth.capture`）；账号页操作员可用；设置 → 外部工具服务（仅管理员）可注册 MCP Server；设置 → 插件（仅管理员）可注册 HTTP 插件侧车
 - 设置 → 模型（仅管理员）：维护多个命名模型 profile（OpenAI 兼容），按档位（light/standard/power）参与任务感知 Auto 智能路由，任意 profile 均可删除；操作员可查看列表用于聊天下拉（详见下文「多模型配置与对话选模型」）
 - 设置 → 技能（仅管理员）：列出已安装包、上传 `.md` / `.zip`、删除用户包，并勾选默认 Agent 的 skills
+- 设置 → 账号记忆：控制面账号可跨会话记忆事实；可在设置页管理；可在运行参数中关闭自动抽取
 - 设置 → 消息回调（仅管理员）：配置全局 Run 事件 Webhook URL 与 headers，可发送测试投递；可查看最近 pending / dead 投递并重投
 - 设置 → 微信（仅管理员）：iLink 扫码登录个人微信 Bot、配置默认 Agent、受理人与 allowlist（见下文「微信 Channel」）
 - 聊天页 **高级**（可折叠）：可选本次 Run 的 `webhook_url` 覆盖（留空则用全局配置）

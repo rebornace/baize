@@ -1,6 +1,7 @@
 # P6：控制面账号级 Memory 产品化
 
-> 状态：**实现计划已就绪**（2026-09-14；计划 [`../plans/2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
+> 状态：**已交付**（计划：[`../plans/2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
+
 > 日期：2026-09-14  
 > 史诗：P6  
 > 前置：控制面 Gate（admin/operator）、会话与 system 组装、滚动摘要（compaction，本史诗不替代）、会话工作区与 MCP（文档检索不进本史诗）  
