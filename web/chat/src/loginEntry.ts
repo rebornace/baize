@@ -3,6 +3,12 @@ import type { LoginEntry } from './api'
 /** Case-insensitive; aligned with backend loginentry sensitive key redaction. */
 const SENSITIVE_FIELD = /password|passwd|secret|token|api_key/i
 
+/** True when a tool.result content object is the login gate payload. */
+export function isLoginRequiredContent(result: unknown): boolean {
+  if (result == null || typeof result !== 'object') return false
+  return (result as { code?: unknown }).code === 'login_required'
+}
+
 export type LoginFieldType = 'text' | 'password'
 
 export interface LoginEntryField {

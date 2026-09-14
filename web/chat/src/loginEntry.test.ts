@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterLoginEntries, fieldsFromEntry } from './loginEntry'
+import { filterLoginEntries, fieldsFromEntry, isLoginRequiredContent } from './loginEntry'
 
 describe('filterLoginEntries', () => {
   it('filters by query against title and tool_name', () => {
@@ -22,5 +22,16 @@ describe('fieldsFromEntry', () => {
       { name: 'username', type: 'text', required: true },
       { name: 'password', type: 'password', required: true },
     ])
+  })
+})
+
+describe('isLoginRequiredContent', () => {
+  it('detects login_required code on tool result content', () => {
+    expect(isLoginRequiredContent({ code: 'login_required', message: '此工具需要先登录' })).toBe(
+      true,
+    )
+    expect(isLoginRequiredContent({ code: 'other' })).toBe(false)
+    expect(isLoginRequiredContent(null)).toBe(false)
+    expect(isLoginRequiredContent('login_required')).toBe(false)
   })
 })

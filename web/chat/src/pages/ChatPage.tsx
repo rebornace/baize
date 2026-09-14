@@ -13,10 +13,12 @@ import {
   isTerminal,
   listConversations,
   listEvents,
+  listLoginEntries,
   listMessages,
   listModelProfiles,
   listSkills,
   listTools,
+  loginInvoke,
   openRunStream,
   rollbackMessages,
   type Attachment,
@@ -24,6 +26,7 @@ import {
   type ConversationScope,
   type ConversationSummary,
   type Event,
+  type LoginEntry,
   type ModelProfile,
   type RunStatus,
   type SkillSummary,
@@ -32,6 +35,7 @@ import {
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
 import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
+import { LoginPicker } from '../components/LoginPicker'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
@@ -63,7 +67,7 @@ import {
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
-import { ACTIONS, CHAT, friendlyError, WELCOME } from '../strings'
+import { ACTIONS, CHAT, friendlyError, LOGIN_AT, loginAtErrorText, WELCOME } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { uuid } from '../uuid'
@@ -120,6 +124,9 @@ export function ChatPage() {
   /** run_id → folded historical tool/workflow blocks (read-only replay). */
   const [historyBlocks, setHistoryBlocks] = useState<Record<string, ToolOrWorkflowBlock[]>>({})
   const [toolCatalog, setToolCatalog] = useState<ToolCatalog>([])
+  const [loginEntries, setLoginEntries] = useState<LoginEntry[]>([])
+  const [loginPickerOpen, setLoginPickerOpen] = useState(false)
+  const [loginPickerConnectorId, setLoginPickerConnectorId] = useState<string | undefined>()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [visionWarning, setVisionWarning] = useState<string | null>(null)
   const toast = useToast()
@@ -225,6 +232,16 @@ export function ChatPage() {
     })
   }, [])
 
+  const refreshLoginEntries = useCallback(async (id: string) => {
+    try {
+      const entries = await listLoginEntries(id)
+      if (conversationIdRef.current !== id) return
+      setLoginEntries(entries)
+    } catch {
+      if (conversationIdRef.current === id) setLoginEntries([])
+    }
+  }, [])
+
   const finishLiveRun = useCallback(
     async (id: string) => {
       stopStream()
@@ -252,8 +269,9 @@ export function ChatPage() {
         // and conversation switch effects will reload messages on retry.
       }
       await refreshConversations()
+      await refreshLoginEntries(id)
     },
-    [mergeHistoryPages, refreshConversations, stopPoll, stopStream],
+    [mergeHistoryPages, refreshConversations, refreshLoginEntries, stopPoll, stopStream],
   )
 
   const applyEvents = useCallback((events: Event[]) => {
@@ -319,6 +337,18 @@ export function ChatPage() {
     [finishLiveRun, startPoll, stopPoll, stopStream],
   )
 
+  /** Subscribe to a run via the same SSE → poll fallback path as createRun. */
+  const attachRun = useCallback(
+    (runId: string, forConversationId: string, status: string) => {
+      setBusy(true)
+      setLiveEvents([])
+      lastEventIndexRef.current = -1
+      setStatus(statusLabel(status))
+      startStream(runId, forConversationId, -1)
+    },
+    [startStream],
+  )
+
   const restoreLiveRun = useCallback(
     async (id: string, msgs: ChatMessage[]) => {
       const candidate = findLiveRunCandidate(msgs)
@@ -326,13 +356,9 @@ export function ChatPage() {
       const run = await getRun(candidate)
       if (conversationIdRef.current !== id) return
       if (!isActiveRunStatus(run.status)) return
-      setBusy(true)
-      setStatus(statusLabel(run.status))
-      setLiveEvents([])
-      lastEventIndexRef.current = -1
-      startStream(candidate, id, -1)
+      attachRun(candidate, id, run.status)
     },
-    [startStream],
+    [attachRun],
   )
 
   useEffect(() => {
@@ -384,7 +410,12 @@ export function ChatPage() {
       .then((tools: ToolInfo[]) => {
         if (cancelled) return
         setToolCatalog(
-          tools.map((t) => ({ name: t.name, title: t.title, description: t.description })),
+          tools.map((t) => ({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            connector_id: t.connector_id,
+          })),
         )
       })
       .catch(() => { /* catalog missing is non-blocking */ })
@@ -410,6 +441,8 @@ export function ChatPage() {
     lastEventIndexRef.current = -1
     setBusy(false)
     setStatus('')
+    setLoginPickerOpen(false)
+    setLoginPickerConnectorId(undefined)
 
     const id = conversationId
     void (async () => {
@@ -424,13 +457,14 @@ export function ChatPage() {
         // the idle sync retries listMessages every 2s.
       }
     })()
+    void refreshLoginEntries(id)
 
     return () => {
       cancelled = true
       stopStream()
       stopPoll()
     }
-  }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
+  }, [conversationId, refreshLoginEntries, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
 
   // Idle sync: weixin (and other external) inbound turns append messages / create
   // runs without this tab knowing. Poll while a conversation is open so /ui
@@ -678,9 +712,7 @@ export function ChatPage() {
       // The conversation switched mid-flight: the message was already accepted,
       // so report acceptance even though this view no longer tracks the run.
       if (conversationIdRef.current !== sentConversationId) return true
-      setStatus(statusLabel(created.status))
-      setLiveRunId(created.run_id)
-      startStream(created.run_id, sentConversationId, -1)
+      attachRun(created.run_id, sentConversationId, created.status)
     } catch (err) {
       // Post-acceptance failure (vision_unsupported / 5xx / network): the
       // Composer still clears; reconcile messages with the server below.
@@ -698,6 +730,40 @@ export function ChatPage() {
       }
     }
     return true
+  }
+
+  /** Forced login invoke: never write arguments into a user bubble. */
+  const onPickLogin = async (entry: LoginEntry, args?: Record<string, unknown>) => {
+    const sentConversationId = conversationId
+    setBusy(true)
+    setStatus('发送中…')
+    setLoginPickerOpen(false)
+    setLoginPickerConnectorId(undefined)
+    try {
+      const created = await loginInvoke(sentConversationId, {
+        agent_id: agentId,
+        connector_id: entry.connector_id,
+        tool_name: entry.tool_name,
+        ...(args !== undefined ? { arguments: args } : {}),
+      })
+      await refreshConversations()
+      if (conversationIdRef.current !== sentConversationId) return
+      toast.push({ tone: 'info', title: LOGIN_AT.startedNote })
+      attachRun(created.run_id, sentConversationId, created.status)
+    } catch (err) {
+      if (conversationIdRef.current !== sentConversationId) return
+      setBusy(false)
+      setLiveRunId(null)
+      const f = loginAtErrorText(err)
+      pushToast({ tone: 'error', title: f.title, detail: f.detail })
+      setStatus('')
+    }
+  }
+
+  const onGoLogin = (block: Extract<ChatBlock, { kind: 'tool' }>) => {
+    const connectorId = toolCatalog.find((t) => t.name === block.name)?.connector_id
+    setLoginPickerConnectorId(connectorId)
+    setLoginPickerOpen(true)
   }
 
   const onRollbackUser = async (m: ChatMessage) => {
@@ -732,11 +798,7 @@ export function ChatPage() {
         return
       }
       const runId = res.regenerated_run.run_id
-      setStatus(statusLabel(res.regenerated_run.status))
-      setLiveRunId(runId)
-      setLiveEvents([])
-      lastEventIndexRef.current = -1
-      startStream(runId, conversationId, -1)
+      attachRun(runId, conversationId, res.regenerated_run.status)
     } catch (e) {
       setBusy(false)
       reportError(e)
@@ -1091,7 +1153,7 @@ export function ChatPage() {
                 case 'tool':
                   return (
                     <div key={`live-t-${i}`} className="msg-row tool">
-                      <ToolCard block={block} catalog={toolCatalog} onError={reportError} />
+                      <ToolCard block={block} catalog={toolCatalog} onError={reportError} onGoLogin={onGoLogin} />
                     </div>
                   )
                 case 'workflow':
@@ -1134,6 +1196,8 @@ export function ChatPage() {
             disabled={composerDisabled}
             draft={composerDraft}
             skills={skills}
+            loginEntries={loginEntries}
+            onPickLogin={onPickLogin}
             onSend={onSend}
             toolbar={
               modelProfiles.length > 0 ? (
@@ -1178,6 +1242,19 @@ export function ChatPage() {
       >
         <p className="vision-warning-body">{visionWarning}</p>
       </Modal>
+      <LoginPicker
+        open={loginPickerOpen}
+        entries={
+          loginPickerConnectorId
+            ? loginEntries.filter((e) => e.connector_id === loginPickerConnectorId)
+            : loginEntries
+        }
+        onClose={() => {
+          setLoginPickerOpen(false)
+          setLoginPickerConnectorId(undefined)
+        }}
+        onPick={onPickLogin}
+      />
       <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss} />
     </div>
   )

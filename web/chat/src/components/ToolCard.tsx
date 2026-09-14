@@ -4,7 +4,8 @@ import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
-import { HITL } from '../strings'
+import { isLoginRequiredContent } from '../loginEntry'
+import { HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
 import { Button } from './ui'
 
@@ -17,11 +18,20 @@ export interface ToolCardProps {
   readOnly?: boolean
   /** 决议失败时回调父级弹 toast；卡片自身只显通用提示。 */
   onError?: (e: unknown) => void
+  /** login_required 时「去登录」；父级按 catalog.connector_id 打开 LoginPicker。 */
+  onGoLogin?: (block: ToolBlock) => void
 }
 
-export function ToolCard({ block, catalog = [], readOnly = false, onError }: ToolCardProps) {
+export function ToolCard({
+  block,
+  catalog = [],
+  readOnly = false,
+  onError,
+  onGoLogin,
+}: ToolCardProps) {
   const waiting = block.status === 'waiting_human' && !readOnly
-  const [expanded, setExpanded] = useState(waiting)
+  const loginRequired = !readOnly && isLoginRequiredContent(block.result)
+  const [expanded, setExpanded] = useState(waiting || loginRequired)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [showComment, setShowComment] = useState(false)
@@ -31,6 +41,13 @@ export function ToolCard({ block, catalog = [], readOnly = false, onError }: Too
     block.result !== undefined ? parseAnalysisPageResult(block.result) : null
   const label = friendlyToolName(block.name, catalog)
   const description = catalog.find((t) => t.name === block.name)?.description?.trim() || ''
+  const loginMessage =
+    loginRequired &&
+    block.result != null &&
+    typeof block.result === 'object' &&
+    typeof (block.result as { message?: unknown }).message === 'string'
+      ? String((block.result as { message: string }).message).trim()
+      : ''
 
   // running → waiting_human: auto-expand arguments (user may still collapse).
   useEffect(() => {
@@ -146,6 +163,15 @@ export function ToolCard({ block, catalog = [], readOnly = false, onError }: Too
           >
             {HITL.viewParams}
           </button>
+        </div>
+      )}
+
+      {loginRequired && (
+        <div className="tool-card-actions tool-card-login-actions">
+          {loginMessage ? <p className="tool-card-login-msg">{loginMessage}</p> : null}
+          <Button size="sm" variant="primary" onClick={() => onGoLogin?.(block)}>
+            {LOGIN_AT.goLogin}
+          </Button>
         </div>
       )}
 

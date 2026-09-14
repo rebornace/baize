@@ -2,6 +2,8 @@ export interface ToolCatalogEntry {
   name: string
   title?: string
   description?: string
+  /** Connector owning this tool; used for login_required → filtered LoginPicker. */
+  connector_id?: string
 }
 export type ToolCatalog = ToolCatalogEntry[]
 
