@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
-	"github.com/rebornace/baize/internal/loginentry"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -614,7 +614,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					continue
 				}
 
-				content, _, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments, false, false)
+				content, _, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments, false)
 				if tcErr != nil && errors.Is(tcErr, ErrHITLRejected) {
 					return tcErr
 				}
@@ -723,7 +723,7 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 		},
 		Invoke: func(ictx context.Context, toolName string, stepID string, args map[string]any) (map[string]any, bool, error) {
 			callID := fmt.Sprintf("wf-%s-%s", st.workflowSkill, stepID)
-			return e.invokeTool(ictx, runID, callID, toolName, args, stepApproved[stepID], false)
+			return e.invokeTool(ictx, runID, callID, toolName, args, stepApproved[stepID])
 		},
 	})
 	if werr != nil {
@@ -791,23 +791,22 @@ func workflowInterrupted(evs []store.Event) bool {
 
 // invokeTool performs one full tool interaction for a run: pre-call gate
 // (login / approval) and events, then the timeout-bounded Invoke with the same
-// event/data shapes as before. skipLoginGate bypasses blockedByLogin (used by
-// ExecuteForcedTool for already-validated login entries). A rejection returns
-// ErrHITLRejected and the run has already been finalized as rejected (with a
-// humanized note); the caller must stop instead of appending further results.
-// Transient failures inside one interaction keep the last-known return shape
-// so the value/error contract stays uniform.
-func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval, skipLoginGate bool) (map[string]any, bool, error) {
+// event/data shapes as before. A rejection returns ErrHITLRejected and the run
+// has already been finalized as rejected (with a humanized note); the caller
+// must stop instead of appending further results. Transient failures inside
+// one interaction keep the last-known return shape so the value/error contract
+// stays uniform.
+func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval bool) (map[string]any, bool, error) {
 	isError := false
 	content := map[string]any{}
 
 	rejected, rerr := func() (bool, error) {
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMToolCall,
-			Data: map[string]any{"id": callID, "name": name, "arguments": loginentry.RedactArgs(args)},
+			Data: map[string]any{"id": callID, "name": name, "arguments": redactToolArgs(args)},
 		})
 
-		if !skipLoginGate && e.blockedByLogin(ctx, name) {
+		if e.blockedByLogin(ctx, name) {
 			content = tool.LoginRequiredContent()
 			isError = true
 			return false, nil
@@ -1082,4 +1081,22 @@ func asString(v any) string {
 func asMap(v any) map[string]any {
 	m, _ := v.(map[string]any)
 	return m
+}
+
+var sensitiveToolArgKey = regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key)`)
+
+// redactToolArgs returns a copy of args with sensitive keys masked for events.
+func redactToolArgs(args map[string]any) map[string]any {
+	if len(args) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		if sensitiveToolArgKey.MatchString(k) {
+			out[k] = "***"
+		} else {
+			out[k] = v
+		}
+	}
+	return out
 }

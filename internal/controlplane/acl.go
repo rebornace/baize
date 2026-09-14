@@ -27,8 +27,6 @@ var aclRules = []routeRule{
 	{method: "POST", segments: []string{"v0", "conversations", "{id}", "identities", "{iid}", "default"}, role: RoleOperator},
 	{method: "DELETE", segments: []string{"v0", "conversations", "{id}", "identities", "{iid}"}, role: RoleOperator},
 	{method: "DELETE", segments: []string{"v0", "conversations", "{id}", "identities"}, role: RoleOperator},
-	{method: "GET", segments: []string{"v0", "conversations", "{id}", "login-entries"}, role: RoleOperator},
-	{method: "POST", segments: []string{"v0", "conversations", "{id}", "login-invoke"}, role: RoleOperator},
 	{method: "PUT", segments: []string{"v0", "agents", "{id}"}, role: RoleAdmin},
 	{method: "PUT", segments: []string{"v0", "connectors", "{id}"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "connectors", "{id}"}, role: RoleAdmin},

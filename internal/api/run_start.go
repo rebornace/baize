@@ -26,10 +26,6 @@ type startRunInput struct {
 	// (![图片](…)/[file:…](…)) that must not reach the model or a mirrored
 	// channel peer. When empty, Input is persisted.
 	BubbleContent string
-	// ForcedToolName / ForcedToolArgs, when set, dispatch KindForcedTool
-	// instead of a normal LLM KindRun.
-	ForcedToolName string
-	ForcedToolArgs map[string]any
 }
 
 func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, error) {
@@ -51,8 +47,6 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		PassthroughHeaders: in.Passthrough,
 		WebhookConfig:      in.Webhook,
 		ModelProfileID:     in.ModelProfileID,
-		ForcedToolName:     in.ForcedToolName,
-		ForcedToolArgs:     in.ForcedToolArgs,
 	}
 
 	runRec, err := s.Store.CreateRun(createIn)
@@ -90,11 +84,6 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		Input:     in.Input,
 		Skills:    runOpts.Skills,
 		UserParts: PartsToMiddleware(runOpts.UserParts),
-	}
-	if name := strings.TrimSpace(in.ForcedToolName); name != "" {
-		job.Kind = middleware.KindForcedTool
-		job.ToolName = name
-		job.ToolArgs = in.ForcedToolArgs
 	}
 	s.Dispatch(ctx, job)
 

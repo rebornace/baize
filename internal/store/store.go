@@ -283,11 +283,6 @@ type Run struct {
 	// WebhookConfig carries per-run webhook URL/header overrides for outbound
 	// event delivery. Never serialized to JSON (json:"-").
 	WebhookConfig *WebhookConfig `json:"-"`
-	// ForcedToolName / ForcedToolArgs persist login-invoke (and similar)
-	// forced-tool turns so crash reconciliation can re-enqueue KindForcedTool
-	// with the original arguments. Never serialized to API JSON (json:"-").
-	ForcedToolName string         `json:"-"`
-	ForcedToolArgs map[string]any `json:"-"`
 	// LeaseUntil is the worker lease deadline for an in-flight run. nil = no
 	// lease. Never serialized to JSON (json:"-"). Used by queue reconciliation.
 	LeaseUntil *time.Time `json:"-"`
@@ -307,8 +302,6 @@ type CreateRunInput struct {
 	ModelProfileID     string
 	PassthroughHeaders map[string]string
 	WebhookConfig      *WebhookConfig
-	ForcedToolName     string
-	ForcedToolArgs     map[string]any
 }
 
 type HITLPayload struct {

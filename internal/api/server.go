@@ -61,12 +61,6 @@ type RunWithOptions interface {
 	ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def, input string, opts run.RunOptions) error
 }
 
-// ForcedToolRunner is implemented by runners that can execute a single forced
-// tool turn (login-invoke). run.Engine implements this; test fakes need not.
-type ForcedToolRunner interface {
-	ExecuteForcedTool(ctx context.Context, runID, toolName string, args map[string]any) error
-}
-
 // RunCanceller is implemented by run.Engine for cooperative cancel.
 type RunCanceller interface {
 	Cancel(runID string) error
@@ -429,8 +423,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities", s.handleClearIdentities)
-	s.mux.HandleFunc("GET /v0/conversations/{id}/login-entries", s.handleListLoginEntries)
-	s.mux.HandleFunc("POST /v0/conversations/{id}/login-invoke", s.handleLoginInvoke)
 	s.mux.HandleFunc("GET /v0/conversations", s.handleListConversations)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}", s.handleDeleteConversation)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
@@ -1911,28 +1903,6 @@ func (s *Server) runExecute(ctx context.Context, runID string, def agent.Def, in
 	return s.Runner.Execute(ctx, runID, def, input)
 }
 
-func (s *Server) runForcedTool(ctx context.Context, job middleware.Job) error {
-	ft, ok := s.Runner.(ForcedToolRunner)
-	if !ok {
-		err := fmt.Errorf("forced tool runner not available")
-		s.finalizeRunError(job.RunID, "", err)
-		return err
-	}
-	if err := ft.ExecuteForcedTool(ctx, job.RunID, job.ToolName, job.ToolArgs); err != nil {
-		if errors.Is(err, run.ErrHITLRejected) {
-			return nil
-		}
-		cur, _ := s.Store.GetRun(job.RunID)
-		convID := ""
-		if cur != nil {
-			convID = cur.ConversationID
-		}
-		s.finalizeRunError(job.RunID, convID, err)
-		return err
-	}
-	return nil
-}
-
 // ExecuteJob runs a queued run under a worker lease with idempotency gating.
 // It implements middleware.Executor: queue workers and the local fallback
 // goroutine both funnel through it. Terminal or HITL-waiting runs are
@@ -1967,10 +1937,6 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 	hbCtx, stopHB := context.WithCancel(ctx)
 	defer stopHB()
 	go s.leaseHeartbeat(hbCtx, job.RunID, ttl)
-
-	if job.Kind == middleware.KindForcedTool {
-		return s.runForcedTool(ctx, job)
-	}
 
 	def, input, opts, err := s.resolveJob(job, cur)
 	if err != nil {
