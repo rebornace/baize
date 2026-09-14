@@ -171,15 +171,19 @@ func (s *SQLiteStore) Upsert(e Entry) (Entry, error) {
 
 func (s *SQLiteStore) updateEntryTx(tx *sql.Tx, id string, e Entry, now time.Time) (Entry, error) {
 	var prev Entry
-	var created string
+	var created, updated string
 	err := tx.QueryRow(
 		`SELECT id, owner_id, key, text, source, created_at, updated_at FROM account_memory WHERE id = ?`,
 		id,
-	).Scan(&prev.ID, &prev.OwnerID, &prev.Key, &prev.Text, &prev.Source, &created, &prev.UpdatedAt)
+	).Scan(&prev.ID, &prev.OwnerID, &prev.Key, &prev.Text, &prev.Source, &created, &updated)
 	if err != nil {
 		return Entry{}, err
 	}
 	prev.CreatedAt, err = parseMemoryTime(created)
+	if err != nil {
+		return Entry{}, err
+	}
+	prev.UpdatedAt, err = parseMemoryTime(updated)
 	if err != nil {
 		return Entry{}, err
 	}

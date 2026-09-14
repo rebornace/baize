@@ -53,3 +53,25 @@ func TestSQLiteUpsertSearchIsolationDelete(t *testing.T) {
 		t.Fatalf("after delete: %+v", got2)
 	}
 }
+
+func TestSQLiteUpsertSameOwnerKeyOverwrites(t *testing.T) {
+	s := openSQLiteMemory(t)
+	first, err := s.Upsert(memory.Entry{OwnerID: "alice", Key: "pref", Text: "绿茶", Source: memory.SourceExplicit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Upsert(memory.Entry{OwnerID: "alice", Key: "pref", Text: "红茶", Source: memory.SourceExplicit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("id changed: %s -> %s", first.ID, second.ID)
+	}
+	if second.Text != "红茶" {
+		t.Fatalf("text=%q", second.Text)
+	}
+	list, _ := s.List("alice", 0, 0)
+	if len(list) != 1 {
+		t.Fatalf("len=%d", len(list))
+	}
+}
