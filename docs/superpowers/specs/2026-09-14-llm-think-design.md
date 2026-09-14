@@ -1,6 +1,6 @@
 # LLM-THINK：思考级别、方言映射与流式思考展示
 
-> 状态：**范围已确认**（2026-09-14 头脑风暴；待写实现计划）  
+> 状态：**实现计划已就绪**（计划：[`plans/2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)）  
 > 日期：2026-09-14  
 > 史诗：LLM-THINK  
 > 前置：多模型档案（`disable_thinking`）、P1 聊天（模型芯片，明确 defer 本能力）、Run SSE（`GET /v0/runs/{id}/stream`）、`openai_compatible` Chat Completions  
@@ -134,8 +134,8 @@ assistant 增加可选 `thinking`（TEXT，可空）与 `thinking_redacted`（�
 2. Base URL 含 `openrouter.ai` → 发送 OpenRouter `reasoning` 对象（见 7.2「openrouter」；UI 无单独选项）。  
 3. 模型名或 Base URL 含 `deepseek` → `deepseek`。  
 4. 模型名或 Base URL 含 `qwen`、`dashscope`、`aliyuncs.com` → `qwen`。  
-5. 模型名像推理模型（大小写不敏感子串：`o1`、`o3`、`o4`、`gpt-5`、`gpt-6`、`grok`、`gemini-2.5`、`gemini-3`、`r1`）或 Base URL 含 `api.openai.com`、`api.x.ai`、`generativelanguage.googleapis.com` → `openai`。  
-6. 否则 `omit`（**不**给 GPT-4o / Llama 等发 `reasoning_effort`，避免 400）。
+5. 模型名像推理模型（大小写不敏感子串：`o1`、`o3`、`o4`、`gpt-5`、`gpt-6`、`grok`、`gemini-2.5`、`gemini-3`、`r1`）→ `openai`。主机为 `api.openai.com` / `api.x.ai` / `generativelanguage.googleapis.com` **不能单独**升级为 openai：`gpt-4o` 等非推理名仍走第 6 步 `omit`，避免 400。  
+6. 否则 `omit`（**不**给 GPT-4o / Llama 等发 `reasoning_effort`）。
 
 强制 `openai` 时即使模型名不像推理模型也发 `reasoning_effort`（给自建网关）。强制 `omit` 永不发思考相关字段。
 
