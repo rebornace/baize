@@ -215,6 +215,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs lease_until: %w", err)
 	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS thinking_level TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs thinking_level: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles context_tokens: %w", err)

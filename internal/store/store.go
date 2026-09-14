@@ -290,6 +290,9 @@ type Run struct {
 	ConversationID string    `json:"conversation_id,omitempty"`
 	IdentityID     string    `json:"identity_id,omitempty"`
 	ModelProfileID string    `json:"model_profile_id,omitempty"`
+	// ThinkingLevel is an optional per-run override (off|low|medium|high).
+	// Empty means use the model profile default.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 	// PassthroughHeaders carries per-run passthrough auth headers. They are
 	// never serialized to JSON (json:"-") so they cannot leak via GET /runs/{id}
 	// or events. SQLite persists them in a dedicated passthrough_json column.
@@ -314,6 +317,7 @@ type CreateRunInput struct {
 	ConversationID     string
 	IdentityID         string
 	ModelProfileID     string
+	ThinkingLevel      string // empty = profile default
 	PassthroughHeaders map[string]string
 	WebhookConfig      *WebhookConfig
 }

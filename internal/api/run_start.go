@@ -21,6 +21,7 @@ type startRunInput struct {
 	UserParts                                  []llm.ContentPart
 	PreEvents                                  []store.Event
 	ModelProfileID                             string
+	ThinkingLevel                              string // empty = profile default
 	// BubbleContent is the exact text persisted to the conversation message
 	// for display. It may carry UI-only attachment reference lines
 	// (![图片](…)/[file:…](…)) that must not reach the model or a mirrored
@@ -47,6 +48,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		PassthroughHeaders: in.Passthrough,
 		WebhookConfig:      in.Webhook,
 		ModelProfileID:     in.ModelProfileID,
+		ThinkingLevel:      in.ThinkingLevel,
 	}
 
 	runRec, err := s.Store.CreateRun(createIn)

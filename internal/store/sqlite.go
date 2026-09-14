@@ -192,7 +192,7 @@ func (s *SQLStore) queryRow(query string, args ...any) *sql.Row {
 
 // runSelectColumns is the canonical runs column order scanned by scanRunRow;
 // GetRun and ListRunsForReconcile must select exactly these columns in order.
-const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until`
+const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until, thinking_level`
 
 // sqliteTimeLayout is a fixed-width (9 fractional digits) RFC3339 layout. SQLite
 // compares TEXT timestamps byte-wise, so variable-length fractions (RFC3339Nano
@@ -220,11 +220,11 @@ func (s *SQLStore) timeArg(t time.Time) any {
 func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	var r Run
 	var status, createdAt string
-	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID sql.NullString
+	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID, thinkingLevel sql.NullString
 	var leaseUntil sql.NullTime
 	if err := sc.Scan(
 		&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt,
-		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil,
+		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil, &thinkingLevel,
 	); err != nil {
 		return nil, err
 	}
@@ -237,6 +237,9 @@ func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	}
 	if modelProfileID.Valid {
 		r.ModelProfileID = modelProfileID.String
+	}
+	if thinkingLevel.Valid {
+		r.ThinkingLevel = thinkingLevel.String
 	}
 	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
 		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
@@ -434,7 +437,7 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
 // existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id", "thinking_level"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
@@ -817,6 +820,7 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
 		ModelProfileID:     in.ModelProfileID,
+		ThinkingLevel:      in.ThinkingLevel,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
 	}
@@ -836,10 +840,10 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		webhookSQL = sql.NullString{String: string(b), Valid: true}
 	}
 	_, err := s.exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, thinking_level)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), formatSQLiteTime(r.CreatedAt),
-		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID,
+		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID, r.ThinkingLevel,
 	)
 	if err != nil {
 		return nil, err
