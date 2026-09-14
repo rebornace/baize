@@ -44,6 +44,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		ensureDemoSettingsKey()
 		log.Printf("baize demo: config=%v agent=%s llm=%s", cfgPaths, cfg.Agent.ID, cfg.LLM.Provider)
 		warnIfLLMKeyMissing(cfg)
 		if err := bootstrap.Run(cfg, "configs/demo.yaml"); err != nil {
@@ -106,4 +107,16 @@ func warnIfLLMKeyMissing(cfg config.Config) {
 	if strings.TrimSpace(os.Getenv(env)) == "" {
 		log.Printf("warning: %s is not set; real LLM calls will fail (set it in .env)", env)
 	}
+}
+
+// ensureDemoSettingsKey sets a stable local-only key when BAIZE_SETTINGS_KEY is
+// unset so trial OAuth / settings writes work without editing YAML. Prefer a
+// real key in .env for any shared or long-lived data directory.
+func ensureDemoSettingsKey() {
+	if strings.TrimSpace(os.Getenv("BAIZE_SETTINGS_KEY")) != "" {
+		return
+	}
+	const demoKey = "baize-demo-settings-key-do-not-use-in-prod"
+	_ = os.Setenv("BAIZE_SETTINGS_KEY", demoKey)
+	log.Printf("warning: BAIZE_SETTINGS_KEY unset; using ephemeral demo key (set it in .env for stable sealed secrets)")
 }

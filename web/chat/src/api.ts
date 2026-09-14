@@ -236,9 +236,12 @@ export type RuntimeKnobsOverrides = Record<keyof RuntimeKnobs, boolean>
 export interface RuntimeKnobsView {
   effective: RuntimeKnobs
   overridden: RuntimeKnobsOverrides
+  public_base_url: string
+  public_base_url_overridden: boolean
 }
 
-/** Partial engine-knob update; omitted fields are left unchanged. */
+/** Partial engine-knob update; omitted fields are left unchanged.
+ * public_base_url: omit = leave; "" = clear override to YAML; non-empty = set. */
 export type RuntimeKnobsPatch = Partial<{
   max_messages: number
   max_steps: number
@@ -248,6 +251,7 @@ export type RuntimeKnobsPatch = Partial<{
   compact_reserve_tokens: number
   compact_keep_recent: number
   compact_summary_timeout_seconds: number
+  public_base_url: string
 }>
 
 export async function getRuntimeSettings(): Promise<RuntimeKnobsView> {
@@ -968,6 +972,13 @@ async function parseConnectorJSON<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, code, message)
   }
   return (await res.json()) as T
+}
+
+export async function listConnectors(type?: string): Promise<ConnectorInfo[]> {
+  const q = type ? `?type=${encodeURIComponent(type)}` : ''
+  const res = await fetch(`/v0/connectors${q}`, { headers: authInit() })
+  const body = await parseConnectorJSON<{ connectors: ConnectorInfo[] }>(res)
+  return body.connectors ?? []
 }
 
 export async function getConnector(id: string): Promise<ConnectorInfo> {

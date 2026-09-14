@@ -3,6 +3,8 @@ package connector_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -255,3 +257,40 @@ func TestRegisterOneFromConnectorRejectsMCPExtra(t *testing.T) {
 		t.Fatal("expected error registering extra on mcp connector")
 	}
 }
+
+// OAuth MCP servers (e.g. Gugudata) return 401 before the admin completes
+// browser auth. Apply must still persist the connector so「去授权」can run.
+func TestApplyHTTPMCPUnauthorizedAllowsEmptyCatalog(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://example/.well-known/oauth-protected-resource"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	login := []string{}
+	c, infos, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "gugu", Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       srv.URL,
+		},
+		RequireLogin: &login,
+	})
+	if err != nil {
+		t.Fatalf("Apply must soft-fail Unauthorized: %v", err)
+	}
+	if c.ID != "gugu" {
+		t.Fatalf("id=%q", c.ID)
+	}
+	if len(infos) != 0 {
+		t.Fatalf("want empty catalog before OAuth, got %d tools", len(infos))
+	}
+	if _, err := st.GetConnector("gugu"); err != nil {
+		t.Fatalf("connector should be persisted: %v", err)
+	}
+}
+

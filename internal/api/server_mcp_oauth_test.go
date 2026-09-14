@@ -11,6 +11,7 @@ import (
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/connector/mcpoauth"
+	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -55,6 +56,54 @@ func TestMCPOAuthStartRequiresPublicBase(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "public_base_required") {
 		t.Fatalf("want public_base_required: %s", rr.Body.String())
+	}
+}
+
+func TestMCPOAuthStartAfterPublicBaseHotPatch(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{
+		ID:   "mcp1",
+		Type: "mcp",
+		MCP:  store.MCPConfig{Transport: "http", URL: "http://127.0.0.1:9/mcp"},
+	})
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	srv.AdminToken = "adm"
+	h := runtimecfg.New(runtimecfg.Snapshot{})
+	srv.Settings = h
+	srv.CallbackPublicBase = ""
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/connectors/mcp1/mcp/oauth/start", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "public_base_required") {
+		t.Fatalf("before patch: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	patch := httptest.NewRequest(http.MethodPatch, "/v0/settings/runtime",
+		strings.NewReader(`{"public_base_url":"http://127.0.0.1:8080"}`))
+	patch.Header.Set("Authorization", "Bearer adm")
+	patch.Header.Set("Content-Type", "application/json")
+	pr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(pr, patch)
+	if pr.Code != http.StatusOK {
+		t.Fatalf("patch: status=%d body=%s", pr.Code, pr.Body.String())
+	}
+	if srv.CallbackPublicBase != "http://127.0.0.1:8080" {
+		t.Fatalf("CallbackPublicBase=%q", srv.CallbackPublicBase)
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/v0/connectors/mcp1/mcp/oauth/start", nil)
+	req2.Header.Set("Authorization", "Bearer adm")
+	rr2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr2, req2)
+	if strings.Contains(rr2.Body.String(), "public_base_required") {
+		t.Fatalf("after patch still public_base_required: %s", rr2.Body.String())
+	}
+	// Discover will fail (no real MCP); any non-public_base error is success for this test.
+	if rr2.Code == http.StatusOK {
+		t.Fatal("unexpected OK without MCP AS")
 	}
 }
 

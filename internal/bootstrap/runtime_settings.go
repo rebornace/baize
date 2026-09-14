@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/rebornace/baize/internal/config"
@@ -39,6 +40,7 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			AdminToken:    adminToken,
 			Operators:     operators,
 		},
+		PublicBaseURL: strings.TrimSpace(cfg.Runtime.PublicBaseURL),
 	}
 	h := runtimecfg.New(base)
 	if err := h.Load(context.Background(), st); err != nil {

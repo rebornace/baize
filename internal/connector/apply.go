@@ -216,17 +216,18 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 				// Soft-fail: oauth_reauth_required / settings_key_required must not
 				// hard-block PUT. Skip OAuth-bearing discover and preserve existing
 				// MCP tools so headers/URL edits still save.
-				if in.Store != nil {
-					for _, t := range in.Store.ListToolsByConnector(in.ID) {
-						if t.Source == store.ToolSourceMCP {
-							discovered = append(discovered, t)
-						}
-					}
-				}
+				discovered = existingMCPTools(in.Store, in.ID)
 				break
 			}
 			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
 			if err != nil {
+				// First-time OAuth MCP: server returns 401 before the admin has
+				// completed「去授权」. Allow saving an empty/prior catalog so the
+				// connector exists and OAuth start can run; callback re-discovers.
+				if isUnauthorizedMCPErr(err) {
+					discovered = existingMCPTools(in.Store, in.ID)
+					break
+				}
 				return store.Connector{}, nil, err
 			}
 			discovered = tools
@@ -397,6 +398,30 @@ func filterInfosByConnector(reg *tool.Registry, connectorID string) []tool.Info 
 		}
 	}
 	return out
+}
+
+func existingMCPTools(st store.Store, connectorID string) []store.Tool {
+	if st == nil {
+		return nil
+	}
+	var out []store.Tool
+	for _, t := range st.ListToolsByConnector(connectorID) {
+		if t.Source == store.ToolSourceMCP {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func isUnauthorizedMCPErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "unauthorized") ||
+		strings.Contains(s, "401") ||
+		strings.Contains(s, "forbidden") ||
+		strings.Contains(s, "403")
 }
 
 // isMutatingMethod reports whether the HTTP method mutates server state.

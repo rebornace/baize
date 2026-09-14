@@ -226,8 +226,16 @@ export const WEBHOOKS = {
 export const RUNTIME = {
   title: '运行参数',
   descriptionAdmin:
-    '调整对话长度、工具超时与历史压缩；保存后立即生效，无需重启。控制面口令也可在本页轮换。',
+    '调整公开基址、对话长度、工具超时与历史压缩；保存后立即生效，无需重启。控制面口令也可在本页轮换。',
   descriptionOperator: '只读查看当前生效的运行参数；修改请联系管理员。',
+  sectionPublicBase: '公开基址',
+  fieldPublicBase: 'Runtime 公开地址',
+  hintPublicBase:
+    '管理员浏览器与 OAuth 授权服务器可访问的 Runtime 根地址（如 http://127.0.0.1:8080）。MCP OAuth 回调与侧车 callback 依赖此项；留空并保存可回落到 YAML 配置。',
+  publicBaseRequiredHint: 'MCP OAuth 需要填写此项',
+  savePublicBase: '保存公开基址',
+  toastPublicBaseSaved: '公开基址已保存，立即生效',
+  errPublicBaseInvalid: '请填写以 http:// 或 https:// 开头的完整地址',
   sectionBehavior: '对话与工具行为',
   sectionCompact: '历史压缩',
   sectionCreds: '控制面口令',
@@ -558,8 +566,16 @@ export const CONNECTORS = {
   fieldOAuthClientIdHint: '选填。授权服务器不支持自动注册（DCR）时填写预登记的客户端 ID。',
   fieldOAuthClientSecret: 'OAuth Client Secret',
   fieldOAuthClientSecretHint: '选填。机密客户端时填写；保存后不再回显，留空表示保持原密钥。',
-  errOAuthPublicBase: '请先在运行时配置中设置 public_base_url，才能完成 OAuth 回调。',
+  errOAuthPublicBase: '需要设置公开基址（public_base_url）才能完成 OAuth 回调。可在本页填写，或到「设置 → 运行参数」。',
+  oauthPublicBaseTitle: '设置公开基址',
+  oauthPublicBaseBody: '授权回调需要 Runtime 的公开根地址。本机试用可直接使用下方预填地址。',
+  oauthPublicBaseSaveRetry: '保存并继续授权',
+  oauthPublicBaseCancel: '取消',
   errOAuthClientRequired: '请填写 OAuth Client ID，或使用支持自动注册的授权服务器。',
+  errOAuthSettingsKey: '请先在项目根目录 .env 中设置 BAIZE_SETTINGS_KEY（可参考 .env.example），然后重启 Runtime，才能加密保存 OAuth 令牌。',
+  errOAuthDiscover: '无法发现该 MCP 的 OAuth 端点，请确认服务支持 MCP OAuth 2.1。',
+  errOAuthExchange: '换取访问令牌失败，请重新授权。',
+  errOAuthState: '授权状态无效或已过期，请重新点击「去授权」。',
 } as const
 
 // ---- 设置页：对外提供能力（MCP 导出） ----
@@ -727,6 +743,10 @@ const CONNECTOR_CODE_TITLES: Record<string, string> = {
   invalid_auth: '连接保存的凭证无效，请联系管理员通过配置处理。',
   public_base_required: CONNECTORS.errOAuthPublicBase,
   oauth_client_required: CONNECTORS.errOAuthClientRequired,
+  settings_key_required: CONNECTORS.errOAuthSettingsKey,
+  oauth_discover_failed: CONNECTORS.errOAuthDiscover,
+  oauth_exchange_failed: CONNECTORS.errOAuthExchange,
+  invalid_state: CONNECTORS.errOAuthState,
 }
 
 /** 把连接器相关异常翻译为 {title, detail?}；未知错误给出通用标题与可展开技术详情。 */
@@ -742,7 +762,10 @@ export function connectorErrorText(e: unknown): FriendlyError {
       if (/command is required|unsupported mcp transport/.test(e.message)) return { title: '连接配置不完整，请检查启动命令或连接方式。' }
       if (/url is required/.test(e.message)) return { title: '请填写远程服务地址。' }
       if (/401|403|unauthor|forbidden/i.test(e.message)) {
-        return { title: '该服务需要鉴权，请在请求头中提供有效的 API Key；交互式 OAuth 登录暂不支持。' }
+        return {
+          title: '该服务需要鉴权：可填静态 Authorization，或先保存连接器后点「去授权」。',
+          detail: `${e.code}: ${e.message}`,
+        }
       }
       return { title: CONNECTORS.errMcpConnect, detail: `${e.code}: ${e.message}` }
     }

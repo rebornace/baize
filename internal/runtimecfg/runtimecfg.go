@@ -35,8 +35,9 @@ type Credentials struct {
 
 // Snapshot is an immutable view of all hot-reloadable settings.
 type Snapshot struct {
-	Knobs Knobs
-	Creds Credentials
+	Knobs         Knobs
+	Creds         Credentials
+	PublicBaseURL string // advertised Runtime root (OAuth / plugin callbacks)
 }
 
 // operatorEntry is a runtime-added named operator (id + plaintext token).
@@ -69,7 +70,7 @@ type credsOverride struct {
 }
 
 // Holder stores the config baseline plus the current atomic Snapshot. The
-// baseline is never mutated at runtime; KV overrides (ko/co) are layered on
+// baseline is never mutated at runtime; KV overrides (ko/co/po) are layered on
 // top to produce the effective snapshot.
 type Holder struct {
 	base Snapshot
@@ -79,12 +80,15 @@ type Holder struct {
 
 	ko knobsOverride
 	co credsOverride
+	// po is nil when PublicBaseURL is not overridden (use YAML baseline).
+	// Non-nil (including pointer to "") means an explicit runtime override.
+	po *string
 }
 
 // New builds a Holder seeded from the config baseline.
 func New(base Snapshot) *Holder {
 	h := &Holder{base: base}
-	snap := mergeSnapshot(base, knobsOverride{}, credsOverride{})
+	snap := mergeSnapshot(base, knobsOverride{}, credsOverride{}, nil)
 	h.cur.Store(&snap)
 	return h
 }
@@ -118,11 +122,24 @@ func (h *Holder) Knobs() Knobs { return h.Snapshot().Knobs }
 // Credentials returns the effective control-plane credentials.
 func (h *Holder) Credentials() Credentials { return h.Snapshot().Creds }
 
+// PublicBaseURL returns the effective advertised Runtime root URL.
+func (h *Holder) PublicBaseURL() string { return h.Snapshot().PublicBaseURL }
+
+// PublicBaseURLOverridden reports whether PublicBaseURL comes from a KV override.
+func (h *Holder) PublicBaseURLOverridden() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.po != nil
+}
+
 // mergeSnapshot layers override pointers/values on top of the config baseline.
 // Numeric knob overrides that are nil keep the baseline; credential token
 // overrides that are empty keep the baseline; runtime operators are appended
-// to the baseline operators.
-func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride) Snapshot {
+// to the baseline operators. A non-nil po overrides PublicBaseURL (even to "").
+func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string) Snapshot {
 	s := base
 	k := s.Knobs
 	if ko.MaxMessages != nil {
@@ -165,6 +182,10 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride) Snapshot {
 	}
 	c.Operators = ops
 	s.Creds = c
+
+	if po != nil {
+		s.PublicBaseURL = *po
+	}
 	return s
 }
 

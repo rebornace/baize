@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/mcpoauth"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
@@ -24,9 +25,9 @@ func mcpOAuthRedirectURI(publicBase, connectorID string) string {
 
 func (s *Server) handleMCPOAuthStart(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	publicBase := strings.TrimSpace(s.CallbackPublicBase)
+	publicBase := s.publicBaseURL()
 	if publicBase == "" {
-		writeError(w, http.StatusBadRequest, "public_base_required", "configure runtime.public_base_url for MCP OAuth callbacks")
+		writeError(w, http.StatusBadRequest, "public_base_required", "set public_base_url in Settings → Runtime (or YAML runtime.public_base_url)")
 		return
 	}
 
@@ -239,7 +240,29 @@ func (s *Server) handleMCPOAuthCallback(w http.ResponseWriter, r *http.Request) 
 	oauth.Status = "authorized"
 	oauth.TokenBundleSealed = sealed
 	c.MCP.OAuth = oauth
-	s.Store.UpsertConnector(c)
+
+	// Re-discover tools with the new Bearer so the catalog is usable after OAuth.
+	login := append([]string(nil), c.RequireLogin...)
+	approval := append([]string(nil), c.RequireApproval...)
+	if _, _, applyErr := connector.Apply(connector.ApplyInput{
+		Store:              s.Store,
+		Registry:           s.Registry,
+		Identities:         s.Identities,
+		ID:                 id,
+		Type:               "mcp",
+		MCP:                c.MCP,
+		RequireLogin:       &login,
+		RequireApproval:    &approval,
+		CallbackSigner:     s.CallbackSigner,
+		CallbackSecret:     s.CallbackSecret,
+		CallbackPublicBase: s.publicBaseURL(),
+		CallbackTTL:        s.CallbackTTL,
+	}); applyErr != nil {
+		// Token is already sealed on the connector via Apply's Upsert path only on
+		// success; if rediscover fails, still persist authorized tokens so the
+		// admin can retry by re-saving the connector.
+		s.Store.UpsertConnector(c)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

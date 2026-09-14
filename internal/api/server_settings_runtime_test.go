@@ -63,6 +63,9 @@ func TestGetRuntimeSettings(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `"max_steps":16`) {
 		t.Fatalf("expected effective max_steps, body=%s", rr.Body.String())
 	}
+	if !strings.Contains(rr.Body.String(), `"public_base_url"`) {
+		t.Fatalf("expected public_base_url field, body=%s", rr.Body.String())
+	}
 }
 
 func TestPatchRuntimeSettingsHot(t *testing.T) {
@@ -83,6 +86,34 @@ func TestPatchRuntimeSettingsHot(t *testing.T) {
 	}
 	if h2.Knobs().MaxSteps != 32 || h2.Knobs().CompactionEnabled {
 		t.Fatalf("override must survive reload: %+v", h2.Knobs())
+	}
+}
+
+func TestPatchRuntimePublicBaseURLHot(t *testing.T) {
+	srv, st := runtimeSettingsServer(t)
+	rr := doJSON(t, srv, http.MethodPatch, "/v0/settings/runtime", "adm",
+		map[string]any{"public_base_url": "http://127.0.0.1:8080/"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if srv.Settings.PublicBaseURL() != "http://127.0.0.1:8080" {
+		t.Fatalf("settings url=%q", srv.Settings.PublicBaseURL())
+	}
+	if srv.CallbackPublicBase != "http://127.0.0.1:8080" {
+		t.Fatalf("CallbackPublicBase not synced: %q", srv.CallbackPublicBase)
+	}
+	if !strings.Contains(rr.Body.String(), `"public_base_url":"http://127.0.0.1:8080"`) {
+		t.Fatalf("response missing url: %s", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"public_base_url_overridden":true`) {
+		t.Fatalf("expected overridden true: %s", rr.Body.String())
+	}
+	h2 := runtimecfg.New(runtimecfg.Snapshot{})
+	if err := h2.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if h2.PublicBaseURL() != "http://127.0.0.1:8080" {
+		t.Fatalf("persist reload: %q", h2.PublicBaseURL())
 	}
 }
 

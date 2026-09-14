@@ -1,27 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  ApiError,
   deleteConnector,
   disconnectMcpOAuth,
-  getConnector,
-  listTools,
+  listConnectors,
+  patchRuntimeSettings,
   putConnector,
   startMcpOAuth,
   type ConnectorInfo,
 } from '../api'
-import { ToastRegion, useToast } from '../components/ui'
+import { ToastRegion, useToast, Modal, Button, Field, Input } from '../components/ui'
 import { ConnectorShell, type ConnectorRowData } from '../components/settings/ConnectorShell'
 import { ConnectorEditorModal, type ConnectorEditorInitial } from '../components/settings/ConnectorEditorModal'
 import { CONNECTORS, connectorErrorText } from '../strings'
-import { mcpConnectorIds, mcpSummary } from './connectorForms/mcp'
+import { mcpSummary } from './connectorForms/mcp'
 import { toPermissionTools } from './connectorForms/permissions'
 import type { SavedConnection } from './connectorForms/types'
 
-function toRow(info: ConnectorInfo, fallbackCount: number): ConnectorRowData {
+function toRow(info: ConnectorInfo): ConnectorRowData {
   const http = info.mcp?.transport === 'http'
   return {
     id: info.id,
     summary: mcpSummary(info.mcp),
-    toolCount: info.tools?.length ?? fallbackCount,
+    toolCount: info.tools?.length ?? 0,
     loginNames: [],
     approvalNames: info.require_approval ?? [],
     supportsOAuth: http,
@@ -43,17 +44,16 @@ export function McpSettings() {
     open: false, editing: false, initial: emptyInitial,
   })
   const oauthPollStopRef = useRef<(() => void) | null>(null)
+  const [publicBasePrompt, setPublicBasePrompt] = useState<{ connectorId: string; value: string } | null>(null)
+  const [publicBaseBusy, setPublicBaseBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const tools = await listTools()
-      const countById = new Map<string, number>()
-      for (const t of tools) {
-        if (t.source === 'mcp' && t.connector_id) countById.set(t.connector_id, (countById.get(t.connector_id) ?? 0) + 1)
-      }
-      const infos = await Promise.all(mcpConnectorIds(tools).map((id) => getConnector(id)))
+      // List connectors from store (not tools): OAuth MCP may save with 0 tools
+      // until「去授权」completes, and must still appear on this page.
+      const infos = await listConnectors('mcp')
       setConnectors(infos)
-      setRows(infos.map((c) => toRow(c, countById.get(c.id) ?? 0)))
+      setRows(infos.map((c) => toRow(c)))
       setLoadError(null)
     } catch (e) {
       setLoadError(connectorErrorText(e).title)
@@ -114,14 +114,47 @@ export function McpSettings() {
     await load()
   }
 
+  const runAuthorize = async (id: string) => {
+    const { authorization_url: url } = await startMcpOAuth(id)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    push({ tone: 'success', title: CONNECTORS.oauthAuthorizeOpened })
+    startOAuthStatusPoll()
+  }
+
   const handleAuthorize = async (id: string) => {
     try {
-      const { authorization_url: url } = await startMcpOAuth(id)
-      window.open(url, '_blank', 'noopener,noreferrer')
-      push({ tone: 'success', title: CONNECTORS.oauthAuthorizeOpened })
-      startOAuthStatusPoll()
+      await runAuthorize(id)
     } catch (e) {
-      push({ tone: 'error', title: connectorErrorText(e).title })
+      if (e instanceof ApiError && e.code === 'public_base_required') {
+        setPublicBasePrompt({
+          connectorId: id,
+          value: typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8080',
+        })
+        return
+      }
+      const err = connectorErrorText(e)
+      push({ tone: 'error', title: err.title, detail: err.detail })
+    }
+  }
+
+  const confirmPublicBaseAndAuthorize = async () => {
+    if (!publicBasePrompt) return
+    const trimmed = publicBasePrompt.value.trim()
+    if (!trimmed || !/^https?:\/\//i.test(trimmed)) {
+      push({ tone: 'error', title: CONNECTORS.errOAuthPublicBase })
+      return
+    }
+    setPublicBaseBusy(true)
+    try {
+      await patchRuntimeSettings({ public_base_url: trimmed })
+      const id = publicBasePrompt.connectorId
+      setPublicBasePrompt(null)
+      await runAuthorize(id)
+    } catch (e) {
+      const err = connectorErrorText(e)
+      push({ tone: 'error', title: err.title, detail: err.detail })
+    } finally {
+      setPublicBaseBusy(false)
     }
   }
 
@@ -131,7 +164,8 @@ export function McpSettings() {
       push({ tone: 'success', title: CONNECTORS.oauthDisconnected })
       await load()
     } catch (e) {
-      push({ tone: 'error', title: connectorErrorText(e).title })
+      const err = connectorErrorText(e)
+      push({ tone: 'error', title: err.title, detail: err.detail })
     }
   }
 
@@ -149,9 +183,53 @@ export function McpSettings() {
         onAuthorize={handleAuthorize} onDisconnectOAuth={handleDisconnectOAuth} />
       <ConnectorEditorModal kind="mcp" open={editor.open} editing={editor.editing} initial={editor.initial}
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
-        formatError={(e) => connectorErrorText(e).title}
+        formatError={(e) => {
+          const err = connectorErrorText(e)
+          return err.detail ? `${err.title}\n${err.detail}` : err.title
+        }}
         onSaveInfo={handleSaveInfo}
         onSavedInfo={(c) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
+      <Modal
+        open={publicBasePrompt !== null}
+        title={CONNECTORS.oauthPublicBaseTitle}
+        onClose={() => {
+          if (publicBaseBusy) return
+          setPublicBasePrompt(null)
+        }}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={publicBaseBusy}
+              onClick={() => setPublicBasePrompt(null)}
+            >
+              {CONNECTORS.oauthPublicBaseCancel}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={publicBaseBusy}
+              onClick={() => void confirmPublicBaseAndAuthorize()}
+            >
+              {publicBaseBusy ? CONNECTORS.oauthPublicBaseSaveRetry + '…' : CONNECTORS.oauthPublicBaseSaveRetry}
+            </Button>
+          </>
+        }
+      >
+        <p className="settings-muted">{CONNECTORS.oauthPublicBaseBody}</p>
+        <Field label={CONNECTORS.oauthPublicBaseTitle}>
+          <Input
+            type="url"
+            value={publicBasePrompt?.value ?? ''}
+            onChange={(e) =>
+              setPublicBasePrompt((p) => (p ? { ...p, value: e.target.value } : p))
+            }
+            disabled={publicBaseBusy}
+            placeholder="http://127.0.0.1:8080"
+          />
+        </Field>
+      </Modal>
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </>
   )

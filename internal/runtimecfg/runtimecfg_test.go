@@ -57,6 +57,9 @@ func TestNilHolderSafe(t *testing.T) {
 	if got := h.Credentials(); got.OperatorToken != "" || len(got.Operators) != 0 {
 		t.Fatalf("nil holder creds must be zero: %+v", got)
 	}
+	if h.PublicBaseURL() != "" || h.PublicBaseURLOverridden() {
+		t.Fatal("nil holder PublicBaseURL must be empty")
+	}
 	h.ReplaceBaseline(baseSnapshot()) // must not panic
 }
 
@@ -84,7 +87,7 @@ func TestMergeSnapshotOverlaysOnlyProvided(t *testing.T) {
 	off := false
 	snap := mergeSnapshot(base,
 		knobsOverride{MaxSteps: &steps, CompactionEnabled: &off},
-		credsOverride{AdminToken: "new-adm"})
+		credsOverride{AdminToken: "new-adm"}, nil)
 	if snap.Knobs.MaxSteps != 24 {
 		t.Fatalf("maxsteps override: %d", snap.Knobs.MaxSteps)
 	}
@@ -110,7 +113,7 @@ func TestMergeAppendsRuntimeOperators(t *testing.T) {
 	base := baseSnapshot()
 	snap := mergeSnapshot(base, knobsOverride{}, credsOverride{
 		Operators: []operatorEntry{{ID: "bob", Token: "tb"}},
-	})
+	}, nil)
 	if len(snap.Creds.Operators) != 2 {
 		t.Fatalf("want base+runtime = 2 operators, got %+v", snap.Creds.Operators)
 	}
@@ -438,6 +441,59 @@ func TestKnobsViewMarksOverridden(t *testing.T) {
 	}
 	if v.Overridden.MaxMessages || v.Effective.MaxMessages != 40 {
 		t.Fatalf("maxmessages should be baseline not overridden: %+v", v)
+	}
+}
+
+func TestPublicBaseURLBaselineAndOverride(t *testing.T) {
+	h := New(Snapshot{PublicBaseURL: "http://yaml.example:8080"})
+	if h.PublicBaseURL() != "http://yaml.example:8080" || h.PublicBaseURLOverridden() {
+		t.Fatalf("baseline: url=%q overridden=%v", h.PublicBaseURL(), h.PublicBaseURLOverridden())
+	}
+	url := "http://127.0.0.1:8080/"
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{PublicBaseURL: &url}); err != nil {
+		t.Fatal(err)
+	}
+	if h.PublicBaseURL() != "http://127.0.0.1:8080" {
+		t.Fatalf("want normalized override, got %q", h.PublicBaseURL())
+	}
+	if !h.PublicBaseURLOverridden() {
+		t.Fatal("expected overridden")
+	}
+	clear := ""
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{PublicBaseURL: &clear}); err != nil {
+		t.Fatal(err)
+	}
+	if h.PublicBaseURL() != "http://yaml.example:8080" || h.PublicBaseURLOverridden() {
+		t.Fatalf("clear must restore YAML: url=%q overridden=%v", h.PublicBaseURL(), h.PublicBaseURLOverridden())
+	}
+}
+
+func TestPublicBaseURLValidate(t *testing.T) {
+	h := New(Snapshot{})
+	bad := "ftp://x"
+	if err := h.ValidateKnobs(KnobsPatch{PublicBaseURL: &bad}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("want ErrBadRequest, got %v", err)
+	}
+	rel := "/relative"
+	if err := h.ValidateKnobs(KnobsPatch{PublicBaseURL: &rel}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("relative must fail, got %v", err)
+	}
+}
+
+func TestPublicBaseURLPersists(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	h := New(Snapshot{PublicBaseURL: "http://yaml.example"})
+	url := "https://runtime.example"
+	if err := h.ApplyKnobs(context.Background(), st, KnobsPatch{PublicBaseURL: &url}); err != nil {
+		t.Fatal(err)
+	}
+	h2 := New(Snapshot{PublicBaseURL: "http://yaml.example"})
+	if err := h2.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if h2.PublicBaseURL() != "https://runtime.example" || !h2.PublicBaseURLOverridden() {
+		t.Fatalf("reload: url=%q overridden=%v", h2.PublicBaseURL(), h2.PublicBaseURLOverridden())
 	}
 }
 

@@ -30,6 +30,8 @@ async function renderRuntime() {
   vi.spyOn(api, 'getRuntimeSettings').mockResolvedValue({
     effective: baseKnobs,
     overridden,
+    public_base_url: '',
+    public_base_url_overridden: false,
   })
   vi.spyOn(api, 'getCredentials').mockResolvedValue({
     source: 'override',
@@ -94,10 +96,11 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
 describe('RuntimeSettings humanize shell', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
-  it('shows PageHeader title and three section headings; compact adv collapsed', async () => {
+  it('shows PageHeader title and section headings; compact adv collapsed', async () => {
     const { host, root } = await renderRuntime()
     expect(host.textContent).toContain(RUNTIME.title)
     expect(host.textContent).not.toContain('运行时设置')
+    expect(host.textContent).toContain(RUNTIME.sectionPublicBase)
     expect(host.textContent).toContain(RUNTIME.sectionBehavior)
     expect(host.textContent).toContain(RUNTIME.sectionCompact)
     expect(host.textContent).toContain(RUNTIME.sectionCreds)

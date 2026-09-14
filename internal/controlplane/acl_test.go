@@ -30,6 +30,7 @@ func TestMinRoleTable(t *testing.T) {
 		{"POST", "/v0/conversations/c1/login-invoke", RoleAdmin},
 		{"PUT", "/v0/agents/a1", RoleAdmin},
 		{"PUT", "/v0/connectors/c1", RoleAdmin},
+		{"GET", "/v0/connectors", RoleAdmin},
 		{"GET", "/v0/connectors/c1", RoleAdmin},
 		{"POST", "/v0/connectors/c1/mcp/oauth/start", RoleAdmin},
 		{"GET", "/v0/connectors/c1/mcp/oauth/callback", RoleNone},

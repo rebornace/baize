@@ -173,6 +173,8 @@ type Server struct {
 	// CallbackSigner / CallbackPublicBase / CallbackTTL configure
 	// callback_urls.event injection into sidecar invoke context. When any
 	// piece is missing the URL is omitted (fail-open). Set by bootstrap.
+	// CallbackPublicBase is also kept in sync with Settings.PublicBaseURL()
+	// after PATCH /v0/settings/runtime (see publicBaseURL).
 	CallbackSigner     httpplugin.CallbackSigner
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
@@ -220,6 +222,16 @@ func (s *Server) inboxLimiter() *inbox.RateLimiter {
 		}
 	})
 	return s.InboxLimiter
+}
+
+// publicBaseURL returns the advertised Runtime root for OAuth redirects and
+// plugin callback_urls. Prefer the hot-reloadable Settings holder when wired
+// (tests that only set CallbackPublicBase still work).
+func (s *Server) publicBaseURL() string {
+	if s.Settings != nil {
+		return strings.TrimSpace(s.Settings.PublicBaseURL())
+	}
+	return strings.TrimSpace(s.CallbackPublicBase)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -403,6 +415,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("GET /v0/agents/{id}", s.handleGetAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
+	s.mux.HandleFunc("GET /v0/connectors", s.handleListConnectors)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/start", s.handleMCPOAuthStart)
 	s.mux.HandleFunc("GET /v0/connectors/{id}/mcp/oauth/callback", s.handleMCPOAuthCallback)
@@ -945,7 +958,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		MCP:                  body.MCP,
 		CallbackSigner:       s.CallbackSigner,
 		CallbackSecret:       s.CallbackSecret,
-		CallbackPublicBase:   s.CallbackPublicBase,
+		CallbackPublicBase:   s.publicBaseURL(),
 		CallbackTTL:          s.CallbackTTL,
 	})
 	if err != nil {
@@ -1052,6 +1065,19 @@ type authBody struct {
 	} `json:"capture"`
 }
 
+func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {
+	wantType := strings.TrimSpace(r.URL.Query().Get("type"))
+	all := s.Store.ListConnectors()
+	out := make([]map[string]any, 0, len(all))
+	for _, c := range all {
+		if wantType != "" && c.Type != wantType {
+			continue
+		}
+		out = append(out, s.connectorResponse(c))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"connectors": out})
+}
+
 func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	c, err := s.Store.GetConnector(id)
@@ -1059,7 +1085,11 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
 		return
 	}
-	tools := s.Store.ListToolsByConnector(id)
+	writeJSON(w, http.StatusOK, s.connectorResponse(c))
+}
+
+func (s *Server) connectorResponse(c store.Connector) map[string]any {
+	tools := s.Store.ListToolsByConnector(c.ID)
 	if tools == nil {
 		tools = []store.Tool{}
 	}
@@ -1078,7 +1108,7 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 	if c.Type == "mcp" {
 		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
 func (s *Server) loadEventsWebhook() webhook.Config {
@@ -1469,7 +1499,7 @@ func (s *Server) registerOne(c store.Connector, t store.Tool) error {
 	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, c, t, connector.CallbackConfig{
 		Signer:     s.CallbackSigner,
 		Secret:     s.CallbackSecret,
-		PublicBase: s.CallbackPublicBase,
+		PublicBase: s.publicBaseURL(),
 		TTL:        s.CallbackTTL,
 	})
 }

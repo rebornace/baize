@@ -152,6 +152,53 @@ func TestPutMCPStdioConnectorRegistersTools(t *testing.T) {
 	}
 }
 
+func TestListConnectorsTypeMCPIncludesEmptyTools(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{
+		ID:   "gugu",
+		Type: "mcp",
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       "https://mcp.gugudata.com/mcp",
+		},
+	})
+	st.UpsertConnector(store.Connector{
+		ID:      "openapi1",
+		Type:    "openapi",
+		Spec:    "x.yaml",
+		BaseURL: "http://example",
+	})
+	srv := api.NewServer(st, tool.NewRegistry(), &fakeRunner{store: st})
+	req := httptest.NewRequest(http.MethodGet, "/v0/connectors?type=mcp", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Connectors []struct {
+			ID    string `json:"id"`
+			Type  string `json:"type"`
+			Tools []any  `json:"tools"`
+			MCP   struct {
+				URL string `json:"url"`
+			} `json:"mcp"`
+		} `json:"connectors"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Connectors) != 1 || got.Connectors[0].ID != "gugu" {
+		t.Fatalf("want only gugu mcp, got %+v", got.Connectors)
+	}
+	if got.Connectors[0].MCP.URL != "https://mcp.gugudata.com/mcp" {
+		t.Fatalf("mcp.url=%q", got.Connectors[0].MCP.URL)
+	}
+	if got.Connectors[0].Tools == nil {
+		t.Fatal("tools must be [] not null")
+	}
+}
+
 func TestGetConnectorMCPOAuthRedacted(t *testing.T) {
 	const (
 		tokenBundle  = "bz1:fake-token-bundle-sealed"

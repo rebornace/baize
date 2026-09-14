@@ -104,9 +104,12 @@ export function resolveBadge(kind: BadgeKind, data: unknown): BadgeResult | null
       return { tone: 'neutral', text: driver === 'sqlite' ? '本地文件' : driver.toLowerCase() }
     }
     case 'runtime': {
-      const overridden = (data as RuntimeKnobsView).overridden ?? {}
-      const custom = Object.values(overridden).some(Boolean)
-      return { tone: 'neutral', text: custom ? '已自定义' : '默认' }
+      const view = data as RuntimeKnobsView
+      const overridden = view.overridden ?? {}
+      const custom = Object.values(overridden).some(Boolean) || Boolean(view.public_base_url_overridden)
+      return custom
+        ? { tone: 'neutral', text: '已自定义' }
+        : { tone: 'neutral', text: '默认' }
     }
     default: {
       const _exhaustive: never = kind
