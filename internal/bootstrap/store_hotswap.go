@@ -148,6 +148,11 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 		_ = newCloser.Close()
 		return fmt.Errorf("open conversation/identity: %w", err)
 	}
+	mem, err := openMemory(newRaw, cfgSnap)
+	if err != nil {
+		_ = newCloser.Close()
+		return fmt.Errorf("open memory: %w", err)
+	}
 
 	newRaw.UpsertAgent(store.Agent{
 		ID:     cfgSnap.Agent.ID,
@@ -182,8 +187,11 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	rt.engine.Store = wrapped
 	rt.engine.Messages = messages
 	rt.engine.Identities = identities
+	rt.engine.Memory = mem
 	if meta, ok := messages.(conversation.MetaStore); ok {
 		rt.engine.Meta = meta
+	} else {
+		rt.engine.Meta = nil
 	}
 
 	if rt.compactor != nil {

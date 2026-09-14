@@ -16,6 +16,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
@@ -80,6 +81,8 @@ type Engine struct {
 	// Meta is optional. When set with Outbound, succeeded assistant replies
 	// for weixin conversations are delivered to the channel peer.
 	Meta conversation.MetaStore
+	// Memory is optional account-scoped fact store (P6). nil disables memory.
+	Memory memory.Store
 	// Outbound is optional channel used for UI→peer sync after a succeeded run.
 	Outbound channel.Channel
 	// OutboundExtras optionally supplies per-conversation extras (e.g. context_token).
