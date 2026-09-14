@@ -16,6 +16,9 @@ type Message struct {
 	Content    string
 	ToolCallID string
 	ToolCalls  []ToolCall
+	Thinking   string
+	// ThinkingRedacted is set when the upstream withheld displayable thinking.
+	ThinkingRedacted bool
 	// Parts is an optional multimodal payload. When non-empty, providers encode
 	// the message content as a structured array (text + image parts) instead of
 	// a plain string. Callers are responsible for including any text they want

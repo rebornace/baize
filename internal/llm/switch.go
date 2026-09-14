@@ -34,7 +34,10 @@ type ProfileSource interface {
 
 type ctxKey int
 
-const modelProfileIDKey ctxKey = iota
+const (
+	modelProfileIDKey ctxKey = iota
+	thinkingLevelKey
+)
 
 // WithModelProfileID attaches a per-run model profile choice to the context.
 func WithModelProfileID(ctx context.Context, profileID string) context.Context {
@@ -47,6 +50,22 @@ func WithModelProfileID(ctx context.Context, profileID string) context.Context {
 // ModelProfileIDFromContext returns the per-run profile id, or "".
 func ModelProfileIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(modelProfileIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithThinkingLevel attaches a per-run thinking level override to the context.
+func WithThinkingLevel(ctx context.Context, level string) context.Context {
+	if level == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, thinkingLevelKey, level)
+}
+
+// ThinkingLevelFromContext returns the per-run thinking level, or "".
+func ThinkingLevelFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(thinkingLevelKey).(string); ok {
 		return v
 	}
 	return ""

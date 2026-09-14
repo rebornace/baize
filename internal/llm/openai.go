@@ -55,6 +55,16 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 		client = http.DefaultClient
 	}
 
+	level := ThinkingLevelFromContext(ctx)
+	if level == "" {
+		level = o.ThinkingLevel
+	}
+	if level == "" && o.DisableThinking {
+		level = ThinkingOff
+	}
+	d := InferDialect(o.ThinkingDialect, o.Model, o.BaseURL)
+	f := ApplyThinking(d, level)
+
 	reqBody := openAIRequest{
 		Model:    o.Model,
 		Messages: toOpenAIMessages(messages),
@@ -62,36 +72,21 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	if len(tools) > 0 {
 		reqBody.Tools = toOpenAITools(tools)
 	}
-	// DeepSeek V4 defaults thinking on; disable to avoid billing reasoning tokens.
-	if o.DisableThinking {
-		reqBody.Thinking = &openAIThinking{Type: "disabled"}
-	}
+	applyThinkingToRequest(&reqBody, f)
 
-	payload, err := json.Marshal(reqBody)
+	body, status, err := o.postChat(ctx, client, reqBody)
 	if err != nil {
-		return Message{}, fmt.Errorf("openai_compatible: marshal request: %w", err)
+		return Message{}, err
 	}
-
-	url := o.BaseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return Message{}, fmt.Errorf("openai_compatible: build request: %w", err)
+	if status == http.StatusBadRequest && shouldRetryWithoutOff(body) {
+		clearOffThinkingFields(&reqBody)
+		body, status, err = o.postChat(ctx, client, reqBody)
+		if err != nil {
+			return Message{}, err
+		}
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.APIKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return Message{}, fmt.Errorf("openai_compatible: http: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return Message{}, fmt.Errorf("openai_compatible: read body: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Message{}, fmt.Errorf("openai_compatible: status %d: %s", resp.StatusCode, truncateBytes(body, 512))
+	if status < 200 || status >= 300 {
+		return Message{}, fmt.Errorf("openai_compatible: status %d: %s", status, truncateBytes(body, 512))
 	}
 
 	var parsed openAIResponse
@@ -105,22 +100,80 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	return fromOpenAIMessage(parsed.Choices[0].Message)
 }
 
-type openAIRequest struct {
-	Model    string          `json:"model"`
-	Messages []openAIMessage `json:"messages"`
-	Tools    []openAITool    `json:"tools,omitempty"`
-	Thinking *openAIThinking `json:"thinking,omitempty"`
+func (o *OpenAI) postChat(ctx context.Context, client *http.Client, reqBody openAIRequest) ([]byte, int, error) {
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, 0, fmt.Errorf("openai_compatible: marshal request: %w", err)
+	}
+
+	url := o.BaseURL + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, 0, fmt.Errorf("openai_compatible: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.APIKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("openai_compatible: http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("openai_compatible: read body: %w", err)
+	}
+	return body, resp.StatusCode, nil
 }
 
-type openAIThinking struct {
-	Type string `json:"type"`
+func applyThinkingToRequest(req *openAIRequest, f ThinkingFields) {
+	req.ReasoningEffort = f.ReasoningEffort
+	req.Thinking = f.Thinking
+	req.EnableThinking = f.EnableThinking
+	req.ThinkingBudget = f.ThinkingBudget
+	req.Reasoning = f.Reasoning
+}
+
+func clearOffThinkingFields(req *openAIRequest) {
+	if req.ReasoningEffort == "none" {
+		req.ReasoningEffort = ""
+	}
+	if req.Thinking != nil && req.Thinking.Type == "disabled" {
+		req.Thinking = nil
+	}
+	if req.EnableThinking != nil && !*req.EnableThinking {
+		req.EnableThinking = nil
+	}
+	if req.Reasoning != nil && req.Reasoning.Effort == "none" {
+		req.Reasoning = nil
+	}
+}
+
+func shouldRetryWithoutOff(body []byte) bool {
+	s := string(body)
+	return strings.Contains(s, "none") && strings.Contains(s, "reasoning_effort")
+}
+
+type openAIRequest struct {
+	Model           string               `json:"model"`
+	Messages        []openAIMessage      `json:"messages"`
+	Tools           []openAITool         `json:"tools,omitempty"`
+	Stream          bool                 `json:"stream,omitempty"`
+	Thinking        *ThinkingToggle      `json:"thinking,omitempty"`
+	ReasoningEffort string               `json:"reasoning_effort,omitempty"`
+	EnableThinking  *bool                `json:"enable_thinking,omitempty"`
+	ThinkingBudget  *int                 `json:"thinking_budget,omitempty"`
+	Reasoning       *OpenRouterReasoning `json:"reasoning,omitempty"`
 }
 
 type openAIMessage struct {
-	Role       string           `json:"role"`
-	Content    any              `json:"content"` // string or []openAIContentPart; always set (strict gateways require the field)
-	ToolCallID string           `json:"tool_call_id,omitempty"`
-	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	Role             string           `json:"role"`
+	Content          any              `json:"content"` // string or []openAIContentPart; always set (strict gateways require the field)
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	Reasoning        json.RawMessage  `json:"reasoning,omitempty"`
 }
 
 // openAIContentPart is one element of the OpenAI multimodal content array.
@@ -259,6 +312,7 @@ func fromOpenAIMessage(m openAIMessage) (Message, error) {
 		Role:       Role(m.Role),
 		Content:    contentString(m.Content),
 		ToolCallID: m.ToolCallID,
+		Thinking:   extractThinking(m),
 	}
 	for _, tc := range m.ToolCalls {
 		args := map[string]any{}
@@ -277,6 +331,20 @@ func fromOpenAIMessage(m openAIMessage) (Message, error) {
 		msg.Role = RoleAssistant
 	}
 	return msg, nil
+}
+
+func extractThinking(m openAIMessage) string {
+	if strings.TrimSpace(m.ReasoningContent) != "" {
+		return m.ReasoningContent
+	}
+	if len(m.Reasoning) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(m.Reasoning, &s); err == nil {
+		return s
+	}
+	return ""
 }
 
 func truncateBytes(b []byte, n int) string {
