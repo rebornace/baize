@@ -1,0 +1,38 @@
+import type { LoginEntry } from './api'
+
+/** Case-insensitive; aligned with backend loginentry sensitive key redaction. */
+const SENSITIVE_FIELD = /password|passwd|secret|token|api_key/i
+
+export type LoginFieldType = 'text' | 'password'
+
+export interface LoginEntryField {
+  name: string
+  type: LoginFieldType
+  required: boolean
+}
+
+export function isSensitiveLoginField(name: string): boolean {
+  return SENSITIVE_FIELD.test(name)
+}
+
+/** Filter login picker rows by mention query (title + tool_name). */
+export function filterLoginEntries(entries: LoginEntry[], query: string): LoginEntry[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return entries
+  return entries.filter(
+    (e) =>
+      e.title.toLowerCase().includes(needle) || e.tool_name.toLowerCase().includes(needle),
+  )
+}
+
+/** Derive modal inputs from a catalog entry (required names only). */
+export function fieldsFromEntry(
+  entry: Pick<LoginEntry, 'required' | 'parameters'>,
+): LoginEntryField[] {
+  const names = entry.required ?? []
+  return names.map((name) => ({
+    name,
+    type: isSensitiveLoginField(name) ? 'password' : 'text',
+    required: true,
+  }))
+}

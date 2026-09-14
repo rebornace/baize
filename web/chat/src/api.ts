@@ -1053,6 +1053,51 @@ export async function putAgent(
   await parseJSON<{ id: string; system: string; skills?: string[] }>(res)
 }
 
+export type LoginEntry = {
+  id: string
+  connector_id: string
+  connector_title: string
+  connector_type: string
+  tool_name: string
+  title: string
+  logged_in: boolean
+  parameters?: Record<string, unknown>
+  required: string[]
+}
+
+export async function listLoginEntries(
+  conversationId: string,
+  connectorId?: string,
+): Promise<LoginEntry[]> {
+  const qs = connectorId ? `?connector_id=${encodeURIComponent(connectorId)}` : ''
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/login-entries${qs}`,
+    { headers: authInit() },
+  )
+  const body = await parseJSON<{ entries: LoginEntry[] }>(res)
+  return body.entries ?? []
+}
+
+export async function loginInvoke(
+  conversationId: string,
+  body: {
+    agent_id: string
+    connector_id: string
+    tool_name: string
+    arguments?: Record<string, unknown>
+  },
+): Promise<{ run_id: string; status: string; conversation_id: string }> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/login-invoke`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    },
+  )
+  return parseJSON(res)
+}
+
 export async function listIdentities(conversationId: string): Promise<IdentityView[]> {
   const res = await fetch(
     `/v0/conversations/${encodeURIComponent(conversationId)}/identities`,
