@@ -34,17 +34,17 @@ func TestParseDedupPreservesOrder(t *testing.T) {
 }
 
 func TestParseMentionOnly(t *testing.T) {
-	cleaned, ids := skillparse.Parse("@login-doctor-miao")
+	cleaned, ids := skillparse.Parse("@login-crm")
 	if cleaned != "" {
 		t.Fatalf("cleaned = %q, want empty", cleaned)
 	}
-	if !reflect.DeepEqual(ids, []string{"login-doctor-miao"}) {
+	if !reflect.DeepEqual(ids, []string{"login-crm"}) {
 		t.Fatalf("ids = %v", ids)
 	}
-	if !skillparse.IsMentionOnly("@login-doctor-miao ") {
+	if !skillparse.IsMentionOnly("@login-crm ") {
 		t.Fatal("expected mention-only")
 	}
-	if skillparse.IsMentionOnly("@login-doctor-miao 帮我登录") {
+	if skillparse.IsMentionOnly("@login-crm 帮我登录") {
 		t.Fatal("text plus mention is not mention-only")
 	}
 }

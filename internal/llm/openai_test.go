@@ -125,13 +125,13 @@ func TestOpenAIAssistantToolCallsAlwaysIncludesContent(t *testing.T) {
 	p := llm.NewOpenAI(srv.URL, "k", "m")
 	_, err := p.Chat(context.Background(), []llm.Message{
 		{Role: llm.RoleSystem, Content: "sys"},
-		{Role: llm.RoleUser, Content: "@login-doctor-miao"},
+		{Role: llm.RoleUser, Content: "@login-crm"},
 		{
 			Role: llm.RoleAssistant,
 			ToolCalls: []llm.ToolCall{{
 				ID:   "call_1",
 				Name: "activate_skill",
-				Arguments: map[string]any{"skill_id": "login-doctor-miao"},
+				Arguments: map[string]any{"skill_id": "login-crm"},
 			}},
 		},
 		{Role: llm.RoleTool, ToolCallID: "call_1", Content: `{"ok":true}`},
