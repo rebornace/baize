@@ -25,6 +25,7 @@ import (
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
+	"github.com/rebornace/baize/internal/connector/mcpoauth"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/connector/specimport"
 	"github.com/rebornace/baize/internal/connector/specstore"
@@ -172,9 +173,14 @@ type Server struct {
 	// CallbackSigner / CallbackPublicBase / CallbackTTL configure
 	// callback_urls.event injection into sidecar invoke context. When any
 	// piece is missing the URL is omitted (fail-open). Set by bootstrap.
+	// CallbackPublicBase is also kept in sync with Settings.PublicBaseURL()
+	// after PATCH /v0/settings/runtime (see publicBaseURL).
 	CallbackSigner     httpplugin.CallbackSigner
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
+
+	// OAuthSessions holds in-flight MCP OAuth PKCE state (single-process).
+	OAuthSessions *mcpoauth.SessionStore
 
 	// Outbound is the channel used to deliver mirrored UI/API user turns and
 	// succeeded assistant replies to channel peers. It is normally a
@@ -200,6 +206,7 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 		Runner:           runner,
 		Identities:       identity.NewMemoryStore(),
 		MCPExportEnabled: true,
+		OAuthSessions:    mcpoauth.NewSessionStore(),
 		mux:              http.NewServeMux(),
 	}
 	s.routes()
@@ -215,6 +222,16 @@ func (s *Server) inboxLimiter() *inbox.RateLimiter {
 		}
 	})
 	return s.InboxLimiter
+}
+
+// publicBaseURL returns the advertised Runtime root for OAuth redirects and
+// plugin callback_urls. Prefer the hot-reloadable Settings holder when wired
+// (tests that only set CallbackPublicBase still work).
+func (s *Server) publicBaseURL() string {
+	if s.Settings != nil {
+		return strings.TrimSpace(s.Settings.PublicBaseURL())
+	}
+	return strings.TrimSpace(s.CallbackPublicBase)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -398,7 +415,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
 	s.mux.HandleFunc("GET /v0/agents/{id}", s.handleGetAgent)
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
+	s.mux.HandleFunc("GET /v0/connectors", s.handleListConnectors)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
+	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/start", s.handleMCPOAuthStart)
+	s.mux.HandleFunc("GET /v0/connectors/{id}/mcp/oauth/callback", s.handleMCPOAuthCallback)
+	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/disconnect", s.handleMCPOAuthDisconnect)
+	s.mux.HandleFunc("GET /v0/connectors/{id}/mcp/oauth/status", s.handleMCPOAuthStatus)
 	s.mux.HandleFunc("GET /v0/tools", s.handleGetTools)
 	s.mux.HandleFunc("PATCH /v0/tools/{name}", s.handlePatchTool)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/tools", s.handlePostConnectorTool)
@@ -870,7 +892,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	// omitted so both preserve-on-omit paths share one store read.
 	var existingConn store.Connector
 	var hasExisting bool
-	needExisting := body.ExecutionCallbackURL == nil || (body.Type != "mcp" && body.Auth.Capture == nil)
+	needExisting := body.ExecutionCallbackURL == nil || (body.Type != "mcp" && body.Auth.Capture == nil) || (body.Type == "mcp" && body.MCP.OAuth != nil)
 	if needExisting {
 		if existing, err := s.Store.GetConnector(id); err == nil {
 			existingConn = existing
@@ -916,6 +938,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		callbackURL = existingConn.ExecutionCallbackURL
 	}
 
+	if body.Type == "mcp" {
+		mergeMCPOAuthPreserveSecrets(&body.MCP, existingConn, hasExisting)
+	}
+
 	c, infos, err := connector.Apply(connector.ApplyInput{
 		Store:                s.Store,
 		Registry:             s.Registry,
@@ -932,7 +958,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		MCP:                  body.MCP,
 		CallbackSigner:       s.CallbackSigner,
 		CallbackSecret:       s.CallbackSecret,
-		CallbackPublicBase:   s.CallbackPublicBase,
+		CallbackPublicBase:   s.publicBaseURL(),
 		CallbackTTL:          s.CallbackTTL,
 	})
 	if err != nil {
@@ -981,7 +1007,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"tools":                  infos,
 	}
 	if c.Type == "mcp" {
-		resp["mcp"] = c.MCP
+		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
 	s.syncLoginManagedSkill(id)
 	writeJSON(w, http.StatusOK, resp)
@@ -1039,6 +1065,19 @@ type authBody struct {
 	} `json:"capture"`
 }
 
+func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {
+	wantType := strings.TrimSpace(r.URL.Query().Get("type"))
+	all := s.Store.ListConnectors()
+	out := make([]map[string]any, 0, len(all))
+	for _, c := range all {
+		if wantType != "" && c.Type != wantType {
+			continue
+		}
+		out = append(out, s.connectorResponse(c))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"connectors": out})
+}
+
 func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	c, err := s.Store.GetConnector(id)
@@ -1046,7 +1085,11 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
 		return
 	}
-	tools := s.Store.ListToolsByConnector(id)
+	writeJSON(w, http.StatusOK, s.connectorResponse(c))
+}
+
+func (s *Server) connectorResponse(c store.Connector) map[string]any {
+	tools := s.Store.ListToolsByConnector(c.ID)
 	if tools == nil {
 		tools = []store.Tool{}
 	}
@@ -1063,9 +1106,9 @@ func (s *Server) handleGetConnector(w http.ResponseWriter, r *http.Request) {
 		"tools":                  tools,
 	}
 	if c.Type == "mcp" {
-		resp["mcp"] = c.MCP
+		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
 func (s *Server) loadEventsWebhook() webhook.Config {
@@ -1456,7 +1499,7 @@ func (s *Server) registerOne(c store.Connector, t store.Tool) error {
 	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, c, t, connector.CallbackConfig{
 		Signer:     s.CallbackSigner,
 		Secret:     s.CallbackSecret,
-		PublicBase: s.CallbackPublicBase,
+		PublicBase: s.publicBaseURL(),
 		TTL:        s.CallbackTTL,
 	})
 }

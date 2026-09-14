@@ -38,6 +38,7 @@ export interface ConnectorEditorInitial {
 const EMPTY_MCP_FORM: McpFormValues = {
   id: '', transport: 'stdio', command: '', argsText: '', envText: '', url: '', headersText: '',
   exportDbReadonly: false,
+  oauthClientId: '', oauthClientSecret: '', oauthStatus: '',
 }
 
 export interface ConnectorEditorModalProps {
@@ -253,6 +254,25 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                       setMcpForm((f) => ({ ...f, headersText: e.target.value }))
                       setMcpErrors((p) => ({ ...p, headers: undefined }))
                     }} />
+                </Field>
+                <Field label={CONNECTORS.fieldOAuthClientId} hint={CONNECTORS.fieldOAuthClientIdHint}>
+                  <Input
+                    value={mcpForm.oauthClientId}
+                    disabled={saving}
+                    placeholder="optional-client-id"
+                    autoComplete="off"
+                    onChange={(e) => setMcpForm((f) => ({ ...f, oauthClientId: e.target.value }))}
+                  />
+                </Field>
+                <Field label={CONNECTORS.fieldOAuthClientSecret} hint={CONNECTORS.fieldOAuthClientSecretHint}>
+                  <Input
+                    type="password"
+                    value={mcpForm.oauthClientSecret}
+                    disabled={saving}
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    onChange={(e) => setMcpForm((f) => ({ ...f, oauthClientSecret: e.target.value }))}
+                  />
                 </Field>
               </>
             )}

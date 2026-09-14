@@ -434,6 +434,40 @@ describe('ConnectorEditorModal mcp', () => {
     expect(host.textContent).toContain(CONNECTORS.errMcpUrlRequired)
     expect(onSaveInfo).not.toHaveBeenCalled()
   })
+
+  it('http: optional oauth client_id/secret fields; secret is password and not echoed', async () => {
+    const onSaveInfo = vi.fn(async () => [{ name: 'q' }])
+    await render(mcpProps({
+      onSaveInfo,
+      editing: true,
+      initial: {
+        id: 'r1', baseUrl: '', tools: [], loginNames: [], approvalNames: [],
+        mcp: {
+          transport: 'http', url: 'https://mcp.example.com',
+          oauth: { status: 'authorized', client_id: 'existing-cid', client_secret: 'sealed-should-not-show' },
+        },
+      },
+    }))
+    expect(host.textContent).toContain(CONNECTORS.fieldOAuthClientId)
+    expect(host.textContent).toContain(CONNECTORS.fieldOAuthClientSecret)
+    const secret = host.querySelector('input[type="password"]') as HTMLInputElement
+    expect(secret).toBeTruthy()
+    expect(secret.value).toBe('')
+    const clientId = [...host.querySelectorAll('input')].find(
+      (i) => i !== secret && (i as HTMLInputElement).value === 'existing-cid',
+    ) as HTMLInputElement
+    expect(clientId).toBeTruthy()
+    await setValue(secret, 'new-secret')
+    await act(async () => { btn('保存连接').click(); await Promise.resolve() })
+    await flush()
+    expect(onSaveInfo).toHaveBeenCalledWith({
+      kind: 'mcp', id: 'r1',
+      mcp: {
+        transport: 'http', url: 'https://mcp.example.com',
+        oauth: { client_id: 'existing-cid', client_secret: 'new-secret', status: 'authorized' },
+      },
+    })
+  })
 })
 
 describe('ConnectorEditorModal advanced', () => {

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rebornace/baize/internal/settingscrypto"
@@ -13,6 +15,8 @@ import (
 )
 
 // KnobsPatch is a partial engine-knob update (nil fields = leave unchanged).
+// PublicBaseURL: nil = leave unchanged; pointer to "" = clear override (YAML
+// baseline); pointer to a non-empty URL = set override.
 type KnobsPatch struct {
 	MaxMessages                  *int     `json:"max_messages,omitempty"`
 	MaxSteps                     *int     `json:"max_steps,omitempty"`
@@ -22,6 +26,7 @@ type KnobsPatch struct {
 	CompactReserveTokens         *int     `json:"compact_reserve_tokens,omitempty"`
 	KeepRecent                   *int     `json:"compact_keep_recent,omitempty"`
 	CompactSummaryTimeoutSeconds *int     `json:"compact_summary_timeout_seconds,omitempty"`
+	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 }
 
 // OperatorInput is one add_operator entry {id, token}.
@@ -41,8 +46,9 @@ type CredsPatch struct {
 
 // persisted is the on-disk KV shape (delta only; absent = baseline).
 type persisted struct {
-	Knobs knobsOverride `json:"knobs,omitempty"`
-	Creds credsOverride `json:"creds,omitempty"`
+	Knobs         knobsOverride `json:"knobs,omitempty"`
+	Creds         credsOverride `json:"creds,omitempty"`
+	PublicBaseURL *string       `json:"public_base_url,omitempty"`
 }
 
 // Exported error sentinels so the API layer can map them to HTTP status codes
@@ -63,6 +69,34 @@ func HTTPStatus(err error) int {
 	default:
 		return 500
 	}
+}
+
+// NormalizePublicBaseURL trims space and trailing slashes. Empty input stays empty.
+func NormalizePublicBaseURL(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
+}
+
+// ValidatePublicBaseURL accepts empty (clear) or an absolute http/https URL
+// with a host and no fragment. Returns the normalized form.
+func ValidatePublicBaseURL(raw string) (string, error) {
+	n := NormalizePublicBaseURL(raw)
+	if n == "" {
+		return "", nil
+	}
+	u, err := url.Parse(n)
+	if err != nil {
+		return "", fmt.Errorf("%w: public_base_url is not a valid URL", ErrBadRequest)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%w: public_base_url must be http or https", ErrBadRequest)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("%w: public_base_url must include a host", ErrBadRequest)
+	}
+	if u.Fragment != "" {
+		return "", fmt.Errorf("%w: public_base_url must not include a fragment", ErrBadRequest)
+	}
+	return NormalizePublicBaseURL(u.String()), nil
 }
 
 // ValidateKnobs checks field-level ranges. Returns a descriptive error.
@@ -88,6 +122,11 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 	if p.CompactSummaryTimeoutSeconds != nil &&
 		(*p.CompactSummaryTimeoutSeconds < 1 || *p.CompactSummaryTimeoutSeconds > 600) {
 		return fmt.Errorf("%w: compact_summary_timeout_seconds must be 1-600", ErrBadRange)
+	}
+	if p.PublicBaseURL != nil {
+		if _, err := ValidatePublicBaseURL(*p.PublicBaseURL); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -131,10 +170,23 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	if p.CompactSummaryTimeoutSeconds != nil {
 		next.CompactSummaryTimeoutSec = p.CompactSummaryTimeoutSeconds
 	}
-	if err := h.persistLocked(ctx, st, next, h.co); err != nil {
+	nextPO := h.po
+	if p.PublicBaseURL != nil {
+		n, err := ValidatePublicBaseURL(*p.PublicBaseURL)
+		if err != nil {
+			return err
+		}
+		if n == "" {
+			nextPO = nil // clear override → YAML baseline
+		} else {
+			nextPO = &n
+		}
+	}
+	if err := h.persistLocked(ctx, st, next, h.co, nextPO); err != nil {
 		return err
 	}
 	h.ko = next
+	h.po = nextPO
 	h.swapLocked()
 	return nil
 }
@@ -197,12 +249,12 @@ func (h *Holder) ApplyCreds(ctx context.Context, st store.Store, p CredsPatch) e
 
 	// Lockout guard: if baseline configured a gate, the result must still have
 	// at least one valid credential slot.
-	effective := mergeSnapshot(h.base, h.ko, next).Creds
+	effective := mergeSnapshot(h.base, h.ko, next, h.po).Creds
 	if credentialsConfigured(h.base.Creds) && !credentialsConfigured(effective) {
 		return fmt.Errorf("%w: refusing to clear all credentials (would lock out the gate)", ErrBadRequest)
 	}
 
-	if err := h.persistLocked(ctx, st, h.ko, next); err != nil {
+	if err := h.persistLocked(ctx, st, h.ko, next, h.po); err != nil {
 		return err
 	}
 	h.co = next
@@ -232,7 +284,7 @@ func (h *Holder) effectiveHasOperator(next credsOverride, id string) bool {
 }
 
 func (h *Holder) swapLocked() {
-	snap := mergeSnapshot(h.base, h.ko, h.co)
+	snap := mergeSnapshot(h.base, h.ko, h.co, h.po)
 	h.cur.Store(&snap)
 }
 
@@ -307,7 +359,7 @@ func openCreds(key settingscrypto.Key, c *credsOverride) error {
 }
 
 // persistLocked writes the merged delta to the KV. Caller holds h.mu.
-func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOverride, co credsOverride) error {
+func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOverride, co credsOverride, po *string) error {
 	if st == nil {
 		return nil // tests / no-store: swap in-memory only
 	}
@@ -316,7 +368,7 @@ func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOver
 	if err := sealCreds(key, &coPersist); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(persisted{Knobs: ko, Creds: coPersist})
+	raw, err := json.Marshal(persisted{Knobs: ko, Creds: coPersist, PublicBaseURL: po})
 	if err != nil {
 		return err
 	}
@@ -345,6 +397,7 @@ func (h *Holder) Load(ctx context.Context, st store.Store) error {
 	h.mu.Lock()
 	h.ko = p.Knobs
 	h.co = p.Creds
+	h.po = p.PublicBaseURL
 	h.swapLocked()
 	h.mu.Unlock()
 	return nil

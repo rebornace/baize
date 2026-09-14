@@ -158,25 +158,38 @@ func migrateModelProfiles(st Store, key settingscrypto.Key) error {
 		}
 		return nil
 	case *SQLStore:
+		// SQLite uses SetMaxOpenConns(1). Collect first, then Upsert — never
+		// write while a Query Rows still holds the only connection (deadlock).
 		rows, err := s.query(`SELECT id, ` + upsertModelProfileColumns + ` FROM model_profiles`)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		var pending []ModelProfile
 		for rows.Next() {
 			p, err := scanModelProfileStored(rows)
 			if err != nil {
+				rows.Close()
 				return err
 			}
 			stored := p.APIKey
 			if stored == "" || settingscrypto.IsSealed(stored) {
 				continue
 			}
+			pending = append(pending, p)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, p := range pending {
 			if _, err := st.UpsertModelProfile(p); err != nil {
 				return err
 			}
 		}
-		return rows.Err()
+		return nil
 	default:
 		return nil
 	}

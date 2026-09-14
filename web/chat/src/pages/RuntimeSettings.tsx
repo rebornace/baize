@@ -285,6 +285,7 @@ export function RuntimeSettings() {
   const { toasts, push, dismiss } = useToast()
   const [knobView, setKnobView] = useState<RuntimeKnobsView | null>(null)
   const [form, setForm] = useState<KnobsForm | null>(null)
+  const [publicBase, setPublicBase] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
@@ -294,6 +295,7 @@ export function RuntimeSettings() {
       const v = await getRuntimeSettings()
       setKnobView(v)
       setForm(knobsToForm(v.effective))
+      setPublicBase(v.public_base_url ?? '')
     } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: RUNTIME.loadFailed, detail: f.detail ?? f.title })
@@ -308,6 +310,32 @@ export function RuntimeSettings() {
 
   const setField = (key: keyof KnobsForm, value: string | boolean) => {
     setForm((f) => (f ? { ...f, [key]: value } : f))
+  }
+
+  const onSubmitPublicBase = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!knobView) return
+    const trimmed = publicBase.trim()
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+      push({ tone: 'error', title: RUNTIME.errPublicBaseInvalid })
+      return
+    }
+    if (trimmed === (knobView.public_base_url ?? '')) {
+      push({ tone: 'info', title: RUNTIME.toastNoChange })
+      return
+    }
+    setBusy(true)
+    try {
+      const v = await patchRuntimeSettings({ public_base_url: trimmed })
+      setKnobView(v)
+      setPublicBase(v.public_base_url ?? '')
+      push({ tone: 'success', title: RUNTIME.toastPublicBaseSaved })
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
   }
 
   const onSubmitKnobs = async (e: FormEvent) => {
@@ -330,6 +358,7 @@ export function RuntimeSettings() {
       const v = await patchRuntimeSettings(patch)
       setKnobView(v)
       setForm(knobsToForm(v.effective))
+      setPublicBase(v.public_base_url ?? '')
       push({ tone: 'success', title: RUNTIME.toastKnobsSaved })
     } catch (err) {
       const f = friendlyError(err)
@@ -348,6 +377,32 @@ export function RuntimeSettings() {
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
       {loading && <p className="settings-muted">加载中…</p>}
+
+      {!loading && knobView && (
+        <form className="settings-form" onSubmit={(e) => void onSubmitPublicBase(e)}>
+          <h2 className="settings-subheading">{RUNTIME.sectionPublicBase}</h2>
+          {!knobView.public_base_url && (
+            <p className="settings-muted">{RUNTIME.publicBaseRequiredHint}</p>
+          )}
+          <Field
+            label={knobFieldLabel(RUNTIME.fieldPublicBase, knobView.public_base_url_overridden)}
+            hint={RUNTIME.hintPublicBase}
+          >
+            <Input
+              type="url"
+              placeholder="http://127.0.0.1:8080"
+              value={publicBase}
+              onChange={(e) => setPublicBase(e.target.value)}
+              disabled={busy || readOnly}
+            />
+          </Field>
+          {!readOnly && (
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? RUNTIME.saving : RUNTIME.savePublicBase}
+            </Button>
+          )}
+        </form>
+      )}
 
       {!loading && knobView && form && (
         <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>

@@ -39,8 +39,10 @@ func (s *Server) handleGetRuntimeSettings(w http.ResponseWriter, r *http.Request
 	}
 	view := s.Settings.KnobsView()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"effective":  knobsToJSON(view.Effective),
-		"overridden": view.Overridden,
+		"effective":                 knobsToJSON(view.Effective),
+		"overridden":                view.Overridden,
+		"public_base_url":           s.Settings.PublicBaseURL(),
+		"public_base_url_overridden": s.Settings.PublicBaseURLOverridden(),
 	})
 }
 
@@ -61,10 +63,14 @@ func (s *Server) handlePatchRuntimeSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, runtimecfg.HTTPStatus(err), "invalid_settings", err.Error())
 		return
 	}
+	// Keep the OAuth / Apply path field in sync without restart.
+	s.CallbackPublicBase = s.Settings.PublicBaseURL()
 	view := s.Settings.KnobsView()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"effective":  knobsToJSON(view.Effective),
-		"overridden": view.Overridden,
+		"effective":                 knobsToJSON(view.Effective),
+		"overridden":                view.Overridden,
+		"public_base_url":           s.Settings.PublicBaseURL(),
+		"public_base_url_overridden": s.Settings.PublicBaseURLOverridden(),
 	})
 }
 

@@ -3,8 +3,10 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/settingscrypto"
@@ -149,5 +151,57 @@ func TestMigrateStoreNoKeyPlaintextNoOp(t *testing.T) {
 	}
 	if err := MigrateStore(st); err != nil {
 		t.Fatalf("plaintext with no key should no-op: %v", err)
+	}
+}
+
+// Regression: SQLite MaxOpenConns(1) deadlocks if MigrateStore Upserts while
+// SELECT Rows from model_profiles are still open.
+func TestMigrateStoreSQLiteSealsPlainAPIKeyWithoutDeadlock(t *testing.T) {
+	setTestSettingsKey(t)
+	path := filepath.Join(t.TempDir(), "migrate-profiles.db")
+	st, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = st.exec(
+		`INSERT INTO model_profiles (id, name, provider, base_url, model, api_key, api_key_env,
+		 disable_thinking, supports_vision, context_tokens, auto_tier, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"mp_plain", "plain-model", "openai_compatible", "https://x/v1", "m1",
+		"sk-plain-sqlite-migrate", "", 0, 0, DefaultContextTokens, AutoTierStandard, now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- MigrateStore(st) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("MigrateStore: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("MigrateStore deadlocked (timed out after 5s)")
+	}
+
+	got, err := st.GetModelProfile("mp_plain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.APIKey != "sk-plain-sqlite-migrate" {
+		t.Fatalf("want decrypted plain key, got %q", got.APIKey)
+	}
+	// Confirm on-disk value is sealed: re-query stored without open via raw scan.
+	row := st.queryRow(`SELECT api_key FROM model_profiles WHERE id = ?`, "mp_plain")
+	var stored string
+	if err := row.Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(stored, settingscrypto.Prefix) {
+		t.Fatalf("stored api_key should be sealed, got %q", stored)
 	}
 }

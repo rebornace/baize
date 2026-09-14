@@ -510,6 +510,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	runtimeHolder := buildRuntimeHolder(cfg, st, op, adm, operators)
 	engine.Settings = runtimeHolder
 	srv.Settings = runtimeHolder
+	// Prefer effective (YAML + KV) over the YAML-only value captured earlier.
+	srv.CallbackPublicBase = runtimeHolder.PublicBaseURL()
 	if compactor != nil {
 		compactor.Settings = runtimeHolder
 	}

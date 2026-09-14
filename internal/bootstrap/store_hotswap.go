@@ -321,6 +321,7 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 			AdminToken:    adm,
 			Operators:     operators,
 		},
+		PublicBaseURL: strings.TrimSpace(cfg.Runtime.PublicBaseURL),
 	}
 
 	rt.mu.Lock()
@@ -339,6 +340,7 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 
 	if holder != nil {
 		holder.ReplaceBaseline(base)
+		rt.srv.CallbackPublicBase = holder.PublicBaseURL()
 	}
 	if mismatch {
 		log.Printf("store config mismatch after reload: YAML driver=%q effective=%q; use PUT /v0/settings/store to hot-swap",

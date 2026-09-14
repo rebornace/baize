@@ -12,6 +12,10 @@ export interface ConnectorRowData {
   toolCount: number
   loginNames: string[]
   approvalNames: string[]
+  /** MCP HTTP：是否展示 OAuth 操作。 */
+  supportsOAuth?: boolean
+  /** MCP OAuth："" | "authorized" | "needs_reauth" */
+  oauthStatus?: string
 }
 
 export interface ConnectorShellProps {
@@ -22,9 +26,25 @@ export interface ConnectorShellProps {
   onCreate: () => void
   onEdit: (id: string) => void
   onDelete: (id: string) => Promise<void> | void
+  /** MCP HTTP：去授权 / 重新授权。 */
+  onAuthorize?: (id: string) => Promise<void> | void
+  /** MCP HTTP：断开授权。 */
+  onDisconnectOAuth?: (id: string) => Promise<void> | void
 }
 
-export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdit, onDelete }: ConnectorShellProps) {
+function oauthBadge(status: string | undefined) {
+  if (status === 'authorized') {
+    return <Badge tone="success">{CONNECTORS.oauthAuthorized}</Badge>
+  }
+  if (status === 'needs_reauth') {
+    return <Badge tone="warning">{CONNECTORS.oauthNeedsReauth}</Badge>
+  }
+  return null
+}
+
+export function ConnectorShell({
+  kind, rows, loading, loadError, onCreate, onEdit, onDelete, onAuthorize, onDisconnectOAuth,
+}: ConnectorShellProps) {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -87,17 +107,41 @@ export function ConnectorShell({ kind, rows, loading, loadError, onCreate, onEdi
         <div className="connector-list">
           {rows.map((row) => {
             const summary = permissionSummary(row.loginNames, row.approvalNames)
+            const oauthItems = []
+            if (row.supportsOAuth && onAuthorize) {
+              const label = row.oauthStatus === 'authorized' || row.oauthStatus === 'needs_reauth'
+                ? CONNECTORS.oauthReauthorize
+                : CONNECTORS.oauthAuthorize
+              oauthItems.push({
+                id: 'oauth-authorize',
+                label,
+                onSelect: () => { void onAuthorize(row.id) },
+              })
+            }
+            if (row.supportsOAuth && onDisconnectOAuth && (row.oauthStatus === 'authorized' || row.oauthStatus === 'needs_reauth')) {
+              oauthItems.push({
+                id: 'oauth-disconnect',
+                label: CONNECTORS.oauthDisconnect,
+                onSelect: () => { void onDisconnectOAuth(row.id) },
+              })
+            }
             return (
               <Card key={row.id} className="connector-card"
                 title={row.id}
                 description={row.summary ?? row.baseUrl ?? '—'}
-                trailing={<Badge tone="info">{CONNECTORS.toolCount(row.toolCount)}</Badge>}>
+                trailing={
+                  <>
+                    {oauthBadge(row.oauthStatus)}
+                    <Badge tone="info">{CONNECTORS.toolCount(row.toolCount)}</Badge>
+                  </>
+                }>
                 {summary && <p className="connector-perm">{summary}</p>}
                 <div className="connector-card-actions">
                   <Link to="/settings/tools" className="btn ghost sm">{CONNECTORS.toolsLink}</Link>
                   <DropdownMenu
                     triggerLabel={`${row.id} 操作`}
                     items={[
+                      ...oauthItems,
                       { id: 'edit', label: CONNECTORS.menuEdit, onSelect: () => onEdit(row.id) },
                       { id: 'delete', label: CONNECTORS.menuDelete, destructive: true, onSelect: () => beginDelete(row.id) },
                     ]}

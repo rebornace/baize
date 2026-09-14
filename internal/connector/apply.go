@@ -13,6 +13,7 @@ import (
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -32,6 +33,10 @@ type ApplyInput struct {
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
 	Auth                    store.ConnectorAuth
 	MCP                     store.MCPConfig
+
+	// SettingsKey seals/opens MCP OAuth token bundles. Optional; when empty,
+	// callers may rely on BAIZE_SETTINGS_KEY via settingscrypto.KeyFromEnv.
+	SettingsKey settingscrypto.Key
 
 	// Callback injection (Phase 2). When all four are usable and the
 	// per-invoke ctx carries a RunID, the plugin invoker issues a short-lived
@@ -191,13 +196,41 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			if err != nil {
 				return store.Connector{}, nil, err
 			}
-			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
+			key := ensureSettingsKey(in.SettingsKey)
+			headers, reauth, oauthErr := resolveMCPHTTPOAuthHeaders(
+				context.Background(), in.Store, in.ID, key, headers, cfg.OAuth,
+			)
+			if oauthErr != nil {
+				return store.Connector{}, nil, oauthErr
+			}
+			// Keep refreshed sealed bundle (or needs_reauth status) on input for Upsert.
+			in.MCP.OAuth = cfg.OAuth
+			mcpHTTPURL = cfg.URL
+			// Invoker keeps static headers only; OAuth is re-resolved per call from store.
+			staticHeaders, err := mcpbridge.ResolveHeaders(cfg.Headers)
 			if err != nil {
 				return store.Connector{}, nil, err
 			}
+			mcpHTTPHeaders = staticHeaders
+			if reauth != nil {
+				// Soft-fail: oauth_reauth_required / settings_key_required must not
+				// hard-block PUT. Skip OAuth-bearing discover and preserve existing
+				// MCP tools so headers/URL edits still save.
+				discovered = existingMCPTools(in.Store, in.ID)
+				break
+			}
+			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
+			if err != nil {
+				// First-time OAuth MCP: server returns 401 before the admin has
+				// completed「去授权」. Allow saving an empty/prior catalog so the
+				// connector exists and OAuth start can run; callback re-discovers.
+				if isUnauthorizedMCPErr(err) {
+					discovered = existingMCPTools(in.Store, in.ID)
+					break
+				}
+				return store.Connector{}, nil, err
+			}
 			discovered = tools
-			mcpHTTPURL = cfg.URL
-			mcpHTTPHeaders = headers
 		default:
 			return store.Connector{}, nil, fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
 		}
@@ -326,6 +359,8 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		mcpSession:              mcpSession,
 		mcpHTTPURL:              mcpHTTPURL,
 		mcpHTTPHeaders:          mcpHTTPHeaders,
+		settingsKey:             ensureSettingsKey(in.SettingsKey),
+		store:                   in.Store,
 		callbackURL:             strings.TrimSpace(in.ExecutionCallbackURL),
 		callbackSigner:          in.CallbackSigner,
 		callbackSecret:          in.CallbackSecret,
@@ -363,6 +398,30 @@ func filterInfosByConnector(reg *tool.Registry, connectorID string) []tool.Info 
 		}
 	}
 	return out
+}
+
+func existingMCPTools(st store.Store, connectorID string) []store.Tool {
+	if st == nil {
+		return nil
+	}
+	var out []store.Tool
+	for _, t := range st.ListToolsByConnector(connectorID) {
+		if t.Source == store.ToolSourceMCP {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func isUnauthorizedMCPErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "unauthorized") ||
+		strings.Contains(s, "401") ||
+		strings.Contains(s, "forbidden") ||
+		strings.Contains(s, "403")
 }
 
 // isMutatingMethod reports whether the HTTP method mutates server state.
