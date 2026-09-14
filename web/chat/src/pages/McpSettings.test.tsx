@@ -80,4 +80,72 @@ describe('McpSettings page', () => {
     expect(host.textContent).not.toContain('工具权限')
     expect(host.textContent).toContain('已保存')
   })
+
+  it('shows authorized / needs_reauth badges for HTTP MCP OAuth status', async () => {
+    const authorized = {
+      id: 'authz', type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example/a', oauth: { status: 'authorized', client_id: 'c1' } },
+      require_approval: [], tools: [],
+    }
+    const reauth = {
+      id: 'reauth', type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example/b', oauth: { status: 'needs_reauth', client_id: 'c2' } },
+      require_approval: [], tools: [],
+    }
+    fetchMock.mockImplementation(async (url: unknown) => {
+      const u = String(url)
+      if (u.endsWith('/v0/tools')) {
+        return json({
+          tools: [
+            { name: 't1', connector_id: 'authz', source: 'mcp' },
+            { name: 't2', connector_id: 'reauth', source: 'mcp' },
+          ],
+        })
+      }
+      if (u.includes('/v0/connectors/authz')) return json(authorized)
+      if (u.includes('/v0/connectors/reauth')) return json(reauth)
+      return json({})
+    })
+    await act(async () => { createRoot(host).render(<MemoryRouter><McpSettings /></MemoryRouter>); await Promise.resolve() })
+    await flush()
+    expect(host.textContent).toContain('已授权')
+    expect(host.textContent).toContain('需重新登录')
+  })
+
+  it('clicks 去授权 then POSTs start and opens authorization_url', async () => {
+    const httpConn = {
+      id: 'remote', type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example/mcp' },
+      require_approval: [], tools: [],
+    }
+    const openSpy = vi.fn()
+    vi.stubGlobal('open', openSpy)
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+      const u = String(url)
+      if (u.endsWith('/v0/tools')) return json({ tools: [{ name: 't', connector_id: 'remote', source: 'mcp' }] })
+      if (u.includes('/mcp/oauth/start') && init?.method === 'POST') {
+        return json({ authorization_url: 'https://auth.example/authorize?x=1' })
+      }
+      if (u.includes('/v0/connectors/remote')) return json(httpConn)
+      return json({})
+    })
+    await act(async () => { createRoot(host).render(<MemoryRouter><McpSettings /></MemoryRouter>); await Promise.resolve() })
+    await flush()
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')]
+        .find((i) => i.textContent!.includes('去授权'))!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flush(4)
+    const startCalls = fetchMock.mock.calls.filter(
+      ([u, i]) => String(u).includes('/v0/connectors/remote/mcp/oauth/start') && (i as RequestInit)?.method === 'POST',
+    )
+    expect(startCalls).toHaveLength(1)
+    expect(openSpy).toHaveBeenCalledWith('https://auth.example/authorize?x=1', '_blank', 'noopener,noreferrer')
+  })
 })

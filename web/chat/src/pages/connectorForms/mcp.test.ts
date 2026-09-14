@@ -6,11 +6,13 @@ import {
 
 const stdio = (over: Partial<McpFormValues> = {}): McpFormValues => ({
   id: 'analytics', transport: 'stdio', command: 'npx', argsText: '-y srv', envText: 'A=1',
-  url: '', headersText: '', exportDbReadonly: false, ...over,
+  url: '', headersText: '', exportDbReadonly: false,
+  oauthClientId: '', oauthClientSecret: '', oauthStatus: '', ...over,
 })
 const http = (over: Partial<McpFormValues> = {}): McpFormValues => ({
   id: 'remote', transport: 'http', command: '', argsText: '', envText: '',
-  url: 'https://mcp.example.com', headersText: 'Authorization=Bearer t', exportDbReadonly: false, ...over,
+  url: 'https://mcp.example.com', headersText: 'Authorization=Bearer t', exportDbReadonly: false,
+  oauthClientId: '', oauthClientSecret: '', oauthStatus: '', ...over,
 })
 
 describe('validateMcp', () => {
@@ -65,6 +67,31 @@ describe('validateMcp', () => {
     if (on.ok) expect(on.mcp.export_db_readonly).toBe(true)
     else throw new Error('expected success')
   })
+  it('http: attaches oauth.client_id when provided', () => {
+    const r = validateMcp(http({ oauthClientId: 'cid-1' }))
+    if (!r.ok) throw new Error('expected success')
+    expect(r.mcp.oauth).toEqual({ client_id: 'cid-1' })
+    expect(r.mcp.oauth).not.toHaveProperty('token_bundle')
+  })
+  it('http: sends client_secret only when typed; never token_bundle', () => {
+    const r = validateMcp(http({
+      oauthClientId: 'cid-1',
+      oauthClientSecret: 's3cret',
+      oauthStatus: 'authorized',
+    }))
+    if (!r.ok) throw new Error('expected success')
+    expect(r.mcp.oauth).toMatchObject({
+      client_id: 'cid-1',
+      client_secret: 's3cret',
+      status: 'authorized',
+    })
+    expect(Object.keys(r.mcp.oauth!)).not.toContain('token_bundle')
+  })
+  it('stdio: never attaches oauth even if form fields set', () => {
+    const r = validateMcp(stdio({ oauthClientId: 'cid', oauthClientSecret: 'x' }))
+    if (!r.ok) throw new Error('expected success')
+    expect(r.mcp.oauth).toBeUndefined()
+  })
 })
 
 describe('mcpSummary', () => {
@@ -93,6 +120,26 @@ describe('connectorToMcpForm', () => {
       mcp: { transport: 'stdio', command: 'npx', export_db_readonly: true },
     }
     expect(connectorToMcpForm(c).exportDbReadonly).toBe(true)
+  })
+  it('maps oauth.client_id and status but never echoes secret or token_bundle', () => {
+    const c: ConnectorInfo = {
+      id: 'o', type: 'mcp',
+      mcp: {
+        transport: 'http', url: 'https://h',
+        oauth: {
+          status: 'needs_reauth',
+          client_id: 'cid',
+          client_secret: 'should-not-echo',
+          token_bundle: 'bz1:sealed',
+          token_endpoint: 'https://auth/token',
+        },
+      },
+    }
+    const f = connectorToMcpForm(c)
+    expect(f.oauthClientId).toBe('cid')
+    expect(f.oauthStatus).toBe('needs_reauth')
+    expect(f.oauthClientSecret).toBe('')
+    expect(f.oauthTokenEndpoint).toBe('https://auth/token')
   })
 })
 

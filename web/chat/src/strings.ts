@@ -546,6 +546,20 @@ export const CONNECTORS = {
   mcpStdioSummary: (command: string) => `本地程序 · ${command}`,
   mcpHttpSummary: (url: string) => `远程服务 · ${url}`,
   errorGeneric: '操作未能完成，请稍后重试。',
+  // ---- MCP OAuth ----
+  oauthAuthorized: '已授权',
+  oauthNeedsReauth: '需重新登录',
+  oauthAuthorize: '去授权',
+  oauthReauthorize: '重新授权',
+  oauthDisconnect: '断开授权',
+  oauthDisconnected: '已断开授权',
+  oauthAuthorizeOpened: '已打开授权页面',
+  fieldOAuthClientId: 'OAuth Client ID',
+  fieldOAuthClientIdHint: '选填。授权服务器不支持自动注册（DCR）时填写预登记的客户端 ID。',
+  fieldOAuthClientSecret: 'OAuth Client Secret',
+  fieldOAuthClientSecretHint: '选填。机密客户端时填写；保存后不再回显，留空表示保持原密钥。',
+  errOAuthPublicBase: '请先在运行时配置中设置 public_base_url，才能完成 OAuth 回调。',
+  errOAuthClientRequired: '请填写 OAuth Client ID，或使用支持自动注册的授权服务器。',
 } as const
 
 // ---- 设置页：对外提供能力（MCP 导出） ----
@@ -711,6 +725,8 @@ const CONNECTOR_CODE_TITLES: Record<string, string> = {
   invalid_plugin: '无法从该插件地址识别到可用能力，请检查服务是否正常。',
   tool_conflict: '有工具与其它连接重名，请调整对方系统里的操作名称后重试。',
   invalid_auth: '连接保存的凭证无效，请联系管理员通过配置处理。',
+  public_base_required: CONNECTORS.errOAuthPublicBase,
+  oauth_client_required: CONNECTORS.errOAuthClientRequired,
 }
 
 /** 把连接器相关异常翻译为 {title, detail?}；未知错误给出通用标题与可展开技术详情。 */

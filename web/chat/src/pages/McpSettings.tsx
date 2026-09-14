@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   deleteConnector,
+  disconnectMcpOAuth,
   getConnector,
   listTools,
   putConnector,
+  startMcpOAuth,
   type ConnectorInfo,
 } from '../api'
 import { ToastRegion, useToast } from '../components/ui'
@@ -15,12 +17,15 @@ import { toPermissionTools } from './connectorForms/permissions'
 import type { SavedConnection } from './connectorForms/types'
 
 function toRow(info: ConnectorInfo, fallbackCount: number): ConnectorRowData {
+  const http = info.mcp?.transport === 'http'
   return {
     id: info.id,
     summary: mcpSummary(info.mcp),
     toolCount: info.tools?.length ?? fallbackCount,
     loginNames: [],
     approvalNames: info.require_approval ?? [],
+    supportsOAuth: http,
+    oauthStatus: http ? (info.mcp?.oauth?.status ?? '') : undefined,
   }
 }
 
@@ -77,6 +82,26 @@ export function McpSettings() {
     await load()
   }
 
+  const handleAuthorize = async (id: string) => {
+    try {
+      const { authorization_url: url } = await startMcpOAuth(id)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      push({ tone: 'success', title: CONNECTORS.oauthAuthorizeOpened })
+    } catch (e) {
+      push({ tone: 'error', title: connectorErrorText(e).title })
+    }
+  }
+
+  const handleDisconnectOAuth = async (id: string) => {
+    try {
+      await disconnectMcpOAuth(id)
+      push({ tone: 'success', title: CONNECTORS.oauthDisconnected })
+      await load()
+    } catch (e) {
+      push({ tone: 'error', title: connectorErrorText(e).title })
+    }
+  }
+
   const handleSaveInfo = async (conn: SavedConnection) => {
     // 判别收窄：本页 kind 恒为 mcp，非 mcp 正常不可达。
     if (conn.kind !== 'mcp') return []
@@ -87,7 +112,8 @@ export function McpSettings() {
   return (
     <>
       <ConnectorShell kind="mcp" rows={rows} loading={loading} loadError={loadError}
-        onCreate={openCreate} onEdit={openEdit} onDelete={handleDelete} />
+        onCreate={openCreate} onEdit={openEdit} onDelete={handleDelete}
+        onAuthorize={handleAuthorize} onDisconnectOAuth={handleDisconnectOAuth} />
       <ConnectorEditorModal kind="mcp" open={editor.open} editing={editor.editing} initial={editor.initial}
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
         formatError={(e) => connectorErrorText(e).title}

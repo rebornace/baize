@@ -869,6 +869,20 @@ export async function createConnectorTool(
   return parseJSON<ToolInfo>(res)
 }
 
+/** MCP OAuth 公开字段；GET 不回显 token_bundle / client_secret。PUT 可带明文 client_secret。 */
+export interface MCPOAuthConfig {
+  status?: string
+  client_id?: string
+  /** 仅创建/更新时发送明文；GET 恒为空。 */
+  client_secret?: string
+  /** 前端不得从表单写回；GET 亦已脱敏。 */
+  token_bundle?: string
+  authorization_endpoint?: string
+  token_endpoint?: string
+  registration_endpoint?: string
+  resource_metadata_url?: string
+}
+
 export interface MCPConfig {
   transport: 'stdio' | 'http'
   command?: string
@@ -877,6 +891,11 @@ export interface MCPConfig {
   url?: string
   headers?: Record<string, string>
   export_db_readonly?: boolean
+  oauth?: MCPOAuthConfig
+}
+
+export interface MCPOAuthStartResult {
+  authorization_url: string
 }
 
 export interface ConnectorAuth {
@@ -980,6 +999,22 @@ export async function deleteConnectorTool(connectorId: string, name: string): Pr
     }
     throw new Error(`HTTP ${res.status}: ${detail}`)
   }
+}
+
+export async function startMcpOAuth(id: string): Promise<MCPOAuthStartResult> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}/mcp/oauth/start`, {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseConnectorJSON<MCPOAuthStartResult>(res)
+}
+
+export async function disconnectMcpOAuth(id: string): Promise<{ id: string; status: string }> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}/mcp/oauth/disconnect`, {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseConnectorJSON<{ id: string; status: string }>(res)
 }
 
 export async function deleteConnector(id: string): Promise<void> {
