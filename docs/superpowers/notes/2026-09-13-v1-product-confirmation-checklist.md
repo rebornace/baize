@@ -52,8 +52,8 @@
 | **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | 连接器自动登录 Skill / login_required「去登录」 | **已交付（待合入）** | 规格 [`specs/2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`plans/2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；分支 `feat/login-skill`；UI-LOGIN-AT 直达（login-entries / login-invoke / 登录专用区）已拆除 |
 | **LLM-THINK** | 思考级别开关 | 可开刀（先规格） | 独立 |
 | **BLOB-CS** | Connector / Skill blob 化 | 可开刀（先规格） | 独立 |
-| **UI-MCP-OAUTH** | MCP OAuth 2.1 | 先头脑风暴 | **不合并** |
-| **P6** | Memory 产品化 | 先头脑风暴 | **不合并** |
+| **UI-MCP-OAUTH** | MCP OAuth 2.1 | **范围已确认** | [`specs/2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；连接器级、仅 admin；**不合并** |
+| **P6** | Memory 产品化 | **范围已确认** | [`specs/2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)；控制面账号级事实+本地检索；**不合并** |
 
 **计数：** 勾选能力仍是那些要做的点；**立项史诗 = 12**（上表 12 行）。相对「15 行清单」少掉的是：DOC 合一、C1/OPS 并入 F、i18n **抽离**挂 RUNTIME（完整 i18n 仍单独一行）。
 
@@ -66,7 +66,7 @@
 3. **UI-EXPORT-DB-RO**（小刀）  
 4. **CH-PORT** → **CH-OUTBOX**  
 5. ~~**LOGIN-SKILL**~~（已交付，待合入） · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
-6. **UI-MCP-OAUTH** · **P6**  
+6. **UI-MCP-OAUTH** · **P6**（范围已确认；见 [`specs/2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)、[`specs/2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)）  
 
 **F 与现有待办：** 不吸收 OUTBOX/BLOB/PORT/OAuth/Memory/@登录/i18n/export_db_ro；DOC 保持独立（A1）。
 

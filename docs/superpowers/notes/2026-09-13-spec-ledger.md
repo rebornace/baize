@@ -103,9 +103,10 @@
 | **UI-I18N** | 要做 · 先定范围 | 独立规格 |
 | **CH-OUTBOX** | **已交付** | [`2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md)；`channel_outbox` + worker；设置 → 微信可重投 |
 | **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | **已交付（待合入）** | 规格 [`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；managed `login-<id>` +「去登录」→ `@login-`；`login-entries` / `login-invoke` 直达已拆除；历史对照 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
+| **UI-MCP-OAUTH** | **范围已确认** | [`2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；连接器级 admin OAuth；不并 LOGIN-SKILL |
+| **P6** Memory | **范围已确认** | [`2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)；控制面账号事实+本地检索；文档 RAG 用上传/MCP |
 | **BLOB-CS** | 要做 | 各开规格 |
 | **CH-PORT** | **已交付** | 规格 [`2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md)；`BAIZE_LISTEN` + autostart 端口文件 |
-| **P6** Memory / **MCP OAuth** | 要做 · 先脑暴 | **不合并**进其他史诗 |
 
 ---
 
@@ -123,7 +124,7 @@
 2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
 4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · **LLM-THINK** · **BLOB-CS** · **UI-I18N**  
-5. **MCP OAuth** · **P6 Memory**  
+5. **MCP OAuth** · **P6 Memory**（范围已确认；待写实现计划）  
 6. ~~渠道 DoD / sql-store worktree~~（已完成）
 
 ---
