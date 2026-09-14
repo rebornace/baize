@@ -279,6 +279,63 @@ func TestMCPOAuthHTTPInvokeNeedsReauth(t *testing.T) {
 	}
 }
 
+func TestMCPOAuthHTTPInvokeRejectsMissingSettingsKey(t *testing.T) {
+	mcpSrv, cap := startCapturingMCPHTTP(t)
+	login := []string{}
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	// Seal with key present, then clear env so Apply/invoke see no settings key.
+	sealed := sealTestBundle(t, mcpoauth.TokenBundle{
+		AccessToken: "oauth-access",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	t.Setenv("BAIZE_SETTINGS_KEY", "")
+
+	_, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "mcp-nokey", Type: "mcp",
+		SettingsKey: nil,
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       mcpSrv.URL,
+		},
+		RequireLogin: &login,
+	})
+	if err != nil {
+		t.Fatalf("Apply without oauth: %v", err)
+	}
+
+	c, err := st.GetConnector("mcp-nokey")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.MCP.OAuth = &store.MCPOAuthConfig{
+		Status:            "authorized",
+		ClientID:          "cid",
+		TokenBundleSealed: sealed,
+	}
+	st.UpsertConnector(c)
+
+	before := len(cap.all())
+	out, isErr, invErr := reg.Invoke(context.Background(), "echo", map[string]any{"message": "x"})
+	if invErr != nil {
+		t.Fatalf("invoke err=%v (want tool IsError content)", invErr)
+	}
+	if !isErr {
+		t.Fatalf("want IsError=true, out=%+v", out)
+	}
+	if out["code"] != "settings_key_required" {
+		t.Fatalf("code=%v out=%+v", out["code"], out)
+	}
+	for _, a := range cap.all()[before:] {
+		if strings.HasPrefix(a, "Bearer ") {
+			t.Fatalf("must not send Bearer without settings key; got %q", a)
+		}
+	}
+}
+
 func TestMCPOAuthHTTPInvokeAfterDisconnectHasNoBearer(t *testing.T) {
 	mcpSrv, cap := startCapturingMCPHTTP(t)
 	login := []string{}

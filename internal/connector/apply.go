@@ -204,7 +204,11 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 				return store.Connector{}, nil, oauthErr
 			}
 			if reauth != nil {
-				return store.Connector{}, nil, fmt.Errorf("%w: oauth_reauth_required", mcpbridge.ErrInvalidMCP)
+				code, _ := reauth["code"].(string)
+				if code == "" {
+					code = "oauth_reauth_required"
+				}
+				return store.Connector{}, nil, fmt.Errorf("%w: %s", mcpbridge.ErrInvalidMCP, code)
 			}
 			// Keep refreshed sealed bundle on input so phase-4 Upsert persists it.
 			in.MCP.OAuth = cfg.OAuth

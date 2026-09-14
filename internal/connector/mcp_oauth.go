@@ -51,7 +51,10 @@ func resolveMCPHTTPOAuthHeaders(
 		return headers, nil, nil
 	}
 	if len(key) == 0 {
-		return headers, nil, nil
+		return nil, map[string]any{
+			"error": "MCP OAuth 需要设置 BAIZE_SETTINGS_KEY 才能解密令牌",
+			"code":  "settings_key_required",
+		}, nil
 	}
 
 	bundle, err := mcpoauth.OpenBundle(key, oauth.TokenBundleSealed)
