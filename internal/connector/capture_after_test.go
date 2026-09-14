@@ -8,7 +8,7 @@ import (
 
 func TestMaybeCaptureLoginAnnotatesMiss(t *testing.T) {
 	ids := identity.NewMemoryStore()
-	content := map[string]any{"code": 200, "email": "admin@miao.com"}
+	content := map[string]any{"code": 200, "email": "a@b.com"}
 	maybeCaptureLogin("c1", ids, identity.CaptureConfig{
 		ToolNameGlob:   "*login*",
 		TokenJSONPaths: []string{"accessToken"},

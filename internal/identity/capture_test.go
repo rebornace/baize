@@ -77,13 +77,13 @@ func TestCaptureTokenValueAndNestedObject(t *testing.T) {
 		"data": map[string]any{
 			"tokenName":  "satoken",
 			"tokenValue": testJWT,
-			"user":       map[string]any{"email": "admin@miao.com"},
+			"user":       map[string]any{"email": "admin@x.com"},
 		},
 	})
 	if !ok || headers["Authorization"] != "Bearer "+testJWT {
 		t.Fatalf("tokenValue extract: headers=%+v ok=%v", headers, ok)
 	}
-	if label != "admin@miao.com" {
+	if label != "admin@x.com" {
 		t.Fatalf("label=%q", label)
 	}
 
