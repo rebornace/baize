@@ -17,6 +17,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
@@ -190,6 +191,9 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	rt.engine.Memory = mem
 	if meta, ok := messages.(conversation.MetaStore); ok {
 		rt.engine.Meta = meta
+		for _, tm := range memory.Tools(mem, meta) {
+			rt.reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+		}
 	} else {
 		rt.engine.Meta = nil
 	}

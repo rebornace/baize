@@ -331,9 +331,13 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("open memory store: %w", err)
 	}
-	// Specs registered now; invokers are stubs until task 5 wires Store+Meta.
-	reg.RegisterSpecApproved(memory.RememberSpec(), memory.StubInvoker, false)
-	reg.RegisterSpecApproved(memory.ForgetSpec(), memory.StubInvoker, false)
+	var metaStore conversation.MetaStore
+	if m, ok := messages.(conversation.MetaStore); ok {
+		metaStore = m
+	}
+	for _, tm := range memory.Tools(mem, metaStore) {
+		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+	}
 
 	if err := registerConnector(st, reg, cfg, identities, callbackCfg); err != nil {
 		_ = closer.Close()
