@@ -69,3 +69,17 @@ func TestListFilterConnectorAndLoggedIn(t *testing.T) {
 		t.Fatalf("missing connector => [] got %d", len(empty))
 	}
 }
+
+func TestListMatchesPascalCaseLogin(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"}) // defaults *login*
+	st.ReplaceConnectorTools("auth", []store.Tool{
+		{ConnectorID: "auth", Name: "AuthController_phoneLogin", Enabled: true},
+		{ConnectorID: "auth", Name: "AuthController_phonePasswordLogin", Enabled: true},
+		{ConnectorID: "auth", Name: "AuthController_sendSms", Enabled: true},
+	})
+	entries := loginentry.List(st, identity.NewMemoryStore(), "c1", "")
+	if len(entries) != 2 {
+		t.Fatalf("len=%d want 2 phone*Login tools, got %+v", len(entries), entries)
+	}
+}

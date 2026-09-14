@@ -17,11 +17,13 @@ type CaptureConfig struct {
 }
 
 // MatchToolName reports whether toolName matches the configured glob pattern.
+// Matching is case-insensitive so default "*login*" also covers OpenAPI-style
+// names like AuthController_phoneLogin (PascalCase "Login").
 func MatchToolName(glob, toolName string) bool {
 	if glob == "" {
 		return false
 	}
-	ok, err := path.Match(glob, toolName)
+	ok, err := path.Match(strings.ToLower(glob), strings.ToLower(toolName))
 	return err == nil && ok
 }
 

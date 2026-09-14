@@ -95,6 +95,13 @@ func TestMatchToolName(t *testing.T) {
 	if identity.MatchToolName("*login*", "AdminAuthController_logout") {
 		t.Fatal("expected no match")
 	}
+	// OpenAPI-style PascalCase *Login* must match default *login* glob.
+	if !identity.MatchToolName("*login*", "AuthController_phoneLogin") {
+		t.Fatal("expected case-insensitive match for phoneLogin")
+	}
+	if !identity.MatchToolName("*login*", "AuthController_phonePasswordLogin") {
+		t.Fatal("expected case-insensitive match for phonePasswordLogin")
+	}
 }
 
 func TestContextKeys(t *testing.T) {
