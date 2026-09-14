@@ -9,18 +9,20 @@ import (
 	"github.com/google/uuid"
 )
 
-const upsertModelProfileColumns = `name, provider, base_url, model, api_key, api_key_env, disable_thinking, supports_vision, context_tokens, auto_tier, created_at, updated_at`
+const upsertModelProfileColumns = `name, provider, base_url, model, api_key, api_key_env, disable_thinking, thinking_level, thinking_dialect, supports_vision, context_tokens, auto_tier, created_at, updated_at`
 
 func scanModelProfile(scanner interface{ Scan(...any) error }) (ModelProfile, error) {
 	var p ModelProfile
 	var createdAt, updatedAt string
 	var disableThinking, supportsVision sql.NullBool
-	var autoTier sql.NullString
+	var thinkingLevel, thinkingDialect, autoTier sql.NullString
 	if err := scanner.Scan(&p.ID, &p.Name, &p.Provider, &p.BaseURL, &p.Model, &p.APIKey,
-		&p.APIKeyEnv, &disableThinking, &supportsVision, &p.ContextTokens, &autoTier, &createdAt, &updatedAt); err != nil {
+		&p.APIKeyEnv, &disableThinking, &thinkingLevel, &thinkingDialect, &supportsVision, &p.ContextTokens, &autoTier, &createdAt, &updatedAt); err != nil {
 		return ModelProfile{}, err
 	}
 	p.DisableThinking = disableThinking.Bool
+	p.ThinkingLevel = thinkingLevel.String
+	p.ThinkingDialect = thinkingDialect.String
 	p.SupportsVision = supportsVision.Bool
 	p.AutoTier = NormalizeAutoTier(autoTier.String)
 	if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
@@ -40,12 +42,14 @@ func scanModelProfileStored(scanner interface{ Scan(...any) error }) (ModelProfi
 	var p ModelProfile
 	var createdAt, updatedAt string
 	var disableThinking, supportsVision sql.NullBool
-	var autoTier sql.NullString
+	var thinkingLevel, thinkingDialect, autoTier sql.NullString
 	if err := scanner.Scan(&p.ID, &p.Name, &p.Provider, &p.BaseURL, &p.Model, &p.APIKey,
-		&p.APIKeyEnv, &disableThinking, &supportsVision, &p.ContextTokens, &autoTier, &createdAt, &updatedAt); err != nil {
+		&p.APIKeyEnv, &disableThinking, &thinkingLevel, &thinkingDialect, &supportsVision, &p.ContextTokens, &autoTier, &createdAt, &updatedAt); err != nil {
 		return ModelProfile{}, err
 	}
 	p.DisableThinking = disableThinking.Bool
+	p.ThinkingLevel = thinkingLevel.String
+	p.ThinkingDialect = thinkingDialect.String
 	p.SupportsVision = supportsVision.Bool
 	p.AutoTier = NormalizeAutoTier(autoTier.String)
 	if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
@@ -84,6 +88,7 @@ func (s *SQLStore) GetModelProfile(id string) (ModelProfile, error) {
 }
 
 func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
+	SyncProfileThinking(&p)
 	if strings.TrimSpace(p.Name) == "" {
 		return ModelProfile{}, fmt.Errorf("model profile name is required")
 	}
@@ -103,9 +108,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 			return ModelProfile{}, err
 		}
 		_, err := s.exec(
-			`INSERT INTO model_profiles (id, `+upsertModelProfileColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO model_profiles (id, `+upsertModelProfileColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.ID, p.Name, p.Provider, p.BaseURL, p.Model, p.APIKey, p.APIKeyEnv,
-			p.DisableThinking, p.SupportsVision, p.ContextTokens, p.AutoTier,
+			p.DisableThinking, p.ThinkingLevel, p.ThinkingDialect, p.SupportsVision, p.ContextTokens, p.AutoTier,
 			p.CreatedAt.Format(time.RFC3339Nano), p.UpdatedAt.Format(time.RFC3339Nano),
 		)
 		if err != nil {
@@ -135,9 +140,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 	}
 	_, err = s.exec(
 		`UPDATE model_profiles SET name=?, provider=?, base_url=?, model=?, api_key=?, api_key_env=?,
-		   disable_thinking=?, supports_vision=?, context_tokens=?, auto_tier=?, updated_at=? WHERE id=?`,
+		   disable_thinking=?, thinking_level=?, thinking_dialect=?, supports_vision=?, context_tokens=?, auto_tier=?, updated_at=? WHERE id=?`,
 		p.Name, p.Provider, p.BaseURL, p.Model, p.APIKey, p.APIKeyEnv,
-		p.DisableThinking, p.SupportsVision, p.ContextTokens, p.AutoTier,
+		p.DisableThinking, p.ThinkingLevel, p.ThinkingDialect, p.SupportsVision, p.ContextTokens, p.AutoTier,
 		p.UpdatedAt.Format(time.RFC3339Nano), p.ID,
 	)
 	if err != nil {

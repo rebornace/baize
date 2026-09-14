@@ -757,6 +757,7 @@
 
 .composer-box {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
@@ -767,7 +768,8 @@
 }
 
 .composer-box textarea {
-  flex: 1;
+  flex: 1 1 8rem;
+  min-width: 0;
   resize: none;
   min-height: 1.5rem;
   max-height: 10rem;
@@ -1682,7 +1684,15 @@
   font-size: 0.75rem;
 }
 
-.composer-toolbar { display: inline-flex; align-items: center; flex: 0 0 auto; margin-right: var(--space-1); }
+/* 模型/思考芯片单独占满一行，避免挤窄 textarea 导致 placeholder 换行难看。 */
+.composer-toolbar {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  flex: 1 1 100%;
+  margin: 0;
+}
 .model-chip, .model-chip-inner { display: inline-flex; align-items: center; gap: 4px; }
 .model-chip-inner {
   font-size: 13px;
@@ -1734,6 +1744,64 @@ a.model-chip-empty:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.thinking-block {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.thinking-block-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.thinking-block-toggle:disabled {
+  cursor: default;
+}
+
+.thinking-block-toggle:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.thinking-block-body {
+  padding: 0 0.75rem 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.thinking-block-body .typewriter,
+.thinking-block-body .markdown-body {
+  color: inherit;
+  font-size: inherit;
+}
+
+.thinking-block-redacted {
+  padding: 0.45rem 0.75rem;
+}
+
+.thinking-block-redacted-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.msg .thinking-block {
+  margin-bottom: 0.55rem;
 }
 
 /* Keep the "more" overflow menu aligned with the small ghost action buttons. */

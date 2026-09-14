@@ -259,3 +259,53 @@ func TestSQLiteRunPersistsModelProfileID(t *testing.T) {
 		t.Fatalf("model_profile_id not persisted: %q", got.ModelProfileID)
 	}
 }
+
+func TestModelProfileThinkingMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.db")
+	s, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	p, err := s.UpsertModelProfile(ModelProfile{Name: "n", BaseURL: "u", Model: "m", DisableThinking: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ThinkingLevel != "off" {
+		t.Fatalf("level=%s", p.ThinkingLevel)
+	}
+	if !p.DisableThinking {
+		t.Fatal("compat flag")
+	}
+	if p.ThinkingDialect != "auto" {
+		t.Fatalf("dialect=%s", p.ThinkingDialect)
+	}
+
+	p2, err := s.UpsertModelProfile(ModelProfile{Name: "n2", BaseURL: "u", Model: "m", DisableThinking: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2.ThinkingLevel != "medium" {
+		t.Fatalf("%s", p2.ThinkingLevel)
+	}
+
+	// Persist across Close/Open.
+	id := p.ID
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	got, err := s2.GetModelProfile(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ThinkingLevel != "off" || got.ThinkingDialect != "auto" || !got.DisableThinking {
+		t.Fatalf("after reopen: %+v", got)
+	}
+}

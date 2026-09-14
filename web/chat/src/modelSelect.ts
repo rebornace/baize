@@ -92,7 +92,8 @@ export function visionGate(
 /**
  * Merge the per-message model choice into createRun options. Auto is sent
  * explicitly as model_profile_id="auto"; a manual pick sends its concrete id.
- * The choice is never persisted across messages.
+ * Optional thinkingLevel (from the chat thinking chip) is passed through when
+ * present; omit it to use the model profile default.
  */
 export function buildRunOptions(
   selectedId: string,

@@ -1695,6 +1695,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Skills         []string              `json:"skills"`
 		Attachments    []attach.AttachmentIn `json:"attachments"`
 		ModelProfileID string                `json:"model_profile_id"`
+		ThinkingLevel  string                `json:"thinking_level"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -1702,6 +1703,11 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(body.AgentID) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "agent_id is required")
+		return
+	}
+	lvl := strings.ToLower(strings.TrimSpace(body.ThinkingLevel))
+	if lvl != "" && lvl != "off" && lvl != "low" && lvl != "medium" && lvl != "high" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid thinking_level")
 		return
 	}
 
@@ -1927,6 +1933,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Passthrough:    passthrough,
 		UserParts:      userParts,
 		ModelProfileID: modelProfileID,
+		ThinkingLevel:  lvl,
 		BubbleContent:  bubbleContent,
 	})
 	if err != nil {

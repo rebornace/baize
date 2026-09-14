@@ -23,7 +23,8 @@ import { settingsNavItems } from './settingsNav'
 
 const model = (over: Partial<ModelProfile> = {}): ModelProfile => ({
   id: 'm1', name: 'm', provider: 'openai_compatible', base_url: 'u', model: 'gpt',
-  disable_thinking: false, supports_vision: false, context_tokens: 1, auto_tier: 'standard', ...over,
+  disable_thinking: false, thinking_level: 'medium', thinking_dialect: 'auto',
+  supports_vision: false, context_tokens: 1, auto_tier: 'standard', ...over,
 })
 const tool = (source: string, connector = 'c', enabled = true): ToolInfo => ({
   name: source + connector, connector_id: connector, source, enabled,

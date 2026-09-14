@@ -438,7 +438,8 @@ go run ./cmd/baize start
 
 生产启动后，可在 **设置 → 模型**（`/settings/models`，仅管理员）维护多个**命名模型 profile**，无需改 YAML、无需重启：
 
-- 每个 profile 含：名称、Provider（本版固定 `openai_compatible`）、Base URL、模型名、API Key（或 API Key 环境变量名）、`disable_thinking`、`supports_vision`、`context_tokens`，以及 **Auto 路由档位**（`light` / `standard` / `power`，可选「auto」按模型名自动识别）。档位告诉任务感知 Auto 路由器该模型的能力级别。
+- 每个 profile 含：名称、Provider（本版固定 `openai_compatible`）、Base URL、模型名、API Key（或 API Key 环境变量名）、思考级别 / 协议（兼容迁移旧 `disable_thinking`）、`supports_vision`、`context_tokens`，以及 **Auto 路由档位**（`light` / `standard` / `power`，可选「auto」按模型名自动识别）。档位告诉任务感知 Auto 路由器该模型的能力级别。
+- **思考级别与可见思考：** Chat 可调思考级别；支持流式展示模型思考（视上游是否返回）。
 - **API Key 存本地库**（SQLite / Postgres，与 DSN 密码同级信任）。配置 `BAIZE_SETTINGS_KEY` 后，入库的 `api_key` **加密落库**（`bz1:` 信封）；`api_key_env` 不加密。界面与 API 响应一律**脱敏**回显（前 3 后 4，中间省略）。编辑时 Key 留空表示**不修改**；也可只填环境变量名、由 Runtime 启动/调用时读取。**任何 profile 都可删除，包括最后一个**；当一个模型都没有时，聊天会被拦截并提示先添加模型。
 - **热切换、不重启**：profile 增改后，下一次对话自动生效；底层按 Run 解析 / 缓存 Provider，配置更新即热重建。
 - **智能路由（Auto）**：聊天框模型下拉首项为「智能路由（Auto）」，也是默认与无人值守入口的行为。Auto 并非独立模型，而是一套确定性路由策略：根据每轮对话的**实际内容**（文本长度、推理类关键词、代码块、附件数量）判定难度档位，在该档位里挑选模型（普通文本优先用 `standard`），理想档位没有模型时向相邻档位降级；**带图片的消息只会使用勾选了 `supports_vision` 的模型**。也可在下拉里**手动指定**某条消息固定使用某个具体模型；手动选择会被严格遵守、**不会**自动改道（即便该模型不支持图片，也只会提示而不偷偷换模型）。**选择不记忆**——发送成功后下拉重置回 Auto，不写 `localStorage`。微信渠道、Inbox、MCP 导出等**无人值守入口**始终走 Auto。

@@ -27,6 +27,7 @@ import {
   type ModelProfile,
   type RunStatus,
   type SkillSummary,
+  type ThinkingLevel,
   type ToolInfo,
 } from '../api'
 import { extractAnalysisPagesFromEvents } from '../analysisPage'
@@ -35,10 +36,12 @@ import { Composer } from '../components/Composer'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
+import { ThinkingChip } from '../components/ThinkingChip'
 import { ToolCard } from '../components/ToolCard'
 import { UserBubble } from '../components/UserBubble'
 import { WorkflowCard } from '../components/WorkflowCard'
 import { TypewriterText } from '../components/TypewriterText'
+import { ThinkingBlock, MessageThinkingFallback } from '../components/ThinkingBlock'
 import {
   Button,
   ConfirmDialog,
@@ -61,6 +64,7 @@ import {
   type ToolOrWorkflowBlock,
 } from '../historyBlocks'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
+import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
 import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
 import { ACTIONS, CHAT, friendlyError, LOGIN_AT, WELCOME } from '../strings'
@@ -116,6 +120,8 @@ export function ChatPage() {
   // Persisted model choice (localStorage via modelChoice.ts); "" only until the
   // lazy initializer runs. Auto is the server-side smart router.
   const [selectedModelId, setSelectedModelId] = useState(loadModelChoice)
+  // Per-conversation thinking override (sessionStorage); '' = follow model default.
+  const [thinkingLevel, setThinkingLevel] = useState(() => loadThinkingChoice(conversationId))
   /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
   const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
   /** run_id → folded historical tool/workflow blocks (read-only replay). */
@@ -446,6 +452,12 @@ export function ChatPage() {
     }
   }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
 
+  // Sticky thinking override is keyed by conversationId; switching chats resets
+  // to that chat's stored choice (or '' = follow model default).
+  useEffect(() => {
+    setThinkingLevel(loadThinkingChoice(conversationId))
+  }, [conversationId])
+
   // Idle sync: weixin (and other external) inbound turns append messages / create
   // runs without this tab knowing. Poll while a conversation is open so /ui
   // picks them up without a manual refresh.
@@ -685,6 +697,7 @@ export function ChatPage() {
     try {
       const runOptions = buildRunOptions(selectedModelId, {
         attachments,
+        ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
       })
       const created = await createRun(agentId, text, sentConversationId, runOptions)
       // Model choice is persisted via onChooseModel; do not reset after send.
@@ -825,6 +838,11 @@ export function ChatPage() {
   const onChooseModel = (id: string) => {
     setSelectedModelId(id)
     saveModelChoice(id)
+  }
+
+  const onChooseThinking = (level: string) => {
+    setThinkingLevel(level)
+    saveThinkingChoice(conversationId, level)
   }
 
   // Copy with a legacy fallback for non-secure (HTTP/LAN) contexts without
@@ -1027,14 +1045,28 @@ export function ChatPage() {
                 m.run_id &&
                 isFirstAssistantMessageOfRun(msgIndex, messages) &&
                 historyBlocks[m.run_id]
+              const hasEventThinking = Boolean(
+                m.run_id && historyBlocks[m.run_id]?.some((b) => b.kind === 'thinking'),
+              )
+              const showMessageThinking =
+                m.role === 'assistant' &&
+                !hasEventThinking &&
+                (Boolean(m.thinking?.trim()) || Boolean(m.thinking_redacted)) &&
+                (!m.run_id || isFirstAssistantMessageOfRun(msgIndex, messages))
               // 分析页产物源自工具结果：该 run 只要有历史工具块（统一在首条
               // assistant 消息处渲染），所有 assistant 消息都不再独立出预览，
               // 避免同一 run 多条 assistant 消息时重复 iframe。
+              const hasHistoryToolBlocks = Boolean(
+                m.run_id &&
+                  historyBlocks[m.run_id]?.some(
+                    (b) => b.kind === 'tool' || b.kind === 'workflow',
+                  ),
+              )
               const pages =
                 m.role === 'assistant' &&
                 m.run_id &&
                 m.run_id !== liveRunId &&
-                !historyBlocks[m.run_id]
+                !hasHistoryToolBlocks
                   ? historyPages[m.run_id] ?? []
                   : []
               const canAct = persisted && !busy && !liveRunId && !historyMutating
@@ -1042,18 +1074,42 @@ export function ChatPage() {
                 <div key={m.id} className={`msg-row ${bubbleClass}`}>
                   {runHistoryBlocks && (
                     <div className="msg-history-blocks" data-testid="history-blocks">
-                      {runHistoryBlocks.map((b, i) =>
-                        b.kind === 'tool' ? (
-                          <ToolCard key={`h-${i}`} block={b} catalog={toolCatalog} readOnly />
-                        ) : (
-                          <WorkflowCard key={`h-${i}`} block={b} />
-                        ),
-                      )}
+                      {runHistoryBlocks.map((b, i) => {
+                        switch (b.kind) {
+                          case 'tool':
+                            return (
+                              <ToolCard
+                                key={`h-${i}`}
+                                block={b}
+                                catalog={toolCatalog}
+                                readOnly
+                              />
+                            )
+                          case 'workflow':
+                            return <WorkflowCard key={`h-${i}`} block={b} />
+                          case 'thinking':
+                            return (
+                              <ThinkingBlock key={`h-${i}`} block={b} readOnly />
+                            )
+                          default: {
+                            const _exhaustive: never = b
+                            return _exhaustive
+                          }
+                        }
+                      })}
                     </div>
                   )}
                   <div className={`msg ${bubbleClass}`}>
                     {m.role === 'assistant' ? (
-                      <MarkdownText text={m.content} />
+                      <>
+                        {showMessageThinking && (
+                          <MessageThinkingFallback
+                            thinking={m.thinking}
+                            redacted={m.thinking_redacted}
+                          />
+                        )}
+                        <MarkdownText text={m.content} />
+                      </>
                     ) : (
                       <UserBubble content={m.content} />
                     )}
@@ -1104,6 +1160,12 @@ export function ChatPage() {
                       <div className="msg assistant">
                         <TypewriterText text={block.text} active />
                       </div>
+                    </div>
+                  )
+                case 'thinking':
+                  return (
+                    <div key={`live-th-${block.turn}-${i}`} className="msg-row tool">
+                      <ThinkingBlock block={block} />
                     </div>
                   )
                 case 'system':
@@ -1168,12 +1230,19 @@ export function ChatPage() {
             onSend={onSend}
             toolbar={
               modelProfiles.length > 0 ? (
-                <ModelChip
-                  profiles={modelProfiles}
-                  value={selectedModelId}
-                  onChange={onChooseModel}
-                  disabled={composerDisabled}
-                />
+                <>
+                  <ModelChip
+                    profiles={modelProfiles}
+                    value={selectedModelId}
+                    onChange={onChooseModel}
+                    disabled={composerDisabled}
+                  />
+                  <ThinkingChip
+                    value={thinkingLevel}
+                    onChange={onChooseThinking}
+                    disabled={composerDisabled}
+                  />
+                </>
               ) : role === 'admin' ? (
                 <Link to="/settings/models" className="model-chip model-chip-empty">
                   {CHAT.addModel}

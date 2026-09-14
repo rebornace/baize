@@ -13,12 +13,14 @@ const (
 )
 
 type Message struct {
-	ID             string    `json:"id"`
-	ConversationID string    `json:"conversation_id"`
-	Role           string    `json:"role"`
-	Content        string    `json:"content"`
-	RunID          string    `json:"run_id"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	ConversationID   string    `json:"conversation_id"`
+	Role             string    `json:"role"`
+	Content          string    `json:"content"`
+	Thinking         string    `json:"thinking,omitempty"`
+	ThinkingRedacted bool      `json:"thinking_redacted,omitempty"`
+	RunID            string    `json:"run_id"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // mediaRefLine matches a persisted user-message line that references a

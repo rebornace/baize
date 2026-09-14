@@ -7,6 +7,13 @@ export type ChatBlock =
   | { kind: 'assistant'; text: string }
   | { kind: 'system'; text: string }
   | {
+      kind: 'thinking'
+      turn: number
+      text: string
+      status: 'streaming' | 'done' | 'redacted'
+      collapsed: boolean
+    }
+  | {
       kind: 'tool'
       name: string
       status: 'running' | 'waiting_human' | 'succeeded' | 'failed' | 'approved' | 'rejected'
@@ -24,6 +31,55 @@ export type ChatBlock =
 
 type ToolBlock = Extract<ChatBlock, { kind: 'tool' }>
 type WorkflowBlock = Extract<ChatBlock, { kind: 'workflow' }>
+type ThinkingBlock = Extract<ChatBlock, { kind: 'thinking' }>
+
+function findThinkingByTurn(blocks: ChatBlock[], turn: number): ThinkingBlock | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'thinking' && b.turn === turn) return b
+  }
+  return undefined
+}
+
+function upsertThinking(
+  blocks: ChatBlock[],
+  turn: number,
+  patch: Partial<Pick<ThinkingBlock, 'text' | 'status' | 'collapsed'>>,
+): ThinkingBlock {
+  const existing = findThinkingByTurn(blocks, turn)
+  if (existing) {
+    if (patch.text !== undefined) existing.text = patch.text
+    if (patch.status !== undefined) existing.status = patch.status
+    if (patch.collapsed !== undefined) existing.collapsed = patch.collapsed
+    return existing
+  }
+  const created: ThinkingBlock = {
+    kind: 'thinking',
+    turn,
+    text: patch.text ?? '',
+    status: patch.status ?? 'streaming',
+    collapsed: patch.collapsed ?? false,
+  }
+  blocks.push(created)
+  return created
+}
+
+function upsertAssistant(blocks: ChatBlock[], text: string): void {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'assistant') {
+      b.text = text
+      return
+    }
+  }
+  blocks.push({ kind: 'assistant', text })
+}
+
+function eventTurn(data: Record<string, unknown> | undefined): number {
+  const raw = data?.turn
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) ? n : 0
+}
 
 function isUnfinished(status: ToolBlock['status']): boolean {
   switch (status) {
@@ -168,9 +224,38 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         if (card) card.status = 'rejected'
         break
       }
+      case 'llm.thinking.delta': {
+        const turn = eventTurn(data)
+        upsertThinking(blocks, turn, {
+          text: String(data?.text ?? ''),
+          status: 'streaming',
+          collapsed: false,
+        })
+        break
+      }
+      case 'llm.thinking': {
+        const turn = eventTurn(data)
+        const redacted = Boolean(data?.thinking_redacted)
+        upsertThinking(blocks, turn, {
+          text: String(data?.text ?? ''),
+          status: redacted ? 'redacted' : 'done',
+          collapsed: redacted ? true : undefined,
+        })
+        break
+      }
+      case 'llm.content.delta': {
+        const turn = eventTurn(data)
+        const thinking = findThinkingByTurn(blocks, turn)
+        if (thinking) {
+          thinking.status = thinking.status === 'redacted' ? 'redacted' : 'done'
+          thinking.collapsed = true
+        }
+        upsertAssistant(blocks, String(data?.text ?? ''))
+        break
+      }
       case 'llm.message': {
         const content = String(data?.content ?? '')
-        if (content) blocks.push({ kind: 'assistant', text: content })
+        if (content) upsertAssistant(blocks, content)
         break
       }
       case 'llm.error': {

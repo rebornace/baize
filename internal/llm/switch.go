@@ -18,6 +18,8 @@ type ModelProfileView struct {
 	APIKey          string
 	APIKeyEnv       string
 	DisableThinking bool
+	ThinkingLevel   string
+	ThinkingDialect string
 	SupportsVision  bool
 	ContextTokens   int
 	Tier            string
@@ -32,7 +34,10 @@ type ProfileSource interface {
 
 type ctxKey int
 
-const modelProfileIDKey ctxKey = iota
+const (
+	modelProfileIDKey ctxKey = iota
+	thinkingLevelKey
+)
 
 // WithModelProfileID attaches a per-run model profile choice to the context.
 func WithModelProfileID(ctx context.Context, profileID string) context.Context {
@@ -45,6 +50,22 @@ func WithModelProfileID(ctx context.Context, profileID string) context.Context {
 // ModelProfileIDFromContext returns the per-run profile id, or "".
 func ModelProfileIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(modelProfileIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithThinkingLevel attaches a per-run thinking level override to the context.
+func WithThinkingLevel(ctx context.Context, level string) context.Context {
+	if level == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, thinkingLevelKey, level)
+}
+
+// ThinkingLevelFromContext returns the per-run thinking level, or "".
+func ThinkingLevelFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(thinkingLevelKey).(string); ok {
 		return v
 	}
 	return ""
@@ -80,6 +101,8 @@ func (s *Switch) defaultBuild(v ModelProfileView) Provider {
 	}
 	p := NewOpenAI(v.BaseURL, key, v.Model)
 	p.DisableThinking = v.DisableThinking
+	p.ThinkingLevel = v.ThinkingLevel
+	p.ThinkingDialect = v.ThinkingDialect
 	p.VisionSupported = v.SupportsVision
 	return p
 }
@@ -122,6 +145,18 @@ func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 		return Message{}, err
 	}
 	return prov.Chat(ctx, messages, tools)
+}
+
+// ChatStream implements Streamer: prefers a streaming provider, otherwise Chat.
+func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
+	p, err := s.providerFor(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	if st, ok := p.(Streamer); ok {
+		return st.ChatStream(ctx, messages, tools, onThink, onContent)
+	}
+	return p.Chat(ctx, messages, tools)
 }
 
 // SupportsVision reports whether ANY configured model can accept image parts.

@@ -77,6 +77,17 @@ export const CHAT = {
   noModelConfigured: '暂未配置模型',
   // SSE 降级轮询提示
   reconnecting: '正在重新连接…',
+  // 本会话思考级别覆盖
+  thinkingChip: '思考级别',
+  thinkingDefault: '默认',
+  // 输入框：短 placeholder（芯片占宽后不宜长句换行）；完整快捷键放 title
+  composerPlaceholder: '输入消息…',
+  composerTitle: 'Enter 发送 · Shift+Enter 换行 · @ 或 / 选择技能',
+  // 思考块展示（实时打字机 / 历史折叠）
+  thinking: '思考中',
+  thoughtDone: '已思考',
+  viewThinking: '查看思考',
+  thinkingRedacted: '模型未返回可展示的思考',
 } as const
 
 export interface FriendlyError {
@@ -318,7 +329,18 @@ export const MODELS = {
   fieldApiKeyEnv: 'API Key 环境变量名',
   fieldTier: '任务档位',
   fieldVision: '视觉（支持图片附件）',
-  fieldDisableThinking: '禁用思考',
+  fieldThinkingLevel: '默认思考',
+  thinkingLevelOff: '关',
+  thinkingLevelLow: '低',
+  thinkingLevelMedium: '中',
+  thinkingLevelHigh: '高',
+  fieldThinkingDialect: '思考协议',
+  thinkingDialectAuto: '自动',
+  thinkingDialectOpenai: 'OpenAI',
+  thinkingDialectDeepseek: 'DeepSeek',
+  thinkingDialectQwen: '通义',
+  thinkingDialectOmit: '不发送',
+  listThinkingOff: '关思考',
   fieldContextTokens: '上下文长度',
   confirmDeleteTitle: '删除这个模型？',
   confirmDeleteBody: '删除后不可恢复。',

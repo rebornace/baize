@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { CHAT } from '../strings'
 import { activeMention, replaceMention } from '../skillMention'
 import type { SkillSummary } from '../api'
 
@@ -258,7 +259,8 @@ export function Composer({
             // Defer so click-on-suggestion still fires before we clear.
             window.setTimeout(() => setCompletion(null), 150)
           }}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行；输入 @ 或 / 选择技能"
+          placeholder={CHAT.composerPlaceholder}
+          title={CHAT.composerTitle}
           rows={1}
           disabled={disabled}
           aria-label="消息输入"

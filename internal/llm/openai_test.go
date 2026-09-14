@@ -209,3 +209,89 @@ func TestMockSupportsVisionConfigurable(t *testing.T) {
 		t.Fatalf("mock should be configurable to support vision")
 	}
 }
+
+func TestChatDeepSeekThinkingOff(t *testing.T) {
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = b
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "deepseek-chat")
+	p.ThinkingLevel = llm.ThinkingOff
+	_, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+
+	var req map[string]any
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, capturedBody)
+	}
+	thinking, _ := req["thinking"].(map[string]any)
+	if thinking == nil || thinking["type"] != "disabled" {
+		t.Fatalf("want thinking.disabled, body=%s", capturedBody)
+	}
+	if _, ok := req["reasoning_effort"]; ok {
+		t.Fatalf("must not send reasoning_effort: %s", capturedBody)
+	}
+}
+
+func TestChatOpenAIReasoningEffortHigh(t *testing.T) {
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = b
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "o3")
+	p.ThinkingDialect = llm.DialectAuto
+	p.ThinkingLevel = llm.ThinkingHigh
+	_, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+
+	var req map[string]any
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, capturedBody)
+	}
+	if req["reasoning_effort"] != "high" {
+		t.Fatalf("want reasoning_effort=high, body=%s", capturedBody)
+	}
+	if _, ok := req["thinking"]; ok {
+		t.Fatalf("must not send thinking: %s", capturedBody)
+	}
+}
+
+func TestChatParsesReasoningContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"答","reasoning_content":"链"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	msg, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Thinking != "链" {
+		t.Fatalf("Thinking=%q want 链", msg.Thinking)
+	}
+	if msg.Content != "答" {
+		t.Fatalf("Content=%q want 答", msg.Content)
+	}
+}

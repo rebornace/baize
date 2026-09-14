@@ -22,6 +22,8 @@ type modelProfilePayload struct {
 	APIKey          *string `json:"api_key"`
 	APIKeyEnv       *string `json:"api_key_env"`
 	DisableThinking *bool   `json:"disable_thinking"`
+	ThinkingLevel   *string `json:"thinking_level"`
+	ThinkingDialect *string `json:"thinking_dialect"`
 	SupportsVision  *bool   `json:"supports_vision"`
 	ContextTokens   *int    `json:"context_tokens"`
 	// AutoTier is "light" | "standard" | "power" | "auto". "auto" (or empty on
@@ -154,6 +156,7 @@ func (s *Server) handlePostModelProfile(w http.ResponseWriter, r *http.Request) 
 		SupportsVision:  p.SupportsVision != nil && *p.SupportsVision,
 		AutoTier:        tier,
 	}
+	applyThinkingPayload(&prof, p, true)
 	if p.ContextTokens != nil && *p.ContextTokens > 0 {
 		prof.ContextTokens = *p.ContextTokens
 	}
@@ -210,6 +213,7 @@ func (s *Server) handlePatchModelProfile(w http.ResponseWriter, r *http.Request)
 	if p.DisableThinking != nil {
 		updated.DisableThinking = *p.DisableThinking
 	}
+	applyThinkingPayload(&updated, p, false)
 	if p.SupportsVision != nil {
 		updated.SupportsVision = *p.SupportsVision
 	}
@@ -265,7 +269,7 @@ func validateModelCreate(p modelProfilePayload) error {
 	if strVal(p.APIKey) == "" && strVal(p.APIKeyEnv) == "" {
 		return errors.New("either api_key or api_key_env is required")
 	}
-	return nil
+	return validateThinkingPayload(p)
 }
 
 func validateModelPatch(p modelProfilePayload) error {
@@ -281,5 +285,63 @@ func validateModelPatch(p modelProfilePayload) error {
 	if p.Model != nil && strVal(p.Model) == "" {
 		return errors.New("model must not be empty")
 	}
+	return validateThinkingPayload(p)
+}
+
+func validateThinkingPayload(p modelProfilePayload) error {
+	if p.ThinkingLevel != nil {
+		lvl := strings.ToLower(strings.TrimSpace(*p.ThinkingLevel))
+		if lvl != "" && !validThinkingLevel(lvl) {
+			return errors.New("invalid thinking_level")
+		}
+	}
+	if p.ThinkingDialect != nil {
+		d := strings.ToLower(strings.TrimSpace(*p.ThinkingDialect))
+		if d != "" && !validThinkingDialect(d) {
+			return errors.New("invalid thinking_dialect")
+		}
+	}
 	return nil
+}
+
+func validThinkingLevel(lvl string) bool {
+	switch lvl {
+	case store.ThinkingOff, store.ThinkingLow, store.ThinkingMedium, store.ThinkingHigh:
+		return true
+	default:
+		return false
+	}
+}
+
+func validThinkingDialect(d string) bool {
+	switch d {
+	case store.ThinkingDialectAuto, store.ThinkingDialectOpenAI, store.ThinkingDialectDeepSeek,
+		store.ThinkingDialectQwen, store.ThinkingDialectOmit:
+		return true
+	default:
+		return false
+	}
+}
+
+// applyThinkingPayload merges thinking fields onto a profile.
+// On create (isCreate), omitted level falls through to DisableThinking via Sync.
+// On patch: thinking_level wins when both are present; only disable_thinking
+// clears ThinkingLevel so Sync remaps from the flag.
+func applyThinkingPayload(prof *store.ModelProfile, p modelProfilePayload, isCreate bool) {
+	if p.ThinkingDialect != nil {
+		prof.ThinkingDialect = strings.ToLower(strings.TrimSpace(*p.ThinkingDialect))
+	}
+	if p.ThinkingLevel != nil {
+		lvl := strings.ToLower(strings.TrimSpace(*p.ThinkingLevel))
+		prof.ThinkingLevel = lvl
+		return
+	}
+	if isCreate {
+		// Leave ThinkingLevel empty so SyncProfileThinking maps from DisableThinking.
+		return
+	}
+	if p.DisableThinking != nil {
+		// Only the legacy flag changed: clear level so Sync remaps.
+		prof.ThinkingLevel = ""
+	}
 }

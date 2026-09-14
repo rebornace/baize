@@ -123,3 +123,33 @@ func TestSwitchRebuildsOnUpdate(t *testing.T) {
 		t.Fatalf("expected rebuild after update (v1 then v2), got %v", models)
 	}
 }
+
+func TestSwitchDefaultBuildCopiesThinkingFields(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	sw := NewSwitch(src)
+	view := ModelProfileView{
+		ID:              "mp_t",
+		BaseURL:         "https://x/v1",
+		Model:           "m",
+		APIKey:          "k",
+		ThinkingLevel:   ThinkingHigh,
+		ThinkingDialect: DialectDeepSeek,
+		DisableThinking: false,
+		UpdatedAt:       time.Now(),
+	}
+	src.byID["mp_t"] = view
+	src.list = []ModelProfileView{view}
+
+	ctx := WithModelProfileID(context.Background(), "mp_t")
+	prov, err := sw.providerFor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, ok := prov.(*OpenAI)
+	if !ok {
+		t.Fatalf("want *OpenAI, got %T", prov)
+	}
+	if o.ThinkingLevel != ThinkingHigh || o.ThinkingDialect != DialectDeepSeek {
+		t.Fatalf("thinking fields not copied: level=%q dialect=%q", o.ThinkingLevel, o.ThinkingDialect)
+	}
+}

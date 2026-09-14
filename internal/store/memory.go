@@ -222,6 +222,7 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
 		ModelProfileID:     in.ModelProfileID,
+		ThinkingLevel:      in.ThinkingLevel,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
 	}

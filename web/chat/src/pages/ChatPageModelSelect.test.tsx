@@ -10,6 +10,8 @@ const profile = (over: Partial<ModelProfile> & Pick<ModelProfile, 'id' | 'name'>
   base_url: 'https://api.example.com/v1',
   model: 'gpt-4o',
   disable_thinking: false,
+  thinking_level: 'medium',
+  thinking_dialect: 'auto',
   supports_vision: false,
   context_tokens: 128000,
   auto_tier: 'standard',
@@ -117,6 +119,15 @@ describe('buildRunOptions', () => {
     expect(opts.modelProfileId).toBe('mp_2')
     expect(opts.sessionToken).toBe('tok')
   })
+
+  it('passes through thinkingLevel when provided and omits it by default', () => {
+    const withLevel = buildRunOptions('auto', { thinkingLevel: 'low' })
+    expect(withLevel.thinkingLevel).toBe('low')
+    expect(withLevel.modelProfileId).toBe(AUTO_MODEL_ID)
+    expect(Object.prototype.hasOwnProperty.call(buildRunOptions('auto'), 'thinkingLevel')).toBe(
+      false,
+    )
+  })
 })
 
 describe('ModelSelect', () => {
@@ -190,5 +201,17 @@ describe('chat model fetch wiring', () => {
     await createRun('a1', 'hi', 'c1', buildRunOptions(''))
     const body2 = JSON.parse(fetchMock.mock.calls[1][1].body) as Record<string, unknown>
     expect(body2.model_profile_id).toBe('auto')
+  })
+
+  it('createRun serializes thinking_level only when a level is set', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ run_id: 'r1', status: 'queued' }))
+    await createRun('a1', 'hi', 'c1', buildRunOptions('auto', { thinkingLevel: 'high' }))
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body) as Record<string, unknown>
+    expect(body.thinking_level).toBe('high')
+    expect(body.model_profile_id).toBe('auto')
+
+    await createRun('a1', 'hi', 'c1', buildRunOptions('auto'))
+    const body2 = JSON.parse(fetchMock.mock.calls[1][1].body) as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(body2, 'thinking_level')).toBe(false)
   })
 })

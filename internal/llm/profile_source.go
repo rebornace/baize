@@ -26,6 +26,8 @@ func toView(p store.ModelProfile) ModelProfileView {
 		APIKey:          p.APIKey,
 		APIKeyEnv:       p.APIKeyEnv,
 		DisableThinking: p.DisableThinking,
+		ThinkingLevel:   p.ThinkingLevel,
+		ThinkingDialect: p.ThinkingDialect,
 		SupportsVision:  p.SupportsVision,
 		ContextTokens:   p.ContextTokens,
 		Tier:            store.NormalizeAutoTier(p.AutoTier),
