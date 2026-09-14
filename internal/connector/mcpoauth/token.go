@@ -144,15 +144,19 @@ func requestToken(
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return TokenBundle{}, err
+		return TokenBundle{}, fmt.Errorf("token endpoint request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return TokenBundle{}, err
+		return TokenBundle{}, fmt.Errorf("token endpoint read body: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return TokenBundle{}, fmt.Errorf("token endpoint: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		bodyStr := strings.TrimSpace(string(body))
+		if isOAuthInvalidGrant(resp.StatusCode, bodyStr) {
+			return TokenBundle{}, fmt.Errorf("%w: %s", ErrNeedsReauth, bodyStr)
+		}
+		return TokenBundle{}, fmt.Errorf("token endpoint: status %d: %s", resp.StatusCode, bodyStr)
 	}
 	var tr tokenResponse
 	if err := json.Unmarshal(body, &tr); err != nil {
@@ -175,4 +179,20 @@ func requestToken(
 		b.ExpiresAt = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
 	}
 	return b, nil
+}
+
+// isOAuthInvalidGrant reports whether a token-endpoint error body is a clear
+// invalid_grant that requires interactive re-authorization.
+func isOAuthInvalidGrant(status int, body string) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnauthorized {
+		return false
+	}
+	var er struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(body), &er) == nil && er.Error == "invalid_grant" {
+		return true
+	}
+	return strings.Contains(body, `"error":"invalid_grant"`) ||
+		strings.Contains(body, `"error": "invalid_grant"`)
 }

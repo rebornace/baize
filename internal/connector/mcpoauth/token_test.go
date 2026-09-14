@@ -144,6 +144,45 @@ func TestEnsureAccessTokenSkewRefreshWindow(t *testing.T) {
 	}
 }
 
+func TestEnsureAccessTokenInvalidGrantNeedsReauth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"revoked"}`))
+	}))
+	defer srv.Close()
+
+	_, err := EnsureAccessToken(context.Background(), http.DefaultClient, srv.URL, "cid", "", TokenBundle{
+		AccessToken:  "old",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+	}, 0)
+	if !errors.Is(err, ErrNeedsReauth) {
+		t.Fatalf("want ErrNeedsReauth, got %v", err)
+	}
+}
+
+func TestEnsureAccessTokenTransient5xxNotNeedsReauth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "upstream down", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	_, err := EnsureAccessToken(context.Background(), http.DefaultClient, srv.URL, "cid", "", TokenBundle{
+		AccessToken:  "old",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+	}, 0)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if errors.Is(err, ErrNeedsReauth) {
+		t.Fatalf("5xx must not be ErrNeedsReauth, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Fatalf("want status in error, got %v", err)
+	}
+}
+
 func TestExchangeCode(t *testing.T) {
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

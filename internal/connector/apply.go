@@ -203,20 +203,8 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			if oauthErr != nil {
 				return store.Connector{}, nil, oauthErr
 			}
-			if reauth != nil {
-				code, _ := reauth["code"].(string)
-				if code == "" {
-					code = "oauth_reauth_required"
-				}
-				return store.Connector{}, nil, fmt.Errorf("%w: %s", mcpbridge.ErrInvalidMCP, code)
-			}
-			// Keep refreshed sealed bundle on input so phase-4 Upsert persists it.
+			// Keep refreshed sealed bundle (or needs_reauth status) on input for Upsert.
 			in.MCP.OAuth = cfg.OAuth
-			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
-			if err != nil {
-				return store.Connector{}, nil, err
-			}
-			discovered = tools
 			mcpHTTPURL = cfg.URL
 			// Invoker keeps static headers only; OAuth is re-resolved per call from store.
 			staticHeaders, err := mcpbridge.ResolveHeaders(cfg.Headers)
@@ -224,6 +212,24 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 				return store.Connector{}, nil, err
 			}
 			mcpHTTPHeaders = staticHeaders
+			if reauth != nil {
+				// Soft-fail: oauth_reauth_required / settings_key_required must not
+				// hard-block PUT. Skip OAuth-bearing discover and preserve existing
+				// MCP tools so headers/URL edits still save.
+				if in.Store != nil {
+					for _, t := range in.Store.ListToolsByConnector(in.ID) {
+						if t.Source == store.ToolSourceMCP {
+							discovered = append(discovered, t)
+						}
+					}
+				}
+				break
+			}
+			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
+			if err != nil {
+				return store.Connector{}, nil, err
+			}
+			discovered = tools
 		default:
 			return store.Connector{}, nil, fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
 		}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   deleteConnector,
   disconnectMcpOAuth,
@@ -29,6 +29,9 @@ function toRow(info: ConnectorInfo, fallbackCount: number): ConnectorRowData {
   }
 }
 
+const OAUTH_STATUS_POLL_MS = 2500
+const OAUTH_STATUS_POLL_MAX_MS = 90_000
+
 export function McpSettings() {
   const { toasts, push, dismiss } = useToast()
   const [rows, setRows] = useState<ConnectorRowData[]>([])
@@ -39,6 +42,7 @@ export function McpSettings() {
   const [editor, setEditor] = useState<{ open: boolean; editing: boolean; initial: ConnectorEditorInitial }>({
     open: false, editing: false, initial: emptyInitial,
   })
+  const oauthPollStopRef = useRef<(() => void) | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +62,34 @@ export function McpSettings() {
     }
   }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => () => { oauthPollStopRef.current?.() }, [])
+
+  const startOAuthStatusPoll = useCallback(() => {
+    oauthPollStopRef.current?.()
+    const started = Date.now()
+    const tick = () => {
+      if (Date.now() - started > OAUTH_STATUS_POLL_MAX_MS) {
+        stop()
+        return
+      }
+      void load()
+    }
+    const onFocus = () => { tick() }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    const intervalId = window.setInterval(tick, OAUTH_STATUS_POLL_MS)
+    const stop = () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVis)
+      if (oauthPollStopRef.current === stop) oauthPollStopRef.current = null
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVis)
+    oauthPollStopRef.current = stop
+    window.setTimeout(stop, OAUTH_STATUS_POLL_MAX_MS)
+  }, [load])
 
   const openCreate = () => {
     setEditor({ open: true, editing: false, initial: emptyInitial })
@@ -87,6 +119,7 @@ export function McpSettings() {
       const { authorization_url: url } = await startMcpOAuth(id)
       window.open(url, '_blank', 'noopener,noreferrer')
       push({ tone: 'success', title: CONNECTORS.oauthAuthorizeOpened })
+      startOAuthStatusPoll()
     } catch (e) {
       push({ tone: 'error', title: connectorErrorText(e).title })
     }

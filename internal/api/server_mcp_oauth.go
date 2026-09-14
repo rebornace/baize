@@ -116,6 +116,16 @@ func (s *Server) handleMCPOAuthStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"authorization_url": authURL})
 }
 
+// oauthResourceURL returns origin+path for the OAuth resource parameter,
+// stripping query, fragment, and userinfo.
+func oauthResourceURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
+}
+
 func buildAuthorizationURL(authorizationEndpoint, clientID, redirectURI, challenge, state, resource string) (string, error) {
 	u, err := url.Parse(authorizationEndpoint)
 	if err != nil {
@@ -128,8 +138,8 @@ func buildAuthorizationURL(authorizationEndpoint, clientID, redirectURI, challen
 	q.Set("code_challenge", challenge)
 	q.Set("code_challenge_method", "S256")
 	q.Set("state", state)
-	if resource != "" {
-		q.Set("resource", resource)
+	if res := oauthResourceURL(resource); res != "" {
+		q.Set("resource", res)
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil

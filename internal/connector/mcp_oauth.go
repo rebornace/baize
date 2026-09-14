@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/rebornace/baize/internal/connector/mcpoauth"
@@ -17,8 +19,10 @@ import (
 // discover path). Refreshed bundles are written back onto override and, when
 // store+connectorID are set, best-effort UpsertConnector.
 //
-// On EnsureAccessToken failure it best-effort sets status=needs_reauth and
-// returns a tool-error content map with code oauth_reauth_required.
+// On ErrNeedsReauth (including invalid_grant) it best-effort sets
+// status=needs_reauth and returns a tool-error content map with code
+// oauth_reauth_required. Transient network/5xx errors are returned as err
+// without writing needs_reauth.
 func resolveMCPHTTPOAuthHeaders(
 	ctx context.Context,
 	st store.Store,
@@ -76,6 +80,9 @@ func resolveMCPHTTPOAuthHeaders(
 		ctx, http.DefaultClient, oauth.TokenEndpoint, oauth.ClientID, clientSecret, bundle, 0,
 	)
 	if err != nil {
+		if !errors.Is(err, mcpoauth.ErrNeedsReauth) {
+			return nil, nil, fmt.Errorf("MCP OAuth 令牌暂时不可用: %w", err)
+		}
 		oauth.Status = "needs_reauth"
 		if st != nil && connectorID != "" {
 			conn.ID = connectorID

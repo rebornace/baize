@@ -393,3 +393,187 @@ func TestMCPOAuthHTTPInvokeAfterDisconnectHasNoBearer(t *testing.T) {
 		}
 	}
 }
+
+func TestApplySoftFailsOAuthReauthKeepsExistingTools(t *testing.T) {
+	mcpSrv, _ := startCapturingMCPHTTP(t)
+	login := []string{}
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	valid := sealTestBundle(t, mcpoauth.TokenBundle{
+		AccessToken: "valid-for-discover",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	key, _ := settingscrypto.KeyFromEnv()
+	in := connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "mcp-soft", Type: "mcp",
+		SettingsKey: key,
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       mcpSrv.URL,
+			Headers:   map[string]string{"X-Edit": "before"},
+			OAuth: &store.MCPOAuthConfig{
+				Status:            "authorized",
+				ClientID:          "cid",
+				TokenBundleSealed: valid,
+			},
+		},
+		RequireLogin: &login,
+	}
+	if _, _, err := connector.Apply(in); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	toolsBefore := st.ListToolsByConnector("mcp-soft")
+	if len(toolsBefore) == 0 {
+		t.Fatal("expected discovered tools after first Apply")
+	}
+
+	expired := sealTestBundle(t, mcpoauth.TokenBundle{
+		AccessToken: "expired-only",
+		ExpiresAt:   time.Now().Add(-time.Minute),
+	})
+	in.MCP.Headers = map[string]string{"X-Edit": "after"}
+	in.MCP.OAuth = &store.MCPOAuthConfig{
+		Status:            "authorized",
+		ClientID:          "cid",
+		TokenBundleSealed: expired,
+	}
+	conn, _, err := connector.Apply(in)
+	if err != nil {
+		t.Fatalf("Apply with oauth_reauth must soft-fail (save headers/URL): %v", err)
+	}
+	if conn.MCP.Headers["X-Edit"] != "after" {
+		t.Fatalf("headers not saved: %+v", conn.MCP.Headers)
+	}
+	if conn.MCP.OAuth == nil || conn.MCP.OAuth.Status != "needs_reauth" {
+		t.Fatalf("oauth status=%v want needs_reauth", conn.MCP.OAuth)
+	}
+	toolsAfter := st.ListToolsByConnector("mcp-soft")
+	if len(toolsAfter) != len(toolsBefore) {
+		t.Fatalf("tools after soft-fail=%d want keep %d", len(toolsAfter), len(toolsBefore))
+	}
+}
+
+func TestApplySoftFailsSettingsKeyRequiredKeepsExistingTools(t *testing.T) {
+	mcpSrv, _ := startCapturingMCPHTTP(t)
+	login := []string{}
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	sealed := sealTestBundle(t, mcpoauth.TokenBundle{
+		AccessToken: "oauth-access",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	key, _ := settingscrypto.KeyFromEnv()
+	if _, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "mcp-soft-key", Type: "mcp",
+		SettingsKey: key,
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       mcpSrv.URL,
+			OAuth: &store.MCPOAuthConfig{
+				Status:            "authorized",
+				ClientID:          "cid",
+				TokenBundleSealed: sealed,
+			},
+		},
+		RequireLogin: &login,
+	}); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	before := len(st.ListToolsByConnector("mcp-soft-key"))
+	if before == 0 {
+		t.Fatal("expected tools")
+	}
+
+	t.Setenv("BAIZE_SETTINGS_KEY", "")
+	conn, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "mcp-soft-key", Type: "mcp",
+		SettingsKey: nil,
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       mcpSrv.URL + "/edited",
+			Headers:   map[string]string{"X-Keep": "1"},
+			OAuth: &store.MCPOAuthConfig{
+				Status:            "authorized",
+				ClientID:          "cid",
+				TokenBundleSealed: sealed,
+			},
+		},
+		RequireLogin: &login,
+	})
+	if err != nil {
+		t.Fatalf("Apply without settings key must soft-fail: %v", err)
+	}
+	if conn.MCP.URL != mcpSrv.URL+"/edited" {
+		t.Fatalf("URL not saved: %q", conn.MCP.URL)
+	}
+	if got := len(st.ListToolsByConnector("mcp-soft-key")); got != before {
+		t.Fatalf("tools=%d want keep %d", got, before)
+	}
+}
+
+func TestMCPOAuthHTTPInvokeTransientRefreshDoesNotNeedsReauth(t *testing.T) {
+	mcpSrv, _ := startCapturingMCPHTTP(t)
+	login := []string{}
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+
+	valid := sealTestBundle(t, mcpoauth.TokenBundle{
+		AccessToken: "valid-for-discover",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	key, _ := settingscrypto.KeyFromEnv()
+	if _, _, err := connector.Apply(connector.ApplyInput{
+		Store: st, Registry: reg, Identities: ids,
+		ID: "mcp-transient", Type: "mcp",
+		SettingsKey: key,
+		MCP: store.MCPConfig{
+			Transport: "http",
+			URL:       mcpSrv.URL,
+			OAuth: &store.MCPOAuthConfig{
+				Status:            "authorized",
+				ClientID:          "cid",
+				TokenEndpoint:     "http://127.0.0.1:1/token",
+				TokenBundleSealed: valid,
+			},
+		},
+		RequireLogin: &login,
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	expired := sealTestBundle(t, mcpoauth.TokenBundle{
+		AccessToken:  "old",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+	})
+	c, _ := st.GetConnector("mcp-transient")
+	c.MCP.OAuth.TokenBundleSealed = expired
+	c.MCP.OAuth.Status = "authorized"
+	c.MCP.OAuth.TokenEndpoint = "http://127.0.0.1:1/token"
+	st.UpsertConnector(c)
+
+	out, isErr, invErr := reg.Invoke(context.Background(), "echo", map[string]any{"message": "x"})
+	if invErr == nil {
+		t.Fatalf("want transient invoke error, out=%+v isErr=%v", out, isErr)
+	}
+	if !strings.Contains(invErr.Error(), "暂时不可用") {
+		t.Fatalf("want readable transient error, got %v", invErr)
+	}
+	if out != nil {
+		if code, _ := out["code"].(string); code == "oauth_reauth_required" {
+			t.Fatalf("transient must not return oauth_reauth_required: %+v", out)
+		}
+	}
+	c2, _ := st.GetConnector("mcp-transient")
+	if c2.MCP.OAuth.Status != "authorized" {
+		t.Fatalf("status=%q must stay authorized on transient", c2.MCP.OAuth.Status)
+	}
+}

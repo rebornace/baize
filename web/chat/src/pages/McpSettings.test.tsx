@@ -149,6 +149,54 @@ describe('McpSettings page', () => {
     expect(openSpy).toHaveBeenCalledWith('https://auth.example/authorize?x=1', '_blank', 'noopener,noreferrer')
   })
 
+  it('after 去授权, focus/visibilitychange reloads OAuth status badge', async () => {
+    let status = ''
+    const base = {
+      id: 'remote', type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example/mcp', oauth: { status: '', client_id: 'c1' } },
+      require_approval: [], tools: [],
+    }
+    const openSpy = vi.fn()
+    vi.stubGlobal('open', openSpy)
+    fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+      const u = String(url)
+      if (u.endsWith('/v0/tools')) return json({ tools: [{ name: 't', connector_id: 'remote', source: 'mcp' }] })
+      if (u.includes('/mcp/oauth/start') && init?.method === 'POST') {
+        return json({ authorization_url: 'https://auth.example/authorize?x=1' })
+      }
+      if (u.includes('/v0/connectors/remote')) {
+        return json({ ...base, mcp: { ...base.mcp, oauth: { status, client_id: 'c1' } } })
+      }
+      return json({})
+    })
+    await act(async () => { createRoot(host).render(<MemoryRouter><McpSettings /></MemoryRouter>); await Promise.resolve() })
+    await flush()
+    expect(host.textContent).not.toContain('已授权')
+
+    await act(async () => {
+      ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      ;[...host.querySelectorAll('.dropdown-item')]
+        .find((i) => i.textContent!.includes('去授权'))!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flush(4)
+
+    status = 'authorized'
+    const getsBefore = fetchMock.mock.calls.filter(([u, i]) => String(u).includes('/v0/connectors/remote') && !(i as RequestInit)?.method).length
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await Promise.resolve()
+    })
+    await flush(4)
+    const getsAfter = fetchMock.mock.calls.filter(([u, i]) => String(u).includes('/v0/connectors/remote') && !(i as RequestInit)?.method).length
+    expect(getsAfter).toBeGreaterThan(getsBefore)
+    expect(host.textContent).toContain('已授权')
+  })
+
   it('clicks 断开授权 then POSTs disconnect, toasts, and reloads', async () => {
     let disconnected = false
     const authorized = {
