@@ -65,7 +65,8 @@
 | 启动 Run | `POST /v0/runs` → `{ run_id }` |
 | 查询轨迹 | `GET /v0/runs/{id}` · `GET /v0/runs/{id}/events` |
 | 恢复 HITL | `POST /v0/runs/{id}/resume` |
-| 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook 出站（已实现；UI：**设置 → Webhook**）· 出站失败自动退避重试与死信（SQLite outbox + 进程内 worker；admin 可列表重投） |
+| 事件推送 | SSE `GET /v0/runs/{id}/stream`（已实现）· Webhook 出站（已实现；UI：**设置 → Webhook**）· Run 事件出站失败自动退避重试与死信（`webhook_outbox` + 进程内 worker；admin 可列表重投） |
+| 渠道出站 | IM `SendText` / `SendMedia` 先入持久化 `channel_outbox`（SQLite / Postgres / Memory 三驱动），再由独立 worker 投递适配器；跨重启续投、指数退避与死信；UI：**设置 → 消息 → 微信** 可查看 pending/dead 并手动重投（与 Run `webhook_outbox` 分表）。**注：** 渠道 outbox pending **不**随 Store 热切迁移；热切前宜排空，或接受旧库 due 丢弃 |
 
 `Run` 状态机（最小）：`queued` → `running` → (`waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`。
 
@@ -179,7 +180,7 @@ HTTP 插件侧车在 `POST /v0/tools/{name}/invoke` 成功返回后，亦可按 
 | 多 Agent | 多个 Agent 配置 + Run 间消息（非默认；本版不做） |
 | Skill 包 | **配置形态**（不升格为与 Runtime / Agent / Tool / Connector / Run 并列的第六抽象）：`SKILL.md` 流程正文 + `tools` 清单；无在线自闭环、无市场 |
 | Memory | Run 工作记忆内置；企业 Memory 插件默认关 |
-| Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，支持 `action=resume`（HITL 机器审批），见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；**微信个人号 Channel v0（已实现）** — iLink 扫码 + 长轮询私信、会话 `owner_id`、与 `/ui` 权限内双向同步，见 [README 微信 Channel](../README.zh-CN.md#微信-channel个人号-ilink)；企微 / 钉钉为后续同契约插件（非本版） |
+| Channel 参考 | **HTTP Webhook Inbox v1（已实现）** — `POST /v0/inbox/{channel_id}` + HMAC 验签，支持 `action=resume`（HITL 机器审批），见 [README 生产集成](../README.zh-CN.md#生产集成webhook-inbox) 与 [`examples/inbox-alert/`](../examples/inbox-alert/)；**微信个人号 Channel v0（已实现）** — 进程外 `weixin-adapter` + webhook 渠道实例（iLink 扫码 + 长轮询私信）、会话 `owner_id`、与 `/ui` 权限内双向同步，见 [README 微信 Channel](../README.zh-CN.md#微信-channel个人号-ilink)；**渠道出站 durable outbox（CH-OUTBOX，已实现）** — `channel_outbox` + worker，设置 → 微信可重投；企微 / 钉钉为后续同契约插件（非本版） |
 
 ### Skill：发现与激活（语义）
 

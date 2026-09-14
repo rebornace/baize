@@ -621,12 +621,21 @@ export const WEIXIN = {
   toastProcessStart: '适配器进程已启动',
   toastProcessStop: '适配器进程已停止',
   toastProcessRestart: '适配器进程已重启',
+  toastRetryQueued: '已加入重试队列',
   confirmLogoutTitle: '登出微信渠道？',
   confirmLogoutBody: '登出后需重新扫码登录，正在进行的微信对话将无法继续收发。',
   confirmLogoutOk: '登出',
   confirmStopTitle: '停止适配器进程？',
   confirmStopBody: '停止后微信渠道不再收发消息，可随时再点「启动进程」恢复。',
   confirmStopOk: '停止',
+  outboundTitle: '最近出站',
+  outboundHint: '可查看未发出或多次失败的消息，并可重试。',
+  outboundEmpty: '暂无待发送或已停止的记录。',
+  outboundRetry: '重试',
+  outboundRetrying: '重试中…',
+  statusPending: '待发送',
+  statusDead: '已停止',
+  statusDelivered: '已发送',
 } as const
 
 // ---- 设置页：外部来信（Inbox） ----

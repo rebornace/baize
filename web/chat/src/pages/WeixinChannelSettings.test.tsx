@@ -7,7 +7,10 @@ import { GateContext } from '../gateContext'
 import { WEIXIN } from '../strings'
 import { WeixinChannelSettings } from './WeixinChannelSettings'
 
-async function renderPage(role: 'admin' | 'operator' = 'admin') {
+async function renderPage(
+  role: 'admin' | 'operator' = 'admin',
+  deliveries: api.ChannelOutboundDelivery[] = [],
+) {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
@@ -18,6 +21,7 @@ async function renderPage(role: 'admin' | 'operator' = 'admin') {
     enabled: true,
     running: true,
   })
+  vi.spyOn(api, 'getChannelOutboundDeliveries').mockResolvedValue(deliveries)
   await act(async () => {
     root.render(
       createElement(
@@ -77,6 +81,40 @@ describe('WeixinChannelSettings UI', () => {
       await new Promise((r) => setTimeout(r, 0))
     })
     expect(logout).toHaveBeenCalled()
+
+    root.unmount()
+    host.remove()
+  })
+
+  it('shows outbound deliveries title and retry for dead row', async () => {
+    const retry = vi.spyOn(api, 'retryChannelOutboundDelivery').mockResolvedValue({ status: 'queued' })
+    const { host, root } = await renderPage('admin', [
+      {
+        id: 'ob_dead',
+        status: 'dead',
+        kind: 'text',
+        peer_id: 'p1',
+        conversation_id: 'weixin:a:p1',
+        run_id: 'run1',
+        attempt: 5,
+        max_attempts: 5,
+        last_error: 'timeout',
+      },
+    ])
+
+    expect(host.textContent).toContain(WEIXIN.outboundTitle)
+    expect(host.textContent).not.toMatch(/5xx|死信/)
+    const retryBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(WEIXIN.outboundRetry),
+    )
+    expect(retryBtn).toBeTruthy()
+
+    await act(async () => {
+      retryBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(retry).toHaveBeenCalledWith('weixin', 'ob_dead')
 
     root.unmount()
     host.remove()

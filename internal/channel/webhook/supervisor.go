@@ -92,6 +92,11 @@ func (s *supervisor) spawn(ctx context.Context) (*exec.Cmd, error) {
 	cmd.Env = append(os.Environ(), s.env...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Drop a previous run's listen.port before Start so waitPortFile cannot
+	// return a stale host:port while the new child binds elsewhere.
+	if s.portFile != "" {
+		_ = os.Remove(s.portFile)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %q: %w", s.command, err)
 	}

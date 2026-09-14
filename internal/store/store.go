@@ -183,6 +183,57 @@ func WebhookOutboxDeliveryKey(runID string, kind WebhookOutboxKind, eventIndex i
 	return fmt.Sprintf("%s:%s:%d", runID, kind, eventIndex)
 }
 
+const ChannelOutboxMaxAttempts = 5
+
+type ChannelOutboxStatus string
+
+const (
+	ChannelOutboxPending   ChannelOutboxStatus = "pending"
+	ChannelOutboxDelivered ChannelOutboxStatus = "delivered"
+	ChannelOutboxDead      ChannelOutboxStatus = "dead"
+)
+
+type ChannelOutboxKind string
+
+const (
+	ChannelOutboxKindText  ChannelOutboxKind = "text"
+	ChannelOutboxKindMedia ChannelOutboxKind = "media"
+)
+
+type ChannelOutboxEntry struct {
+	ID             string
+	DeliveryKey    string
+	Channel        string
+	Kind           ChannelOutboxKind
+	PeerID         string
+	ConversationID string
+	Account        string
+	RunID          string
+	PayloadJSON    []byte
+	BlobKeysJSON   []byte
+	TargetURL      string
+	Attempt        int
+	MaxAttempts    int
+	Status         ChannelOutboxStatus
+	LastError      string
+	NextRetryAt    time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+var ErrChannelOutboxNotFound = errors.New("channel outbox entry not found")
+
+// ChannelOutboxDeliveryKey builds a unique outbox idempotency key.
+// uniqueID must be unique per outbound call (typically a UUID). It must not be a
+// process-local monotonic sequence: those reset on restart and collide with
+// delivered history under PutChannelOutboxIfAbsent (pending|delivered active).
+func ChannelOutboxDeliveryKey(channel, conversationID string, kind ChannelOutboxKind, runID, uniqueID string) string {
+	if runID == "" {
+		runID = "_"
+	}
+	return fmt.Sprintf("%s:%s:%s:%s:%s", channel, conversationID, kind, runID, uniqueID)
+}
+
 // InboxDeliveryTTL is the idempotency retention window. GetInboxDelivery treats
 // rows older than this as misses; PutInboxDelivery may overwrite expired rows.
 const InboxDeliveryTTL = 24 * time.Hour
@@ -380,6 +431,13 @@ type Store interface {
 	GetWebhookOutbox(id string) (WebhookOutboxEntry, error)
 	UpdateWebhookOutbox(entry WebhookOutboxEntry) error
 	ResetWebhookOutboxRetry(id string) error
+
+	PutChannelOutboxIfAbsent(entry ChannelOutboxEntry) (created bool, id string, err error)
+	ListChannelOutboxDue(now time.Time, limit int) ([]ChannelOutboxEntry, error)
+	ListChannelOutbox(channel string, statuses []ChannelOutboxStatus, limit int) ([]ChannelOutboxEntry, error)
+	GetChannelOutbox(id string) (ChannelOutboxEntry, error)
+	UpdateChannelOutbox(entry ChannelOutboxEntry) error
+	ResetChannelOutboxRetry(id string) error
 
 	UpsertMCPExportIdentity(MCPExportIdentity) error
 	GetMCPExportIdentity(id string) (MCPExportIdentity, error)

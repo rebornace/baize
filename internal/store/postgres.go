@@ -84,6 +84,28 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS channel_outbox (
+  id TEXT PRIMARY KEY,
+  delivery_key TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  peer_id TEXT,
+  conversation_id TEXT,
+  account TEXT,
+  run_id TEXT,
+  payload_json TEXT NOT NULL,
+  blob_keys_json TEXT,
+  target_url TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  status TEXT NOT NULL,
+  last_error TEXT,
+  next_retry_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_channel_outbox_pending ON channel_outbox(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_channel_outbox_channel_status ON channel_outbox(channel, status);
 CREATE TABLE IF NOT EXISTS mcp_export_identities (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

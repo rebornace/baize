@@ -1,21 +1,33 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import {
+  getChannelOutboundDeliveries,
   getWeixinLoginStatus,
   getWeixinSettings,
   logoutWeixin,
   putWeixinSettings,
   restartWeixinProcess,
+  retryChannelOutboundDelivery,
   startWeixinLogin,
   startWeixinProcess,
   stopWeixinProcess,
+  type ChannelOutboundDelivery,
   type WeixinChannelSettings,
 } from '../api'
-import { ConfirmDialog, PageHeader, ToastRegion, useToast } from '../components/ui'
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  PageHeader,
+  ToastRegion,
+  useToast,
+  type BadgeTone,
+} from '../components/ui'
 import { useGate } from '../gateContext'
 import { qrDataUrlFromText } from '../qrDataUrl'
 import { WEIXIN, friendlyError } from '../strings'
 
 const POLL_MS = 2000
+const WEIXIN_CHANNEL = 'weixin'
 
 export function parseAllowlistText(text: string): string[] {
   return text
@@ -41,6 +53,38 @@ export function loginStatusLabel(status: string): string {
   }
 }
 
+export function formatOutboundStatus(status: string): string {
+  switch (status) {
+    case 'dead':
+      return WEIXIN.statusDead
+    case 'pending':
+      return WEIXIN.statusPending
+    case 'delivered':
+      return WEIXIN.statusDelivered
+    default:
+      return status
+  }
+}
+
+function outboundBadgeTone(status: string): BadgeTone {
+  switch (status) {
+    case 'dead':
+      return 'danger'
+    case 'pending':
+      return 'warning'
+    case 'delivered':
+      return 'success'
+    default:
+      return 'neutral'
+  }
+}
+
+export function outboundSummary(d: ChannelOutboundDelivery): string {
+  const peer = d.peer_id || d.conversation_id || d.run_id || d.id
+  const err = d.last_error ? ` · ${d.last_error}` : ''
+  return `${peer} · ${d.kind} · ${d.attempt}/${d.max_attempts}${err}`
+}
+
 export function WeixinChannelSettings() {
   const [agentId, setAgentId] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -48,6 +92,8 @@ export function WeixinChannelSettings() {
   const [enabled, setEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [deliveries, setDeliveries] = useState<ChannelOutboundDelivery[]>([])
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const [running, setRunning] = useState<boolean | null>(null)
   const [runReason, setRunReason] = useState<string | null>(null)
   const [confirmLogout, setConfirmLogout] = useState(false)
@@ -56,6 +102,7 @@ export function WeixinChannelSettings() {
 
   const { role } = useGate()
   const isAdmin = role === 'admin'
+  const uiBusy = busy || retryingId !== null
 
   const [ticket, setTicket] = useState<string | null>(null)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
@@ -117,17 +164,26 @@ export function WeixinChannelSettings() {
     }
   }, [])
 
+  const loadDeliveries = useCallback(async () => {
+    try {
+      const rows = await getChannelOutboundDeliveries(WEIXIN_CHANNEL)
+      setDeliveries(rows)
+    } catch {
+      setDeliveries([])
+    }
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const s = await getWeixinSettings()
+      const [s] = await Promise.all([getWeixinSettings(), loadDeliveries()])
       applySettings(s)
     } catch (err) {
       pushError(err, WEIXIN.loadFailed)
     } finally {
       setLoading(false)
     }
-  }, [applySettings, pushError])
+  }, [applySettings, loadDeliveries, pushError])
 
   useEffect(() => {
     void load()
@@ -258,6 +314,19 @@ export function WeixinChannelSettings() {
     }
   }
 
+  const onRetry = async (id: string) => {
+    setRetryingId(id)
+    try {
+      await retryChannelOutboundDelivery(WEIXIN_CHANNEL, id)
+      push({ tone: 'success', title: WEIXIN.toastRetryQueued })
+      await loadDeliveries()
+    } catch (err) {
+      pushError(err)
+    } finally {
+      setRetryingId(null)
+    }
+  }
+
   return (
     <div className="settings-section">
       <PageHeader title={WEIXIN.title} description={WEIXIN.description} />
@@ -285,7 +354,7 @@ export function WeixinChannelSettings() {
             <button
               type="button"
               className="btn primary"
-              disabled={busy}
+              disabled={uiBusy}
               onClick={() => void onProcessAction('start')}
             >
               启动进程
@@ -293,7 +362,7 @@ export function WeixinChannelSettings() {
             <button
               type="button"
               className="btn ghost"
-              disabled={busy}
+              disabled={uiBusy}
               onClick={() => void onProcessAction('restart')}
             >
               重启进程
@@ -301,7 +370,7 @@ export function WeixinChannelSettings() {
             <button
               type="button"
               className="btn ghost"
-              disabled={busy}
+              disabled={uiBusy}
               onClick={() => setConfirmStop(true)}
             >
               停止进程
@@ -316,11 +385,11 @@ export function WeixinChannelSettings() {
       <section className="weixin-login-block">
         <h2 className="settings-subheading">登录</h2>
         <div className="weixin-login-actions">
-          <button type="button" className="btn primary" disabled={busy} onClick={() => void onStartLogin()}>
+          <button type="button" className="btn primary" disabled={uiBusy} onClick={() => void onStartLogin()}>
             {qrUrl ? '刷新二维码' : '获取登录二维码'}
           </button>
           {isAdmin && (
-            <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirmLogout(true)}>
+            <button type="button" className="btn ghost" disabled={uiBusy} onClick={() => setConfirmLogout(true)}>
               登出
             </button>
           )}
@@ -350,7 +419,7 @@ export function WeixinChannelSettings() {
               className="settings-input"
               value={agentId}
               onChange={(e) => setAgentId(e.target.value)}
-              disabled={busy}
+              disabled={uiBusy}
               placeholder="ticket-agent"
             />
           </label>
@@ -360,7 +429,7 @@ export function WeixinChannelSettings() {
               className="settings-input"
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
-              disabled={busy}
+              disabled={uiBusy}
               placeholder="alice 或 channel:weixin"
             />
           </label>
@@ -371,7 +440,7 @@ export function WeixinChannelSettings() {
               rows={5}
               value={allowlistText}
               onChange={(e) => setAllowlistText(e.target.value)}
-              disabled={busy}
+              disabled={uiBusy}
               placeholder="peer_id_1&#10;peer_id_2"
             />
           </label>
@@ -380,14 +449,45 @@ export function WeixinChannelSettings() {
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              disabled={busy}
+              disabled={uiBusy}
             />
             启用微信渠道
           </label>
-          <button type="submit" className="btn primary" disabled={busy}>
+          <button type="submit" className="btn primary" disabled={uiBusy}>
             {busy ? '保存中…' : '保存设置'}
           </button>
         </form>
+      )}
+
+      {!loading && isAdmin && (
+        <section className="settings-webhook-deliveries">
+          <h2 className="settings-subheading">{WEIXIN.outboundTitle}</h2>
+          <p className="settings-meta">{WEIXIN.outboundHint}</p>
+          {deliveries.length === 0 ? (
+            <p className="settings-muted">{WEIXIN.outboundEmpty}</p>
+          ) : (
+            <ul className="settings-list">
+              {deliveries.map((d) => (
+                <li key={d.id} className="settings-list-item">
+                  <div className="settings-tool-line">
+                    <Badge tone={outboundBadgeTone(d.status)}>{formatOutboundStatus(d.status)}</Badge>
+                    <span>{outboundSummary(d)}</span>
+                  </div>
+                  {(d.status === 'dead' || d.status === 'pending') && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={uiBusy}
+                      onClick={() => void onRetry(d.id)}
+                    >
+                      {retryingId === d.id ? WEIXIN.outboundRetrying : WEIXIN.outboundRetry}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       <ConfirmDialog
@@ -396,7 +496,7 @@ export function WeixinChannelSettings() {
         title={WEIXIN.confirmLogoutTitle}
         body={WEIXIN.confirmLogoutBody}
         confirmText={WEIXIN.confirmLogoutOk}
-        busy={busy}
+        busy={uiBusy}
         onCancel={() => setConfirmLogout(false)}
         onConfirm={() => void onLogout()}
       />
@@ -407,7 +507,7 @@ export function WeixinChannelSettings() {
         title={WEIXIN.confirmStopTitle}
         body={WEIXIN.confirmStopBody}
         confirmText={WEIXIN.confirmStopOk}
-        busy={busy}
+        busy={uiBusy}
         onCancel={() => setConfirmStop(false)}
         onConfirm={() => void onProcessAction('stop')}
       />
