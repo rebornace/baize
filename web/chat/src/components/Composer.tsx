@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { activeMention, replaceMention } from '../skillMention'
-import type { SkillSummary } from '../api'
+import { filterLoginEntries } from '../loginEntry'
+import { LOGIN_AT } from '../strings'
+import type { LoginEntry, SkillSummary } from '../api'
+import { LoginParamsModal } from './LoginParamsModal'
 
 const ACCEPT =
   '.txt,.md,.csv,.docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.gif'
@@ -15,6 +18,10 @@ export interface ComposerProps {
   draft?: string
   /** Skills available for @-completion. Omit to disable the popup. */
   skills?: SkillSummary[]
+  /** Login catalog entries mixed into the @/ popup (above skills). */
+  loginEntries?: LoginEntry[]
+  /** Fired when a login entry is chosen (after optional params modal). */
+  onPickLogin?: (entry: LoginEntry, args?: Record<string, unknown>) => void | Promise<void>
   /** Optional leading slot inside composer-box (before the attach button). */
   toolbar?: ReactNode
 }
@@ -23,14 +30,29 @@ interface Completion {
   start: number
   end: number
   query: string
-  matches: SkillSummary[]
+  loginMatches: LoginEntry[]
+  skillMatches: SkillSummary[]
+  /** Flat index across loginMatches then skillMatches. */
   activeIndex: number
 }
 
-export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerProps) {
+function flatCount(c: Completion): number {
+  return c.loginMatches.length + c.skillMatches.length
+}
+
+export function Composer({
+  disabled,
+  onSend,
+  draft,
+  skills,
+  loginEntries,
+  onPickLogin,
+  toolbar,
+}: ComposerProps) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [completion, setCompletion] = useState<Completion | null>(null)
+  const [paramsEntry, setParamsEntry] = useState<LoginEntry | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -53,8 +75,23 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
     return map
   }, [skills])
 
+  const clearMention = (start: number, end: number) => {
+    const before = text.slice(0, start)
+    const after = text.slice(end)
+    const next = before + after
+    setText(next)
+    requestAnimationFrame(() => {
+      const el = taRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(before.length, before.length)
+    })
+  }
+
   const updateCompletion = (value: string, caret: number) => {
-    if (!skills || skills.length === 0) {
+    const skillList = skills ?? []
+    const loginList = loginEntries ?? []
+    if (skillList.length === 0 && loginList.length === 0) {
       setCompletion(null)
       return
     }
@@ -64,8 +101,9 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
       return
     }
     const q = active.query.toLowerCase()
-    const matches = skills.filter((s) => s.id.toLowerCase().startsWith(q))
-    if (matches.length === 0) {
+    const skillMatches = skillList.filter((s) => s.id.toLowerCase().startsWith(q))
+    const loginMatches = filterLoginEntries(loginList, active.query)
+    if (skillMatches.length === 0 && loginMatches.length === 0) {
       setCompletion(null)
       return
     }
@@ -73,12 +111,13 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
       start: active.start,
       end: active.end,
       query: active.query,
-      matches,
+      loginMatches,
+      skillMatches,
       activeIndex: 0,
     })
   }
 
-  const applyCompletion = (pick: SkillSummary) => {
+  const applySkill = (pick: SkillSummary) => {
     if (!completion) return
     const { text: next, caret } = replaceMention(text, completion.start, completion.end, pick.id)
     setText(next)
@@ -89,6 +128,29 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
       el.focus()
       el.setSelectionRange(caret, caret)
     })
+  }
+
+  const applyLogin = (pick: LoginEntry) => {
+    if (!completion) return
+    clearMention(completion.start, completion.end)
+    setCompletion(null)
+    if ((pick.required ?? []).length === 0) {
+      void onPickLogin?.(pick)
+      return
+    }
+    setParamsEntry(pick)
+  }
+
+  const pickActive = () => {
+    if (!completion) return
+    const nLogin = completion.loginMatches.length
+    if (completion.activeIndex < nLogin) {
+      const pick = completion.loginMatches[completion.activeIndex]
+      if (pick) applyLogin(pick)
+      return
+    }
+    const pick = completion.skillMatches[completion.activeIndex - nLogin]
+    if (pick) applySkill(pick)
   }
 
   const submit = async () => {
@@ -105,29 +167,26 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (completion) {
+      const total = flatCount(completion)
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setCompletion((c) =>
-          c ? { ...c, activeIndex: (c.activeIndex + 1) % c.matches.length } : c,
+          c && total > 0 ? { ...c, activeIndex: (c.activeIndex + 1) % total } : c,
         )
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         setCompletion((c) =>
-          c
-            ? {
-                ...c,
-                activeIndex: (c.activeIndex - 1 + c.matches.length) % c.matches.length,
-              }
+          c && total > 0
+            ? { ...c, activeIndex: (c.activeIndex - 1 + total) % total }
             : c,
         )
         return
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
-        const pick = completion.matches[completion.activeIndex]
-        if (pick) applyCompletion(pick)
+        pickActive()
         return
       }
       if (e.key === 'Escape') {
@@ -166,6 +225,10 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
   const openFilePicker = () => {
     fileInputRef.current?.click()
   }
+
+  const showPopup =
+    completion != null &&
+    (completion.loginMatches.length > 0 || completion.skillMatches.length > 0)
 
   return (
     <div className="composer">
@@ -255,28 +318,71 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
         >
           发送
         </button>
-        {completion && completion.matches.length > 0 && (
-          <ul className="composer-complete" role="listbox" aria-label="Skill 补全">
-            {completion.matches.map((s, i) => (
+        {showPopup && completion && (
+          <ul className="composer-complete" role="listbox" aria-label="补全">
+            {completion.loginMatches.length > 0 && (
+              <li className="composer-complete-section" role="presentation">
+                {LOGIN_AT.sectionLogin}
+              </li>
+            )}
+            {completion.loginMatches.map((entry, i) => (
               <li
-                key={s.id}
+                key={`login:${entry.id}`}
                 role="option"
                 aria-selected={i === completion.activeIndex}
-                className={i === completion.activeIndex ? 'composer-complete-item active' : 'composer-complete-item'}
+                className={
+                  i === completion.activeIndex
+                    ? 'composer-complete-item active'
+                    : 'composer-complete-item'
+                }
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  applyCompletion(s)
+                  applyLogin(entry)
                 }}
                 onMouseEnter={() =>
                   setCompletion((c) => (c ? { ...c, activeIndex: i } : c))
                 }
               >
-                <span className="composer-complete-id">{s.id}</span>
-                {s.description ? (
-                  <span className="composer-complete-desc">{s.description}</span>
-                ) : null}
+                <span className="composer-complete-id">
+                  {entry.title}
+                  {entry.logged_in ? (
+                    <span className="composer-complete-badge">{LOGIN_AT.loggedInBadge}</span>
+                  ) : null}
+                </span>
               </li>
             ))}
+            {completion.skillMatches.length > 0 && completion.loginMatches.length > 0 && (
+              <li className="composer-complete-section" role="presentation">
+                {LOGIN_AT.sectionSkills}
+              </li>
+            )}
+            {completion.skillMatches.map((s, i) => {
+              const flat = completion.loginMatches.length + i
+              return (
+                <li
+                  key={`skill:${s.id}`}
+                  role="option"
+                  aria-selected={flat === completion.activeIndex}
+                  className={
+                    flat === completion.activeIndex
+                      ? 'composer-complete-item active'
+                      : 'composer-complete-item'
+                  }
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    applySkill(s)
+                  }}
+                  onMouseEnter={() =>
+                    setCompletion((c) => (c ? { ...c, activeIndex: flat } : c))
+                  }
+                >
+                  <span className="composer-complete-id">{s.id}</span>
+                  {s.description ? (
+                    <span className="composer-complete-desc">{s.description}</span>
+                  ) : null}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
@@ -286,6 +392,17 @@ export function Composer({ disabled, onSend, draft, skills, toolbar }: ComposerP
           {skillsById.size > 6 ? '…' : ''}
         </span>
       )}
+      <LoginParamsModal
+        open={paramsEntry != null}
+        entry={paramsEntry}
+        onCancel={() => setParamsEntry(null)}
+        onSubmit={async (args) => {
+          const picked = paramsEntry
+          if (!picked) return
+          await onPickLogin?.(picked, args)
+          setParamsEntry(null)
+        }}
+      />
     </div>
   )
 }

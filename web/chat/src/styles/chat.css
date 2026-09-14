@@ -1490,6 +1490,16 @@
   overflow-y: auto;
 }
 
+.composer-complete-section {
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  cursor: default;
+  list-style: none;
+}
+
 .composer-complete-item {
   display: flex;
   flex-direction: column;
@@ -1504,9 +1514,18 @@
 }
 
 .composer-complete-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-weight: 600;
   font-size: 0.875rem;
   color: var(--text);
+}
+
+.composer-complete-badge {
+  font-weight: 500;
+  font-size: 0.7rem;
+  color: var(--success, var(--text-muted));
 }
 
 .composer-complete-desc {
@@ -1515,6 +1534,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.login-params-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .composer-hint {
