@@ -124,11 +124,11 @@ func TestMCPOAuthStartCallbackDisconnect(t *testing.T) {
 			})
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
 			_ = json.NewEncoder(w).Encode(map[string]string{
-				"issuer":                            asBase,
-				"authorization_endpoint":            asBase + "/authorize",
-				"token_endpoint":                    asBase + "/token",
-				"registration_endpoint":             asBase + "/register",
-				"code_challenge_methods_supported":  "S256",
+				"issuer":                           asBase,
+				"authorization_endpoint":           asBase + "/authorize",
+				"token_endpoint":                   asBase + "/token",
+				"registration_endpoint":            asBase + "/register",
+				"code_challenge_methods_supported": "S256",
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/register":
 			_ = json.NewEncoder(w).Encode(map[string]any{
