@@ -1,10 +1,11 @@
 # CLEAN-PERF-HOT：可证性能 + README 回填
 
-> 状态：**设计已批准**（2026-09-15 产品对话确认方案 3）  
+> 状态：**已交付**（2026-09-15；四探针已测、保持现状；README 中/英已回填；计划 [`../plans/2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)）  
 > 史诗：CLEAN（AUDIT → CONTRACT → STRUCT → GATES → **PERF-HOT**）  
 > 父规格：[`2026-09-15-oss-quality-cleanup-design.md`](./2026-09-15-oss-quality-cleanup-design.md) §4.5  
 > 候选来源：[`../notes/2026-09-15-clean-audit.md`](../notes/2026-09-15-clean-audit.md) §7  
-> 前置：GATES 已交付
+> 前置：GATES 已交付  
+> 基线笔记：[`../notes/2026-09-15-clean-perf-hot.md`](../notes/2026-09-15-clean-perf-hot.md)
 
 ## 1. 目标
 
@@ -69,3 +70,4 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-09-15 | 初稿：方案 3；产品对话批准 |
+| 2026-09-15 | 已交付：四探针基线 + 保持现状；README/账本收口；任务 7 N/A |

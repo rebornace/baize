@@ -277,13 +277,13 @@ $env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
 - `docs/superpowers/specs/2026-09-15-oss-quality-cleanup-design.md` / PERF 详设状态  
 - 可选：AUDIT §7 加一句「PERF-HOT 已测」
 
-- [ ] **步骤 1：README**
+- [x] **步骤 1：README**
 
 若有数字：表格列出探针名、中位数、环境一句、链到 `docs/developers/performance.md`。  
 若无优化：明确写「已在本地跑完四探针；当前实现保持现状；复现见 performance.md」——**仍不要留「将在后续 PERF 回填」空头支票**。
 
-- [ ] **步骤 2：账本** — PERF-HOT **已交付**；CLEAN 史诗标完成或「质量收口完毕」  
-- [ ] **步骤 3：回归**
+- [x] **步骤 2：账本** — PERF-HOT **已交付**；CLEAN 史诗标完成或「质量收口完毕」  
+- [x] **步骤 3：回归**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
@@ -293,8 +293,8 @@ Push-Location web\chat; npm run lint; npm test; npx tsc --noEmit; Pop-Location
 
 （bench 不进默认 CI。）
 
-- [ ] **步骤 4：Commit** `docs: CLEAN-PERF-HOT 交付与 README/账本收口`  
-- [ ] **步骤 5：停住** — finishing 菜单；提示双推后看 CI
+- [x] **步骤 4：Commit** `docs: CLEAN-PERF-HOT 交付与 README/账本收口`  
+- [x] **步骤 5：停住** — finishing 菜单；提示双推后看 CI
 
 ---
 

@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **GATES 已交付；PERF-HOT 计划就绪** | PERF-HOT 详设 [`2026-09-15-clean-perf-hot-design.md`](../specs/2026-09-15-clean-perf-hot-design.md)；计划 [`2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)；**下一动作：执行 PERF-HOT** |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **已交付（质量收口完毕）** | PERF-HOT 已交付：四探针已测、保持现状；README 中/英已回填；详设 [`2026-09-15-clean-perf-hot-design.md`](../specs/2026-09-15-clean-perf-hot-design.md)；计划 [`2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)；笔记 [`2026-09-15-clean-perf-hot.md`](./2026-09-15-clean-perf-hot.md) |
 
 ---
 
@@ -128,7 +128,7 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **CLEAN** — GATES 已交付；下一动作执行 PERF-HOT  
+1. ~~**CLEAN**~~（已交付：AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT；质量收口完毕）  
 
 2. ~~**DOC**~~（已交付）  
 3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
