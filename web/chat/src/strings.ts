@@ -46,6 +46,8 @@ export const CONNECTORS = liveGroup('CONNECTORS')
 export const MCP_EXPORTS = liveGroup('MCP_EXPORTS')
 export const WEIXIN = liveGroup('WEIXIN')
 export const INBOX = liveGroup('INBOX')
+export const LOCALE = liveGroup('LOCALE')
+export const WORKFLOW = liveGroup('WORKFLOW')
 
 /** 内部档位 id -> 对外叫法；未知值按「标准」。 */
 export function tierLabel(tier?: string): string {

@@ -689,4 +689,13 @@ export const enPack = {
     progress: (current: number, total: number) => `Step ${current} / ${total}`,
     step: (n: number) => `Step ${n}`,
   },
+  LOCALE: {
+    sectionTitle: 'Interface language',
+    sectionHint: 'Stored only in this browser; keeps your choice after refresh.',
+    optionZh: '中文',
+    optionEn: 'English',
+    chipAria: 'Interface language',
+    chipZh: '中',
+    chipEn: 'EN',
+  },
 } satisfies StringsPack

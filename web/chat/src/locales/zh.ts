@@ -681,6 +681,15 @@ export const zhPack = {
     progress: (current: number, total: number) => `第 ${current} / 共 ${total} 步`,
     step: (n: number) => `步骤 ${n}`,
   },
+  LOCALE: {
+    sectionTitle: '界面语言',
+    sectionHint: '仅保存在本机浏览器，刷新后仍有效。',
+    optionZh: '中文',
+    optionEn: 'English',
+    chipAria: '界面语言',
+    chipZh: '中',
+    chipEn: 'EN',
+  },
 }
 
 /** Shape shared by zh/en packs (string fields widen beyond zh literals). */

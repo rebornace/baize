@@ -36,6 +36,7 @@ import { Composer } from '../components/Composer'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
+import { LanguageChip } from '../components/LanguageChip'
 import { ThinkingChip } from '../components/ThinkingChip'
 import { ToolCard } from '../components/ToolCard'
 import { UserBubble } from '../components/UserBubble'
@@ -1229,29 +1230,32 @@ export function ChatPage() {
             skills={skills}
             onSend={onSend}
             toolbar={
-              modelProfiles.length > 0 ? (
-                <>
-                  <ModelChip
-                    profiles={modelProfiles}
-                    value={selectedModelId}
-                    onChange={onChooseModel}
-                    disabled={composerDisabled}
-                  />
-                  <ThinkingChip
-                    value={thinkingLevel}
-                    onChange={onChooseThinking}
-                    disabled={composerDisabled}
-                  />
-                </>
-              ) : role === 'admin' ? (
-                <Link to="/settings/models" className="model-chip model-chip-empty">
-                  {CHAT.addModel}
-                </Link>
-              ) : (
-                <span className="model-chip model-chip-empty" aria-disabled="true">
-                  {CHAT.noModelConfigured}
-                </span>
-              )
+              <>
+                {modelProfiles.length > 0 ? (
+                  <>
+                    <ModelChip
+                      profiles={modelProfiles}
+                      value={selectedModelId}
+                      onChange={onChooseModel}
+                      disabled={composerDisabled}
+                    />
+                    <ThinkingChip
+                      value={thinkingLevel}
+                      onChange={onChooseThinking}
+                      disabled={composerDisabled}
+                    />
+                  </>
+                ) : role === 'admin' ? (
+                  <Link to="/settings/models" className="model-chip model-chip-empty">
+                    {CHAT.addModel}
+                  </Link>
+                ) : (
+                  <span className="model-chip model-chip-empty" aria-disabled="true">
+                    {CHAT.noModelConfigured}
+                  </span>
+                )}
+                <LanguageChip />
+              </>
             }
           />
         </div>
