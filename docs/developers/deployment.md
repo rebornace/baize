@@ -96,7 +96,7 @@ docker compose -f docker-compose.weixin.yml up --build
 
 ### systemd
 
-单元来自 [`deploy/systemd/`](../../deploy/systemd/)：
+单元来自 [`deploy/systemd/`](../../deploy/systemd/)。也可从 [GitHub Releases](https://github.com/rebornace/baize/releases) 下载预编译 `linux` 包，解压到 `/opt/baize` 后跳过下面的 `go build`：
 
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /opt/baize/baize ./cmd/baize

@@ -96,7 +96,7 @@ Conventions:
 
 ### systemd
 
-Units live under [`deploy/systemd/`](../../deploy/systemd/):
+Units live under [`deploy/systemd/`](../../deploy/systemd/). You can also download a prebuilt `linux` archive from [GitHub Releases](https://github.com/rebornace/baize/releases), unpack under `/opt/baize`, and skip the `go build` lines below:
 
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /opt/baize/baize ./cmd/baize
