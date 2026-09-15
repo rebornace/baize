@@ -741,7 +741,13 @@ export const zhPack = {
     dark: '深色',
   },
   SETTINGS_NAV: {
+    title: '设置',
     overview: '总览',
+    backToChat: '返回聊天',
+    closeMenu: '关闭菜单',
+    openMenu: '打开设置菜单',
+    navAria: '设置导航',
+    adminOnly: '仅管理员',
     groupAssistant: '助手',
     groupConnect: '连接',
     groupMessaging: '消息',
@@ -775,6 +781,11 @@ export const zhPack = {
     storageDesc: '对话和数据保存在哪里（本地文件或数据库）',
     runtime: '运行参数',
     runtimeDesc: '压缩、超时等运行行为，修改后即时生效',
+    homeSubtitle: '管理助手的模型、能力和对外连接',
+    refreshStatus: '刷新状态',
+    onboardAdmin: '先添加一个模型，助手才能开始对话。',
+    onboardOperator: '还没有可用模型，请联系管理员添加。',
+    goAddModel: '去添加',
   },
   MODEL_SELECT: {
     visionNone:

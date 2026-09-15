@@ -3,11 +3,15 @@ import { Menu } from 'lucide-react'
 import { ThemeToggle } from '../components/ui'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { useGate } from '../gateContext'
+import { useLocale } from '../locale/LocaleContext'
 import { OVERVIEW_ITEM, SETTINGS_GROUPS, visibleNavItems } from '../settingsNav'
 import { useDrawer } from '../useDrawer'
 
 export function SettingsLayout() {
   const { role } = useGate()
+  // Subscribe so sidebar labels rebuild when language changes (without full page reload).
+  const { strings } = useLocale()
+  const navCopy = strings.SETTINGS_NAV
   const nav = visibleNavItems(role)
   const drawer = useDrawer()
   return (
@@ -15,11 +19,11 @@ export function SettingsLayout() {
       <button
         type="button"
         className="app-drawer-scrim"
-        aria-label="关闭菜单"
+        aria-label={navCopy.closeMenu}
         onClick={drawer.close}
       />
-      <aside className="settings-nav" aria-label="设置导航">
-        <p className="settings-nav-title">设置</p>
+      <aside className="settings-nav" aria-label={navCopy.navAria}>
+        <p className="settings-nav-title">{navCopy.title}</p>
         <nav className="settings-nav-list">
           <NavLink
             to={OVERVIEW_ITEM.to}
@@ -57,7 +61,7 @@ export function SettingsLayout() {
         <div className="settings-nav-bottom">
           <ThemeToggle />
           <Link to="/" className="settings-back">
-            返回聊天
+            {navCopy.backToChat}
           </Link>
         </div>
         <SidebarResizer />
@@ -67,12 +71,12 @@ export function SettingsLayout() {
           <button
             type="button"
             className="app-menu-btn"
-            aria-label="打开设置菜单"
+            aria-label={navCopy.openMenu}
             onClick={drawer.open}
           >
             <Menu size={20} aria-hidden="true" />
           </button>
-          <strong>设置</strong>
+          <strong>{navCopy.title}</strong>
         </div>
         <Outlet />
       </main>

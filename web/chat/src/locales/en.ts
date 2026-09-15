@@ -749,7 +749,13 @@ export const enPack = {
     dark: 'Dark',
   },
   SETTINGS_NAV: {
+    title: 'Settings',
     overview: 'Overview',
+    backToChat: 'Back to chat',
+    closeMenu: 'Close menu',
+    openMenu: 'Open settings menu',
+    navAria: 'Settings navigation',
+    adminOnly: 'Admin only',
     groupAssistant: 'Assistant',
     groupConnect: 'Connect',
     groupMessaging: 'Messaging',
@@ -785,6 +791,11 @@ export const enPack = {
     storageDesc: 'Where conversations and data are stored (local file or database)',
     runtime: 'Runtime settings',
     runtimeDesc: 'Compaction, timeouts, and other runtime behavior; changes apply immediately',
+    homeSubtitle: 'Manage models, capabilities, and external connections',
+    refreshStatus: 'Refresh status',
+    onboardAdmin: 'Add a model first so the assistant can start chatting.',
+    onboardOperator: 'No model is available yet. Ask an admin to add one.',
+    goAddModel: 'Add model',
   },
   MODEL_SELECT: {
     visionNone:

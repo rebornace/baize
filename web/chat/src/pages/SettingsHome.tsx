@@ -3,11 +3,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Lock, RefreshCw } from 'lucide-react'
 import { useGate } from '../gateContext'
 import { Card, Badge, Spinner } from '../components/ui'
+import { useLocale } from '../locale/LocaleContext'
 import { SETTINGS_GROUPS, settingsNavItems, type SettingsNavItem } from '../settingsNav'
 import { useSettingsBadges } from '../settingsHomeBadges'
 
 export function SettingsHome() {
   const { role } = useGate()
+  const { strings } = useLocale()
+  const navCopy = strings.SETTINGS_NAV
   const navigate = useNavigate()
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
@@ -35,7 +38,7 @@ export function SettingsHome() {
   const renderCard = (item: SettingsNavItem) => {
     const isLocked = role === 'operator' && item.operator === 'locked'
     const badge = isLocked
-      ? <span className="settings-locked-label"><Lock size={12} aria-hidden="true" />仅管理员</span>
+      ? <span className="settings-locked-label"><Lock size={12} aria-hidden="true" />{navCopy.adminOnly}</span>
       : item.badge
         ? (badges[item.badge] === undefined
             ? <Spinner />
@@ -61,27 +64,25 @@ export function SettingsHome() {
     <div className="settings-home">
       <div className="settings-home-head">
         <div>
-          <h1 className="settings-home-title">设置</h1>
-          <p className="settings-home-sub">管理助手的模型、能力和对外连接</p>
+          <h1 className="settings-home-title">{navCopy.title}</h1>
+          <p className="settings-home-sub">{navCopy.homeSubtitle}</p>
         </div>
         <button
           type="button"
           className={`btn ghost sm settings-refresh-btn${refreshing ? ' spinning' : ''}`}
           onClick={refresh}
         >
-          <RefreshCw size={14} aria-hidden="true" /> 刷新状态
+          <RefreshCw size={14} aria-hidden="true" /> {navCopy.refreshStatus}
         </button>
       </div>
 
       {showOnboard && (
         <div className="settings-onboard" role="status">
           <span>
-            {role === 'admin'
-              ? '先添加一个模型，助手才能开始对话。'
-              : '还没有可用模型，请联系管理员添加。'}
+            {role === 'admin' ? navCopy.onboardAdmin : navCopy.onboardOperator}
           </span>
           {role === 'admin' && (
-            <Link to="/settings/models" className="btn primary sm">去添加</Link>
+            <Link to="/settings/models" className="btn primary sm">{navCopy.goAddModel}</Link>
           )}
         </div>
       )}
