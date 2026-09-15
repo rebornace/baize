@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -28,17 +29,29 @@ type ToolRoute struct {
 	Security []string
 }
 
-// LoadTools parses an OpenAPI 3 spec file and returns one ToolRoute per operation.
-func LoadTools(specPath string) ([]ToolRoute, error) {
+// LoadToolsFromBytes parses OpenAPI 3 spec bytes and returns one ToolRoute per operation.
+func LoadToolsFromBytes(data []byte) ([]ToolRoute, error) {
 	loader := openapi3.NewLoader()
-	doc, err := loader.LoadFromFile(specPath)
+	doc, err := loader.LoadFromData(data)
 	if err != nil {
 		return nil, fmt.Errorf("load openapi: %w", err)
 	}
 	if err := doc.Validate(loader.Context); err != nil {
 		return nil, fmt.Errorf("validate openapi: %w", err)
 	}
+	return loadFromDoc(doc)
+}
 
+// LoadTools parses an OpenAPI 3 spec file and returns one ToolRoute per operation.
+func LoadTools(specPath string) ([]ToolRoute, error) {
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		return nil, fmt.Errorf("read openapi spec: %w", err)
+	}
+	return LoadToolsFromBytes(data)
+}
+
+func loadFromDoc(doc *openapi3.T) ([]ToolRoute, error) {
 	var tools []ToolRoute
 	if doc.Paths == nil {
 		return tools, nil
