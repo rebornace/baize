@@ -1,3 +1,5 @@
+**中文** | [English](./getting-started.en.md)
+
 # 入门：构建、测试与贡献
 
 ## 环境
@@ -46,7 +48,7 @@ npx tsc --noEmit
 - Windows：`.\demo.cmd`
 - Unix：`./scripts/demo.sh`
 
-生产向启动见根 README 的 `start` / `baize start`（需 `BAIZE_API_KEY`）。更多部署见 [deployment](./deployment.md)。
+生产向启动见根 README 的 `start` / `baize start`（需 `BAIZE_API_KEY`）。更多部署见 [部署](./deployment.md)（[English](./deployment.en.md)）。
 
 ## 目录地图（贡献者）
 

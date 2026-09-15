@@ -1,3 +1,5 @@
+**中文** | [English](./architecture.en.md)
+
 # 架构与插件边界
 
 Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把 LLM、Tool、遗留 HTTP API 与人机卡点收成可审计的 `Run`。平台用 REST / HTTP 集成；不提供官方语言 SDK（集成方直接调控制面 HTTP）。
@@ -28,7 +30,7 @@ Baize Runtime (Go)
 ```
 
 - **MCP 桥（客户端）**：`PUT /v0/connectors/{id}` 注册 `type: mcp`；`tools/list` → 目录 `source=mcp`，Run 内 `tools/call`。
-- **MCP 导出**：Runtime 作 Streamable HTTP MCP Server（`/v0/mcp/export`），只读暴露目录子集；与桥方向相反，不经 Run / 白泽 LLM。
+- **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop 等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的对话模型。
 - **存储**：默认 SQLite；支持 `postgres` / `memory`。Blob：`file` / `s3` / `memory`。
 - **控制面鉴权**：可选 operator / admin 口令；详见 [http-api](./http-api.md) 与 [configuration](./configuration.md)。
 
@@ -77,7 +79,7 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 | 默认 | 单 Agent ReAct：选 Tool → 执行 → 写轨迹 → 结束 |
 | 可选 | Skill 包内线性 `workflow.yaml`（顺序步骤 + 可选 HITL；无 branch / 循环） |
 | Skill | 配置形态：`SKILL.md` + tools；`agent.skills` 默认激活；`activate_skill` 仅扩大本 Run |
-| Channel | Webhook Inbox；微信等为进程外适配器 + 声明式 `channels`（见 [deployment](./deployment.md)） |
+| Channel | 带签名的来信入口；即时消息等为进程外适配器 + 声明式 `channels`（见 [部署](./deployment.md)）。**当前仓库已提供个人微信适配器**，渠道能力本身不限于微信 |
 
 ## HITL
 
