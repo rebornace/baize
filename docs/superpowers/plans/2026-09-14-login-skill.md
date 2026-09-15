@@ -190,7 +190,7 @@ git commit -m "feat(webui): 去登录跳转 login skill；拆除登录直达 UI"
 
 ### 任务 7：账本与回归
 
-- [x] 更新 ledger / 确认清单：LOGIN-SKILL 已交付（待合入）；UI-LOGIN-AT 直达已拆除  
+- [x] 更新 ledger / 确认清单：LOGIN-SKILL 已交付；UI-LOGIN-AT 直达已拆除  
 - [x] `go test` 相关包 + vitest 登录/技能相关  
 - [x] commit
 

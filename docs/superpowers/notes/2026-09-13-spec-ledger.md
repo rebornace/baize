@@ -82,7 +82,7 @@
 | 项 | 来源 | 备注 |
 |----|------|------|
 | MCP OAuth 交互登录 | P3-C → **UI-MCP-OAUTH** | **已交付** | [`2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md) |
-| 登录入口 / `login_required` | P3-B/D → **LOGIN-SKILL**（原 UI-LOGIN-AT 直达已拆除） | **已交付（待合入）**；[`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md) |
+| 登录入口 / `login_required` | P3-B/D → **LOGIN-SKILL**（原 UI-LOGIN-AT 直达已拆除） | **已交付**；[`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md) |
 | i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
 | 模型思考级别开关 | P1 非目标 → 上调 | **已交付** | 规格 [`2026-09-14-llm-think-design.md`](../specs/2026-09-14-llm-think-design.md)；计划 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md) |
 | `export_db_readonly` UI | P3-C → **已交付** | [`2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
@@ -102,7 +102,7 @@
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
 | **UI-I18N** | **已交付** | [`2026-09-15-ui-i18n-design.md`](../specs/2026-09-15-ui-i18n-design.md)；计划 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)；zh-CN / en；`baize.locale` 本机偏好 |
 | **CH-OUTBOX** | **已交付** | [`2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md)；`channel_outbox` + worker；设置 → 微信可重投 |
-| **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | **已交付（待合入）** | 规格 [`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；managed `login-<id>` +「去登录」→ `@login-`；`login-entries` / `login-invoke` 直达已拆除；历史对照 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
+| **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | **已交付** | 规格 [`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；managed `login-<id>` +「去登录」→ `@login-`；`login-entries` / `login-invoke` 直达已拆除；历史对照 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
 | **UI-MCP-OAUTH** | **已交付** | 规格 [`2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；计划 [`2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md) |
 | **P6** Memory | **已交付** | 规格 [`2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)；计划 [`2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)；控制面账号事实+本地检索 |
 | **BLOB-CS** | **已交付** | 规格 [`2026-09-15-blob-cs-design.md`](../specs/2026-09-15-blob-cs-design.md)；计划 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md) |
@@ -123,7 +123,7 @@
 1. ~~**DOC**~~（已交付）  
 2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
-4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · ~~**BLOB-CS**~~（已交付；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · ~~**UI-I18N**~~（已交付；见 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
+4. ~~**LOGIN-SKILL**~~（已交付；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · ~~**BLOB-CS**~~（已交付；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · ~~**UI-I18N**~~（已交付；见 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
 5. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6 Memory**~~（已交付；见 [`2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
 6. ~~渠道 DoD / sql-store worktree~~（已完成）
 
