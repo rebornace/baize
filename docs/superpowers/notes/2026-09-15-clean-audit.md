@@ -115,7 +115,38 @@
 
 | 键或命令 | 处置 | 理由 |
 |----------|------|------|
-| （待填） | 保留 | |
+| YAML `listen` | 保留 | 默认 `:8080`；可被 `BAIZE_LISTEN` 覆盖（`internal/config/config.go` `applyListenEnv`） |
+| YAML `store.driver` / `store.sqlite_path` / `store.dsn` | 保留 | sqlite / postgres / memory 等驱动与连接 |
+| YAML `ui.enabled` | 保留 | 是否挂载静态 UI |
+| YAML `llm.*`（`provider` `base_url` `model` `api_key_env` `disable_thinking` `thinking_level` `thinking_dialect` `supports_vision`） | 保留 | 启动期默认 LLM；`api_key_env` 默认 `BAIZE_API_KEY` |
+| YAML `skills.builtin_dir` / `skills.builtin_dirs` / `skills.user_dir` | 保留 | 技能扫描根；`builtin_dirs` 优先于 `builtin_dir` |
+| YAML `agent.id` / `agent.system` / `agent.skills` | 保留 | 默认 agent 身份与技能列表 |
+| YAML `connector.*`（`id` `type` `spec` `base_url` `execution_callback_url` `require_approval*` `require_login` `auth.*`） | 保留 | 样板 OpenAPI/MCP 连接器与鉴权块（`auth.mode` / static / passthrough / vault_ref / capture） |
+| YAML `run.max_steps` / `run.tool_timeout_sec` | 保留 | 默认 16 / 60s |
+| YAML `conversation.*`（`max_messages` `persist_identities` `compact_enabled` `compact_threshold` `compact_reserve_output` `compact_recent_messages`） | 保留 | 会话上限与滚动摘要压缩 |
+| YAML `middleware.*`（`driver` `worker_concurrency` `lease_ttl_sec` `reconcile_interval_sec` `redis.*`） | 保留 | memory（默认）或 redis 队列；`redis.password_env` 等可指向自定义 env |
+| YAML `storage.*`（`driver` `file.root_dir` `s3.endpoint` `region` `bucket` `prefix` `access_key_env` `secret_key_env` `use_ssl` `path_style` `auto_create_bucket`） | 保留 | file / s3 / memory；S3 凭证 env 默认 `S3_ACCESS_KEY` / `S3_SECRET_KEY` |
+| YAML `mock_ticket.listen` | 保留 | 演示 mock-ticket 侧车监听（默认 `:18080`） |
+| YAML `control_plane.operator_token` / `admin_token` / `operators[]` | 保留 | 支持 `env:VAR` / `file:/path` / 明文；operators 为 `id` + `token` |
+| YAML `events.webhook.url` / `events.webhook.headers` | 保留 | 出站事件 webhook |
+| YAML `runtime.public_base_url` / `callback_hmac_secret` / `callback_token_ttl_sec` | 保留 | 侧车 callback URL 注入与 HMAC token（默认 TTL 3600s） |
+| YAML `inbox.channels[]` | 保留 | 入站 webhook 渠道种子（`inbox.Channel`） |
+| YAML `mcp_export.enabled` | 保留 | 省略时默认 true（`*bool` 区分未设与 false） |
+| YAML `channels[]`（`name` `type` `enabled` `config`） | 保留 | 声明式渠道；**省略整段**时 bootstrap 走 legacy 全注册渠道（见 §4） |
+| env `BAIZE_LISTEN` | 保留 | 非空时覆盖 YAML `listen` |
+| env `BAIZE_API_KEY` | 保留 | 默认 LLM API key（`llm.api_key_env` 可改名） |
+| env `BAIZE_SETTINGS_KEY` | 保留 | 密封设置/收件箱/MCP OAuth 等；`baize demo` 未设时用临时 demo key |
+| env `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN` / `BAIZE_OP_*` | 保留 | 经 `control_plane.*: env:…` 引用（非硬编码名，样板见 `configs/demo.yaml`） |
+| env `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 保留 | `storage.s3` 默认凭证 env（可被 yaml 改名） |
+| env `BAIZE_TEST_PG_DSN` | 保留 | **仅测试/CI** Postgres 集成（非运行时产品契约） |
+| env `BAIZE_CONNECTOR_TOKEN` 等 | 保留 | 连接器样板中的 `${VAR}` / `env:VAR` 占位示例（`configs/default.local.yaml`） |
+| env 自定义（`llm.api_key_env`、`middleware.redis.password_env`、`storage.s3.access_key_env` 等） | 保留 | 由 YAML 字段名声明，非固定 `BAIZE_*` 前缀 |
+| `.env` 加载 | 保留 | `baize` 入口 `config.LoadDotEnv(".env")`；已存在进程 env 不被覆盖 |
+| CLI `baize start` | 保留 | `configs/minimal.yaml`（或 `minimal.local.yaml`）；须 `ValidateStart`（含 API key） |
+| CLI `baize demo` | 保留 | 分层 `demo.yaml` + `default.local.yaml` + `demo.local.yaml`；`bootstrap.Run` |
+| CLI `baize serve -config <path>` | 保留 | 显式单文件配置启动 |
+| CLI `baize reset-credentials -config <path>` | 保留 | 清空 store 中 control-plane 热更新 creds，回退 YAML break-glass |
+| CLI `weixin-adapter` flags：`-baize` `-secret` `-addr` `-creds` `-ilink-base` `-port-file` | 保留 | 独立进程；`-secret` / `-baize` 必填；HTTP 面见 §1 脚注（非 core mux） |
 
 ## 3. 契约白名单（Web 客户端 / 路由）
 
@@ -127,7 +158,17 @@
 
 | 位置 | 信号摘要 | 建议处置 | 理由 |
 |------|----------|----------|------|
-| （待填） | | 删除或保留 | |
+| `web/chat/src/pages/runtimeSettingsHelpers.ts` | `@deprecated`：`MAIN_KNOB_FIELDS` / `COMPACT_ADV_FIELDS` / `KNOB_FIELDS` | 保留（CONTRACT 前勿删） | UI 内部别名；产品行为以 `mainKnobFields()` / `compactAdvFields()` 为准 |
+| `web/chat/src/historyBlocks.ts` | `@deprecated` 类型别名 `ToolOrWorkflowBlock` | 保留 | 调用点迁移期兼容；对外无独立 API |
+| `internal/store/sqlite.go` | `type SQLite = SQLStore` 向后兼容别名 | 内部保留 | **非 HTTP 契约**；STRUCT 时可保留或改名 |
+| `internal/store/store.go` + `internal/api/server_models.go` + `web/chat/src/api.ts` | `disable_thinking` 与 `thinking_level` / `thinking_dialect` 双写；`SyncProfileThinking` / `applyThinkingPayload` | 保留 | **对外**：`GET/PATCH/POST /v0/settings/models` JSON 仍含 `disable_thinking`；PATCH 时 `thinking_level` 优先；YAML `llm.disable_thinking` 仍为启动配置字段 |
+| `internal/store/sqlite.go` / `postgres.go` | DB 迁移：`disable_thinking=1` → `thinking_level=off` | 保留 | 存量数据兼容；不改变 HTTP 字段名 |
+| `internal/config/config.go` + `internal/bootstrap/bootstrap.go` | 省略 YAML `channels:` 时 auto-wire 全部注册渠道（pre-registry 部署） | 保留 | **部署契约**：旧单文件配置仍默认可用 webhook 等 |
+| `internal/channel/registry.go` | `RegisterChannel` 无 metadata 注册；声明式配置 partial 列表 back-compat | 内部保留 | 影响渠道接线语义；非 REST 路径 |
+| `web/chat/src/api.ts` | 错误文案保留 `"HTTP <status>:"` 前缀 | 保留 | `GateRoot` 等 UI 用 `startsWith('HTTP 401:')` |
+| `web/chat/src/components/Composer.submit.test.tsx` | `onSend` 返回 `undefined` 的 void 契约 | 保留 | 旧组件回调约定 |
+| `web/chat/src/pages/ChatPage.tsx` | 非安全上下文剪贴板 legacy fallback | 保留 | HTTP/LAN 环境 UX |
+| `internal/api/server.go` 等 | `legacy single-instance` goroutine 执行路径注释 | 内部保留 | 运行时实现细节；**非对外契约**（grep 见 `_tmp-debt-grep` 同类项可忽略） |
 
 ## 5. 结构热点
 
@@ -196,3 +237,20 @@ Select-String -Path internal\**\*.go,cmd\**\*.go -Pattern 'RegisterRoute|POST /v
 （任务 2 核对：`internal/api/server.go` 为 `HandleFunc`/`mux.Handle` 主表；**动态渠道入站** `POST /v0/channels/{name}/inbound` 由 `internal/channel/webhook/channel.go` 经 `api.Server.RegisterRoute` 按渠道名挂载（契约路径模板见上）。）
 
 （**非本表：** 独立进程 `cmd/weixin-adapter` 另暴露适配器侧 HTTP（如 `/outbound`、`/admin/*`），不属于 baize core mux 白名单。）
+
+### 任务 3：配置 / env / CLI + 废弃信号
+
+```powershell
+Select-String -Path internal\**\*.go,cmd\**\*.go,configs\**\* -Pattern 'BAIZE_|os\.Getenv|APIKeyEnv' |
+  Where-Object { $_.Path -notmatch '_test\.go$' } |
+  Select-Object -First 60 Path,LineNumber,Line
+```
+
+（核对：`internal/config/config.go` `type Config` + `cmd/baize/main.go` / `settings_reset.go` / `cmd/weixin-adapter/config.go`。）
+
+```powershell
+Select-String -Path internal\**\*.go,web\chat\src\**\*.{ts,tsx} -Pattern 'deprecated|Deprecated|legacy|back-compat|backward compatible|兼容|废弃|@deprecated' |
+  Select-Object Path,LineNumber,Line
+```
+
+（盘点后删临时文件：`Remove-Item docs\superpowers\notes\_tmp-debt-grep.txt -ErrorAction SilentlyContinue`。）
