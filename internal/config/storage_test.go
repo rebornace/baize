@@ -12,8 +12,8 @@ func TestLoadStorageDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Storage.Driver != "file" {
-		t.Fatalf("driver=%q want file", cfg.Storage.Driver)
+	if cfg.Storage.Driver != "" {
+		t.Fatalf("driver=%q want empty (unset; bootstrap defaults to memory)", cfg.Storage.Driver)
 	}
 	s := cfg.Storage.S3
 	if s.Prefix != "baize" || !cfg.StorageUseSSL() {

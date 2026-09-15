@@ -105,7 +105,9 @@ type Config struct {
 		} `yaml:"redis"`
 	} `yaml:"middleware"`
 	Storage struct {
-		Driver string `yaml:"driver"` // file（默认）| s3
+		// Driver: file | s3 | memory. Empty means unset; bootstrap
+		// ensureBlobStore defaults empty to memory (no disk).
+		Driver string `yaml:"driver"`
 		File   struct {
 			RootDir string `yaml:"root_dir"` // 空则用 dataDir
 		} `yaml:"file"`
@@ -350,9 +352,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Middleware.Redis.EventsChannel == "" {
 		cfg.Middleware.Redis.EventsChannel = "baize:run-events"
 	}
-	if strings.TrimSpace(cfg.Storage.Driver) == "" {
-		cfg.Storage.Driver = "file"
-	}
+	// storage.driver: leave empty when unset so bootstrap can default to memory.
 	if cfg.Storage.S3.Prefix == "" {
 		cfg.Storage.S3.Prefix = "baize"
 	}

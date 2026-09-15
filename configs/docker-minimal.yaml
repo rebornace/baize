@@ -32,5 +32,7 @@ run:
 conversation:
   max_messages: 40
   persist_identities: true
+storage:
+  driver: file
 mock_ticket:
   listen: off
