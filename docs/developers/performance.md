@@ -1,6 +1,6 @@
-# 性能探针（本地）
+# 性能探针（本地复现）
 
-环境：本机 Go（`go version`），非生产 SLA。
+给贡献者在本机复现热点路径耗时用。使用当前机器的 Go（`go version`）；结果因硬件与负载而异。
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
@@ -16,4 +16,4 @@ go test ./internal/blob/memory/ ./internal/blob/file/ -bench=BenchmarkPerfBlobPu
 go test ./internal/api/ -bench=BenchmarkPerfOutboxList -benchtime=50x -count=3
 ```
 
-阈值：优化须相对中位数改善 ≥20%，否则保持现状。禁止竞品对比数字。
+同机同命令建议至少跑 3 次取中位数，再判断是否值得改代码。

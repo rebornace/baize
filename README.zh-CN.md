@@ -71,21 +71,6 @@ POSIX：
 
 ---
 
-## 性能说明
-
-已在本机对四条热点路径（SSE stream 回放、ListMessages、blob Put/Get、outbound-deliveries 列表）跑完探针。**当前实现保持现状**——未达相对中位数改善 ≥20% 的优化门槛。下表数字仅为本机探针（非生产 SLA）；**不写**竞品对比。
-
-| 探针 | 中位数（本机） | 说明 |
-|------|----------------|------|
-| Run SSE stream 回放（N=100 事件） | ~0.11 ms/op | memory store；仅 terminal replay |
-| ListMessages（N=500） | ~1.26 ms/op | sqlite 生产路径 |
-| blob Put/Get 64KiB | ~0.03 ms（memory）/ ~0.40 ms（file） | 固定载荷 |
-| outbound-deliveries 列表（K=200） | ~0.10 ms/op | 仅 List；无真实出站 |
-
-复现见 [`docs/developers/performance.md`](docs/developers/performance.md)（`.\scripts\perf-probes.ps1`）。
-
----
-
 ## 下一步（技术读者）
 
 构建、测试、配置、HTTP 面与部署：

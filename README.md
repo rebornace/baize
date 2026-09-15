@@ -71,21 +71,6 @@ Production start (real LLM, requires `BAIZE_API_KEY`): Windows `.\start.cmd`, PO
 
 ---
 
-## Performance
-
-Local probes for four hot paths (SSE stream replay, ListMessages, blob Put/Get, outbound-deliveries list) have been run on this machine. **Current implementation is kept as-is** — no change met the ≥20% median improvement bar. Numbers below are **local only** (not a production SLA); no competitor comparisons.
-
-| Probe | Median (local) | Notes |
-|-------|----------------|-------|
-| Run SSE stream replay (N=100 events) | ~0.11 ms/op | memory store; terminal replay only |
-| ListMessages (N=500) | ~1.26 ms/op | sqlite production path |
-| blob Put/Get 64KiB | ~0.03 ms (memory) / ~0.40 ms (file) | fixed payload |
-| outbound-deliveries list (K=200) | ~0.10 ms/op | list only; no real outbound |
-
-Reproduce: [`docs/developers/performance.md`](docs/developers/performance.md) (`.\scripts\perf-probes.ps1`).
-
----
-
 ## Next steps (technical readers)
 
 Build, test, configuration, HTTP surface, and deployment:
