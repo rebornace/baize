@@ -9,22 +9,20 @@
 
 **An enterprise AI Agent Runtime: it chats, calls tools, and waits for approval on writes — beside your existing systems, with almost nothing left when you stop it.**
 
-Baize is not another chatbot skin. It is an auditable Agent: the model reasons, invokes tools, pauses for a human when needed, then continues — with the same Run trail across console and channels. Your business HTTP stack does not need a rewrite; an OpenAPI document is enough to give the Agent hands. `/ui` is an **operator console**, not a consumer entertainment chat app.
+Baize is an auditable Agent: the model reasons, invokes tools, pauses for a human when needed, then continues — with the same Run trail across console and channels. Your business HTTP stack does not need a rewrite; an OpenAPI document is enough to turn APIs into executable Agent capabilities. `/ui` is an **operator console** for ops and integrators: conversations, tool cards, approvals, and settings.
 
 ---
 
-## Why Baize instead of “wrap ChatGPT around our API”
+## Product advantages
 
-| Common approach | Baize |
-|-----------------|--------|
-| Stuff docs into the prompt and hope the model invents calls | **OpenAPI / Swagger / Postman → real executable Tools** in a catalog and Run trail |
-| Let the model mutate production freely | **HITL on writes**: approve / reject on tool cards; pause and resume the Run |
-| Embed an SDK and touch business code | **Zero-intrusion sidecar**: one Runtime process; stop it and leave almost nothing behind |
-| Web chat only | **One Agent** across the console, signed Inbox, and personal WeChat DM — same Runs, approvals, and outbound |
-| Scattered tools and ad-hoc auth | **Connectors + conversation identity + login Skills** for `require_login` downstream APIs |
-| Long threads blow the context window | **Rolling compaction**, multi-model profiles, thinking level, Memory, and workspace files |
+- **OpenAPI / Swagger / Postman → executable Tools** in a catalog and Run trail the Agent can call.
+- **HITL on writes**: approve / reject on tool cards; pause and resume the Run with an audit trail.
+- **Zero-intrusion sidecar**: one Runtime process, config outside the app; stop it and leave almost nothing behind.
+- **One Agent, many entry points**: console, signed Inbox, and personal WeChat DM share Runs, approvals, and outbound.
+- **Connectors + conversation identity + login Skills** for downstream `require_login` APIs.
+- **Long sessions that hold up**: rolling compaction, multi-model profiles, thinking level, Memory, and workspace files.
 
-In short: **Baize sells an Agent that works, stays under control, and uninstalls cleanly — not another chat UI.**
+In short: **an enterprise Agent Runtime that works, stays controllable, and uninstalls cleanly.**
 
 ---
 
@@ -33,16 +31,16 @@ In short: **Baize sells an Agent that works, stays under control, and uninstalls
 ### Reason and act
 
 - **ReAct Agent**: pick a tool → run it → record events → finish; optional linear Skill workflows (ordered steps + HITL gates).
-- **Streaming Runs**: the console follows reasoning and tool steps over SSE — not a black-box wait.
+- **Streaming Runs**: the console follows reasoning and tool steps over SSE with a visible trail.
 - **Multi-model profiles**: switch LLM configs; tune **thinking level** where the provider dialect supports it.
 - **Skills**: `SKILL.md` + tool bindings; default skills plus per-run `activate_skill` to widen capability.
 
 ### Where tools come from
 
 - **OpenAPI → tools**: import a spec; each operation lands in the tool catalog for the Agent to call.
-- **HTTP plugins & execution callbacks**: when the doc is incomplete, sidecar or enterprise callback covers legacy logic.
+- **HTTP plugins & execution callbacks**: when a spec is incomplete, sidecar or enterprise callback covers legacy logic.
 - **MCP both ways**: act as an **MCP client** (including OAuth login flows) and **export** a read-only tool subset to other hosts.
-- **Login & identity**: for `require_login` APIs, managed login Skills / conversation identities — not secrets pasted into the prompt.
+- **Login & identity**: for `require_login` APIs, managed login Skills / conversation identities hold credentials.
 
 ### Human-in-the-loop and boundaries
 
@@ -60,7 +58,7 @@ In short: **Baize sells an Agent that works, stays under control, and uninstalls
 ### Channels: meet people where they are
 
 - **Signed Inbox**: alerts / tickets enter the same Agent and approval path.
-- **Personal WeChat DM**: out-of-process adapter + outbound outbox (retry from settings) — not a demo-only webhook toy.
+- **Personal WeChat DM**: out-of-process adapter + outbound outbox with retry from settings.
 - Webhook outbound for enterprise notification buses.
 
 ### For integrators and operators
@@ -80,7 +78,7 @@ Service is live; you will not touch the code yet. Run Baize beside it, turn the 
 The Agent can read, draft, and suggest; status changes and commands only run after a human clicks approve in `/ui`, with an auditable Run trail.
 
 **One Agent for tools and channels**  
-MCP tools, first-party HTTP, WeChat DM, Inbox alerts — one Runtime, one approval and memory story, instead of a Bot per entry point.
+MCP tools, first-party HTTP, WeChat DM, Inbox alerts — one Runtime, one approval and memory story.
 
 ---
 
