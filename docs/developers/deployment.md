@@ -20,7 +20,7 @@ go build -o bin/weixin-adapter ./cmd/weixin-adapter   # Windows: bin/weixin-adap
 go run ./cmd/baize demo                               # 或 Windows: .\demo.cmd
 ```
 
-渠道块示例（样板 `configs/demo.yaml` 已含类似配置）：
+渠道块示例（与样板 `configs/demo.yaml` 一致：**默认动态端口**，`adapter_args` 勿写固定 `-addr`；`outbound_url` / `admin_url` 为占位，启动后由 `credsDir/listen.port` 覆盖）：
 
 ```yaml
 channels:
@@ -35,11 +35,11 @@ channels:
       supports_vision: "true"
       adapter_autostart: "true"
       adapter_command: weixin-adapter
-      adapter_args: "-addr=127.0.0.1:8090,-creds=./data/channels/weixin"
+      adapter_args: "-creds=./data/channels/weixin"
       adapter_creds_dir: ./data/channels/weixin
 ```
 
-此模式**不要**再启用 `weixin-adapter.service`——子进程归 baize。
+需要固定端口时，在 `adapter_args` 写非 0 的 `-addr`（如 `-addr=127.0.0.1:8090`）。此模式**不要**再启用 `weixin-adapter.service`——子进程归 baize。
 
 ## Standalone（生产 Linux / 容器）
 
