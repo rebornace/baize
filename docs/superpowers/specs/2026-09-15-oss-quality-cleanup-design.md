@@ -6,7 +6,7 @@
 > PERF-HOT 详设：[`2026-09-15-clean-perf-hot-design.md`](./2026-09-15-clean-perf-hot-design.md)  
 > 前置：开源首版 12 史诗均已交付；产品确认零外部用户，允许破坏性契约清理  
 > 备注：非新功能；目标为干净可维护的开源首版表面  
-> 实现计划：AUDIT · CONTRACT · STRUCT P0/P1 · GATES（均已交付）· PERF-HOT 计划待写
+> 实现计划：AUDIT · CONTRACT · STRUCT P0/P1 · GATES（均已交付）· PERF-HOT [`../plans/2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)
 
 ---
 

@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **GATES 已交付** | AUDIT→CONTRACT→STRUCT→GATES 已齐（计划 [`2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md)）；**下一动作：执行 PERF-HOT** |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **GATES 已交付；PERF-HOT 计划就绪** | PERF-HOT 详设 [`2026-09-15-clean-perf-hot-design.md`](../specs/2026-09-15-clean-perf-hot-design.md)；计划 [`2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)；**下一动作：执行 PERF-HOT** |
 
 ---
 
