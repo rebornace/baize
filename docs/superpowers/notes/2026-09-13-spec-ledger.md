@@ -128,7 +128,7 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **CLEAN**（质量收口，分阶段）— 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；顺序 AUDIT → CONTRACT → STRUCT → GATES → PERF-HOT；**下一动作：AUDIT 盘点**  
+1. **CLEAN**（质量收口，分阶段）— 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；AUDIT 计划 [`2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；**下一动作：执行 AUDIT**  
 2. ~~**DOC**~~（已交付）  
 3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 4. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
