@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **已批准（待实现）** | 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；先做 AUDIT 盘点清单并确认后再动契约 |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **已批准（AUDIT 计划就绪）** | 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；AUDIT 计划 [`2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；清单确认前不开 CONTRACT |
 
 ---
 
