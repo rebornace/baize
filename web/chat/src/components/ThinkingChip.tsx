@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { Brain } from 'lucide-react'
-import { DropdownMenu, type MenuItem } from './ui'
+import { useLocale } from '../locale/LocaleContext'
 import { CHAT, MODELS } from '../strings'
+import { DropdownMenu, type MenuItem } from './ui'
 
 export interface ThinkingChipProps {
   /** '' = follow model default; otherwise off|low|medium|high. */
@@ -10,30 +11,30 @@ export interface ThinkingChipProps {
   disabled?: boolean
 }
 
-const OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: CHAT.thinkingDefault },
-  { value: 'off', label: MODELS.thinkingLevelOff },
-  { value: 'low', label: MODELS.thinkingLevelLow },
-  { value: 'medium', label: MODELS.thinkingLevelMedium },
-  { value: 'high', label: MODELS.thinkingLevelHigh },
-]
-
-function labelFor(value: string): string {
-  return OPTIONS.find((o) => o.value === value)?.label ?? CHAT.thinkingDefault
+function thinkingOptions() {
+  return [
+    { value: '', label: CHAT.thinkingDefault },
+    { value: 'off', label: MODELS.thinkingLevelOff },
+    { value: 'low', label: MODELS.thinkingLevelLow },
+    { value: 'medium', label: MODELS.thinkingLevelMedium },
+    { value: 'high', label: MODELS.thinkingLevelHigh },
+  ] as const
 }
 
 export function ThinkingChip({ value, onChange, disabled }: ThinkingChipProps) {
+  const { locale } = useLocale()
   const selected = value.trim()
-  const label = labelFor(selected)
+  const options = useMemo(() => thinkingOptions(), [locale])
+  const label = options.find((o) => o.value === selected)?.label ?? CHAT.thinkingDefault
 
   const items: MenuItem[] = useMemo(
     () =>
-      OPTIONS.map((o) => ({
+      options.map((o) => ({
         id: o.value || 'default',
         label: o.label,
         onSelect: () => onChange(o.value),
       })),
-    [onChange],
+    [options, onChange],
   )
 
   return (
