@@ -21,7 +21,9 @@ func TestCreateAndGetRun(t *testing.T) {
 	if err != nil || got.Input != "创建工单" {
 		t.Fatalf("got %+v err=%v", got, err)
 	}
-	s.AppendEvent(r.ID, store.Event{Type: "run.started"})
+	if err := s.AppendEvent(r.ID, store.Event{Type: "run.started"}); err != nil {
+		t.Fatal(err)
+	}
 	evs, _ := s.ListEvents(r.ID)
 	if len(evs) != 1 || evs[0].Type != "run.started" {
 		t.Fatalf("events=%+v", evs)

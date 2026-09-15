@@ -196,10 +196,7 @@ func TestRunStreamEndedCatchUpDeliversStoreEvents(t *testing.T) {
 	}()
 
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if strings.Contains(rr.Body.String(), "run.started") {
-			break
-		}
+	for !strings.Contains(rr.Body.String(), "run.started") {
 		if time.Now().After(deadline) {
 			cancel()
 			t.Fatal("initial replay not received")

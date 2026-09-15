@@ -23,12 +23,16 @@ func TestBuildMessagesInjectsRollingSummary(t *testing.T) {
 		if i%2 == 1 {
 			role = conversation.RoleAssistant
 		}
-		ms.Append(conv, conversation.Message{Role: role, Content: "旧消息内容"})
+		if _, err := ms.Append(conv, conversation.Message{Role: role, Content: "旧消息内容"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	ms.UpsertRollingSummary(conversation.RollingSummary{
+	if err := ms.UpsertRollingSummary(conversation.RollingSummary{
 		ConversationID: conv, Summary: "此前对话：用户在做报销系统",
 		CoversThroughMessageID: "x", CoversThroughOrder: 1,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	msgs := e.buildMessages("系统提示", conv, "现在的问题", nil)
 	if msgs[0].Role != "system" || msgs[0].Content != "系统提示" {
 		t.Fatalf("first message must be the real system prompt: %+v", msgs[0])
@@ -63,7 +67,9 @@ func TestBuildMessagesInjectsRollingSummary(t *testing.T) {
 func TestBuildMessagesNoSummaryUnchanged(t *testing.T) {
 	ms := conversation.NewMemoryStore()
 	e := &Engine{Messages: ms, MaxMessages: 40}
-	ms.Append("c", conversation.Message{Role: conversation.RoleUser, Content: "你好"})
+	if _, err := ms.Append("c", conversation.Message{Role: conversation.RoleUser, Content: "你好"}); err != nil {
+		t.Fatal(err)
+	}
 	msgs := e.buildMessages("sys", "c", "在吗", nil)
 	for _, m := range msgs {
 		if strings.Contains(m.Content, "滚动摘要") {
@@ -75,7 +81,9 @@ func TestBuildMessagesNoSummaryUnchanged(t *testing.T) {
 func TestBuildMessagesBlankSummaryNotInjected(t *testing.T) {
 	ms := conversation.NewMemoryStore()
 	e := &Engine{Messages: ms, MaxMessages: 40}
-	ms.Append("c", conversation.Message{Role: conversation.RoleUser, Content: "你好"})
+	if _, err := ms.Append("c", conversation.Message{Role: conversation.RoleUser, Content: "你好"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := ms.UpsertRollingSummary(conversation.RollingSummary{
 		ConversationID: "c", Summary: "   ",
 	}); err != nil {
@@ -178,10 +186,12 @@ func seedConvWithRecentMarkers(t *testing.T, ms conversation.Store, convID strin
 		if i%2 == 1 {
 			role = conversation.RoleAssistant
 		}
-		ms.Append(convID, conversation.Message{
+		if _, err := ms.Append(convID, conversation.Message{
 			Role:    role,
 			Content: fmt.Sprintf("RECENT-MARKER-%d 近期消息独特内容", i),
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

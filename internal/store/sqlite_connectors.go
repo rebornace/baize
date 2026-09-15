@@ -151,7 +151,7 @@ func (s *SQLStore) DeleteConnector(id string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(`DELETE FROM tools WHERE connector_id = ?`, id); err != nil {
 		return err

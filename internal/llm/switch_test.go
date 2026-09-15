@@ -112,12 +112,18 @@ func TestSwitchRebuildsOnUpdate(t *testing.T) {
 	src.list = []ModelProfileView{src.byID["mp_a"]}
 
 	ctx := WithModelProfileID(context.Background(), "mp_a")
-	sw.Chat(ctx, nil, nil)
-	sw.Chat(ctx, nil, nil) // cached, no rebuild
+	if _, err := sw.Chat(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sw.Chat(ctx, nil, nil); err != nil { // cached, no rebuild
+		t.Fatal(err)
+	}
 	// profile edited: UpdatedAt advances.
 	src.byID["mp_a"] = ModelProfileView{ID: "mp_a", Model: "v2", Tier: "standard", UpdatedAt: t0.Add(time.Second)}
 	src.list = []ModelProfileView{src.byID["mp_a"]}
-	sw.Chat(ctx, nil, nil)
+	if _, err := sw.Chat(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(models) != 2 || models[0] != "v1" || models[1] != "v2" {
 		t.Fatalf("expected rebuild after update (v1 then v2), got %v", models)

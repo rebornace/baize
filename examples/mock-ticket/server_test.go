@@ -25,7 +25,9 @@ func TestCreateAndListTickets(t *testing.T) {
 		t.Fatal(err)
 	}
 	var list []map[string]any
-	json.NewDecoder(res.Body).Decode(&list)
+	if err := json.NewDecoder(res.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
 	if len(list) != 1 {
 		t.Fatalf("list=%v", list)
 	}

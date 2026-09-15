@@ -49,7 +49,7 @@ func TestWorkerProcessesEnqueuedJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 	ex := &fakeExecutor{}
 	stop := mw.StartWorkers(context.Background(), ex)
 	defer stop()
@@ -65,7 +65,7 @@ func TestStartWorkersNilSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 	// 不传 Executor 时不应 panic：worker 仅 drain-and-ack（测试用）。
 	stop := mw.StartWorkers(context.Background(), nil)
 	if err := mw.Queue.Enqueue(context.Background(), middleware.Job{RunID: "run_drain", Kind: middleware.KindRun}); err != nil {
@@ -79,7 +79,7 @@ func TestWorkerRecoversExecutorPanic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 	ex := &fakeExecutor{panicOn: map[string]bool{"run_panic": true}}
 	stop := mw.StartWorkers(context.Background(), ex)
 	defer stop()
@@ -105,7 +105,7 @@ func TestStartWorkersStopWaitsForInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -153,7 +153,7 @@ func TestWorkerJobCtxNotCanceledOnStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	started := make(chan struct{})
 	release := make(chan struct{})

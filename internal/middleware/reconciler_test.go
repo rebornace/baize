@@ -30,7 +30,7 @@ func TestReconcileEnqueuesOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	var mu sync.Mutex
 	var got []string
@@ -69,7 +69,7 @@ func TestStartReconcilerTicksAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	var mu sync.Mutex
 	var got []string
