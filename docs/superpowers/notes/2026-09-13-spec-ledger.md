@@ -33,7 +33,7 @@
 | `2026-08-30-multi-model-profiles-design.md` | 已交付 | X2 | — |
 | `2026-09-01-context-compaction-design.md` | 已交付 | X4 | — |
 | `2026-09-03-middleware-multi-source-design.md` | 已交付 | X3 | — |
-| `2026-09-04-blob-object-storage-design.md` | 已交付 | Blob 多源 | connector/skill blob 化仍欠（规格非目标） |
+| `2026-09-04-blob-object-storage-design.md` | 已交付 | Blob 多源 | connector/skill 对象化见 **BLOB-CS**（已交付） |
 | `2026-09-04-agent-workspace-files-design.md` | 已交付 | 会话工作区 | — |
 | `2026-08-28-webhook-inbox-v1` / outbound-retry 等 | 已批准→视为已交付 | 集成闭环 | 头状态可按需再刷；功能不欠 |
 
