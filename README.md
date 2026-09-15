@@ -70,7 +70,7 @@ If ports are busy, stop the previous `baize` process and retry. Or set `BAIZE_LI
 
 ### Operator UI (`/ui`)
 
-Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening `/ui` unlocks first; operators can only access 账号 (accounts), while changing 助手功能 (assistant capabilities) requires an admin token.
+Open `http://127.0.0.1:8080/ui`. If a control-plane token is configured, opening `/ui` unlocks first; operators can only access 账号 (accounts), while changing 助手功能 (assistant capabilities) requires an admin token. The console supports **Chinese / English**; language preference is stored in this browser only (`baize.locale`).
 
 - Left: conversation list + **New chat**; **Settings** at the bottom-left (operators see “账号”)
 - Center: transcript; mutating tools show a **card** (name + status). Expand it for arguments / result

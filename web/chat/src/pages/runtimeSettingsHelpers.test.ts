@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildKnobsPatch,
   knobsToForm,
-  MAIN_KNOB_FIELDS,
-  COMPACT_ADV_FIELDS,
+  mainKnobFields,
+  compactAdvFields,
   allKnobFieldSpecs,
   validateKnobField,
   type KnobsForm,
@@ -35,12 +35,12 @@ describe('knobsToForm', () => {
 
 describe('field groups', () => {
   it('splits main vs compact advanced keys', () => {
-    expect(MAIN_KNOB_FIELDS.map((f) => f.key)).toEqual([
+    expect(mainKnobFields().map((f) => f.key)).toEqual([
       'max_messages',
       'max_steps',
       'tool_timeout_seconds',
     ])
-    expect(COMPACT_ADV_FIELDS.map((f) => f.key)).toEqual([
+    expect(compactAdvFields().map((f) => f.key)).toEqual([
       'compact_threshold',
       'compact_reserve_tokens',
       'compact_keep_recent',
@@ -54,9 +54,9 @@ describe('field groups', () => {
 })
 
 describe('validateKnobField', () => {
-  const maxMessages = MAIN_KNOB_FIELDS.find((f) => f.key === 'max_messages')!
-  const maxSteps = MAIN_KNOB_FIELDS.find((f) => f.key === 'max_steps')!
-  const threshold = COMPACT_ADV_FIELDS.find((f) => f.key === 'compact_threshold')!
+  const maxMessages = mainKnobFields().find((f) => f.key === 'max_messages')!
+  const maxSteps = mainKnobFields().find((f) => f.key === 'max_steps')!
+  const threshold = compactAdvFields().find((f) => f.key === 'compact_threshold')!
 
   it('accepts in-range values', () => {
     expect(validateKnobField(maxMessages, '100')).toBeNull()

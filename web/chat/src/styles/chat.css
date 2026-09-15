@@ -1019,6 +1019,30 @@
   font-weight: 600;
 }
 
+.locale-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.locale-choice-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 0.25rem 0.75rem;
+}
+.locale-choice-option[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
@@ -1736,6 +1760,34 @@ a.model-chip-empty:hover {
 .model-chip-empty[aria-disabled="true"]:hover {
   background: var(--surface);
   color: var(--text-muted);
+}
+
+.language-chip {
+  max-width: none;
+  padding: 2px 8px;
+  gap: 2px;
+}
+.language-chip-inner {
+  gap: 2px;
+  overflow: visible;
+}
+.language-chip-opt {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.language-chip-opt[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--text);
+  font-weight: 600;
+}
+.language-chip-sep {
+  opacity: 0.4;
+  user-select: none;
 }
 
 /* Read-only historical tool/workflow blocks, rendered once above the first

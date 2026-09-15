@@ -1,5 +1,5 @@
 import type { CreateRunOptions, ModelProfile } from './api'
-import { AUTO_LABEL, tierLabel, VISION_LABEL } from './strings'
+import { AUTO_LABEL, MODEL_SELECT, tierLabel, VISION_LABEL } from './strings'
 
 // 档位文案的单一来源在 ./strings；此处再导出以保持 ModelSettings 既有 import 路径。
 export { tierLabel } from './strings'
@@ -33,8 +33,11 @@ export function modelOptions(profiles: ModelProfile[]): ModelOption[] {
       tierLabel(p.auto_tier),
       p.supports_vision ? VISION_LABEL : '',
     ].filter(Boolean)
-    const suffix = tags.length ? ` · ${tags.join('·')}` : ''
-    return { value: p.id, label: `${p.name}（${p.model}）${suffix}` }
+    const tagText = tags.length ? ` · ${tags.join('·')}` : ''
+    return {
+      value: p.id,
+      label: `${p.name}${MODEL_SELECT.optionMeta(p.model, tagText)}`,
+    }
   })
   return [auto, ...rest]
 }
@@ -78,14 +81,14 @@ export function visionGate(
     if (canVision) return { allowed: true }
     return {
       allowed: false,
-      message: '当前没有可用的「视觉」模型，请到「设置 → AI 模型」添加，或移除图片后再发送。',
+      message: MODEL_SELECT.visionNone,
     }
   }
   const chosen = profiles.find((p) => p.id === selectedId.trim())
   if (chosen?.supports_vision) return { allowed: true }
   return {
     allowed: false,
-    message: '这个模型看不了图片。请改用「智能选择」或带「视觉」标记的模型，或移除图片。',
+    message: MODEL_SELECT.visionUnsupported,
   }
 }
 

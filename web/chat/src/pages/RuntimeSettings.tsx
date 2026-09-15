@@ -18,11 +18,12 @@ import {
   useToast,
   type ToastApi,
 } from '../components/ui'
+import { useLocale } from '../locale/LocaleContext'
 import { useGate } from '../gateContext'
 import { RUNTIME, friendlyError } from '../strings'
 import {
-  MAIN_KNOB_FIELDS,
-  COMPACT_ADV_FIELDS,
+  mainKnobFields,
+  compactAdvFields,
   allKnobFieldSpecs,
   buildKnobsPatch,
   knobsToForm,
@@ -281,6 +282,7 @@ function knobFieldLabel(label: string, overridden: boolean) {
 
 export function RuntimeSettings() {
   const { role } = useGate()
+  const { locale, setLocale, strings } = useLocale()
   const readOnly = role !== 'admin'
   const { toasts, push, dismiss } = useToast()
   const [knobView, setKnobView] = useState<RuntimeKnobsView | null>(null)
@@ -288,6 +290,7 @@ export function RuntimeSettings() {
   const [publicBase, setPublicBase] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const L = strings.LOCALE
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -376,6 +379,33 @@ export function RuntimeSettings() {
       />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
+      <section className="settings-form" aria-labelledby="locale-section-title">
+        <h2 id="locale-section-title" className="settings-subheading">
+          {L.sectionTitle}
+        </h2>
+        <p className="settings-muted">{L.sectionHint}</p>
+        <div className="locale-choice" role="group" aria-label={L.sectionTitle} data-testid="locale-choice">
+          <button
+            type="button"
+            className="locale-choice-option"
+            aria-pressed={locale === 'zh-CN'}
+            data-testid="locale-zh"
+            onClick={() => setLocale('zh-CN')}
+          >
+            {L.optionZh}
+          </button>
+          <button
+            type="button"
+            className="locale-choice-option"
+            aria-pressed={locale === 'en'}
+            data-testid="locale-en"
+            onClick={() => setLocale('en')}
+          >
+            {L.optionEn}
+          </button>
+        </div>
+      </section>
+
       {loading && <p className="settings-muted">加载中…</p>}
 
       {!loading && knobView && (
@@ -407,7 +437,7 @@ export function RuntimeSettings() {
       {!loading && knobView && form && (
         <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
           <h2 className="settings-subheading">{RUNTIME.sectionBehavior}</h2>
-          {MAIN_KNOB_FIELDS.map((spec) => (
+          {mainKnobFields().map((spec) => (
             <Field
               key={spec.key}
               label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
@@ -441,7 +471,7 @@ export function RuntimeSettings() {
           </label>
           <details>
             <summary>{RUNTIME.compactAdvanced}</summary>
-            {COMPACT_ADV_FIELDS.map((spec) => (
+            {compactAdvFields().map((spec) => (
               <Field
                 key={spec.key}
                 label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}

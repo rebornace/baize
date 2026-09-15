@@ -36,6 +36,7 @@ import { Composer } from '../components/Composer'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { MarkdownText } from '../components/MarkdownText'
 import { ModelChip } from '../components/ModelChip'
+import { LanguageChip } from '../components/LanguageChip'
 import { ThinkingChip } from '../components/ThinkingChip'
 import { ToolCard } from '../components/ToolCard'
 import { UserBubble } from '../components/UserBubble'
@@ -632,7 +633,7 @@ export function ChatPage() {
     }
 
     setBusy(true)
-    setStatus('发送中…')
+    setStatus(CHAT.sending)
 
     // Build attachments from selected files. Image attachments are gated by
     // the active model choice: Auto routes to a vision model when available,
@@ -817,11 +818,11 @@ export function ChatPage() {
 
   const onCancelRun = async () => {
     if (!liveRunId) return
-    setStatus('正在取消…')
+    setStatus(CHAT.cancelling)
     try {
       await cancelRun(liveRunId)
       await finishLiveRun(conversationId)
-      setStatus('已取消')
+      setStatus(CHAT.cancelled)
     } catch (e) {
       reportError(e)
       try {
@@ -1217,7 +1218,7 @@ export function ChatPage() {
               <p className="status">{status}</p>
               {showStop && (
                 <button type="button" className="btn danger sm" onClick={() => void onCancelRun()}>
-                  停止
+                  {CHAT.stop}
                 </button>
               )}
             </div>
@@ -1229,29 +1230,32 @@ export function ChatPage() {
             skills={skills}
             onSend={onSend}
             toolbar={
-              modelProfiles.length > 0 ? (
-                <>
-                  <ModelChip
-                    profiles={modelProfiles}
-                    value={selectedModelId}
-                    onChange={onChooseModel}
-                    disabled={composerDisabled}
-                  />
-                  <ThinkingChip
-                    value={thinkingLevel}
-                    onChange={onChooseThinking}
-                    disabled={composerDisabled}
-                  />
-                </>
-              ) : role === 'admin' ? (
-                <Link to="/settings/models" className="model-chip model-chip-empty">
-                  {CHAT.addModel}
-                </Link>
-              ) : (
-                <span className="model-chip model-chip-empty" aria-disabled="true">
-                  {CHAT.noModelConfigured}
-                </span>
-              )
+              <>
+                {modelProfiles.length > 0 ? (
+                  <>
+                    <ModelChip
+                      profiles={modelProfiles}
+                      value={selectedModelId}
+                      onChange={onChooseModel}
+                      disabled={composerDisabled}
+                    />
+                    <ThinkingChip
+                      value={thinkingLevel}
+                      onChange={onChooseThinking}
+                      disabled={composerDisabled}
+                    />
+                  </>
+                ) : role === 'admin' ? (
+                  <Link to="/settings/models" className="model-chip model-chip-empty">
+                    {CHAT.addModel}
+                  </Link>
+                ) : (
+                  <span className="model-chip model-chip-empty" aria-disabled="true">
+                    {CHAT.noModelConfigured}
+                  </span>
+                )}
+                <LanguageChip />
+              </>
             }
           />
         </div>
@@ -1286,19 +1290,19 @@ export function ChatPage() {
 function statusLabel(status: string): string {
   switch (status) {
     case 'queued':
-      return '排队中'
+      return CHAT.statusQueued
     case 'running':
-      return '运行中'
+      return CHAT.statusRunning
     case 'waiting_human':
-      return '等待批准'
+      return CHAT.statusWaitingHuman
     case 'succeeded':
-      return '已完成'
+      return CHAT.statusSucceeded
     case 'failed':
-      return '失败'
+      return CHAT.statusFailed
     case 'cancelled':
-      return '已取消'
+      return CHAT.statusCancelled
     case 'rejected':
-      return '已停止'
+      return CHAT.statusRejected
     default:
       return status
   }

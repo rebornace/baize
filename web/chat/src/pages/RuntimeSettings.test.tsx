@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 import type { RuntimeKnobs } from '../api'
 import { GateContext } from '../gateContext'
+import { LocaleProvider } from '../locale/LocaleContext'
+import { LOCALE_STORAGE_KEY } from '../locale/types'
 import { RUNTIME } from '../strings'
 import { RuntimeSettings } from './RuntimeSettings'
 
@@ -44,9 +46,13 @@ async function renderRuntime() {
   await act(async () => {
     root.render(
       createElement(
-        GateContext.Provider,
-        { value: { role: 'admin', gateEnabled: true, operatorId: 'admin' } },
-        createElement(RuntimeSettings),
+        LocaleProvider,
+        null,
+        createElement(
+          GateContext.Provider,
+          { value: { role: 'admin', gateEnabled: true, operatorId: 'admin' } },
+          createElement(RuntimeSettings),
+        ),
       ),
     )
     await new Promise((r) => setTimeout(r, 0))
@@ -99,6 +105,7 @@ describe('RuntimeSettings humanize shell', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   it('shows PageHeader title and section headings; compact adv collapsed', async () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
     const { host, root } = await renderRuntime()
     expect(host.textContent).toContain(RUNTIME.title)
     expect(host.textContent).not.toContain('运行时设置')
@@ -122,6 +129,7 @@ describe('RuntimeSettings humanize shell', () => {
   })
 
   it('credentials section uses humanized labels and empty named-ops copy', async () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
     const { host, root } = await renderRuntime()
     expect(host.textContent).toContain(RUNTIME.fieldOperatorToken)
     expect(host.textContent).toContain(RUNTIME.fieldAdminToken)
@@ -129,6 +137,20 @@ describe('RuntimeSettings humanize shell', () => {
     expect(host.textContent).toContain(RUNTIME.namedOpsTitle)
     expect(host.textContent).toContain(RUNTIME.rotateSubmit)
     expect(host.textContent).toContain(RUNTIME.addOperator)
+    root.unmount()
+    host.remove()
+  })
+
+  it('locale choice persists baize.locale when switching to English', async () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
+    const { host, root } = await renderRuntime()
+    const enBtn = host.querySelector('[data-testid="locale-en"]') as HTMLButtonElement | null
+    expect(enBtn).toBeTruthy()
+    await act(async () => {
+      enBtn!.click()
+    })
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
+    expect(document.documentElement.lang).toBe('en')
     root.unmount()
     host.remove()
   })
