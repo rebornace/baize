@@ -34,7 +34,7 @@ func TestApplyLoadsToolsFromBlobSpecKey(t *testing.T) {
 	_, infos, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: identity.NewMemoryStore(),
 		Blobs: blobs,
-		ID: "blob-c", Type: "openapi", Spec: key, BaseURL: "http://example.invalid",
+		ID:    "blob-c", Type: "openapi", Spec: key, BaseURL: "http://example.invalid",
 		RequireLogin: &login,
 		Auth:         store.ConnectorAuth{Mode: "static"},
 	})
