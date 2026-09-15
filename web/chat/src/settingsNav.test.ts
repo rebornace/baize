@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { setPack } from './locale/pack'
+import { enPack } from './locales/en'
+import { zhPack } from './locales/zh'
 import { SETTINGS_GROUPS, settingsNavItems, visibleNavItems } from './settingsNav'
 
-const adminItems = settingsNavItems('admin')
-const operatorItems = settingsNavItems('operator')
+afterEach(() => {
+  setPack(zhPack)
+})
 
 describe('SETTINGS_GROUPS', () => {
   it('declares the four groups in display order', () => {
+    setPack(zhPack)
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual([
       'assistant',
       'connect',
@@ -14,18 +19,27 @@ describe('SETTINGS_GROUPS', () => {
     ])
     expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(['助手', '连接', '消息', '系统'])
   })
+
+  it('switches group labels to English', () => {
+    setPack(enPack)
+    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual([
+      'Assistant',
+      'Connect',
+      'Messaging',
+      'System',
+    ])
+  })
 })
 
 describe('settingsNavItems(admin)', () => {
   it('returns 14 items with unique routes and complete metadata', () => {
+    const adminItems = settingsNavItems('admin')
     expect(adminItems).toHaveLength(14)
     const tos = adminItems.map((i) => i.to)
     expect(new Set(tos).size).toBe(14)
     for (const item of adminItems) {
       expect(item.label).toBeTruthy()
       expect(item.desc).toBeTruthy()
-      // lucide-react 1.x 图标是 React.forwardRef 产物（{ $$typeof, render }），typeof 为 'object'；
-      // 同时兼容函数组件形态
       expect(
         typeof item.icon === 'function' ||
           (typeof item.icon === 'object' &&
@@ -36,7 +50,8 @@ describe('settingsNavItems(admin)', () => {
   })
 
   it('uses the friendly names', () => {
-    const byTo = Object.fromEntries(adminItems.map((i) => [i.to, i.label]))
+    setPack(zhPack)
+    const byTo = Object.fromEntries(settingsNavItems('admin').map((i) => [i.to, i.label]))
     expect(byTo['/settings/models']).toBe('模型')
     expect(byTo['/settings/tools']).toBe('助手功能')
     expect(byTo['/settings/memory']).toBe('账号记忆')
@@ -47,7 +62,16 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/runtime']).toBe('运行参数')
   })
 
+  it('uses English labels when en pack is active', () => {
+    setPack(enPack)
+    const byTo = Object.fromEntries(settingsNavItems('admin').map((i) => [i.to, i.label]))
+    expect(byTo['/settings/models']).toBe('Models')
+    expect(byTo['/settings/tools']).toBe('Assistant capabilities')
+    expect(byTo['/settings/runtime']).toBe('Runtime settings')
+  })
+
   it('groups items correctly', () => {
+    const adminItems = settingsNavItems('admin')
     const inGroup = (g: string) => adminItems.filter((i) => i.group === g).map((i) => i.to)
     expect(inGroup('assistant')).toEqual([
       '/settings/models',
@@ -70,6 +94,7 @@ describe('settingsNavItems(admin)', () => {
   })
 
   it('declares badge kinds for the cards that have live status', () => {
+    const adminItems = settingsNavItems('admin')
     const badgeByTo = Object.fromEntries(adminItems.map((i) => [i.to, i.badge]))
     expect(badgeByTo['/settings/models']).toBe('models')
     expect(badgeByTo['/settings/identities']).toBeUndefined()
@@ -79,6 +104,7 @@ describe('settingsNavItems(admin)', () => {
 
 describe('settingsNavItems(operator) access levels', () => {
   it('marks read/login/full/locked correctly', () => {
+    const operatorItems = settingsNavItems('operator')
     const access = (to: string) => operatorItems.find((i) => i.to === to)?.operator
     expect(access('/settings/models')).toBe('read')
     expect(access('/settings/tools')).toBe('read')
