@@ -252,32 +252,51 @@
 
 ## 5. 结构热点
 
-统计：2026-09-15，PowerShell 按目录聚合 `.go`（`internal`,`cmd`，不含 `vendor`）与 `web/chat/src` 单文件 `.ts`/`.tsx` 行数 Top 15。
+统计日期：2026-09-15。复现命令见 §10 任务 4。
+
+**Go：** 在 `internal`、`cmd` 下递归 `*.go`，排除 `vendor`；按**目录（包）**聚合行数，取 Top 15。
+
+**TypeScript：** 在 `web/chat/src` 下递归 `*.ts` / `*.tsx` 单文件行数；**排除** `*.test.ts(x)`、`*.spec.ts(x)`（不把测试计入 STRUCT 热点）；取生产源码 Top 15。若含测试文件，`ModelSettings.test.tsx`（672）等会挤占榜单，与「页面实现体量」目标不一致。
+
+### 5.1 Go 包 Top 15
 
 | 路径 | 行数（约） | 建议拆法（一句话） | 本版优先级 |
 |------|------------|--------------------|------------|
-| `internal/api`（包） | 16962 | 按域拆 handler 文件：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 |
+| `internal/api` | 16962 | 按域拆 handler：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 |
+| `internal/store` | 7039 | 驱动与迁移分目录；SQL 方法按实体（models/conversations/runs）切文件 | P1 |
+| `internal/run` | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 |
+| `internal/channel/webhook` | 5137 | 入站/出站/重试与配置解析分模块 | P2 |
+| `internal/connector` | 3788 | MCP/invoke/registry 与 OpenAPI 子包边界收紧（父包不含 openapi 子目录行数） | P1 |
+| `internal/bootstrap` | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 |
+| `internal/channel` | 2451 | registry 与各渠道适配边界 | P2 |
+| `internal/llm` | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 |
+| `internal/identity` | 2146 | 会话身份解析、默认身份与 store 映射分层 | P1 |
+| `cmd/weixin-adapter/internal/weixinlink` | 1798 | 独立进程 iLink 客户端；保持与 core 边界 | 保留 |
+| `internal/connector/openapi` | 1674 | spec 解析、路由展开与 invoker 生成拆文件 | P1 |
+| `internal/conversation` | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 |
+| `internal/memory` | 1597 | store 后端与 settings API 映射 | P2 |
+| `internal/config` | 1500 | 校验与 env 覆盖分文件 | P2 |
+| `cmd/weixin-adapter` | 1381 | 独立进程入口与 HTTP 面；不并入 baize core | 保留 |
+
+### 5.2 Web 生产源码 Top 15（排除 `*.test.*` / `*.spec.*`）
+
+| 路径 | 行数（约） | 建议拆法（一句话） | 本版优先级 |
+|------|------------|--------------------|------------|
 | `web/chat/src/api.ts` | 1409 | 按资源拆 `api/runs.ts`、`api/settings/memory.ts`、`api/connectors.ts` 等，保留 `authHeaders`/`parseJSON` 内核 | P0 |
 | `web/chat/src/pages/ChatPage.tsx` | 1312 | 拆会话侧栏、消息区（列表+折叠块）、Composer 区、顶栏与 run 生命周期 hook | P0 |
-| `internal/store`（包） | 7039 | 驱动实现与迁移分目录；大 SQL 方法按实体（models/conversations/runs）切文件 | P1 |
-| `internal/run`（包） | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 |
+| `web/chat/src/locales/en.ts` | 868 | **保留（文案包）** | 保留 |
+| `web/chat/src/locales/zh.ts` | 859 | **保留（文案包）** | 保留 |
 | `web/chat/src/pages/ToolsSettings.tsx` | 808 | 列表/批量操作/连接器内嵌表单拆子组件 + `useToolsSettings` | P1 |
 | `web/chat/src/pages/McpExportSettings.tsx` | 744 | 身份列表、密钥列表、工具 export 列拆段 | P1 |
-| `web/chat/src/pages/ModelSettings.tsx` | 621 | 列表与编辑 Modal/表单拆文件（测试已 672 行可随动） | P1 |
-| `internal/connector`（包） | 3788 | OpenAPI/MCP/invoke 与 registry 边界收紧 | P1 |
-| `internal/conversation`（包） | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 |
-| `internal/llm`（包） | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 |
-| `internal/channel/webhook`（包） | 5137 | 入站/出站/重试与配置解析分模块 | P2 |
-| `internal/bootstrap`（包） | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 |
-| `internal/channel`（包） | 2451 | registry 与各渠道适配边界 | P2 |
-| `internal/memory`（包） | 1597 | store 后端与 API 映射 | P2 |
-| `internal/config`（包） | 1500 | 校验与 env 覆盖分文件 | P2 |
-| `cmd/weixin-adapter` + `…/weixinlink` | 1381 + 1798 | 独立进程；STRUCT 时保持边界，不并入 core | 保留 |
-| `web/chat/src/locales/zh.ts` | 859 | **保留（文案包）**；按域键已分组，不拆文件除非 i18n 工具链要求 | 保留 |
-| `web/chat/src/locales/en.ts` | 868 | **保留（文案包）** | 保留 |
+| `web/chat/src/pages/ModelSettings.tsx` | 621 | 列表与编辑 Modal/表单拆文件 | P1 |
 | `web/chat/src/pages/InboxSettings.tsx` | 533 | 渠道卡片与密钥旋转 Modal 拆组件 | P2 |
 | `web/chat/src/pages/RuntimeSettings.tsx` | 531 | 旋钮表单与 operators 卡片拆分 | P2 |
 | `web/chat/src/pages/WeixinChannelSettings.tsx` | 516 | 登录流与进程控制拆 hook | P2 |
+| `web/chat/src/components/settings/ConnectorEditorModal.tsx` | 371 | OpenAPI/MCP 两步表单按 `connectorForms/*` 与 shell 拆段 | P2 |
+| `web/chat/src/pages/SkillsSettings.tsx` | 355 | 列表、上传与 agent 技能勾选拆 hook + 子列表 | P2 |
+| `web/chat/src/components/Composer.tsx` | 314 | 输入区、附件、技能选择与提交拆子组件 | P2 |
+| `web/chat/src/foldEvents.ts` | 294 | 纯函数块类型与 fold 规则可按 event kind 分文件 | P2 |
+| `web/chat/src/pages/MemorySettings.tsx` | 280 | CRUD 表格与编辑表单拆组件 | P2 |
 
 ## 6. 门禁基线
 
@@ -384,9 +403,10 @@ Get-ChildItem -Recurse -Filter '*.go' internal,cmd |
   Select-Object -First 15
 
 Get-ChildItem -Recurse -Include '*.ts','*.tsx' web\chat\src |
+  Where-Object { $_.Name -notmatch '\.(test|spec)\.(ts|tsx)$' } |
   Sort-Object { @(Get-Content $_.FullName).Count } -Descending |
   Select-Object -First 15 |
   ForEach-Object { "{0,5}  {1}" -f @(Get-Content $_.FullName).Count, $_.FullName.Replace((Get-Location).Path+'\','') }
 ```
 
-（删除候选核对：`Select-String -Path web\chat\src\**\*.{ts,tsx} -Pattern 'patchToolRequireLogin|clearMessages'` 应仅命中 `api.ts` 定义行。）
+（TS 榜单排除 `*.test.*` / `*.spec.*`；Go 榜单为包目录 Top 15，见 §5.1–5.2。删除候选核对：`Select-String -Path web\chat\src -Pattern 'patchToolRequireLogin|clearMessages' -Recurse` 应仅命中 `api.ts` 定义行。）
