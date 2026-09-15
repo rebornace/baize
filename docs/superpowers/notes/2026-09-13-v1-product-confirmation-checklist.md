@@ -65,7 +65,7 @@
 2. **F 母篇**（仅 C1 + KV 加密 + 驱动热切换/SIGHUP；**B1** 顺序已锁）→ 可先落地 **C1**  
 3. **UI-EXPORT-DB-RO**（小刀）  
 4. **CH-PORT** → **CH-OUTBOX**  
-5. ~~**LOGIN-SKILL**~~（已交付，待合入） · ~~**LLM-THINK**~~（已交付） · ~~**BLOB-CS**~~（已交付；见 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**（规格已批准；见 [`plans/2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
+5. ~~**LOGIN-SKILL**~~（已交付，待合入） · ~~**LLM-THINK**~~（已交付） · ~~**BLOB-CS**~~（已交付；见 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · ~~**UI-I18N**~~（已交付；见 [`plans/2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
 6. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6**~~（已交付；见 [`plans/2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
 
 **F 与现有待办：** 不吸收 OUTBOX/BLOB/PORT/OAuth/Memory/@登录/i18n/export_db_ro；DOC 保持独立（A1）。

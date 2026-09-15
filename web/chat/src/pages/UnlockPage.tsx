@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { getMe } from '../api'
 import { clearControlToken, writeControlToken } from '../controlAuth'
+import { UNLOCK } from '../strings'
 
 export interface UnlockPageProps {
   onUnlocked: () => void
@@ -20,13 +21,13 @@ export function UnlockPage({ onUnlocked }: UnlockPageProps) {
       const me = await getMe()
       if (me.role !== 'operator' && me.role !== 'admin') {
         clearControlToken()
-        setError('口令不对')
+        setError(UNLOCK.badToken)
         return
       }
       onUnlocked()
     } catch {
       clearControlToken()
-      setError('口令不对')
+      setError(UNLOCK.badToken)
     } finally {
       setBusy(false)
     }
@@ -35,7 +36,7 @@ export function UnlockPage({ onUnlocked }: UnlockPageProps) {
   return (
     <div className="unlock-shell">
       <form className="unlock-card" onSubmit={(e) => void onSubmit(e)}>
-        <h1 className="unlock-title">解锁</h1>
+        <h1 className="unlock-title">{UNLOCK.title}</h1>
         <input
           type="password"
           className="unlock-input"
@@ -44,7 +45,7 @@ export function UnlockPage({ onUnlocked }: UnlockPageProps) {
           autoComplete="current-password"
         />
         <button type="submit" className="btn primary" disabled={busy}>
-          进入
+          {UNLOCK.enter}
         </button>
         {error && <p className="unlock-error">{error}</p>}
       </form>

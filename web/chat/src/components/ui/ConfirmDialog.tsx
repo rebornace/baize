@@ -1,3 +1,4 @@
+import { COMMON } from '../../strings'
 import { Button } from './Button'
 import { Modal } from './Modal'
 
@@ -9,14 +10,14 @@ export interface ConfirmDialogProps {
   cancelText?: string
   danger?: boolean
   busy?: boolean
-  /** 弹窗内展示的一行错误（如异步操作失败后的中文反馈）。 */
+  /** 弹窗内展示的一行错误（如异步操作失败后的反馈）。 */
   error?: string | null
   onConfirm: () => void
   onCancel: () => void
 }
 
 export function ConfirmDialog({
-  open, title, body, confirmText = '确认', cancelText = '取消',
+  open, title, body, confirmText = COMMON.confirm, cancelText = COMMON.cancel,
   danger, busy, error, onConfirm, onCancel,
 }: ConfirmDialogProps) {
   return (

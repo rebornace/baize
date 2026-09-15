@@ -784,6 +784,18 @@ export const zhPack = {
     optionMeta: (model: string, tags: string) =>
       tags ? `（${model}）${tags}` : `（${model}）`,
   },
+  COMMON: {
+    confirm: '确认',
+    cancel: '取消',
+  },
+  UNLOCK: {
+    title: '解锁',
+    enter: '进入',
+    badToken: '口令不对',
+  },
+  COMING_SOON: {
+    body: '即将接入，不会在此填写假配置。',
+  },
 }
 
 /** Shape shared by zh/en packs (string fields widen beyond zh literals). */

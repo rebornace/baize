@@ -794,4 +794,16 @@ export const enPack = {
     optionMeta: (model: string, tags: string) =>
       tags ? ` (${model}) ${tags}` : ` (${model})`,
   },
+  COMMON: {
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+  },
+  UNLOCK: {
+    title: 'Unlock',
+    enter: 'Enter',
+    badToken: 'Incorrect passphrase',
+  },
+  COMING_SOON: {
+    body: 'Coming soon — no placeholder settings here.',
+  },
 } satisfies StringsPack
