@@ -22,7 +22,11 @@ func ptr[T any](v T) *T { return &v }
 
 func writeLoginGetMeSpec(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(".", "baize-spec-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := filepath.Join(dir, "spec.yaml")
 	content := `openapi: 3.0.3
 info:
@@ -66,7 +70,11 @@ paths:
 
 func writeLoginGetMeProbeSpec(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(".", "baize-spec-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := filepath.Join(dir, "spec.yaml")
 	content := `openapi: 3.0.3
 info:
@@ -116,7 +124,11 @@ paths:
 
 func writeAdminLoginSpec(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(".", "baize-spec-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := filepath.Join(dir, "spec.yaml")
 	content := `openapi: 3.0.3
 info:
@@ -384,7 +396,11 @@ func TestApplyHTTPPersistsAndCaptures(t *testing.T) {
 }
 
 func TestApplyEmptyStaticHeadersOK(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(".", "baize-spec-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	spec := filepath.Join(dir, "spec.yaml")
 	content := "openapi: 3.0.3\ninfo:\n  title: bs\n  version: 0.1.0\npaths:\n  /probe:\n    get:\n      operationId: probe\n      responses:\n        \"200\":\n          description: ok\n"
 	if err := os.WriteFile(spec, []byte(content), 0o644); err != nil {
@@ -393,14 +409,14 @@ func TestApplyEmptyStaticHeadersOK(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	login := []string(nil)
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, applyErr := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: identity.NewMemoryStore(),
 		ID: "bs", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
 		RequireLogin: &login,
 		Auth:         store.ConnectorAuth{Mode: "static"},
 	})
-	if err != nil {
-		t.Fatal(err)
+	if applyErr != nil {
+		t.Fatal(applyErr)
 	}
 }
 
@@ -506,8 +522,12 @@ func TestApplyBadSpecPreservesRowsAndRegistry(t *testing.T) {
 	beforeRows := st.ListToolsByConnector("c")
 	beforeInfos := reg.List()
 
-	// Bad spec: empty paths → ErrInvalidSpec.
-	dir := t.TempDir()
+	// Bad spec: empty paths ? ErrInvalidSpec.
+	dir, mkdirErr := os.MkdirTemp(".", "baize-spec-*")
+	if mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	badSpec := filepath.Join(dir, "bad.yaml")
 	if err := os.WriteFile(badSpec, []byte("openapi: 3.0.3\ninfo:\n  title: bad\n  version: 0.1.0\npaths: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -674,7 +694,7 @@ func TestRegisterOneFromConnectorRegistersRow(t *testing.T) {
 		t.Fatal("getMe should be unregistered before wrapper call")
 	}
 
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, toolRow, connector.CallbackConfig{}); err != nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, nil, c, toolRow, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("RegisterOneFromConnector: %v", err)
 	}
 	info, ok := reg.Get("getMe")
@@ -726,7 +746,7 @@ func TestRegisterOneFromConnectorRejectsPluginExtra(t *testing.T) {
 		Path:        "/phantom",
 		InputSchema: map[string]any{"type": "object"},
 	}
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra, connector.CallbackConfig{}); err == nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, nil, c, extra, connector.CallbackConfig{}); err == nil {
 		t.Fatal("expected error registering extra on plugin connector, got nil")
 	}
 	if _, ok := reg.Get("phantom"); ok {
@@ -736,7 +756,11 @@ func TestRegisterOneFromConnectorRejectsPluginExtra(t *testing.T) {
 
 func writeEchoSpec(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(".", "baize-spec-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := filepath.Join(dir, "spec.yaml")
 	content := `openapi: 3.0.3
 info:

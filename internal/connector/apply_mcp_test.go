@@ -156,7 +156,11 @@ func TestApplyMCPBadCommandPreservesRegistry(t *testing.T) {
 
 func writeMinimalOpenAPISpec(t *testing.T, operationID string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(".", "baize-spec-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	p := filepath.Join(dir, "spec.yaml")
 	content := "openapi: 3.0.3\n" +
 		"info:\n  title: t\n  version: 0.1.0\n" +
@@ -253,7 +257,7 @@ func TestRegisterOneFromConnectorRejectsMCPExtra(t *testing.T) {
 		Path:        "/phantom",
 		InputSchema: map[string]any{"type": "object"},
 	}
-	if err := connector.RegisterOneFromConnector(st, reg, ids, c, extra, connector.CallbackConfig{}); err == nil {
+	if err := connector.RegisterOneFromConnector(st, reg, ids, nil, c, extra, connector.CallbackConfig{}); err == nil {
 		t.Fatal("expected error registering extra on mcp connector")
 	}
 }

@@ -41,7 +41,7 @@ func TestCatalogRestartSQLite(t *testing.T) {
 	login := []string{}
 	cfg.Connector.RequireLogin = login
 
-	if err := registerConnector(st, reg, cfg, ids, connector.CallbackConfig{}); err != nil {
+	if err := registerConnector(st, reg, cfg, ids, nil, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector: %v", err)
 	}
 	if _, ok := reg.Get("probe"); !ok {
@@ -79,10 +79,10 @@ func TestCatalogRestartSQLite(t *testing.T) {
 	reg2 := tool.NewRegistry()
 	ids2 := identity.NewMemoryStore()
 
-	if err := registerConnector(st2, reg2, cfg, ids2, connector.CallbackConfig{}); err != nil {
+	if err := registerConnector(st2, reg2, cfg, ids2, nil, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector after restart: %v", err)
 	}
-	loadStoredConnectors(st2, reg2, cfg, ids2, connector.CallbackConfig{})
+	loadStoredConnectors(st2, reg2, cfg, ids2, nil, connector.CallbackConfig{})
 
 	// Disabled probe must not be registered.
 	if _, ok := reg2.Get("probe"); ok {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/controlplane"
@@ -40,6 +41,7 @@ type storeRuntime struct {
 	inboxReg    *inbox.Registry
 	holder      *runtimecfg.Holder
 	callbackCfg connector.CallbackConfig
+	blobs       blob.Store
 
 	configPath string
 	cfg        *config.Config
@@ -215,10 +217,10 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	for _, id := range oldIDs {
 		rt.reg.UnregisterConnector(id)
 	}
-	if err := registerConnector(wrapped, rt.reg, cfgSnap, identities, rt.callbackCfg); err != nil {
+	if err := registerConnector(wrapped, rt.reg, cfgSnap, identities, rt.blobs, rt.callbackCfg); err != nil {
 		log.Printf("store hot-swap: register YAML connector: %v", err)
 	}
-	loadStoredConnectors(wrapped, rt.reg, cfgSnap, identities, rt.callbackCfg)
+	loadStoredConnectors(wrapped, rt.reg, cfgSnap, identities, rt.blobs, rt.callbackCfg)
 
 	if rt.inboxReg != nil {
 		if err := seedInboxChannels(cfgSnap, wrapped, rt.inboxReg); err != nil {

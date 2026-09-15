@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/connector/executecallback"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
@@ -412,7 +413,7 @@ type CallbackConfig struct {
 //
 // cb wires callback_urls.event injection for the http plugin invoke path;
 // pass a zero CallbackConfig to disable injection.
-func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.Store, c store.Connector, t store.Tool, cb CallbackConfig) error {
+func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.Store, blobs blob.Store, c store.Connector, t store.Tool, cb CallbackConfig) error {
 	typ := strings.TrimSpace(c.Type)
 	if typ == "" {
 		typ = "openapi"
@@ -481,9 +482,9 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 			return fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
 		}
 	case "openapi":
-		routes, err := openapi.LoadTools(c.Spec)
+		routes, err := loadOpenAPIRoutes(context.Background(), blobs, c.Spec)
 		if err != nil {
-			return fmt.Errorf("%w: %w", openapi.ErrInvalidSpec, err)
+			return err
 		}
 		capture = CaptureDefaults(identity.CaptureConfig{
 			ToolNameGlob:   c.Auth.Capture.ToolNameGlob,
