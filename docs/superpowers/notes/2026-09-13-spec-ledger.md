@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **CONTRACT 已交付** | 清单 [`2026-09-15-clean-audit.md`](./2026-09-15-clean-audit.md) §0 已批准；CONTRACT 计划 [`2026-09-15-clean-contract.md`](../plans/2026-09-15-clean-contract.md) 已执行（2026-09-15）；**下一动作：开 CLEAN-STRUCT 计划** |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **CONTRACT 已交付；STRUCT P0 计划就绪** | CONTRACT 已执行；STRUCT P0 计划 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)（`server.go` / `api.ts` / `ChatPage`）；P1+ 另波；**下一动作：执行 STRUCT P0** |
 
 ---
 
@@ -128,7 +128,7 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **CLEAN** — CONTRACT 已交付；开 STRUCT 计划（母规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md) §4.3）  
+1. **CLEAN** — 执行 STRUCT P0（计划 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)）  
 2. ~~**DOC**~~（已交付）  
 3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 4. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
