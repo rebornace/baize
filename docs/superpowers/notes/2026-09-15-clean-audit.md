@@ -3,7 +3,7 @@
 > 日期：2026-09-15  
 > 状态：**已产品确认**（2026-09-15）  
 > 规格：[`../specs/2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)  
-> 下一阶段：CLEAN-CONTRACT（计划见 [`../plans/2026-09-15-clean-contract.md`](../plans/2026-09-15-clean-contract.md)）
+> 下一阶段：CLEAN-STRUCT（CONTRACT 已交付 2026-09-15；计划 [`../plans/2026-09-15-clean-contract.md`](../plans/2026-09-15-clean-contract.md) 已执行）
 
 ## 0. 产品确认栏
 
@@ -321,12 +321,14 @@
 
 ## 8. 公开文档处置（CONTRACT 执行）
 
+**执行状态（2026-09-15）：** 已完成 — 产品向 README、`docs/developers/*` 已落地；旧 `docs/architecture-and-plugin-protocol.md`、`docs/deployment.md` 已删除。
+
 | 路径 | 建议 | 理由 |
 |------|------|------|
-| `README.md` / `README.zh-CN.md` | 重写为产品向 | 规格已定 |
-| 新建开发者文档 | 新建 | 规格已定 |
-| `docs/architecture-and-plugin-protocol.md` | 删除 | 规格已定 |
-| `docs/deployment.md` | 删除 | 规格已定 |
+| `README.md` / `README.zh-CN.md` | 重写为产品向 | **已执行** |
+| 新建开发者文档 | 新建 | **已执行**（`docs/developers/`） |
+| `docs/architecture-and-plugin-protocol.md` | 删除 | **已执行** |
+| `docs/deployment.md` | 删除 | **已执行** |
 
 ## 9. 明确不做（本轮 CLEAN）
 
@@ -418,7 +420,7 @@ Get-ChildItem -Recurse -Include '*.ts','*.tsx' web\chat\src |
   ForEach-Object { "{0,5}  {1}" -f @(Get-Content $_.FullName).Count, $_.FullName.Replace((Get-Location).Path+'\','') }
 ```
 
-（TS 榜单排除 `*.test.*` / `*.spec.*`；Go 榜单为包目录 Top 15，见 §5.1–5.2。删除候选核对：`Select-String -Path web\chat\src -Pattern 'patchToolRequireLogin|clearMessages' -Recurse` 应仅命中 `api.ts` 定义行。）
+（TS 榜单排除 `*.test.*` / `*.spec.*`；Go 榜单为包目录 Top 15，见 §5.1–5.2。删除候选核对（CONTRACT 后）：`Get-ChildItem web\chat\src -Recurse -Include *.ts,*.tsx | Select-String -Pattern 'patchToolRequireLogin|clearMessages'` **应零命中**。）
 
 ### 任务 5：门禁基线 + 性能候选 + 收口
 

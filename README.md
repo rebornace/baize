@@ -15,7 +15,7 @@ Baize is an Agent Runtime that sits beside your services: turn OpenAPI into call
 
 ## Highlights
 
-- **Zero intrusion:** No changes to the business process, no embedded SDK — sidecar on, sidecar off.
+- **Zero intrusion:** No changes to the business service, no embedded SDK — sidecar on, sidecar off.
 - **OpenAPI → tools:** Upload or point at an API document; operations become assistant capabilities.
 - **Approval gate for writes:** Mutating calls can wait for a human before hitting your systems.
 - **Clean uninstall:** Single process, config outside the app — stop Runtime and leave almost nothing behind.

@@ -1,11 +1,11 @@
 # OSS 质量收口：规范、契约、结构、门禁与可证性能
 
-> 状态：**已批准（待实现）**  
+> 状态：**进行中**（AUDIT 已确认；**CONTRACT 已交付**；STRUCT / GATES / PERF-HOT 待实现）  
 > 日期：2026-09-15  
 > 史诗：CLEAN（分阶段：AUDIT → CONTRACT → STRUCT → GATES → PERF-HOT）  
 > 前置：开源首版 12 史诗均已交付；产品确认零外部用户，允许破坏性契约清理  
 > 备注：非新功能；目标为干净可维护的开源首版表面  
-> 实现计划：AUDIT [`../plans/2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；清单 [`../notes/2026-09-15-clean-audit.md`](../notes/2026-09-15-clean-audit.md)（**已确认**）；CONTRACT [`../plans/2026-09-15-clean-contract.md`](../plans/2026-09-15-clean-contract.md)；其后 STRUCT/GATES/PERF 另开计划
+> 实现计划：AUDIT [`../plans/2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；清单 [`../notes/2026-09-15-clean-audit.md`](../notes/2026-09-15-clean-audit.md)（**已确认**）；CONTRACT [`../plans/2026-09-15-clean-contract.md`](../plans/2026-09-15-clean-contract.md)（**已交付**，2026-09-15）；其后 STRUCT / GATES / PERF-HOT 另开计划
 
 ---
 
@@ -155,3 +155,4 @@ AUDIT → CONTRACT（文档分层骨架）→ STRUCT → GATES → PERF-HOT（�
 | 日期 | 说明 |
 |------|------|
 | 2026-09-15 | 初稿：方案 3 + 文档分层 + 零用户破契约；设计评审通过 |
+| 2026-09-15 | CLEAN-CONTRACT 交付：客户端死导出删除、公开 docs 分层、产品向 README；测试绿 |
