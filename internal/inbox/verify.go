@@ -7,8 +7,6 @@ import (
 	"github.com/rebornace/baize/internal/webhooksig"
 )
 
-const signaturePrefix = webhooksig.SignaturePrefix
-
 var (
 	ErrInvalidSignature = webhooksig.ErrInvalidSignature
 	ErrTimestampSkew    = webhooksig.ErrTimestampSkew

@@ -430,7 +430,6 @@ func buildInboundContent(text string, files []InboundFile, supportsVision bool) 
 		}
 	}
 
-	llmText := text
 	var b strings.Builder
 	b.WriteString(text)
 	for _, t := range textExts {
@@ -453,8 +452,7 @@ func buildInboundContent(text string, files []InboundFile, supportsVision bool) 
 		b.WriteString("】\n（已收到该文件，但暂不支持解析其内容，无法读取其中的信息。）")
 	}
 	if len(textExts) > 0 || len(imageExts) > 0 || len(skipped) > 0 {
-		llmText = b.String()
-		parts = append(parts, llm.ContentPart{Type: "text", Text: llmText})
+		parts = append(parts, llm.ContentPart{Type: "text", Text: b.String()})
 		if supportsVision {
 			for _, img := range imageExts {
 				parts = append(parts, llm.ContentPart{
