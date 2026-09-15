@@ -1039,14 +1039,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 // then reloads the skill catalog. Sync/Reload failures are logged only so the
 // connector mutation HTTP response stays successful.
 func (s *Server) syncLoginManagedSkill(connectorID string) {
-	if s == nil || s.SkillCatalog == nil {
+	if s == nil || s.SkillCatalog == nil || s.SkillCatalog.Blobs == nil {
 		return
 	}
-	managedDir := s.SkillCatalog.ManagedDir()
-	if strings.TrimSpace(managedDir) == "" {
-		return
-	}
-	if err := loginmanage.SyncConnector(s.Store, managedDir, s.SkillCatalog.UserDir(), connectorID); err != nil {
+	if err := loginmanage.SyncConnector(s.Store, s.SkillCatalog.Blobs, connectorID); err != nil {
 		log.Printf("loginmanage: sync connector %q: %v", connectorID, err)
 		return
 	}

@@ -354,7 +354,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		return nil, nil, err
 	}
 	loadStoredConnectors(st, reg, cfg, identities, blobStore, callbackCfg)
-	if err := loginmanage.SyncAll(st, managedDir, cfg.Skills.UserDir); err != nil {
+	if err := loginmanage.SyncAll(st, blobStore); err != nil {
 		log.Printf("loginmanage: SyncAll: %v", err)
 	} else if err := skillCat.Reload(); err != nil {
 		log.Printf("loginmanage: reload skills after SyncAll: %v", err)

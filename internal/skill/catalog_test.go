@@ -109,10 +109,10 @@ func TestCatalogLoadsManaged(t *testing.T) {
 	root := t.TempDir()
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
-	managed := filepath.Join(root, "managed")
-	mustWriteManagedSkill(t, filepath.Join(managed, "login-auth"), "login-auth", "auth", []string{"phoneLogin"})
+	blobs := testMemoryBlobs(t)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user, managed, testMemoryBlobs(t))
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,11 +143,10 @@ func TestCatalogManagedOverridesUser(t *testing.T) {
 	root := t.TempDir()
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
-	managed := filepath.Join(root, "managed")
-	mustWriteManagedSkill(t, filepath.Join(managed, "login-auth"), "login-auth", "auth", []string{"phoneLogin"})
-
 	blobs := testMemoryBlobs(t)
-	cat, err := skill.LoadCatalog([]string{builtin}, user, managed, blobs)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,12 +248,11 @@ func TestDeleteUser(t *testing.T) {
 	root := t.TempDir()
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
-	managed := filepath.Join(root, "managed")
 	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "x", []string{"a"})
-	mustWriteManagedSkill(t, filepath.Join(managed, "login-auth"), "login-auth", "auth", []string{"phoneLogin"})
-
 	blobs := testMemoryBlobs(t)
-	cat, err := skill.LoadCatalog([]string{builtin}, user, managed, blobs)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,11 +498,8 @@ func mustWriteSkill(t *testing.T, dir, name, desc string, tools []string) {
 	}
 }
 
-func mustWriteManagedSkill(t *testing.T, dir, name, connectorID string, tools []string) {
+func mustPutManagedSkill(t *testing.T, blobs blob.Store, name, connectorID string, tools []string) {
 	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	var b strings.Builder
 	b.WriteString("---\nname: " + name + "\ndescription: connector " + connectorID + " login\ntools:\n")
 	for _, x := range tools {
@@ -512,7 +507,8 @@ func mustWriteManagedSkill(t *testing.T, dir, name, connectorID string, tools []
 	}
 	b.WriteString("managed: true\nmanaged_kind: connector_login\nmanaged_connector_id: " + connectorID + "\n")
 	b.WriteString("---\n\nbody\n")
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(b.String()), 0o644); err != nil {
+	key := blob.SkillObjectKey("managed", name, "SKILL.md")
+	if err := blobs.Put(context.Background(), key, []byte(b.String()), "text/markdown"); err != nil {
 		t.Fatal(err)
 	}
 }

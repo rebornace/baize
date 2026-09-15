@@ -35,8 +35,8 @@ type Catalog struct {
 	mu          sync.RWMutex
 	byID        map[string]Package
 	builtinDirs []string
-	userDir     string // retained for loginmanage / API paths; user packages live in Blobs
-	managedDir  string
+	userDir     string // retained for API paths; user packages live in Blobs
+	managedDir  string // retained for API compat; managed packages live in Blobs
 	Blobs       blob.Store
 }
 
@@ -100,8 +100,7 @@ func (c *Catalog) Reload() error {
 	if err := c.loadUserFromBlobs(byID); err != nil {
 		return err
 	}
-	// TODO(task-6): List blob.PrefixSkillsManaged and load managed packages from blob.
-	if err := scanDir(c.managedDir, SourceManaged, byID); err != nil {
+	if err := c.loadManagedFromBlobs(byID); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -111,16 +110,24 @@ func (c *Catalog) Reload() error {
 }
 
 func (c *Catalog) loadUserFromBlobs(byID map[string]Package) error {
+	return c.loadSkillsFromBlobs(blob.PrefixSkillsUser, SourceUser, byID)
+}
+
+func (c *Catalog) loadManagedFromBlobs(byID map[string]Package) error {
+	return c.loadSkillsFromBlobs(blob.PrefixSkillsManaged, SourceManaged, byID)
+}
+
+func (c *Catalog) loadSkillsFromBlobs(prefix, source string, byID map[string]Package) error {
 	if c.Blobs == nil {
 		return nil
 	}
 	ctx := context.Background()
-	entries, err := c.Blobs.List(ctx, blob.PrefixSkillsUser)
+	entries, err := c.Blobs.List(ctx, prefix)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		id, ok := userSkillIDFromKey(e.Key)
+		id, ok := skillIDFromBlobKey(prefix, e.Key)
 		if !ok {
 			continue
 		}
@@ -136,8 +143,8 @@ func (c *Catalog) loadUserFromBlobs(byID map[string]Package) error {
 			log.Printf("skill: warning: %s name=%q != id=%q", e.Key, pkg.Name, id)
 		}
 		pkg.ID = id
-		pkg.Source = SourceUser
-		wfKey := blob.SkillObjectKey(SourceUser, id, "workflow.yaml")
+		pkg.Source = source
+		wfKey := blob.SkillObjectKey(source, id, "workflow.yaml")
 		wfRaw, wfErr := c.Blobs.Get(ctx, wfKey)
 		if wfErr == nil {
 			wf, perr := workflow.Parse(wfRaw)
@@ -156,9 +163,9 @@ func (c *Catalog) loadUserFromBlobs(byID map[string]Package) error {
 	return nil
 }
 
-// userSkillIDFromKey extracts id from skills/user/<id>/SKILL.md.
-func userSkillIDFromKey(key string) (string, bool) {
-	rest, ok := strings.CutPrefix(key, blob.PrefixSkillsUser)
+// skillIDFromBlobKey extracts id from skills/<source>/<id>/SKILL.md.
+func skillIDFromBlobKey(prefix, key string) (string, bool) {
+	rest, ok := strings.CutPrefix(key, prefix)
 	if !ok {
 		return "", false
 	}

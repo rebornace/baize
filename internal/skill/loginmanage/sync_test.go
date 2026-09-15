@@ -1,19 +1,29 @@
 package loginmanage_test
 
 import (
-	"os"
-	"path/filepath"
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/memory"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/store"
 )
 
+func testMemoryBlobs(t *testing.T) blob.Store {
+	t.Helper()
+	s, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
 func TestSyncWritesManagedPackage(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"})
 	st.ReplaceConnectorTools("auth", []store.Tool{
@@ -23,12 +33,12 @@ func TestSyncWritesManagedPackage(t *testing.T) {
 		{ConnectorID: "auth", Name: "listThings", Enabled: true},
 	})
 
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
 
-	skillPath := filepath.Join(managed, "login-auth", "SKILL.md")
-	raw, err := os.ReadFile(skillPath)
+	key := blob.SkillObjectKey("managed", "login-auth", "SKILL.md")
+	raw, err := blobs.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,21 +61,52 @@ func TestSyncWritesManagedPackage(t *testing.T) {
 	if strings.Contains(content, "baize") || strings.Contains(strings.ToLower(content), "baize") {
 		t.Fatal("vendor-neutral copy must not mention product name")
 	}
-	if _, err := os.Stat(filepath.Join(managed, "login-auth", "workflow.yaml")); !os.IsNotExist(err) {
+	if _, err := blobs.Get(context.Background(), blob.SkillObjectKey("managed", "login-auth", "workflow.yaml")); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatalf("workflow.yaml must not exist, err=%v", err)
 	}
 }
 
-func TestSyncSkipsNonManagedConflict(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
-	pkg := filepath.Join(userSkills, "login-auth")
-	if err := os.MkdirAll(pkg, 0o755); err != nil {
+func TestSyncManagedVisibleInCatalogAndDeletesWithConnector(t *testing.T) {
+	blobs := testMemoryBlobs(t)
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"})
+	st.ReplaceConnectorTools("auth", []store.Tool{
+		{ConnectorID: "auth", Name: "phoneLogin", Enabled: true},
+	})
+
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
+	cat, err := skill.LoadCatalog(nil, "", "", blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("login-auth")
+	if !ok || p.Source != skill.SourceManaged {
+		t.Fatalf("Catalog missing login-auth after Sync: %+v ok=%v", p, ok)
+	}
+
+	st.DeleteConnector("auth")
+	if err := loginmanage.SyncAll(st, blobs); err != nil {
+		t.Fatal(err)
+	}
+	key := blob.SkillObjectKey("managed", "login-auth", "SKILL.md")
+	if _, err := blobs.Get(context.Background(), key); !errors.Is(err, blob.ErrNotFound) {
+		t.Fatalf("managed blob should be gone after connector delete, err=%v", err)
+	}
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("login-auth"); ok {
+		t.Fatal("Catalog should drop login-auth after managed blob deleted")
+	}
+}
+
+func TestSyncSkipsNonManagedConflict(t *testing.T) {
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
 	original := "---\nname: login-auth\ndescription: user fork\ntools: [custom]\n---\n\n# User skill\n"
-	if err := os.WriteFile(filepath.Join(pkg, "SKILL.md"), []byte(original), 0o644); err != nil {
+	if err := blobs.Put(ctx, blob.SkillObjectKey("user", "login-auth", "SKILL.md"), []byte(original), "text/markdown"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -75,55 +116,50 @@ func TestSyncSkipsNonManagedConflict(t *testing.T) {
 		{ConnectorID: "auth", Name: "AuthController_phoneLogin", Enabled: true},
 	})
 
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(pkg, "SKILL.md"))
+	got, err := blobs.Get(ctx, blob.SkillObjectKey("user", "login-auth", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != original {
 		t.Fatalf("user package must stay unchanged\ngot:\n%s", got)
 	}
-	if _, err := os.Stat(filepath.Join(managed, "login-auth")); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, blob.SkillObjectKey("managed", "login-auth", "SKILL.md")); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("must not write managed package when user conflict exists")
 	}
 }
 
 func TestSyncConflictDeletesResidualManaged(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"})
 	st.ReplaceConnectorTools("auth", []store.Tool{
 		{ConnectorID: "auth", Name: "phoneLogin", Enabled: true},
 	})
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	managedPkg := filepath.Join(managed, "login-auth")
-	if _, err := os.Stat(managedPkg); err != nil {
+	managedKey := blob.SkillObjectKey("managed", "login-auth", "SKILL.md")
+	if _, err := blobs.Get(ctx, managedKey); err != nil {
 		t.Fatal(err)
 	}
 
-	userPkg := filepath.Join(userSkills, "login-auth")
-	if err := os.MkdirAll(userPkg, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	userMD := "---\nname: login-auth\ndescription: user fork\ntools: [custom]\n---\n\n# User\n"
-	if err := os.WriteFile(filepath.Join(userPkg, "SKILL.md"), []byte(userMD), 0o644); err != nil {
+	if err := blobs.Put(ctx, blob.SkillObjectKey("user", "login-auth", "SKILL.md"), []byte(userMD), "text/markdown"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(managedPkg); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, managedKey); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("residual managed package must be deleted on user conflict")
 	}
-	got, err := os.ReadFile(filepath.Join(userPkg, "SKILL.md"))
+	got, err := blobs.Get(ctx, blob.SkillObjectKey("user", "login-auth", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,61 +169,58 @@ func TestSyncConflictDeletesResidualManaged(t *testing.T) {
 }
 
 func TestSyncDeletesWhenTypeBecomesMCP(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"})
 	st.ReplaceConnectorTools("auth", []store.Tool{
 		{ConnectorID: "auth", Name: "phoneLogin", Enabled: true},
 	})
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	pkg := filepath.Join(managed, "login-auth")
-	if _, err := os.Stat(pkg); err != nil {
+	key := blob.SkillObjectKey("managed", "login-auth", "SKILL.md")
+	if _, err := blobs.Get(ctx, key); err != nil {
 		t.Fatal(err)
 	}
 
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "mcp"})
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(pkg); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, key); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("managed package must be deleted when connector type becomes mcp")
 	}
 }
 
 func TestSyncDeletesWhenNoTools(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "http"})
 	st.ReplaceConnectorTools("auth", []store.Tool{
 		{ConnectorID: "auth", Name: "phoneLogin", Enabled: true},
 	})
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	pkg := filepath.Join(managed, "login-auth")
-	if _, err := os.Stat(pkg); err != nil {
+	key := blob.SkillObjectKey("managed", "login-auth", "SKILL.md")
+	if _, err := blobs.Get(ctx, key); err != nil {
 		t.Fatal(err)
 	}
 
 	st.ReplaceConnectorTools("auth", nil)
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(pkg); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, key); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("managed package must be deleted when no login tools remain")
 	}
 }
 
 func TestSyncAllSkipsMCP(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"})
 	st.ReplaceConnectorTools("auth", []store.Tool{
@@ -198,47 +231,42 @@ func TestSyncAllSkipsMCP(t *testing.T) {
 		{ConnectorID: "mcp1", Name: "oauthLogin", Enabled: true},
 	})
 
-	if err := loginmanage.SyncAll(st, managed, userSkills); err != nil {
+	if err := loginmanage.SyncAll(st, blobs); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(managed, "login-auth", "SKILL.md")); err != nil {
+	if _, err := blobs.Get(ctx, blob.SkillObjectKey("managed", "login-auth", "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(managed, "login-mcp1")); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, blob.SkillObjectKey("managed", "login-mcp1", "SKILL.md")); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("mcp connectors must not get managed login skills")
 	}
 }
 
 func TestSyncAllRemovesOrphanManagedLogin(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(root, "managed")
-	userSkills := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "openapi"})
 	st.ReplaceConnectorTools("auth", []store.Tool{
 		{ConnectorID: "auth", Name: "phoneLogin", Enabled: true},
 	})
-	if err := loginmanage.SyncConnector(st, managed, userSkills, "auth"); err != nil {
+	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
 
-	orphan := filepath.Join(managed, "login-gone")
-	if err := os.MkdirAll(orphan, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	orphanMD := "---\nname: login-gone\ndescription: orphan\ntools: [x]\nmanaged: true\nmanaged_kind: connector_login\nmanaged_connector_id: gone\n---\n\n# orphan\n"
-	if err := os.WriteFile(filepath.Join(orphan, "SKILL.md"), []byte(orphanMD), 0o644); err != nil {
+	if err := blobs.Put(ctx, blob.SkillObjectKey("managed", "login-gone", "SKILL.md"), []byte(orphanMD), "text/markdown"); err != nil {
 		t.Fatal(err)
 	}
 
 	st.UpsertConnector(store.Connector{ID: "auth", Type: "mcp"})
-	if err := loginmanage.SyncAll(st, managed, userSkills); err != nil {
+	if err := loginmanage.SyncAll(st, blobs); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(managed, "login-auth")); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, blob.SkillObjectKey("managed", "login-auth", "SKILL.md")); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("type-changed connector package must be removed by SyncAll")
 	}
-	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+	if _, err := blobs.Get(ctx, blob.SkillObjectKey("managed", "login-gone", "SKILL.md")); !errors.Is(err, blob.ErrNotFound) {
 		t.Fatal("orphan managed connector_login must be removed by SyncAll")
 	}
 }

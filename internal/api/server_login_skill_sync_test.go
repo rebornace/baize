@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,11 @@ func TestPutConnectorSyncsManagedLoginSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cat, err := skill.LoadCatalog(nil, userDir, managedDir, nil)
+	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatalf("open memory blob: %v", err)
+	}
+	cat, err := skill.LoadCatalog(nil, userDir, managedDir, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,10 +40,6 @@ func TestPutConnectorSyncsManagedLoginSkill(t *testing.T) {
 	srv := NewServer(st, reg, &gateFakeRunner{store: st})
 	srv.Identities = identity.NewMemoryStore()
 	srv.DataDir = t.TempDir()
-	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
-	if err != nil {
-		t.Fatalf("open memory blob: %v", err)
-	}
 	srv.Blobs = blobs
 	srv.SkillCatalog = cat
 	h := srv.Handler()
@@ -75,8 +76,12 @@ func TestPutConnectorSyncsManagedLoginSkill(t *testing.T) {
 	}
 
 	skillPath := filepath.Join(managedDir, "login-auth", "SKILL.md")
-	if _, err := os.Stat(skillPath); err != nil {
-		t.Fatalf("managed package missing on disk: %v", err)
+	if _, err := os.Stat(skillPath); !os.IsNotExist(err) {
+		t.Fatalf("must not write local managedDir, stat err=%v", err)
+	}
+	key := blob.SkillObjectKey("managed", "login-auth", "SKILL.md")
+	if _, err := blobs.Get(context.Background(), key); err != nil {
+		t.Fatalf("managed package missing in blob: %v", err)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/v0/skills", nil)
@@ -102,5 +107,15 @@ func TestPutConnectorSyncsManagedLoginSkill(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("GET /v0/skills missing login-auth: %+v", listBody.Skills)
+	}
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/v0/connectors/auth", nil)
+	delRR := httptest.NewRecorder()
+	h.ServeHTTP(delRR, delReq)
+	if delRR.Code != http.StatusOK && delRR.Code != http.StatusNoContent {
+		t.Fatalf("DELETE status=%d body=%s", delRR.Code, delRR.Body.String())
+	}
+	if _, err := blobs.Get(context.Background(), key); !errors.Is(err, blob.ErrNotFound) {
+		t.Fatalf("managed blob should be gone after connector delete, err=%v", err)
 	}
 }
