@@ -3,18 +3,16 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
+import type { ChatBlock } from '../foldEvents'
 import { ToolCard } from './ToolCard'
 
-// waiting_human 工具块（多余字段按简报构造，组件只读 name/runId/status/arguments/result）。
-const block = {
+const block: Extract<ChatBlock, { kind: 'tool' }> = {
   kind: 'tool',
   name: 'order_query',
   runId: 'r1',
-  callId: 'c1',
-  args: {},
   status: 'waiting_human',
-  startedAt: '2026-01-01T00:00:00Z',
-} as any
+  arguments: {},
+}
 
 let host: HTMLDivElement
 let root: Root

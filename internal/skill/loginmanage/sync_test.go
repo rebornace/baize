@@ -86,7 +86,9 @@ func TestSyncManagedVisibleInCatalogAndDeletesWithConnector(t *testing.T) {
 		t.Fatalf("Catalog missing login-auth after Sync: %+v ok=%v", p, ok)
 	}
 
-	st.DeleteConnector("auth")
+	if err := st.DeleteConnector("auth"); err != nil {
+		t.Fatal(err)
+	}
 	if err := loginmanage.SyncAll(st, blobs); err != nil {
 		t.Fatal(err)
 	}

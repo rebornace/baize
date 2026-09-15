@@ -56,10 +56,7 @@ func TestRunStreamPollsStoreWithoutHubNudge(t *testing.T) {
 
 	// Wait until initial replay is visible, then append without Hub notify.
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if strings.Contains(rr.Body.String(), "run.started") {
-			break
-		}
+	for !strings.Contains(rr.Body.String(), "run.started") {
 		if time.Now().After(deadline) {
 			cancel()
 			t.Fatal("initial replay not received")
@@ -73,10 +70,7 @@ func TestRunStreamPollsStoreWithoutHubNudge(t *testing.T) {
 	}
 
 	deadline = time.Now().Add(2 * time.Second)
-	for {
-		if strings.Contains(rr.Body.String(), "llm.message") {
-			break
-		}
+	for !strings.Contains(rr.Body.String(), "llm.message") {
 		if time.Now().After(deadline) {
 			cancel()
 			<-done
@@ -126,10 +120,7 @@ func TestRunStreamExternalNudgeTriggersCatchUp(t *testing.T) {
 	}()
 
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if strings.Contains(rr.Body.String(), "run.started") {
-			break
-		}
+	for !strings.Contains(rr.Body.String(), "run.started") {
 		if time.Now().After(deadline) {
 			cancel()
 			t.Fatal("initial replay not received")
@@ -205,10 +196,7 @@ func TestRunStreamEndedCatchUpDeliversStoreEvents(t *testing.T) {
 	}()
 
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if strings.Contains(rr.Body.String(), "run.started") {
-			break
-		}
+	for !strings.Contains(rr.Body.String(), "run.started") {
 		if time.Now().After(deadline) {
 			cancel()
 			t.Fatal("initial replay not received")

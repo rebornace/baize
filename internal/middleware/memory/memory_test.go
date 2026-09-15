@@ -16,7 +16,7 @@ func TestMemoryQueueEnqueueConsumeAck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	job := middleware.Job{RunID: "run_1", Kind: middleware.KindRun, Input: "hi", EnqueuedAt: time.Now()}
 	if err := mw.Queue.Enqueue(context.Background(), job); err != nil {
@@ -39,7 +39,7 @@ func TestMemoryQueueEnqueueFillsEnqueuedAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	job := middleware.Job{RunID: "run_ts", Kind: middleware.KindRun, Input: "hi"}
 	if err := mw.Queue.Enqueue(context.Background(), job); err != nil {
@@ -87,7 +87,7 @@ func TestMemoryQueueEnqueueRespectsContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 
 	// A single consumer drains nothing: fill the 1024-buffer so Enqueue blocks.
 	ctxFill, cancelFill := context.WithTimeout(context.Background(), 5*time.Second)
@@ -119,7 +119,7 @@ func TestMemoryBusLocalNudge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 	ch, err := mw.Bus.SubscribeRunEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestMemoryLimiterWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mw.Close()
+	defer func() { _ = mw.Close() }()
 	// memory limiter default window; hammer one key and assert it eventually denies.
 	allowed := 0
 	for i := 0; i < 5000; i++ {

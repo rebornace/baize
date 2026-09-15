@@ -66,7 +66,7 @@ func startCapturingMCPHTTP(t *testing.T) (*httptest.Server, *authCapture) {
 		Name:        "echo",
 		Description: "echo",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, args mcpOAuthEchoArgs) (*mcp.CallToolResult, mcpOAuthEchoOutput, error) {
-		return nil, mcpOAuthEchoOutput{Message: args.Message}, nil
+		return nil, mcpOAuthEchoOutput(args), nil
 	})
 	inner := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	cap := &authCapture{}

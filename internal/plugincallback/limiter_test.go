@@ -21,22 +21,31 @@ func TestLimiterAllowsUnderBudget(t *testing.T) {
 func TestLimiterPerRunIsolated(t *testing.T) {
 	l := NewLimiter(2, time.Hour)
 	now := time.Unix(1_700_000_000, 0)
-	if !l.Allow("run_a", now) || !l.Allow("run_a", now) {
-		t.Fatal("run_a calls rejected")
+	if !l.Allow("run_a", now) {
+		t.Fatal("run_a first call rejected")
+	}
+	if !l.Allow("run_a", now) {
+		t.Fatal("run_a second call rejected")
 	}
 	if l.Allow("run_a", now) {
 		t.Fatal("run_a 3rd should reject")
 	}
-	if !l.Allow("run_b", now) || !l.Allow("run_b", now) {
-		t.Fatal("run_b calls rejected")
+	if !l.Allow("run_b", now) {
+		t.Fatal("run_b first call rejected")
+	}
+	if !l.Allow("run_b", now) {
+		t.Fatal("run_b second call rejected")
 	}
 }
 
 func TestLimiterWindowReset(t *testing.T) {
 	l := NewLimiter(2, time.Hour)
 	t0 := time.Unix(1_700_000_000, 0)
-	if !l.Allow("run_r", t0) || !l.Allow("run_r", t0) {
-		t.Fatal("first window calls rejected")
+	if !l.Allow("run_r", t0) {
+		t.Fatal("first window first call rejected")
+	}
+	if !l.Allow("run_r", t0) {
+		t.Fatal("first window second call rejected")
 	}
 	if l.Allow("run_r", t0) {
 		t.Fatal("over-budget in first window should reject")

@@ -103,10 +103,10 @@ func (s *Server) handlePostInbox(w http.ResponseWriter, r *http.Request) {
 
 	bodyHash := sha256Hex(rawBody)
 	action := strings.TrimSpace(payload.Action)
-	switch {
-	case action == "" || action == inbox.ActionCreateRun:
+	switch action {
+	case "", inbox.ActionCreateRun:
 		s.handleInboxCreateRun(w, r, channel, channelID, payload, bodyHash)
-	case action == inbox.ActionResume:
+	case inbox.ActionResume:
 		s.handleInboxResume(w, r, channel, channelID, payload, bodyHash)
 	default:
 		writeError(w, http.StatusBadRequest, "invalid_request", "unknown action")

@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ToolInfo } from '../api'
 import { OpenApiSettings, openApiConnectorIds } from './OpenApiSettings'
 
 function json(body: unknown, init?: ResponseInit) {
@@ -40,15 +41,17 @@ async function renderOpenApi() {
 
 describe('openApiConnectorIds', () => {
   it('includes spec/extra sources only', () => {
-    expect(openApiConnectorIds([
+    const tools: ToolInfo[] = [
       { name: 'a', connector_id: 'o1', source: 'spec' },
       { name: 'b', connector_id: 'o2', source: 'extra' },
       { name: 'c', connector_id: 'p1', source: 'plugin' },
-    ] as any)).toEqual(['o1', 'o2'])
+    ]
+    expect(openApiConnectorIds(tools)).toEqual(['o1', 'o2'])
   })
 
   it('dedupes connector ids, preserves first-seen order and excludes plugin/mcp', () => {
-    const ids = openApiConnectorIds([
+    // connector_id 为空串：覆盖 !t.connector_id 分支（缺字段场景用窄类型而非 as any）
+    const tools: ToolInfo[] = [
       { name: 'a', connector_id: 'o1', source: 'spec' },
       { name: 'b', connector_id: 'o1', source: 'extra' },
       { name: 'c', connector_id: 'o2', source: 'extra' },
@@ -56,9 +59,9 @@ describe('openApiConnectorIds', () => {
       { name: 'e', connector_id: 'p1', source: 'plugin' },
       { name: 'f', connector_id: 'm1', source: 'mcp' },
       { name: 'g', connector_id: 'o3', source: 'spec' },
-      { name: 'h', source: 'spec' },
-    ] as any)
-    expect(ids).toEqual(['o1', 'o2', 'o3'])
+      { name: 'h', connector_id: '', source: 'spec' },
+    ]
+    expect(openApiConnectorIds(tools)).toEqual(['o1', 'o2', 'o3'])
   })
 })
 

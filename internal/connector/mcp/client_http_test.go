@@ -25,7 +25,7 @@ func TestHTTPDiscoverAndCallTool(t *testing.T) {
 		Name:        "echo",
 		Description: "echo",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, args httpEchoArgs) (*mcp.CallToolResult, httpEchoOutput, error) {
-		return nil, httpEchoOutput{Message: args.Message}, nil
+		return nil, httpEchoOutput(args), nil
 	})
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)

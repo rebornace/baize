@@ -13,14 +13,15 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 	if db == nil {
 		return nil, sql.ErrConnDone
 	}
-	if dialect == store.DialectSQLite || dialect == "" {
+	switch dialect {
+	case store.DialectSQLite, "":
 		if _, err := db.Exec(sqliteMessagesSchema); err != nil {
 			return nil, err
 		}
 		if err := migrateMessagesThinkingColumns(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
-	} else if dialect == store.DialectPostgres {
+	case store.DialectPostgres:
 		// messages table is created by store.OpenPostgres; ensure meta for shared DB.
 		const pgMeta = `
 CREATE TABLE IF NOT EXISTS conversation_meta (

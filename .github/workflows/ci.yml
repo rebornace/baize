@@ -41,7 +41,6 @@ jobs:
         with:
           version: v2.4.0
           args: --timeout=5m
-          only-new-issues: true
       - name: Build
         run: go build ./...
       - name: Test
