@@ -48,6 +48,8 @@ export const WEIXIN = liveGroup('WEIXIN')
 export const INBOX = liveGroup('INBOX')
 export const LOCALE = liveGroup('LOCALE')
 export const WORKFLOW = liveGroup('WORKFLOW')
+export const SETTINGS_NAV = liveGroup('SETTINGS_NAV')
+export const MODEL_SELECT = liveGroup('MODEL_SELECT')
 
 /** 内部档位 id -> 对外叫法；未知值按「标准」。 */
 export function tierLabel(tier?: string): string {

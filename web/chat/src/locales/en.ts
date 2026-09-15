@@ -698,4 +698,50 @@ export const enPack = {
     chipZh: '中',
     chipEn: 'EN',
   },
+  SETTINGS_NAV: {
+    overview: 'Overview',
+    groupAssistant: 'Assistant',
+    groupConnect: 'Connect',
+    groupMessaging: 'Messaging',
+    groupSystem: 'System',
+    models: 'Models',
+    modelsDesc:
+      'Manage models for chat and understanding; Auto select routes by task (future vector/audio models extend here)',
+    tools: 'Assistant capabilities',
+    toolsDesc: 'Manage callable capabilities; require confirmation or login before calls',
+    skills: 'Skills',
+    skillsDesc: 'Reusable workflows; type @ or / in chat to invoke',
+    memory: 'Account memory',
+    memoryDesc:
+      'View and manage facts remembered across chats for this account; runtime toggle is under Runtime settings',
+    openapi: 'Business systems',
+    openapiDesc: 'Upload an API document to connect internal business systems without writing code',
+    mcp: 'External tool services',
+    mcpDesc: 'Connect standard MCP tool servers (local subprocess or remote HTTP) to extend capabilities',
+    plugins: 'Plugins',
+    pluginsDesc: 'Connect independently deployed plugin programs',
+    mcpExport: 'Expose capabilities',
+    mcpExportDesc: 'Expose assistant capabilities as a standard MCP server for other clients',
+    weixin: 'WeChat',
+    weixinDesc:
+      'Connect a WeChat account so customers/colleagues can chat with the assistant (DingTalk / Feishu cards come later)',
+    webhooks: 'Message callbacks',
+    webhooksDesc: 'Push to a URL you choose when new messages or events arrive',
+    inbox: 'Inbound mail',
+    inboxDesc: 'Generate a dedicated inbox URL; external mail becomes conversations',
+    identities: 'Accounts',
+    identitiesDesc: 'Manage people who can sign in and use the assistant',
+    storage: 'Storage',
+    storageDesc: 'Where conversations and data are stored (local file or database)',
+    runtime: 'Runtime settings',
+    runtimeDesc: 'Compaction, timeouts, and other runtime behavior; changes apply immediately',
+  },
+  MODEL_SELECT: {
+    visionNone:
+      'No Vision model is available. Add one under Settings → Models, or remove images before sending.',
+    visionUnsupported:
+      'This model cannot see images. Switch to Auto select or a Vision-tagged model, or remove images.',
+    optionMeta: (model: string, tags: string) =>
+      tags ? ` (${model}) ${tags}` : ` (${model})`,
+  },
 } satisfies StringsPack

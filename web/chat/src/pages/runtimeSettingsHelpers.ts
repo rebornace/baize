@@ -25,70 +25,81 @@ export interface KnobFieldSpec {
   integer: boolean
 }
 
-export const MAIN_KNOB_FIELDS: KnobFieldSpec[] = [
-  {
-    key: 'max_messages',
-    label: RUNTIME.fieldMaxMessages,
-    hint: RUNTIME.hintMaxMessages,
-    min: 1,
-    max: 500,
-    integer: true,
-  },
-  {
-    key: 'max_steps',
-    label: RUNTIME.fieldMaxSteps,
-    hint: RUNTIME.hintMaxSteps,
-    min: 1,
-    max: 100,
-    integer: true,
-  },
-  {
-    key: 'tool_timeout_seconds',
-    label: RUNTIME.fieldToolTimeout,
-    hint: RUNTIME.hintToolTimeout,
-    min: 1,
-    max: 600,
-    integer: true,
-  },
-]
+/** Rebuild on each call so labels/hints follow the active locale pack. */
+export function mainKnobFields(): KnobFieldSpec[] {
+  return [
+    {
+      key: 'max_messages',
+      label: RUNTIME.fieldMaxMessages,
+      hint: RUNTIME.hintMaxMessages,
+      min: 1,
+      max: 500,
+      integer: true,
+    },
+    {
+      key: 'max_steps',
+      label: RUNTIME.fieldMaxSteps,
+      hint: RUNTIME.hintMaxSteps,
+      min: 1,
+      max: 100,
+      integer: true,
+    },
+    {
+      key: 'tool_timeout_seconds',
+      label: RUNTIME.fieldToolTimeout,
+      hint: RUNTIME.hintToolTimeout,
+      min: 1,
+      max: 600,
+      integer: true,
+    },
+  ]
+}
 
-export const COMPACT_ADV_FIELDS: KnobFieldSpec[] = [
-  {
-    key: 'compact_threshold',
-    label: RUNTIME.fieldCompactThreshold,
-    hint: RUNTIME.hintCompactThreshold,
-    min: 0.1,
-    max: 0.95,
-    integer: false,
-  },
-  {
-    key: 'compact_reserve_tokens',
-    label: RUNTIME.fieldCompactReserve,
-    hint: RUNTIME.hintCompactReserve,
-    min: 256,
-    max: 100000,
-    integer: true,
-  },
-  {
-    key: 'compact_keep_recent',
-    label: RUNTIME.fieldCompactKeep,
-    hint: RUNTIME.hintCompactKeep,
-    min: 0,
-    max: 100,
-    integer: true,
-  },
-  {
-    key: 'compact_summary_timeout_seconds',
-    label: RUNTIME.fieldCompactSummaryTimeout,
-    hint: RUNTIME.hintCompactSummaryTimeout,
-    min: 1,
-    max: 600,
-    integer: true,
-  },
-]
+export function compactAdvFields(): KnobFieldSpec[] {
+  return [
+    {
+      key: 'compact_threshold',
+      label: RUNTIME.fieldCompactThreshold,
+      hint: RUNTIME.hintCompactThreshold,
+      min: 0.1,
+      max: 0.95,
+      integer: false,
+    },
+    {
+      key: 'compact_reserve_tokens',
+      label: RUNTIME.fieldCompactReserve,
+      hint: RUNTIME.hintCompactReserve,
+      min: 256,
+      max: 100000,
+      integer: true,
+    },
+    {
+      key: 'compact_keep_recent',
+      label: RUNTIME.fieldCompactKeep,
+      hint: RUNTIME.hintCompactKeep,
+      min: 0,
+      max: 100,
+      integer: true,
+    },
+    {
+      key: 'compact_summary_timeout_seconds',
+      label: RUNTIME.fieldCompactSummaryTimeout,
+      hint: RUNTIME.hintCompactSummaryTimeout,
+      min: 1,
+      max: 600,
+      integer: true,
+    },
+  ]
+}
+
+/** @deprecated Prefer mainKnobFields() — live labels. */
+export const MAIN_KNOB_FIELDS = mainKnobFields()
+
+/** @deprecated Prefer compactAdvFields() — live labels. */
+export const COMPACT_ADV_FIELDS = compactAdvFields()
 
 export function allKnobFieldSpecs(): KnobFieldSpec[] {
-  return [...MAIN_KNOB_FIELDS, ...COMPACT_ADV_FIELDS]
+  return [...mainKnobFields(), ...compactAdvFields()]
 }
 
 /** @deprecated 勿用；保留一版别名以免遗漏引用时可 grep */
@@ -119,7 +130,7 @@ export function validateKnobField(spec: KnobFieldSpec, raw: string): string | nu
     return `${spec.label} ${RUNTIME.errMustInt}`
   }
   if (v < spec.min || v > spec.max) {
-    return `${spec.label} ${RUNTIME.errOutOfRange}（${spec.min}–${spec.max}）`
+    return `${spec.label} ${RUNTIME.errOutOfRange} (${spec.min}–${spec.max})`
   }
   return null
 }

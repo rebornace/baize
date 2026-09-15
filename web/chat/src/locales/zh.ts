@@ -690,6 +690,50 @@ export const zhPack = {
     chipZh: '中',
     chipEn: 'EN',
   },
+  SETTINGS_NAV: {
+    overview: '总览',
+    groupAssistant: '助手',
+    groupConnect: '连接',
+    groupMessaging: '消息',
+    groupSystem: '系统',
+    models: '模型',
+    modelsDesc:
+      '管理对话与理解用的模型；「智能选择」会按任务自动切换（未来向量、音频等模型在此扩展分类）',
+    tools: '助手功能',
+    toolsDesc: '管理助手能调用的各项功能；可设置调用前是否需你确认或登录',
+    skills: '技能',
+    skillsDesc: '可复用的操作流程，对话里输入 @ 或 / 即可调用',
+    memory: '账号记忆',
+    memoryDesc: '查看与管理本账号跨会话记住的事实；仅本人可见，运行开关在「运行参数」',
+    openapi: '业务系统',
+    openapiDesc: '上传一份接口文档，即可对接公司内部的各类业务系统，不用写代码',
+    mcp: '外部工具服务',
+    mcpDesc: '接入标准 MCP 工具服务（本地子进程或远程 HTTP），扩展助手可用能力',
+    plugins: '插件',
+    pluginsDesc: '接入独立部署的插件程序',
+    mcpExport: '对外提供能力',
+    mcpExportDesc: '把助手的能力以标准 MCP 服务对外开放，供其他客户端调用',
+    weixin: '微信',
+    weixinDesc: '接入微信账号，让客户/同事通过微信与助手对话（未来钉钉、飞书各占一张卡）',
+    webhooks: '消息回调',
+    webhooksDesc: '有新消息或事件时，主动推送到你指定的地址',
+    inbox: '外部来信',
+    inboxDesc: '生成专属收件地址，外部系统来信自动变成对话',
+    identities: '账号',
+    identitiesDesc: '管理能登录、使用助手的人员',
+    storage: '存储',
+    storageDesc: '对话和数据保存在哪里（本地文件或数据库）',
+    runtime: '运行参数',
+    runtimeDesc: '压缩、超时等运行行为，修改后即时生效',
+  },
+  MODEL_SELECT: {
+    visionNone:
+      '当前没有可用的「视觉」模型，请到「设置 → AI 模型」添加，或移除图片后再发送。',
+    visionUnsupported:
+      '这个模型看不了图片。请改用「智能选择」或带「视觉」标记的模型，或移除图片。',
+    optionMeta: (model: string, tags: string) =>
+      tags ? `（${model}）${tags}` : `（${model}）`,
+  },
 }
 
 /** Shape shared by zh/en packs (string fields widen beyond zh literals). */

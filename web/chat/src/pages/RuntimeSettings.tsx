@@ -22,8 +22,8 @@ import { useLocale } from '../locale/LocaleContext'
 import { useGate } from '../gateContext'
 import { RUNTIME, friendlyError } from '../strings'
 import {
-  MAIN_KNOB_FIELDS,
-  COMPACT_ADV_FIELDS,
+  mainKnobFields,
+  compactAdvFields,
   allKnobFieldSpecs,
   buildKnobsPatch,
   knobsToForm,
@@ -437,7 +437,7 @@ export function RuntimeSettings() {
       {!loading && knobView && form && (
         <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
           <h2 className="settings-subheading">{RUNTIME.sectionBehavior}</h2>
-          {MAIN_KNOB_FIELDS.map((spec) => (
+          {mainKnobFields().map((spec) => (
             <Field
               key={spec.key}
               label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
@@ -471,7 +471,7 @@ export function RuntimeSettings() {
           </label>
           <details>
             <summary>{RUNTIME.compactAdvanced}</summary>
-            {COMPACT_ADV_FIELDS.map((spec) => (
+            {compactAdvFields().map((spec) => (
               <Field
                 key={spec.key}
                 label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}

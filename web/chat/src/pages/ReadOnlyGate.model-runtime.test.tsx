@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
+import { LocaleProvider } from '../locale/LocaleContext'
 import { MODELS, RUNTIME } from '../strings'
 import { ModelSettings } from './ModelSettings'
 import { RuntimeSettings } from './RuntimeSettings'
@@ -23,9 +24,11 @@ async function renderOperator(el: React.ReactNode) {
   await act(async () => {
     createRoot(host).render(
       <MemoryRouter>
-        <GateContext.Provider value={{ role: 'operator', gateEnabled: true, operatorId: 'op' }}>
-          {el}
-        </GateContext.Provider>
+        <LocaleProvider>
+          <GateContext.Provider value={{ role: 'operator', gateEnabled: true, operatorId: 'op' }}>
+            {el}
+          </GateContext.Provider>
+        </LocaleProvider>
       </MemoryRouter>,
     )
     await new Promise((r) => setTimeout(r, 0))
