@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/baize-banner.jpg" alt="Baize" width="100%">
+</p>
+
 [![CI](https://github.com/rebornace/baize/actions/workflows/ci.yml/badge.svg)](https://github.com/rebornace/baize/actions/workflows/ci.yml)
 
 # Baize
@@ -9,7 +13,7 @@
 
 **An enterprise AI assistant runtime: it can chat, call your business systems, and ask a person to confirm important writes — beside what you already run.**
 
-Baize helps teams attach a capable assistant to existing services: understand the goal → call APIs or plugins → ask an operator to confirm in the console when needed → write results back to the conversation or a messaging channel. You usually **do not change business code**; an API document is enough for the assistant to take real actions, not only chat. The web **`/ui`** is an operator console for product, ops, and integrators.
+In legend, Baize knows the names of all things; we use that name hoping the assistant can recognize and use the APIs, plugins, and workflows in your business world. Baize helps teams attach a capable assistant to existing services: understand the goal → call APIs or plugins → ask an operator to confirm in the console when needed → write results back to the conversation or a messaging channel. You usually **do not change business code**; an API document is enough for the assistant to take real actions. The web **`/ui`** is an operator console for product, ops, and integrators.
 
 ---
 
