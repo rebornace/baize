@@ -681,6 +681,7 @@ export const zhPack = {
     progress: (current: number, total: number) => `第 ${current} / 共 ${total} 步`,
     step: (n: number) => `步骤 ${n}`,
   },
-} as const
+}
 
+/** Shape shared by zh/en packs (string fields widen beyond zh literals). */
 export type StringsPack = typeof zhPack

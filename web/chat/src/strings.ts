@@ -8,14 +8,14 @@ setPack(zhPack)
 export type TierId = 'light' | 'standard' | 'power'
 
 function liveGroup<K extends keyof typeof zhPack>(key: K): (typeof zhPack)[K] {
-  return new Proxy({} as (typeof zhPack)[K], {
+  return new Proxy({} as object, {
     get(_target, prop) {
       if (typeof prop === 'symbol') return undefined
       const section = getPack()[key] as Record<string, unknown>
       const val = section[prop]
       return typeof val === 'function' ? (val as (...a: unknown[]) => unknown).bind(section) : val
     },
-  })
+  }) as (typeof zhPack)[K]
 }
 
 export let AUTO_LABEL = zhPack.AUTO_LABEL
@@ -71,7 +71,7 @@ function isNetworkish(e: unknown): boolean {
 export function friendlyError(e: unknown): FriendlyError {
   const p = getPack()
   if (e instanceof ApiError) {
-    const codeTitle = p.CODE_TITLE[e.code]
+    const codeTitle = (p.CODE_TITLE as Record<string, string>)[e.code]
     if (codeTitle) return { title: codeTitle }
     if (e.status === 401 || e.status === 403) {
       return { title: p.ERRORS.unauthorized }
@@ -96,7 +96,7 @@ export function identitySourceLabel(source: string): string {
 
 /** 存储驱动 -> 人话选项；未知驱动原值兜底。提交值仍用英文 driver。 */
 export function driverLabel(driver: string): string {
-  return getPack().DRIVER_LABELS[driver] ?? driver
+  return (getPack().DRIVER_LABELS as Record<string, string>)[driver] ?? driver
 }
 
 /** 把模型设置页相关异常翻译为人话标题；未知错误附技术详情。 */
