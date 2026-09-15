@@ -36,16 +36,14 @@ type Catalog struct {
 	byID        map[string]Package
 	builtinDirs []string
 	userDir     string // retained for API paths; user packages live in Blobs
-	managedDir  string // retained for API compat; managed packages live in Blobs
 	Blobs       blob.Store
 }
 
-func LoadCatalog(builtinDirs []string, userDir, managedDir string, blobs blob.Store) (*Catalog, error) {
+func LoadCatalog(builtinDirs []string, userDir string, blobs blob.Store) (*Catalog, error) {
 	c := &Catalog{
 		byID:        make(map[string]Package),
 		builtinDirs: append([]string(nil), builtinDirs...),
 		userDir:     userDir,
-		managedDir:  managedDir,
 		Blobs:       blobs,
 	}
 	if err := c.Reload(); err != nil {
@@ -81,13 +79,6 @@ func (c *Catalog) UserDir() string {
 		return ""
 	}
 	return c.userDir
-}
-
-func (c *Catalog) ManagedDir() string {
-	if c == nil {
-		return ""
-	}
-	return c.managedDir
 }
 
 func (c *Catalog) Reload() error {

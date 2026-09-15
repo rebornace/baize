@@ -30,7 +30,7 @@ func TestPutConnectorSyncsManagedLoginSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open memory blob: %v", err)
 	}
-	cat, err := skill.LoadCatalog(nil, userDir, managedDir, blobs)
+	cat, err := skill.LoadCatalog(nil, userDir, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}

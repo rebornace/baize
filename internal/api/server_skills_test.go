@@ -30,7 +30,7 @@ func skillsServer(t *testing.T) (*Server, store.Store, http.Handler, *skill.Cata
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}

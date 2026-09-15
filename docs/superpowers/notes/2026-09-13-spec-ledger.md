@@ -105,7 +105,7 @@
 | **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | **已交付（待合入）** | 规格 [`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；managed `login-<id>` +「去登录」→ `@login-`；`login-entries` / `login-invoke` 直达已拆除；历史对照 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
 | **UI-MCP-OAUTH** | **已交付** | 规格 [`2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；计划 [`2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md) |
 | **P6** Memory | **已交付** | 规格 [`2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)；计划 [`2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)；控制面账号事实+本地检索 |
-| **BLOB-CS** | **实现计划已就绪** | 规格 [`2026-09-15-blob-cs-design.md`](../specs/2026-09-15-blob-cs-design.md)；计划 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md) |
+| **BLOB-CS** | **已交付** | 规格 [`2026-09-15-blob-cs-design.md`](../specs/2026-09-15-blob-cs-design.md)；计划 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md) |
 | **CH-PORT** | **已交付** | 规格 [`2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md)；`BAIZE_LISTEN` + autostart 端口文件 |
 
 ---
@@ -123,7 +123,7 @@
 1. ~~**DOC**~~（已交付）  
 2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
-4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · **BLOB-CS**（实现计划已就绪；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**  
+4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · ~~**BLOB-CS**~~（已交付；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**  
 5. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6 Memory**~~（已交付；见 [`2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
 6. ~~渠道 DoD / sql-store worktree~~（已完成）
 

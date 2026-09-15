@@ -51,7 +51,7 @@
 | **CH-OUTBOX** | 渠道 outbox | **已交付** | [`specs/2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`plans/2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md) |
 | **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | 连接器自动登录 Skill / login_required「去登录」 | **已交付（待合入）** | 规格 [`specs/2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`plans/2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；分支 `feat/login-skill`；UI-LOGIN-AT 直达（login-entries / login-invoke / 登录专用区）已拆除 |
 | **LLM-THINK** | 思考级别开关 | **已交付** | 规格 [`specs/2026-09-14-llm-think-design.md`](../specs/2026-09-14-llm-think-design.md)；计划 [`plans/2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)；**不合并** |
-| **BLOB-CS** | Connector / Skill blob 化 | **实现计划已就绪** | 规格 [`specs/2026-09-15-blob-cs-design.md`](../specs/2026-09-15-blob-cs-design.md)；计划 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)；**不合并** |
+| **BLOB-CS** | Connector / Skill blob 化 | **已交付** | 规格 [`specs/2026-09-15-blob-cs-design.md`](../specs/2026-09-15-blob-cs-design.md)；计划 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)；**不合并** |
 | **UI-MCP-OAUTH** | MCP OAuth 2.1 | **已交付** | 规格 [`specs/2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；计划 [`plans/2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md) |
 | **P6** | Memory 产品化 | **已交付** | 规格 [`specs/2026-09-14-p6-memory-design.md`](../specs/2026-09-14-p6-memory-design.md)；计划 [`plans/2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)；**不合并** |
 
@@ -65,7 +65,7 @@
 2. **F 母篇**（仅 C1 + KV 加密 + 驱动热切换/SIGHUP；**B1** 顺序已锁）→ 可先落地 **C1**  
 3. **UI-EXPORT-DB-RO**（小刀）  
 4. **CH-PORT** → **CH-OUTBOX**  
-5. ~~**LOGIN-SKILL**~~（已交付，待合入） · ~~**LLM-THINK**~~（已交付） · **BLOB-CS**（实现计划已就绪；见 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**  
+5. ~~**LOGIN-SKILL**~~（已交付，待合入） · ~~**LLM-THINK**~~（已交付） · ~~**BLOB-CS**~~（已交付；见 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**  
 6. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6**~~（已交付；见 [`plans/2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
 
 **F 与现有待办：** 不吸收 OUTBOX/BLOB/PORT/OAuth/Memory/@登录/i18n/export_db_ro；DOC 保持独立（A1）。

@@ -77,7 +77,7 @@ func TestSyncManagedVisibleInCatalogAndDeletesWithConnector(t *testing.T) {
 	if err := loginmanage.SyncConnector(st, blobs, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog(nil, "", "", blobs)
+	cat, err := skill.LoadCatalog(nil, "", blobs)
 	if err != nil {
 		t.Fatal(err)
 	}

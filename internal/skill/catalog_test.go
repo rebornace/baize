@@ -30,7 +30,7 @@ func TestCatalogUserSkillBlobInstallReloadDelete(t *testing.T) {
 	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "from-disk", []string{"a"})
 
 	blobs := testMemoryBlobs(t)
-	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), "", blobs)
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestCatalogUserOverridesBuiltin(t *testing.T) {
 	user := filepath.Join(root, "user")
 	mustWriteSkill(t, filepath.Join(builtin, "demo"), "demo", "from-builtin", []string{"a"})
 	blobs := testMemoryBlobs(t)
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestCatalogLoadsManaged(t *testing.T) {
 	blobs := testMemoryBlobs(t)
 	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestCatalogManagedOverridesUser(t *testing.T) {
 	blobs := testMemoryBlobs(t)
 	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestCatalogSkipsDirWithoutSkillMD(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(builtin, "empty"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", testMemoryBlobs(t))
+	cat, err := skill.LoadCatalog([]string{builtin}, user, testMemoryBlobs(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("no frontmatter\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := skill.LoadCatalog([]string{builtin}, user, "", nil); err == nil {
+		if _, err := skill.LoadCatalog([]string{builtin}, user, nil); err == nil {
 			t.Fatal("expected error for missing frontmatter")
 		}
 	})
@@ -238,7 +238,7 @@ func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(raw), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := skill.LoadCatalog([]string{builtin2}, user2, "", nil); err == nil {
+		if _, err := skill.LoadCatalog([]string{builtin2}, user2, nil); err == nil {
 			t.Fatal("expected error for missing name")
 		}
 	})
@@ -252,7 +252,7 @@ func TestDeleteUser(t *testing.T) {
 	blobs := testMemoryBlobs(t)
 	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", blobs)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestDeleteUser(t *testing.T) {
 
 func TestInstallMDRejectsUnsafeName(t *testing.T) {
 	root := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), "", testMemoryBlobs(t))
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), testMemoryBlobs(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestInstallZipRejectsTraversal(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), "", testMemoryBlobs(t))
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), testMemoryBlobs(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestLoadCatalogReadsWorkflowYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", nil)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
 	if err != nil {
 		t.Fatalf("LoadCatalog: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestLoadCatalogInvalidWorkflowFails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte("name:\nsteps: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := skill.LoadCatalog([]string{builtin}, user, "", nil); err == nil {
+	if _, err := skill.LoadCatalog([]string{builtin}, user, nil); err == nil {
 		t.Fatal("want invalid workflow to fail load")
 	}
 }
@@ -367,7 +367,7 @@ func TestLoadCatalogWithoutWorkflowYAML(t *testing.T) {
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
 	mustWriteSkill(t, filepath.Join(builtin, "plain"), "plain", "no pipeline", []string{"a"})
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", nil)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "workflow.yaml"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := skill.LoadCatalog([]string{builtin}, user, "", nil); err == nil {
+	if _, err := skill.LoadCatalog([]string{builtin}, user, nil); err == nil {
 		t.Fatal("want workflow.yaml read error to fail load")
 	}
 }
@@ -403,7 +403,7 @@ func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
 func TestLoadRepoTicketTriage(t *testing.T) {
 	builtin := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", nil)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 	core := filepath.Join("..", "..", "skills")
 	demo := filepath.Join("..", "..", "examples", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{core, demo}, user, "", nil)
+	cat, err := skill.LoadCatalog([]string{core, demo}, user, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 	if _, ok := cat.Get("ticket-triage"); !ok {
 		t.Fatal("ticket-triage not found")
 	}
-	catMinimal, err := skill.LoadCatalog([]string{core}, user, "", nil)
+	catMinimal, err := skill.LoadCatalog([]string{core}, user, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +457,7 @@ func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 func TestLoadRepoDataAnalytics(t *testing.T) {
 	builtin := filepath.Join("..", "..", "skills")
 	user := t.TempDir()
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "", nil)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

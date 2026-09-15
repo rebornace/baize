@@ -1,6 +1,6 @@
 # BLOB-CS：Connector 规格与 Skill 包进 blob.Store
 
-> 状态：**实现计划已就绪**（2026-09-15；计划 [`../plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)）  
+> 状态：**已交付**（2026-09-15；计划 [`../plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)）  
 > 日期：2026-09-15  
 > 史诗：BLOB-CS  
 > 前置：`blob.Store` 与驱动已交付（[`2026-09-04-blob-object-storage-design.md`](2026-09-04-blob-object-storage-design.md)）；artifacts / workspaces / channel-media 已用前缀约定  
@@ -115,5 +115,5 @@ builtin ──仍──► ./skills（或配置 builtin 目录）
 
 ## 11. 文档与账本
 
-- 账本 / 确认清单：BLOB-CS → **实现计划已就绪**（计划 `plans/2026-09-15-blob-cs.md`）；实现交付后改为 **已交付**。  
-- README 在交付后补一句：Connector 规格与用户 Skill 存于配置的对象存储（blob）。
+- 账本 / 确认清单：BLOB-CS → **已交付**（计划 `plans/2026-09-15-blob-cs.md`）。  
+- README：Connector 规格与用户/managed Skill 存于配置的对象存储（blob）；builtin Skill 仍本地。
