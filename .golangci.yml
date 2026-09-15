@@ -1,4 +1,4 @@
-# F-C1：稳妥规则集；全仓清债不在本刀（CI 用 only-new-issues）。
+# F-C1：稳妥默认规则集；全仓必须通过（与 CI 全量 golangci 一致）。
 version: "2"
 
 run:

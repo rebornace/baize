@@ -170,7 +170,7 @@ func fileExt(filename string) string {
 		return ".bin"
 	}
 	for _, r := range ext[1:] {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
 			return ".bin"
 		}
 	}

@@ -1,5 +1,7 @@
 # CLEAN-GATES 实现计划
 
+> **交付状态（2026-09-15）：** GATES 已交付（`feat/clean-gates`）；账本见 [`../notes/2026-09-13-spec-ledger.md`](../notes/2026-09-13-spec-ledger.md) §5b；下一动作 **PERF-HOT**。
+
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
 **目标：** 用 CI **全量** golangci（去掉 `only-new-issues`）证明存量债清零；对齐开发者文档与 `.golangci.yml` 叙述；保持 gofmt/vet/test 与前端门禁。
@@ -184,7 +186,7 @@ git commit -m "chore: 收紧前端类型豁免并文档化全量 golangci"
 
 ### 任务 5：账本收口与停住
 
-- [ ] **步骤 1：全量回归**
+- [x] **步骤 1：全量回归**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$(go env GOPATH)\bin;$env:PATH"
@@ -193,10 +195,10 @@ go test ./internal/api/ ./internal/store/ ./internal/run/ ./cmd/baize/ -count=1
 Push-Location web\chat; npm run lint; npm test; npx tsc --noEmit; Pop-Location
 ```
 
-- [ ] **步骤 2：账本** — GATES **已交付**；下一动作 **PERF-HOT**  
-- [ ] **步骤 3：规格头** 更新 GATES 状态  
-- [ ] **步骤 4：Commit** `docs: CLEAN-GATES 交付与账本收口`  
-- [ ] **步骤 5：停住** — 提示合入后看 CI 是否全绿；再开 PERF-HOT
+- [x] **步骤 2：账本** — GATES **已交付**；下一动作 **PERF-HOT**  
+- [x] **步骤 3：规格头** 更新 GATES 状态  
+- [x] **步骤 4：Commit** `docs: CLEAN-GATES 交付与账本收口`  
+- [x] **步骤 5：停住** — 提示合入后看 CI 是否全绿；再开 PERF-HOT
 
 ---
 

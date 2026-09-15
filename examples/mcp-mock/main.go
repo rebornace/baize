@@ -24,7 +24,7 @@ func main() {
 		Name:        "echo",
 		Description: "echo",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, args echoArgs) (*mcp.CallToolResult, echoOutput, error) {
-		return nil, echoOutput{Message: args.Message}, nil
+		return nil, echoOutput(args), nil
 	})
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {

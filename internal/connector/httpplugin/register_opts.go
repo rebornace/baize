@@ -36,8 +36,3 @@ type RegisterOpts struct {
 // plugincallback.Issue so bootstrap can wire the real implementation without
 // httpplugin depending on plugincallback directly at the type level.
 type CallbackSigner func(secret []byte, runID string, ttl time.Duration) (token string, exp time.Time, err error)
-
-// defaultCallbackTTL mirrors config.DefaultCallbackTokenTTLSec so callers that
-// omit CallbackTTL still get a sane lifetime. Bootstrap passes the configured
-// value explicitly.
-const defaultCallbackTTL = time.Hour

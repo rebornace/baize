@@ -33,8 +33,7 @@ func TestFetchSpecFromURLSwaggerUIHTML(t *testing.T) {
 	specimport.SetAllowPrivateFetchHosts(true)
 	defer specimport.SetAllowPrivateFetchHosts(false)
 	spec := readFixture(t, "openapi3-min.json")
-	var specSrv *httptest.Server
-	specSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	specSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(spec))
 	}))

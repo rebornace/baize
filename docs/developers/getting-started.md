@@ -18,7 +18,14 @@ go build ./...
 go test -count=1 ./...
 ```
 
-CI 还会跑 `golangci-lint`（`only-new-issues`）。本地可选安装同版本后执行。
+### Lint（Go）
+
+本地须与 CI 一致跑全量：
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.4.0
+golangci-lint run ./... --timeout=5m
+```
 
 集成测试若依赖 Postgres，可设置 `BAIZE_TEST_PG_DSN`（CI 已注入）。
 

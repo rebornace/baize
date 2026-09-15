@@ -142,7 +142,7 @@ func normalizeOpName(method, path string) string {
 
 func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) (map[string]any, string) {
 	body := requestBodySchema(op)
-	bodyKind := "object"
+	var bodyKind string
 	var schema map[string]any
 
 	switch typ, _ := body["type"].(string); typ {

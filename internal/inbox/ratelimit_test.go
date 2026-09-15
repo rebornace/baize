@@ -9,8 +9,11 @@ import (
 
 func TestRateLimitBlocksBurst(t *testing.T) {
 	rl := inbox.NewRateLimiter(2, time.Minute)
-	if !rl.Allow("a") || !rl.Allow("a") {
-		t.Fatal("first two should pass")
+	if !rl.Allow("a") {
+		t.Fatal("first should pass")
+	}
+	if !rl.Allow("a") {
+		t.Fatal("second should pass")
 	}
 	if rl.Allow("a") {
 		t.Fatal("third should block")

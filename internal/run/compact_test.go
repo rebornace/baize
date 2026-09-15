@@ -46,7 +46,9 @@ func seedConv(t *testing.T, ms conversation.Store, convID string, n int) {
 		if i%2 == 1 {
 			role = conversation.RoleAssistant
 		}
-		ms.Append(convID, conversation.Message{Role: role, Content: strings.Repeat("内容", 100)})
+		if _, err := ms.Append(convID, conversation.Message{Role: role, Content: strings.Repeat("内容", 100)}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

@@ -36,31 +36,31 @@ func (f *fakeWeixinAdapter) handler(secret string) http.Handler {
 			http.Error(w, "bad sig", http.StatusUnauthorized)
 			return
 		}
-		switch {
-		case r.URL.Path == "/outbound":
+		switch r.URL.Path {
+		case "/outbound":
 			var m map[string]any
 			_ = json.Unmarshal(body, &m)
 			f.mu.Lock()
 			f.outbound = append(f.outbound, m)
 			f.mu.Unlock()
 			w.WriteHeader(http.StatusOK)
-		case r.URL.Path == "/admin/status":
+		case "/admin/status":
 			f.mu.Lock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"has_credentials": f.hasCreds, "polling": f.polling})
 			f.mu.Unlock()
-		case r.URL.Path == "/admin/login/start":
+		case "/admin/login/start":
 			_ = json.NewEncoder(w).Encode(map[string]string{"ticket": "tk", "qr_url": "qr"})
-		case r.URL.Path == "/admin/login/status":
+		case "/admin/login/status":
 			f.mu.Lock()
 			f.hasCreds, f.polling = true, true
 			f.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-		case r.URL.Path == "/admin/logout":
+		case "/admin/logout":
 			f.mu.Lock()
 			f.hasCreds, f.polling = false, false
 			f.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "logged_out"})
-		case r.URL.Path == "/admin/start" || r.URL.Path == "/admin/stop":
+		case "/admin/start", "/admin/stop":
 			w.WriteHeader(http.StatusOK)
 		default:
 			http.NotFound(w, r)

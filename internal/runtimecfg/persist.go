@@ -251,7 +251,7 @@ func (h *Holder) ApplyCreds(ctx context.Context, st store.Store, p CredsPatch) e
 			if h.effectiveHasOperator(next, in.ID) {
 				return fmt.Errorf("%w: %q", ErrConflict, in.ID)
 			}
-			next.Operators = append(next.Operators, operatorEntry{ID: in.ID, Token: in.Token})
+			next.Operators = append(next.Operators, operatorEntry(in))
 		}
 	}
 
