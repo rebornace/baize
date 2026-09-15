@@ -268,14 +268,14 @@
 | `internal/store` | 7039 | 驱动与迁移分目录；SQL 方法按实体（models/conversations/runs）切文件 | P1 · **延后 STRUCT-P1** |
 | `internal/run` | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 · **延后 STRUCT-P1** |
 | `internal/channel/webhook` | 5137 | 入站/出站/重试与配置解析分模块 | P2 |
-| `internal/connector` | 3788 | MCP/invoke/registry 与 OpenAPI 子包边界收紧（父包不含 openapi 子目录行数） | P1 |
+| `internal/connector` | 3788 | MCP/invoke/registry 与 OpenAPI 子包边界收紧（父包不含 openapi 子目录行数） | P1 · **体量已可接受 / 保留**（最大生产文件 `register_one.go` 556 <800） |
 | `internal/bootstrap` | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 |
 | `internal/channel` | 2451 | registry 与各渠道适配边界 | P2 |
-| `internal/llm` | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 |
-| `internal/identity` | 2146 | 会话身份解析、默认身份与 store 映射分层 | P1 |
+| `internal/llm` | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 · **体量已可接受 / 保留**（最大生产文件 `openai.go` 548 <800） |
+| `internal/identity` | 2146 | 会话身份解析、默认身份与 store 映射分层 | P1 · **体量已可接受 / 保留**（最大生产文件 `sqlite.go` 426 <800） |
 | `cmd/weixin-adapter/internal/weixinlink` | 1798 | 独立进程 iLink 客户端；保持与 core 边界 | 保留 |
-| `internal/connector/openapi` | 1674 | spec 解析、路由展开与 invoker 生成拆文件 | P1 |
-| `internal/conversation` | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 |
+| `internal/connector/openapi` | 1674 | spec 解析、路由展开与 invoker 生成拆文件 | P1 · **体量已可接受 / 保留**（最大生产文件 `loader.go` 277 <800） |
+| `internal/conversation` | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 · **体量已可接受 / 保留**（最大生产文件 `sqlite.go` 423 <800） |
 | `internal/memory` | 1597 | store 后端与 settings API 映射 | P2 |
 | `internal/config` | 1500 | 校验与 env 覆盖分文件 | P2 |
 | `cmd/weixin-adapter` | 1381 | 独立进程入口与 HTTP 面；不并入 baize core | 保留 |
