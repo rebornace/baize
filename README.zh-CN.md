@@ -115,6 +115,53 @@
 
 ---
 
+## 用预编译二进制部署（无需安装 Go）
+
+适合直接在服务器或本机跑正式环境。从 [GitHub Releases](https://github.com/rebornace/baize/releases) 下载对应平台的压缩包（含 `baize` 与可选的 `weixin-adapter`），解压后按下面配置即可。
+
+**1. 准备目录（示例）**
+
+```text
+baize/
+  baize                 # 或 Windows 的 baize.exe
+  weixin-adapter        # 仅使用微信渠道时需要
+  configs/minimal.yaml  # 可从本仓库拷贝样板
+  .env
+  data/
+```
+
+**2. 写 `.env`（密钥不进 YAML）**
+
+```bash
+BAIZE_API_KEY=sk-你的模型密钥
+BAIZE_SETTINGS_KEY=一串足够长的随机字符
+# 可选：BAIZE_LISTEN=:8080
+```
+
+**3. 启动**
+
+```bash
+# 在解压目录下；优先使用 configs/minimal.local.yaml（若存在）
+./baize start
+# 或显式指定配置：
+./baize serve -config configs/minimal.yaml
+```
+
+操作台：http://127.0.0.1:8080/ui  
+
+改端口、模型地址、数据库路径等改 YAML / 环境变量后**重启进程**即可，不必重新编译。连接器、账号等多数能力可在操作台配置，写入 `data/`。
+
+Linux 用 systemd 托管、微信适配器独立部署等，见 [部署说明](docs/developers/deployment.md)。本仓库也可用脚本本地交叉编译：
+
+```bash
+# Windows PowerShell
+.\scripts\build-release.ps1 -Version v0.1.0
+# macOS / Linux
+./scripts/build-release.sh v0.1.0
+```
+
+---
+
 ## 开发者文档
 
 构建、测试、配置、部署与接口说明（**中英双语**）：

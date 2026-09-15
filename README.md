@@ -115,6 +115,53 @@ Production (real model, needs `BAIZE_API_KEY`): Windows `.\start.cmd`, macOS / L
 
 ---
 
+## Deploy with prebuilt binaries (no Go required)
+
+For production on a server or laptop: download the archive for your OS/arch from [GitHub Releases](https://github.com/rebornace/baize/releases) (`baize` plus optional `weixin-adapter`), unpack, then configure as below.
+
+**1. Layout (example)**
+
+```text
+baize/
+  baize                 # or baize.exe on Windows
+  weixin-adapter        # only if you use the Weixin channel
+  configs/minimal.yaml  # copy the sample from this repo
+  .env
+  data/
+```
+
+**2. Create `.env` (secrets stay out of YAML)**
+
+```bash
+BAIZE_API_KEY=sk-your-model-key
+BAIZE_SETTINGS_KEY=a-long-random-string
+# optional: BAIZE_LISTEN=:8080
+```
+
+**3. Start**
+
+```bash
+# from the unpack directory; prefers configs/minimal.local.yaml when present
+./baize start
+# or pin the config file:
+./baize serve -config configs/minimal.yaml
+```
+
+Console: http://127.0.0.1:8080/ui  
+
+Change listen port, model URL, DB path, etc. via YAML / env and **restart the process** — no rebuild. Connectors and accounts are mostly configured in the UI and stored under `data/`.
+
+For systemd and standalone Weixin adapter setup, see [deployment](docs/developers/deployment.md). To cross-compile locally from this repo:
+
+```bash
+# Windows PowerShell
+.\scripts\build-release.ps1 -Version v0.1.0
+# macOS / Linux
+./scripts/build-release.sh v0.1.0
+```
+
+---
+
 ## Developer docs
 
 Build, test, configuration, deployment, and HTTP surface (**Chinese and English**):
