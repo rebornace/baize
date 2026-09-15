@@ -1,11 +1,11 @@
 # OSS 质量收口：规范、契约、结构、门禁与可证性能
 
-> 状态：**进行中**（AUDIT 已确认；**CONTRACT 已交付**；STRUCT / GATES / PERF-HOT 待实现）  
+> 状态：**进行中**（AUDIT 已确认；**CONTRACT / STRUCT / GATES 已交付**；PERF-HOT 待实现）  
 > 日期：2026-09-15  
 > 史诗：CLEAN（分阶段：AUDIT → CONTRACT → STRUCT → GATES → PERF-HOT）  
 > 前置：开源首版 12 史诗均已交付；产品确认零外部用户，允许破坏性契约清理  
 > 备注：非新功能；目标为干净可维护的开源首版表面  
-> 实现计划：AUDIT · CONTRACT（已交付）· STRUCT P0 [`../plans/2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)（已交付）· STRUCT-P1 [`../plans/2026-09-15-clean-struct-p1.md`](../plans/2026-09-15-clean-struct-p1.md) · GATES [`../plans/2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md) · PERF 另开
+> 实现计划：AUDIT · CONTRACT（已交付）· STRUCT P0 [`../plans/2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)（已交付）· STRUCT-P1 [`../plans/2026-09-15-clean-struct-p1.md`](../plans/2026-09-15-clean-struct-p1.md)（已交付）· GATES [`../plans/2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md)（已交付）· PERF 另开
 
 ---
 

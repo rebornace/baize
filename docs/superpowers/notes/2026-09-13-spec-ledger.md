@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **STRUCT-P1 已交付** | P0/P1 已交付（计划 [`2026-09-15-clean-struct-p1.md`](../plans/2026-09-15-clean-struct-p1.md)）；**下一动作：执行 CLEAN-GATES**（[`2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md)） |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **GATES 已交付** | AUDIT→CONTRACT→STRUCT→GATES 已齐（计划 [`2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md)）；**下一动作：执行 PERF-HOT** |
 
 ---
 
@@ -128,7 +128,8 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **CLEAN** — STRUCT-P1 已交付；下一动作执行 CLEAN-GATES（[`2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md)）  
+1. **CLEAN** — GATES 已交付；下一动作执行 PERF-HOT  
+
 2. ~~**DOC**~~（已交付）  
 3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 4. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  

@@ -306,7 +306,7 @@
 
 | 工具 | 命令 | 问题数或退出码 | 备注 |
 |------|------|----------------|------|
-| golangci 全量 | `golangci-lint run ./... --timeout=5m` | **46 issues**；退出码 **1** | 官方摘要：`errcheck` 20、`staticcheck` 22、`ineffassign` 2、`unused` 2。Top 规则（按子码/linter 粗排）：`errcheck`、`staticcheck`（常见 `S1016`/`QF1006`/`ST1019`/`SA4000`/`QF1002` 等）、`unused`、`ineffassign`。CI 现为 `only-new-issues: true`，故本地全量是「首次存量债」基线；**AUDIT 不修**，留给 GATES |
+| golangci 全量 | `golangci-lint run ./... --timeout=5m` | **46 issues**；退出码 **1**（AUDIT 基线） | 官方摘要：`errcheck` 20、`staticcheck` 22、`ineffassign` 2、`unused` 2。Top 规则（按子码/linter 粗排）：`errcheck`、`staticcheck`（常见 `S1016`/`QF1006`/`ST1019`/`SA4000`/`QF1002` 等）、`unused`、`ineffassign`。当时 CI 为 `only-new-issues: true`；**AUDIT 不修**。**GATES 清零（2026-09-15）：** 全量 **0 issues** / 退出码 **0**；CI 已去掉 `only-new-issues`（计划 [`../plans/2026-09-15-clean-gates.md`](../plans/2026-09-15-clean-gates.md)） |
 | eslint | `npm ci` + `npm run lint`（`web/chat`） | 退出码 **0**；无 error/warning 摘要 | `eslint src` 干净 |
 | gofmt -l | `gofmt -l ./cmd ./internal`；另扫全仓 `*.go`（排除 `.git`/`vendor`/`.superpowers`/`node_modules`） | **0** dirty；退出码 **0** | 裸 `gofmt -l .` 会因 `.superpowers/engine_old.go`（非法 UTF-16）报错；产品源码已齐。**不**把 `.superpowers` 噪声计入门禁 |
 
@@ -337,7 +337,7 @@
 - 插件公共 Go SDK、OTel、Playwright、新功能史诗
 - 强制覆盖率挡合并
 - 无证据的性能改动、伪造竞品对比
-- AUDIT 阶段不修 golangci 全量 **46** 条存量（留给 GATES；CI 仍 only-new）
+- AUDIT 阶段不修 golangci 全量 **46** 条存量（留给 GATES；当时 CI 仍 only-new）；**GATES 已清零**（见 §6）
 - 不把 `cmd/weixin-adapter` 侧 HTTP 并入 baize core mux 契约清理范围（独立进程；§1 脚注已说明）
 - 不把 `web/chat/src/locales/*` 文案包纳入 STRUCT 拆分目标（§5.2 已标「保留」）
 - 不将 `internal/store` 的 `SQLite` 类型别名等**非 HTTP** 内部兼容当作对外删除项
