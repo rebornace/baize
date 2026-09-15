@@ -45,11 +45,12 @@ npx tsc --noEmit
 
 | 路径 | 说明 |
 |------|------|
-| `internal/api/` | HTTP 控制面；`server.go` 路由注册，handlers 按域分文件 |
-| `web/chat/src/api/` | 浏览器客户端；`api.ts` 为 barrel |
+| `internal/api/` | HTTP 控制面；`server.go` 路由注册，handlers 按域分文件（含 `server_runs.go` / `server_runs_exec.go`） |
+| `web/chat/src/api/` | 浏览器客户端；`api.ts` 为 barrel；settings 见 `api/settings/*` |
 | `web/chat/src/pages/chat/` | Chat 页 hooks/子组件；入口 `pages/ChatPage.tsx` |
-| `internal/run/` | Run 引擎（本波未拆，见后续 STRUCT-P1） |
-| `internal/store/` | 持久化（本波未拆） |
+| `web/chat/src/pages/` | Settings 入口页；Tools/Models/MCP Export 等已拆子目录（如 `pages/tools/`） |
+| `internal/run/` | Run 引擎；`engine.go` 入口/循环，步进/流式等见 `engine_*.go` |
+| `internal/store/` | 持久化；`sqlite.go` 打开/迁移，实体 SQL 见 `sqlite_*.go` |
 
 ## 贡献
 

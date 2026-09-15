@@ -258,26 +258,26 @@
 
 **TypeScript：** 在 `web/chat/src` 下递归 `*.ts` / `*.tsx` 单文件行数；**排除** `*.test.ts(x)`、`*.spec.ts(x)`（不把测试计入 STRUCT 热点）；取生产源码 Top 15。若含测试文件，`ModelSettings.test.tsx`（672）等会挤占榜单，与「页面实现体量」目标不一致。
 
-**STRUCT P0（2026-09-15，`feat/clean-struct`）：** 下表 **P0** 行已按 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md) 拆分交付。表中 **P1/P2** 热点本版**不拆**，统一延后至 **CLEAN-STRUCT-P1**（见账本 [`2026-09-13-spec-ledger.md`](./2026-09-13-spec-ledger.md) §5b）。
+**STRUCT P0（2026-09-15，`feat/clean-struct`）：** 下表 **P0** 行已按 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md) 拆分交付。**STRUCT-P1（2026-09-15，`feat/clean-struct-p1`）：** 下表 **P1** 行已按 [`2026-09-15-clean-struct-p1.md`](../plans/2026-09-15-clean-struct-p1.md) 交付（已拆或体量保留）。**P2** 热点本版**不拆**，统一标 **本版保留待 GATES**（见账本 [`2026-09-13-spec-ledger.md`](./2026-09-13-spec-ledger.md) §5b）。
 
 ### 5.1 Go 包 Top 15
 
 | 路径 | 行数（约） | 建议拆法（一句话） | 本版优先级 |
 |------|------------|--------------------|------------|
-| `internal/api` | 16962 | 按域拆 handler：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 · **已拆** |
-| `internal/store` | 7039 | 驱动与迁移分目录；SQL 方法按实体（models/conversations/runs）切文件 | P1 · **延后 STRUCT-P1** |
-| `internal/run` | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 · **延后 STRUCT-P1** |
-| `internal/channel/webhook` | 5137 | 入站/出站/重试与配置解析分模块 | P2 |
-| `internal/connector` | 3788 | MCP/invoke/registry 与 OpenAPI 子包边界收紧（父包不含 openapi 子目录行数） | P1 |
-| `internal/bootstrap` | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 |
-| `internal/channel` | 2451 | registry 与各渠道适配边界 | P2 |
-| `internal/llm` | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 |
-| `internal/identity` | 2146 | 会话身份解析、默认身份与 store 映射分层 | P1 |
+| `internal/api` | 16962 | 按域拆 handler：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 · **已拆**（P1 波续拆 `server_runs`：`server_runs.go` ~582 + `server_runs_exec.go` 等） |
+| `internal/store` | 7039 | 驱动与迁移分目录；SQL 方法按实体（models/conversations/runs）切文件 | P1 · **已拆**（最大生产文件 `sqlite.go` ~370；另有 `sqlite_runs.go` / `sqlite_conversations.go` 等） |
+| `internal/run` | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 · **已拆**（`engine.go` ~637；另有 `engine_step.go` 等） |
+| `internal/channel/webhook` | 5137 | 入站/出站/重试与配置解析分模块 | P2 · **本版保留待 GATES** |
+| `internal/connector` | 3788 | MCP/invoke/registry 与 OpenAPI 子包边界收紧（父包不含 openapi 子目录行数） | P1 · **体量已可接受 / 保留**（最大生产文件 `register_one.go` 556 <800） |
+| `internal/bootstrap` | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 · **本版保留待 GATES** |
+| `internal/channel` | 2451 | registry 与各渠道适配边界 | P2 · **本版保留待 GATES** |
+| `internal/llm` | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 · **体量已可接受 / 保留**（最大生产文件 `openai.go` 548 <800） |
+| `internal/identity` | 2146 | 会话身份解析、默认身份与 store 映射分层 | P1 · **体量已可接受 / 保留**（最大生产文件 `sqlite.go` 426 <800） |
 | `cmd/weixin-adapter/internal/weixinlink` | 1798 | 独立进程 iLink 客户端；保持与 core 边界 | 保留 |
-| `internal/connector/openapi` | 1674 | spec 解析、路由展开与 invoker 生成拆文件 | P1 |
-| `internal/conversation` | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 |
-| `internal/memory` | 1597 | store 后端与 settings API 映射 | P2 |
-| `internal/config` | 1500 | 校验与 env 覆盖分文件 | P2 |
+| `internal/connector/openapi` | 1674 | spec 解析、路由展开与 invoker 生成拆文件 | P1 · **体量已可接受 / 保留**（最大生产文件 `loader.go` 277 <800） |
+| `internal/conversation` | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 · **体量已可接受 / 保留**（最大生产文件 `sqlite.go` 423 <800） |
+| `internal/memory` | 1597 | store 后端与 settings API 映射 | P2 · **本版保留待 GATES** |
+| `internal/config` | 1500 | 校验与 env 覆盖分文件 | P2 · **本版保留待 GATES** |
 | `cmd/weixin-adapter` | 1381 | 独立进程入口与 HTTP 面；不并入 baize core | 保留 |
 
 ### 5.2 Web 生产源码 Top 15（排除 `*.test.*` / `*.spec.*`）
@@ -288,17 +288,17 @@
 | `web/chat/src/pages/ChatPage.tsx` | 1312 | 拆会话侧栏、消息区（列表+折叠块）、Composer 区、顶栏与 run 生命周期 hook | P0 · **已拆** |
 | `web/chat/src/locales/en.ts` | 868 | **保留（文案包）** | 保留 |
 | `web/chat/src/locales/zh.ts` | 859 | **保留（文案包）** | 保留 |
-| `web/chat/src/pages/ToolsSettings.tsx` | 808 | 列表/批量操作/连接器内嵌表单拆子组件 + `useToolsSettings` | P1 |
-| `web/chat/src/pages/McpExportSettings.tsx` | 744 | 身份列表、密钥列表、工具 export 列拆段 | P1 |
-| `web/chat/src/pages/ModelSettings.tsx` | 621 | 列表与编辑 Modal/表单拆文件 | P1 |
-| `web/chat/src/pages/InboxSettings.tsx` | 533 | 渠道卡片与密钥旋转 Modal 拆组件 | P2 |
-| `web/chat/src/pages/RuntimeSettings.tsx` | 531 | 旋钮表单与 operators 卡片拆分 | P2 |
-| `web/chat/src/pages/WeixinChannelSettings.tsx` | 516 | 登录流与进程控制拆 hook | P2 |
-| `web/chat/src/components/settings/ConnectorEditorModal.tsx` | 371 | OpenAPI/MCP 两步表单按 `connectorForms/*` 与 shell 拆段 | P2 |
-| `web/chat/src/pages/SkillsSettings.tsx` | 355 | 列表、上传与 agent 技能勾选拆 hook + 子列表 | P2 |
-| `web/chat/src/components/Composer.tsx` | 314 | 输入区、附件、技能选择与提交拆子组件 | P2 |
-| `web/chat/src/foldEvents.ts` | 294 | 纯函数块类型与 fold 规则可按 event kind 分文件 | P2 |
-| `web/chat/src/pages/MemorySettings.tsx` | 280 | CRUD 表格与编辑表单拆组件 | P2 |
+| `web/chat/src/pages/ToolsSettings.tsx` | 121 | 列表/批量操作/连接器内嵌表单拆子组件 + `useToolsSettings` | P1 · **已拆**（入口页已瘦身；子文件在 `pages/tools/` 等） |
+| `web/chat/src/pages/McpExportSettings.tsx` | 176 | 身份列表、密钥列表、工具 export 列拆段 | P1 · **已拆**（入口页已瘦身；子文件在 `pages/mcp-export/` 等） |
+| `web/chat/src/pages/ModelSettings.tsx` | 118 | 列表与编辑 Modal/表单拆文件 | P1 · **已拆**（入口页已瘦身；子文件在 `pages/models/` 等） |
+| `web/chat/src/pages/InboxSettings.tsx` | 533 | 渠道卡片与密钥旋转 Modal 拆组件 | P2 · **本版保留待 GATES** |
+| `web/chat/src/pages/RuntimeSettings.tsx` | 531 | 旋钮表单与 operators 卡片拆分 | P2 · **本版保留待 GATES** |
+| `web/chat/src/pages/WeixinChannelSettings.tsx` | 516 | 登录流与进程控制拆 hook | P2 · **本版保留待 GATES** |
+| `web/chat/src/components/settings/ConnectorEditorModal.tsx` | 371 | OpenAPI/MCP 两步表单按 `connectorForms/*` 与 shell 拆段 | P2 · **本版保留待 GATES** |
+| `web/chat/src/pages/SkillsSettings.tsx` | 355 | 列表、上传与 agent 技能勾选拆 hook + 子列表 | P2 · **本版保留待 GATES** |
+| `web/chat/src/components/Composer.tsx` | 314 | 输入区、附件、技能选择与提交拆子组件 | P2 · **本版保留待 GATES** |
+| `web/chat/src/foldEvents.ts` | 294 | 纯函数块类型与 fold 规则可按 event kind 分文件 | P2 · **本版保留待 GATES** |
+| `web/chat/src/pages/MemorySettings.tsx` | 280 | CRUD 表格与编辑表单拆组件 | P2 · **本版保留待 GATES** |
 
 ## 6. 门禁基线
 
