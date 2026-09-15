@@ -41,6 +41,16 @@ npx tsc --noEmit
 
 生产向启动见根 README 的 `start` / `baize start`（需 `BAIZE_API_KEY`）。更多部署见 [deployment](./deployment.md)。
 
+## 目录地图（贡献者）
+
+| 路径 | 说明 |
+|------|------|
+| `internal/api/` | HTTP 控制面；`server.go` 路由注册，handlers 按域分文件 |
+| `web/chat/src/api/` | 浏览器客户端；`api.ts` 为 barrel |
+| `web/chat/src/pages/chat/` | Chat 页 hooks/子组件；入口 `pages/ChatPage.tsx` |
+| `internal/run/` | Run 引擎（本波未拆，见后续 STRUCT-P1） |
+| `internal/store/` | 持久化（本波未拆） |
+
 ## 贡献
 
 1. 从 `main` 开分支，提 PR 合入 `main`。
