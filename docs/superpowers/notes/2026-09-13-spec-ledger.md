@@ -100,7 +100,7 @@
 | **DOC**（P1+P2） | **已交付** | [`2026-09-13-doc-p1-p2-design.md`](../specs/2026-09-13-doc-p1-p2-design.md)；架构草案已收口 |
 | **F**（含 C1 + OPS-HOT） | **已交付** | F-C1 / F-KV / F-HOT；DoD：[`2026-09-13-f-kv-dod-audit.md`](2026-09-13-f-kv-dod-audit.md)、[`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md) |
 | **UI-RUNTIME**（+ i18n 文案抽离附录） | 已交付 | 人话化；完整多语言见 UI-I18N |
-| **UI-I18N** | 规格已批准 · 实现中 | [`2026-09-15-ui-i18n-design.md`](../specs/2026-09-15-ui-i18n-design.md)；计划 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md) |
+| **UI-I18N** | **已交付** | [`2026-09-15-ui-i18n-design.md`](../specs/2026-09-15-ui-i18n-design.md)；计划 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)；zh-CN / en；`baize.locale` 本机偏好 |
 | **CH-OUTBOX** | **已交付** | [`2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md)；`channel_outbox` + worker；设置 → 微信可重投 |
 | **LOGIN-SKILL**（原 **UI-LOGIN-AT**） | **已交付（待合入）** | 规格 [`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md)；计划 [`2026-09-14-login-skill.md`](../plans/2026-09-14-login-skill.md)；managed `login-<id>` +「去登录」→ `@login-`；`login-entries` / `login-invoke` 直达已拆除；历史对照 [`2026-09-14-ui-login-at-design.md`](../specs/2026-09-14-ui-login-at-design.md) |
 | **UI-MCP-OAUTH** | **已交付** | 规格 [`2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md)；计划 [`2026-09-14-mcp-oauth.md`](../plans/2026-09-14-mcp-oauth.md) |
@@ -123,7 +123,7 @@
 1. ~~**DOC**~~（已交付）  
 2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
-4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · ~~**BLOB-CS**~~（已交付；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**（规格已批准；见 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
+4. ~~**LOGIN-SKILL**~~（已交付，待合入；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · ~~**BLOB-CS**~~（已交付；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · ~~**UI-I18N**~~（已交付；见 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
 5. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6 Memory**~~（已交付；见 [`2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
 6. ~~渠道 DoD / sql-store worktree~~（已完成）
 
