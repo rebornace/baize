@@ -8,10 +8,13 @@ if (Test-Path $out) {
     Remove-Item -Force $out
 }
 
+# Bench regexes aligned to actual names from tasks 2–5:
+# BenchmarkPerfStreamReplay, BenchmarkPerfListMessages,
+# BenchmarkPerfBlobPutGet{64,256}KiB, BenchmarkPerfOutboxList
 $cmds = @(
-    @( "go", "test", "./internal/api/", "-bench=BenchmarkPerfStream", "-benchtime=50x", "-count=3" ),
+    @( "go", "test", "./internal/api/", "-bench=BenchmarkPerfStreamReplay", "-benchtime=50x", "-count=3" ),
     @( "go", "test", "./internal/store/", "-bench=BenchmarkPerfListMessages", "-benchtime=50x", "-count=3" ),
-    @( "go", "test", "./internal/blob/memory/", "./internal/blob/file/", "-bench=BenchmarkPerfBlob", "-benchtime=50x", "-count=3" ),
+    @( "go", "test", "./internal/blob/memory/", "./internal/blob/file/", "-bench=BenchmarkPerfBlobPutGet", "-benchtime=50x", "-count=3" ),
     @( "go", "test", "./internal/api/", "-bench=BenchmarkPerfOutboxList", "-benchtime=50x", "-count=3" )
 )
 

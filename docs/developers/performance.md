@@ -10,9 +10,9 @@ $env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
 或单独：
 
 ```powershell
-go test ./internal/api/ -bench=BenchmarkPerfStream -benchtime=50x -count=3
+go test ./internal/api/ -bench=BenchmarkPerfStreamReplay -benchtime=50x -count=3
 go test ./internal/store/ -bench=BenchmarkPerfListMessages -benchtime=50x -count=3
-go test ./internal/blob/memory/ ./internal/blob/file/ -bench=BenchmarkPerfBlob -benchtime=50x -count=3
+go test ./internal/blob/memory/ ./internal/blob/file/ -bench=BenchmarkPerfBlobPutGet -benchtime=50x -count=3
 go test ./internal/api/ -bench=BenchmarkPerfOutboxList -benchtime=50x -count=3
 ```
 
