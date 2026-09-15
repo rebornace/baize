@@ -258,13 +258,15 @@
 
 **TypeScript：** 在 `web/chat/src` 下递归 `*.ts` / `*.tsx` 单文件行数；**排除** `*.test.ts(x)`、`*.spec.ts(x)`（不把测试计入 STRUCT 热点）；取生产源码 Top 15。若含测试文件，`ModelSettings.test.tsx`（672）等会挤占榜单，与「页面实现体量」目标不一致。
 
+**STRUCT P0（2026-09-15，`feat/clean-struct`）：** 下表 **P0** 行已按 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md) 拆分交付。表中 **P1/P2** 热点本版**不拆**，统一延后至 **CLEAN-STRUCT-P1**（见账本 [`2026-09-13-spec-ledger.md`](./2026-09-13-spec-ledger.md) §5b）。
+
 ### 5.1 Go 包 Top 15
 
 | 路径 | 行数（约） | 建议拆法（一句话） | 本版优先级 |
 |------|------------|--------------------|------------|
-| `internal/api` | 16962 | 按域拆 handler：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 |
-| `internal/store` | 7039 | 驱动与迁移分目录；SQL 方法按实体（models/conversations/runs）切文件 | P1 |
-| `internal/run` | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 |
+| `internal/api` | 16962 | 按域拆 handler：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 · **已拆** |
+| `internal/store` | 7039 | 驱动与迁移分目录；SQL 方法按实体（models/conversations/runs）切文件 | P1 · **延后 STRUCT-P1** |
+| `internal/run` | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 · **延后 STRUCT-P1** |
 | `internal/channel/webhook` | 5137 | 入站/出站/重试与配置解析分模块 | P2 |
 | `internal/connector` | 3788 | MCP/invoke/registry 与 OpenAPI 子包边界收紧（父包不含 openapi 子目录行数） | P1 |
 | `internal/bootstrap` | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 |
@@ -282,8 +284,8 @@
 
 | 路径 | 行数（约） | 建议拆法（一句话） | 本版优先级 |
 |------|------------|--------------------|------------|
-| `web/chat/src/api.ts` | 1409 | 按资源拆 `api/runs.ts`、`api/settings/memory.ts`、`api/connectors.ts` 等，保留 `authHeaders`/`parseJSON` 内核 | P0 |
-| `web/chat/src/pages/ChatPage.tsx` | 1312 | 拆会话侧栏、消息区（列表+折叠块）、Composer 区、顶栏与 run 生命周期 hook | P0 |
+| `web/chat/src/api.ts` | 1409 | 按资源拆 `api/runs.ts`、`api/settings/memory.ts`、`api/connectors.ts` 等，保留 `authHeaders`/`parseJSON` 内核 | P0 · **已拆** |
+| `web/chat/src/pages/ChatPage.tsx` | 1312 | 拆会话侧栏、消息区（列表+折叠块）、Composer 区、顶栏与 run 生命周期 hook | P0 · **已拆** |
 | `web/chat/src/locales/en.ts` | 868 | **保留（文案包）** | 保留 |
 | `web/chat/src/locales/zh.ts` | 859 | **保留（文案包）** | 保留 |
 | `web/chat/src/pages/ToolsSettings.tsx` | 808 | 列表/批量操作/连接器内嵌表单拆子组件 + `useToolsSettings` | P1 |

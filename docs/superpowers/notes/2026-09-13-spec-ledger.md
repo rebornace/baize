@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **CONTRACT 已交付；STRUCT P0 计划就绪** | CONTRACT 已执行；STRUCT P0 计划 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)（`server.go` / `api.ts` / `ChatPage`）；P1+ 另波；**下一动作：执行 STRUCT P0** |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **STRUCT P0 已交付** | P0：`internal/api`（`server.go` 按域）、`web/chat/src/api.ts` + `api/*`、`ChatPage` + `pages/chat/*` 已拆；计划 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)；AUDIT §5 P1/P2 **延后 CLEAN-STRUCT-P1**；**下一动作：开 CLEAN-STRUCT-P1**（若跳过 P1 则 **CLEAN-GATES**，须在账本写明「P1 热点本版保留」） |
 
 ---
 
@@ -128,7 +128,7 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **CLEAN** — 执行 STRUCT P0（计划 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)）  
+1. **CLEAN** — STRUCT P0 **已交付**；下一刀 **CLEAN-STRUCT-P1** 或 **CLEAN-GATES**（计划 [`2026-09-15-clean-struct.md`](../plans/2026-09-15-clean-struct.md)）  
 2. ~~**DOC**~~（已交付）  
 3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 4. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  

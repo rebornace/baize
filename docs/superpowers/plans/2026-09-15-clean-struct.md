@@ -1,5 +1,7 @@
 # CLEAN-STRUCT 实现计划（P0 波）
 
+**交付状态（2026-09-15）：** P0 波已交付（`feat/clean-struct`）；账本见 [`2026-09-13-spec-ledger.md`](../notes/2026-09-13-spec-ledger.md) §5b；AUDIT §5 P0 已标「已拆」，P1+ 延后 **CLEAN-STRUCT-P1**。
+
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
 **目标：** 按 AUDIT §5 完成 **P0** 结构瘦身：拆开 `internal/api/server.go` 残留巨石、按资源拆分 `web/chat/src/api.ts`、按 UI 职责拆分 `ChatPage.tsx`；行为以现有测试为准，不改对外 HTTP 契约。
@@ -15,9 +17,9 @@
 
 | 热点 | 处置 |
 |------|------|
-| `internal/api` / 尤其 `server.go`（~3114 行） | **拆 P0** |
-| `web/chat/src/api.ts`（~1400 行） | **拆 P0** |
-| `web/chat/src/pages/ChatPage.tsx`（~1312 行） | **拆 P0** |
+| `internal/api` / 尤其 `server.go`（~3114 行） | **P0 已拆** |
+| `web/chat/src/api.ts`（~1400 行） | **P0 已拆** |
+| `web/chat/src/pages/ChatPage.tsx`（~1312 行） | **P0 已拆** |
 | locales 文案包 | **保留**（AUDIT 已定） |
 | weixin-adapter | **保留** |
 | AUDIT P1/P2（store/run/Settings 页等） | **本波明确延后** → 另开 `CLEAN-STRUCT-P1` 计划 |
@@ -252,7 +254,7 @@ git commit -m "refactor(ui): ChatPage 拆 session/run hooks 与子组件"
 - 修改：`docs/superpowers/notes/2026-09-15-clean-audit.md` §5（P0 行注明已拆；P1+ 注明延后至 STRUCT-P1）
 - 修改：账本 CLEAN 行；规格实现计划回链
 
-- [ ] **步骤 1：目录地图（公开开发者文档）**
+- [x] **步骤 1：目录地图（公开开发者文档）**
 
 追加简短小节，至少包含：
 
@@ -268,7 +270,7 @@ git commit -m "refactor(ui): ChatPage 拆 session/run hooks 与子组件"
 | `internal/store/` | 持久化（本波未拆） |
 ```
 
-- [ ] **步骤 2：回归**
+- [x] **步骤 2：回归**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
@@ -276,7 +278,7 @@ go test ./internal/api/ -count=1
 Push-Location web\chat; npm test; npx tsc --noEmit; Pop-Location
 ```
 
-- [ ] **步骤 3：账本**
+- [x] **步骤 3：账本**
 
 CLEAN：**STRUCT P0 已交付**；下一动作开 **CLEAN-STRUCT-P1**（或直接 **CLEAN-GATES**——若产品决定跳过 P1，须在账本写明「P1 热点本版保留」）。  
 **默认建议：** 下一刀仍开 STRUCT-P1（store/run + Settings P1 页），然后再 GATES。
