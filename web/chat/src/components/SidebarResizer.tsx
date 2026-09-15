@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { applySidebarWidth, DEFAULT_SIDEBAR_WIDTH, persistSidebarWidth } from '../sidebarResize'
+import { CHAT } from '../strings'
 
 /**
  * 侧栏右边缘的拖拽手柄：拖动改变 --sidebar-width（聊天页/设置页同步）。
@@ -53,7 +54,7 @@ export function SidebarResizer() {
     <button
       type="button"
       className="sidebar-resizer"
-      aria-label="拖动调整侧栏宽度"
+      aria-label={CHAT.resizeSidebar}
       aria-orientation="vertical"
       onPointerDown={startDrag}
       onKeyDown={nudge}

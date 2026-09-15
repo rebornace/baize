@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
+import { CHAT } from '../strings'
 
 export interface ChannelImageProps {
   url: string
@@ -58,10 +59,10 @@ export function ChannelImage({ url, alt }: ChannelImageProps) {
   }, [url, gateEnabled, isLocal])
 
   if (failed) {
-    return <span className="channel-image-failed">（图片加载失败）</span>
+    return <span className="channel-image-failed">{CHAT.imageLoadFailed}</span>
   }
   if (!src) {
-    return <span className="channel-image-loading">（图片加载中…）</span>
+    return <span className="channel-image-loading">{CHAT.imageLoading}</span>
   }
-  return <img src={src} alt={alt ?? '图片'} className="channel-image" loading="lazy" />
+  return <img src={src} alt={alt ?? CHAT.imageAlt} className="channel-image" loading="lazy" />
 }

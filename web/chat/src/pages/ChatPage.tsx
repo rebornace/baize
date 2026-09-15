@@ -59,6 +59,7 @@ import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
 import { foldEvents, type ChatBlock } from '../foldEvents'
 import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
+import { useLocale } from '../locale/LocaleContext'
 import {
   foldToolBlocks,
   isFirstAssistantMessageOfRun,
@@ -101,6 +102,8 @@ function loadConversationScope(isAdmin: boolean): ConversationScope {
 
 export function ChatPage() {
   const { role, gateEnabled } = useGate()
+  // Subscribe so chat chrome rebuilds when language changes (without full reload).
+  useLocale()
   const drawer = useDrawer()
   const [agentId, setAgentId] = useState(AGENT_FALLBACK)
   const [conversationId, setConversationIdState] = useState(loadConversationId)
@@ -915,10 +918,10 @@ export function ChatPage() {
       <button
         type="button"
         className="app-drawer-scrim"
-        aria-label="关闭菜单"
+        aria-label={CHAT.closeMenu}
         onClick={drawer.close}
       />
-      <aside className="chat-sidebar" aria-label="对话列表">
+      <aside className="chat-sidebar" aria-label={CHAT.conversationListAria}>
         <div className="chat-sidebar-top">
           <button
             type="button"
@@ -928,10 +931,10 @@ export function ChatPage() {
               drawer.close()
             }}
           >
-            新对话
+            {CHAT.newChat}
           </button>
           {role === 'admin' && (
-            <div className="conversation-scope" role="group" aria-label="会话范围">
+            <div className="conversation-scope" role="group" aria-label={CHAT.scopeAria}>
               <button
                 type="button"
                 className={
@@ -941,7 +944,7 @@ export function ChatPage() {
                 }
                 onClick={() => setConversationScope('all')}
               >
-                全部
+                {CHAT.scopeAll}
               </button>
               <button
                 type="button"
@@ -952,7 +955,7 @@ export function ChatPage() {
                 }
                 onClick={() => setConversationScope('mine')}
               >
-                我的
+                {CHAT.scopeMine}
               </button>
             </div>
           )}
@@ -976,8 +979,8 @@ export function ChatPage() {
                 <button
                   type="button"
                   className="conversation-delete"
-                  title="删除对话"
-                  aria-label={`删除对话 ${conversationListLabel(c.id, c.title)}`}
+                  title={CHAT.deleteConversationTitle}
+                  aria-label={CHAT.deleteConversationAria(conversationListLabel(c.id, c.title))}
                   onClick={(e) => {
                     e.stopPropagation()
                     onDeleteConversation(c.id)
@@ -995,7 +998,7 @@ export function ChatPage() {
             to={role === 'admin' ? '/settings' : '/settings/identities'}
             className="settings-link"
           >
-            {role === 'admin' ? '设置' : '账号'}
+            {role === 'admin' ? CHAT.linkSettings : CHAT.linkAccounts}
           </Link>
           {gateEnabled && (
             <button
@@ -1006,7 +1009,7 @@ export function ChatPage() {
                 window.location.assign('/ui/')
               }}
             >
-              退出
+              {CHAT.logout}
             </button>
           )}
         </div>
@@ -1018,7 +1021,7 @@ export function ChatPage() {
           <button
             type="button"
             className="app-menu-btn"
-            aria-label="打开对话列表"
+            aria-label={CHAT.openConversationList}
             onClick={drawer.open}
           >
             <Menu size={20} aria-hidden="true" />

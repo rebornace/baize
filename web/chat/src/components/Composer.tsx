@@ -187,14 +187,14 @@ export function Composer({
   return (
     <div className="composer">
       {files.length > 0 && (
-        <div className="composer-chips" aria-label="附件列表">
+        <div className="composer-chips" aria-label={CHAT.attachmentsAria}>
           {files.map((f, i) => (
             <span key={`${f.name}-${i}`} className="composer-chip">
               <span className="composer-chip-name" title={f.name}>{f.name}</span>
               <button
                 type="button"
                 className="composer-chip-remove"
-                aria-label={`移除 ${f.name}`}
+                aria-label={CHAT.removeAttachmentAria(f.name)}
                 onClick={() => removeFile(i)}
                 disabled={disabled}
               >
@@ -220,8 +220,8 @@ export function Composer({
         <button
           type="button"
           className="composer-attach"
-          aria-label="添加附件"
-          title="添加附件"
+          aria-label={CHAT.addAttachment}
+          title={CHAT.addAttachment}
           onClick={openFilePicker}
           disabled={disabled}
         >
@@ -263,7 +263,7 @@ export function Composer({
           title={CHAT.composerTitle}
           rows={1}
           disabled={disabled}
-          aria-label="消息输入"
+          aria-label={CHAT.messageInputAria}
         />
         <button
           type="button"
@@ -271,10 +271,10 @@ export function Composer({
           onClick={submit}
           disabled={!canSend}
         >
-          发送
+          {CHAT.send}
         </button>
         {showPopup && completion && (
-          <ul className="composer-complete" role="listbox" aria-label="技能补全">
+          <ul className="composer-complete" role="listbox" aria-label={CHAT.skillCompleteAria}>
             {completion.skillMatches.map((s, i) => (
               <li
                 key={`skill:${s.id}`}
@@ -304,7 +304,8 @@ export function Composer({
       </div>
       {skillsById.size > 0 && (
         <span className="composer-hint" aria-hidden="true">
-          可用 Skill：{Array.from(skillsById.keys()).slice(0, 6).join('、')}
+          {CHAT.availableSkills}
+          {Array.from(skillsById.keys()).slice(0, 6).join(CHAT.skillListSep)}
           {skillsById.size > 6 ? '…' : ''}
         </span>
       )}
