@@ -26,6 +26,7 @@ import './styles/components.css'
 import './styles/layout.css'
 import './styles/settings.css'
 import './styles/chat.css'
+import { LocaleProvider } from './locale/LocaleContext'
 import { initSidebarWidth } from './sidebarResize'
 
 initSidebarWidth()
@@ -39,6 +40,7 @@ function AdminOnly({ children }: { children: ReactNode }) {
 createRoot(document.getElementById('app')!).render(
   <StrictMode>
     <BrowserRouter basename="/ui">
+      <LocaleProvider>
       <GateRoot>
         <Routes>
           <Route path="/" element={<ChatPage />} />
@@ -111,6 +113,7 @@ createRoot(document.getElementById('app')!).render(
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </GateRoot>
+      </LocaleProvider>
     </BrowserRouter>
   </StrictMode>,
 )
