@@ -25,7 +25,7 @@ func TestPutConnectorSyncsManagedLoginSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cat, err := skill.LoadCatalog(nil, userDir, managedDir)
+	cat, err := skill.LoadCatalog(nil, userDir, managedDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

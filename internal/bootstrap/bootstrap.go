@@ -309,8 +309,17 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 
 	reg := tool.NewRegistry()
 
+	// blob.Store is assembled before skill catalog and connector registration so
+	// Catalog can List/Get skills/user/… and Apply can load connectors/<id>/… keys.
+	// Artifact/workspace/channel-media still wait for sqlBackend below.
+	blobStore, err := ensureBlobStore(context.Background(), cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open blob store: %w", err)
+	}
+
 	managedDir := filepath.Join(cfg.Skills.UserDir, "managed")
-	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir, managedDir)
+	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir, managedDir, blobStore)
 	if err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("load skill catalog: %w", err)
@@ -338,15 +347,6 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 	for _, tm := range memory.Tools(mem, metaStore) {
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
-	}
-
-	// blob.Store is always assembled before connector registration so Apply can
-	// load connectors/<id>/… keys. Artifact/workspace/channel-media still wait
-	// for sqlBackend below.
-	blobStore, err := ensureBlobStore(context.Background(), cfg)
-	if err != nil {
-		_ = closer.Close()
-		return nil, nil, fmt.Errorf("open blob store: %w", err)
 	}
 
 	if err := registerConnector(st, reg, cfg, identities, blobStore, callbackCfg); err != nil {
