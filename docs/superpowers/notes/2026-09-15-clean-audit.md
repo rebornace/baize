@@ -18,7 +18,7 @@
 
 | METHOD path | 处置 | 理由 |
 |-------------|------|------|
-| ﻿DELETE /v0/connectors/{id} | 保留 | |
+| DELETE /v0/connectors/{id} | 保留 | |
 | DELETE /v0/connectors/{id}/tools/{name} | 保留 | |
 | DELETE /v0/conversations/{id} | 保留 | |
 | DELETE /v0/conversations/{id}/identities | 保留 | |
@@ -63,12 +63,16 @@
 | GET /v0/skills/{id} | 保留 | |
 | GET /v0/tools | 保留 | |
 | GET /v0/ui-config | 保留 | |
+| HANDLE /ui/ | 保留 | |
+| HANDLE /v0/mcp/export | 保留 | |
+| HANDLE /v0/mcp/export/ | 保留 | |
 | PATCH /v0/settings/credentials | 保留 | |
 | PATCH /v0/settings/mcp-export/identities/{id} | 保留 | |
 | PATCH /v0/settings/memory/{id} | 保留 | |
 | PATCH /v0/settings/models/{id} | 保留 | |
 | PATCH /v0/settings/runtime | 保留 | |
 | PATCH /v0/tools/{name} | 保留 | |
+| POST /v0/channels/{name}/inbound | 保留 | |
 | POST /v0/connectors/{id}/mcp/oauth/disconnect | 保留 | |
 | POST /v0/connectors/{id}/mcp/oauth/start | 保留 | |
 | POST /v0/connectors/{id}/tools | 保留 | |
@@ -104,9 +108,6 @@
 | PUT /v0/settings/events-webhook | 保留 | |
 | PUT /v0/settings/inbox-channels | 保留 | |
 | PUT /v0/settings/store | 保留 | |
-| HANDLE /v0/mcp/export | 保留 | |
-| HANDLE /v0/mcp/export/ | 保留 | |
-| HANDLE /ui/ | 保留 | |
 
 处置枚举：**保留** / **重命名** / **删除**。
 
@@ -172,20 +173,26 @@
 ### 任务 2：HTTP 路由全表
 
 ```powershell
-Select-String -Path internal\api\server.go -Pattern 'HandleFunc\"(GET|POST|PUT|PATCH|DELETE) ([^\"]+)\"' |
-  ForEach-Object { if ($_.Line -match 'HandleFunc\"((?:GET|POST|PUT|PATCH|DELETE) [^\"]+)\"') { $Matches[1] } } |
-  Sort-Object -Unique |
-  Set-Content -Encoding utf8 docs\superpowers\notes\2026-09-15-clean-audit-routes.txt
-
-Add-Content docs\superpowers\notes\2026-09-15-clean-audit-routes.txt "HANDLE /v0/mcp/export"
-Add-Content docs\superpowers\notes\2026-09-15-clean-audit-routes.txt "HANDLE /v0/mcp/export/"
-Add-Content docs\superpowers\notes\2026-09-15-clean-audit-routes.txt "HANDLE /ui/"
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$routes = Select-String -Path internal\api\server.go -Pattern 'HandleFunc\("(GET|POST|PUT|PATCH|DELETE) ([^"]+)"' |
+  ForEach-Object { if ($_.Line -match 'HandleFunc\("((?:GET|POST|PUT|PATCH|DELETE) [^"]+)"') { $Matches[1] } } |
+  Sort-Object -Unique
+$extra = @(
+  'POST /v0/channels/{name}/inbound',
+  'HANDLE /v0/mcp/export',
+  'HANDLE /v0/mcp/export/',
+  'HANDLE /ui/'
+)
+($routes + $extra | Sort-Object -Unique) | ForEach-Object { $_ } |
+  Set-Content -Path docs\superpowers\notes\2026-09-15-clean-audit-routes.txt -Encoding $utf8NoBom
 ```
 
 ```powershell
-Select-String -Path internal\**\*.go,cmd\**\*.go -Pattern '"/v0/' |
-  Where-Object { $_.Path -notmatch '_test\.go$' -and $_.Line -match 'HandleFunc|Handle\(' } |
+Select-String -Path internal\**\*.go,cmd\**\*.go -Pattern 'RegisterRoute|POST /v0/channels/' |
+  Where-Object { $_.Path -notmatch '_test\.go$' } |
   Select-Object -First 30 Path,LineNumber,Line
 ```
 
-（任务 2 核对：`/v0` 路由注册仅见于 `internal/api/server.go`，无额外追加项。）
+（任务 2 核对：`internal/api/server.go` 为 `HandleFunc`/`mux.Handle` 主表；**动态渠道入站** `POST /v0/channels/{name}/inbound` 由 `internal/channel/webhook/channel.go` 经 `api.Server.RegisterRoute` 按渠道名挂载（契约路径模板见上）。）
+
+（**非本表：** 独立进程 `cmd/weixin-adapter` 另暴露适配器侧 HTTP（如 `/outbound`、`/admin/*`），不属于 baize core mux 白名单。）

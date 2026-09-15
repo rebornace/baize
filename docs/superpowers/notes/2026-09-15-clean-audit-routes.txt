@@ -1,4 +1,4 @@
-﻿DELETE /v0/connectors/{id}
+DELETE /v0/connectors/{id}
 DELETE /v0/connectors/{id}/tools/{name}
 DELETE /v0/conversations/{id}
 DELETE /v0/conversations/{id}/identities
@@ -43,12 +43,16 @@ GET /v0/skills
 GET /v0/skills/{id}
 GET /v0/tools
 GET /v0/ui-config
+HANDLE /ui/
+HANDLE /v0/mcp/export
+HANDLE /v0/mcp/export/
 PATCH /v0/settings/credentials
 PATCH /v0/settings/mcp-export/identities/{id}
 PATCH /v0/settings/memory/{id}
 PATCH /v0/settings/models/{id}
 PATCH /v0/settings/runtime
 PATCH /v0/tools/{name}
+POST /v0/channels/{name}/inbound
 POST /v0/connectors/{id}/mcp/oauth/disconnect
 POST /v0/connectors/{id}/mcp/oauth/start
 POST /v0/connectors/{id}/tools
@@ -84,6 +88,3 @@ PUT /v0/settings/channels/{name}
 PUT /v0/settings/events-webhook
 PUT /v0/settings/inbox-channels
 PUT /v0/settings/store
-HANDLE /v0/mcp/export
-HANDLE /v0/mcp/export/
-HANDLE /ui/
