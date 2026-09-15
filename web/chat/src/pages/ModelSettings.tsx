@@ -30,28 +30,33 @@ import { MODELS, VISION_LABEL, modelErrorText } from '../strings'
 
 const CREATE_ID = '__new__'
 
-// Editable tier options plus "auto" (infer from the model name server-side).
-const TIER_OPTIONS: { value: ModelTier | 'auto'; label: string }[] = [
-  { value: 'auto', label: '自动识别（按模型名）' },
-  { value: 'light', label: '快速（简单、省钱的日常任务）' },
-  { value: 'standard', label: '标准（适合多数任务）' },
-  { value: 'power', label: '深度思考（复杂推理、长任务）' },
-]
+function tierOptions(): { value: ModelTier | 'auto'; label: string }[] {
+  return [
+    { value: 'auto', label: MODELS.tierOptionAuto },
+    { value: 'light', label: MODELS.tierOptionLight },
+    { value: 'standard', label: MODELS.tierOptionStandard },
+    { value: 'power', label: MODELS.tierOptionPower },
+  ]
+}
 
-const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
-  { value: 'off', label: MODELS.thinkingLevelOff },
-  { value: 'low', label: MODELS.thinkingLevelLow },
-  { value: 'medium', label: MODELS.thinkingLevelMedium },
-  { value: 'high', label: MODELS.thinkingLevelHigh },
-]
+function thinkingLevelOptions(): { value: ThinkingLevel; label: string }[] {
+  return [
+    { value: 'off', label: MODELS.thinkingLevelOff },
+    { value: 'low', label: MODELS.thinkingLevelLow },
+    { value: 'medium', label: MODELS.thinkingLevelMedium },
+    { value: 'high', label: MODELS.thinkingLevelHigh },
+  ]
+}
 
-const THINKING_DIALECT_OPTIONS: { value: ThinkingDialect; label: string }[] = [
-  { value: 'auto', label: MODELS.thinkingDialectAuto },
-  { value: 'openai', label: MODELS.thinkingDialectOpenai },
-  { value: 'deepseek', label: MODELS.thinkingDialectDeepseek },
-  { value: 'qwen', label: MODELS.thinkingDialectQwen },
-  { value: 'omit', label: MODELS.thinkingDialectOmit },
-]
+function thinkingDialectOptions(): { value: ThinkingDialect; label: string }[] {
+  return [
+    { value: 'auto', label: MODELS.thinkingDialectAuto },
+    { value: 'openai', label: MODELS.thinkingDialectOpenai },
+    { value: 'deepseek', label: MODELS.thinkingDialectDeepseek },
+    { value: 'qwen', label: MODELS.thinkingDialectQwen },
+    { value: 'omit', label: MODELS.thinkingDialectOmit },
+  ]
+}
 
 export interface ProfileFormState {
   name: string
@@ -244,7 +249,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           }
           disabled={busy}
         >
-          {TIER_OPTIONS.map((o) => (
+          {tierOptions().map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -262,7 +267,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
           }
           disabled={busy}
         >
-          {THINKING_LEVEL_OPTIONS.map((o) => (
+          {thinkingLevelOptions().map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -291,7 +296,7 @@ function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
             }
             disabled={busy}
           >
-            {THINKING_DIALECT_OPTIONS.map((o) => (
+            {thinkingDialectOptions().map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

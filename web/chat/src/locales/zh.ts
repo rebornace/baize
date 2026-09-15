@@ -56,9 +56,10 @@ export const zhPack = {
   // SSE 降级轮询提示
   reconnecting: '正在重新连接…',
   // 本会话思考级别覆盖
-  thinkingChip: '思考级别',
-  thinkingDefault: '默认',
-  // 输入框：短 placeholder（芯片占宽后不宜长句换行）；完整快捷键放 title
+    thinkingChip: '思考级别',
+    thinkingDefault: '默认',
+    selectModel: '选择模型',
+    // 输入框：短 placeholder（芯片占宽后不宜长句换行）；完整快捷键放 title
   composerPlaceholder: '输入消息…',
   composerTitle: 'Enter 发送 · Shift+Enter 换行 · @ 或 / 选择技能',
   // 思考块展示（实时打字机 / 历史折叠）
@@ -308,6 +309,10 @@ export const zhPack = {
   fieldApiKey: 'API 密钥',
   fieldApiKeyEnv: 'API Key 环境变量名',
   fieldTier: '任务档位',
+  tierOptionAuto: '自动识别（按模型名）',
+  tierOptionLight: '快速（简单、省钱的日常任务）',
+  tierOptionStandard: '标准（适合多数任务）',
+  tierOptionPower: '深度思考（复杂推理、长任务）',
   fieldVision: '视觉（支持图片附件）',
   fieldThinkingLevel: '默认思考',
   thinkingLevelOff: '关',

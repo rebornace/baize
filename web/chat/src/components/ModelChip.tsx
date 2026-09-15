@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { Cpu } from 'lucide-react'
 import type { ModelProfile } from '../api'
+import { useLocale } from '../locale/LocaleContext'
 import { AUTO_MODEL_ID } from '../modelSelect'
-import { AUTO_LABEL, tierLabel, VISION_LABEL } from '../strings'
+import { AUTO_LABEL, CHAT, tierLabel, VISION_LABEL } from '../strings'
 import { DropdownMenu, type MenuItem } from './ui'
 
 export interface ModelChipProps {
@@ -13,6 +14,7 @@ export interface ModelChipProps {
 }
 
 export function ModelChip({ profiles, value, onChange, disabled }: ModelChipProps) {
+  const { locale } = useLocale()
   const selected = value.trim() === '' ? AUTO_MODEL_ID : value
   const chosen = profiles.find((p) => p.id === selected)
   const label = chosen ? chosen.name : AUTO_LABEL
@@ -29,11 +31,11 @@ export function ModelChip({ profiles, value, onChange, disabled }: ModelChipProp
       onSelect: () => onChange(p.id),
     }))
     return [autoItem, ...rest]
-  }, [profiles, onChange])
+  }, [profiles, onChange, locale])
 
   return (
     <DropdownMenu
-      triggerLabel="选择模型"
+      triggerLabel={CHAT.selectModel}
       triggerClassName="model-chip"
       items={items}
       disabled={disabled}
