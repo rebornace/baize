@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	PrefixConnectors      = "connectors/"
-	PrefixSkillsUser      = "skills/user/"
-	PrefixSkillsManaged   = "skills/managed/"
+	PrefixConnectors    = "connectors/"
+	PrefixSkillsUser    = "skills/user/"
+	PrefixSkillsManaged = "skills/managed/"
 )
 
 // ConnectorNormalizedKey is the blob key for normalized OpenAPI stored in Connector.Spec.
