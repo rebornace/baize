@@ -1,10 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { setPack } from './locale/pack'
+import { enPack } from './locales/en'
+import { zhPack } from './locales/zh'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from './friendlyTool'
 
 const catalog: ToolCatalog = [
   { name: 'query_order', title: '查询订单', description: '按单号查订单' },
   { name: 'no_title', title: '', description: '' },
 ]
+
+beforeEach(() => {
+  setPack(zhPack)
+})
+afterEach(() => {
+  setPack(zhPack)
+})
 
 describe('friendlyToolName', () => {
   it('prefers catalog title, falls back to technical name', () => {
@@ -24,7 +34,15 @@ describe('toolPhrase', () => {
     expect(toolPhrase('query_order', 'approved', catalog)).toBe('已同意：查询订单')
     expect(toolPhrase('query_order', 'rejected', catalog)).toBe('已拒绝：查询订单')
   })
+
   it('uses technical name in phrase when no title', () => {
     expect(toolPhrase('totally_new', 'running', catalog)).toBe('正在处理：totally_new…')
+  })
+
+  it('switches phrase templates with locale pack', () => {
+    setPack(enPack)
+    expect(toolPhrase('query_order', 'succeeded', catalog)).toBe('Completed: 查询订单')
+    expect(toolPhrase('query_order', 'failed', catalog)).toBe('Failed: 查询订单')
+    expect(toolPhrase('query_order', 'running', catalog)).toBe('Processing: 查询订单…')
   })
 })
