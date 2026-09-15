@@ -18,7 +18,95 @@
 
 | METHOD path | 处置 | 理由 |
 |-------------|------|------|
-| （待填） | 保留 | |
+| ﻿DELETE /v0/connectors/{id} | 保留 | |
+| DELETE /v0/connectors/{id}/tools/{name} | 保留 | |
+| DELETE /v0/conversations/{id} | 保留 | |
+| DELETE /v0/conversations/{id}/identities | 保留 | |
+| DELETE /v0/conversations/{id}/identities/{iid} | 保留 | |
+| DELETE /v0/conversations/{id}/messages | 保留 | |
+| DELETE /v0/settings/mcp-export/identities/{id} | 保留 | |
+| DELETE /v0/settings/mcp-export/keys/{id} | 保留 | |
+| DELETE /v0/settings/memory/{id} | 保留 | |
+| DELETE /v0/settings/models/{id} | 保留 | |
+| DELETE /v0/skills/{id} | 保留 | |
+| GET /healthz | 保留 | |
+| GET /v0/agents/{id} | 保留 | |
+| GET /v0/artifacts/{id} | 保留 | |
+| GET /v0/channels/media/{conv}/{object} | 保留 | |
+| GET /v0/connectors | 保留 | |
+| GET /v0/connectors/{id} | 保留 | |
+| GET /v0/connectors/{id}/mcp/oauth/callback | 保留 | |
+| GET /v0/connectors/{id}/mcp/oauth/status | 保留 | |
+| GET /v0/conversations | 保留 | |
+| GET /v0/conversations/{id}/identities | 保留 | |
+| GET /v0/conversations/{id}/messages | 保留 | |
+| GET /v0/me | 保留 | |
+| GET /v0/runs/{id} | 保留 | |
+| GET /v0/runs/{id}/events | 保留 | |
+| GET /v0/runs/{id}/stream | 保留 | |
+| GET /v0/settings/channels/{name} | 保留 | |
+| GET /v0/settings/channels/{name}/login/status | 保留 | |
+| GET /v0/settings/channels/{name}/outbound-deliveries | 保留 | |
+| GET /v0/settings/credentials | 保留 | |
+| GET /v0/settings/events-webhook | 保留 | |
+| GET /v0/settings/events-webhook/deliveries | 保留 | |
+| GET /v0/settings/inbox-channels | 保留 | |
+| GET /v0/settings/mcp-export | 保留 | |
+| GET /v0/settings/mcp-export/identities | 保留 | |
+| GET /v0/settings/mcp-export/identities/{id} | 保留 | |
+| GET /v0/settings/mcp-export/keys | 保留 | |
+| GET /v0/settings/memory | 保留 | |
+| GET /v0/settings/models | 保留 | |
+| GET /v0/settings/runtime | 保留 | |
+| GET /v0/settings/store | 保留 | |
+| GET /v0/skills | 保留 | |
+| GET /v0/skills/{id} | 保留 | |
+| GET /v0/tools | 保留 | |
+| GET /v0/ui-config | 保留 | |
+| PATCH /v0/settings/credentials | 保留 | |
+| PATCH /v0/settings/mcp-export/identities/{id} | 保留 | |
+| PATCH /v0/settings/memory/{id} | 保留 | |
+| PATCH /v0/settings/models/{id} | 保留 | |
+| PATCH /v0/settings/runtime | 保留 | |
+| PATCH /v0/tools/{name} | 保留 | |
+| POST /v0/connectors/{id}/mcp/oauth/disconnect | 保留 | |
+| POST /v0/connectors/{id}/mcp/oauth/start | 保留 | |
+| POST /v0/connectors/{id}/tools | 保留 | |
+| POST /v0/conversations/{id}/fork | 保留 | |
+| POST /v0/conversations/{id}/identities | 保留 | |
+| POST /v0/conversations/{id}/identities/{iid}/default | 保留 | |
+| POST /v0/conversations/{id}/messages/{message_id}/rollback | 保留 | |
+| POST /v0/inbox/{channel_id} | 保留 | |
+| POST /v0/runs | 保留 | |
+| POST /v0/runs/{id}/cancel | 保留 | |
+| POST /v0/runs/{id}/plugin-callbacks | 保留 | |
+| POST /v0/runs/{id}/resume | 保留 | |
+| POST /v0/settings/channels/{name}/login/start | 保留 | |
+| POST /v0/settings/channels/{name}/logout | 保留 | |
+| POST /v0/settings/channels/{name}/outbound-deliveries/{id}/retry | 保留 | |
+| POST /v0/settings/channels/{name}/process/restart | 保留 | |
+| POST /v0/settings/channels/{name}/process/start | 保留 | |
+| POST /v0/settings/channels/{name}/process/stop | 保留 | |
+| POST /v0/settings/events-webhook/deliveries/{id}/retry | 保留 | |
+| POST /v0/settings/events-webhook/test | 保留 | |
+| POST /v0/settings/inbox-channels/{id}/rotate-secret | 保留 | |
+| POST /v0/settings/inbox-channels/{id}/test | 保留 | |
+| POST /v0/settings/mcp-export/identities | 保留 | |
+| POST /v0/settings/mcp-export/keys | 保留 | |
+| POST /v0/settings/memory | 保留 | |
+| POST /v0/settings/models | 保留 | |
+| POST /v0/settings/reload | 保留 | |
+| POST /v0/settings/store/restart | 保留 | |
+| POST /v0/skills | 保留 | |
+| PUT /v0/agents/{id} | 保留 | |
+| PUT /v0/connectors/{id} | 保留 | |
+| PUT /v0/settings/channels/{name} | 保留 | |
+| PUT /v0/settings/events-webhook | 保留 | |
+| PUT /v0/settings/inbox-channels | 保留 | |
+| PUT /v0/settings/store | 保留 | |
+| HANDLE /v0/mcp/export | 保留 | |
+| HANDLE /v0/mcp/export/ | 保留 | |
+| HANDLE /ui/ | 保留 | |
 
 处置枚举：**保留** / **重命名** / **删除**。
 
@@ -81,4 +169,23 @@
 
 ## 10. 复现命令备忘
 
-（任务 2–5 填入实际用过的命令）
+### 任务 2：HTTP 路由全表
+
+```powershell
+Select-String -Path internal\api\server.go -Pattern 'HandleFunc\"(GET|POST|PUT|PATCH|DELETE) ([^\"]+)\"' |
+  ForEach-Object { if ($_.Line -match 'HandleFunc\"((?:GET|POST|PUT|PATCH|DELETE) [^\"]+)\"') { $Matches[1] } } |
+  Sort-Object -Unique |
+  Set-Content -Encoding utf8 docs\superpowers\notes\2026-09-15-clean-audit-routes.txt
+
+Add-Content docs\superpowers\notes\2026-09-15-clean-audit-routes.txt "HANDLE /v0/mcp/export"
+Add-Content docs\superpowers\notes\2026-09-15-clean-audit-routes.txt "HANDLE /v0/mcp/export/"
+Add-Content docs\superpowers\notes\2026-09-15-clean-audit-routes.txt "HANDLE /ui/"
+```
+
+```powershell
+Select-String -Path internal\**\*.go,cmd\**\*.go -Pattern '"/v0/' |
+  Where-Object { $_.Path -notmatch '_test\.go$' -and $_.Line -match 'HandleFunc|Handle\(' } |
+  Select-Object -First 30 Path,LineNumber,Line
+```
+
+（任务 2 核对：`/v0` 路由注册仅见于 `internal/api/server.go`，无额外追加项。）
