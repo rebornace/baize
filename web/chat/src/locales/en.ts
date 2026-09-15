@@ -1,6 +1,19 @@
-import type { StringsPack } from './zh'
+import { zhPack, type StringsPack } from './zh'
 
-/** Minimal stub; full en pack lands in task 4. */
+/**
+ * Temporary en pack for task 3: Chinese base with a few English probes
+ * so LocaleProvider / live-string tests can detect switches.
+ * Full English lands in task 4.
+ */
 export const enPack = {
-  _probe: 'en',
-} as const satisfies StringsPack
+  ...zhPack,
+  AUTO_LABEL: 'Auto select',
+  ACTIONS: {
+    ...zhPack.ACTIONS,
+    copy: 'Copy',
+  },
+  CHAT: {
+    ...zhPack.CHAT,
+    copySuccess: 'Copied',
+  },
+} as StringsPack

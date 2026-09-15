@@ -12,7 +12,7 @@ function Probe() {
   return (
     <div>
       <span data-testid="locale">{locale}</span>
-      <span data-testid="probe">{(strings as { _probe: string })._probe}</span>
+      <span data-testid="probe">{strings.ACTIONS.copy}</span>
       <button type="button" data-testid="to-en" onClick={() => setLocale('en')}>
         en
       </button>
@@ -53,7 +53,7 @@ describe('LocaleProvider', () => {
     renderProvider()
     expect(document.documentElement.lang).toBe('en')
     expect(container.querySelector('[data-testid="locale"]')?.textContent).toBe('en')
-    expect(container.querySelector('[data-testid="probe"]')?.textContent).toBe('en')
+    expect(container.querySelector('[data-testid="probe"]')?.textContent).toBe('Copy')
     expect(getPack()).toBe(packs.en)
   })
 
@@ -68,7 +68,7 @@ describe('LocaleProvider', () => {
 
     expect(document.documentElement.lang).toBe('en')
     expect(container.querySelector('[data-testid="locale"]')?.textContent).toBe('en')
-    expect(container.querySelector('[data-testid="probe"]')?.textContent).toBe('en')
+    expect(container.querySelector('[data-testid="probe"]')?.textContent).toBe('Copy')
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
     expect(getPack()).toBe(packs.en)
 
