@@ -925,10 +925,6 @@ export async function patchTool(
   return parseJSON<ToolInfo>(res)
 }
 
-export async function patchToolRequireLogin(name: string, requireLogin: boolean): Promise<ToolInfo> {
-  return patchTool(name, { require_login: requireLogin })
-}
-
 export async function createConnectorTool(
   connectorId: string,
   body: {
@@ -1243,14 +1239,6 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
     { headers: authInit() },
   )
   return parseJSON<ChatMessage[]>(res)
-}
-
-export async function clearMessages(conversationId: string): Promise<void> {
-  const res = await fetch(
-    `/v0/conversations/${encodeURIComponent(conversationId)}/messages`,
-    { method: 'DELETE', headers: authInit() },
-  )
-  await parseJSON<{ status: string }>(res)
 }
 
 /**
