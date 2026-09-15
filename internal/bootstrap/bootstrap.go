@@ -25,6 +25,7 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/blob"
 	_ "github.com/rebornace/baize/internal/blob/file"
+	_ "github.com/rebornace/baize/internal/blob/memory"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channelmedia"
 	// Built-in channel: the generic out-of-process webhook channel registers
@@ -446,19 +447,16 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackPublicBase = callbackPublicBase
 	srv.CallbackTTL = callbackTTL
 
-	// channelMedia is set when a blob store is available (sqlBackend present)
-	// and feeds both the channel Runtime (persist inbound images) and the API
-	// (serve them back with the conversation ACL). blobStore is also passed to
-	// wireChannels for channel_outbox outbound media.
+	// blob.Store is always assembled (memory when storage.driver unset) so
+	// connector/skill paths never see a nil Store. Artifact, workspace, and
+	// channel-media still require SQL metadata and stay behind sqlBackend.
+	blobStore, err := ensureBlobStore(context.Background(), cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open blob store: %w", err)
+	}
 	var channelMedia *channelmedia.Store
-	var blobStore blob.Store
 	if sqlBackend != nil {
-		var err error
-		blobStore, err = openBlobStore(context.Background(), cfg)
-		if err != nil {
-			_ = closer.Close()
-			return nil, nil, fmt.Errorf("open blob store: %w", err)
-		}
 		artStore, err := artifact.NewStore(blobStore, sqlBackend)
 		if err != nil {
 			_ = closer.Close()
@@ -681,13 +679,14 @@ func redisPasswordFromEnv(env string) string {
 	return os.Getenv(env)
 }
 
-// openBlobStore builds the configured object-storage driver. The file driver
-// roots under dataDir when storage.file.root_dir is unset, preserving the
-// historical <dataDir>/artifacts layout.
-func openBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
+// ensureBlobStore always opens a blob.Store. When storage.driver is unset,
+// defaults to memory so demo / in-process runs need no disk; yaml-configured
+// file/s3 are honored. The file driver roots under dataDir when
+// storage.file.root_dir is unset, preserving the historical <dataDir>/artifacts layout.
+func ensureBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Storage.Driver))
 	if driver == "" {
-		driver = "file"
+		driver = "memory"
 	}
 	opts := blob.Options{
 		File: blob.FileOptions{RootDir: cfg.Storage.File.RootDir},
