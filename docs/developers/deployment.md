@@ -1,6 +1,8 @@
-# 部署：Runtime 与微信适配器
+**中文** | [English](./deployment.en.md)
 
-Baize 是单个静态 Go 二进制。微信（iLink）渠道以旁路进程 **`weixin-adapter`**（`cmd/weixin-adapter`）运行，与 baize 通过 HMAC 签名的 JSON over HTTP 交互：
+# 部署：Runtime 与渠道适配器
+
+Baize 是单个静态 Go 二进制。**消息渠道**通过旁路适配器进程对接；本仓库当前提供的适配器是个人微信（iLink）渠道 **`weixin-adapter`**（`cmd/weixin-adapter`）。白泽与适配器通过 HMAC 签名的 JSON over HTTP 交互：
 
 | 方向 | 路径 |
 |------|------|

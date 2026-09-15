@@ -1,3 +1,5 @@
+**中文** | [English](./http-api.en.md)
+
 # 控制面 HTTP 鸟瞰
 
 Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET /healthz`、可选静态 `/ui/`）。
@@ -27,11 +29,11 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
 | Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../plugin-callbacks` | 执行与轨迹 |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
-| Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（如微信适配器） |
+| Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等 | 会话与身份 |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
 | Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、mcp-export… |
-| MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP Server 导出工具目录只读子集 |
+| MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。

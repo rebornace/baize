@@ -7,82 +7,85 @@
 
 **English** | [中文](README.zh-CN.md)
 
-**An enterprise AI Agent Runtime: it chats, calls tools, and waits for approval on writes — beside your existing systems, with almost nothing left when you stop it.**
+**An enterprise AI assistant runtime: it can chat, call your business systems, and ask a person to confirm important writes — beside what you already run.**
 
-Baize is an auditable Agent: the model reasons, invokes tools, pauses for a human when needed, then continues — with the same Run trail across console and channels. Your business HTTP stack does not need a rewrite; an OpenAPI document is enough to turn APIs into executable Agent capabilities. `/ui` is an **operator console** for ops and integrators: conversations, tool cards, approvals, and settings.
+Baize helps teams attach a capable assistant to existing services: understand the goal → call APIs or plugins → ask an operator to confirm in the console when needed → write results back to the conversation or a messaging channel. You usually **do not change business code**; an API document is enough for the assistant to take real actions, not only chat. The web **`/ui`** is an operator console for product, ops, and integrators.
 
 ---
 
 ## Product advantages
 
-- **OpenAPI / Swagger / Postman → executable Tools** in a catalog and Run trail the Agent can call.
-- **HITL on writes**: approve / reject on tool cards; pause and resume the Run with an audit trail.
-- **Zero-intrusion sidecar**: one Runtime process, config outside the app; stop it and leave almost nothing behind.
-- **One Agent, many entry points**: console, signed Inbox, and personal WeChat DM share Runs, approvals, and outbound.
-- **Connectors + conversation identity + login Skills** for downstream `require_login` APIs.
-- **Long sessions that hold up**: rolling compaction, multi-model profiles, thinking level, Memory, and workspace files.
-
-In short: **an enterprise Agent Runtime that works, stays controllable, and uninstalls cleanly.**
+- **API docs become capabilities**: upload or point to OpenAPI / Swagger / Postman-style docs; operations become tools the assistant can call, visible in the console.
+- **Human confirmation for important writes**: creates and status changes can wait for approve / reject on a card before they run — with a clear trail.
+- **Sidecar on, clean off**: one process, config outside the app; stop it and leave almost nothing behind.
+- **One assistant, many entry points**: console, signed alert/ticket ingress, and IM channels share approvals, memory, and outbound delivery.
+- **Downstream login supported**: the assistant can guide a login flow, then call systems with session credentials.
+- **Long conversations stay usable**: automatic context compaction; multiple model setups and thinking options; account-level memory, attachments, and workspace files.
 
 ---
 
-## What the Agent can do (product highlights)
+## What the assistant can do
 
-### Reason and act
+### Chat and act
 
-- **ReAct Agent**: pick a tool → run it → record events → finish; optional linear Skill workflows (ordered steps + HITL gates).
-- **Streaming Runs**: the console follows reasoning and tool steps over SSE with a visible trail.
-- **Multi-model profiles**: switch LLM configs; tune **thinking level** where the provider dialect supports it.
-- **Skills**: `SKILL.md` + tool bindings; default skills plus per-run `activate_skill` to widen capability.
+- Default flow: think → pick a tool → run it → report; skill packs can add step-by-step flows (with optional approval points).
+- The console can **follow along** as reasoning and tool steps happen.
+- Switch among multiple model setups; tune thinking-related options when the model supports them.
+- **Skill packs**: instructions + tools; set defaults, or enable more skills for the current conversation.
 
 ### Where tools come from
 
-- **OpenAPI → tools**: import a spec; each operation lands in the tool catalog for the Agent to call.
-- **HTTP plugins & execution callbacks**: when a spec is incomplete, sidecar or enterprise callback covers legacy logic.
-- **MCP both ways**: act as an **MCP client** (including OAuth login flows) and **export** a read-only tool subset to other hosts.
-- **Login & identity**: for `require_login` APIs, managed login Skills / conversation identities hold credentials.
+- **API document → tools**: each operation joins the tool list for the assistant to call.
+- **HTTP plugins (small companion services)**: when docs are incomplete or logic lives outside the spec, run a small service that tells Baize which tools exist and how to invoke them — ideal for legacy systems, internal scripts, or custom logic. You can also have Baize call back to your own URL with the tool name and arguments so your side executes them.
+- **Connect external tool ecosystems (MCP)**: Baize can act as a client to MCP-capable tool servers (including common OAuth login flows).
+- **Export tools to everyday Agent clients**: Baize can also act as an MCP server and expose a **read-only** slice of your tool catalog to clients such as Cursor or Claude Desktop — reuse the business capabilities you already wired in Baize inside the assistants your team already uses. Export does not run through Baize’s own chat model; it is for sharing the tool catalog.
 
-### Human-in-the-loop and boundaries
+### People in the loop and safety
 
-- Sensitive writes enter `waiting_human`; operators decide on the card, then `resume`.
-- Tools can be disabled; full credentials stay out of event replay.
-- Trial uses a mock LLM (no key); production uses a real model — paths stay separate.
+- Sensitive writes can pause until an operator confirms in the console.
+- Tools can be disabled anytime; full secrets stay out of conversation event replay.
+- Trial can use a built-in mock model (no cloud API key); production uses a real model — paths stay separate.
 
 ### Memory, materials, long sessions
 
-- **Memory**: account-scoped retrievable facts the Agent can use beyond the current window.
-- **Workspace files / Blob**: attachments and objects via local or S3-style drivers.
-- **Context compaction**: rolling summaries so tokens go to history that still matters.
-- Conversation **fork / rollback** for operator-friendly recovery (console + API).
+- **Memory**: store account-level facts the assistant can retrieve across chats.
+- **Attachments and object storage**: keep materials locally or in object storage.
+- **Context compaction**: long threads get rolling summaries so space goes to what still matters.
+- Conversation fork / rollback for everyday ops (console and API).
 
-### Channels: meet people where they are
+### Messaging channels
 
-- **Signed Inbox**: alerts / tickets enter the same Agent and approval path.
-- **Personal WeChat DM**: out-of-process adapter + outbound outbox with retry from settings.
-- Webhook outbound for enterprise notification buses.
+Channels are a **general, extensible** capability: alerts, tickets, and instant messaging can share the same assistant, approvals, and outbound path.
 
-### For integrators and operators
+- **Signed inbox**: external systems push alerts/tickets into the same assistant and approval flow.
+- **Instant messaging**: the architecture supports IM via adapters. **The adapter shipped in this repository today is personal WeChat DM** (a small companion process plus an outbound queue with retry in settings). Other IMs can follow the same pattern — Baize is not limited to WeChat.
+- Events can also be pushed to your own notification endpoints.
 
-- Full **HTTP control plane** (runs, conversations, connectors, settings) — no mandatory language SDK.
-- Bilingual **zh / en** `/ui`: conversations, tool cards, settings IA, humanized runtime knobs.
-- Partial runtime hot-reload; SQLite by default, Postgres when you need it.
+### For product, ops, and integrators
+
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs.
+- Full HTTP management surface for scripts and platforms — no mandatory language SDK.
+- Some runtime knobs hot-reload; a local database is enough to start, with larger databases when you need them.
 
 ---
 
 ## Use cases
 
-**Sidecar Agent for a legacy HTTP system**  
-Service is live; you will not touch the code yet. Run Baize beside it, turn the API doc into tools, trial “query / create / approve” on the internal network, then decide on deeper changes.
+**Assistant beside a legacy system**  
+Service is live; you will not touch the code yet. Run Baize beside it, hand capabilities over via the API doc, trial “query / create / approve” internally, then decide on deeper changes.
 
-**Ops-gated assistant for writes**  
-The Agent can read, draft, and suggest; status changes and commands only run after a human clicks approve in `/ui`, with an auditable Run trail.
+**Writes that need a human click**  
+The assistant can read, draft, and suggest; status changes and commands wait for confirmation in the console, with a trail.
 
-**One Agent for tools and channels**  
-MCP tools, first-party HTTP, WeChat DM, Inbox alerts — one Runtime, one approval and memory story.
+**One assistant for tools and channels**  
+External tools, first-party plugins, inbox ingress, and IM — one approval and memory story.
+
+**Reuse wired tools inside everyday Agent clients**  
+After APIs and plugins are connected in Baize, export them over MCP to Cursor and similar clients so the team works in familiar apps.
 
 ---
 
-## Feel the Agent in 30 seconds
+## Try it in 30 seconds
 
 **Requirements:** Go 1.25+ (matches CI; no C compiler)
 
@@ -92,28 +95,27 @@ MCP tools, first-party HTTP, WeChat DM, Inbox alerts — one Runtime, one approv
 ```
 
 ```bash
-# POSIX
+# macOS / Linux
 ./scripts/demo.sh
 # or: go run ./cmd/baize demo
 ```
 
-Trial stack = mock LLM + bundled demo HTTP — **no API key**.
+The trial stack uses a mock model and bundled demo business HTTP — **no cloud API key**.
 
 - Console: http://127.0.0.1:8080/ui  
 - Demo business HTTP: http://127.0.0.1:18080  
 
-Open `/ui`, send “VPN is down, please file a record” — watch the Agent pick a tool, then **approve the write** on the card. If ports are busy, stop the old `baize` process or set `BAIZE_LISTEN` (e.g. `:9080`) and restart.
+Open the console, send “VPN is down, please file a record” — watch the assistant pick a tool, then **approve the write**. If ports are busy, stop the old Baize process or change the listen port and restart.
 
-Production start (real LLM, requires `BAIZE_API_KEY`): Windows `.\start.cmd`, POSIX `./scripts/start.sh`.
+Production (real model, needs `BAIZE_API_KEY`): Windows `.\start.cmd`, macOS / Linux `./scripts/start.sh`.
 
 ---
 
 ## Developer docs
 
-Build, test, config, deploy, and HTTP surface:
+Build, test, configuration, deployment, and HTTP surface (**Chinese and English**):
 
-- [Developer docs index](docs/developers/README.md)
-- [Getting started](docs/developers/getting-started.md) · [Architecture](docs/developers/architecture.md) · [Deployment](docs/developers/deployment.md) · [Configuration](docs/developers/configuration.md) · [HTTP API](docs/developers/http-api.md) · [Local probes](docs/developers/performance.md)
+- [Developer docs (English)](docs/developers/README.en.md) · [中文](docs/developers/README.md)
 
 ---
 

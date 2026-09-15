@@ -1,3 +1,5 @@
+**中文** | [English](./configuration.en.md)
+
 # 配置：YAML、环境变量与 CLI
 
 权威结构见 `internal/config/config.go`；下列为现行常用键摘要。样板见 `configs/`（`minimal.yaml`、`demo.yaml`、`docker-*.yaml` 等）。
@@ -13,7 +15,7 @@
 | `baize serve -config <path>` | 显式单文件配置启动 Runtime |
 | `baize reset-credentials -config <path>` | 清空 store 中控制面热更新口令，回退 YAML break-glass |
 
-旁路进程：`weixin-adapter`（见 [deployment](./deployment.md)）。
+旁路进程：`weixin-adapter`（见 [部署](./deployment.md)，[English](./deployment.en.md)）。
 
 ## YAML 顶层键
 
