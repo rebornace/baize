@@ -18,10 +18,7 @@ type reconcileStore struct {
 }
 
 func (s *reconcileStore) ListRunsForReconcile(limit int) ([]*store.Run, error) {
-	var out []*store.Run
-	for _, r := range s.runs {
-		out = append(out, r)
-	}
+	out := append([]*store.Run(nil), s.runs...)
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}

@@ -13,10 +13,11 @@ func Notify(st store.Store, hub *Hub) store.Store {
 }
 
 func (n *notifyingStore) AppendEvent(runID string, ev store.Event) error {
-	if err := n.Store.AppendEvent(runID, ev); err != nil {
+	inner := n.Store
+	if err := inner.AppendEvent(runID, ev); err != nil {
 		return err
 	}
-	evs, err := n.Store.ListEvents(runID)
+	evs, err := inner.ListEvents(runID)
 	if err != nil || len(evs) == 0 {
 		return nil
 	}
@@ -26,7 +27,8 @@ func (n *notifyingStore) AppendEvent(runID string, ev store.Event) error {
 }
 
 func (n *notifyingStore) UpdateRun(id string, status store.Status, output, errMsg string) error {
-	if err := n.Store.UpdateRun(id, status, output, errMsg); err != nil {
+	inner := n.Store
+	if err := inner.UpdateRun(id, status, output, errMsg); err != nil {
 		return err
 	}
 	if status == store.StatusSucceeded || status == store.StatusFailed || status == store.StatusCancelled || status == store.StatusRejected {
