@@ -300,20 +300,24 @@
 
 ## 6. 门禁基线
 
+统计日期：2026-09-15。环境：Go 1.25.0、`golangci-lint` v2.4.0（与 CI `golangci-lint-action` `version: v2.4.0` 对齐）、`web/chat` Node lint。复现命令见 §10 任务 5。
+
 | 工具 | 命令 | 问题数或退出码 | 备注 |
 |------|------|----------------|------|
-| golangci 全量 | | | |
-| eslint | | | |
-| gofmt -l | | | |
+| golangci 全量 | `golangci-lint run ./... --timeout=5m` | **46 issues**；退出码 **1** | 官方摘要：`errcheck` 20、`staticcheck` 22、`ineffassign` 2、`unused` 2。Top 规则（按子码/linter 粗排）：`errcheck`、`staticcheck`（常见 `S1016`/`QF1006`/`ST1019`/`SA4000`/`QF1002` 等）、`unused`、`ineffassign`。CI 现为 `only-new-issues: true`，故本地全量是「首次存量债」基线；**AUDIT 不修**，留给 GATES |
+| eslint | `npm ci` + `npm run lint`（`web/chat`） | 退出码 **0**；无 error/warning 摘要 | `eslint src` 干净 |
+| gofmt -l | `gofmt -l ./cmd ./internal`；另扫全仓 `*.go`（排除 `.git`/`vendor`/`.superpowers`/`node_modules`） | **0** dirty；退出码 **0** | 裸 `gofmt -l .` 会因 `.superpowers/engine_old.go`（非法 UTF-16）报错；产品源码已齐。**不**把 `.superpowers` 噪声计入门禁 |
 
 ## 7. 性能候选（只标注，不测）
 
+本阶段**不**跑重型压测、**不**新增 `Benchmark*`、**不**写 README 数字。仓库当前无既有 `Benchmark` 函数。
+
 | 路径 | 为何值得测 | PERF-HOT 建议探针 |
 |------|------------|-------------------|
-| 聊天流式 `GET /v0/runs/{id}/stream` | | |
-| 会话消息读写 | | | |
-| blob / artifacts | | | |
-| 渠道出站 | | | |
+| 聊天流式 `GET /v0/runs/{id}/stream` | 主路径：UI `openRunStream` / SSE 轮询；长 run、多 tool 事件时延迟与缓冲直接影响体感；已有 `server_sse_poll_test` 证明可测 | 本地起 `baize demo` → `POST /v0/runs` → 计时首个 `run.started` / 终端事件到齐；或扩展现有 SSE 测试为可脚本化耗时；可选 `go test` 包内轻量计时（非压测） |
+| 会话消息读写 | `GET/DELETE …/messages`、fork/rollback、rolling summary 与 compact 同路径；大会话时 list + compact 易成瓶颈 | 构造 N 条消息会话后测 `handleListMessages` / store `ListMessages` 耗时；`go test` 对 `internal/conversation` / `internal/store` 加可控 N 的计时断言或后续 `Benchmark` |
+| blob / artifacts | 附件上传、`GET /v0/artifacts/{id}`、channel media；S3/file 驱动切换后 IO 差异大，易误判「慢在 API」 | 固定小/中附件：`createRun` 带 attachment → 读 artifact URL；对 `blob.Store` Put/Get 做本地 `go test` 计时；对比 memory vs file 驱动 |
+| 渠道出站 | 微信等 `outbound-deliveries` 列表/重试、webhook dispatcher；失败重试队列积压时影响渠道 UX | 种子若干 delivery 行 → `GET …/outbound-deliveries` 与 `POST …/retry` 延迟；对 `internal/channel/webhook` 出站路径加可复现 fixture + 计时（勿打真实外部网） |
 
 ## 8. 公开文档处置（CONTRACT 执行）
 
@@ -329,7 +333,12 @@
 - 插件公共 Go SDK、OTel、Playwright、新功能史诗
 - 强制覆盖率挡合并
 - 无证据的性能改动、伪造竞品对比
-- （AUDIT 中发现但决定不做的项追加于此）
+- AUDIT 阶段不修 golangci 全量 **46** 条存量（留给 GATES；CI 仍 only-new）
+- 不把 `cmd/weixin-adapter` 侧 HTTP 并入 baize core mux 契约清理范围（独立进程；§1 脚注已说明）
+- 不把 `web/chat/src/locales/*` 文案包纳入 STRUCT 拆分目标（§5.2 已标「保留」）
+- 不将 `internal/store` 的 `SQLite` 类型别名等**非 HTTP** 内部兼容当作对外删除项
+- 不清理 `.superpowers` 下非产品源码噪声（如非法编码 `engine_old.go`）；不计入 gofmt 门禁
+- 本 AUDIT **不**跑重型压测 / **不**编造 Benchmark 或 README 性能数字（§7 只标注）
 
 ## 10. 复现命令备忘
 
@@ -410,3 +419,26 @@ Get-ChildItem -Recurse -Include '*.ts','*.tsx' web\chat\src |
 ```
 
 （TS 榜单排除 `*.test.*` / `*.spec.*`；Go 榜单为包目录 Top 15，见 §5.1–5.2。删除候选核对：`Select-String -Path web\chat\src -Pattern 'patchToolRequireLogin|clearMessages' -Recurse` 应仅命中 `api.ts` 定义行。）
+
+### 任务 5：门禁基线 + 性能候选 + 收口
+
+```powershell
+$env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
+
+# gofmt（产品源码；勿用裸 gofmt -l . —— .superpowers 有非法 UTF-16）
+gofmt -l ./cmd ./internal
+# 可选全仓扫描（排除噪声目录）见实现时脚本：Get-ChildItem *.go 过滤 .git/vendor/.superpowers/node_modules
+
+Push-Location web\chat
+npm ci
+npm run lint
+Pop-Location
+
+# golangci v2.4.0（与 CI 一致；若代理失败可 GOPROXY=https://goproxy.cn,direct）
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.4.0
+$env:PATH = "$(go env GOPATH)\bin;$env:PATH"
+golangci-lint run ./... --timeout=5m
+# 摘要：46 issues（errcheck 20 / staticcheck 22 / ineffassign 2 / unused 2）；勿提交巨型原始日志
+```
+
+（§7 性能：只标注；仓库无既有 `Benchmark*`。探针建议见表，**不**在 AUDIT 执行重型压测。）

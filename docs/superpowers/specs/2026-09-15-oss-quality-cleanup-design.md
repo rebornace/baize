@@ -5,7 +5,7 @@
 > 史诗：CLEAN（分阶段：AUDIT → CONTRACT → STRUCT → GATES → PERF-HOT）  
 > 前置：开源首版 12 史诗均已交付；产品确认零外部用户，允许破坏性契约清理  
 > 备注：非新功能；目标为干净可维护的开源首版表面  
-> 实现计划：AUDIT [`../plans/2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；其后 CONTRACT/STRUCT/GATES/PERF 另开计划
+> 实现计划：AUDIT [`../plans/2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；清单 [`../notes/2026-09-15-clean-audit.md`](../notes/2026-09-15-clean-audit.md)（**待产品确认**后再开 CONTRACT）；其后 CONTRACT/STRUCT/GATES/PERF 另开计划
 
 ---
 

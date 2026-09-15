@@ -114,7 +114,7 @@
 
 | 项 | 状态 | 下一动作 |
 |----|------|----------|
-| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **已批准（AUDIT 计划就绪）** | 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；AUDIT 计划 [`2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；清单确认前不开 CONTRACT |
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **AUDIT 清单已产出（待产品确认）** | 清单见 [`2026-09-15-clean-audit.md`](./2026-09-15-clean-audit.md)，**待产品确认**后再开 CONTRACT 计划；规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；AUDIT 计划 [`2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md) |
 
 ---
 
@@ -128,7 +128,7 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. **CLEAN**（质量收口，分阶段）— 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；AUDIT 计划 [`2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)；**下一动作：执行 AUDIT**  
+1. **CLEAN**（质量收口，分阶段）— 清单见 [`2026-09-15-clean-audit.md`](./2026-09-15-clean-audit.md)，**待产品确认**后再开 CONTRACT 计划；规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；AUDIT 计划 [`2026-09-15-clean-audit.md`](../plans/2026-09-15-clean-audit.md)  
 2. ~~**DOC**~~（已交付）  
 3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
 4. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
