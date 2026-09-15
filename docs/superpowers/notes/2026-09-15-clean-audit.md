@@ -150,9 +150,89 @@
 
 ## 3. 契约白名单（Web 客户端 / 路由）
 
+路由定义：`web/chat/src/main.tsx`（`BrowserRouter` `basename="/ui"`；无 `createBrowserRouter`）。对外静态面：`HANDLE /ui/`（§1）。
+
+### 3.1 UI 路由
+
 | 表面（api.ts 函数或 UI 路由） | 处置 | 理由 |
 |------------------------------|------|------|
-| （待填） | 保留 | |
+| UI `/` → `ChatPage` | 保留 | 聊天主壳 |
+| UI `/settings` → `SettingsLayout`（子路由见下） | 保留 | 设置 IA |
+| UI `/settings` index → `SettingsHome` | 保留 | 设置首页 |
+| UI `/settings/tools` → `ToolsSettings` | 保留 | 工具目录 |
+| UI `/settings/openapi` → `OpenApiSettings`（`AdminOnly`） | 保留 | OpenAPI 连接器 |
+| UI `/settings/skills` → `SkillsSettings` | 保留 | 技能 |
+| UI `/settings/memory` → `MemorySettings` | 保留 | 记忆 |
+| UI `/settings/identities` → `IdentitiesSettings` | 保留 | 会话身份 |
+| UI `/settings/mcp` → `McpSettings`（`AdminOnly`） | 保留 | MCP 连接器 |
+| UI `/settings/mcp-export` → `McpExportSettings`（`AdminOnly`） | 保留 | MCP 导出 |
+| UI `/settings/plugins` → `PluginSettings`（`AdminOnly`） | 保留 | HTTP 插件连接器 |
+| UI `/settings/webhooks` → `WebhookSettings`（`AdminOnly`） | 保留 | 事件 webhook |
+| UI `/settings/inbox` → `InboxSettings`（`AdminOnly`） | 保留 | 外部来信 |
+| UI `/settings/channels/weixin` → `WeixinChannelSettings` | 保留 | 微信渠道 |
+| UI `/settings/models` → `ModelSettings` | 保留 | 模型配置 |
+| UI `/settings/storage` → `StorageSettings`（`AdminOnly`） | 保留 | 存储驱动 |
+| UI `/settings/runtime` → `RuntimeSettings` | 保留 | 运行时旋钮 + 控制面凭证 |
+| UI `*` → `Navigate` `/` | 保留 | 未知路径回聊天 |
+| 组件 `GateRoot` / `UnlockPage`（非独立路由） | 保留 | 门禁解锁；`getMe` + `getUIConfig` |
+
+### 3.2 `api.ts` 导出（类型 / 错误 / 本地辅助）
+
+| 表面 | 处置 | 理由 |
+|------|------|------|
+| `api.ts` 导出类型（`Run`/`Event`/`ModelProfile`/`ConnectorInfo`/`ChatMessage`/…） | 保留 | TS 契约；随 UI 与测试引用 |
+| `ApiError` | 保留 | `strings*.ts` 错误映射 |
+| `setGateEnabled` | 保留 | 门禁开关；无独立 HTTP |
+| `inferMediaType` / `fileToAttachment` / `isImageAttachment` | 保留 | 附件本地处理；`createRun` 入参 |
+| `isTerminal` | 保留 | `findLiveRun.ts` |
+| `openRunStream` | 保留 | `GET /v0/runs/{id}/stream`（SSE） |
+
+### 3.3 `api.ts` HTTP 客户端函数
+
+| 表面 | 处置 | 理由 |
+|------|------|------|
+| `getUIConfig` | 保留 | `GET /v0/ui-config` |
+| `getMe` | 保留 | `GET /v0/me` |
+| `startWeixinLogin` | 保留 | `POST /v0/settings/channels/weixin/login/start` |
+| `getWeixinLoginStatus` | 保留 | `GET /v0/settings/channels/weixin/login/status` |
+| `logoutWeixin` | 保留 | `POST /v0/settings/channels/weixin/logout` |
+| `getWeixinSettings` / `putWeixinSettings` | 保留 | `GET`/`PUT /v0/settings/channels/weixin` |
+| `startWeixinProcess` / `stopWeixinProcess` / `restartWeixinProcess` | 保留 | `POST …/channels/weixin/process/{start\|stop\|restart}` |
+| `getChannelOutboundDeliveries` / `retryChannelOutboundDelivery` | 保留 | 微信出站投递；`GET`/`POST …/outbound-deliveries` |
+| `listMemory` / `createMemory` / `patchMemory` / `deleteMemory` | 保留 | `GET`/`POST`/`PATCH`/`DELETE /v0/settings/memory` |
+| `getRuntimeSettings` / `patchRuntimeSettings` | 保留 | `GET`/`PATCH /v0/settings/runtime` |
+| `getCredentials` / `patchCredentials` | 保留 | `GET`/`PATCH /v0/settings/credentials`；`RuntimeSettings` |
+| `createRun` | 保留 | `POST /v0/runs` |
+| `getStoreSettings` / `putStoreSettings` / `restartAfterStoreChange` | 保留 | `GET`/`PUT /v0/settings/store`；`POST …/store/restart` |
+| `getEventsWebhook` / `putEventsWebhook` / `testEventsWebhook` | 保留 | events-webhook CRUD + test |
+| `getEventsWebhookDeliveries` / `retryEventsWebhookDelivery` | 保留 | 投递列表与重试 |
+| `getInboxChannels` / `putInboxChannels` / `rotateInboxSecret` / `testInboxChannel` | 保留 | inbox-channels 全套 |
+| `getMCPExportSettings` | 保留 | `GET /v0/settings/mcp-export` |
+| `listMCPExportIdentities` / `createMCPExportIdentity` / `patchMCPExportIdentity` / `deleteMCPExportIdentity` | 保留 | mcp-export identities |
+| `listMCPExportKeys` / `createMCPExportKey` / `revokeMCPExportKey` | 保留 | mcp-export keys |
+| `listModelProfiles` / `createModelProfile` / `updateModelProfile` / `deleteModelProfile` | 保留 | `GET`/`POST`/`PATCH`/`DELETE /v0/settings/models` |
+| `getRun` / `listEvents` / `resumeRun` / `cancelRun` | 保留 | runs 读/事件/恢复/取消 |
+| `listTools` / `patchTool` | 保留 | `GET /v0/tools`；`PATCH /v0/tools/{name}` |
+| `patchToolRequireLogin` | **删除** | **无 UI 调用**（全 `web/chat/src` 无引用；`ToolsSettings` 直调 `patchTool`） |
+| `createConnectorTool` / `deleteConnectorTool` | 保留 | connector tools POST/DELETE |
+| `listConnectors` / `getConnector` / `putConnector` / `deleteConnector` | 保留 | connectors CRUD |
+| `startMcpOAuth` / `disconnectMcpOAuth` | 保留 | MCP OAuth start/disconnect |
+| `listSkills` / `uploadSkill` / `deleteSkill` | 保留 | skills（无 `GET /v0/skills/{id}` 封装） |
+| `getAgent` / `putAgent` | 保留 | `GET`/`PUT /v0/agents/{id}` |
+| `listIdentities` / `createIdentity` / `setDefaultIdentity` / `deleteIdentity` / `clearIdentities` | 保留 | conversation identities |
+| `listMessages` | 保留 | `GET …/messages` |
+| `clearMessages` | **删除** | **无 UI 调用**（全 `web/chat/src` 无引用）；后端 `DELETE …/messages` 仍存在 |
+| `deleteConversation` | 保留 | `DELETE /v0/conversations/{id}` |
+| `rollbackMessages` / `forkConversation` | 保留 | rollback / fork |
+| `listConversations` | 保留 | `GET /v0/conversations` |
+
+### 3.4 §1 HTTP 无 Web 封装（非删除候选）
+
+下列 §1 路由**无**对应 `api.ts` 函数，属探针、OAuth 重定向、MCP 协议、渠道入站或插件侧车；**保留** HTTP 契约，不在 Web 表标删：
+
+`GET /healthz`；`GET /v0/artifacts/{id}`；`GET /v0/channels/media/{conv}/{object}`；`GET /v0/connectors/{id}/mcp/oauth/callback`；`GET /v0/connectors/{id}/mcp/oauth/status`；`GET /v0/settings/mcp-export/identities/{id}`；`GET /v0/skills/{id}`；`POST /v0/channels/{name}/inbound`；`POST /v0/inbox/{channel_id}`；`POST /v0/runs/{id}/plugin-callbacks`；`POST /v0/settings/reload`；`HANDLE /v0/mcp/export`（及尾斜杠变体）。
+
+媒体 URL 由 `createRun` 附件与消息渲染间接使用 channel media 路径，无独立 fetch 封装。
 
 ## 4. 废弃 / 兼容 / 双写信号
 
@@ -172,9 +252,32 @@
 
 ## 5. 结构热点
 
+统计：2026-09-15，PowerShell 按目录聚合 `.go`（`internal`,`cmd`，不含 `vendor`）与 `web/chat/src` 单文件 `.ts`/`.tsx` 行数 Top 15。
+
 | 路径 | 行数（约） | 建议拆法（一句话） | 本版优先级 |
 |------|------------|--------------------|------------|
-| （待填） | | | P0/P1/P2/保留 |
+| `internal/api`（包） | 16962 | 按域拆 handler 文件：`server_settings_*` / `server_runs` / `server_conversations` 等，共享 `parse`/`ACL` 小模块 | P0 |
+| `web/chat/src/api.ts` | 1409 | 按资源拆 `api/runs.ts`、`api/settings/memory.ts`、`api/connectors.ts` 等，保留 `authHeaders`/`parseJSON` 内核 | P0 |
+| `web/chat/src/pages/ChatPage.tsx` | 1312 | 拆会话侧栏、消息区（列表+折叠块）、Composer 区、顶栏与 run 生命周期 hook | P0 |
+| `internal/store`（包） | 7039 | 驱动实现与迁移分目录；大 SQL 方法按实体（models/conversations/runs）切文件 | P1 |
+| `internal/run`（包） | 5600 | 引擎步进、流式事件、插件回调与取消分模块 | P1 |
+| `web/chat/src/pages/ToolsSettings.tsx` | 808 | 列表/批量操作/连接器内嵌表单拆子组件 + `useToolsSettings` | P1 |
+| `web/chat/src/pages/McpExportSettings.tsx` | 744 | 身份列表、密钥列表、工具 export 列拆段 | P1 |
+| `web/chat/src/pages/ModelSettings.tsx` | 621 | 列表与编辑 Modal/表单拆文件（测试已 672 行可随动） | P1 |
+| `internal/connector`（包） | 3788 | OpenAPI/MCP/invoke 与 registry 边界收紧 | P1 |
+| `internal/conversation`（包） | 1662 | 持久化、压缩、fork/rollback 服务分层 | P1 |
+| `internal/llm`（包） | 2311 | provider 实现与 thinking/profile 适配分文件 | P1 |
+| `internal/channel/webhook`（包） | 5137 | 入站/出站/重试与配置解析分模块 | P2 |
+| `internal/bootstrap`（包） | 3723 | `wire*` 按子系统（store/channel/connector）分段 | P2 |
+| `internal/channel`（包） | 2451 | registry 与各渠道适配边界 | P2 |
+| `internal/memory`（包） | 1597 | store 后端与 API 映射 | P2 |
+| `internal/config`（包） | 1500 | 校验与 env 覆盖分文件 | P2 |
+| `cmd/weixin-adapter` + `…/weixinlink` | 1381 + 1798 | 独立进程；STRUCT 时保持边界，不并入 core | 保留 |
+| `web/chat/src/locales/zh.ts` | 859 | **保留（文案包）**；按域键已分组，不拆文件除非 i18n 工具链要求 | 保留 |
+| `web/chat/src/locales/en.ts` | 868 | **保留（文案包）** | 保留 |
+| `web/chat/src/pages/InboxSettings.tsx` | 533 | 渠道卡片与密钥旋转 Modal 拆组件 | P2 |
+| `web/chat/src/pages/RuntimeSettings.tsx` | 531 | 旋钮表单与 operators 卡片拆分 | P2 |
+| `web/chat/src/pages/WeixinChannelSettings.tsx` | 516 | 登录流与进程控制拆 hook | P2 |
 
 ## 6. 门禁基线
 
@@ -254,3 +357,36 @@ Select-String -Path internal\**\*.go,web\chat\src\**\*.{ts,tsx} -Pattern 'deprec
 ```
 
 （盘点后删临时文件：`Remove-Item docs\superpowers\notes\_tmp-debt-grep.txt -ErrorAction SilentlyContinue`。）
+
+### 任务 4：Web 表面 + 结构热点
+
+```powershell
+Select-String -Path web\chat\src\api.ts -Pattern '^export (async )?function |^export const ' |
+  ForEach-Object { $_.Line.Trim() }
+```
+
+```powershell
+# UI 路由：web\chat\src\main.tsx（BrowserRouter basename=/ui）
+```
+
+```powershell
+$env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
+
+Get-ChildItem -Recurse -Filter '*.go' internal,cmd |
+  Where-Object { $_.FullName -notmatch '\\vendor\\' } |
+  Group-Object { $_.DirectoryName } |
+  ForEach-Object {
+    $lines = 0
+    $_.Group | ForEach-Object { $lines += @(Get-Content $_.FullName).Count }
+    [PSCustomObject]@{ Lines=$lines; Dir=$_.Name.Replace((Get-Location).Path + '\','') }
+  } |
+  Sort-Object Lines -Descending |
+  Select-Object -First 15
+
+Get-ChildItem -Recurse -Include '*.ts','*.tsx' web\chat\src |
+  Sort-Object { @(Get-Content $_.FullName).Count } -Descending |
+  Select-Object -First 15 |
+  ForEach-Object { "{0,5}  {1}" -f @(Get-Content $_.FullName).Count, $_.FullName.Replace((Get-Location).Path+'\','') }
+```
+
+（删除候选核对：`Select-String -Path web\chat\src\**\*.{ts,tsx} -Pattern 'patchToolRequireLogin|clearMessages'` 应仅命中 `api.ts` 定义行。）
