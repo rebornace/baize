@@ -110,6 +110,8 @@
 
 ### 4.5 PERF-HOT（可证性能 + README 回填）
 
+详设见 [`2026-09-15-clean-perf-hot-design.md`](./2026-09-15-clean-perf-hot-design.md)（方案 3：四条探针全测；有显著差异才修；有数字才回填 README）。
+
 1. 按 AUDIT 候选固定环境与脚本（开发者文档可复现）  
 2. 基线 → 只改差异显著且不伤可读性的点 → 再测  
 3. **有前后数据才写入 README**；无显著收益则记录「已测、保持现状」  
@@ -156,3 +158,4 @@ AUDIT → CONTRACT（文档分层骨架）→ STRUCT → GATES → PERF-HOT（�
 |------|------|
 | 2026-09-15 | 初稿：方案 3 + 文档分层 + 零用户破契约；设计评审通过 |
 | 2026-09-15 | CLEAN-CONTRACT 交付：客户端死导出删除、公开 docs 分层、产品向 README；测试绿 |
+| 2026-09-15 | STRUCT / GATES 已交付；PERF-HOT 详设批准（方案 3） |
