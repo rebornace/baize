@@ -5,7 +5,7 @@ import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
 import { isLoginRequiredContent, loginSkillID, resolveConnectorId } from '../loginEntry'
-import { HITL, LOGIN_AT } from '../strings'
+import { CHAT, HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
 import { Button } from './ui'
 
@@ -125,14 +125,14 @@ export function ToolCard({
 
       {expanded && (
         <div className="tool-card-body">
-          <p className="tool-card-techname">工具：{block.name}</p>
+          <p className="tool-card-techname">{CHAT.toolPrefix}{block.name}</p>
           {block.arguments !== undefined && (
             <pre className="tool-card-json">{formatJSON(block.arguments)}</pre>
           )}
           {block.result !== undefined &&
             (analysisPage ? (
               <details className="tool-card-details">
-                <summary>详情</summary>
+                <summary>{CHAT.details}</summary>
                 <pre className="tool-card-json">{formatJSON(block.result)}</pre>
               </details>
             ) : (

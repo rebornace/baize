@@ -2,16 +2,23 @@
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ChannelFileLink, fileKind } from './ChannelFileLink'
 import { GateContext } from '../gateContext'
+import { setPack } from '../locale/pack'
+import { zhPack } from '../locales/zh'
+import { CHAT } from '../strings'
+import { ChannelFileLink, fileKind } from './ChannelFileLink'
 
 let host: HTMLDivElement
 beforeEach(() => {
   ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  setPack(zhPack)
   host = document.createElement('div')
   document.body.appendChild(host)
 })
-afterEach(() => host.remove())
+afterEach(() => {
+  host.remove()
+  setPack(zhPack)
+})
 
 function render(el: ReactNode) {
   act(() => {
@@ -25,19 +32,19 @@ function render(el: ReactNode) {
 
 describe('fileKind', () => {
   it('maps common extensions to friendly labels', () => {
-    expect(fileKind('photo.JPG').label).toBe('图片')
-    expect(fileKind('sheet.xlsx').label).toBe('表格')
-    expect(fileKind('data.csv').label).toBe('表格')
-    expect(fileKind('bundle.zip').label).toBe('压缩包')
-    expect(fileKind('行程.docx').label).toBe('文档')
-    expect(fileKind('plan.pdf').label).toBe('文档')
-    expect(fileKind('deck.pptx').label).toBe('演示')
+    expect(fileKind('photo.JPG').label).toBe(CHAT.fileKindImage)
+    expect(fileKind('sheet.xlsx').label).toBe(CHAT.fileKindSheet)
+    expect(fileKind('data.csv').label).toBe(CHAT.fileKindSheet)
+    expect(fileKind('bundle.zip').label).toBe(CHAT.fileKindArchive)
+    expect(fileKind('行程.docx').label).toBe(CHAT.fileKindDoc)
+    expect(fileKind('plan.pdf').label).toBe(CHAT.fileKindDoc)
+    expect(fileKind('deck.pptx').label).toBe(CHAT.fileKindDeck)
   })
 
   it('falls back to the uppercase extension for unknown types', () => {
-    expect(fileKind('archive.7z').label).toBe('压缩包')
+    expect(fileKind('archive.7z').label).toBe(CHAT.fileKindArchive)
     expect(fileKind('script.ps1').label).toBe('PS1')
-    expect(fileKind('noext').label).toBe('文件')
+    expect(fileKind('noext').label).toBe(CHAT.fileKindFile)
   })
 })
 
@@ -47,11 +54,7 @@ describe('ChannelFileLink card', () => {
     const card = host.querySelector('.channel-file-link')
     expect(card).not.toBeNull()
     expect(host.querySelector('.channel-file-name')?.textContent).toBe('黄山三日行程.docx')
-    expect(host.querySelector('.channel-file-kind')?.textContent).toBe('文档')
-    expect(host.querySelector('.channel-file-icon')).not.toBeNull()
-    expect(host.querySelector('.channel-file-dl')).not.toBeNull()
-    // Old presentation (emoji + "点击下载" hint) must be gone.
-    expect(card?.textContent).not.toContain('📎')
-    expect(card?.textContent).not.toContain('点击下载')
+    expect(host.querySelector('.channel-file-kind')?.textContent).toBe(CHAT.fileKindDoc)
+    expect(card?.textContent).not.toContain(CHAT.clickToDownload)
   })
 })

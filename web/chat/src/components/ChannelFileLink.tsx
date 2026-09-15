@@ -10,6 +10,7 @@ import {
 import type { ComponentType } from 'react'
 import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
+import { CHAT } from '../strings'
 
 export interface ChannelFileLinkProps {
   name: string
@@ -25,21 +26,21 @@ export function fileKind(name: string): Kind {
   const dot = name.lastIndexOf('.')
   const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
-    return { icon: FileImage, label: '图片' }
+    return { icon: FileImage, label: CHAT.fileKindImage }
   }
   if (['xls', 'xlsx', 'csv'].includes(ext)) {
-    return { icon: FileSpreadsheet, label: '表格' }
+    return { icon: FileSpreadsheet, label: CHAT.fileKindSheet }
   }
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
-    return { icon: FileArchive, label: '压缩包' }
+    return { icon: FileArchive, label: CHAT.fileKindArchive }
   }
   if (['doc', 'docx', 'txt', 'md', 'pdf'].includes(ext)) {
-    return { icon: FileText, label: '文档' }
+    return { icon: FileText, label: CHAT.fileKindDoc }
   }
   if (['ppt', 'pptx'].includes(ext)) {
-    return { icon: FileType2, label: '演示' }
+    return { icon: FileType2, label: CHAT.fileKindDeck }
   }
-  return { icon: FileIcon, label: ext ? ext.toUpperCase() : '文件' }
+  return { icon: FileIcon, label: ext ? ext.toUpperCase() : CHAT.fileKindFile }
 }
 
 /**
@@ -86,7 +87,7 @@ export function ChannelFileLink({ name, url }: ChannelFileLinkProps) {
   }
 
   return (
-    <button type="button" className="channel-file-link" onClick={() => void download()} title="点击下载">
+    <button type="button" className="channel-file-link" onClick={() => void download()} title={CHAT.clickToDownload}>
       <span className="channel-file-icon">
         <Icon size={18} />
       </span>
