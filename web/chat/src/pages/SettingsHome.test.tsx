@@ -4,6 +4,9 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
+import { LocaleProvider } from '../locale/LocaleContext'
+import { setPack } from '../locale/pack'
+import { zhPack } from '../locales/zh'
 import { SettingsHome } from './SettingsHome'
 
 function jsonResponse(body: unknown): Response {
@@ -12,21 +15,26 @@ function jsonResponse(body: unknown): Response {
 
 let host: HTMLDivElement
 beforeEach(() => {
+  localStorage.clear()
+  localStorage.setItem('baize.locale', 'zh-CN')
+  setPack(zhPack)
   host = document.createElement('div')
   document.body.appendChild(host)
   vi.stubGlobal('fetch', vi.fn())
   vi.clearAllMocks()
 })
-afterEach(() => { host.remove(); vi.unstubAllGlobals() })
+afterEach(() => { host.remove(); vi.unstubAllGlobals(); localStorage.clear(); setPack(zhPack) })
 
 function render(role: 'admin' | 'operator') {
   act(() => {
     createRoot(host).render(
-      <MemoryRouter>
-        <GateContext.Provider value={{ role, gateEnabled: true, operatorId: 'op' }}>
-          <SettingsHome />
-        </GateContext.Provider>
-      </MemoryRouter>,
+      <LocaleProvider>
+        <MemoryRouter>
+          <GateContext.Provider value={{ role, gateEnabled: true, operatorId: 'op' }}>
+            <SettingsHome />
+          </GateContext.Provider>
+        </MemoryRouter>
+      </LocaleProvider>,
     )
   })
 }
