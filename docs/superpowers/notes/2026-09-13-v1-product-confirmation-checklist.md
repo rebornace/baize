@@ -45,7 +45,7 @@
 | **DOC** | DOC-P1 + DOC-P2 | **已交付** | [`specs/2026-09-13-doc-p1-p2-design.md`](../specs/2026-09-13-doc-p1-p2-design.md) |
 | **F** | F + **C1** + **OPS-HOT**（驱动热切换 / SIGHUP / 凭据 KV 加密） | **已交付** | F-HOT 计划 [`plans/2026-09-13-f-store-hot-swap.md`](../plans/2026-09-13-f-store-hot-swap.md)；DoD [`2026-09-13-f-hot-dod-audit.md`](2026-09-13-f-hot-dod-audit.md) |
 | **UI-RUNTIME** | UI-RUNTIME + **i18n 文案抽离（附录）** | 已交付 | 已交付（2026-09-13）；`specs/2026-09-13-runtime-settings-humanize-design.md` |
-| **UI-I18N** | i18n 框架（语言切换 / 英等） | 先定范围 | 可紧接 RUNTIME 后；独立规格 |
+| **UI-I18N** | i18n 框架（语言切换 / 英等） | 规格已批准 · 实现中 | [`specs/2026-09-15-ui-i18n-design.md`](../specs/2026-09-15-ui-i18n-design.md)；计划 [`plans/2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md) |
 | **UI-EXPORT-DB-RO** | export_db_readonly UI | **已交付** | [`specs/2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
 | **CH-PORT** | 动态端口 | **已交付** | 规格 [`specs/2026-09-13-ch-port-design.md`](../specs/2026-09-13-ch-port-design.md)；计划 [`plans/2026-09-13-ch-port.md`](../plans/2026-09-13-ch-port.md) |
 | **CH-OUTBOX** | 渠道 outbox | **已交付** | [`specs/2026-09-13-ch-outbox-design.md`](../specs/2026-09-13-ch-outbox-design.md)；计划 [`plans/2026-09-13-ch-outbox.md`](../plans/2026-09-13-ch-outbox.md) |
@@ -65,7 +65,7 @@
 2. **F 母篇**（仅 C1 + KV 加密 + 驱动热切换/SIGHUP；**B1** 顺序已锁）→ 可先落地 **C1**  
 3. **UI-EXPORT-DB-RO**（小刀）  
 4. **CH-PORT** → **CH-OUTBOX**  
-5. ~~**LOGIN-SKILL**~~（已交付，待合入） · ~~**LLM-THINK**~~（已交付） · ~~**BLOB-CS**~~（已交付；见 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**  
+5. ~~**LOGIN-SKILL**~~（已交付，待合入） · ~~**LLM-THINK**~~（已交付） · ~~**BLOB-CS**~~（已交付；见 [`plans/2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · **UI-I18N**（规格已批准；见 [`plans/2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
 6. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6**~~（已交付；见 [`plans/2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
 
 **F 与现有待办：** 不吸收 OUTBOX/BLOB/PORT/OAuth/Memory/@登录/i18n/export_db_ro；DOC 保持独立（A1）。
