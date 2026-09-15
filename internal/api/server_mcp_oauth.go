@@ -248,6 +248,7 @@ func (s *Server) handleMCPOAuthCallback(w http.ResponseWriter, r *http.Request) 
 		Store:              s.Store,
 		Registry:           s.Registry,
 		Identities:         s.Identities,
+		Blobs:              s.Blobs,
 		ID:                 id,
 		Type:               "mcp",
 		MCP:                c.MCP,

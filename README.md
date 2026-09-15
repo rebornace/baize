@@ -322,7 +322,7 @@ Skills are an optional **configuration** layer (not a sixth Runtime abstract): a
 
 | Topic | Behavior |
 |-------|----------|
-| Disk layout | Builtin `./skills` (`skills.builtin_dir`) and user `./data/skills` (`skills.user_dir`); each subfolder is a pack id with `SKILL.md` |
+| Disk / blob layout | Builtin packs from local `./skills` (`skills.builtin_dir`); user and managed packs in the configured blob store (not under `./data/skills`) |
 | Install / remove | Admin upload `.md` or `.zip` via `POST /v0/skills` or Settings → 技能 (skills); `DELETE /v0/skills/{id}` removes **user** packs only (builtin → `400`). Same id: user overrides builtin |
 | Default activation | `agent.skills` (YAML / `PUT /v0/agents/{id}`) lists packs active at Run start |
 | Progressive activation | When any pack is installed, the model gets built-in `activate_skill` to expand the active set **for that Run** |
@@ -765,7 +765,7 @@ Override module proxy at build time if needed: `docker build --build-arg GOPROXY
 
 ### Artifact storage (file / S3-compatible)
 
-Analysis-report HTML artifacts are stored through a pluggable blob store. The default `storage.driver: file` writes bytes under `<dataDir>/artifacts` (i.e. next to the SQLite DB; no migration needed). For shared or multi-replica deployments, point it at any S3-compatible object store (AWS S3 / MinIO / Alibaba OSS / Tencent COS). Note `storage.s3.endpoint` is **required for every S3-compatible backend** (the driver rejects an empty endpoint); set `use_ssl`/`path_style` to match:
+Analysis-report HTML artifacts are stored through a pluggable blob store. Connector specs and user/managed Skill packs also live in the configured blob (object storage); builtin Skills remain on local disk. The default `storage.driver: file` writes bytes under `<dataDir>/artifacts` (i.e. next to the SQLite DB; no migration needed). For shared or multi-replica deployments, point it at any S3-compatible object store (AWS S3 / MinIO / Alibaba OSS / Tencent COS). Note `storage.s3.endpoint` is **required for every S3-compatible backend** (the driver rejects an empty endpoint); set `use_ssl`/`path_style` to match:
 
 ```yaml
 storage:

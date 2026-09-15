@@ -44,7 +44,7 @@ func TestRegisterConnectorStaticMissingEnvFails(t *testing.T) {
 		"Authorization": "Bearer ${BOOTSTRAP_MISSING_ENV_XYZ}",
 	}
 
-	err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), connector.CallbackConfig{})
+	err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), nil, connector.CallbackConfig{})
 	if err == nil {
 		t.Fatal("expected error for unresolved static env, got nil")
 	}
@@ -74,7 +74,7 @@ func TestRegisterConnectorVaultRefPersistsAuthShape(t *testing.T) {
 		"Authorization": "env:BOOTSTRAP_VAULT_TOK",
 	}
 
-	if err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), connector.CallbackConfig{}); err != nil {
+	if err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), nil, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector: %v", err)
 	}
 	c, err := st.GetConnector("bs-vault")

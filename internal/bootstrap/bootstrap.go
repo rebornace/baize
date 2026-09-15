@@ -25,6 +25,7 @@ import (
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/blob"
 	_ "github.com/rebornace/baize/internal/blob/file"
+	_ "github.com/rebornace/baize/internal/blob/memory"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channelmedia"
 	// Built-in channel: the generic out-of-process webhook channel registers
@@ -308,8 +309,16 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 
 	reg := tool.NewRegistry()
 
-	managedDir := filepath.Join(cfg.Skills.UserDir, "managed")
-	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir, managedDir)
+	// blob.Store is assembled before skill catalog and connector registration so
+	// Catalog can List/Get skills/user/… and Apply can load connectors/<id>/… keys.
+	// Artifact/workspace/channel-media still wait for sqlBackend below.
+	blobStore, err := ensureBlobStore(context.Background(), cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open blob store: %w", err)
+	}
+
+	skillCat, err := skill.LoadCatalog(cfg.SkillBuiltinDirs(), cfg.Skills.UserDir, blobStore)
 	if err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("load skill catalog: %w", err)
@@ -339,12 +348,12 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
 
-	if err := registerConnector(st, reg, cfg, identities, callbackCfg); err != nil {
+	if err := registerConnector(st, reg, cfg, identities, blobStore, callbackCfg); err != nil {
 		_ = closer.Close()
 		return nil, nil, err
 	}
-	loadStoredConnectors(st, reg, cfg, identities, callbackCfg)
-	if err := loginmanage.SyncAll(st, managedDir, cfg.Skills.UserDir); err != nil {
+	loadStoredConnectors(st, reg, cfg, identities, blobStore, callbackCfg)
+	if err := loginmanage.SyncAll(st, blobStore); err != nil {
 		log.Printf("loginmanage: SyncAll: %v", err)
 	} else if err := skillCat.Reload(); err != nil {
 		log.Printf("loginmanage: reload skills after SyncAll: %v", err)
@@ -446,19 +455,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackPublicBase = callbackPublicBase
 	srv.CallbackTTL = callbackTTL
 
-	// channelMedia is set when a blob store is available (sqlBackend present)
-	// and feeds both the channel Runtime (persist inbound images) and the API
-	// (serve them back with the conversation ACL). blobStore is also passed to
-	// wireChannels for channel_outbox outbound media.
+	// Artifact, workspace, and channel-media still require SQL metadata and
+	// stay behind sqlBackend; they reuse the blobStore opened above.
 	var channelMedia *channelmedia.Store
-	var blobStore blob.Store
 	if sqlBackend != nil {
-		var err error
-		blobStore, err = openBlobStore(context.Background(), cfg)
-		if err != nil {
-			_ = closer.Close()
-			return nil, nil, fmt.Errorf("open blob store: %w", err)
-		}
 		artStore, err := artifact.NewStore(blobStore, sqlBackend)
 		if err != nil {
 			_ = closer.Close()
@@ -548,6 +548,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		inboxReg:    inboxReg,
 		holder:      runtimeHolder,
 		callbackCfg: callbackCfg,
+		blobs:       blobStore,
 		configPath:  configPath,
 		cfg:         srv.Config,
 		raw:         closer.inner,
@@ -568,6 +569,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	if dir := dataDir(cfg); dir != "" {
 		srv.DataDir = dir
 	}
+	srv.Blobs = blobStore
 	// Long-lived context for channel inbound loops; cancelled first on
 	// shutdown (per-channel Stop closures run after and drain their loops).
 	runCtx, runCancel := context.WithCancel(context.Background())
@@ -681,13 +683,14 @@ func redisPasswordFromEnv(env string) string {
 	return os.Getenv(env)
 }
 
-// openBlobStore builds the configured object-storage driver. The file driver
-// roots under dataDir when storage.file.root_dir is unset, preserving the
-// historical <dataDir>/artifacts layout.
-func openBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
+// ensureBlobStore always opens a blob.Store. When storage.driver is unset,
+// defaults to memory so demo / in-process runs need no disk; yaml-configured
+// file/s3 are honored. The file driver roots under dataDir when
+// storage.file.root_dir is unset, preserving the historical <dataDir>/artifacts layout.
+func ensureBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Storage.Driver))
 	if driver == "" {
-		driver = "file"
+		driver = "memory"
 	}
 	opts := blob.Options{
 		File: blob.FileOptions{RootDir: cfg.Storage.File.RootDir},
@@ -1131,7 +1134,7 @@ func (c *storeAndMCPCloser) Close() error {
 	return nil
 }
 
-func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store, cb connector.CallbackConfig) error {
+func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store, blobs blob.Store, cb connector.CallbackConfig) error {
 	if strings.TrimSpace(cfg.Connector.ID) == "" {
 		return nil
 	}
@@ -1154,6 +1157,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		Store:                   st,
 		Registry:                reg,
 		Identities:              identities,
+		Blobs:                   blobs,
 		ID:                      cfg.Connector.ID,
 		Type:                    cfg.Connector.Type,
 		Spec:                    cfg.Connector.Spec,
@@ -1189,7 +1193,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 // enabled rows. Errors are logged but do not abort startup so a single bad
 // connector cannot brick the runtime; the YAML connector is skipped because it
 // was just registered by registerConnector.
-func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store, cb connector.CallbackConfig) {
+func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config, identities identity.Store, blobs blob.Store, cb connector.CallbackConfig) {
 	for _, c := range st.ListConnectors() {
 		if c.ID == cfg.Connector.ID {
 			continue
@@ -1198,6 +1202,7 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			Store:                st,
 			Registry:             reg,
 			Identities:           identities,
+			Blobs:                blobs,
 			ID:                   c.ID,
 			Type:                 c.Type,
 			Spec:                 c.Spec,

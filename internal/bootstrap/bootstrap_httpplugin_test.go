@@ -35,7 +35,7 @@ func TestRegisterConnectorHTTPNoSpec(t *testing.T) {
 	cfg.Connector.BaseURL = sidecar.URL
 	// Spec intentionally empty for http.
 
-	if err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), connector.CallbackConfig{}); err != nil {
+	if err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), nil, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector: %v", err)
 	}
 	c, err := st.GetConnector("side")
@@ -54,7 +54,7 @@ func TestRegisterConnectorHTTPMissingBaseURL(t *testing.T) {
 	cfg.Connector.ID = "side"
 	cfg.Connector.Type = "http"
 
-	err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), connector.CallbackConfig{})
+	err := registerConnector(st, reg, cfg, identity.NewMemoryStore(), nil, connector.CallbackConfig{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -92,7 +92,7 @@ func TestRegisterConnectorHTTPSessionIdentityHeadersPreferStatic(t *testing.T) {
 		"Authorization": "Bearer STATIC",
 	}
 
-	if err := registerConnector(st, reg, cfg, ids, connector.CallbackConfig{}); err != nil {
+	if err := registerConnector(st, reg, cfg, ids, nil, connector.CallbackConfig{}); err != nil {
 		t.Fatalf("registerConnector: %v", err)
 	}
 

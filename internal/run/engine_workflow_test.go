@@ -32,7 +32,7 @@ func loadWorkflowCatalog(t *testing.T, id string, wfYAML string) *skill.Catalog 
 	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte(wfYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := skill.LoadCatalog([]string{root}, filepath.Join(root, "_user"), "")
+	cat, err := skill.LoadCatalog([]string{root}, filepath.Join(root, "_user"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

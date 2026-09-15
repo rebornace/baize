@@ -3,15 +3,19 @@ package skill
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/workflow"
 )
 
@@ -31,16 +35,16 @@ type Catalog struct {
 	mu          sync.RWMutex
 	byID        map[string]Package
 	builtinDirs []string
-	userDir     string
-	managedDir  string
+	userDir     string // retained for API paths; user packages live in Blobs
+	Blobs       blob.Store
 }
 
-func LoadCatalog(builtinDirs []string, userDir, managedDir string) (*Catalog, error) {
+func LoadCatalog(builtinDirs []string, userDir string, blobs blob.Store) (*Catalog, error) {
 	c := &Catalog{
 		byID:        make(map[string]Package),
 		builtinDirs: append([]string(nil), builtinDirs...),
 		userDir:     userDir,
-		managedDir:  managedDir,
+		Blobs:       blobs,
 	}
 	if err := c.Reload(); err != nil {
 		return nil, err
@@ -77,13 +81,6 @@ func (c *Catalog) UserDir() string {
 	return c.userDir
 }
 
-func (c *Catalog) ManagedDir() string {
-	if c == nil {
-		return ""
-	}
-	return c.managedDir
-}
-
 func (c *Catalog) Reload() error {
 	byID := make(map[string]Package)
 	for _, dir := range c.builtinDirs {
@@ -91,16 +88,83 @@ func (c *Catalog) Reload() error {
 			return err
 		}
 	}
-	if err := scanDir(c.userDir, SourceUser, byID); err != nil {
+	if err := c.loadUserFromBlobs(byID); err != nil {
 		return err
 	}
-	if err := scanDir(c.managedDir, SourceManaged, byID); err != nil {
+	if err := c.loadManagedFromBlobs(byID); err != nil {
 		return err
 	}
 	c.mu.Lock()
 	c.byID = byID
 	c.mu.Unlock()
 	return nil
+}
+
+func (c *Catalog) loadUserFromBlobs(byID map[string]Package) error {
+	return c.loadSkillsFromBlobs(blob.PrefixSkillsUser, SourceUser, byID)
+}
+
+func (c *Catalog) loadManagedFromBlobs(byID map[string]Package) error {
+	return c.loadSkillsFromBlobs(blob.PrefixSkillsManaged, SourceManaged, byID)
+}
+
+func (c *Catalog) loadSkillsFromBlobs(prefix, source string, byID map[string]Package) error {
+	if c.Blobs == nil {
+		return nil
+	}
+	ctx := context.Background()
+	entries, err := c.Blobs.List(ctx, prefix)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		id, ok := skillIDFromBlobKey(prefix, e.Key)
+		if !ok {
+			continue
+		}
+		raw, err := c.Blobs.Get(ctx, e.Key)
+		if err != nil {
+			return fmt.Errorf("skill blob %s: %w", e.Key, err)
+		}
+		pkg, err := ParseSKILLMD(raw)
+		if err != nil {
+			return fmt.Errorf("%s: %w", e.Key, err)
+		}
+		if pkg.Name != id {
+			log.Printf("skill: warning: %s name=%q != id=%q", e.Key, pkg.Name, id)
+		}
+		pkg.ID = id
+		pkg.Source = source
+		wfKey := blob.SkillObjectKey(source, id, "workflow.yaml")
+		wfRaw, wfErr := c.Blobs.Get(ctx, wfKey)
+		if wfErr == nil {
+			wf, perr := workflow.Parse(wfRaw)
+			if perr != nil {
+				return fmt.Errorf("%s: %w", wfKey, perr)
+			}
+			if wf.Name != pkg.ID {
+				log.Printf("skill: warning: %s workflow name=%q != id=%q", wfKey, wf.Name, pkg.ID)
+			}
+			pkg.Workflow = wf
+		} else if !errors.Is(wfErr, blob.ErrNotFound) {
+			return fmt.Errorf("%s: %w", wfKey, wfErr)
+		}
+		byID[id] = pkg
+	}
+	return nil
+}
+
+// skillIDFromBlobKey extracts id from skills/<source>/<id>/SKILL.md.
+func skillIDFromBlobKey(prefix, key string) (string, bool) {
+	rest, ok := strings.CutPrefix(key, prefix)
+	if !ok {
+		return "", false
+	}
+	id, suffix, ok := strings.Cut(rest, "/")
+	if !ok || id == "" || suffix != "SKILL.md" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
 }
 
 func scanDir(dir, source string, byID map[string]Package) error {
@@ -155,6 +219,9 @@ func scanDir(dir, source string, byID map[string]Package) error {
 
 func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
 	_ = filename
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
 	pkg, err := ParseSKILLMD(raw)
 	if err != nil {
 		return Package{}, err
@@ -163,11 +230,13 @@ func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
 	if err := validateSkillID(id); err != nil {
 		return Package{}, err
 	}
-	dir := filepath.Join(c.userDir, id)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	ctx := context.Background()
+	prefix := blob.PrefixSkillsUser + id + "/"
+	if err := blob.DeletePrefix(ctx, c.Blobs, prefix); err != nil {
 		return Package{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), raw, 0o644); err != nil {
+	key := blob.SkillObjectKey(SourceUser, id, "SKILL.md")
+	if err := c.Blobs.Put(ctx, key, raw, "text/markdown"); err != nil {
 		return Package{}, err
 	}
 	if err := c.Reload(); err != nil {
@@ -181,6 +250,9 @@ func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
 }
 
 func (c *Catalog) InstallZip(raw []byte) (Package, error) {
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
 	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
 		return Package{}, err
@@ -236,7 +308,54 @@ func (c *Catalog) InstallZip(raw []byte) (Package, error) {
 	if err != nil {
 		return Package{}, err
 	}
-	return c.InstallMD(filepath.Base(skillPath), skillRaw)
+	pkg, err := ParseSKILLMD(skillRaw)
+	if err != nil {
+		return Package{}, err
+	}
+	id := pkg.Name
+	if err := validateSkillID(id); err != nil {
+		return Package{}, err
+	}
+
+	pkgRoot := filepath.Dir(skillPath)
+	ctx := context.Background()
+	prefix := blob.PrefixSkillsUser + id + "/"
+	if err := blob.DeletePrefix(ctx, c.Blobs, prefix); err != nil {
+		return Package{}, err
+	}
+	err = filepath.WalkDir(pkgRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(pkgRoot, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		key := blob.SkillObjectKey(SourceUser, id, filepath.ToSlash(rel))
+		ct := "application/octet-stream"
+		if strings.EqualFold(filepath.Base(rel), "SKILL.md") {
+			ct = "text/markdown"
+		}
+		return c.Blobs.Put(ctx, key, data, ct)
+	})
+	if err != nil {
+		return Package{}, err
+	}
+	if err := c.Reload(); err != nil {
+		return Package{}, err
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return Package{}, fmt.Errorf("installed skill %q not found after reload", id)
+	}
+	return p, nil
 }
 
 func findSkillMD(root string) (string, error) {
@@ -281,7 +400,10 @@ func (c *Catalog) DeleteUser(id string) error {
 	if p.Source != SourceUser {
 		return fmt.Errorf("%w: %q", ErrBuiltin, id)
 	}
-	if err := os.RemoveAll(filepath.Join(c.userDir, id)); err != nil {
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	if err := blob.DeletePrefix(context.Background(), c.Blobs, blob.PrefixSkillsUser+id+"/"); err != nil {
 		return err
 	}
 	return c.Reload()

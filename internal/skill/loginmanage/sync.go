@@ -1,35 +1,39 @@
 package loginmanage
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/store"
 )
 
 // SyncAll refreshes managed login skills for all connectors, then removes orphan
 // connector_login packages (connector missing or not openapi/http).
-func SyncAll(st store.Store, managedDir, userDir string) error {
+func SyncAll(st store.Store, blobs blob.Store) error {
 	if st == nil {
 		return nil
 	}
 	for _, c := range st.ListConnectors() {
-		if err := SyncConnector(st, managedDir, userDir, c.ID); err != nil {
+		if err := SyncConnector(st, blobs, c.ID); err != nil {
 			return err
 		}
 	}
-	return cleanupOrphanManagedLoginSkills(st, managedDir)
+	return cleanupOrphanManagedLoginSkills(st, blobs)
 }
 
 // SyncConnector writes, updates, or deletes the managed login skill for one connector.
-func SyncConnector(st store.Store, managedDir, userDir, connectorID string) error {
+func SyncConnector(st store.Store, blobs blob.Store, connectorID string) error {
 	if st == nil {
 		return nil
+	}
+	if blobs == nil {
+		return fmt.Errorf("blob store not configured")
 	}
 	skillID := SkillID(connectorID)
 	if skillID == "" {
@@ -38,28 +42,27 @@ func SyncConnector(st store.Store, managedDir, userDir, connectorID string) erro
 	}
 
 	tools := selectToolsForSync(st, connectorID)
-
-	pkgName := skillID
-	managedPkg := filepath.Join(managedDir, pkgName)
-	userPkg := filepath.Join(userDir, pkgName)
+	ctx := context.Background()
 
 	// Non-managed conflict: do not overwrite user (or non-managed) package.
 	// Delete residual managed connector_login so Catalog managed-over-user
 	// load order cannot shadow the user fork.
-	if conflictNonManaged(userPkg) || conflictNonManaged(managedPkg) {
+	userKey := blob.SkillObjectKey("user", skillID, "SKILL.md")
+	managedKey := blob.SkillObjectKey("managed", skillID, "SKILL.md")
+	if conflictNonManaged(ctx, blobs, userKey) || conflictNonManaged(ctx, blobs, managedKey) {
 		log.Printf("loginmanage: skip %s: non-managed package occupies skill id", skillID)
-		return deleteManagedPackage(managedPkg)
+		return deleteManagedPackage(ctx, blobs, skillID)
 	}
 
 	if len(tools) == 0 {
-		return deleteManagedPackage(managedPkg)
+		return deleteManagedPackage(ctx, blobs, skillID)
 	}
 
 	content, err := RenderSKILLMD(connectorID, tools)
 	if err != nil {
 		return err
 	}
-	return writeManagedPackage(managedPkg, content)
+	return writeManagedPackage(ctx, blobs, skillID, content)
 }
 
 // selectToolsForSync returns login tools for openapi/http connectors.
@@ -85,20 +88,21 @@ func isLoginSkillConnectorType(typ string) bool {
 	}
 }
 
-func cleanupOrphanManagedLoginSkills(st store.Store, managedDir string) error {
-	entries, err := os.ReadDir(managedDir)
+func cleanupOrphanManagedLoginSkills(st store.Store, blobs blob.Store) error {
+	if blobs == nil {
+		return nil
+	}
+	ctx := context.Background()
+	entries, err := blobs.List(ctx, blob.PrefixSkillsManaged)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
 		return err
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
+		id, ok := managedSkillIDFromKey(e.Key)
+		if !ok {
 			continue
 		}
-		pkgDir := filepath.Join(managedDir, e.Name())
-		raw, err := os.ReadFile(filepath.Join(pkgDir, "SKILL.md"))
+		raw, err := blobs.Get(ctx, e.Key)
 		if err != nil {
 			continue
 		}
@@ -110,7 +114,7 @@ func cleanupOrphanManagedLoginSkills(st store.Store, managedDir string) error {
 		keep := false
 		if connectorID != "" {
 			if c, err := st.GetConnector(connectorID); err == nil && isLoginSkillConnectorType(c.Type) {
-				if SkillID(connectorID) == e.Name() {
+				if SkillID(connectorID) == id {
 					keep = true
 				}
 			}
@@ -118,15 +122,27 @@ func cleanupOrphanManagedLoginSkills(st store.Store, managedDir string) error {
 		if keep {
 			continue
 		}
-		if err := deleteManagedPackage(pkgDir); err != nil {
+		if err := deleteManagedPackage(ctx, blobs, id); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func conflictNonManaged(pkgDir string) bool {
-	raw, err := os.ReadFile(filepath.Join(pkgDir, "SKILL.md"))
+func managedSkillIDFromKey(key string) (string, bool) {
+	rest, ok := strings.CutPrefix(key, blob.PrefixSkillsManaged)
+	if !ok {
+		return "", false
+	}
+	id, suffix, ok := strings.Cut(rest, "/")
+	if !ok || id == "" || suffix != "SKILL.md" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
+}
+
+func conflictNonManaged(ctx context.Context, blobs blob.Store, key string) bool {
+	raw, err := blobs.Get(ctx, key)
 	if err != nil {
 		return false
 	}
@@ -160,25 +176,23 @@ func parseManagedFrontmatter(raw []byte) (skillFrontmatter, bool) {
 	return fm, true
 }
 
-func writeManagedPackage(pkgDir, content string) error {
-	if err := os.RemoveAll(pkgDir); err != nil {
+func writeManagedPackage(ctx context.Context, blobs blob.Store, id, content string) error {
+	prefix := blob.PrefixSkillsManaged + id + "/"
+	if err := blob.DeletePrefix(ctx, blobs, prefix); err != nil {
 		return fmt.Errorf("remove managed package: %w", err)
 	}
-	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir managed package: %w", err)
-	}
-	path := filepath.Join(pkgDir, "SKILL.md")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	key := blob.SkillObjectKey("managed", id, "SKILL.md")
+	if err := blobs.Put(ctx, key, []byte(content), "text/markdown"); err != nil {
 		return fmt.Errorf("write SKILL.md: %w", err)
 	}
 	return nil
 }
 
-func deleteManagedPackage(pkgDir string) error {
-	raw, err := os.ReadFile(filepath.Join(pkgDir, "SKILL.md"))
+func deleteManagedPackage(ctx context.Context, blobs blob.Store, id string) error {
+	key := blob.SkillObjectKey("managed", id, "SKILL.md")
+	raw, err := blobs.Get(ctx, key)
 	if err != nil {
-		if os.IsNotExist(err) {
-			_ = os.RemoveAll(pkgDir)
+		if errors.Is(err, blob.ErrNotFound) {
 			return nil
 		}
 		return err
@@ -186,7 +200,7 @@ func deleteManagedPackage(pkgDir string) error {
 	if !isManagedConnectorLogin(raw) {
 		return nil
 	}
-	if err := os.RemoveAll(pkgDir); err != nil {
+	if err := blob.DeletePrefix(ctx, blobs, blob.PrefixSkillsManaged+id+"/"); err != nil {
 		return fmt.Errorf("delete managed package: %w", err)
 	}
 	return nil

@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/memory"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -23,13 +26,18 @@ func skillsServer(t *testing.T) (*Server, store.Store, http.Handler, *skill.Cata
 	builtin := filepath.Join(root, "builtin")
 	user := filepath.Join(root, "user")
 	mustWriteSkillDir(t, filepath.Join(builtin, "builtin-skill"), "builtin-skill", "from-builtin", []string{"a"})
-	cat, err := skill.LoadCatalog([]string{builtin}, user, "")
+	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := store.NewMemory()
 	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
 	srv.SkillCatalog = cat
+	srv.Blobs = blobs
 	return srv, st, srv.Handler(), cat
 }
 

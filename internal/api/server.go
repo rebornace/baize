@@ -20,6 +20,7 @@ import (
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
@@ -146,7 +147,8 @@ type Server struct {
 	InboxGate func(channelID string) bool
 	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
 	MCPExportEnabled bool
-	DataDir          string // parent dir for specstore (sqlite dir); required for spec_content PUT
+	DataDir          string // parent dir for sqlite / legacy paths; not used for connector specs
+	Blobs            blob.Store
 	ConfigPath       string
 	Config           *config.Config
 	Shutdown         func(context.Context) error
@@ -841,8 +843,8 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		specImportContent = string(fetched)
 	}
 	if specImportContent != "" {
-		if strings.TrimSpace(s.DataDir) == "" {
-			writeError(w, http.StatusInternalServerError, "internal_error", "data directory is not configured")
+		if s.Blobs == nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "blob store is not configured")
 			return
 		}
 		if len(specImportContent) > maxSpecContentSize {
@@ -863,12 +865,12 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
-		relPath, err := specstore.Write(s.DataDir, id, content, normalized)
+		specKey, err := specstore.Write(r.Context(), s.Blobs, id, content, normalized)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		specPath = filepath.Join(s.DataDir, relPath)
+		specPath = specKey
 		importFormatDetected = detected
 	} else if body.Type == "openapi" && specPath == "" {
 		existing, err := s.Store.GetConnector(id)
@@ -876,7 +878,19 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
 			return
 		}
-		if _, err := os.Stat(existing.Spec); err != nil {
+		if specstore.IsBlobSpecKey(existing.Spec) {
+			if s.Blobs == nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", "blob store is not configured")
+				return
+			}
+			if _, err := s.Blobs.Get(r.Context(), existing.Spec); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
+				return
+			}
+		} else if specstore.IsLegacyConnectorFSPath(existing.Spec) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "filesystem spec path is no longer supported; re-import via spec_content or spec_url")
+			return
+		} else if _, err := os.Stat(existing.Spec); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", "spec is required")
 			return
 		}
@@ -953,6 +967,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		Store:                s.Store,
 		Registry:             s.Registry,
 		Identities:           s.Identities,
+		Blobs:                s.Blobs,
 		ID:                   id,
 		Type:                 body.Type,
 		Spec:                 specPath,
@@ -1024,14 +1039,10 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 // then reloads the skill catalog. Sync/Reload failures are logged only so the
 // connector mutation HTTP response stays successful.
 func (s *Server) syncLoginManagedSkill(connectorID string) {
-	if s == nil || s.SkillCatalog == nil {
+	if s == nil || s.SkillCatalog == nil || s.SkillCatalog.Blobs == nil {
 		return
 	}
-	managedDir := s.SkillCatalog.ManagedDir()
-	if strings.TrimSpace(managedDir) == "" {
-		return
-	}
-	if err := loginmanage.SyncConnector(s.Store, managedDir, s.SkillCatalog.UserDir(), connectorID); err != nil {
+	if err := loginmanage.SyncConnector(s.Store, s.SkillCatalog.Blobs, connectorID); err != nil {
 		log.Printf("loginmanage: sync connector %q: %v", connectorID, err)
 		return
 	}
@@ -1503,7 +1514,7 @@ func (s *Server) handlePatchTool(w http.ResponseWriter, r *http.Request) {
 // invoker closure Apply uses. It does not write the Store; the caller is
 // responsible for UpsertTool before calling.
 func (s *Server) registerOne(c store.Connector, t store.Tool) error {
-	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, c, t, connector.CallbackConfig{
+	return connector.RegisterOneFromConnector(s.Store, s.Registry, s.Identities, s.Blobs, c, t, connector.CallbackConfig{
 		Signer:     s.CallbackSigner,
 		Secret:     s.CallbackSecret,
 		PublicBase: s.publicBaseURL(),
@@ -1642,6 +1653,12 @@ func (s *Server) handleDeleteConnector(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.Store.GetConnector(id); err != nil {
 		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
 		return
+	}
+	if s.Blobs != nil {
+		if err := blob.DeletePrefix(r.Context(), s.Blobs, blob.PrefixConnectors+id+"/"); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 	s.Registry.UnregisterConnector(id)
 	if err := s.Store.DeleteConnector(id); err != nil {

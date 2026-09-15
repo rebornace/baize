@@ -87,7 +87,7 @@ func TestCatalogRestartMCP(t *testing.T) {
 	ids2 := identity.NewMemoryStore()
 	cfg := config.Config{} // no YAML connector
 
-	loadStoredConnectors(st2, reg2, cfg, ids2, connector.CallbackConfig{})
+	loadStoredConnectors(st2, reg2, cfg, ids2, nil, connector.CallbackConfig{})
 
 	if _, ok := reg2.Get("echo"); !ok {
 		t.Fatalf("echo must be registered after loadStoredConnectors: %+v", reg2.List())

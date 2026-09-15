@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/authresolve"
+	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
@@ -25,6 +26,7 @@ type ApplyInput struct {
 	Store                   store.Store
 	Registry                *tool.Registry
 	Identities              identity.Store
+	Blobs                   blob.Store // required when Spec is a connectors/ blob key
 	ID, Type, Spec, BaseURL string
 	ImportFormat            string
 	ExecutionCallbackURL    string
@@ -131,9 +133,9 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		if strings.TrimSpace(in.Spec) == "" {
 			return store.Connector{}, nil, fmt.Errorf("connector.spec is required")
 		}
-		routes, err := openapi.LoadTools(in.Spec)
+		routes, err := loadOpenAPIRoutes(context.Background(), in.Blobs, in.Spec)
 		if err != nil {
-			return store.Connector{}, nil, fmt.Errorf("%w: %w", openapi.ErrInvalidSpec, err)
+			return store.Connector{}, nil, err
 		}
 		if len(routes) == 0 {
 			return store.Connector{}, nil, fmt.Errorf("%w: no usable operations", openapi.ErrInvalidSpec)

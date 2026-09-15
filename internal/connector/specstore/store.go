@@ -1,28 +1,43 @@
 package specstore
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/rebornace/baize/internal/blob"
 )
 
-// Write persists imported and normalized spec files under dataRoot/connectors/{id}/.
-// normalizedPath is relative to dataRoot for connector.Spec.
-func Write(dataRoot, connectorID string, originalContent []byte, normalizedJSON []byte) (normalizedPath string, err error) {
-	dir := filepath.Join(dataRoot, "connectors", connectorID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create connector dir: %w", err)
-	}
+// IsBlobSpecKey reports whether spec is a connector blob object key
+// (connectors/<id>/...) rather than a filesystem path.
+func IsBlobSpecKey(spec string) bool {
+	return strings.HasPrefix(spec, "connectors/") && !filepath.IsAbs(spec)
+}
 
-	importedPath := filepath.Join(dir, "imported.bin")
-	if err := os.WriteFile(importedPath, originalContent, 0o644); err != nil {
+// IsLegacyConnectorFSPath reports whether spec is an absolute path to the
+// old on-disk connectors/<id>/openapi.normalized.json layout.
+func IsLegacyConnectorFSPath(spec string) bool {
+	if !filepath.IsAbs(spec) {
+		return false
+	}
+	slash := filepath.ToSlash(spec)
+	return strings.Contains(slash, "/connectors/") && strings.HasSuffix(slash, "/openapi.normalized.json")
+}
+
+// Write persists imported and normalized spec bytes in store and returns the
+// normalized object key for connector.Spec.
+func Write(ctx context.Context, store blob.Store, connectorID string, original, normalized []byte) (specKey string, err error) {
+	if store == nil {
+		return "", fmt.Errorf("blob store is required")
+	}
+	importedKey := blob.ConnectorImportedKey(connectorID)
+	if err := store.Put(ctx, importedKey, original, "application/octet-stream"); err != nil {
 		return "", fmt.Errorf("write imported spec: %w", err)
 	}
-
-	normalizedPath = filepath.Join("connectors", connectorID, "openapi.normalized.json")
-	fullNormalized := filepath.Join(dataRoot, normalizedPath)
-	if err := os.WriteFile(fullNormalized, normalizedJSON, 0o644); err != nil {
+	specKey = blob.ConnectorNormalizedKey(connectorID)
+	if err := store.Put(ctx, specKey, normalized, "application/json"); err != nil {
 		return "", fmt.Errorf("write normalized spec: %w", err)
 	}
-	return normalizedPath, nil
+	return specKey, nil
 }

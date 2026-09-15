@@ -13,6 +13,55 @@ import (
 	"github.com/rebornace/baize/internal/connector/openapi"
 )
 
+func TestLoadToolsFromBytesMinimalJSON(t *testing.T) {
+	spec := []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "minimal", "version": "1.0.0"},
+  "paths": {
+    "/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) < 1 {
+		t.Fatalf("expected >=1 route, got %d", len(tools))
+	}
+	route := findRoute(t, tools, "ping")
+	if route.Method != http.MethodGet || route.Path != "/ping" {
+		t.Fatalf("route=%+v", route)
+	}
+
+	path := writeTempSpec(t, `openapi: "3.0.3"
+info:
+  title: minimal
+  version: "1.0.0"
+paths:
+  /ping:
+    get:
+      operationId: ping
+      responses:
+        "200": { description: ok }
+`)
+	fromFile, err := openapi.LoadTools(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromFile) != len(tools) {
+		t.Fatalf("LoadTools count=%d, LoadToolsFromBytes count=%d", len(fromFile), len(tools))
+	}
+	fileRoute := findRoute(t, fromFile, "ping")
+	if fileRoute.Method != route.Method || fileRoute.Path != route.Path || fileRoute.Name != route.Name {
+		t.Fatalf("file=%+v bytes=%+v", fileRoute, route)
+	}
+}
+
 func TestLoadToolsSecurityFromGlobal(t *testing.T) {
 	spec := `openapi: "3.0.3"
 info:

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/memory"
 	"github.com/rebornace/baize/internal/connector/specimport"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
@@ -31,6 +34,11 @@ func openAPIServer(t *testing.T) (*Server, http.Handler, string) {
 	srv := NewServer(st, reg, &gateFakeRunner{store: st})
 	srv.Identities = identity.NewMemoryStore()
 	srv.DataDir = t.TempDir()
+	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatalf("open memory blob: %v", err)
+	}
+	srv.Blobs = blobs
 	return srv, srv.Handler(), srv.DataDir
 }
 

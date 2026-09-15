@@ -319,11 +319,11 @@ curl -s -X PUT http://127.0.0.1:8080/v0/connectors/brave-search \
 
 ### Agent Skills（可选）
 
-Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL.md`（流程 Markdown）+ 工具名列表。用来收窄（或叠加）模型可见的已启用工具，并把流程正文注入 Run 的 system。
+Skill 是可选的**配置形态**（不升格为第六抽象）：一份 `SKILL.md`（流程 Markdown）+ 工具名列表。用来收窄（或叠加）模型可见的已启用工具，并把流程正文注入 Run 的 system。Connector 规格与用户/managed Skill 存于配置的 blob（对象存储）；builtin Skill 仍读本地目录。
 
 | 主题 | 行为 |
 |------|------|
-| 落盘 | 内置 `./skills`（`skills.builtin_dir`）与用户 `./data/skills`（`skills.user_dir`）；一级子目录为包 id，内含 `SKILL.md` |
+| 落盘 / blob | 内置包读本地 `./skills`（`skills.builtin_dir`）；用户与 managed 包装入配置的 blob，不再写入 `./data/skills` |
 | 上传 / 删除 | 管理员经 `POST /v0/skills` 或「设置 → 技能」上传 `.md` / `.zip`；`DELETE /v0/skills/{id}` 仅删 **user** 包（内置 → `400`）。同 id：用户覆盖内置 |
 | 默认激活 | `agent.skills`（YAML / `PUT /v0/agents/{id}`）列出 Run 开始时已激活的包 |
 | 渐进激活 | 安装集非空时，模型可见内置工具 `activate_skill`，可在**本 Run** 内扩大激活集 |
