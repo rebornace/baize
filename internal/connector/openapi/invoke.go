@@ -73,6 +73,10 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Go's default User-Agent ("Go-http-client/1.1") is blocked by some edge WAFs
+	// (e.g. Alibaba ESA http_custom). Set a stable product UA unless the caller
+	// already supplied one via Headers/overlay.
+	req.Header.Set("User-Agent", "baize-openapi/1.0")
 	for k, v := range mergeHeaders(inv.Headers, overlay) {
 		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
 			continue
