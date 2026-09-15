@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
+import { CHAT } from '../strings'
 
 export interface AnalysisPagePreviewProps {
   artifactUrl: string
@@ -84,15 +85,15 @@ export function AnalysisPagePreview({ artifactUrl }: AnalysisPagePreviewProps) {
           sandbox="allow-scripts"
           src={src}
           height={480}
-          title="分析页预览"
+          title={CHAT.analysisPreviewTitle}
         />
       ) : (
         <div className="analysis-page-preview-loading">
-          {error ? `预览加载失败：${error}` : '加载分析页…'}
+          {error ? CHAT.analysisPreviewFailed(error) : CHAT.analysisPreviewLoading}
         </div>
       )}
       <button type="button" className="analysis-page-preview-link" onClick={() => void openInNewTab()}>
-        在新标签页打开
+        {CHAT.analysisOpenTab}
       </button>
     </div>
   )
