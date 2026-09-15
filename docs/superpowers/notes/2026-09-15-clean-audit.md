@@ -314,6 +314,8 @@
 
 本阶段**不**跑重型压测、**不**新增 `Benchmark*`、**不**写 README 数字。仓库当前无既有 `Benchmark` 函数。
 
+> **PERF-HOT 已测（2026-09-15）：** 下表四路径已按 [`2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md) 建立 `Benchmark*` 探针并完成本地基线；结论「保持现状」。详见 [`2026-09-15-clean-perf-hot.md`](./2026-09-15-clean-perf-hot.md)、[`../../developers/performance.md`](../../developers/performance.md)。
+
 | 路径 | 为何值得测 | PERF-HOT 建议探针 |
 |------|------------|-------------------|
 | 聊天流式 `GET /v0/runs/{id}/stream` | 主路径：UI `openRunStream` / SSE 轮询；长 run、多 tool 事件时延迟与缓冲直接影响体感；已有 `server_sse_poll_test` 证明可测 | 本地起 `baize demo` → `POST /v0/runs` → 计时首个 `run.started` / 终端事件到齐；或扩展现有 SSE 测试为可脚本化耗时；可选 `go test` 包内轻量计时（非压测） |

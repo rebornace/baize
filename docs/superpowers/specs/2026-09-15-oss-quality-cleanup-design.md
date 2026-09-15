@@ -1,12 +1,12 @@
 # OSS 质量收口：规范、契约、结构、门禁与可证性能
 
-> 状态：**进行中**（AUDIT 已确认；**CONTRACT / STRUCT / GATES 已交付**；PERF-HOT 设计已批准，待实现）  
+> 状态：**已交付**（质量收口完毕；AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT 全阶段完成，2026-09-15）  
 > 日期：2026-09-15  
 > 史诗：CLEAN（分阶段：AUDIT → CONTRACT → STRUCT → GATES → PERF-HOT）  
-> PERF-HOT 详设：[`2026-09-15-clean-perf-hot-design.md`](./2026-09-15-clean-perf-hot-design.md)  
+> PERF-HOT 详设：[`2026-09-15-clean-perf-hot-design.md`](./2026-09-15-clean-perf-hot-design.md)（**已交付**：四探针已测、保持现状）  
 > 前置：开源首版 12 史诗均已交付；产品确认零外部用户，允许破坏性契约清理  
 > 备注：非新功能；目标为干净可维护的开源首版表面  
-> 实现计划：AUDIT · CONTRACT · STRUCT P0/P1 · GATES（均已交付）· PERF-HOT [`../plans/2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)
+> 实现计划：AUDIT · CONTRACT · STRUCT P0/P1 · GATES · PERF-HOT（均已交付；PERF-HOT [`../plans/2026-09-15-clean-perf-hot.md`](../plans/2026-09-15-clean-perf-hot.md)）
 
 ---
 
@@ -77,7 +77,7 @@
 
 | 文档 | 读者 | 内容 |
 |------|------|------|
-| README（中/英） | 产品、运营、决策者 | 是什么、亮点、核心能力（人话）、场景/案例、试用入口；性能区先留位或「待 PERF-HOT 回填」 |
+| README（中/英） | 产品、运营、决策者 | 是什么、亮点、核心能力（人话）、场景/案例、试用入口；性能区已由 PERF-HOT 回填（已测、保持现状） |
 | 开发者文档（新建，如 `docs/developers/` 或单文件 guide） | 贡献者/集成方 | 构建、配置、契约/API、目录地图、CI、贡献流程 |
 | 删除 | — | `docs/architecture-and-plugin-protocol.md`、`docs/deployment.md`；需要则重写进开发者文档 |
 
@@ -160,3 +160,4 @@ AUDIT → CONTRACT（文档分层骨架）→ STRUCT → GATES → PERF-HOT（�
 | 2026-09-15 | 初稿：方案 3 + 文档分层 + 零用户破契约；设计评审通过 |
 | 2026-09-15 | CLEAN-CONTRACT 交付：客户端死导出删除、公开 docs 分层、产品向 README；测试绿 |
 | 2026-09-15 | STRUCT / GATES 已交付；PERF-HOT 详设批准（方案 3） |
+| 2026-09-15 | PERF-HOT 已交付：四探针已测、保持现状；README 中/英回填；CLEAN 史诗收口 |
