@@ -83,7 +83,7 @@
 |----|------|------|
 | MCP OAuth 交互登录 | P3-C → **UI-MCP-OAUTH** | **已交付** | [`2026-09-14-mcp-oauth-design.md`](../specs/2026-09-14-mcp-oauth-design.md) |
 | 登录入口 / `login_required` | P3-B/D → **LOGIN-SKILL**（原 UI-LOGIN-AT 直达已拆除） | **已交付**；[`2026-09-14-login-skill-design.md`](../specs/2026-09-14-login-skill-design.md) |
-| i18n | WebUI 非目标 → 上调 | **要做**；须切片 |
+| i18n | WebUI 非目标 → 上调 | **已交付**（UI-I18N） |
 | 模型思考级别开关 | P1 非目标 → 上调 | **已交付** | 规格 [`2026-09-14-llm-think-design.md`](../specs/2026-09-14-llm-think-design.md)；计划 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md) |
 | `export_db_readonly` UI | P3-C → **已交付** | [`2026-09-13-ui-export-db-readonly-design.md`](../specs/2026-09-13-ui-export-db-readonly-design.md) |
 | 技能可视化编辑器 | P3-D | 确认不做 |
@@ -110,6 +110,14 @@
 
 ---
 
+## 5b. 首版后质量收口（非功能史诗）
+
+| 项 | 状态 | 下一动作 |
+|----|------|----------|
+| **CLEAN**（AUDIT→CONTRACT→STRUCT→GATES→PERF-HOT） | **已批准（待实现）** | 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；先做 AUDIT 盘点清单并确认后再动契约 |
+
+---
+
 ## 6. 确认不做（本版）— 2026-09-13 产品确认
 
 **不做 / 不新立项：** A1 · B1 · P3 OTel · P5 · I2–I5 · W1/W2 · P7 · CH-SDK · 技能可视化 · Playwright · 微信群聊/语音视频 · U1 · Agent↔Tool 白名单 · MCP capture · 商业 E1–E5 · CH-WL-FORCE（已有）。
@@ -120,12 +128,13 @@
 
 ## 7. 建议的下一刀候选（选题用）
 
-1. ~~**DOC**~~（已交付）  
-2. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
-3. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
-4. ~~**LOGIN-SKILL**~~（已交付；UI-LOGIN-AT 直达已拆除） · ~~**LLM-THINK**~~（已交付；见 [`2026-09-14-llm-think.md`](../plans/2026-09-14-llm-think.md)） · ~~**BLOB-CS**~~（已交付；见 [`2026-09-15-blob-cs.md`](../plans/2026-09-15-blob-cs.md)） · ~~**UI-I18N**~~（已交付；见 [`2026-09-15-ui-i18n.md`](../plans/2026-09-15-ui-i18n.md)）  
-5. ~~**UI-MCP-OAUTH**~~（已交付） · ~~**P6 Memory**~~（已交付；见 [`2026-09-14-p6-memory.md`](../plans/2026-09-14-p6-memory.md)）  
-6. ~~渠道 DoD / sql-store worktree~~（已完成）
+1. **CLEAN**（质量收口，分阶段）— 规格 [`2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)；顺序 AUDIT → CONTRACT → STRUCT → GATES → PERF-HOT；**下一动作：AUDIT 盘点**  
+2. ~~**DOC**~~（已交付）  
+3. ~~**CH-PORT**~~ / ~~**CH-OUTBOX**~~（已交付）  
+4. ~~**F-HOT**~~ / ~~**UI-EXPORT-DB-RO**~~ / ~~**UI-RUNTIME**~~（已交付）  
+5. ~~**LOGIN-SKILL**~~ / ~~**LLM-THINK**~~ / ~~**BLOB-CS**~~ / ~~**UI-I18N**~~（已交付）  
+6. ~~**UI-MCP-OAUTH**~~ / ~~**P6 Memory**~~（已交付）  
+7. ~~渠道 DoD / sql-store worktree~~（已完成）
 
 ---
 
