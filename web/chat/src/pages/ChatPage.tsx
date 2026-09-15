@@ -1,187 +1,71 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { CornerUpLeft, GitBranch, Menu } from 'lucide-react'
 import {
-  cancelRun,
-  createRun,
-  deleteConversation,
-  fileToAttachment,
-  forkConversation,
-  getRun,
   getUIConfig,
-  isImageAttachment,
-  isTerminal,
-  listConversations,
-  listEvents,
-  listMessages,
   listModelProfiles,
   listSkills,
   listTools,
-  openRunStream,
-  rollbackMessages,
-  type Attachment,
-  type ChatMessage,
-  type ConversationScope,
-  type ConversationSummary,
-  type Event,
   type ModelProfile,
-  type RunStatus,
   type SkillSummary,
-  type ThinkingLevel,
   type ToolInfo,
 } from '../api'
-import { extractAnalysisPagesFromEvents } from '../analysisPage'
-import { AnalysisPagePreview } from '../components/AnalysisPagePreview'
 import { Composer } from '../components/Composer'
-import { SidebarResizer } from '../components/SidebarResizer'
-import { MarkdownText } from '../components/MarkdownText'
-import { ModelChip } from '../components/ModelChip'
-import { LanguageChip } from '../components/LanguageChip'
-import { ThinkingChip } from '../components/ThinkingChip'
-import { ToolCard } from '../components/ToolCard'
-import { UserBubble } from '../components/UserBubble'
-import { WorkflowCard } from '../components/WorkflowCard'
-import { TypewriterText } from '../components/TypewriterText'
-import { ThinkingBlock, MessageThinkingFallback } from '../components/ThinkingBlock'
 import {
   Button,
   ConfirmDialog,
-  DropdownMenu,
   Modal,
-  ThemeToggle,
   ToastRegion,
   useToast,
-  type MenuItem,
 } from '../components/ui'
-import { conversationListLabel } from '../conversationLabel'
-import { clearControlToken } from '../controlAuth'
-import { findLiveRunCandidate, isActiveRunStatus } from '../findLiveRun'
-import { foldEvents, type ChatBlock } from '../foldEvents'
+import { foldEvents } from '../foldEvents'
 import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
 import { useLocale } from '../locale/LocaleContext'
-import {
-  foldToolBlocks,
-  isFirstAssistantMessageOfRun,
-  type ToolOrWorkflowBlock,
-} from '../historyBlocks'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
-import { AUTO_MODEL_ID, buildRunOptions, visionGate } from '../modelSelect'
-import { buildLocalPreview, extractBlobURLs } from '../localAttachments'
-import { ACTIONS, CHAT, friendlyError, LOGIN_AT, WELCOME } from '../strings'
+import { AUTO_MODEL_ID } from '../modelSelect'
+import { CHAT, friendlyError, LOGIN_AT } from '../strings'
 import { replaceMention } from '../skillMention'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
-import { uuid } from '../uuid'
+import { ChatMessageList, copyText } from './chat/ChatMessageList'
+import { ChatSidebar } from './chat/ChatSidebar'
+import { ChatComposerToolbar, ChatTopBar } from './chat/ChatTopBar'
+import { useChatRun } from './chat/useChatRun'
+import { useChatSession, type ChatLiveControls } from './chat/useChatSession'
 
-
-const CONV_KEY = 'baize.conversation_id'
-const SCOPE_KEY = 'baize.conversation_scope'
-const POLL_MS = 700
-const IDLE_SYNC_MS = 2000
 const AGENT_FALLBACK = 'ticket-agent'
-
-function newConversationId(): string {
-  return `conv_${uuid()}`
-}
-
-function loadConversationId(): string {
-  const existing = localStorage.getItem(CONV_KEY)?.trim()
-  if (existing) return existing
-  const id = newConversationId()
-  localStorage.setItem(CONV_KEY, id)
-  return id
-}
-
-function loadConversationScope(isAdmin: boolean): ConversationScope {
-  if (!isAdmin) return 'mine'
-  const raw = localStorage.getItem(SCOPE_KEY)?.trim()
-  return raw === 'mine' ? 'mine' : 'all'
-}
 
 export function ChatPage() {
   const { role, gateEnabled } = useGate()
   // Subscribe so chat chrome rebuilds when language changes (without full reload).
   useLocale()
   const drawer = useDrawer()
+  const toast = useToast()
+  const pushToast = toast.push
+
   const [agentId, setAgentId] = useState(AGENT_FALLBACK)
-  const [conversationId, setConversationIdState] = useState(loadConversationId)
-  const [conversationScope, setConversationScopeState] = useState<ConversationScope>(() =>
-    loadConversationScope(role === 'admin'),
-  )
-  const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [liveEvents, setLiveEvents] = useState<Event[]>([])
-  const [liveRunId, setLiveRunId] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [historyMutating, setHistoryMutating] = useState(false)
-  const [status, setStatus] = useState('')
-  const [composerDraft, setComposerDraft] = useState<string | undefined>(undefined)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [supportsVision, setSupportsVision] = useState(true)
   const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
   // Persisted model choice (localStorage via modelChoice.ts); "" only until the
   // lazy initializer runs. Auto is the server-side smart router.
   const [selectedModelId, setSelectedModelId] = useState(loadModelChoice)
-  // Per-conversation thinking override (sessionStorage); '' = follow model default.
-  const [thinkingLevel, setThinkingLevel] = useState(() => loadThinkingChoice(conversationId))
-  /** run_id → analysis page artifact URLs (kept after live run ends / on reload). */
-  const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
-  /** run_id → folded historical tool/workflow blocks (read-only replay). */
-  const [historyBlocks, setHistoryBlocks] = useState<Record<string, ToolOrWorkflowBlock[]>>({})
   const [toolCatalog, setToolCatalog] = useState<ToolCatalog>([])
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [visionWarning, setVisionWarning] = useState<string | null>(null)
-  const toast = useToast()
 
-  const cancelStreamRef = useRef<(() => void) | null>(null)
-  /** runIds whose events have already been fetched once (drives both pages and blocks). */
-  const fetchedRunsRef = useRef<Set<string>>(new Set())
-  const pollTimerRef = useRef<number | null>(null)
-  const lastEventIndexRef = useRef(-1)
-  const conversationIdRef = useRef(conversationId)
-  conversationIdRef.current = conversationId
-  const liveRunIdRef = useRef(liveRunId)
-  liveRunIdRef.current = liveRunId
-  const liveEventsRef = useRef(liveEvents)
-  liveEventsRef.current = liveEvents
-  const conversationScopeRef = useRef(conversationScope)
-  conversationScopeRef.current = conversationScope
-
-  // Transient blob: object URLs backing optimistic attachment previews. They
-  // are revoked as soon as no message references them (the optimistic bubble
-  // is replaced by the server version on run end / refresh / switch / delete).
-  const liveBlobURLsRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    const referenced = new Set(extractBlobURLs(messages.map((m) => m.content)))
-    for (const url of liveBlobURLsRef.current) {
-      if (!referenced.has(url)) URL.revokeObjectURL(url)
-    }
-    liveBlobURLsRef.current = referenced
-  }, [messages])
-  // Revoke every preview object URL on unmount (e.g. leaving the chat page).
-  useEffect(() => {
-    const tracked = liveBlobURLsRef
-    return () => {
-      for (const url of tracked.current) URL.revokeObjectURL(url)
-      tracked.current = new Set()
-    }
-  }, [])
-
-  const { scrollerRef, bottomRef, onScroll, scrollToBottom } = useStickToBottom([
-    messages,
-    liveEvents,
-    liveRunId,
-    conversationId,
-    historyPages,
-    historyBlocks,
-  ])
+  const liveRef = useRef<ChatLiveControls>({
+    busy: false,
+    liveRunId: null,
+    setBusy: () => {},
+    stopStream: () => {},
+    stopPoll: () => {},
+    resetLive: () => {},
+    attachRun: () => {},
+  })
 
   // User-initiated actions surface friendly errors via Toast. Background
   // failures (polling / idle sync / background refetches) stay silent so a
   // 700ms poll loop cannot spam toasts; their state keeps advancing on retry.
-  const pushToast = toast.push
   const reportError = useCallback(
     (e: unknown) => {
       const f = friendlyError(e)
@@ -190,169 +74,57 @@ export function ChatPage() {
     [pushToast],
   )
 
-  const setConversationId = useCallback((id: string) => {
-    setConversationIdState(id)
-    localStorage.setItem(CONV_KEY, id)
-  }, [])
+  const session = useChatSession({
+    role,
+    reportError,
+    pushToast,
+    liveRef,
+    agentId,
+  })
 
-  const setConversationScope = useCallback((scope: ConversationScope) => {
-    setConversationScopeState(scope)
-    localStorage.setItem(SCOPE_KEY, scope)
-  }, [])
-
-  const stopPoll = useCallback(() => {
-    if (pollTimerRef.current !== null) {
-      window.clearInterval(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
-  }, [])
-
-  const stopStream = useCallback(() => {
-    cancelStreamRef.current?.()
-    cancelStreamRef.current = null
-  }, [])
-
-  const refreshConversations = useCallback(async () => {
-    try {
-      const scope = role === 'admin' ? conversationScopeRef.current : undefined
-      const list = await listConversations(scope)
-      setConversations(list)
-    } catch {
-      // Background list refresh (also runs on the 2s idle sync): stay silent,
-      // the next tick retries. Never toast here to avoid notification spam.
-    }
-  }, [role])
-
-  const mergeHistoryPages = useCallback((runId: string, urls: string[]) => {
-    if (!runId || urls.length === 0) return
-    setHistoryPages((prev) => {
-      const existing = prev[runId] ?? []
-      const merged = [...existing]
-      for (const u of urls) {
-        if (!merged.includes(u)) merged.push(u)
-      }
-      if (merged.length === existing.length) return prev
-      return { ...prev, [runId]: merged }
-    })
-  }, [])
-
-  const finishLiveRun = useCallback(
-    async (id: string) => {
-      stopStream()
-      stopPoll()
-      const runId = liveRunIdRef.current
-      if (runId) {
-        const pages = extractAnalysisPagesFromEvents(liveEventsRef.current)
-        if (pages.length > 0) {
-          mergeHistoryPages(
-            runId,
-            pages.map((p) => p.artifactUrl),
-          )
-        }
-      }
-      setLiveRunId(null)
-      setLiveEvents([])
-      lastEventIndexRef.current = -1
-      setBusy(false)
-      try {
-        const msgs = await listMessages(id)
-        if (conversationIdRef.current !== id) return
-        setMessages(msgs)
-      } catch {
-        // Background refetch when a live run ends: stay silent; the idle sync
-        // and conversation switch effects will reload messages on retry.
-      }
-      await refreshConversations()
-    },
-    [mergeHistoryPages, refreshConversations, stopPoll, stopStream],
+  // Per-conversation thinking override (sessionStorage); '' = follow model default.
+  const [thinkingLevel, setThinkingLevel] = useState(() =>
+    loadThinkingChoice(session.conversationId),
   )
 
-  const applyEvents = useCallback((events: Event[]) => {
-    setLiveEvents(events)
+  // Stable scroll handle so useChatRun's conversation-switch effect does not churn.
+  const scrollToBottomRef = useRef<(behavior?: ScrollBehavior) => void>(() => {})
+  const scrollToBottomStable = useCallback((behavior: ScrollBehavior = 'auto') => {
+    scrollToBottomRef.current(behavior)
   }, [])
 
-  const startPoll = useCallback(
-    (runId: string, forConversationId: string) => {
-      stopPoll()
-      const tick = async () => {
-        if (conversationIdRef.current !== forConversationId) {
-          stopPoll()
-          return
-        }
-        try {
-          const [run, events] = await Promise.all([getRun(runId), listEvents(runId)])
-          if (conversationIdRef.current !== forConversationId) return
-          applyEvents(events)
-          lastEventIndexRef.current = events.length - 1
-          setStatus(statusLabel(run.status))
-          if (isTerminal(run.status)) {
-            await finishLiveRun(forConversationId)
-          }
-        } catch {
-          // Transient 700ms poll failure: stay silent and retry next tick.
-        }
-      }
-      void tick()
-      pollTimerRef.current = window.setInterval(() => {
-        void tick()
-      }, POLL_MS)
-    },
-    [applyEvents, finishLiveRun, stopPoll],
-  )
+  const run = useChatRun({
+    role,
+    agentId,
+    conversationId: session.conversationId,
+    conversationIdRef: session.conversationIdRef,
+    setMessages: session.setMessages,
+    setHistoryPages: session.setHistoryPages,
+    setHistoryBlocks: session.setHistoryBlocks,
+    fetchedRunsRef: session.fetchedRunsRef,
+    mergeHistoryPages: session.mergeHistoryPages,
+    refreshConversations: session.refreshConversations,
+    setComposerDraft: session.setComposerDraft,
+    modelProfiles,
+    selectedModelId,
+    thinkingLevel,
+    supportsVision,
+    scrollToBottom: scrollToBottomStable,
+    reportError,
+    pushToast,
+    liveRef,
+    setVisionWarning,
+  })
 
-  const startStream = useCallback(
-    (runId: string, forConversationId: string, after: number) => {
-      stopStream()
-      stopPoll()
-      setLiveRunId(runId)
-      lastEventIndexRef.current = after
-
-      cancelStreamRef.current = openRunStream(
-        runId,
-        after,
-        (ev, index) => {
-          if (conversationIdRef.current !== forConversationId) return
-          setLiveEvents((prev) => [...prev, ev])
-          if (index >= 0) lastEventIndexRef.current = index
-        },
-        (endedStatus) => {
-          if (conversationIdRef.current !== forConversationId) return
-          setStatus(statusLabel(endedStatus as RunStatus))
-          void finishLiveRun(forConversationId)
-        },
-        () => {
-          if (conversationIdRef.current !== forConversationId) return
-          setStatus(CHAT.reconnecting)
-          startPoll(runId, forConversationId)
-        },
-      )
-    },
-    [finishLiveRun, startPoll, stopPoll, stopStream],
-  )
-
-  /** Subscribe to a run via the same SSE → poll fallback path as createRun. */
-  const attachRun = useCallback(
-    (runId: string, forConversationId: string, status: string) => {
-      setBusy(true)
-      setLiveEvents([])
-      lastEventIndexRef.current = -1
-      setStatus(statusLabel(status))
-      startStream(runId, forConversationId, -1)
-    },
-    [startStream],
-  )
-
-  const restoreLiveRun = useCallback(
-    async (id: string, msgs: ChatMessage[]) => {
-      const candidate = findLiveRunCandidate(msgs)
-      if (!candidate) return
-      const run = await getRun(candidate)
-      if (conversationIdRef.current !== id) return
-      if (!isActiveRunStatus(run.status)) return
-      attachRun(candidate, id, run.status)
-    },
-    [attachRun],
-  )
+  const { scrollerRef, bottomRef, onScroll, scrollToBottom } = useStickToBottom([
+    session.messages,
+    run.liveEvents,
+    run.liveRunId,
+    session.conversationId,
+    session.historyPages,
+    session.historyBlocks,
+  ])
+  scrollToBottomRef.current = scrollToBottom
 
   useEffect(() => {
     // One cancel flag for every mount-time fetch: under StrictMode dev double
@@ -411,323 +183,20 @@ export function ChatPage() {
           })),
         )
       })
-      .catch(() => { /* catalog missing is non-blocking */ })
+      .catch(() => {
+        /* catalog missing is non-blocking */
+      })
     return () => {
       cancelled = true
     }
     // toast.push is identity-stable (useCallback); effect runs once on mount.
   }, [])
 
-  useEffect(() => {
-    void refreshConversations()
-  }, [conversationScope, refreshConversations])
-
-  useEffect(() => {
-    let cancelled = false
-    stopStream()
-    stopPoll()
-    setLiveRunId(null)
-    setLiveEvents([])
-    setHistoryPages({})
-    setHistoryBlocks({})
-    fetchedRunsRef.current = new Set()
-    lastEventIndexRef.current = -1
-    setBusy(false)
-    setStatus('')
-
-    const id = conversationId
-    void (async () => {
-      try {
-        const msgs = await listMessages(id)
-        if (cancelled || conversationIdRef.current !== id) return
-        setMessages(msgs)
-        requestAnimationFrame(() => scrollToBottom('auto'))
-        await restoreLiveRun(id, msgs)
-      } catch {
-        // Background conversation load: a transient failure stays silent;
-        // the idle sync retries listMessages every 2s.
-      }
-    })()
-
-    return () => {
-      cancelled = true
-      stopStream()
-      stopPoll()
-    }
-  }, [conversationId, restoreLiveRun, scrollToBottom, stopPoll, stopStream])
-
   // Sticky thinking override is keyed by conversationId; switching chats resets
   // to that chat's stored choice (or '' = follow model default).
   useEffect(() => {
-    setThinkingLevel(loadThinkingChoice(conversationId))
-  }, [conversationId])
-
-  // Idle sync: weixin (and other external) inbound turns append messages / create
-  // runs without this tab knowing. Poll while a conversation is open so /ui
-  // picks them up without a manual refresh.
-  useEffect(() => {
-    const id = conversationId
-    let cancelled = false
-    let fingerprint = ''
-
-    const tick = async () => {
-      if (cancelled || conversationIdRef.current !== id) return
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        return
-      }
-      try {
-        await refreshConversations()
-        const msgs = await listMessages(id)
-        if (cancelled || conversationIdRef.current !== id) return
-        const next =
-          msgs.length === 0
-            ? '0'
-            : `${msgs.length}:${msgs[msgs.length - 1]?.id ?? ''}:${msgs[msgs.length - 1]?.run_id ?? ''}`
-        if (next !== fingerprint) {
-          fingerprint = next
-          setMessages(msgs)
-        }
-        if (!liveRunIdRef.current) {
-          await restoreLiveRun(id, msgs)
-        }
-      } catch {
-        /* ignore transient poll errors */
-      }
-    }
-
-    const timer = window.setInterval(() => {
-      void tick()
-    }, IDLE_SYNC_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [conversationId, refreshConversations, restoreLiveRun])
-
-  // Load historical artifacts for completed turns (refresh / reopen):
-  // for each not-yet-fetched run we list events ONCE and derive both analysis
-  // page previews and read-only tool/workflow blocks. A run with events but no
-  // analysis page must still produce tool blocks (M2: no early return on pages).
-  useEffect(() => {
-    const runIds = [
-      ...new Set(
-        messages
-          .filter((m) => m.role === 'assistant' && m.run_id)
-          .map((m) => m.run_id as string),
-      ),
-    ]
-    const pending = runIds.filter((runId) => !fetchedRunsRef.current.has(runId))
-    if (pending.length === 0) return
-    let cancelled = false
-    // Runs still in flight when the effect re-runs (also covers StrictMode's
-    // mount/cleanup/mount double invoke) must lose their fetched marker so the
-    // next effect run fetches them again; completed runs keep theirs.
-    const inFlight = new Set(pending)
-    void (async () => {
-      await Promise.all(
-        pending.map(async (runId) => {
-          // Mark first so concurrent effect re-runs never double-fetch.
-          fetchedRunsRef.current.add(runId)
-          try {
-            const events = await listEvents(runId)
-            if (cancelled) return
-            const pages = extractAnalysisPagesFromEvents(events)
-            if (pages.length > 0) {
-              mergeHistoryPages(
-                runId,
-                pages.map((p) => p.artifactUrl),
-              )
-            }
-            const blocks = foldToolBlocks(runId, events)
-            if (blocks.length > 0) {
-              setHistoryBlocks((prev) =>
-                prev[runId] ? prev : { ...prev, [runId]: blocks },
-              )
-            }
-            inFlight.delete(runId)
-          } catch {
-            inFlight.delete(runId)
-            // A run that cannot be listed (deleted, transient error) may become
-            // fetchable later; drop the marker so a future effect retries once.
-            if (!cancelled) fetchedRunsRef.current.delete(runId)
-          }
-        }),
-      )
-    })()
-    return () => {
-      cancelled = true
-      inFlight.forEach((runId) => fetchedRunsRef.current.delete(runId))
-    }
-  }, [messages, mergeHistoryPages])
-
-  const onNewChat = () => {
-    stopStream()
-    stopPoll()
-    setLiveRunId(null)
-    setLiveEvents([])
-    setHistoryPages({})
-    setHistoryBlocks({})
-    fetchedRunsRef.current = new Set()
-    setMessages([])
-    setBusy(false)
-    setStatus('')
-    setComposerDraft(undefined)
-    setConversationId(newConversationId())
-  }
-
-  const onSelectConversation = (id: string) => {
-    if (id === conversationId) return
-    setConversationId(id)
-  }
-
-  // The sidebar ✕ (and any future entry point) only opens the confirm dialog;
-  // the actual deletion happens in performDelete after explicit confirmation.
-  const onDeleteConversation = (id: string) => {
-    setConfirmDelete(id)
-  }
-
-  const performDelete = async () => {
-    const id = confirmDelete
-    if (!id) return
-    setConfirmDelete(null)
-    try {
-      await deleteConversation(id)
-    } catch (e) {
-      // friendlyError maps conversation_busy etc. to a human message.
-      reportError(e)
-      return
-    }
-    toast.push({ tone: 'success', title: CHAT.deleteSuccess })
-    // If the deleted conversation is the one open, reset to a fresh chat.
-    if (id === conversationId) {
-      stopStream()
-      stopPoll()
-      setLiveRunId(null)
-      setLiveEvents([])
-      setHistoryPages({})
-      setHistoryBlocks({})
-      fetchedRunsRef.current = new Set()
-      setMessages([])
-      setBusy(false)
-      setStatus('')
-      setComposerDraft(undefined)
-      setConversationId(newConversationId())
-    }
-    await refreshConversations()
-  }
-
-  // Returns false when the message is rejected up-front (no model / vision
-  // gate / attachment failure) so Composer keeps the draft text and files;
-  // true once the message has been accepted (optimistic row appended), even if
-  // the run creation fails afterwards.
-  const onSend = async (text: string, files: File[]): Promise<boolean> => {
-    const sentConversationId = conversationId
-
-    // No model configured: block up-front. Guidance is role-specific so an
-    // operator is never pointed at the admin-only model settings page.
-    if (modelProfiles.length === 0) {
-      setBusy(false)
-      setStatus('')
-      toast.push({
-        tone: 'error',
-        title: role === 'admin' ? CHAT.noModelAdmin : CHAT.noModelOperator,
-      })
-      return false
-    }
-
-    setBusy(true)
-    setStatus(CHAT.sending)
-
-    // Build attachments from selected files. Image attachments are gated by
-    // the active model choice: Auto routes to a vision model when available,
-    // while a manual pick is honored exactly (a text-only manual choice on an
-    // image turn is rejected up-front rather than silently rerouted).
-    let attachments: Attachment[] | undefined
-    if (files.length > 0) {
-      try {
-        const built = await Promise.all(files.map((f) => fileToAttachment(f)))
-        const gate = visionGate(
-          modelProfiles,
-          selectedModelId,
-          built.some((a) => isImageAttachment(a.media_type)),
-          supportsVision,
-        )
-        if (!gate.allowed) {
-          setBusy(false)
-          setStatus('')
-          // Image capability mismatch is shown as a modal, not a toast, so the
-          // user keeps their draft/attachments and the message is not rerouted.
-          // Operators without settings access get contact-admin guidance.
-          setVisionWarning(
-            role === 'admin'
-              ? (gate.message ?? CHAT.visionWarningFallback)
-              : CHAT.visionBlockedOperator,
-          )
-          return false
-        }
-        attachments = built
-      } catch (err) {
-        setBusy(false)
-        setStatus('')
-        reportError(err)
-        return false
-      }
-    }
-
-    // Gates passed: the message is accepted. Only now drop the rollback draft
-    // source so a rejected send keeps the composer contents.
-    setComposerDraft(undefined)
-
-    // Optimistic bubble renders exactly what was sent: typed text plus inline
-    // image / file-card previews backed by transient blob: URLs (no redundant
-    // "（附件：…）" note). The server version replaces it on run end.
-    const preview = buildLocalPreview(text, files)
-    const userBubble = preview.content
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `local_${Date.now()}`,
-        conversation_id: sentConversationId,
-        role: 'user',
-        content: userBubble,
-        created_at: new Date().toISOString(),
-      },
-    ])
-    setLiveEvents([])
-    lastEventIndexRef.current = -1
-    requestAnimationFrame(() => scrollToBottom('smooth'))
-
-    try {
-      const runOptions = buildRunOptions(selectedModelId, {
-        attachments,
-        ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
-      })
-      const created = await createRun(agentId, text, sentConversationId, runOptions)
-      // Model choice is persisted via onChooseModel; do not reset after send.
-      await refreshConversations()
-      // The conversation switched mid-flight: the message was already accepted,
-      // so report acceptance even though this view no longer tracks the run.
-      if (conversationIdRef.current !== sentConversationId) return true
-      attachRun(created.run_id, sentConversationId, created.status)
-    } catch (err) {
-      // Post-acceptance failure (vision_unsupported / 5xx / network): the
-      // Composer still clears; reconcile messages with the server below.
-      if (conversationIdRef.current !== sentConversationId) return true
-      setBusy(false)
-      setLiveRunId(null)
-      // friendlyError maps vision_unsupported / 5xx / network to human titles.
-      reportError(err)
-      setStatus('')
-      try {
-        const msgs = await listMessages(sentConversationId)
-        if (conversationIdRef.current === sentConversationId) setMessages(msgs)
-      } catch {
-        /* keep optimistic row */
-      }
-    }
-    return true
-  }
+    setThinkingLevel(loadThinkingChoice(session.conversationId))
+  }, [session.conversationId])
 
   /** login_required「去登录」→ 刷新 skills 后写入 @login-<id>，聚焦输入框，不自动发送。 */
   const onGoLoginSkill = async (skillId: string) => {
@@ -744,97 +213,7 @@ export function ChatPage() {
       return
     }
     const { text } = replaceMention('', 0, 0, skillId)
-    setComposerDraft(text)
-  }
-
-  const onRollbackUser = async (m: ChatMessage) => {
-    if (busy || liveRunId || historyMutating) return
-    setHistoryMutating(true)
-    try {
-      const res = await rollbackMessages(conversationId, m.id)
-      setMessages(res.messages)
-      setComposerDraft(m.content)
-      await refreshConversations()
-    } catch (e) {
-      reportError(e)
-    } finally {
-      setHistoryMutating(false)
-    }
-  }
-
-  const onRegenerate = async (m: ChatMessage) => {
-    if (busy || liveRunId || historyMutating) return
-    setBusy(true)
-    setHistoryMutating(true)
-    try {
-      const res = await rollbackMessages(conversationId, m.id, {
-        regenerate: true,
-        agentId,
-      })
-      setMessages(res.messages)
-      setComposerDraft(undefined)
-      await refreshConversations()
-      if (!res.regenerated_run) {
-        setBusy(false)
-        return
-      }
-      const runId = res.regenerated_run.run_id
-      attachRun(runId, conversationId, res.regenerated_run.status)
-    } catch (e) {
-      setBusy(false)
-      reportError(e)
-    } finally {
-      setHistoryMutating(false)
-    }
-  }
-
-  const onRollbackTo = async (m: ChatMessage) => {
-    if (busy || liveRunId || historyMutating) return
-    setHistoryMutating(true)
-    try {
-      const res = await rollbackMessages(conversationId, m.id)
-      setMessages(res.messages)
-      setComposerDraft(undefined)
-      await refreshConversations()
-    } catch (e) {
-      reportError(e)
-    } finally {
-      setHistoryMutating(false)
-    }
-  }
-
-  const onFork = async (m: ChatMessage) => {
-    if (busy || liveRunId || historyMutating) return
-    setHistoryMutating(true)
-    try {
-      const res = await forkConversation(conversationId, m.id)
-      setConversationId(res.conversation_id)
-      setMessages(res.messages)
-      setComposerDraft(undefined)
-      await refreshConversations()
-    } catch (e) {
-      reportError(e)
-    } finally {
-      setHistoryMutating(false)
-    }
-  }
-
-  const onCancelRun = async () => {
-    if (!liveRunId) return
-    setStatus(CHAT.cancelling)
-    try {
-      await cancelRun(liveRunId)
-      await finishLiveRun(conversationId)
-      setStatus(CHAT.cancelled)
-    } catch (e) {
-      reportError(e)
-      try {
-        await finishLiveRun(conversationId)
-      } catch {
-        setBusy(false)
-        setLiveRunId(null)
-      }
-    }
+    session.setComposerDraft(text)
   }
 
   // Model choice persists immediately (localStorage); it survives sends and
@@ -846,38 +225,10 @@ export function ChatPage() {
 
   const onChooseThinking = (level: string) => {
     setThinkingLevel(level)
-    saveThinkingChoice(conversationId, level)
+    saveThinkingChoice(session.conversationId, level)
   }
 
-  // Copy with a legacy fallback for non-secure (HTTP/LAN) contexts without
-  // navigator.clipboard. The hidden textarea is removed synchronously so it
-  // never disturbs page focus.
-  async function copyText(text: string): Promise<boolean> {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text)
-        return true
-      }
-    } catch {
-      /* fall through to legacy path */
-    }
-    const ta = document.createElement('textarea')
-    try {
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      return document.execCommand('copy')
-    } catch {
-      return false
-    } finally {
-      // Removed even if select()/execCommand() throws so no hidden node lingers.
-      ta.remove()
-    }
-  }
-
-  const onCopyMessage = (m: ChatMessage) => {
+  const onCopyMessage = (m: (typeof session.messages)[number]) => {
     void copyText(m.content).then((ok) => {
       toast.push(
         ok
@@ -887,31 +238,10 @@ export function ChatPage() {
     })
   }
 
-  // Low-frequency actions live in the "more" menu. system_note additionally
-  // exposes "roll back to here" at the top; it never gets a copy action.
-  const buildMessageMenuItems = (m: ChatMessage): MenuItem[] => {
-    const items: MenuItem[] = []
-    if (m.role === 'system_note') {
-      items.push({
-        id: 'rollback-here',
-        label: ACTIONS.rollbackHere,
-        icon: <CornerUpLeft size={15} aria-hidden />,
-        onSelect: () => void onRollbackTo(m),
-      })
-    }
-    items.push({
-      id: 'fork',
-      label: ACTIONS.forkAsNew,
-      icon: <GitBranch size={15} aria-hidden />,
-      onSelect: () => void onFork(m),
-    })
-    return items
-  }
-
-  const liveBlocks: ChatBlock[] = liveRunId ? foldEvents(liveRunId, liveEvents) : []
-  const showWelcome = messages.length === 0 && liveBlocks.length === 0
-  const composerDisabled = busy || historyMutating
-  const showStop = Boolean(liveRunId && busy)
+  const liveBlocks = run.liveRunId ? foldEvents(run.liveRunId, run.liveEvents) : []
+  const showWelcome = session.messages.length === 0 && liveBlocks.length === 0
+  const composerDisabled = run.busy || session.historyMutating
+  const showStop = Boolean(run.liveRunId && run.busy)
 
   return (
     <div className={`chat-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
@@ -921,306 +251,49 @@ export function ChatPage() {
         aria-label={CHAT.closeMenu}
         onClick={drawer.close}
       />
-      <aside className="chat-sidebar" aria-label={CHAT.conversationListAria}>
-        <div className="chat-sidebar-top">
-          <button
-            type="button"
-            className="btn ghost sidebar-new"
-            onClick={() => {
-              onNewChat()
-              drawer.close()
-            }}
-          >
-            {CHAT.newChat}
-          </button>
-          {role === 'admin' && (
-            <div className="conversation-scope" role="group" aria-label={CHAT.scopeAria}>
-              <button
-                type="button"
-                className={
-                  conversationScope === 'all'
-                    ? 'conversation-scope-btn active'
-                    : 'conversation-scope-btn'
-                }
-                onClick={() => setConversationScope('all')}
-              >
-                {CHAT.scopeAll}
-              </button>
-              <button
-                type="button"
-                className={
-                  conversationScope === 'mine'
-                    ? 'conversation-scope-btn active'
-                    : 'conversation-scope-btn'
-                }
-                onClick={() => setConversationScope('mine')}
-              >
-                {CHAT.scopeMine}
-              </button>
-            </div>
-          )}
-          <ul className="conversation-list">
-            {conversations.map((c) => (
-              <li key={c.id} className="conversation-row">
-                <button
-                  type="button"
-                  className={
-                    c.id === conversationId
-                      ? 'conversation-item active'
-                      : 'conversation-item'
-                  }
-                  onClick={() => {
-                    onSelectConversation(c.id)
-                    drawer.close()
-                  }}
-                >
-                  {conversationListLabel(c.id, c.title)}
-                </button>
-                <button
-                  type="button"
-                  className="conversation-delete"
-                  title={CHAT.deleteConversationTitle}
-                  aria-label={CHAT.deleteConversationAria(conversationListLabel(c.id, c.title))}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDeleteConversation(c.id)
-                  }}
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="chat-sidebar-bottom">
-          <ThemeToggle />
-          <Link
-            to={role === 'admin' ? '/settings' : '/settings/identities'}
-            className="settings-link"
-          >
-            {role === 'admin' ? CHAT.linkSettings : CHAT.linkAccounts}
-          </Link>
-          {gateEnabled && (
-            <button
-              type="button"
-              className="settings-logout"
-              onClick={() => {
-                clearControlToken()
-                window.location.assign('/ui/')
-              }}
-            >
-              {CHAT.logout}
-            </button>
-          )}
-        </div>
-        <SidebarResizer />
-      </aside>
+      <ChatSidebar
+        role={role}
+        gateEnabled={gateEnabled}
+        conversationId={session.conversationId}
+        conversationScope={session.conversationScope}
+        conversations={session.conversations}
+        onNewChat={session.onNewChat}
+        onSelectConversation={session.onSelectConversation}
+        onDeleteConversation={session.onDeleteConversation}
+        onScopeChange={session.setConversationScope}
+        onCloseDrawer={drawer.close}
+      />
 
       <main className="chat-main">
-        <div className="app-mobile-bar">
-          <button
-            type="button"
-            className="app-menu-btn"
-            aria-label={CHAT.openConversationList}
-            onClick={drawer.open}
-          >
-            <Menu size={20} aria-hidden="true" />
-          </button>
-        </div>
-        <div
-          className="messages"
-          aria-live="polite"
-          ref={scrollerRef}
+        <ChatTopBar onOpenDrawer={drawer.open} />
+        <ChatMessageList
+          messages={session.messages}
+          liveBlocks={liveBlocks}
+          liveRunId={run.liveRunId}
+          historyPages={session.historyPages}
+          historyBlocks={session.historyBlocks}
+          toolCatalog={toolCatalog}
+          busy={run.busy}
+          historyMutating={session.historyMutating}
+          showWelcome={showWelcome}
+          scrollerRef={scrollerRef}
+          bottomRef={bottomRef}
           onScroll={onScroll}
-        >
-          <div className="messages-inner">
-            {showWelcome && (
-              <div className="welcome">
-                <p className="welcome-title">{WELCOME.title}</p>
-                <p className="welcome-sub">{WELCOME.subtitle}</p>
-              </div>
-            )}
-            {messages.map((m, msgIndex) => {
-              const bubbleClass =
-                m.role === 'user' ? 'user' : m.role === 'system_note' ? 'system' : 'assistant'
-              const persisted = !m.id.startsWith('local_')
-              const runHistoryBlocks =
-                m.role === 'assistant' &&
-                m.run_id &&
-                isFirstAssistantMessageOfRun(msgIndex, messages) &&
-                historyBlocks[m.run_id]
-              const hasEventThinking = Boolean(
-                m.run_id && historyBlocks[m.run_id]?.some((b) => b.kind === 'thinking'),
-              )
-              const showMessageThinking =
-                m.role === 'assistant' &&
-                !hasEventThinking &&
-                (Boolean(m.thinking?.trim()) || Boolean(m.thinking_redacted)) &&
-                (!m.run_id || isFirstAssistantMessageOfRun(msgIndex, messages))
-              // 分析页产物源自工具结果：该 run 只要有历史工具块（统一在首条
-              // assistant 消息处渲染），所有 assistant 消息都不再独立出预览，
-              // 避免同一 run 多条 assistant 消息时重复 iframe。
-              const hasHistoryToolBlocks = Boolean(
-                m.run_id &&
-                  historyBlocks[m.run_id]?.some(
-                    (b) => b.kind === 'tool' || b.kind === 'workflow',
-                  ),
-              )
-              const pages =
-                m.role === 'assistant' &&
-                m.run_id &&
-                m.run_id !== liveRunId &&
-                !hasHistoryToolBlocks
-                  ? historyPages[m.run_id] ?? []
-                  : []
-              const canAct = persisted && !busy && !liveRunId && !historyMutating
-              return (
-                <div key={m.id} className={`msg-row ${bubbleClass}`}>
-                  {runHistoryBlocks && (
-                    <div className="msg-history-blocks" data-testid="history-blocks">
-                      {runHistoryBlocks.map((b, i) => {
-                        switch (b.kind) {
-                          case 'tool':
-                            return (
-                              <ToolCard
-                                key={`h-${i}`}
-                                block={b}
-                                catalog={toolCatalog}
-                                readOnly
-                              />
-                            )
-                          case 'workflow':
-                            return <WorkflowCard key={`h-${i}`} block={b} />
-                          case 'thinking':
-                            return (
-                              <ThinkingBlock key={`h-${i}`} block={b} readOnly />
-                            )
-                          default: {
-                            const _exhaustive: never = b
-                            return _exhaustive
-                          }
-                        }
-                      })}
-                    </div>
-                  )}
-                  <div className={`msg ${bubbleClass}`}>
-                    {m.role === 'assistant' ? (
-                      <>
-                        {showMessageThinking && (
-                          <MessageThinkingFallback
-                            thinking={m.thinking}
-                            redacted={m.thinking_redacted}
-                          />
-                        )}
-                        <MarkdownText text={m.content} />
-                      </>
-                    ) : (
-                      <UserBubble content={m.content} />
-                    )}
-                  </div>
-                  {pages.length > 0 && (
-                    <div className="msg-analysis-pages">
-                      {pages.map((url) => (
-                        <AnalysisPagePreview key={url} artifactUrl={url} />
-                      ))}
-                    </div>
-                  )}
-                  {canAct && (
-                    <div className="msg-actions">
-                      {m.role === 'user' && (
-                        <>
-                          <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
-                            {ACTIONS.editAndReanswer}
-                          </button>
-                          <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
-                            {ACTIONS.copy}
-                          </button>
-                        </>
-                      )}
-                      {m.role === 'assistant' && (
-                        <>
-                          <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
-                            {ACTIONS.regenerate}
-                          </button>
-                          <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
-                            {ACTIONS.copy}
-                          </button>
-                        </>
-                      )}
-                      <DropdownMenu
-                        triggerLabel={ACTIONS.more}
-                        items={buildMessageMenuItems(m)}
-                      />
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-            {liveBlocks.map((block, i) => {
-              switch (block.kind) {
-                case 'assistant':
-                  return (
-                    <div key={`live-a-${i}`} className="msg-row assistant">
-                      <div className="msg assistant">
-                        <TypewriterText text={block.text} active />
-                      </div>
-                    </div>
-                  )
-                case 'thinking':
-                  return (
-                    <div key={`live-th-${block.turn}-${i}`} className="msg-row tool">
-                      <ThinkingBlock block={block} />
-                    </div>
-                  )
-                case 'system':
-                  return (
-                    <div key={`live-s-${i}`} className="msg-row system">
-                      <div className="msg system">
-                        <MarkdownText text={block.text} plain />
-                      </div>
-                    </div>
-                  )
-                case 'tool':
-                  return (
-                    <div key={`live-t-${i}`} className="msg-row tool">
-                      <ToolCard
-                        block={block}
-                        catalog={toolCatalog}
-                        onError={reportError}
-                        onGoLoginSkill={onGoLoginSkill}
-                      />
-                    </div>
-                  )
-                case 'workflow':
-                  return (
-                    <div key={`live-w-${i}`} className="msg-row tool">
-                      <WorkflowCard block={block} />
-                    </div>
-                  )
-                case 'user':
-                  return (
-                    <div key={`live-u-${i}`} className="msg-row user">
-                      <div className="msg user">
-                        <MarkdownText text={block.text} plain />
-                      </div>
-                    </div>
-                  )
-                default: {
-                  const _exhaustive: never = block
-                  return _exhaustive
-                }
-              }
-            })}
-            <div ref={bottomRef} className="messages-end" aria-hidden />
-          </div>
-        </div>
+          onRollbackUser={session.onRollbackUser}
+          onRegenerate={session.onRegenerate}
+          onRollbackTo={session.onRollbackTo}
+          onFork={session.onFork}
+          onCopyMessage={onCopyMessage}
+          reportError={reportError}
+          onGoLoginSkill={onGoLoginSkill}
+        />
 
         <div className="chat-footer">
-          {(status || showStop) && (
+          {(run.status || showStop) && (
             <div className="chat-status-row">
-              <p className="status">{status}</p>
+              <p className="status">{run.status}</p>
               {showStop && (
-                <button type="button" className="btn danger sm" onClick={() => void onCancelRun()}>
+                <button type="button" className="btn danger sm" onClick={() => void run.onCancelRun()}>
                   {CHAT.stop}
                 </button>
               )}
@@ -1229,49 +302,32 @@ export function ChatPage() {
 
           <Composer
             disabled={composerDisabled}
-            draft={composerDraft}
+            draft={session.composerDraft}
             skills={skills}
-            onSend={onSend}
+            onSend={run.onSend}
             toolbar={
-              <>
-                {modelProfiles.length > 0 ? (
-                  <>
-                    <ModelChip
-                      profiles={modelProfiles}
-                      value={selectedModelId}
-                      onChange={onChooseModel}
-                      disabled={composerDisabled}
-                    />
-                    <ThinkingChip
-                      value={thinkingLevel}
-                      onChange={onChooseThinking}
-                      disabled={composerDisabled}
-                    />
-                  </>
-                ) : role === 'admin' ? (
-                  <Link to="/settings/models" className="model-chip model-chip-empty">
-                    {CHAT.addModel}
-                  </Link>
-                ) : (
-                  <span className="model-chip model-chip-empty" aria-disabled="true">
-                    {CHAT.noModelConfigured}
-                  </span>
-                )}
-                <LanguageChip />
-              </>
+              <ChatComposerToolbar
+                role={role}
+                modelProfiles={modelProfiles}
+                selectedModelId={selectedModelId}
+                thinkingLevel={thinkingLevel}
+                disabled={composerDisabled}
+                onChooseModel={onChooseModel}
+                onChooseThinking={onChooseThinking}
+              />
             }
           />
         </div>
       </main>
 
       <ConfirmDialog
-        open={confirmDelete !== null}
+        open={session.confirmDelete !== null}
         danger
         title={CHAT.deleteTitle}
         body={CHAT.deleteBody}
         confirmText={CHAT.deleteConfirm}
-        onConfirm={() => void performDelete()}
-        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => void session.performDelete()}
+        onCancel={() => session.setConfirmDelete(null)}
       />
       <Modal
         open={visionWarning !== null}
@@ -1288,25 +344,4 @@ export function ChatPage() {
       <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss} />
     </div>
   )
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'queued':
-      return CHAT.statusQueued
-    case 'running':
-      return CHAT.statusRunning
-    case 'waiting_human':
-      return CHAT.statusWaitingHuman
-    case 'succeeded':
-      return CHAT.statusSucceeded
-    case 'failed':
-      return CHAT.statusFailed
-    case 'cancelled':
-      return CHAT.statusCancelled
-    case 'rejected':
-      return CHAT.statusRejected
-    default:
-      return status
-  }
 }
