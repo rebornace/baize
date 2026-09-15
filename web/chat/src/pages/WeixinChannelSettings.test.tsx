@@ -4,6 +4,8 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 import { GateContext } from '../gateContext'
+import { setPack } from '../locale/pack'
+import { zhPack } from '../locales/zh'
 import { WEIXIN } from '../strings'
 import { WeixinChannelSettings } from './WeixinChannelSettings'
 
@@ -11,6 +13,7 @@ async function renderPage(
   role: 'admin' | 'operator' = 'admin',
   deliveries: api.ChannelOutboundDelivery[] = [],
 ) {
+  setPack(zhPack)
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
@@ -52,8 +55,8 @@ describe('WeixinChannelSettings UI', () => {
 
   it('operator keeps login but hides settings form (regression)', async () => {
     const { host, root } = await renderPage('operator')
-    expect(host.textContent).toContain('获取登录二维码')
-    expect(host.textContent).not.toContain('保存设置')
+    expect(host.textContent).toContain(WEIXIN.getQr)
+    expect(host.textContent).not.toContain(WEIXIN.saveSettings)
     expect(host.querySelector('textarea')).toBeNull()
     root.unmount()
     host.remove()
@@ -65,7 +68,7 @@ describe('WeixinChannelSettings UI', () => {
     const { host, root } = await renderPage('admin')
 
     const logoutBtn = [...host.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('登出'),
+      b.textContent?.includes(WEIXIN.logout),
     )
     expect(logoutBtn).toBeTruthy()
     await act(async () => {
@@ -132,7 +135,7 @@ describe('WeixinChannelSettings UI', () => {
     const { host, root } = await renderPage('admin')
 
     const stopBtn = [...host.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('停止进程'),
+      b.textContent?.includes(WEIXIN.processStop),
     )
     expect(stopBtn).toBeTruthy()
     await act(async () => {

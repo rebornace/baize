@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { setPack } from '../locale/pack'
+import { zhPack } from '../locales/zh'
+import { WEIXIN } from '../strings'
 import {
   formatAllowlistText,
   loginStatusLabel,
   parseAllowlistText,
 } from './WeixinChannelSettings'
+
+setPack(zhPack)
 
 describe('parseAllowlistText', () => {
   it('splits lines and trims empties', () => {
@@ -27,8 +32,8 @@ describe('formatAllowlistText', () => {
 
 describe('loginStatusLabel', () => {
   it('maps known statuses', () => {
-    expect(loginStatusLabel('pending')).toContain('扫码')
-    expect(loginStatusLabel('success')).toContain('成功')
-    expect(loginStatusLabel('expired')).toContain('过期')
+    expect(loginStatusLabel('pending')).toBe(WEIXIN.loginPending)
+    expect(loginStatusLabel('success')).toBe(WEIXIN.loginSuccess)
+    expect(loginStatusLabel('expired')).toBe(WEIXIN.loginExpired)
   })
 })

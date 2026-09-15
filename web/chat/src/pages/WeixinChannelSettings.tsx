@@ -43,13 +43,13 @@ export function formatAllowlistText(list: string[] | undefined): string {
 export function loginStatusLabel(status: string): string {
   switch (status) {
     case 'pending':
-      return '等待扫码…'
+      return WEIXIN.loginPending
     case 'success':
-      return '登录成功'
+      return WEIXIN.loginSuccess
     case 'expired':
-      return '二维码已过期，请重新获取'
+      return WEIXIN.loginExpired
     default:
-      return status || '未知状态'
+      return status || WEIXIN.loginUnknown
   }
 }
 
@@ -332,24 +332,26 @@ export function WeixinChannelSettings() {
       <PageHeader title={WEIXIN.title} description={WEIXIN.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
-      {loading && <p className="settings-muted">加载中…</p>}
+      {loading && <p className="settings-muted">{WEIXIN.loading}</p>}
       {running !== null && (
         <p className="settings-muted">
-          运行状态：
+          {WEIXIN.runStatusPrefix}
           {running ? (
-            <span className="settings-badge">轮询中</span>
+            <span className="settings-badge">{WEIXIN.runPolling}</span>
           ) : (
-            <span className="settings-badge">已停止</span>
+            <span className="settings-badge">{WEIXIN.runStopped}</span>
           )}
-          {runReason === 'login_required' && (isAdmin ? '（未登录：启用前请先扫码登录）' : '（未登录：请扫码登录）')}
-          {runReason === 'start_failed' && '（启动失败，请检查日志）'}
-          {runReason === 'stopped' && (isAdmin ? '（适配器进程已手动停止，点「启动进程」恢复）' : '（适配器进程已停止，请联系管理员启动）')}
+          {runReason === 'login_required' &&
+            (isAdmin ? WEIXIN.runReasonLoginAdmin : WEIXIN.runReasonLoginOperator)}
+          {runReason === 'start_failed' && WEIXIN.runReasonStartFailed}
+          {runReason === 'stopped' &&
+            (isAdmin ? WEIXIN.runReasonStoppedAdmin : WEIXIN.runReasonStoppedOperator)}
         </p>
       )}
 
       {isAdmin && (
         <section className="weixin-login-block">
-          <h2 className="settings-subheading">适配器进程</h2>
+          <h2 className="settings-subheading">{WEIXIN.processSection}</h2>
           <div className="weixin-login-actions">
             <button
               type="button"
@@ -357,7 +359,7 @@ export function WeixinChannelSettings() {
               disabled={uiBusy}
               onClick={() => void onProcessAction('start')}
             >
-              启动进程
+              {WEIXIN.processStart}
             </button>
             <button
               type="button"
@@ -365,7 +367,7 @@ export function WeixinChannelSettings() {
               disabled={uiBusy}
               onClick={() => void onProcessAction('restart')}
             >
-              重启进程
+              {WEIXIN.processRestart}
             </button>
             <button
               type="button"
@@ -373,35 +375,33 @@ export function WeixinChannelSettings() {
               disabled={uiBusy}
               onClick={() => setConfirmStop(true)}
             >
-              停止进程
+              {WEIXIN.processStop}
             </button>
           </div>
-          <p className="settings-muted">
-            对 weixin-adapter 子进程进行启动 / 重启 / 停止（进程级，区别于下方「启用」开关——后者只控制收消息轮询）。适配器卡死或启动失败时可点「重启进程」恢复，无需重启 baize。
-          </p>
+          <p className="settings-muted">{WEIXIN.processHint}</p>
         </section>
       )}
 
       <section className="weixin-login-block">
-        <h2 className="settings-subheading">登录</h2>
+        <h2 className="settings-subheading">{WEIXIN.loginSection}</h2>
         <div className="weixin-login-actions">
           <button type="button" className="btn primary" disabled={uiBusy} onClick={() => void onStartLogin()}>
-            {qrUrl ? '刷新二维码' : '获取登录二维码'}
+            {qrUrl ? WEIXIN.refreshQr : WEIXIN.getQr}
           </button>
           {isAdmin && (
             <button type="button" className="btn ghost" disabled={uiBusy} onClick={() => setConfirmLogout(true)}>
-              登出
+              {WEIXIN.logout}
             </button>
           )}
         </div>
         {qrUrl && (
           <div className="weixin-qr">
             {qrImgSrc ? (
-              <img src={qrImgSrc} alt="微信登录二维码" className="weixin-qr-img" />
+              <img src={qrImgSrc} alt={WEIXIN.qrAlt} className="weixin-qr-img" />
             ) : (
-              <p className="settings-muted">正在生成二维码…</p>
+              <p className="settings-muted">{WEIXIN.qrGenerating}</p>
             )}
-            <p className="settings-muted weixin-qr-url">请用手机微信扫码（内容：{qrUrl}）</p>
+            <p className="settings-muted weixin-qr-url">{WEIXIN.qrScanHint(qrUrl)}</p>
             {ticket && <p className="settings-muted">ticket: {ticket}</p>}
             {loginStatus && (
               <p className="settings-muted">{loginStatusLabel(loginStatus)}</p>
@@ -412,7 +412,7 @@ export function WeixinChannelSettings() {
 
       {!loading && isAdmin && (
         <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>
-          <h2 className="settings-subheading">设置</h2>
+          <h2 className="settings-subheading">{WEIXIN.settingsSection}</h2>
           <label className="settings-field">
             <span className="settings-field-label">agent_id</span>
             <input
@@ -424,7 +424,7 @@ export function WeixinChannelSettings() {
             />
           </label>
           <label className="settings-field">
-            <span className="settings-field-label">受理人（assignee）</span>
+            <span className="settings-field-label">{WEIXIN.fieldAssignee}</span>
             <input
               className="settings-input"
               value={assignee}
@@ -434,7 +434,7 @@ export function WeixinChannelSettings() {
             />
           </label>
           <label className="settings-field">
-            <span className="settings-field-label">allowlist（每行一个 peer id）</span>
+            <span className="settings-field-label">{WEIXIN.fieldAllowlist}</span>
             <textarea
               className="settings-textarea"
               rows={5}
@@ -451,10 +451,10 @@ export function WeixinChannelSettings() {
               onChange={(e) => setEnabled(e.target.checked)}
               disabled={uiBusy}
             />
-            启用微信渠道
+            {WEIXIN.enableChannel}
           </label>
           <button type="submit" className="btn primary" disabled={uiBusy}>
-            {busy ? '保存中…' : '保存设置'}
+            {busy ? WEIXIN.saving : WEIXIN.saveSettings}
           </button>
         </form>
       )}
