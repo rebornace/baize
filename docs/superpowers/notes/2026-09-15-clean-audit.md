@@ -1,18 +1,18 @@
 # CLEAN-AUDIT 盘点清单
 
 > 日期：2026-09-15  
-> 状态：**待产品确认**  
+> 状态：**已产品确认**（2026-09-15）  
 > 规格：[`../specs/2026-09-15-oss-quality-cleanup-design.md`](../specs/2026-09-15-oss-quality-cleanup-design.md)  
-> 约束：本文件只读盘点结果；确认前不得开 CONTRACT 实现。
+> 下一阶段：CLEAN-CONTRACT（计划见 [`../plans/2026-09-15-clean-contract.md`](../plans/2026-09-15-clean-contract.md)）
 
 ## 0. 产品确认栏
 
-- [ ] 契约白名单已审阅
-- [ ] 结构热点优先级已审阅
-- [ ] 明确不做无异议
-- [ ] 批准进入 CLEAN-CONTRACT
+- [x] 契约白名单已审阅
+- [x] 结构热点优先级已审阅
+- [x] 明确不做无异议
+- [x] 批准进入 CLEAN-CONTRACT
 
-确认人 / 日期：
+确认人 / 日期：产品（对话确认）/ 2026-09-15
 
 ## 1. 契约白名单（HTTP）
 
