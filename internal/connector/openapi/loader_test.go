@@ -140,8 +140,10 @@ paths:
 
 func TestInvokerInvokeWithHeadersOverlays(t *testing.T) {
 	var sawAuth string
+	var sawUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawAuth = r.Header.Get("Authorization")
+		sawUA = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
@@ -168,9 +170,38 @@ func TestInvokerInvokeWithHeadersOverlays(t *testing.T) {
 	if sawAuth != "Bearer CAPTURED" {
 		t.Fatalf("Authorization=%q, want Bearer CAPTURED", sawAuth)
 	}
+	if sawUA != "baize-openapi/1.0" {
+		t.Fatalf("User-Agent=%q, want baize-openapi/1.0 (not Go default)", sawUA)
+	}
 	// Overlay must not mutate inv.Headers.
 	if inv.Headers["Authorization"] != "Bearer ENV" {
 		t.Fatalf("inv.Headers mutated: %v", inv.Headers)
+	}
+}
+
+func TestInvokerUserAgentOverlayWins(t *testing.T) {
+	var sawUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawUA = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "ping",
+			Method: http.MethodGet,
+			Path:   "/",
+		}},
+	}
+	if _, err := inv.InvokeWithHeaders(context.Background(), "ping", nil, map[string]string{
+		"User-Agent": "custom-ua/2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if sawUA != "custom-ua/2" {
+		t.Fatalf("User-Agent=%q, want custom-ua/2", sawUA)
 	}
 }
 
