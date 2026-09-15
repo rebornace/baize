@@ -173,7 +173,6 @@
 ### 任务 2：HTTP 路由全表
 
 ```powershell
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $routes = Select-String -Path internal\api\server.go -Pattern 'HandleFunc\("(GET|POST|PUT|PATCH|DELETE) ([^"]+)"' |
   ForEach-Object { if ($_.Line -match 'HandleFunc\("((?:GET|POST|PUT|PATCH|DELETE) [^"]+)"') { $Matches[1] } } |
   Sort-Object -Unique
@@ -183,8 +182,9 @@ $extra = @(
   'HANDLE /v0/mcp/export/',
   'HANDLE /ui/'
 )
-($routes + $extra | Sort-Object -Unique) | ForEach-Object { $_ } |
-  Set-Content -Path docs\superpowers\notes\2026-09-15-clean-audit-routes.txt -Encoding $utf8NoBom
+$all = @($routes + $extra | Sort-Object -Unique)
+$path = Join-Path (Get-Location) 'docs\superpowers\notes\2026-09-15-clean-audit-routes.txt'
+[IO.File]::WriteAllLines($path, $all, [Text.UTF8Encoding]::new($false))
 ```
 
 ```powershell
