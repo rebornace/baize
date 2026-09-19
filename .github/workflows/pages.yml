@@ -8,6 +8,8 @@ on:
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
+# 仅开源仓 rebornace/baize 部署官网。私有仓 baize_real 同步同文件但不启 Pages，
+# 否则 configure-pages 会报 Get Pages site failed (Not Found)。
 permissions:
   contents: read
   pages: write
@@ -19,6 +21,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.repository == 'rebornace/baize'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
