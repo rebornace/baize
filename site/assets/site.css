@@ -160,6 +160,19 @@ img {
   gap: 0.85rem 1rem;
 }
 
+.ph-badge {
+  display: inline-block;
+  margin-top: 1.25rem;
+  line-height: 0;
+}
+
+.ph-badge img {
+  display: block;
+  width: 250px;
+  max-width: 100%;
+  height: auto;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
