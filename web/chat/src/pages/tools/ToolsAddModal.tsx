@@ -41,17 +41,17 @@ export function ToolsAddModal({
             {TOOLS.cancel}
           </Button>
           <Button type="button" variant="primary" disabled={submitting} onClick={() => void onAddSubmit()}>
-            {submitting ? '提交中…' : TOOLS.addTool}
+            {submitting ? TOOLS.submitting : TOOLS.addTool}
           </Button>
         </>
       }
     >
       <p className="settings-hint">
-        此处仅添加单条 extra 工具；批量导入请用{' '}
+        {TOOLS.addModalHintBefore}{' '}
         <Link to="/settings/openapi" className="settings-link">
-          OpenAPI 设置
-        </Link>
-        上传接口文档。
+          {TOOLS.addModalHintLink}
+        </Link>{' '}
+        {TOOLS.addModalHintAfter}
       </p>
       <form
         className="settings-form"

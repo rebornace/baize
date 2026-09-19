@@ -2,11 +2,14 @@ import type { MCPExportIdentity, MCPExportKey, ToolExportMode, ToolInfo } from '
 import { MCP_EXPORTS } from '../../strings'
 import { formatKeyValueMap, parseKeyValueLines } from '../connectorForms/lines'
 
-export const EXPORT_OPTIONS: { value: ToolExportMode; label: string }[] = [
-  { value: 'default', label: MCP_EXPORTS.exportDefault },
-  { value: 'force_allow', label: MCP_EXPORTS.exportForceAllow },
-  { value: 'force_deny', label: MCP_EXPORTS.exportForceDeny },
-]
+/** Labels read from the live locale pack (do not snapshot at module load). */
+export function exportOptions(): { value: ToolExportMode; label: string }[] {
+  return [
+    { value: 'default', label: MCP_EXPORTS.exportDefault },
+    { value: 'force_allow', label: MCP_EXPORTS.exportForceAllow },
+    { value: 'force_deny', label: MCP_EXPORTS.exportForceDeny },
+  ]
+}
 
 export function toolExportMode(t: ToolInfo): ToolExportMode {
   if (t.export === 'force_allow' || t.export === 'force_deny') return t.export

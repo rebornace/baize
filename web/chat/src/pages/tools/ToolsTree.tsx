@@ -85,7 +85,7 @@ export function ToolsTree(props: TreeProps) {
             void onGroupEnabled(groupKey, rows, true)
           }}
         >
-          全部启用
+          {TOOLS.enableAll}
         </Button>
         <Button
           type="button"
@@ -96,7 +96,7 @@ export function ToolsTree(props: TreeProps) {
             void onGroupEnabled(groupKey, rows, false)
           }}
         >
-          全部停用
+          {TOOLS.disableAll}
         </Button>
       </span>
     )
@@ -194,7 +194,7 @@ export function ToolsTree(props: TreeProps) {
                     startEdit(t)
                   }}
                 >
-                  {isEditing ? '收起' : TOOLS.editCopy}
+                  {isEditing ? TOOLS.collapse : TOOLS.editCopy}
                 </Button>
               </>
             )}
@@ -203,7 +203,7 @@ export function ToolsTree(props: TreeProps) {
         {isEditing && !readOnly && (
           <div className="settings-tool-edit">
             <label className="settings-field">
-              <span className="settings-field-label">显示名</span>
+              <span className="settings-field-label">{TOOLS.displayName}</span>
               <input
                 className="settings-input"
                 value={draftTitle}
@@ -212,7 +212,7 @@ export function ToolsTree(props: TreeProps) {
               />
             </label>
             <label className="settings-field">
-              <span className="settings-field-label">说明</span>
+              <span className="settings-field-label">{TOOLS.descriptionLabel}</span>
               <textarea
                 className="settings-textarea"
                 value={draftDescription}
@@ -231,7 +231,7 @@ export function ToolsTree(props: TreeProps) {
                   void onSaveCopy(t)
                 }}
               >
-                {savingCopy ? '保存中…' : '保存'}
+                {savingCopy ? TOOLS.saving : TOOLS.save}
               </Button>
             </div>
           </div>
@@ -254,10 +254,10 @@ export function ToolsTree(props: TreeProps) {
                 className="settings-group-toggle"
                 onClick={() => setExpandedConnectors((prev) => toggleKey(prev, group.connectorId))}
               >
-                {connectorOpen ? '▾' : '▸'} {group.connectorId || '（无 Connector）'}
+                {connectorOpen ? '▾' : '▸'} {group.connectorId || TOOLS.noConnector}
               </button>
               <span className="settings-group-meta">
-                {groupRows.length} 个工具 · {enabledCount(groupRows)} 已启用
+                {TOOLS.groupMeta(groupRows.length, enabledCount(groupRows))}
               </span>
               {renderGroupButtons(connectorKey, groupRows)}
             </div>
@@ -278,7 +278,7 @@ export function ToolsTree(props: TreeProps) {
                           {prefixOpen ? '▾' : '▸'} {prefixGroup.prefix}
                         </button>
                         <span className="settings-group-meta">
-                          {prefixGroup.tools.length} 个工具 · {enabledCount(prefixGroup.tools)} 已启用
+                          {TOOLS.groupMeta(prefixGroup.tools.length, enabledCount(prefixGroup.tools))}
                         </span>
                         {renderGroupButtons(prefixBusyKey, prefixGroup.tools)}
                       </div>
