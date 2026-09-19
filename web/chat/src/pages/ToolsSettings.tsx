@@ -29,7 +29,7 @@ export function ToolsSettings() {
           value={s.query}
           onChange={(e) => s.setQuery(e.target.value)}
           placeholder={TOOLS.searchPlaceholder}
-          aria-label="搜索工具"
+          aria-label={TOOLS.searchAria}
         />
         {s.showAdd && !s.readOnly && (
           <Button type="button" variant="secondary" size="sm" onClick={s.openAddModal}>
@@ -44,7 +44,7 @@ export function ToolsSettings() {
       <PageHeader title={TOOLS.title} description={TOOLS.description} actions={headerActions} />
       <ToastRegion toasts={s.toasts} onDismiss={s.dismiss} />
       {s.loadFailed && <p className="settings-error">{s.loadError}</p>}
-      {s.tools === null && !s.loadFailed && <p className="settings-muted">加载中…</p>}
+      {s.tools === null && !s.loadFailed && <p className="settings-muted">{TOOLS.loading}</p>}
       {s.tools !== null && (
         <>
           {s.tools.length === 0 && (

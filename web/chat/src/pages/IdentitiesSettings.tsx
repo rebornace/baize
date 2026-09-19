@@ -176,7 +176,7 @@ export function IdentitiesSettings() {
 
       <details className="settings-developer">
         <summary>{ACCOUNTS.developer}</summary>
-        <p className="settings-meta">会话 {conversationId}</p>
+        <p className="settings-meta">{ACCOUNTS.sessionMeta(conversationId)}</p>
       </details>
     </div>
   )

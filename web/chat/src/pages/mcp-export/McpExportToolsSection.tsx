@@ -1,7 +1,7 @@
 import { Field, Input, Select } from '../../components/ui'
-import { MCP_EXPORTS } from '../../strings'
+import { COMMON, MCP_EXPORTS } from '../../strings'
 import type { ToolExportMode } from '../../api'
-import { EXPORT_OPTIONS, toolExportMode } from './mcpExportHelpers'
+import { exportOptions, toolExportMode } from './mcpExportHelpers'
 import type { McpExportSettingsController } from './useMcpExportSettings'
 
 type Props = Pick<
@@ -43,7 +43,7 @@ export function McpExportToolsSection({
           />
         </Field>
       )}
-      {tools == null && !toolsError && <p className="settings-muted">加载中…</p>}
+      {tools == null && !toolsError && <p className="settings-muted">{COMMON.loading}</p>}
       {tools != null && tools.length === 0 && !toolsError && (
         <p className="settings-empty">{MCP_EXPORTS.toolsExportEmpty}</p>
       )}
@@ -62,12 +62,12 @@ export function McpExportToolsSection({
                 <Select
                   value={toolExportMode(t)}
                   disabled={exportBusy === t.name}
-                  aria-label={`${t.title || t.name} 导出策略`}
+                  aria-label={MCP_EXPORTS.exportPolicyAria(t.title || t.name)}
                   onChange={(e) => {
                     void onExportChange(t.name, e.target.value as ToolExportMode)
                   }}
                 >
-                  {EXPORT_OPTIONS.map((opt) => (
+                  {exportOptions().map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>

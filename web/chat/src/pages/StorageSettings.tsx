@@ -172,10 +172,10 @@ export function StorageSettings() {
         <details className="settings-developer">
           <summary>{STORAGE.developer}</summary>
           <p className="settings-meta">
-            配置：{info.config_path}
-            {info.overlay_path ? ` · 覆盖：${info.overlay_path}` : ''}
-            {info.effective_driver ? ` · 运行中：${info.effective_driver}` : ''}
-            {info.store_config_mismatch ? ' · 配置与运行中存储不一致' : ''}
+            {STORAGE.developerConfig(info.config_path)}
+            {info.overlay_path ? ` · ${STORAGE.developerOverlay(info.overlay_path)}` : ''}
+            {info.effective_driver ? ` · ${STORAGE.developerRunning(info.effective_driver)}` : ''}
+            {info.store_config_mismatch ? ` · ${STORAGE.developerMismatch}` : ''}
           </p>
         </details>
       )}

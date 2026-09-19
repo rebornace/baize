@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   getEventsWebhook,
   getInboxChannels,
@@ -20,6 +20,7 @@ import type {
   ToolInfo,
   WeixinChannelSettings,
 } from './api'
+import { getPack, subscribePack } from './locale/pack'
 import type { BadgeKind, SettingsNavItem, SettingsRole } from './settingsNav'
 
 export interface BadgeResult {
@@ -42,15 +43,16 @@ export function countConnectorsBySource(tools: readonly ToolInfo[], sources: rea
 }
 
 function weixinBadge(s: WeixinChannelSettings | undefined): BadgeResult {
-  if (s?.running === true) return { tone: 'success', text: '运行中' }
+  const B = getPack().SETTINGS_BADGES
+  if (s?.running === true) return { tone: 'success', text: B.weixinRunning }
   if (s?.enabled) {
     switch (s.reason) {
-      case 'login_required': return { tone: 'warning', text: '待登录' }
-      case 'start_failed': return { tone: 'warning', text: '启动异常' }
-      default: return { tone: 'warning', text: '已停用' }
+      case 'login_required': return { tone: 'warning', text: B.weixinLoginRequired }
+      case 'start_failed': return { tone: 'warning', text: B.weixinStartFailed }
+      default: return { tone: 'warning', text: B.weixinStopped }
     }
   }
-  return { tone: 'neutral', text: '未接入' }
+  return { tone: 'neutral', text: B.weixinNone }
 }
 
 /**
@@ -58,58 +60,68 @@ function weixinBadge(s: WeixinChannelSettings | undefined): BadgeResult {
  * payload. Returns null when the card should show no badge.
  */
 export function resolveBadge(kind: BadgeKind, data: unknown): BadgeResult | null {
+  const B = getPack().SETTINGS_BADGES
   switch (kind) {
     case 'models': {
       const n = (data as ModelProfile[]).length
-      return n === 0 ? { tone: 'warning', text: '未配置' } : { tone: 'success', text: `已配置 ${n} 个` }
+      return n === 0
+        ? { tone: 'warning', text: B.modelsNone }
+        : { tone: 'success', text: B.modelsCount(n) }
     }
     case 'tools': {
       const tools = data as ToolInfo[]
       if (tools.length === 0) return null
       const n = enabledToolCount(tools)
-      return n === 0 ? { tone: 'warning', text: '未启用' } : { tone: 'success', text: `${n} 项可用` }
+      return n === 0
+        ? { tone: 'warning', text: B.toolsNone }
+        : { tone: 'success', text: B.toolsAvailable(n) }
     }
     case 'skills': {
       const n = ((data as { skills: SkillSummary[] }).skills ?? []).length
-      return n === 0 ? null : { tone: 'neutral', text: `${n} 个技能` }
+      return n === 0 ? null : { tone: 'neutral', text: B.skillsCount(n) }
     }
     case 'openapi': {
       const n = countConnectorsBySource(data as ToolInfo[], ['spec', 'extra'])
-      return n === 0 ? { tone: 'neutral', text: '去接入' } : { tone: 'success', text: `已接 ${n} 个` }
+      return n === 0
+        ? { tone: 'neutral', text: B.connectCta }
+        : { tone: 'success', text: B.connectedCount(n) }
     }
     case 'mcp':
     case 'plugins': {
       const sources = kind === 'mcp' ? ['mcp'] : ['plugin']
       const n = countConnectorsBySource(data as ToolInfo[], sources)
-      return n === 0 ? null : { tone: 'success', text: `已接 ${n} 个` }
+      return n === 0 ? null : { tone: 'success', text: B.connectedCount(n) }
     }
     case 'mcpExport': {
       const n = (data as { id: string }[]).length
-      return n === 0 ? null : { tone: 'neutral', text: `${n} 个出口` }
+      return n === 0 ? null : { tone: 'neutral', text: B.exportCount(n) }
     }
     case 'weixin':
       return weixinBadge(data as WeixinChannelSettings)
     case 'webhook': {
       const cfg = data as EventsWebhookConfig
       return cfg.url && cfg.url.trim() !== ''
-        ? { tone: 'success', text: '已设置' }
-        : { tone: 'neutral', text: '未设置' }
+        ? { tone: 'success', text: B.webhookSet }
+        : { tone: 'neutral', text: B.webhookUnset }
     }
     case 'inbox': {
       const n = (data as InboxChannel[]).length
-      return n === 0 ? null : { tone: 'neutral', text: `${n} 个收件地址` }
+      return n === 0 ? null : { tone: 'neutral', text: B.inboxCount(n) }
     }
     case 'store': {
       const driver = (data as StoreSettings).driver ?? ''
-      return { tone: 'neutral', text: driver === 'sqlite' ? '本地文件' : driver.toLowerCase() }
+      return {
+        tone: 'neutral',
+        text: driver === 'sqlite' ? B.storeLocalFile : driver.toLowerCase(),
+      }
     }
     case 'runtime': {
       const view = data as RuntimeKnobsView
       const overridden = view.overridden ?? {}
       const custom = Object.values(overridden).some(Boolean) || Boolean(view.public_base_url_overridden)
       return custom
-        ? { tone: 'neutral', text: '已自定义' }
-        : { tone: 'neutral', text: '默认' }
+        ? { tone: 'neutral', text: B.runtimeCustom }
+        : { tone: 'neutral', text: B.runtimeDefault }
     }
     default: {
       const _exhaustive: never = kind
@@ -127,6 +139,9 @@ const ADMIN_ONLY_KINDS = new Set<BadgeKind>([
 
 export type BadgeMap = Partial<Record<BadgeKind, BadgeResult | null>>
 
+/** Raw payload per kind; `null` means the request failed (no badge). */
+type RawMap = Partial<Record<BadgeKind, unknown | null>>
+
 /** Kinds derived from the shared `/v0/tools` response. */
 const TOOL_DERIVED_KINDS = ['tools', 'openapi', 'mcp', 'plugins'] as const
 
@@ -137,13 +152,17 @@ const TOOL_DERIVED_KINDS = ['tools', 'openapi', 'mcp', 'plugins'] as const
  * tools/openapi/mcp/plugins kinds. Admin-only kinds are never requested for
  * operators. Any single failed request resolves its kind to null without
  * affecting the others. Re-runs when `items`, `role` or `refreshKey` change.
+ * Badge text re-resolves when the locale pack changes.
  */
 export function useSettingsBadges(
   items: readonly SettingsNavItem[],
   role: SettingsRole,
   refreshKey: number,
 ): BadgeMap {
-  const [badges, setBadges] = useState<BadgeMap>({})
+  const [raw, setRaw] = useState<RawMap>({})
+  const [localeTick, setLocaleTick] = useState(0)
+
+  useEffect(() => subscribePack(() => setLocaleTick((n) => n + 1)), [])
 
   // Callers may pass an inline filtered array whose identity changes every
   // render; key the fetch effect on the badge-kind set contents (plus role)
@@ -163,52 +182,52 @@ export function useSettingsBadges(
     async function run(): Promise<void> {
       // Shared tool list feeds tools/openapi/mcp/plugins. A rejected fetch
       // resolves to null (not []): the four derived kinds must then be null,
-      // because [] would make openapi show a misleading "去接入" CTA on error.
+      // because [] would make openapi show a misleading connect CTA on error.
       const needTools = TOOL_DERIVED_KINDS.some((k) => kinds.has(k))
       const toolsP: Promise<ToolInfo[] | null> = needTools
         ? listTools().then((t) => t, () => null)
         : Promise.resolve([] as ToolInfo[])
       const tasks: Promise<void>[] = []
-      const next: BadgeMap = {}
+      const next: RawMap = {}
 
       if (kinds.has('models')) {
         tasks.push(listModelProfiles()
-          .then((p) => { next.models = resolveBadge('models', p) })
+          .then((p) => { next.models = p })
           .catch(() => { next.models = null }))
       }
       if (kinds.has('skills')) {
         tasks.push(listSkills()
-          .then((s) => { next.skills = resolveBadge('skills', s) })
+          .then((s) => { next.skills = s })
           .catch(() => { next.skills = null }))
       }
       if (kinds.has('weixin')) {
         tasks.push(getWeixinSettings()
-          .then((s) => { next.weixin = resolveBadge('weixin', s) })
+          .then((s) => { next.weixin = s })
           .catch(() => { next.weixin = null }))
       }
       if (kinds.has('webhook')) {
         tasks.push(getEventsWebhook()
-          .then((s) => { next.webhook = resolveBadge('webhook', s) })
+          .then((s) => { next.webhook = s })
           .catch(() => { next.webhook = null }))
       }
       if (kinds.has('inbox')) {
         tasks.push(getInboxChannels()
-          .then((s) => { next.inbox = resolveBadge('inbox', s) })
+          .then((s) => { next.inbox = s })
           .catch(() => { next.inbox = null }))
       }
       if (kinds.has('store')) {
         tasks.push(getStoreSettings()
-          .then((s) => { next.store = resolveBadge('store', s) })
+          .then((s) => { next.store = s })
           .catch(() => { next.store = null }))
       }
       if (kinds.has('runtime')) {
         tasks.push(getRuntimeSettings()
-          .then((s) => { next.runtime = resolveBadge('runtime', s) })
+          .then((s) => { next.runtime = s })
           .catch(() => { next.runtime = null }))
       }
       if (kinds.has('mcpExport')) {
         tasks.push(listMCPExportIdentities()
-          .then((s) => { next.mcpExport = resolveBadge('mcpExport', s) })
+          .then((s) => { next.mcpExport = s })
           .catch(() => { next.mcpExport = null }))
       }
 
@@ -218,19 +237,26 @@ export function useSettingsBadges(
           if (kinds.has(k)) next[k] = null
         }
       } else {
-        if (kinds.has('tools')) next.tools = resolveBadge('tools', tools)
-        if (kinds.has('openapi')) next.openapi = resolveBadge('openapi', tools)
-        if (kinds.has('mcp')) next.mcp = resolveBadge('mcp', tools)
-        if (kinds.has('plugins')) next.plugins = resolveBadge('plugins', tools)
+        if (kinds.has('tools')) next.tools = tools
+        if (kinds.has('openapi')) next.openapi = tools
+        if (kinds.has('mcp')) next.mcp = tools
+        if (kinds.has('plugins')) next.plugins = tools
       }
 
       await Promise.all(tasks)
-      if (!cancelled) setBadges(next)
+      if (!cancelled) setRaw(next)
     }
 
     void run()
     return () => { cancelled = true }
   }, [itemsKey, refreshKey])
 
-  return badges
+  return useMemo(() => {
+    const next: BadgeMap = {}
+    for (const [kind, data] of Object.entries(raw) as [BadgeKind, unknown | null][]) {
+      next[kind] = data === null ? null : resolveBadge(kind, data)
+    }
+    return next
+    // localeTick forces re-resolve when the UI language changes.
+  }, [raw, localeTick])
 }
