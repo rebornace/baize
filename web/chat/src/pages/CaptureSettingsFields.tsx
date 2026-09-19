@@ -21,7 +21,7 @@ export function CaptureSettingsFields({
           className="settings-input"
           value={draft.toolNameGlob}
           onChange={(e) => onDraftChange({ toolNameGlob: e.target.value })}
-          placeholder="*login*（__none__ 关闭）"
+          placeholder={TOOLS.phCaptureGlob}
         />
         <span className="settings-hint">{TOOLS.captureToolGlobHint}</span>
       </label>
@@ -32,7 +32,7 @@ export function CaptureSettingsFields({
           rows={3}
           value={draft.tokenPathsText}
           onChange={(e) => onDraftChange({ tokenPathsText: e.target.value })}
-          placeholder={'accessToken\ndata.token'}
+          placeholder={TOOLS.phCaptureTokenPaths}
         />
         <span className="settings-hint">{TOOLS.captureTokenPathsHint}</span>
       </label>
@@ -43,7 +43,7 @@ export function CaptureSettingsFields({
           rows={2}
           value={draft.labelPathsText}
           onChange={(e) => onDraftChange({ labelPathsText: e.target.value })}
-          placeholder="email"
+          placeholder={TOOLS.phCaptureLabelPaths}
         />
         <span className="settings-hint">{TOOLS.captureLabelPathsHint}</span>
       </label>
@@ -53,7 +53,7 @@ export function CaptureSettingsFields({
           className="settings-input"
           value={draft.headerTemplate}
           onChange={(e) => onDraftChange({ headerTemplate: e.target.value })}
-          placeholder="Bearer {{token}}"
+          placeholder={TOOLS.phCaptureHeader}
         />
         <span className="settings-hint">{TOOLS.captureHeaderTemplateHint}</span>
       </label>
@@ -63,7 +63,7 @@ export function CaptureSettingsFields({
           className="settings-input"
           value={draft.defaultScheme}
           onChange={(e) => onDraftChange({ defaultScheme: e.target.value })}
-          placeholder="bearer"
+          placeholder={TOOLS.phCaptureScheme}
         />
         <span className="settings-hint">{TOOLS.captureDefaultSchemeHint}</span>
       </label>

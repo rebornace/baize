@@ -28,7 +28,7 @@ export function ToolsSettings() {
           className="settings-input"
           value={s.query}
           onChange={(e) => s.setQuery(e.target.value)}
-          placeholder="搜索"
+          placeholder={TOOLS.searchPlaceholder}
           aria-label="搜索工具"
         />
         {s.showAdd && !s.readOnly && (

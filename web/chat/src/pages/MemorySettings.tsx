@@ -139,7 +139,7 @@ export function MemorySettings() {
       <PageHeader title={MEMORY.title} description={MEMORY.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
-      {items === null && <p className="settings-muted">加载中…</p>}
+      {items === null && <p className="settings-muted">{MEMORY.loading}</p>}
 
       <form className="settings-form" onSubmit={(e) => void onCreate(e)}>
         <h2 className="settings-subheading">{MEMORY.add}</h2>
@@ -149,7 +149,7 @@ export function MemorySettings() {
             onChange={(e) => setNewText(e.target.value)}
             disabled={busy}
             rows={3}
-            placeholder="例如：喜欢绿茶"
+            placeholder={MEMORY.phText}
           />
         </Field>
         <Field label={MEMORY.keyLabel} hint={MEMORY.keyHint}>
@@ -157,7 +157,7 @@ export function MemorySettings() {
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
             disabled={busy}
-            placeholder="preference.tea"
+            placeholder={MEMORY.phKey}
           />
         </Field>
         <Button type="submit" variant="primary" disabled={busy}>

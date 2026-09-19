@@ -206,7 +206,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       {formError && <p className="ui-inline-error" role="alert">{formError}</p>}
       <div className="connector-form">
         <Field label={CONNECTORS.fieldId} hint={CONNECTORS.fieldIdHint} required error={fieldErrors.id}>
-          <Input value={id} disabled={editing || saving} placeholder="ticket-api"
+          <Input value={id} disabled={editing || saving} placeholder={CONNECTORS.phId}
             onChange={(e) => { setId(e.target.value); setFieldErrors((p) => ({ ...p, id: undefined })) }} />
         </Field>
         {isMcp && (
@@ -221,18 +221,18 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
             {mcpForm.transport === 'stdio' ? (
               <>
                 <Field label={CONNECTORS.fieldCommand} hint={CONNECTORS.fieldCommandHint} required error={mcpErrors.command}>
-                  <Input value={mcpForm.command} disabled={saving} placeholder="npx"
+                  <Input value={mcpForm.command} disabled={saving} placeholder={CONNECTORS.phCommand}
                     onChange={(e) => {
                       setMcpForm((f) => ({ ...f, command: e.target.value }))
                       setMcpErrors((p) => ({ ...p, command: undefined }))
                     }} />
                 </Field>
                 <Field label={CONNECTORS.fieldArgs} hint={CONNECTORS.fieldArgsHint}>
-                  <Textarea rows={3} value={mcpForm.argsText} disabled={saving} placeholder="@bytebase/dbhub"
+                  <Textarea rows={3} value={mcpForm.argsText} disabled={saving} placeholder={CONNECTORS.phArgs}
                     onChange={(e) => setMcpForm((f) => ({ ...f, argsText: e.target.value }))} />
                 </Field>
                 <Field label={CONNECTORS.fieldEnv} hint={CONNECTORS.fieldEnvHint} error={mcpErrors.env}>
-                  <Textarea rows={3} value={mcpForm.envText} disabled={saving} placeholder={'DSN=${DSN}'}
+                  <Textarea rows={3} value={mcpForm.envText} disabled={saving} placeholder={CONNECTORS.phEnv}
                     onChange={(e) => {
                       setMcpForm((f) => ({ ...f, envText: e.target.value }))
                       setMcpErrors((p) => ({ ...p, env: undefined }))
@@ -242,14 +242,14 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
             ) : (
               <>
                 <Field label={CONNECTORS.fieldUrl} required error={mcpErrors.url}>
-                  <Input value={mcpForm.url} disabled={saving} placeholder="https://mcp.example.com/mcp"
+                  <Input value={mcpForm.url} disabled={saving} placeholder={CONNECTORS.phUrl}
                     onChange={(e) => {
                       setMcpForm((f) => ({ ...f, url: e.target.value }))
                       setMcpErrors((p) => ({ ...p, url: undefined }))
                     }} />
                 </Field>
                 <Field label={CONNECTORS.fieldHeaders} hint={CONNECTORS.fieldHeadersHint} error={mcpErrors.headers}>
-                  <Textarea rows={3} value={mcpForm.headersText} disabled={saving} placeholder="Authorization=Bearer ${TOKEN}"
+                  <Textarea rows={3} value={mcpForm.headersText} disabled={saving} placeholder={CONNECTORS.phHeaders}
                     onChange={(e) => {
                       setMcpForm((f) => ({ ...f, headersText: e.target.value }))
                       setMcpErrors((p) => ({ ...p, headers: undefined }))
@@ -259,7 +259,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                   <Input
                     value={mcpForm.oauthClientId}
                     disabled={saving}
-                    placeholder="optional-client-id"
+                    placeholder={CONNECTORS.phOAuthClientId}
                     autoComplete="off"
                     onChange={(e) => setMcpForm((f) => ({ ...f, oauthClientId: e.target.value }))}
                   />
@@ -269,7 +269,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                     type="password"
                     value={mcpForm.oauthClientSecret}
                     disabled={saving}
-                    placeholder="••••••••"
+                    placeholder={CONNECTORS.phOAuthSecret}
                     autoComplete="new-password"
                     onChange={(e) => setMcpForm((f) => ({ ...f, oauthClientSecret: e.target.value }))}
                   />
@@ -294,7 +294,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         {!isMcp && (
           <Field label={CONNECTORS.fieldBaseUrl} required error={fieldErrors.baseUrl}>
             <Input value={baseUrl} disabled={saving}
-              placeholder={isOpenapi ? 'https://api.example.com' : 'http://127.0.0.1:19090'}
+              placeholder={isOpenapi ? CONNECTORS.phBaseUrlOpenapi : CONNECTORS.phBaseUrlPlugin}
               onChange={(e) => { setBaseUrl(e.target.value); setFieldErrors((p) => ({ ...p, baseUrl: undefined })) }} />
           </Field>
         )}
@@ -313,7 +313,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
             </Field>
             <Field label={CONNECTORS.fieldSpecUrl}>
               <Input value={specUrl} disabled={saving || specContent != null}
-                placeholder="https://api.example.com/openapi.json"
+                placeholder={CONNECTORS.phSpecUrl}
                 onChange={(e) => {
                   const v = e.target.value
                   setSpecUrl(v)
@@ -354,7 +354,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                   value={executionCallbackUrl}
                   disabled={saving}
                   onChange={(e) => setExecutionCallbackUrl(e.target.value)}
-                  placeholder="https://enterprise.example/baize/execute"
+                  placeholder={CONNECTORS.phCallbackUrl}
                 />
               </Field>
             </section>

@@ -81,7 +81,7 @@ export function McpExportKeysSection({
             value={keyName}
             onChange={(e) => setKeyName(e.target.value)}
             disabled={busy || identities.length === 0}
-            placeholder="cursor-dev"
+            placeholder={MCP_EXPORTS.phKeyName}
           />
         </Field>
         <Field label={MCP_EXPORTS.keyBindIdentity} required>
