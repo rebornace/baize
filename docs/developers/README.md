@@ -11,4 +11,5 @@
 | [HTTP API](./http-api.md) · [EN](./http-api.en.md) | 控制面 HTTP 鸟瞰 |
 | [架构](./architecture.md) · [EN](./architecture.en.md) | 运行时边界、插件与核心抽象 |
 | [部署](./deployment.md) · [EN](./deployment.en.md) | 单机与渠道适配器部署 |
+| [官网（GitHub Pages）](../../site/README.md) | 静态官网源码与启用说明 |
 | [性能探针](./performance.md) · [EN](./performance.en.md) | 本机热点路径复现 |

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baize — team AI assistant runtime</title>
+  <meta name="description" content="Baize is a team AI assistant runtime: talk, call your systems, and require human approval for sensitive writes.">
+  <meta property="og:title" content="Baize">
+  <meta property="og:description" content="A team AI assistant runtime that sits beside your services—tools from API docs, human approval when it matters.">
+  <meta property="og:image" content="../assets/baize-banner.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-media" aria-hidden="true">
+      <img src="../assets/baize-banner.jpg" alt="">
+    </div>
+    <div class="wrap top">
+      <nav class="lang" aria-label="Language">
+        <a href="../">中文</a>
+        <a href="./" aria-current="page">English</a>
+      </nav>
+    </div>
+    <div class="wrap hero-copy">
+      <h1 class="brand">Baize<span>白泽</span></h1>
+      <p class="lede">A team AI assistant runtime: converse, call your systems, and pause for human approval when it matters.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">Download binaries</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section wrap" id="capabilities">
+      <h2>Sit beside your stack. Turn APIs into abilities.</h2>
+      <p class="support">You usually don’t rewrite the business service. With an API document, the assistant can execute for real—visible and controllable in the console.</p>
+      <ul class="feature-list">
+        <li>
+          <h3>API docs become tools</h3>
+          <p>Import OpenAPI / Swagger and each operation joins the tool catalog; follow calls live in the console.</p>
+        </li>
+        <li>
+          <h3>Approve sensitive writes</h3>
+          <p>Creates and status changes can wait for an operator to approve or reject—with an audit trail.</p>
+        </li>
+        <li>
+          <h3>One assistant, many doors</h3>
+          <p>Web console, inbound alerts, and messaging channels share approval, memory, and outbound delivery.</p>
+        </li>
+        <li>
+          <h3>Downstream login supported</h3>
+          <p>Guide a login, capture the session credential, then call protected business APIs.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="start wrap" id="start">
+      <h2>Get started</h2>
+      <p class="support">No Go toolchain required: download a release archive for your platform, set secrets, and start.</p>
+      <pre><code>cp .env.example .env
+# set BAIZE_API_KEY and BAIZE_SETTINGS_KEY
+./baize start
+# open http://127.0.0.1:8080/ui</code></pre>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.md">README</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize/tree/main/docs/developers">Developer docs</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <span>MIT License · Baize</span>
+    <span>
+      <a href="https://github.com/rebornace/baize">Source</a>
+      ·
+      <a href="https://github.com/rebornace/baize/releases">Releases</a>
+    </span>
+  </footer>
+</body>
+</html>

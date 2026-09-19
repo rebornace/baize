@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>白泽 Baize — 团队 AI 助手运行时</title>
+  <meta name="description" content="白泽：面向团队的 AI 助手运行时。接口文档变工具，重要操作可先审批，旁挂现有业务即可使用。">
+  <meta property="og:title" content="白泽 Baize">
+  <meta property="og:description" content="面向团队的 AI 助手运行时：能对话、会调用业务系统、重要操作可先让人确认。">
+  <meta property="og:image" content="assets/baize-banner.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-media" aria-hidden="true">
+      <img src="assets/baize-banner.jpg" alt="">
+    </div>
+    <div class="wrap top">
+      <nav class="lang" aria-label="语言">
+        <a href="./" aria-current="page">中文</a>
+        <a href="en/">English</a>
+      </nav>
+    </div>
+    <div class="wrap hero-copy">
+      <h1 class="brand">白泽<span>Baize</span></h1>
+      <p class="lede">面向团队的 AI 助手运行时：能对话、会调用业务系统，重要操作可先让人确认。</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">下载二进制</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section wrap" id="capabilities">
+      <h2>旁挂即用，把接口变成能力</h2>
+      <p class="support">业务系统一般不用改代码。有接口文档，就能让助手真正去执行，并在操作台里看得见、控得住。</p>
+      <ul class="feature-list">
+        <li>
+          <h3>接口文档变工具</h3>
+          <p>导入 OpenAPI / Swagger 等文档，接口进入工具列表；调用过程可在操作台跟随。</p>
+        </li>
+        <li>
+          <h3>重要操作可先审批</h3>
+          <p>建单、改状态等写操作，可要求运营批准后再执行，过程可追溯。</p>
+        </li>
+        <li>
+          <h3>同一套助手，多种入口</h3>
+          <p>网页操作台、告警来信、即时消息渠道共用审批、记忆与出站能力。</p>
+        </li>
+        <li>
+          <h3>需要登录的下游也能接</h3>
+          <p>助手可引导完成登录，再带着会话凭证去调业务系统。</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="start wrap" id="start">
+      <h2>开始使用</h2>
+      <p class="support">无需安装 Go：从 Releases 下载对应平台压缩包，配置密钥后即可启动。</p>
+      <pre><code>cp .env.example .env
+# 填写 BAIZE_API_KEY 与 BAIZE_SETTINGS_KEY
+./baize start
+# 打开 http://127.0.0.1:8080/ui</code></pre>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.zh-CN.md">中文 README</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize/tree/main/docs/developers">开发者文档</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <span>MIT License · 白泽 Baize</span>
+    <span>
+      <a href="https://github.com/rebornace/baize">源码</a>
+      ·
+      <a href="https://github.com/rebornace/baize/releases">Releases</a>
+    </span>
+  </footer>
+</body>
+</html>
