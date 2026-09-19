@@ -5,7 +5,7 @@ export type SkillSummary = {
   name: string
   description: string
   tools: string[]
-  source: 'builtin' | 'user'
+  source: 'builtin' | 'user' | 'managed'
 }
 
 export async function listSkills(): Promise<{ skills: SkillSummary[] }> {

@@ -20,6 +20,7 @@ import {
 } from '../components/ui'
 import { useGate } from '../gateContext'
 import { SKILLS, skillErrorText } from '../strings'
+import { skillDisplayName, skillSourceLabel } from './skills/skillDisplay'
 
 export function toggleSkillSelection(prev: Set<string>, id: string, checked: boolean): Set<string> {
   const next = new Set(prev)
@@ -47,27 +48,6 @@ export function mergeSkillSelection(
     seen.add(id)
   }
   return out
-}
-
-function sourceLabel(source: SkillSummary['source']): string {
-  switch (source) {
-    case 'builtin':
-      return SKILLS.sourceBuiltin
-    case 'user':
-      return SKILLS.sourceUser
-    default: {
-      const _exhaustive: never = source
-      return _exhaustive
-    }
-  }
-}
-
-function skillDisplayName(s: SkillSummary): string {
-  const desc = s.description?.trim()
-  if (desc) return desc
-  const name = s.name?.trim()
-  if (name) return name
-  return s.id
 }
 
 function toolsSummary(tools: string[]): string {
@@ -249,7 +229,7 @@ export function SkillsSettings() {
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
       {loadFailed && <p className="settings-error">{loadError}</p>}
-      {skills === null && !loadFailed && <p className="settings-muted">加载中…</p>}
+      {skills === null && !loadFailed && <p className="settings-muted">{SKILLS.loading}</p>}
 
       {showEmpty && (
         <EmptyState
@@ -290,7 +270,7 @@ export function SkillsSettings() {
             const showId = Boolean(s.description?.trim() && s.id !== title)
             const toolsLine = toolsSummary(s.tools)
             const sourceBadge = (
-              <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{sourceLabel(s.source)}</Badge>
+              <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{skillSourceLabel(s.source)}</Badge>
             )
             const meta = (
               <span className="settings-skill-line">

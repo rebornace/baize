@@ -101,7 +101,7 @@ export function ToolsAddModal({
             onChange={(e) => setForm((f) => ({ ...f, path: e.target.value }))}
             disabled={submitting}
             required
-            placeholder="/items/{id}"
+            placeholder={TOOLS.phToolPath}
           />
         </Field>
         <Field label={TOOLS.fieldTitle}>

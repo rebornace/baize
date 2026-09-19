@@ -60,7 +60,7 @@ export function McpExportIdentitiesSection({
                       value={editForm.scheme}
                       onChange={(e) => setEditForm((f) => ({ ...f, scheme: e.target.value }))}
                       disabled={busy}
-                      placeholder="Bearer"
+                      placeholder={MCP_EXPORTS.phIdentityScheme}
                     />
                   </Field>
                   <Field label={MCP_EXPORTS.identityHeaders}>
@@ -69,7 +69,7 @@ export function McpExportIdentitiesSection({
                       value={editForm.headersText}
                       onChange={(e) => setEditForm((f) => ({ ...f, headersText: e.target.value }))}
                       disabled={busy}
-                      placeholder={'Authorization=Bearer ${TOKEN}'}
+                      placeholder={MCP_EXPORTS.phIdentityHeadersEdit}
                     />
                   </Field>
                   {editFormError && (
@@ -144,7 +144,7 @@ export function McpExportIdentitiesSection({
             value={createForm.name}
             onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
             disabled={busy}
-            placeholder="Ops"
+            placeholder={MCP_EXPORTS.phIdentityName}
           />
         </Field>
         <Field label={MCP_EXPORTS.identityScheme}>
@@ -152,7 +152,7 @@ export function McpExportIdentitiesSection({
             value={createForm.scheme}
             onChange={(e) => setCreateForm((f) => ({ ...f, scheme: e.target.value }))}
             disabled={busy}
-            placeholder="Bearer"
+            placeholder={MCP_EXPORTS.phIdentityScheme}
           />
         </Field>
         <Field label={MCP_EXPORTS.identityHeaders}>
@@ -161,7 +161,7 @@ export function McpExportIdentitiesSection({
             value={createForm.headersText}
             onChange={(e) => setCreateForm((f) => ({ ...f, headersText: e.target.value }))}
             disabled={busy}
-            placeholder="X-Team=ops"
+            placeholder={MCP_EXPORTS.phIdentityHeaders}
           />
         </Field>
         {createFormError && (

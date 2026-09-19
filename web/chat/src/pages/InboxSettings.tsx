@@ -340,7 +340,7 @@ export function InboxSettings() {
                   <Input
                     value={row.id}
                     onChange={(e) => updateRow(index, { id: e.target.value })}
-                    placeholder="alerts"
+                    placeholder={INBOX.phId}
                     required
                   />
                 </Field>
@@ -371,7 +371,7 @@ export function InboxSettings() {
                   <Input
                     value={row.description}
                     onChange={(e) => updateRow(index, { description: e.target.value })}
-                    placeholder="运维告警入口"
+                    placeholder={INBOX.phDescription}
                   />
                 </Field>
                 <div className="settings-field">
@@ -411,7 +411,7 @@ export function InboxSettings() {
                     <Input
                       value={row.webhook_url}
                       onChange={(e) => updateRow(index, { webhook_url: e.target.value })}
-                      placeholder="https://example.com/hooks/baize"
+                      placeholder={INBOX.phOverrideUrl}
                     />
                   </Field>
                   <Field
@@ -422,7 +422,7 @@ export function InboxSettings() {
                       value={row.headersText}
                       onChange={(e) => updateRow(index, { headersText: e.target.value })}
                       rows={3}
-                      placeholder="Authorization=Bearer ${API_TOKEN}"
+                      placeholder={INBOX.phOverrideHeaders}
                     />
                   </Field>
                 </details>

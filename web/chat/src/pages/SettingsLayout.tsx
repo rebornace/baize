@@ -33,7 +33,7 @@ export function SettingsLayout() {
             }
             onClick={drawer.close}
           >
-            {OVERVIEW_ITEM.label}
+            {strings.SETTINGS_NAV.overview}
           </NavLink>
 
           {SETTINGS_GROUPS.map((group) => {

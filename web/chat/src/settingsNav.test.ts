@@ -56,6 +56,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/tools']).toBe('助手功能')
     expect(byTo['/settings/memory']).toBe('账号记忆')
     expect(byTo['/settings/openapi']).toBe('业务系统')
+    expect(byTo['/settings/plugins']).toBe('插件服务')
     expect(byTo['/settings/mcp']).toBe('外部工具服务')
     expect(byTo['/settings/mcp-export']).toBe('对外提供能力')
     expect(byTo['/settings/channels/weixin']).toBe('微信')

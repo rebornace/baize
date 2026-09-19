@@ -23,7 +23,7 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           disabled={busy}
-          placeholder="例如：工作模型 / 视觉模型"
+          placeholder={MODELS.phName}
         />
       </Field>
       <Field label={MODELS.fieldBaseUrl} required>
@@ -31,7 +31,7 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
           value={form.baseUrl}
           onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
           disabled={busy}
-          placeholder="https://api.openai.com/v1"
+          placeholder={MODELS.phBaseUrl}
         />
       </Field>
       <Field label={MODELS.fieldModel} required>
@@ -39,7 +39,7 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
           value={form.model}
           onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
           disabled={busy}
-          placeholder="gpt-4o"
+          placeholder={MODELS.phModel}
         />
       </Field>
       <Field label={MODELS.fieldApiKey}>
@@ -48,13 +48,13 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
           value={form.apiKey}
           onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
           disabled={busy}
-          placeholder={isEdit ? '留空则不修改' : '留空则使用环境变量'}
+          placeholder={isEdit ? MODELS.phApiKeyEdit : MODELS.phApiKeyCreate}
           autoComplete="off"
         />
       </Field>
       <Field
         label={MODELS.fieldTier}
-        hint="智能选择按对话难度在快速/标准/深度思考档位间选模型；图片消息只走勾选了「视觉」的模型。"
+        hint={MODELS.hintTier}
       >
         <Select
           value={form.tier}
@@ -117,7 +117,7 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
             ))}
           </Select>
         </Field>
-        <Field label={MODELS.fieldContextTokens} hint="tokens，留空/0 用默认 128000">
+        <Field label={MODELS.fieldContextTokens} hint={MODELS.hintContextTokens}>
           <Input
             type="number"
             min={1024}
@@ -132,7 +132,7 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
             value={form.apiKeyEnv}
             onChange={(e) => setForm((f) => ({ ...f, apiKeyEnv: e.target.value }))}
             disabled={busy}
-            placeholder="OPENAI_API_KEY"
+            placeholder={MODELS.phApiKeyEnv}
           />
         </Field>
       </details>
