@@ -202,11 +202,13 @@ img {
 }
 
 /* ----- sections ----- */
-.section {
-  padding: 5rem 0 1rem;
+.section,
+.start {
+  padding-block: 5rem 1rem;
 }
 
-.section h2 {
+.section h2,
+.start h2 {
   margin: 0 0 0.75rem;
   font-family: var(--font-display);
   font-size: clamp(1.7rem, 3.5vw, 2.25rem);
@@ -214,7 +216,8 @@ img {
   letter-spacing: 0.04em;
 }
 
-.section .support {
+.section .support,
+.start .support {
   margin: 0 0 2.25rem;
   max-width: 36rem;
   color: var(--muted);
@@ -254,8 +257,10 @@ img {
 }
 
 .start {
-  margin: 4.5rem 0 0;
-  padding: 2.25rem 0 5rem;
+  /* 只用 margin-top，避免 margin 简写盖掉 .wrap 的 margin-inline: auto */
+  margin-top: 4.5rem;
+  padding-top: 2.25rem;
+  padding-bottom: 5rem;
   border-top: 1px solid rgba(183, 207, 196, 0.22);
 }
 
