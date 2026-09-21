@@ -38,6 +38,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
@@ -417,6 +418,12 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		}
 	}
 
+	// Decision layer (DP-1): a Rules-first chain that is zero-cost and always
+	// available. The feature stays behind the hot decide knobs (default off);
+	// when a dedicated small-model profile is added later, prepend a
+	// decide.Remote built from it without touching engine call sites.
+	decider := decide.NewChain(decide.NewRules())
+
 	engine := &run.Engine{
 		Store:       st,
 		LLM:         provider,
@@ -430,6 +437,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		Identities:  identities,
 		Skills:      skillCat,
 		Memory:      mem,
+		Decider:     decider,
 	}
 	if meta, ok := messages.(conversation.MetaStore); ok {
 		engine.Meta = meta
@@ -804,6 +812,11 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		DefaultAgentID: d.defaultAgentID,
 		Media:          d.channelMedia,
 		ResolveModel:   resolveModel,
+		// DP-0: expose the deterministic classifier so channel inbound records
+		// the desired tier on model.routed.
+		Classify: func(sig llm.TaskSignals) string {
+			return llm.ClassifyTask(sig)
+		},
 		AfterCreateRun: func(ctx context.Context, runRec *store.Run, userParts []llm.ContentPart) error {
 			d.srv.Dispatch(context.Background(), middleware.Job{
 				RunID:     runRec.ID,

@@ -119,6 +119,34 @@ func TestPatchRuntimeMemorySwitchesHot(t *testing.T) {
 	}
 }
 
+func TestPatchRuntimeDecideSwitchesHot(t *testing.T) {
+	srv, st := runtimeSettingsServer(t)
+	rr := doJSON(t, srv, http.MethodGet, "/v0/settings/runtime", "op", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	// Default off.
+	if !strings.Contains(rr.Body.String(), `"decide_enabled":false`) ||
+		!strings.Contains(rr.Body.String(), `"decide_memory_enabled":false`) {
+		t.Fatalf("expected decide knobs default false, body=%s", rr.Body.String())
+	}
+	rr = doJSON(t, srv, http.MethodPatch, "/v0/settings/runtime", "adm",
+		map[string]any{"decide_enabled": true, "decide_memory_enabled": true})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !srv.Settings.Knobs().DecideEnabled || !srv.Settings.Knobs().DecideMemoryEnabled {
+		t.Fatalf("decide knobs not applied: %+v", srv.Settings.Knobs())
+	}
+	h2 := runtimecfg.New(runtimecfg.Snapshot{})
+	if err := h2.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if !h2.Knobs().DecideEnabled || !h2.Knobs().DecideMemoryEnabled {
+		t.Fatalf("decide overrides must survive reload: %+v", h2.Knobs())
+	}
+}
+
 func TestPatchRuntimePublicBaseURLHot(t *testing.T) {
 	srv, st := runtimeSettingsServer(t)
 	rr := doJSON(t, srv, http.MethodPatch, "/v0/settings/runtime", "adm",

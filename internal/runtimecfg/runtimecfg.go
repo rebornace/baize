@@ -26,6 +26,9 @@ type Knobs struct {
 	CompactSummaryTimeout time.Duration
 	MemoryEnabled         bool // account memory inject + tools gate
 	MemoryAutoExtract     bool // post-run auto extract (also requires MemoryEnabled)
+	// Decide
+	DecideEnabled       bool // master switch for the decision layer
+	DecideMemoryEnabled bool // DP-1: pre-extract worth-it judgment
 }
 
 // Credentials is the effective control-plane credential set.
@@ -62,6 +65,8 @@ type knobsOverride struct {
 	CompactSummaryTimeoutSec *int     `json:"compact_summary_timeout_seconds,omitempty"`
 	MemoryEnabled            *bool    `json:"memory_enabled,omitempty"`
 	MemoryAutoExtract        *bool    `json:"memory_auto_extract,omitempty"`
+	DecideEnabled            *bool    `json:"decide_enabled,omitempty"`
+	DecideMemoryEnabled      *bool    `json:"decide_memory_enabled,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -176,6 +181,12 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.MemoryAutoExtract != nil {
 		k.MemoryAutoExtract = *ko.MemoryAutoExtract
 	}
+	if ko.DecideEnabled != nil {
+		k.DecideEnabled = *ko.DecideEnabled
+	}
+	if ko.DecideMemoryEnabled != nil {
+		k.DecideMemoryEnabled = *ko.DecideMemoryEnabled
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -212,6 +223,8 @@ type KnobsFieldFlags struct {
 	CompactSummaryTimeout bool `json:"compact_summary_timeout_seconds"`
 	MemoryEnabled         bool `json:"memory_enabled"`
 	MemoryAutoExtract     bool `json:"memory_auto_extract"`
+	DecideEnabled         bool `json:"decide_enabled"`
+	DecideMemoryEnabled   bool `json:"decide_memory_enabled"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -241,6 +254,8 @@ func (h *Holder) KnobsView() KnobsView {
 			CompactSummaryTimeout: ko.CompactSummaryTimeoutSec != nil,
 			MemoryEnabled:         ko.MemoryEnabled != nil,
 			MemoryAutoExtract:     ko.MemoryAutoExtract != nil,
+			DecideEnabled:         ko.DecideEnabled != nil,
+			DecideMemoryEnabled:   ko.DecideMemoryEnabled != nil,
 		},
 	}
 }

@@ -77,6 +77,24 @@ type fakeRuns struct {
 	waiting map[string]*store.Run
 	creates []store.CreateRunInput
 	runs    []*store.Run
+	events  []store.Event
+}
+
+// AppendEvent makes fakeRuns satisfy the optional run-event appender used to
+// persist post-CreateRun observability events (DP-0).
+func (f *fakeRuns) AppendEvent(runID string, ev store.Event) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, ev)
+	return nil
+}
+
+func (f *fakeRuns) appendedEvents() []store.Event {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]store.Event, len(f.events))
+	copy(out, f.events)
+	return out
 }
 
 func (f *fakeRuns) HasActiveRun(conversationID string) (bool, error) {
@@ -197,6 +215,52 @@ func TestHandleInboundCreatesMetaAndRun(t *testing.T) {
 	}
 	if len(ch.texts()) != 0 {
 		t.Fatalf("unexpected SendText: %+v", ch.texts())
+	}
+}
+
+// TestHandleInboundEmitsModelRoutedEvent (DP-0): after a run is created the
+// runtime must append a model.routed event with desired_tier and the resolved
+// profile id. Observability only — it must not change routing behavior.
+func TestHandleInboundEmitsModelRoutedEvent(t *testing.T) {
+	runs := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, runs)
+	rt.ResolveModel = func(llm.TaskSignals) (string, bool, bool) {
+		return "mp_light", true, true
+	}
+	rt.Classify = func(llm.TaskSignals) string {
+		return store.AutoTierLight
+	}
+	rt.AfterCreateRun = func(_ context.Context, _ *store.Run, _ []llm.ContentPart) error {
+		return nil
+	}
+	ch := &fakeChannel{name: "fake"}
+
+	if err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "你好",
+		Extras: map[string]string{"account": "acc-1"},
+	}); err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+
+	var routed *store.Event
+	evs := runs.appendedEvents()
+	for i := range evs {
+		if evs[i].Type == "model.routed" {
+			routed = &evs[i]
+		}
+	}
+	if routed == nil {
+		t.Fatalf("missing model.routed event; events=%+v", evs)
+	}
+	if got := routed.Data["desired_tier"]; got != store.AutoTierLight {
+		t.Fatalf("desired_tier=%v want %s", got, store.AutoTierLight)
+	}
+	if got := routed.Data["resolved_profile_id"]; got != "mp_light" {
+		t.Fatalf("resolved_profile_id=%v want mp_light", got)
+	}
+	if got := routed.Data["auto"]; got != true {
+		t.Fatalf("auto=%v want true", got)
 	}
 }
 

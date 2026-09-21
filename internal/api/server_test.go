@@ -136,7 +136,16 @@ func TestRunSucceedsWithFakeRunner(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&evs); err != nil {
 		t.Fatal(err)
 	}
-	if len(evs) == 0 || evs[0].Type != "run.started" {
+	// DP-0 prepends a model.routed event, so run.started is no longer first;
+	// assert it is present rather than at index 0.
+	hasStarted := false
+	for _, ev := range evs {
+		if ev.Type == "run.started" {
+			hasStarted = true
+			break
+		}
+	}
+	if !hasStarted {
 		t.Fatalf("events=%+v", evs)
 	}
 }

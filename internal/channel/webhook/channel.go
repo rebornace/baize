@@ -177,6 +177,7 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		Assignee:       c.cfg.Assignee,
 		DefaultAgentID: firstNonEmpty(c.cfg.AgentID, deps.DefaultAgentID),
 		ResolveModel:   deps.ResolveModel,
+		Classify:       deps.Classify,
 		AfterCreateRun: deps.AfterCreateRun,
 		ResumeHITL:     deps.ResumeHITL,
 		Source:         c.cfg.Source,

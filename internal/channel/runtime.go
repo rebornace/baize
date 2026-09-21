@@ -34,6 +34,17 @@ type RunStore interface {
 	WaitingHumanRun(conversationID string) (*store.Run, error)
 }
 
+// runEventAppender is an optional capability a RunStore may implement to
+// accept events after a run is created (DP-0 observability). Stores that do
+// not implement it (narrow test fakes) simply skip the event.
+type runEventAppender interface {
+	AppendEvent(runID string, ev store.Event) error
+}
+
+// eventModelRouted mirrors run.EventModelRouted; it is duplicated here because
+// the channel package must not depend on internal/run (run depends on channel).
+const eventModelRouted = "model.routed"
+
 // Runtime turns normalized Channel inbound messages into conversation meta + runs.
 type Runtime struct {
 	Runs           RunStore
@@ -45,6 +56,10 @@ type Runtime struct {
 	// the doc on BuildDeps.ResolveModel. nil means no profile source is wired
 	// (tests / non-LLM paths): images then degrade to text notes.
 	ResolveModel func(sig llm.TaskSignals) (profileID string, visionOK, hasModels bool)
+	// Classify returns the desired capability tier for a turn (DP-0). nil in
+	// tests / when no classifier is wired; the model.routed event then leaves
+	// desired_tier empty. Read live per inbound message so it stays current.
+	Classify func(sig llm.TaskSignals) string
 	// AfterCreateRun is an optional hook to start the engine after CreateRun.
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run (approve/reject). Optional;
@@ -201,6 +216,25 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 	})
 	if err != nil {
 		return fmt.Errorf("channel: create run: %w", err)
+	}
+
+	// DP-0: append a model.routed observability event. Best-effort: a run
+	// store without event support (narrow fakes) skips it. Channel inbound is
+	// always Auto, so auto is fixed true.
+	if appender, ok := r.Runs.(runEventAppender); ok {
+		desiredTier := ""
+		if r.Classify != nil {
+			desiredTier = r.Classify(sig)
+		}
+		_ = appender.AppendEvent(runRec.ID, store.Event{
+			Type: eventModelRouted,
+			Data: map[string]any{
+				"desired_tier":        desiredTier,
+				"resolved_profile_id": runModelProfileID,
+				"auto":                true,
+				"reason":              "channel_auto",
+			},
+		})
 	}
 
 	// Persist inbound attachments for the web UI and append references to the

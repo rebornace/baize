@@ -1,0 +1,32 @@
+package run
+
+import (
+	"strings"
+)
+
+// decideProbeMaxRunes bounds the context sent to the decision layer. The gate
+// call must never be more expensive than the extraction it tries to save, so
+// the probe is aggressively truncated.
+const decideProbeMaxRunes = 1500
+
+// effectiveDecideMemory reports whether DP-1 is live: the decision master
+// switch and the memory decision switch are both on. With no Settings (many
+// test Engines) it stays off, preserving legacy behavior.
+func (e *Engine) effectiveDecideMemory() bool {
+	if e.Settings == nil || e.Decider == nil {
+		return false
+	}
+	k := e.Settings.Knobs()
+	return k.DecideEnabled && k.DecideMemoryEnabled
+}
+
+// buildExtractProbe assembles the (truncated) context for the worth-extracting
+// judgment. It mirrors the shape of the extraction payload but is capped.
+func buildExtractProbe(input, output string) string {
+	user := "用户输入：\n" + strings.TrimSpace(input) + "\n\n助手回复：\n" + strings.TrimSpace(output)
+	r := []rune(user)
+	if len(r) > decideProbeMaxRunes {
+		user = string(r[:decideProbeMaxRunes])
+	}
+	return user
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/store"
@@ -39,6 +40,28 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 	output = strings.TrimSpace(output)
 	if input == "" && output == "" {
 		return
+	}
+
+	// DP-1: ask the decision layer whether this turn is worth a memory
+	// extraction before paying for the generative call. OnFail is Yes: if the
+	// layer is down/degraded, extract as today (fail open, never lose a memory).
+	if e.effectiveDecideMemory() {
+		ans, derr := e.Decider.Ask(ctx, decide.Question{
+			Kind:    decide.KindMemoryExtract,
+			Context: buildExtractProbe(input, output),
+			OnFail:  decide.VerdictYes,
+			TraceID: runID,
+		})
+		// A returned error is treated as fail-open (extract as today). The
+		// production *decide.Chain never errors, so this only happens with a
+		// raw implementation; safety wins over a saved call.
+		if derr == nil && ans.Verdict == decide.VerdictNo && !ans.Degraded {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventMemoryExtractSkipped,
+				Data: map[string]any{"reason": "decider_no", "source": ans.Source},
+			})
+			return
+		}
 	}
 
 	user := "用户输入：\n" + input + "\n\n助手回复：\n" + output

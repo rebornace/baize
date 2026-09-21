@@ -109,6 +109,32 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	modelProfileID := sel.ProfileID
 
+	// DP-0: persist a model.routed observability event with the run. For Auto
+	// the desired tier is the classifier output; for a manual choice we record
+	// the chosen profile's tier. This never changes the routing outcome.
+	desiredTier := ""
+	reason := "manual"
+	if sel.Auto {
+		desiredTier = llm.ClassifyTask(sig)
+		reason = "auto_classify"
+	} else {
+		for _, p := range profiles {
+			if p.ID == modelProfileID {
+				desiredTier = p.Tier
+				break
+			}
+		}
+	}
+	modelRoutedEvent := store.Event{
+		Type: run.EventModelRouted,
+		Data: map[string]any{
+			"desired_tier":        desiredTier,
+			"resolved_profile_id": modelProfileID,
+			"auto":                sel.Auto,
+			"reason":              reason,
+		},
+	}
+
 	// Persist attachments to the per-conversation workspace (best-effort:
 	// failures are logged and never block the turn). Saved logical paths are
 	// listed so the model knows the files are available to read later. This
@@ -268,6 +294,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Webhook:        webhookCfg,
 		Passthrough:    passthrough,
 		UserParts:      userParts,
+		PreEvents:      []store.Event{modelRoutedEvent},
 		ModelProfileID: modelProfileID,
 		ThinkingLevel:  lvl,
 		BubbleContent:  bubbleContent,

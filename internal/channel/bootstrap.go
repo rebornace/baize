@@ -44,6 +44,10 @@ type BuildDeps struct {
 	// vision-capable model, and whether any model is configured at all. Channel
 	// inbound has no manual picker, so it is always Auto.
 	ResolveModel func(sig llm.TaskSignals) (profileID string, visionOK, hasModels bool)
+	// Classify returns the desired capability tier for a turn (DP-0). Optional;
+	// nil leaves desired_tier empty on the model.routed event. Read live per
+	// inbound message so it stays current without restart.
+	Classify func(sig llm.TaskSignals) string
 	// AfterCreateRun enqueues the run after inbound CreateRun (engine wiring).
 	AfterCreateRun func(ctx context.Context, run *store.Run, userParts []llm.ContentPart) error
 	// ResumeHITL continues a waiting_human run after an approve/reject reply.

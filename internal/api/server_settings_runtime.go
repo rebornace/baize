@@ -19,6 +19,8 @@ type runtimeKnobsJSON struct {
 	CompactSummaryTimeoutSeconds int     `json:"compact_summary_timeout_seconds"`
 	MemoryEnabled                bool    `json:"memory_enabled"`
 	MemoryAutoExtract            bool    `json:"memory_auto_extract"`
+	DecideEnabled                bool    `json:"decide_enabled"`
+	DecideMemoryEnabled          bool    `json:"decide_memory_enabled"`
 }
 
 func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
@@ -33,6 +35,8 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		CompactSummaryTimeoutSeconds: int(k.CompactSummaryTimeout.Seconds()),
 		MemoryEnabled:                k.MemoryEnabled,
 		MemoryAutoExtract:            k.MemoryAutoExtract,
+		DecideEnabled:                k.DecideEnabled,
+		DecideMemoryEnabled:          k.DecideMemoryEnabled,
 	}
 }
 

@@ -28,6 +28,8 @@ type KnobsPatch struct {
 	CompactSummaryTimeoutSeconds *int     `json:"compact_summary_timeout_seconds,omitempty"`
 	MemoryEnabled                *bool    `json:"memory_enabled,omitempty"`
 	MemoryAutoExtract            *bool    `json:"memory_auto_extract,omitempty"`
+	DecideEnabled                *bool    `json:"decide_enabled,omitempty"`
+	DecideMemoryEnabled          *bool    `json:"decide_memory_enabled,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 }
 
@@ -177,6 +179,12 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.MemoryAutoExtract != nil {
 		next.MemoryAutoExtract = p.MemoryAutoExtract
+	}
+	if p.DecideEnabled != nil {
+		next.DecideEnabled = p.DecideEnabled
+	}
+	if p.DecideMemoryEnabled != nil {
+		next.DecideMemoryEnabled = p.DecideMemoryEnabled
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

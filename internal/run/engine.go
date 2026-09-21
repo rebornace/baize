@@ -12,6 +12,7 @@ import (
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
@@ -39,6 +40,9 @@ const (
 	// EventContextCompacted records a rolling-summary compaction before a run.
 	EventContextCompacted = "context.compacted"
 	EventWorkflowPrefix   = "workflow."
+	// EventModelRouted (DP-0) records the desired capability tier and the
+	// resolved profile id when a run is created. Observability only.
+	EventModelRouted = "model.routed"
 
 	DefaultToolTimeout = 60 * time.Second
 )
@@ -80,6 +84,10 @@ type Engine struct {
 	Meta conversation.MetaStore
 	// Memory is optional account-scoped fact store (P6). nil disables memory.
 	Memory memory.Store
+	// Decider optionally consults the decision layer before memory extraction
+	// (DP-1). nil disables the layer (legacy behavior); always nil-guard call
+	// sites because most test-built Engines do not set it.
+	Decider decide.Ask
 	// Outbound is optional channel used for UI→peer sync after a succeeded run.
 	Outbound channel.Channel
 	// OutboundExtras optionally supplies per-conversation extras (e.g. context_token).
