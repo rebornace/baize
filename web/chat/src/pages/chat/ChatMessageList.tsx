@@ -6,10 +6,11 @@ import { MarkdownText } from '../../components/MarkdownText'
 import { ThinkingBlock, MessageThinkingFallback } from '../../components/ThinkingBlock'
 import { ToolCard } from '../../components/ToolCard'
 import { TypewriterText } from '../../components/TypewriterText'
+import { UsageMetaLine } from '../../components/UsageMetaLine'
 import { UserBubble } from '../../components/UserBubble'
 import { WorkflowCard } from '../../components/WorkflowCard'
 import { DropdownMenu, type MenuItem } from '../../components/ui'
-import type { ChatBlock } from '../../foldEvents'
+import type { ChatBlock, UsageMeta } from '../../foldEvents'
 import type { ToolCatalog } from '../../friendlyTool'
 import {
   isFirstAssistantMessageOfRun,
@@ -23,6 +24,7 @@ export type ChatMessageListProps = {
   liveRunId: string | null
   historyPages: Record<string, string[]>
   historyBlocks: Record<string, ToolOrWorkflowBlock[]>
+  historyUsage: Record<string, UsageMeta>
   toolCatalog: ToolCatalog
   busy: boolean
   historyMutating: boolean
@@ -73,6 +75,7 @@ export function ChatMessageList({
   liveRunId,
   historyPages,
   historyBlocks,
+  historyUsage,
   toolCatalog,
   busy,
   historyMutating,
@@ -208,6 +211,12 @@ export function ChatMessageList({
                   ))}
                 </div>
               )}
+              {m.role === 'assistant' &&
+                m.run_id &&
+                isFirstAssistantMessageOfRun(msgIndex, messages) &&
+                historyUsage[m.run_id] && (
+                  <UsageMetaLine usage={historyUsage[m.run_id]} />
+                )}
               {canAct && (
                 <div className="msg-actions">
                   {m.role === 'user' && (
@@ -247,6 +256,7 @@ export function ChatMessageList({
                   <div className="msg assistant">
                     <TypewriterText text={block.text} active />
                   </div>
+                  {block.usage && <UsageMetaLine usage={block.usage} />}
                 </div>
               )
             case 'thinking':

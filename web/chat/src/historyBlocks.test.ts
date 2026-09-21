@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Event } from './api'
-import { foldToolBlocks, isFirstAssistantMessageOfRun } from './historyBlocks'
+import {
+  foldToolBlocks,
+  isFirstAssistantMessageOfRun,
+  runUsageFromEvents,
+} from './historyBlocks'
 
 function msg(role: string, runId?: string | null) {
   return { role, run_id: runId ?? null }
@@ -49,6 +53,41 @@ describe('foldToolBlocks', () => {
     expect(blocks.map((b) => b.kind)).toEqual(['thinking', 'tool', 'thinking'])
     expect(blocks[0]).toMatchObject({ kind: 'thinking', turn: 0, text: '想' })
     expect(blocks[2]).toMatchObject({ kind: 'thinking', turn: 1, text: '再想', collapsed: true })
+  })
+})
+
+describe('runUsageFromEvents', () => {
+  it('aggregates usage and savings for a completed run', () => {
+    const events: Event[] = [
+      ev('llm.usage', { turn: 0, prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 }),
+      ev('memory.extract_skipped', { reason: 'decider_no', saved_tokens: 53 }),
+      ev('llm.message', {
+        content: '已创建',
+        prompt_tokens: 20,
+        completion_tokens: 6,
+        total_tokens: 26,
+      }),
+    ]
+    expect(runUsageFromEvents('run-1', events)).toEqual({
+      promptTokens: 30,
+      completionTokens: 10,
+      totalTokens: 40,
+      savedTokens: 53,
+    })
+  })
+  it('returns undefined when nothing reported tokens or savings', () => {
+    expect(runUsageFromEvents('r', [ev('llm.message', { content: 'hi' })])).toBeUndefined()
+  })
+  it('surface savings alone when no llm.message usage exists', () => {
+    const events: Event[] = [
+      ev('memory.extract_skipped', { reason: 'decider_no', saved_tokens: 12 }),
+    ]
+    expect(runUsageFromEvents('r', events)).toEqual({
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      savedTokens: 12,
+    })
   })
 })
 

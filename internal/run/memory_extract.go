@@ -58,7 +58,11 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 		if derr == nil && ans.Verdict == decide.VerdictNo && !ans.Degraded {
 			_ = e.Store.AppendEvent(runID, store.Event{
 				Type: EventMemoryExtractSkipped,
-				Data: map[string]any{"reason": "decider_no", "source": ans.Source},
+				Data: map[string]any{
+					"reason":       "decider_no",
+					"source":       ans.Source,
+					"saved_tokens": estimateExtractionInputTokens(input, output),
+				},
 			})
 			return
 		}

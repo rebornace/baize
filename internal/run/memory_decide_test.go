@@ -85,6 +85,37 @@ func TestDP1DeciderNoSkipsExtract(t *testing.T) {
 	}
 }
 
+// AC-03 (cost): when the decider skips extraction the skip event records an
+// estimate of the input tokens the avoided extraction call would have spent
+// (system prompt + user payload), so the UI can show the saving.
+func TestDP1SkipEventRecordsSavedTokens(t *testing.T) {
+	decider := &stubDecider{ans: decide.Answer{Verdict: decide.VerdictNo, Source: decide.SourceRules}}
+	eng, r, calls := newDP1Engine(t, decider, decideSettings())
+
+	eng.maybeExtractMemory(context.Background(), r.ID, "alice", "记住我喜欢绿茶", "好的，已记下")
+
+	if *calls != 0 {
+		t.Fatalf("extraction must be skipped, calls=%d", *calls)
+	}
+	evs, _ := eng.Store.ListEvents(r.ID)
+	var skipped *store.Event
+	for i := range evs {
+		if evs[i].Type == EventMemoryExtractSkipped {
+			skipped = &evs[i]
+		}
+	}
+	if skipped == nil {
+		t.Fatalf("missing skip event; evs=%+v", evs)
+	}
+	want := estimateExtractionInputTokens("记住我喜欢绿茶", "好的，已记下")
+	if got := asInt(skipped.Data, "saved_tokens"); got != want {
+		t.Fatalf("saved_tokens=%d want %d", got, want)
+	}
+	if got := asInt(skipped.Data, "saved_tokens"); got <= 0 {
+		t.Fatalf("saved_tokens must be positive, got %d", got)
+	}
+}
+
 // AC-04: a degraded verdict (all providers failed, OnFail=Yes) must extract as
 // today — fail open rather than silently dropping a memory.
 func TestDP1DeciderDegradedStillExtracts(t *testing.T) {

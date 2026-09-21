@@ -1,10 +1,18 @@
 import type { Event } from './api'
-import { foldEvents, type ChatBlock } from './foldEvents'
+import { foldEvents, type ChatBlock, type UsageMeta } from './foldEvents'
 
 export type HistoryBlock = Extract<ChatBlock, { kind: 'tool' | 'workflow' | 'thinking' }>
 
 /** @deprecated Prefer HistoryBlock; kept for call-site compatibility. */
 export type ToolOrWorkflowBlock = HistoryBlock
+
+// emptyUsage is the "nothing to report" marker.
+const emptyUsage: UsageMeta = {
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  savedTokens: 0,
+}
 
 /** 该 index 是否为同一 run_id 的第一条 assistant 消息（历史工具块只在此锚定一次）。 */
 export function isFirstAssistantMessageOfRun(
@@ -25,4 +33,26 @@ export function foldToolBlocks(runId: string, events: Event[]): HistoryBlock[] {
     (b): b is HistoryBlock =>
       b.kind === 'tool' || b.kind === 'workflow' || b.kind === 'thinking',
   )
+}
+
+/**
+ * 从持久化 run 事件中聚合 run 级 token 用量与记忆抽取节省量，供历史回看
+ * 附加到该 run 的助手消息。无任何可报告数据时返回 undefined。
+ */
+export function runUsageFromEvents(runId: string, events: Event[]): UsageMeta | undefined {
+  const folded = foldEvents(runId, events)
+  for (let i = folded.length - 1; i >= 0; i--) {
+    const b = folded[i]
+    if (b.kind === 'assistant' && b.usage) return b.usage
+  }
+  // No assistant block carried usage; surface savings recorded on their own.
+  let saved = 0
+  for (const ev of events) {
+    if (ev.type === 'memory.extract_skipped') {
+      const n = Number(ev.data?.saved_tokens)
+      if (Number.isFinite(n)) saved += n
+    }
+  }
+  if (saved <= 0) return undefined
+  return { ...emptyUsage, savedTokens: saved }
 }

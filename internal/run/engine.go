@@ -32,6 +32,7 @@ const (
 	EventLLMContentDelta  = "llm.content.delta"
 	EventLLMThinking      = "llm.thinking"
 	EventLLMMessage       = "llm.message"
+	EventLLMUsage         = "llm.usage"
 	EventLLMError         = "llm.error"
 	EventHITLWaiting      = "hitl.waiting"
 	EventHITLResumed      = "hitl.resumed"
@@ -510,6 +511,15 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		}
 
 		if len(msg.ToolCalls) > 0 {
+			// Record the real cost of this call before any tool work. Only
+			// reported usage is persisted; mock/unreporting providers leave a
+			// zero value and are skipped rather than recording a false 0.
+			if msg.Usage.TotalTokens > 0 {
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventLLMUsage,
+					Data: usageData(turn, msg.Usage),
+				})
+			}
 			// Strip thinking so in-run history never re-feeds it to the model
 			// (eventsAfterInput / buildMessages already omit it).
 			msg.Thinking = ""
@@ -569,6 +579,11 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			msgData["thinking"] = joined
 			if anyRedacted && joined == "" {
 				msgData["thinking_redacted"] = true
+			}
+		}
+		if msg.Usage.TotalTokens > 0 {
+			for k, v := range usageData(turn, msg.Usage) {
+				msgData[k] = v
 			}
 		}
 		_ = e.Store.AppendEvent(runID, store.Event{
@@ -633,6 +648,16 @@ func (e *Engine) ensureRunStarted(runID string) error {
 func asString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// usageData serializes a turn's real usage for event persistence.
+func usageData(turn int, u llm.Usage) map[string]any {
+	return map[string]any{
+		"turn":              turn,
+		"prompt_tokens":     u.PromptTokens,
+		"completion_tokens": u.CompletionTokens,
+		"total_tokens":      u.TotalTokens,
+	}
 }
 
 func asBool(v any) bool {

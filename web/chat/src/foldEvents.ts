@@ -2,9 +2,16 @@ import type { Event } from './api'
 
 export type WorkflowStepStatus = 'pending' | 'running' | 'done' | 'failed'
 
+export type UsageMeta = {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  savedTokens: number
+}
+
 export type ChatBlock =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
+  | { kind: 'assistant'; text: string; usage?: UsageMeta }
   | { kind: 'system'; text: string }
   | {
       kind: 'thinking'
@@ -32,6 +39,7 @@ export type ChatBlock =
 type ToolBlock = Extract<ChatBlock, { kind: 'tool' }>
 type WorkflowBlock = Extract<ChatBlock, { kind: 'workflow' }>
 type ThinkingBlock = Extract<ChatBlock, { kind: 'thinking' }>
+type AssistantBlock = Extract<ChatBlock, { kind: 'assistant' }>
 
 function findThinkingByTurn(blocks: ChatBlock[], turn: number): ThinkingBlock | undefined {
   for (let i = blocks.length - 1; i >= 0; i--) {
@@ -64,6 +72,13 @@ function upsertThinking(
   return created
 }
 
+function findLastAssistant(blocks: ChatBlock[]): AssistantBlock | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].kind === 'assistant') return blocks[i] as AssistantBlock
+  }
+  return undefined
+}
+
 function upsertAssistant(blocks: ChatBlock[], text: string): void {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i]
@@ -73,6 +88,20 @@ function upsertAssistant(blocks: ChatBlock[], text: string): void {
     }
   }
   blocks.push({ kind: 'assistant', text })
+}
+
+// applyUsageMeta writes the run-level usage summary onto the terminal
+// assistant block when there is anything to report.
+function applyUsageMeta(blocks: ChatBlock[], meta: UsageMeta): void {
+  if (meta.totalTokens <= 0 && meta.savedTokens <= 0) return
+  const asst = findLastAssistant(blocks)
+  if (!asst) return
+  asst.usage = { ...meta }
+}
+
+function numField(data: Record<string, unknown> | undefined, key: string): number {
+  const n = Number(data?.[key])
+  return Number.isFinite(n) ? n : 0
 }
 
 function eventTurn(data: Record<string, unknown> | undefined): number {
@@ -152,10 +181,26 @@ function setWorkflowStepStatus(
 
 export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
   const blocks: ChatBlock[] = []
+  // Run-level totals accumulated across all turns. llm.usage (tool-call turns)
+  // arrives before the terminal llm.message; memory.extract_skipped arrives
+  // after it. Both accumulate here and are flushed onto the assistant block.
+  const meta: UsageMeta = { promptTokens: 0, completionTokens: 0, totalTokens: 0, savedTokens: 0 }
 
   for (const ev of events) {
     const data = ev.data
     switch (ev.type) {
+      case 'llm.usage': {
+        meta.promptTokens += numField(data, 'prompt_tokens')
+        meta.completionTokens += numField(data, 'completion_tokens')
+        meta.totalTokens += numField(data, 'total_tokens')
+        applyUsageMeta(blocks, meta)
+        break
+      }
+      case 'memory.extract_skipped': {
+        meta.savedTokens += numField(data, 'saved_tokens')
+        applyUsageMeta(blocks, meta)
+        break
+      }
       case 'llm.tool_call': {
         const name = String(data?.name ?? 'tool')
         blocks.push({
@@ -256,6 +301,10 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
       case 'llm.message': {
         const content = String(data?.content ?? '')
         if (content) upsertAssistant(blocks, content)
+        meta.promptTokens += numField(data, 'prompt_tokens')
+        meta.completionTokens += numField(data, 'completion_tokens')
+        meta.totalTokens += numField(data, 'total_tokens')
+        applyUsageMeta(blocks, meta)
         break
       }
       case 'llm.error': {

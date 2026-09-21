@@ -11,6 +11,16 @@ const (
 	RoleTool      Role = "tool"
 )
 
+// Usage is the real per-call token accounting reported by the provider
+// (OpenAI-compatible usage object). Zero value means the provider did not
+// report usage (e.g. mock or a gateway that omits it); callers should treat it
+// as "unknown", not as a literal zero-cost call.
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type Message struct {
 	Role       Role
 	Content    string
@@ -19,6 +29,8 @@ type Message struct {
 	Thinking   string
 	// ThinkingRedacted is set when the upstream withheld displayable thinking.
 	ThinkingRedacted bool
+	// Usage carries the provider-reported token accounting for this call.
+	Usage Usage
 	// Parts is an optional multimodal payload. When non-empty, providers encode
 	// the message content as a structured array (text + image parts) instead of
 	// a plain string. Callers are responsible for including any text they want

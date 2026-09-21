@@ -69,7 +69,7 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 		return Message{}, fmt.Errorf("openai_compatible: empty choices")
 	}
 
-	return fromOpenAIMessage(parsed.Choices[0].Message)
+	return fromOpenAIMessage(parsed.Choices[0].Message, parsed.Usage)
 }
 
 // ChatStream posts stream:true and parses SSE deltas. Callbacks receive cumulative
@@ -145,6 +145,10 @@ func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []To
 		Messages: toOpenAIMessages(messages),
 		Stream:   stream,
 	}
+	if stream {
+		// Ask the gateway to send a final usage chunk (OpenAI-compatible).
+		reqBody.StreamOptions = &streamOptions{IncludeUsage: true}
+	}
 	if len(tools) > 0 {
 		reqBody.Tools = toOpenAITools(tools)
 	}
@@ -159,6 +163,7 @@ func (o *OpenAI) readChatSSE(r io.Reader, onThink, onContent func(string)) (Mess
 	var thinkBuf, contentBuf strings.Builder
 	toolAcc := map[int]*openAIToolCall{}
 	maxToolIdx := -1
+	var usage Usage
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -173,6 +178,11 @@ func (o *OpenAI) readChatSSE(r io.Reader, onThink, onContent func(string)) (Mess
 		var chunk openAIStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			return Message{}, fmt.Errorf("openai_compatible: decode SSE: %w", err)
+		}
+		// With stream_options.include_usage the final chunk carries usage and
+		// empty choices. Capture it and skip the delta handling.
+		if chunk.Usage != nil {
+			usage = *chunk.Usage
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -229,13 +239,14 @@ func (o *OpenAI) readChatSSE(r io.Reader, onThink, onContent func(string)) (Mess
 			om.ToolCalls = append(om.ToolCalls, *acc)
 		}
 	}
-	return fromOpenAIMessage(om)
+	return fromOpenAIMessage(om, usage)
 }
 
 type openAIStreamChunk struct {
 	Choices []struct {
 		Delta openAIStreamDelta `json:"delta"`
 	} `json:"choices"`
+	Usage *Usage `json:"usage"`
 }
 
 type openAIStreamDelta struct {
@@ -327,6 +338,7 @@ type openAIRequest struct {
 	Messages        []openAIMessage      `json:"messages"`
 	Tools           []openAITool         `json:"tools,omitempty"`
 	Stream          bool                 `json:"stream,omitempty"`
+	StreamOptions   *streamOptions       `json:"stream_options,omitempty"`
 	Thinking        *ThinkingToggle      `json:"thinking,omitempty"`
 	ReasoningEffort string               `json:"reasoning_effort,omitempty"`
 	EnableThinking  *bool                `json:"enable_thinking,omitempty"`
@@ -380,6 +392,12 @@ type openAIResponse struct {
 	Choices []struct {
 		Message openAIMessage `json:"message"`
 	} `json:"choices"`
+	Usage Usage `json:"usage"`
+}
+
+// streamOptions is the OpenAI-compatible stream options object.
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 func toOpenAIMessages(messages []Message) []openAIMessage {
@@ -474,12 +492,13 @@ func toOpenAITools(tools []ToolSpec) []openAITool {
 	return out
 }
 
-func fromOpenAIMessage(m openAIMessage) (Message, error) {
+func fromOpenAIMessage(m openAIMessage, usage Usage) (Message, error) {
 	msg := Message{
 		Role:       Role(m.Role),
 		Content:    contentString(m.Content),
 		ToolCallID: m.ToolCallID,
 		Thinking:   extractThinking(m),
+		Usage:      usage,
 	}
 	for _, tc := range m.ToolCalls {
 		args := map[string]any{}

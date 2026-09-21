@@ -2,6 +2,8 @@ package run
 
 import (
 	"strings"
+
+	"github.com/rebornace/baize/internal/llm"
 )
 
 // decideProbeMaxRunes bounds the context sent to the decision layer. The gate
@@ -29,4 +31,18 @@ func buildExtractProbe(input, output string) string {
 		user = string(r[:decideProbeMaxRunes])
 	}
 	return user
+}
+
+// estimateExtractionInputTokens approximates the input-token cost of the
+// extraction call a skip avoids, using the exact two-message shape that call
+// would have sent (system prompt + assembled user payload, including the
+// per-message structural overhead). It is an estimate (no tokenizer), so the
+// UI labels it as such; it deliberately excludes completion tokens since the
+// whole call never happens.
+func estimateExtractionInputTokens(input, output string) int {
+	user := "用户输入：\n" + strings.TrimSpace(input) + "\n\n助手回复：\n" + strings.TrimSpace(output)
+	return EstimateMessagesTokens([]llm.Message{
+		{Role: llm.RoleSystem, Content: memoryExtractSystem},
+		{Role: llm.RoleUser, Content: user},
+	})
 }

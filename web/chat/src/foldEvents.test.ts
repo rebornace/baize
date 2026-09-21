@@ -287,4 +287,43 @@ describe('foldEvents', () => {
     })
     expect(blocks[3]).toEqual({ kind: 'assistant', text: '结论' })
   })
+
+  it('aggregates run usage onto the terminal assistant block', () => {
+    const blocks = foldEvents('run_usage', [
+      ev('llm.usage', { turn: 0, prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 }),
+      ev('llm.message', {
+        content: '已创建',
+        turn: 1,
+        prompt_tokens: 20,
+        completion_tokens: 6,
+        total_tokens: 26,
+      }),
+    ])
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      kind: 'assistant',
+      text: '已创建',
+      usage: { promptTokens: 30, completionTokens: 10, totalTokens: 40, savedTokens: 0 },
+    })
+  })
+
+  it('records memory-extraction savings onto the terminal assistant block', () => {
+    const blocks = foldEvents('run_saved', [
+      ev('memory.extract_skipped', { reason: 'decider_no', source: 'rules', saved_tokens: 53 }),
+      ev('llm.message', { content: '你好呀' }),
+    ])
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      kind: 'assistant',
+      text: '你好呀',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, savedTokens: 53 },
+    })
+  })
+
+  it('does not attach usage when nothing reported tokens or savings', () => {
+    const blocks = foldEvents('run_plain', [
+      ev('llm.message', { content: '无用量' }),
+    ])
+    expect(blocks).toEqual([{ kind: 'assistant', text: '无用量' }])
+  })
 })

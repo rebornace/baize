@@ -274,6 +274,67 @@ func TestChatOpenAIReasoningEffortHigh(t *testing.T) {
 	}
 }
 
+// TestChatParsesUsage verifies the non-streaming path surfaces the provider's
+// real token usage on the returned Message.
+func TestChatParsesUsage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"答"}}],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	msg, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Usage.PromptTokens != 11 || msg.Usage.CompletionTokens != 7 || msg.Usage.TotalTokens != 18 {
+		t.Fatalf("usage=%+v want {11 7 18}", msg.Usage)
+	}
+}
+
+// TestChatStreamParsesUsage verifies streaming requests opt into usage via
+// stream_options.include_usage and surface the final usage chunk (which carries
+// empty choices) on the returned Message.
+func TestChatStreamParsesUsage(t *testing.T) {
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = b
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"答\"}}]}\n\n" +
+			"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\n" +
+			"data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	msg, err := p.ChatStream(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("chat stream: %v", err)
+	}
+	if msg.Content != "答" {
+		t.Fatalf("content=%q want 答", msg.Content)
+	}
+	if msg.Usage.PromptTokens != 11 || msg.Usage.CompletionTokens != 7 || msg.Usage.TotalTokens != 18 {
+		t.Fatalf("usage=%+v want {11 7 18}", msg.Usage)
+	}
+
+	var req struct {
+		StreamOptions map[string]any `json:"stream_options"`
+	}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	if req.StreamOptions["include_usage"] != true {
+		t.Fatalf("stream_options.include_usage not true; body=%s", capturedBody)
+	}
+}
+
 func TestChatParsesReasoningContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

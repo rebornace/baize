@@ -11,7 +11,12 @@ import {
 } from '../../api'
 import { extractAnalysisPagesFromEvents } from '../../analysisPage'
 import { extractBlobURLs } from '../../localAttachments'
-import { foldToolBlocks, type ToolOrWorkflowBlock } from '../../historyBlocks'
+import {
+  foldToolBlocks,
+  runUsageFromEvents,
+  type ToolOrWorkflowBlock,
+} from '../../historyBlocks'
+import type { UsageMeta } from '../../foldEvents'
 import { CHAT } from '../../strings'
 import { uuid } from '../../uuid'
 
@@ -74,6 +79,8 @@ export function useChatSession({
   const [historyPages, setHistoryPages] = useState<Record<string, string[]>>({})
   /** run_id → folded historical tool/workflow blocks (read-only replay). */
   const [historyBlocks, setHistoryBlocks] = useState<Record<string, ToolOrWorkflowBlock[]>>({})
+  /** run_id → aggregated token usage / savings for the historical assistant row. */
+  const [historyUsage, setHistoryUsage] = useState<Record<string, UsageMeta>>({})
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   /** runIds whose events have already been fetched once (drives both pages and blocks). */
@@ -181,6 +188,12 @@ export function useChatSession({
                 prev[runId] ? prev : { ...prev, [runId]: blocks },
               )
             }
+            const usage = runUsageFromEvents(runId, events)
+            if (usage) {
+              setHistoryUsage((prev) =>
+                prev[runId] ? prev : { ...prev, [runId]: usage },
+              )
+            }
             inFlight.delete(runId)
           } catch {
             inFlight.delete(runId)
@@ -200,6 +213,7 @@ export function useChatSession({
   const clearHistoryState = useCallback(() => {
     setHistoryPages({})
     setHistoryBlocks({})
+    setHistoryUsage({})
     fetchedRunsRef.current = new Set()
     setMessages([])
     setComposerDraft(undefined)
@@ -363,6 +377,7 @@ export function useChatSession({
     setHistoryPages,
     historyBlocks,
     setHistoryBlocks,
+    historyUsage,
     confirmDelete,
     setConfirmDelete,
     fetchedRunsRef,

@@ -272,6 +272,7 @@ export function ChatPage() {
           liveRunId={run.liveRunId}
           historyPages={session.historyPages}
           historyBlocks={session.historyBlocks}
+          historyUsage={session.historyUsage}
           toolCatalog={toolCatalog}
           busy={run.busy}
           historyMutating={session.historyMutating}
