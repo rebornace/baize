@@ -43,6 +43,7 @@ func TestWorkflowPipelineEventsE2E(t *testing.T) {
 	events := listRunEvents(t, runtimeURL, runID)
 	seq := eventTypes(events)
 	wantPrefix := []string{
+		"model.routed",
 		"run.started",
 		"tool.result",
 		"workflow.started",
