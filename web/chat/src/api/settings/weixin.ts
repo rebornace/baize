@@ -8,7 +8,7 @@ export interface WeixinChannelSettings {
   enabled: boolean
   /** Runtime reconciled state, only present on the PUT response. */
   running?: boolean
-  /** Why the channel is not running: "login_required" | "start_failed". */
+  /** Why the channel is not running: "login_required" | "login_expired" | "start_failed". */
   reason?: string
 }
 

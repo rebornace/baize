@@ -79,6 +79,10 @@ func TestStatusReconcilesViaAdminClient(t *testing.T) {
 	if st := c.Status(); st.Running || st.Reason != "start_failed" {
 		t.Fatalf("has-creds-not-polling status=%+v", st)
 	}
+	c.admin = &fakeAdmin{hasCreds: true, polling: false, loginExpired: true}
+	if st := c.Status(); st.Running || st.Reason != "login_expired" {
+		t.Fatalf("login-expired status=%+v", st)
+	}
 	c.admin = &fakeAdmin{hasCreds: true, polling: true}
 	if st := c.Status(); !st.Running || st.Reason != "" {
 		t.Fatalf("polling status=%+v", st)
@@ -91,14 +95,17 @@ func TestStatusReconcilesViaAdminClient(t *testing.T) {
 
 type fakeAdmin struct {
 	hasCreds, polling bool
+	loginExpired      bool
 	err               error
 	started, stopped  bool
 	shutdown          bool
 }
 
-func (f *fakeAdmin) Status(context.Context) (bool, bool, error) { return f.hasCreds, f.polling, f.err }
-func (f *fakeAdmin) Start(context.Context) error                { f.started = true; return f.err }
-func (f *fakeAdmin) Stop(context.Context) error                 { f.stopped = true; return f.err }
+func (f *fakeAdmin) Status(context.Context) (bool, bool, bool, error) {
+	return f.hasCreds, f.polling, f.loginExpired, f.err
+}
+func (f *fakeAdmin) Start(context.Context) error { f.started = true; return f.err }
+func (f *fakeAdmin) Stop(context.Context) error  { f.stopped = true; return f.err }
 func (f *fakeAdmin) LoginStart(context.Context) (string, string, error) {
 	return "t", "qr", f.err
 }

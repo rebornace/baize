@@ -215,7 +215,7 @@ func (c *Client) GetUpdates(ctx context.Context, token, cursor string) ([]Update
 		return nil, "", fmt.Errorf("weixin getupdates: %w", err)
 	}
 	if resp.Ret != 0 || resp.ErrCode != 0 {
-		return nil, "", fmt.Errorf("weixin getupdates: ret=%d errcode=%d errmsg=%s", resp.Ret, resp.ErrCode, resp.ErrMsg)
+		return nil, "", &SessionError{Ret: resp.Ret, ErrCode: resp.ErrCode, ErrMsg: resp.ErrMsg}
 	}
 	if resp.LongPollTimeoutMS > 0 {
 		c.LongPollTimeout = time.Duration(resp.LongPollTimeoutMS) * time.Millisecond

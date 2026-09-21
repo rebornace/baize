@@ -48,6 +48,7 @@ function weixinBadge(s: WeixinChannelSettings | undefined): BadgeResult {
   if (s?.enabled) {
     switch (s.reason) {
       case 'login_required': return { tone: 'warning', text: B.weixinLoginRequired }
+      case 'login_expired': return { tone: 'warning', text: B.weixinLoginExpired }
       case 'start_failed': return { tone: 'warning', text: B.weixinStartFailed }
       default: return { tone: 'warning', text: B.weixinStopped }
     }

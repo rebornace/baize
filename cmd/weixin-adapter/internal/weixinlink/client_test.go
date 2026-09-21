@@ -3,6 +3,7 @@ package weixinlink
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -318,6 +319,50 @@ func TestClient_GetUpdatesAPIError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "-14") && !strings.Contains(err.Error(), "session") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestClient_GetUpdatesSessionTimeoutError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ret":     0,
+			"errcode": -14,
+			"errmsg":  "session timeout",
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, srv.Client())
+	_, _, err := c.GetUpdates(context.Background(), "tok", "")
+	if !IsSessionTimeout(err) {
+		t.Fatalf("err=%v; want a session-timeout error", err)
+	}
+	var se *SessionError
+	if !errors.As(err, &se) {
+		t.Fatalf("err=%v; want *SessionError", err)
+	}
+	if se.ErrCode != ErrCodeSessionTimeout {
+		t.Fatalf("errcode=%d want %d", se.ErrCode, ErrCodeSessionTimeout)
+	}
+}
+
+func TestIsSessionTimeoutOtherError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ret":     0,
+			"errcode": -1,
+			"errmsg":  "system busy",
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, srv.Client())
+	_, _, err := c.GetUpdates(context.Background(), "tok", "")
+	if IsSessionTimeout(err) {
+		t.Fatalf("err=%v; should not be a session timeout", err)
+	}
+	if IsSessionTimeout(context.DeadlineExceeded) {
+		t.Fatal("network error must not be a session timeout")
 	}
 }
 

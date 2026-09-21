@@ -72,6 +72,7 @@ func (a *Adapter) startPolling() error {
 	a.pollDone = done
 	a.polling = true
 	a.pollToken = token
+	a.loginExpired = false // fresh credential: any previous timeout is resolved
 	a.mu.Unlock()
 
 	if oldDone != nil {
@@ -104,6 +105,14 @@ func (a *Adapter) pollLoop(ctx context.Context, token string) {
 		updates, next, err := a.ilink.GetUpdates(ctx, token, cursor)
 		if err != nil {
 			if ctx.Err() != nil {
+				return
+			}
+			// Deterministic session expiry: stop polling instead of hammering
+			// iLink forever. A fresh QR scan clears loginExpired and restarts
+			// the loop via startPolling.
+			if weixinlink.IsSessionTimeout(err) {
+				a.markSessionExpired()
+				log.Printf("weixin-adapter: login session expired; stopped polling until re-scan: %v", err)
 				return
 			}
 			if now := time.Now(); now.Sub(lastErrLog) >= 30*time.Second {
@@ -180,6 +189,18 @@ func (a *Adapter) currentToken() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.token
+}
+
+// markSessionExpired is called by the poll loop when iLink reports a session
+// timeout. The loop is exiting on its own (not via cancel), so clear the
+// polling flag alongside the expiry marker. The done channel is closed by
+// runPollLoop; the stale cancel func stays harmlessly in place (a later
+// startPolling calls it and joins an already-closed done channel).
+func (a *Adapter) markSessionExpired() {
+	a.mu.Lock()
+	a.polling = false
+	a.loginExpired = true
+	a.mu.Unlock()
 }
 
 // forwardInbound signs and POSTs one inbound message to baize's webhook.

@@ -86,6 +86,7 @@ describe('resolveBadge', () => {
     expect(resolveBadge('weixin', { running: true } as WeixinChannelSettings)).toEqual({ tone: 'success', text: '运行中' })
     expect(resolveBadge('weixin', { enabled: true, running: false, reason: 'login_required' })).toEqual({ tone: 'warning', text: '待登录' })
     expect(resolveBadge('weixin', { enabled: true, running: false, reason: 'start_failed' })).toEqual({ tone: 'warning', text: '启动异常' })
+    expect(resolveBadge('weixin', { enabled: true, running: false, reason: 'login_expired' })).toEqual({ tone: 'warning', text: '登录已过期' })
     expect(resolveBadge('weixin', { enabled: true, running: false, reason: 'stopped' })).toEqual({ tone: 'warning', text: '已停用' })
     expect(resolveBadge('weixin', { enabled: false, running: false })).toEqual({ tone: 'neutral', text: '未接入' })
     expect(resolveBadge('weixin', {} as WeixinChannelSettings)).toEqual({ tone: 'neutral', text: '未接入' })

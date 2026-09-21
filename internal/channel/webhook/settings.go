@@ -183,10 +183,13 @@ func (c *Channel) Status() channel.AdapterStatus {
 		// enabled (third-party adapters manage their own lifecycle).
 		return channel.AdapterStatus{Running: true}
 	}
-	hasCreds, polling, err := c.admin.Status(c.bgCtx())
+	hasCreds, polling, loginExpired, err := c.admin.Status(c.bgCtx())
 	if err != nil {
 		log.Printf("webhook %s: adapter status: %v", c.cfg.Name, err)
 		return channel.AdapterStatus{Running: false, Reason: "start_failed"}
+	}
+	if loginExpired {
+		return channel.AdapterStatus{Running: false, Reason: "login_expired"}
 	}
 	if !hasCreds {
 		return channel.AdapterStatus{Running: false, Reason: "login_required"}

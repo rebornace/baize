@@ -343,6 +343,7 @@ export function WeixinChannelSettings() {
           )}
           {runReason === 'login_required' &&
             (isAdmin ? WEIXIN.runReasonLoginAdmin : WEIXIN.runReasonLoginOperator)}
+          {runReason === 'login_expired' && WEIXIN.runReasonLoginExpired}
           {runReason === 'start_failed' && WEIXIN.runReasonStartFailed}
           {runReason === 'stopped' &&
             (isAdmin ? WEIXIN.runReasonStoppedAdmin : WEIXIN.runReasonStoppedOperator)}

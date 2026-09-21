@@ -34,20 +34,26 @@ type Adapter struct {
 	// while polling, startPolling must detect the change and restart the loop,
 	// otherwise the stale token makes GetUpdates fail forever (silently).
 	pollToken string
-	cancel    func()        // stops the current poll loop
-	pollDone  chan struct{} // closed when the current poll loop exits (nil when idle)
+	// loginExpired reports the current session was rejected by iLink as timed
+	// out (errcode -14). The poll loop has stopped; a fresh QR scan clears it
+	// and resumes polling. Surfaced through /admin/status and /healthz.
+	loginExpired bool
+	cancel       func()        // stops the current poll loop
+	pollDone     chan struct{} // closed when the current poll loop exits (nil when idle)
 }
 
 func (a *Adapter) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	polling := a.polling
 	hasCreds := a.token != "" && a.account != ""
+	loginExpired := a.loginExpired
 	a.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":          "ok",
 		"polling":         polling,
 		"has_credentials": hasCreds,
+		"login_expired":   loginExpired,
 	})
 }
 

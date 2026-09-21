@@ -20,8 +20,9 @@ import (
 // (/admin/*). The HTTP implementation lives below; tests inject fakes. All
 // methods return an error when the adapter is unreachable.
 type adminClient interface {
-	// Status returns hasCredentials and polling from the adapter /admin/status.
-	Status(ctx context.Context) (hasCreds bool, polling bool, err error)
+	// Status returns hasCredentials, polling and loginExpired from the adapter
+	// /admin/status.
+	Status(ctx context.Context) (hasCreds bool, polling bool, loginExpired bool, err error)
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	LoginStart(ctx context.Context) (ticket, qrURL string, err error)
@@ -94,15 +95,16 @@ func (c *httpAdminClient) doWithClient(ctx context.Context, hc *http.Client, met
 	return nil
 }
 
-func (c *httpAdminClient) Status(ctx context.Context) (bool, bool, error) {
+func (c *httpAdminClient) Status(ctx context.Context) (bool, bool, bool, error) {
 	var st struct {
 		HasCredentials bool `json:"has_credentials"`
 		Polling        bool `json:"polling"`
+		LoginExpired   bool `json:"login_expired"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/admin/status", nil, &st); err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
-	return st.HasCredentials, st.Polling, nil
+	return st.HasCredentials, st.Polling, st.LoginExpired, nil
 }
 
 func (c *httpAdminClient) Start(ctx context.Context) error {

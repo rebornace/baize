@@ -716,6 +716,7 @@ export const enPack = {
     runStopped: 'Stopped',
     runReasonLoginAdmin: '(Not signed in: scan to sign in before enabling)',
     runReasonLoginOperator: '(Not signed in: please scan to sign in)',
+    runReasonLoginExpired: '(Login expired: please scan again to sign in)',
     runReasonStartFailed: '(Start failed; check the logs)',
     runReasonStoppedAdmin:
       '(Adapter process was stopped manually; click Start process to resume)',
@@ -940,6 +941,7 @@ export const enPack = {
     exportCount: (n: number) => `${n} identities`,
     weixinRunning: 'Running',
     weixinLoginRequired: 'Login required',
+    weixinLoginExpired: 'Login expired',
     weixinStartFailed: 'Start failed',
     weixinStopped: 'Stopped',
     weixinNone: 'Not connected',

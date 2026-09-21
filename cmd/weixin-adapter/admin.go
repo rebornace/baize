@@ -101,6 +101,7 @@ func (a *Adapter) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	st := map[string]any{
 		"has_credentials": a.token != "" && a.account != "",
 		"polling":         a.polling,
+		"login_expired":   a.loginExpired,
 		"account_id":      a.account,
 	}
 	a.mu.Unlock()

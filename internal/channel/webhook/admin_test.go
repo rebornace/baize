@@ -41,9 +41,9 @@ func TestHTTPAdminClientStatusAndActions(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	ac := newHTTPAdminClient(srv.URL, "secret")
-	hasCreds, polling, err := ac.Status(context.Background())
-	if err != nil || !hasCreds || !polling {
-		t.Fatalf("status: %v %v %v", hasCreds, polling, err)
+	hasCreds, polling, loginExpired, err := ac.Status(context.Background())
+	if err != nil || !hasCreds || !polling || loginExpired {
+		t.Fatalf("status: %v %v %v %v", hasCreds, polling, loginExpired, err)
 	}
 	if !strings.HasPrefix(gotPath, "GET /admin/status") || gotSig == "" {
 		t.Fatalf("status call path=%q sig=%q", gotPath, gotSig)
@@ -69,7 +69,7 @@ func TestHTTPAdminClientStatusAndActions(t *testing.T) {
 
 func TestHTTPAdminClientUnreachable(t *testing.T) {
 	ac := newHTTPAdminClient("http://127.0.0.1:1", "s") // closed port
-	if _, _, err := ac.Status(context.Background()); err == nil {
+	if _, _, _, err := ac.Status(context.Background()); err == nil {
 		t.Fatal("expected error for unreachable adapter")
 	}
 }
@@ -95,7 +95,7 @@ func TestHTTPAdminClientLoginPollUsesLongTimeout(t *testing.T) {
 	// short deadline < delay (fast calls time out); long deadline > delay (poll survives).
 	ac := newHTTPAdminClientWithTimeouts(srv.URL, "s", 30*time.Millisecond, 5*time.Second)
 
-	if _, _, err := ac.Status(context.Background()); err == nil {
+	if _, _, _, err := ac.Status(context.Background()); err == nil {
 		t.Fatal("fast Status call should time out at the short deadline")
 	}
 	st, err := ac.LoginPoll(context.Background(), "tk")

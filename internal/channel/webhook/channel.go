@@ -252,7 +252,7 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 				}
 				probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 				defer cancel()
-				if _, _, err := c.admin.Status(probeCtx); err != nil {
+				if _, _, _, err := c.admin.Status(probeCtx); err != nil {
 					return false
 				}
 				return true
