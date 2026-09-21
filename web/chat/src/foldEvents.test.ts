@@ -320,6 +320,26 @@ describe('foldEvents', () => {
     })
   })
 
+  it('aggregates cache-hit tokens across turns', () => {
+    const blocks = foldEvents('run_cached', [
+      ev('llm.usage', { turn: 0, prompt_tokens: 10, completion_tokens: 4, total_tokens: 14, cached_tokens: 8 }),
+      ev('llm.message', {
+        content: '已创建',
+        turn: 1,
+        prompt_tokens: 20,
+        completion_tokens: 6,
+        total_tokens: 26,
+        cached_tokens: 15,
+      }),
+    ])
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      kind: 'assistant',
+      text: '已创建',
+      usage: { promptTokens: 30, totalTokens: 40, cachedTokens: 23 },
+    })
+  })
+
   it('does not attach usage when nothing reported tokens or savings', () => {
     const blocks = foldEvents('run_plain', [
       ev('llm.message', { content: '无用量' }),

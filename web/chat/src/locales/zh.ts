@@ -126,11 +126,11 @@ export const zhPack = {
   analysisPreviewFailed: (err: string) => `预览加载失败：${err}`,
   analysisOpenTab: '在新标签页打开',
   // Token 用量（真实 usage）
-  usageLine: (prompt: number, completion: number, total: number) =>
-    `输入 ${prompt} · 输出 ${completion} · 共 ${total} tokens`,
+  usageLine: (prompt: number, completion: number, total: number, cached = 0) =>
+    `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${completion} · 共 ${total} tokens`,
   usageSavedLine: (saved: number) => `决策层跳过记忆抽取，节省约 ${saved} tokens`,
-  usageBothLine: (prompt: number, completion: number, total: number, saved: number) =>
-    `输入 ${prompt} · 输出 ${completion} · 共 ${total} tokens · 决策层节省约 ${saved} tokens`,
+  usageBothLine: (prompt: number, completion: number, total: number, saved: number, cached = 0) =>
+    `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${completion} · 共 ${total} tokens · 决策层节省约 ${saved} tokens`,
 },
   MEMORY: {
   title: '账号记忆',

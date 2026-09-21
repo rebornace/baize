@@ -73,6 +73,7 @@ describe('runUsageFromEvents', () => {
       completionTokens: 10,
       totalTokens: 40,
       savedTokens: 53,
+      cachedTokens: 0,
     })
   })
   it('returns undefined when nothing reported tokens or savings', () => {
@@ -87,6 +88,7 @@ describe('runUsageFromEvents', () => {
       completionTokens: 0,
       totalTokens: 0,
       savedTokens: 12,
+      cachedTokens: 0,
     })
   })
 })

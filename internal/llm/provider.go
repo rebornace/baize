@@ -1,6 +1,9 @@
 package llm
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 type Role string
 
@@ -19,6 +22,35 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	// CachedTokens counts prompt tokens served from the provider's prefix
+	// cache (cache hit). Zero means no cache was reported or nothing hit.
+	CachedTokens int `json:"cached_tokens"`
+}
+
+// UnmarshalJSON accepts the two common cache-hit dialects:
+//   - DeepSeek: prompt_cache_hit_tokens / prompt_cache_miss_tokens at the top
+//     level of usage.
+//   - OpenAI: prompt_tokens_details.cached_tokens.
+func (u *Usage) UnmarshalJSON(b []byte) error {
+	type alias Usage
+	var raw struct {
+		alias
+		PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+		PromptTokensDetails  *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*u = Usage(raw.alias)
+	switch {
+	case raw.PromptCacheHitTokens > 0:
+		u.CachedTokens = raw.PromptCacheHitTokens
+	case raw.PromptTokensDetails != nil && raw.PromptTokensDetails.CachedTokens > 0:
+		u.CachedTokens = raw.PromptTokensDetails.CachedTokens
+	}
+	return nil
 }
 
 type Message struct {

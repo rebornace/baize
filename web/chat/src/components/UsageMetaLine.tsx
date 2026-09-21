@@ -20,12 +20,14 @@ export function UsageMetaLine({ usage }: UsageMetaLineProps) {
       usage.completionTokens,
       usage.totalTokens,
       usage.savedTokens,
+      usage.cachedTokens,
     )
   } else if (hasUsage) {
     text = CHAT.usageLine(
       usage.promptTokens,
       usage.completionTokens,
       usage.totalTokens,
+      usage.cachedTokens,
     )
   } else {
     text = CHAT.usageSavedLine(usage.savedTokens)

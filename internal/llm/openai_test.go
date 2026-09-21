@@ -335,6 +335,65 @@ func TestChatStreamParsesUsage(t *testing.T) {
 	}
 }
 
+func TestChatParsesCacheHitDeepSeek(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"答"}}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	msg, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Usage.CachedTokens != 80 {
+		t.Fatalf("cached=%d want 80 (usage=%+v)", msg.Usage.CachedTokens, msg.Usage)
+	}
+}
+
+func TestChatParsesCacheHitOpenAI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"答"}}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":60}}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	msg, err := p.Chat(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Usage.CachedTokens != 60 {
+		t.Fatalf("cached=%d want 60 (usage=%+v)", msg.Usage.CachedTokens, msg.Usage)
+	}
+}
+
+func TestChatStreamParsesCacheHitDeepSeek(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"答\"}}]}\n\n" +
+			"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":7,\"total_tokens\":107,\"prompt_cache_hit_tokens\":80,\"prompt_cache_miss_tokens\":20}}\n\n" +
+			"data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	msg, err := p.ChatStream(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("chat stream: %v", err)
+	}
+	if msg.Usage.CachedTokens != 80 {
+		t.Fatalf("cached=%d want 80 (usage=%+v)", msg.Usage.CachedTokens, msg.Usage)
+	}
+}
+
 func TestChatParsesReasoningContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

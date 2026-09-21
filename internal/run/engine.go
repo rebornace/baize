@@ -657,6 +657,7 @@ func usageData(turn int, u llm.Usage) map[string]any {
 		"prompt_tokens":     u.PromptTokens,
 		"completion_tokens": u.CompletionTokens,
 		"total_tokens":      u.TotalTokens,
+		"cached_tokens":     u.CachedTokens,
 	}
 }
 

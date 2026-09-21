@@ -22,13 +22,13 @@ func (s *usageScriptLLM) Chat(ctx context.Context, messages []llm.Message, tools
 			ToolCalls: []llm.ToolCall{
 				{ID: "c1", Name: "create_ticket", Arguments: map[string]any{"title": "x"}},
 			},
-			Usage: llm.Usage{PromptTokens: 10, CompletionTokens: 4, TotalTokens: 14},
+			Usage: llm.Usage{PromptTokens: 10, CompletionTokens: 4, TotalTokens: 14, CachedTokens: 8},
 		}, nil
 	}
 	return llm.Message{
 		Role:    llm.RoleAssistant,
 		Content: "已创建",
-		Usage:   llm.Usage{PromptTokens: 20, CompletionTokens: 6, TotalTokens: 26},
+		Usage:   llm.Usage{PromptTokens: 20, CompletionTokens: 6, TotalTokens: 26, CachedTokens: 15},
 	}, nil
 }
 
@@ -84,6 +84,9 @@ func TestEnginePersistsPerTurnUsage(t *testing.T) {
 	}
 	if got := asInt(usageEvents[0].Data, "total_tokens"); got != 14 {
 		t.Fatalf("usage event total_tokens=%d want 14", got)
+	}
+	if got := asInt(usageEvents[0].Data, "cached_tokens"); got != 8 {
+		t.Fatalf("usage event cached_tokens=%d want 8", got)
 	}
 
 	if terminal == nil {

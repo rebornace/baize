@@ -12,6 +12,7 @@ const emptyUsage: UsageMeta = {
   completionTokens: 0,
   totalTokens: 0,
   savedTokens: 0,
+  cachedTokens: 0,
 }
 
 /** 该 index 是否为同一 run_id 的第一条 assistant 消息（历史工具块只在此锚定一次）。 */

@@ -116,11 +116,11 @@ export const enPack = {
     analysisPreviewFailed: (err: string) => `Preview failed to load: ${err}`,
     analysisOpenTab: 'Open in new tab',
     // Token usage (real provider usage)
-    usageLine: (prompt: number, completion: number, total: number) =>
-      `Input ${prompt} · Output ${completion} · ${total} tokens total`,
+    usageLine: (prompt: number, completion: number, total: number, cached = 0) =>
+      `Input ${prompt}${cached > 0 ? ` (${cached} cached)` : ''} · Output ${completion} · ${total} tokens total`,
     usageSavedLine: (saved: number) => `Decision layer skipped memory extraction, saving ~${saved} tokens`,
-    usageBothLine: (prompt: number, completion: number, total: number, saved: number) =>
-      `Input ${prompt} · Output ${completion} · ${total} tokens total · decision layer saved ~${saved} tokens`,
+    usageBothLine: (prompt: number, completion: number, total: number, saved: number, cached = 0) =>
+      `Input ${prompt}${cached > 0 ? ` (${cached} cached)` : ''} · Output ${completion} · ${total} tokens total · decision layer saved ~${saved} tokens`,
   },
   MEMORY: {
     title: 'Account memory',

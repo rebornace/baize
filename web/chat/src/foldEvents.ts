@@ -7,6 +7,7 @@ export type UsageMeta = {
   completionTokens: number
   totalTokens: number
   savedTokens: number
+  cachedTokens: number
 }
 
 export type ChatBlock =
@@ -184,7 +185,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
   // Run-level totals accumulated across all turns. llm.usage (tool-call turns)
   // arrives before the terminal llm.message; memory.extract_skipped arrives
   // after it. Both accumulate here and are flushed onto the assistant block.
-  const meta: UsageMeta = { promptTokens: 0, completionTokens: 0, totalTokens: 0, savedTokens: 0 }
+  const meta: UsageMeta = { promptTokens: 0, completionTokens: 0, totalTokens: 0, savedTokens: 0, cachedTokens: 0 }
 
   for (const ev of events) {
     const data = ev.data
@@ -193,6 +194,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         meta.promptTokens += numField(data, 'prompt_tokens')
         meta.completionTokens += numField(data, 'completion_tokens')
         meta.totalTokens += numField(data, 'total_tokens')
+        meta.cachedTokens += numField(data, 'cached_tokens')
         applyUsageMeta(blocks, meta)
         break
       }
@@ -304,6 +306,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         meta.promptTokens += numField(data, 'prompt_tokens')
         meta.completionTokens += numField(data, 'completion_tokens')
         meta.totalTokens += numField(data, 'total_tokens')
+        meta.cachedTokens += numField(data, 'cached_tokens')
         applyUsageMeta(blocks, meta)
         break
       }

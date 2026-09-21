@@ -15,11 +15,24 @@ describe('UsageMetaLine', () => {
       completionTokens: 10,
       totalTokens: 40,
       savedTokens: 0,
+      cachedTokens: 0,
     })
     expect(html).toContain('msg-usage')
     expect(html).toContain('输入 30')
     expect(html).toContain('输出 10')
     expect(html).toContain('共 40 tokens')
+  })
+
+  it('renders cache-hit breakdown inside the input count', () => {
+    const html = render({
+      promptTokens: 30,
+      completionTokens: 10,
+      totalTokens: 40,
+      savedTokens: 0,
+      cachedTokens: 23,
+    })
+    expect(html).toContain('输入 30')
+    expect(html).toContain('缓存命中 23')
   })
 
   it('renders savings line', () => {
@@ -28,6 +41,7 @@ describe('UsageMetaLine', () => {
       completionTokens: 0,
       totalTokens: 0,
       savedTokens: 53,
+      cachedTokens: 0,
     })
     expect(html).toContain('节省约 53 tokens')
     expect(html).toContain('跳过记忆抽取')
@@ -39,6 +53,7 @@ describe('UsageMetaLine', () => {
       completionTokens: 10,
       totalTokens: 40,
       savedTokens: 53,
+      cachedTokens: 0,
     })
     expect(html).toContain('共 40 tokens')
     expect(html).toContain('决策层节省约 53 tokens')
@@ -46,7 +61,7 @@ describe('UsageMetaLine', () => {
 
   it('renders nothing when there is nothing to report', () => {
     expect(
-      render({ promptTokens: 0, completionTokens: 0, totalTokens: 0, savedTokens: 0 }),
+      render({ promptTokens: 0, completionTokens: 0, totalTokens: 0, savedTokens: 0, cachedTokens: 0 }),
     ).toBe('')
   })
 })
