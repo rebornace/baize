@@ -47,6 +47,12 @@ type Knobs struct {
 	DecideToolPruneEnabled   bool // consult the layer whether a tool result is worth keeping
 	DecideToolPruneThreshold int  // only judge tool results estimated above this
 	DecideToolPruneMaxJudged int  // max tool results judged per turn
+	// DP-4: cheap fallback for Auto model routing. Only when the deterministic
+	// classifier lands on the ambiguous middle (standard) tier AND the turn is
+	// at least MinRunes long does the layer arbitrate light vs power; short or
+	// clearly-signed turns keep the zero-cost heuristic.
+	DecideRouteEnabled  bool // consult the layer for light/power on ambiguous long turns
+	DecideRouteMinRunes int  // minimum turn length (runes) before consulting
 }
 
 // Credentials is the effective control-plane credential set.
@@ -94,6 +100,8 @@ type knobsOverride struct {
 	DecideToolPruneEnabled   *bool    `json:"decide_tool_prune_enabled,omitempty"`
 	DecideToolPruneThreshold *int     `json:"decide_tool_prune_threshold,omitempty"`
 	DecideToolPruneMaxJudged *int     `json:"decide_tool_prune_max_judged,omitempty"`
+	DecideRouteEnabled       *bool    `json:"decide_route_enabled,omitempty"`
+	DecideRouteMinRunes      *int     `json:"decide_route_min_runes,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -241,6 +249,12 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideToolPruneMaxJudged != nil {
 		k.DecideToolPruneMaxJudged = *ko.DecideToolPruneMaxJudged
 	}
+	if ko.DecideRouteEnabled != nil {
+		k.DecideRouteEnabled = *ko.DecideRouteEnabled
+	}
+	if ko.DecideRouteMinRunes != nil {
+		k.DecideRouteMinRunes = *ko.DecideRouteMinRunes
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -288,6 +302,8 @@ type KnobsFieldFlags struct {
 	DecideToolPrune       bool `json:"decide_tool_prune_enabled"`
 	DecideToolPruneThresh bool `json:"decide_tool_prune_threshold"`
 	DecideToolPruneMax    bool `json:"decide_tool_prune_max_judged"`
+	DecideRoute           bool `json:"decide_route_enabled"`
+	DecideRouteMinRunes   bool `json:"decide_route_min_runes"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -328,6 +344,8 @@ func (h *Holder) KnobsView() KnobsView {
 			DecideToolPrune:       ko.DecideToolPruneEnabled != nil,
 			DecideToolPruneThresh: ko.DecideToolPruneThreshold != nil,
 			DecideToolPruneMax:    ko.DecideToolPruneMaxJudged != nil,
+			DecideRoute:           ko.DecideRouteEnabled != nil,
+			DecideRouteMinRunes:   ko.DecideRouteMinRunes != nil,
 		},
 	}
 }

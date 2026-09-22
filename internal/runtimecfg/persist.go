@@ -39,6 +39,8 @@ type KnobsPatch struct {
 	DecideToolPruneEnabled       *bool    `json:"decide_tool_prune_enabled,omitempty"`
 	DecideToolPruneThreshold     *int     `json:"decide_tool_prune_threshold,omitempty"`
 	DecideToolPruneMaxJudged     *int     `json:"decide_tool_prune_max_judged,omitempty"`
+	DecideRouteEnabled           *bool    `json:"decide_route_enabled,omitempty"`
+	DecideRouteMinRunes          *int     `json:"decide_route_min_runes,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 }
 
@@ -171,6 +173,11 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 		(*p.DecideToolPruneMaxJudged < 1 || *p.DecideToolPruneMaxJudged > 100) {
 		return fmt.Errorf("%w: decide_tool_prune_max_judged must be 1-100", ErrBadRange)
 	}
+	// DP-4: MinRunes is the turn-length floor for consulting the layer.
+	if p.DecideRouteMinRunes != nil &&
+		(*p.DecideRouteMinRunes < 1 || *p.DecideRouteMinRunes > 100000) {
+		return fmt.Errorf("%w: decide_route_min_runes must be 1-100000", ErrBadRange)
+	}
 	return nil
 }
 
@@ -251,6 +258,12 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.DecideToolPruneMaxJudged != nil {
 		next.DecideToolPruneMaxJudged = p.DecideToolPruneMaxJudged
+	}
+	if p.DecideRouteEnabled != nil {
+		next.DecideRouteEnabled = p.DecideRouteEnabled
+	}
+	if p.DecideRouteMinRunes != nil {
+		next.DecideRouteMinRunes = p.DecideRouteMinRunes
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

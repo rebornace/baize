@@ -555,6 +555,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	decideSettingsHolder = runtimeHolder
 	engine.Settings = runtimeHolder
 	srv.Settings = runtimeHolder
+	// DP-4: adapt the decide layer to llm.TierAdvisor. The advisor reads the
+	// hot decide knobs live, so this single wiring survives settings changes.
+	srv.TierAdvisor = &routeTierAdvisor{settings: runtimeHolder, decider: decider}
 	// Prefer effective (YAML + KV) over the YAML-only value captured earlier.
 	srv.CallbackPublicBase = runtimeHolder.PublicBaseURL()
 	if compactor != nil {
@@ -815,7 +818,8 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		if err != nil || len(list) == 0 {
 			return "", false, len(list) > 0
 		}
-		sel, ok := llm.ResolveModel(llm.AutoProfileID, sig, llm.RoutingProfilesFrom(list))
+		sel, ok := llm.ResolveModel(llm.AutoProfileID, sig, llm.RoutingProfilesFrom(list),
+			llm.WithTierAdvisor(d.srv.TierAdvisor))
 		return sel.ProfileID, ok, true
 	}
 

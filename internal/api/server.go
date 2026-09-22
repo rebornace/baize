@@ -122,7 +122,10 @@ type Server struct {
 	// Settings optionally supplies hot-reloadable engine knobs and control-plane
 	// credentials. nil = use the static OperatorToken/AdminToken/Operators
 	// fields above (legacy behavior; existing tests leave it nil).
-	Settings         *runtimecfg.Holder
+	Settings *runtimecfg.Holder
+	// TierAdvisor optionally arbitrates light/power (DP-4) when Auto routing
+	// lands on the standard tier. nil = pure heuristic routing (existing tests).
+	TierAdvisor      llm.TierAdvisor
 	Webhook          *webhook.Dispatcher // optional; nil = no outbound webhook delivery
 	Inbox            *inbox.Registry     // optional; nil = inbox routes unavailable
 	InboxLimiter     *inbox.RateLimiter  // optional; nil => lazy default via inboxLimiter()

@@ -53,6 +53,12 @@ const (
 	// chosen IDs come back in Answer.Values. OnFail is VerdictYes (keep every
 	// system) so a layer outage degrades to the flat-catalog behavior.
 	KindSystemTargets = "system_targets"
+	// KindRouteTier arbitrates light vs power (DP-4) when the deterministic
+	// router lands on the ambiguous standard tier. It is a pick-ONE question
+	// whose Options are [light, power]; the chosen tier comes back in
+	// Answer.Value. The call site supplies no OnFail verdict: on any error it
+	// explicitly keeps ClassifyTask's original standard tier.
+	KindRouteTier = "route_tier"
 )
 
 // ErrUnavailable reports that an implementation currently abstains or is

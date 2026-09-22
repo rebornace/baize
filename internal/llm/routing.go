@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"strings"
 
 	"github.com/rebornace/baize/internal/store"
@@ -32,6 +33,11 @@ type ProfileSelection struct {
 	// Auto reports whether the choice was made by the auto router (vs. an
 	// explicit manual profile selection).
 	Auto bool
+	// Tier is the effective capability tier used to pick ProfileID. For Auto
+	// it reflects ClassifyTask, possibly overridden by the DP-4 advisor; for a
+	// manual choice it is the selected profile's tier. It lets the DP-0 event
+	// record the tier actually used without recomputing the classification.
+	Tier string
 }
 
 // TaskSignals are the deterministic, per-turn inputs used to judge task
@@ -199,22 +205,51 @@ func pickByTier(profiles []RoutingProfile, tier string, requireVision bool) (id 
 //     vision-capable models; with none available ProfileID is "" and
 //     visionOK=false (the caller degrades / warns). With no profiles at all
 //     ProfileID is "" and the caller prompts to add a model.
-func ResolveModel(choice string, sig TaskSignals, profiles []RoutingProfile) (sel ProfileSelection, visionOK bool) {
+func ResolveModel(choice string, sig TaskSignals, profiles []RoutingProfile, opts ...ResolveOption) (sel ProfileSelection, visionOK bool) {
+	cfg := &resolveConfig{}
+	for _, o := range opts {
+		if o != nil {
+			o(cfg)
+		}
+	}
 	if choice != "" && choice != AutoProfileID {
 		// Manual choice is honored exactly and never rerouted. visionOK is only
 		// meaningful on an image turn: a non-image turn is always fine.
 		ok := !sig.HasImages || profileSupportsVision(choice, profiles)
-		return ProfileSelection{ProfileID: choice, Auto: false}, ok
+		tier := ""
+		for _, p := range profiles {
+			if p.ID == choice {
+				tier = store.NormalizeAutoTier(p.Tier)
+				break
+			}
+		}
+		return ProfileSelection{ProfileID: choice, Auto: false, Tier: tier}, ok
 	}
 
 	desired := ClassifyTask(sig)
+	// DP-4: only the ambiguous standard tier of an Auto turn is eligible. The
+	// advisor itself enforces the enabled switches and the turn-length floor
+	// (read live from the hot knobs) and returns ok=false to keep the
+	// classifier's tier whenever it is off, the turn is short, or it errors.
+	if desired == store.AutoTierStandard && cfg.advisor != nil {
+		ctx := cfg.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if picked, ok := cfg.advisor.AdviseTier(ctx, sig.Text); ok {
+			switch store.NormalizeAutoTier(picked) {
+			case store.AutoTierLight, store.AutoTierPower:
+				desired = store.NormalizeAutoTier(picked)
+			}
+		}
+	}
 	requireVision := sig.HasImages
 	id, _ := pickByTier(profiles, desired, requireVision)
 	if requireVision {
 		// No vision model at all: caller degrades images to a text note / warns.
-		return ProfileSelection{ProfileID: id, Auto: true}, id != ""
+		return ProfileSelection{ProfileID: id, Auto: true, Tier: desired}, id != ""
 	}
-	return ProfileSelection{ProfileID: id, Auto: true}, true
+	return ProfileSelection{ProfileID: id, Auto: true, Tier: desired}, true
 }
 
 // RoutingProfilesFrom converts stored profiles to the compact router form.

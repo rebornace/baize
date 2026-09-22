@@ -28,12 +28,27 @@ const remoteSystemTargetsPrompt = `你是系统路由器。任务：判断“用
 - 拿不准时，优先保留可能相关的系统，不要轻易漏掉。
 不要输出解释、markdown 代码块或候选之外的 id。`
 
+// remoteRouteTierPrompt is the DP-4 prompt: choose exactly one capability
+// tier. The answer is still a one-element JSON array so the same parser is
+// reused, but the semantics are single-select.
+const remoteRouteTierPrompt = `你是模型档位仲裁器。任务：只根据“用户这一轮请求”的内容，判断它更适合用便宜快模型（light）还是更强更贵的推理模型（power）。
+判断要点：
+- light：闲聊、简单问答、简短事实查询、格式转换、无需多步推理的任务。
+- power：需要分析/规划/推理/设计/排查、长文本理解、多步任务、复杂代码、明显“为什么/如何解决”类问题。
+- 该回合已被初步判定为“模糊中间档”，请果断二选一，不要回避。
+只输出一个仅含一个元素的 JSON 字符串数组，元素必须是 "light" 或 "power"，例如 ["power"]。
+不要输出解释、markdown 代码块或候选之外的值。`
+
 // systemPromptFor picks the instruction text for a pick-many kind.
 func systemPromptFor(kind string) string {
-	if kind == KindSystemTargets {
+	switch kind {
+	case KindSystemTargets:
 		return remoteSystemTargetsPrompt
+	case KindRouteTier:
+		return remoteRouteTierPrompt
+	default:
+		return remoteMultiSystemPrompt
 	}
-	return remoteMultiSystemPrompt
 }
 
 // RemoteMulti wraps an llm.Provider and coerces its reply into the subset of
@@ -107,5 +122,14 @@ func (r *RemoteMulti) Ask(ctx context.Context, q Question) (Answer, error) {
 		seen[name] = true
 		values = append(values, name)
 	}
-	return Answer{Verdict: VerdictYes, Values: values, Source: SourceRemote}, nil
+	ans := Answer{Verdict: VerdictYes, Values: values, Source: SourceRemote}
+	if q.Kind == KindRouteTier {
+		// Single-select: surface the first valid tier in Value and clear Values.
+		if len(values) == 0 {
+			return Answer{}, ErrUnavailable
+		}
+		ans.Value = values[0]
+		ans.Values = nil
+	}
+	return ans, nil
 }

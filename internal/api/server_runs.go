@@ -101,7 +101,8 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		FileCount: len(textExts),
 		HasCode:   llm.DetectCode(runInput),
 	}
-	sel, visionOK := llm.ResolveModel(llm.NormalizeProfileChoice(body.ModelProfileID), sig, profiles)
+	sel, visionOK := llm.ResolveModel(llm.NormalizeProfileChoice(body.ModelProfileID), sig, profiles,
+		llm.WithContext(r.Context()), llm.WithTierAdvisor(s.TierAdvisor))
 	if hasImages && !visionOK {
 		writeError(w, http.StatusBadRequest, "vision_unsupported",
 			"the selected model does not support vision; switch to 智能路由 (Auto) or a vision-capable model, or remove image attachments")
@@ -109,14 +110,19 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	modelProfileID := sel.ProfileID
 
-	// DP-0: persist a model.routed observability event with the run. For Auto
-	// the desired tier is the classifier output; for a manual choice we record
-	// the chosen profile's tier. This never changes the routing outcome.
+	// DP-0: persist a model.routed observability event with the run. Use the
+	// effective tier actually applied (sel.Tier): for Auto this is the
+	// classifier output, or the DP-4 advisor's override; for a manual choice it
+	// is the selected profile's tier. This never changes the routing outcome.
 	desiredTier := ""
 	reason := "manual"
 	if sel.Auto {
-		desiredTier = llm.ClassifyTask(sig)
+		desiredTier = sel.Tier
+		heuristicTier := llm.ClassifyTask(sig)
 		reason = "auto_classify"
+		if desiredTier != "" && desiredTier != heuristicTier {
+			reason = "auto_decide"
+		}
 	} else {
 		for _, p := range profiles {
 			if p.ID == modelProfileID {

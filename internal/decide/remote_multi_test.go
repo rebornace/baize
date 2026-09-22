@@ -115,3 +115,39 @@ func TestRemoteMultiNoOptionsUnavailable(t *testing.T) {
 		t.Fatalf("err=%v want ErrUnavailable", err)
 	}
 }
+
+// KindRouteTier is single-select: the first valid tier lands in Value and
+// Values stays nil; the route-tier system prompt is used.
+func TestRemoteRouteTierSingleSelect(t *testing.T) {
+	p := &capturingProvider{reply: llm.Message{Content: `["power"]`}}
+	r := NewRemoteMulti(p)
+	ans, err := r.Ask(context.Background(), Question{
+		Kind:    KindRouteTier,
+		Options: []string{"light", "power"},
+	})
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if ans.Value != "power" {
+		t.Errorf("Value=%q want power", ans.Value)
+	}
+	if ans.Values != nil {
+		t.Errorf("Values=%v want nil for single-select", ans.Values)
+	}
+	if !strings.Contains(p.prompt, "档位仲裁器") {
+		t.Errorf("route-tier prompt not used")
+	}
+}
+
+// An empty single-select answer abstains.
+func TestRemoteRouteTierEmptyUnavailable(t *testing.T) {
+	p := &capturingProvider{reply: llm.Message{Content: `[]`}}
+	r := NewRemoteMulti(p)
+	_, err := r.Ask(context.Background(), Question{
+		Kind:    KindRouteTier,
+		Options: []string{"light", "power"},
+	})
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err=%v want ErrUnavailable", err)
+	}
+}

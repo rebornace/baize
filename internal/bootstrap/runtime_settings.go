@@ -48,6 +48,9 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			// defaults are populated so GET reports real effective values.
 			DecideToolPruneThreshold: 500,
 			DecideToolPruneMaxJudged: 8,
+			// DP-4: route fallback defaults off (opt-in); the length floor is
+			// populated so GET reports a real effective trigger.
+			DecideRouteMinRunes: 400,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: operatorToken,
