@@ -36,6 +36,7 @@ type KnobsPatch struct {
 	DecideToolThreshold          *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolTopK               *int     `json:"decide_tool_topk,omitempty"`
 	DecideToolPreTopK            *int     `json:"decide_tool_pre_topk,omitempty"`
+	DecideToolChoiceEnabled      *bool    `json:"decide_tool_choice_enabled,omitempty"`
 	DecideToolPruneEnabled       *bool    `json:"decide_tool_prune_enabled,omitempty"`
 	DecideToolPruneThreshold     *int     `json:"decide_tool_prune_threshold,omitempty"`
 	DecideToolPruneMaxJudged     *int     `json:"decide_tool_prune_max_judged,omitempty"`
@@ -249,6 +250,9 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.DecideToolPreTopK != nil {
 		next.DecideToolPreTopK = p.DecideToolPreTopK
+	}
+	if p.DecideToolChoiceEnabled != nil {
+		next.DecideToolChoiceEnabled = p.DecideToolChoiceEnabled
 	}
 	if p.DecideToolPruneEnabled != nil {
 		next.DecideToolPruneEnabled = p.DecideToolPruneEnabled

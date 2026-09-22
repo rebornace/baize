@@ -40,6 +40,10 @@ type Knobs struct {
 	DecideToolThreshold      int  // only consult when tool count exceeds this
 	DecideToolTopK           int  // candidates the layer would keep
 	DecideToolPreTopK        int  // deterministic keyword prefilter width before the model picks
+	// DP-2b: enum constraint on the main-model call. When true (and DP-2a is
+	// in enforce), the narrowed tools are sent with tool_choice=required so the
+	// model must select one of them. Inert in shadow mode.
+	DecideToolChoiceEnabled bool
 	// DP-3 (redirected): prune bulky accumulated tool results inside a single
 	// run's ReAct loop so they stop growing the per-turn prompt. Only tool
 	// results estimated above the threshold are judged; at most MaxJudged are
@@ -97,6 +101,7 @@ type knobsOverride struct {
 	DecideToolThreshold      *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolTopK           *int     `json:"decide_tool_topk,omitempty"`
 	DecideToolPreTopK        *int     `json:"decide_tool_pre_topk,omitempty"`
+	DecideToolChoiceEnabled  *bool    `json:"decide_tool_choice_enabled,omitempty"`
 	DecideToolPruneEnabled   *bool    `json:"decide_tool_prune_enabled,omitempty"`
 	DecideToolPruneThreshold *int     `json:"decide_tool_prune_threshold,omitempty"`
 	DecideToolPruneMaxJudged *int     `json:"decide_tool_prune_max_judged,omitempty"`
@@ -240,6 +245,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideToolPreTopK != nil {
 		k.DecideToolPreTopK = *ko.DecideToolPreTopK
 	}
+	if ko.DecideToolChoiceEnabled != nil {
+		k.DecideToolChoiceEnabled = *ko.DecideToolChoiceEnabled
+	}
 	if ko.DecideToolPruneEnabled != nil {
 		k.DecideToolPruneEnabled = *ko.DecideToolPruneEnabled
 	}
@@ -299,6 +307,7 @@ type KnobsFieldFlags struct {
 	DecideToolThreshold   bool `json:"decide_tool_threshold"`
 	DecideToolTopK        bool `json:"decide_tool_topk"`
 	DecideToolPreTopK     bool `json:"decide_tool_pre_topk"`
+	DecideToolChoice      bool `json:"decide_tool_choice_enabled"`
 	DecideToolPrune       bool `json:"decide_tool_prune_enabled"`
 	DecideToolPruneThresh bool `json:"decide_tool_prune_threshold"`
 	DecideToolPruneMax    bool `json:"decide_tool_prune_max_judged"`
@@ -341,6 +350,7 @@ func (h *Holder) KnobsView() KnobsView {
 			DecideToolThreshold:   ko.DecideToolThreshold != nil,
 			DecideToolTopK:        ko.DecideToolTopK != nil,
 			DecideToolPreTopK:     ko.DecideToolPreTopK != nil,
+			DecideToolChoice:      ko.DecideToolChoiceEnabled != nil,
 			DecideToolPrune:       ko.DecideToolPruneEnabled != nil,
 			DecideToolPruneThresh: ko.DecideToolPruneThreshold != nil,
 			DecideToolPruneMax:    ko.DecideToolPruneMaxJudged != nil,

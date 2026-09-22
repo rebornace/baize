@@ -191,6 +191,7 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 		"prefilter_count":  len(preNames),
 		"prefilter_empty":  noMatch,
 		"model_consulted":  modelConsulted,
+		"tool_choice":      e.effectiveDecideToolChoice(),
 		"kept":             kept,
 		"kept_count":       len(kept),
 		"sent_count":       sentCount,

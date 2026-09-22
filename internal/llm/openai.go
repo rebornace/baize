@@ -41,7 +41,18 @@ func NewOpenAI(baseURL, apiKey, model string) *OpenAI {
 }
 
 func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (Message, error) {
-	client, reqBody, err := o.prepareChat(ctx, messages, tools, false)
+	return o.chat(ctx, messages, tools, nil)
+}
+
+// ChatWithChoice implements Chooser (DP-2b): same as Chat but attaches a
+// tool_choice enum constraint to the request.
+func (o *OpenAI) ChatWithChoice(ctx context.Context, messages []Message, tools []ToolSpec, choice ToolChoice) (Message, error) {
+	c := choice
+	return o.chat(ctx, messages, tools, &c)
+}
+
+func (o *OpenAI) chat(ctx context.Context, messages []Message, tools []ToolSpec, choice *ToolChoice) (Message, error) {
+	client, reqBody, err := o.prepareChat(ctx, messages, tools, false, choice)
 	if err != nil {
 		return Message{}, err
 	}
@@ -76,7 +87,23 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 // thinking/content. Errors (4xx, non-SSE, timeout) are returned; callers may fall
 // back to Chat — this method does not silently downgrade.
 func (o *OpenAI) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
-	client, reqBody, err := o.prepareChat(ctx, messages, tools, true)
+	return o.chatStream(ctx, messages, tools, nil, onThink, onContent)
+}
+
+// ChatStreamWithChoice implements StreamChooser (DP-2b).
+func (o *OpenAI) ChatStreamWithChoice(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolSpec,
+	choice ToolChoice,
+	onThink, onContent func(cumulative string),
+) (Message, error) {
+	c := choice
+	return o.chatStream(ctx, messages, tools, &c, onThink, onContent)
+}
+
+func (o *OpenAI) chatStream(ctx context.Context, messages []Message, tools []ToolSpec, choice *ToolChoice, onThink, onContent func(cumulative string)) (Message, error) {
+	client, reqBody, err := o.prepareChat(ctx, messages, tools, true, choice)
 	if err != nil {
 		return Message{}, err
 	}
@@ -114,7 +141,7 @@ func (o *OpenAI) ChatStream(ctx context.Context, messages []Message, tools []Too
 	return o.readChatSSE(resp.Body, onThink, onContent)
 }
 
-func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []ToolSpec, stream bool) (*http.Client, openAIRequest, error) {
+func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []ToolSpec, stream bool, choice *ToolChoice) (*http.Client, openAIRequest, error) {
 	if strings.TrimSpace(o.APIKey) == "" {
 		return nil, openAIRequest{}, fmt.Errorf("openai_compatible: api_key is required")
 	}
@@ -151,6 +178,11 @@ func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []To
 	}
 	if len(tools) > 0 {
 		reqBody.Tools = toOpenAITools(tools)
+	}
+	// DP-2b: attach the enum constraint only when a non-empty choice is
+	// supplied; nil keeps the request byte-identical to today.
+	if choice != nil && choice.Type != "" {
+		reqBody.ToolChoice = choice
 	}
 	applyThinkingToRequest(&reqBody, f)
 	return client, reqBody, nil
@@ -337,6 +369,7 @@ type openAIRequest struct {
 	Model           string               `json:"model"`
 	Messages        []openAIMessage      `json:"messages"`
 	Tools           []openAITool         `json:"tools,omitempty"`
+	ToolChoice      *ToolChoice          `json:"tool_choice,omitempty"`
 	Stream          bool                 `json:"stream,omitempty"`
 	StreamOptions   *streamOptions       `json:"stream_options,omitempty"`
 	Thinking        *ThinkingToggle      `json:"thinking,omitempty"`

@@ -495,7 +495,30 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		})
 		var msg llm.Message
 		var err error
-		if st, ok := e.LLM.(llm.Streamer); ok {
+		// DP-2b: when an enum constraint is requested (enforce mode), prefer
+		// the streaming constrained call, falling back to a constrained
+		// non-streaming call — never silently to an unconstrained one. A
+		// provider lacking the optional Chooser capability fails open to the
+		// ordinary call (constraint is an optimization, never a hard gate).
+		if useChoice := e.effectiveDecideToolChoice(); useChoice {
+			choice := llm.ToolChoice{Type: llm.ToolChoiceRequired}
+			// Preferred: streaming constrained call.
+			if sc, ok := e.LLM.(llm.StreamChooser); ok {
+				msg, err = sc.ChatStreamWithChoice(chatCtx, messages, specs, choice, co.Think, co.Content)
+			}
+			// Streaming unavailable/failed -> still enforce via a non-streaming
+			// constrained call.
+			if err != nil {
+				if c, ok := e.LLM.(llm.Chooser); ok {
+					msg, err = c.ChatWithChoice(chatCtx, messages, specs, choice)
+				}
+			}
+			// Provider cannot enforce at all -> fail open to the ordinary
+			// (unconstrained) call rather than break the run.
+			if err != nil {
+				msg, err = e.LLM.Chat(chatCtx, messages, specs)
+			}
+		} else if st, ok := e.LLM.(llm.Streamer); ok {
 			msg, err = st.ChatStream(chatCtx, messages, specs, co.Think, co.Content)
 			if err != nil {
 				msg, err = e.LLM.Chat(chatCtx, messages, specs)

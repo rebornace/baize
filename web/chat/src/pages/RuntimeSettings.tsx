@@ -2,9 +2,11 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
   getCredentials,
   getRuntimeSettings,
+  listModelProfiles,
   patchCredentials,
   patchRuntimeSettings,
   type CredentialsView,
+  type ModelProfile,
   type RuntimeKnobsView,
 } from '../api'
 import {
@@ -14,6 +16,7 @@ import {
   Field,
   Input,
   PageHeader,
+  Select,
   ToastRegion,
   useToast,
   type ToastApi,
@@ -25,6 +28,8 @@ import {
   mainKnobFields,
   compactAdvFields,
   allKnobFieldSpecs,
+  decideToolFields,
+  decideMiscFields,
   buildKnobsPatch,
   knobsToForm,
   validateKnobField,
@@ -287,10 +292,25 @@ export function RuntimeSettings() {
   const { toasts, push, dismiss } = useToast()
   const [knobView, setKnobView] = useState<RuntimeKnobsView | null>(null)
   const [form, setForm] = useState<KnobsForm | null>(null)
+  const [profiles, setProfiles] = useState<ModelProfile[]>([])
   const [publicBase, setPublicBase] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const L = strings.LOCALE
+
+  useEffect(() => {
+    let alive = true
+    void listModelProfiles()
+      .then((ps) => {
+        if (alive) setProfiles(ps)
+      })
+      .catch(() => {
+        // 模型下拉加载失败时退化为自由输入，不阻塞页面。
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -517,6 +537,200 @@ export function RuntimeSettings() {
             )}
           </label>
           <p className="settings-muted">{RUNTIME.memoryAutoExtractHint}</p>
+
+          <h2 className="settings-subheading">{RUNTIME.sectionDecide}</h2>
+          <p className="settings-muted">{RUNTIME.decideHint}</p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.decide_enabled}
+              onChange={(e) => setField('decide_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.decideEnabled}
+            {knobView.overridden.decide_enabled && <Badge>{RUNTIME.badgeOverridden}</Badge>}
+          </label>
+
+          <Field
+            label={knobFieldLabel(RUNTIME.fieldDecideProfile, knobView.overridden.decide_profile_id)}
+            hint={RUNTIME.hintDecideProfile}
+          >
+            {profiles.length > 0 ? (
+              <Select
+                value={form.decide_profile_id}
+                onChange={(e) => setField('decide_profile_id', e.target.value)}
+                disabled={busy || readOnly || !form.decide_enabled}
+              >
+                <option value="">{RUNTIME.decideProfileNone}</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}（{p.model}）
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Input
+                value={form.decide_profile_id}
+                onChange={(e) => setField('decide_profile_id', e.target.value)}
+                disabled={busy || readOnly || !form.decide_enabled}
+                placeholder={RUNTIME.decideProfileNone}
+              />
+            )}
+          </Field>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.decide_memory_enabled}
+              onChange={(e) => setField('decide_memory_enabled', e.target.checked)}
+              disabled={busy || readOnly || !form.decide_enabled}
+            />
+            {RUNTIME.decideMemoryEnabled}
+            {knobView.overridden.decide_memory_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.decideMemoryEnabledHint}</p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.decide_tool_routing_enabled}
+              onChange={(e) => setField('decide_tool_routing_enabled', e.target.checked)}
+              disabled={busy || readOnly || !form.decide_enabled}
+            />
+            {RUNTIME.decideToolRoutingEnabled}
+            {knobView.overridden.decide_tool_routing_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.decideToolRoutingHint}</p>
+          <label className="settings-checkbox" style={{ marginLeft: '1.25rem' }}>
+            <input
+              type="checkbox"
+              checked={form.decide_tool_shadow}
+              onChange={(e) => setField('decide_tool_shadow', e.target.checked)}
+              disabled={busy || readOnly || !form.decide_enabled || !form.decide_tool_routing_enabled}
+            />
+            {RUNTIME.decideToolShadow}
+            {knobView.overridden.decide_tool_shadow && <Badge>{RUNTIME.badgeOverridden}</Badge>}
+          </label>
+          <p className="settings-muted" style={{ marginLeft: '1.25rem' }}>
+            {RUNTIME.decideToolShadowHint}
+          </p>
+          <label className="settings-checkbox" style={{ marginLeft: '1.25rem' }}>
+            <input
+              type="checkbox"
+              checked={form.decide_tool_choice_enabled}
+              onChange={(e) => setField('decide_tool_choice_enabled', e.target.checked)}
+              disabled={
+                busy ||
+                readOnly ||
+                !form.decide_enabled ||
+                !form.decide_tool_routing_enabled ||
+                form.decide_tool_shadow
+              }
+            />
+            {RUNTIME.decideToolChoice}
+            {knobView.overridden.decide_tool_choice_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted" style={{ marginLeft: '1.25rem' }}>
+            {RUNTIME.decideToolChoiceHint}
+          </p>
+          <details>
+            <summary>{RUNTIME.decideToolRoutingEnabled}</summary>
+            {decideToolFields().map((spec) => (
+              <Field
+                key={spec.key}
+                label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+                hint={spec.hint}
+              >
+                <Input
+                  type="number"
+                  step={spec.integer ? 1 : 'any'}
+                  min={spec.min}
+                  max={spec.max}
+                  value={form[spec.key]}
+                  onChange={(e) => setField(spec.key, e.target.value)}
+                  disabled={busy || readOnly || !form.decide_enabled}
+                />
+              </Field>
+            ))}
+          </details>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.decide_tool_prune_enabled}
+              onChange={(e) => setField('decide_tool_prune_enabled', e.target.checked)}
+              disabled={busy || readOnly || !form.decide_enabled}
+            />
+            {RUNTIME.decideToolPruneEnabled}
+            {knobView.overridden.decide_tool_prune_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.decideToolPruneHint}</p>
+          <details>
+            <summary>{RUNTIME.decideToolPruneEnabled}</summary>
+            {decideMiscFields()
+              .filter((s) => s.key.startsWith('decide_tool_prune'))
+              .map((spec) => (
+                <Field
+                  key={spec.key}
+                  label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+                  hint={spec.hint}
+                >
+                  <Input
+                    type="number"
+                    step={spec.integer ? 1 : 'any'}
+                    min={spec.min}
+                    max={spec.max}
+                    value={form[spec.key]}
+                    onChange={(e) => setField(spec.key, e.target.value)}
+                    disabled={busy || readOnly || !form.decide_enabled}
+                  />
+                </Field>
+              ))}
+          </details>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.decide_route_enabled}
+              onChange={(e) => setField('decide_route_enabled', e.target.checked)}
+              disabled={busy || readOnly || !form.decide_enabled}
+            />
+            {RUNTIME.decideRouteEnabled}
+            {knobView.overridden.decide_route_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.decideRouteHint}</p>
+          <details>
+            <summary>{RUNTIME.decideRouteEnabled}</summary>
+            {decideMiscFields()
+              .filter((s) => s.key === 'decide_route_min_runes')
+              .map((spec) => (
+                <Field
+                  key={spec.key}
+                  label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+                  hint={spec.hint}
+                >
+                  <Input
+                    type="number"
+                    step={spec.integer ? 1 : 'any'}
+                    min={spec.min}
+                    max={spec.max}
+                    value={form[spec.key]}
+                    onChange={(e) => setField(spec.key, e.target.value)}
+                    disabled={busy || readOnly || !form.decide_enabled}
+                  />
+                </Field>
+              ))}
+          </details>
 
           {!readOnly && (
             <Button type="submit" variant="primary" disabled={busy}>

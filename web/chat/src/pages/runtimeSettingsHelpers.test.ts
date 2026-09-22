@@ -4,6 +4,8 @@ import {
   knobsToForm,
   mainKnobFields,
   compactAdvFields,
+  decideToolFields,
+  decideMiscFields,
   allKnobFieldSpecs,
   validateKnobField,
   type KnobsForm,
@@ -22,6 +24,20 @@ const baseKnobs: RuntimeKnobs = {
   compact_summary_timeout_seconds: 60,
   memory_enabled: true,
   memory_auto_extract: true,
+  decide_enabled: true,
+  decide_memory_enabled: true,
+  decide_profile_id: '',
+  decide_tool_routing_enabled: true,
+  decide_tool_shadow: true,
+  decide_tool_threshold: 12,
+  decide_tool_topk: 8,
+  decide_tool_pre_topk: 16,
+  decide_tool_choice_enabled: false,
+  decide_tool_prune_enabled: true,
+  decide_tool_prune_threshold: 500,
+  decide_tool_prune_max_judged: 8,
+  decide_route_enabled: false,
+  decide_route_min_runes: 400,
 }
 
 describe('knobsToForm', () => {
@@ -48,8 +64,21 @@ describe('field groups', () => {
     ])
   })
 
-  it('allKnobFieldSpecs covers seven numeric fields', () => {
-    expect(allKnobFieldSpecs()).toHaveLength(7)
+  it('decide groups expose their numeric keys', () => {
+    expect(decideToolFields().map((f) => f.key)).toEqual([
+      'decide_tool_threshold',
+      'decide_tool_pre_topk',
+      'decide_tool_topk',
+    ])
+    expect(decideMiscFields().map((f) => f.key)).toEqual([
+      'decide_tool_prune_threshold',
+      'decide_tool_prune_max_judged',
+      'decide_route_min_runes',
+    ])
+  })
+
+  it('allKnobFieldSpecs covers all thirteen numeric fields', () => {
+    expect(allKnobFieldSpecs()).toHaveLength(13)
   })
 })
 
@@ -115,6 +144,33 @@ describe('buildKnobsPatch', () => {
   it('includes summary timeout change', () => {
     const form: KnobsForm = { ...knobsToForm(baseKnobs), compact_summary_timeout_seconds: '120' }
     expect(buildKnobsPatch(form, baseKnobs)).toEqual({ compact_summary_timeout_seconds: 120 })
+  })
+
+  it('includes decision master + profile changes', () => {
+    const form: KnobsForm = {
+      ...knobsToForm(baseKnobs),
+      decide_enabled: false,
+      decide_profile_id: 'flash',
+    }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({
+      decide_enabled: false,
+      decide_profile_id: 'flash',
+    })
+  })
+
+  it('includes tool-shadow switch to enforce', () => {
+    const form: KnobsForm = { ...knobsToForm(baseKnobs), decide_tool_shadow: false }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ decide_tool_shadow: false })
+  })
+
+  it('includes tool-choice toggle', () => {
+    const form: KnobsForm = { ...knobsToForm(baseKnobs), decide_tool_choice_enabled: true }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ decide_tool_choice_enabled: true })
+  })
+
+  it('includes decision numeric changes', () => {
+    const form: KnobsForm = { ...knobsToForm(baseKnobs), decide_tool_pre_topk: '24' }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ decide_tool_pre_topk: 24 })
   })
 
   it('bundles multiple changes', () => {

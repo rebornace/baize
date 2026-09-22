@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -76,6 +77,11 @@ type cachedProvider struct {
 	updatedAt time.Time
 }
 
+// errChoiceUnsupported is returned when a tool_choice constraint was requested
+// (DP-2b) but the resolved provider cannot enforce it. Callers treat it as the
+// signal to fail open to an ordinary call.
+var errChoiceUnsupported = errors.New("llm: provider does not support tool_choice constraint")
+
 // Switch is a Provider that resolves the active model per-run from a
 // ProfileSource. Provider instances are cached by profile id and rebuilt when
 // the profile's UpdatedAt advances (hot reload, no restart).
@@ -147,6 +153,23 @@ func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 	return prov.Chat(ctx, messages, tools)
 }
 
+// ChatWithChoice implements Chooser (DP-2b) by forwarding to the resolved
+// provider when it supports the optional capability. If the backing provider
+// cannot enforce a tool_choice, we return an error rather than silently
+// downgrading to Chat — dropping the constraint would make the call look
+// constrained when it was not.
+func (s *Switch) ChatWithChoice(ctx context.Context, messages []Message, tools []ToolSpec, choice ToolChoice) (Message, error) {
+	prov, err := s.providerFor(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	ch, ok := prov.(Chooser)
+	if !ok {
+		return Message{}, errChoiceUnsupported
+	}
+	return ch.ChatWithChoice(ctx, messages, tools, choice)
+}
+
 // ChatStream implements Streamer: prefers a streaming provider, otherwise Chat.
 func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
 	p, err := s.providerFor(ctx)
@@ -157,6 +180,29 @@ func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []Too
 		return st.ChatStream(ctx, messages, tools, onThink, onContent)
 	}
 	return p.Chat(ctx, messages, tools)
+}
+
+// ChatStreamWithChoice implements StreamChooser (DP-2b). Prefers a streaming
+// constrained call; otherwise falls back to a constrained non-streaming call
+// (still enforcing the choice), never to an unconstrained one.
+func (s *Switch) ChatStreamWithChoice(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolSpec,
+	choice ToolChoice,
+	onThink, onContent func(cumulative string),
+) (Message, error) {
+	p, err := s.providerFor(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	if sc, ok := p.(StreamChooser); ok {
+		return sc.ChatStreamWithChoice(ctx, messages, tools, choice, onThink, onContent)
+	}
+	if c, ok := p.(Chooser); ok {
+		return c.ChatWithChoice(ctx, messages, tools, choice)
+	}
+	return Message{}, errChoiceUnsupported
 }
 
 // SupportsVision reports whether ANY configured model can accept image parts.

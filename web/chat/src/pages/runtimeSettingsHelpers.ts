@@ -13,11 +13,40 @@ export interface KnobsForm {
   compact_summary_timeout_seconds: string
   memory_enabled: boolean
   memory_auto_extract: boolean
+  // Decision layer (decide).
+  decide_enabled: boolean
+  decide_memory_enabled: boolean
+  decide_profile_id: string
+  decide_tool_routing_enabled: boolean
+  decide_tool_shadow: boolean
+  decide_tool_threshold: string
+  decide_tool_topk: string
+  decide_tool_pre_topk: string
+  decide_tool_choice_enabled: boolean
+  decide_tool_prune_enabled: boolean
+  decide_tool_prune_threshold: string
+  decide_tool_prune_max_judged: string
+  decide_route_enabled: boolean
+  decide_route_min_runes: string
 }
+
+/** Boolean + free-text keys are not rendered as numeric field specs. */
+type NonNumericKnobKeys =
+  | 'compaction_enabled'
+  | 'memory_enabled'
+  | 'memory_auto_extract'
+  | 'decide_enabled'
+  | 'decide_memory_enabled'
+  | 'decide_profile_id'
+  | 'decide_tool_routing_enabled'
+  | 'decide_tool_shadow'
+  | 'decide_tool_choice_enabled'
+  | 'decide_tool_prune_enabled'
+  | 'decide_route_enabled'
 
 /** Field metadata for rendering + validation. */
 export interface KnobFieldSpec {
-  key: keyof Omit<KnobsForm, 'compaction_enabled' | 'memory_enabled' | 'memory_auto_extract'>
+  key: keyof Omit<KnobsForm, NonNumericKnobKeys>
   label: string
   hint: string
   min: number
@@ -98,8 +127,73 @@ export const MAIN_KNOB_FIELDS = mainKnobFields()
 /** @deprecated Prefer compactAdvFields() — live labels. */
 export const COMPACT_ADV_FIELDS = compactAdvFields()
 
+/** Numeric knobs for tool-candidate routing (DP-2a). */
+export function decideToolFields(): KnobFieldSpec[] {
+  return [
+    {
+      key: 'decide_tool_threshold',
+      label: RUNTIME.fieldDecideToolThreshold,
+      hint: RUNTIME.hintDecideToolThreshold,
+      min: 1,
+      max: 500,
+      integer: true,
+    },
+    {
+      key: 'decide_tool_pre_topk',
+      label: RUNTIME.fieldDecideToolPreTopK,
+      hint: RUNTIME.hintDecideToolPreTopK,
+      min: 1,
+      max: 500,
+      integer: true,
+    },
+    {
+      key: 'decide_tool_topk',
+      label: RUNTIME.fieldDecideToolTopK,
+      hint: RUNTIME.hintDecideToolTopK,
+      min: 1,
+      max: 200,
+      integer: true,
+    },
+  ]
+}
+
+/** Numeric knobs for bulky tool-result pruning (DP-3) and route fallback (DP-4). */
+export function decideMiscFields(): KnobFieldSpec[] {
+  return [
+    {
+      key: 'decide_tool_prune_threshold',
+      label: RUNTIME.fieldDecidePruneThreshold,
+      hint: RUNTIME.hintDecidePruneThreshold,
+      min: 1,
+      max: 100000,
+      integer: true,
+    },
+    {
+      key: 'decide_tool_prune_max_judged',
+      label: RUNTIME.fieldDecidePruneMaxJudged,
+      hint: RUNTIME.hintDecidePruneMaxJudged,
+      min: 1,
+      max: 100,
+      integer: true,
+    },
+    {
+      key: 'decide_route_min_runes',
+      label: RUNTIME.fieldDecideRouteMinRunes,
+      hint: RUNTIME.hintDecideRouteMinRunes,
+      min: 1,
+      max: 100000,
+      integer: true,
+    },
+  ]
+}
+
 export function allKnobFieldSpecs(): KnobFieldSpec[] {
-  return [...mainKnobFields(), ...compactAdvFields()]
+  return [
+    ...mainKnobFields(),
+    ...compactAdvFields(),
+    ...decideToolFields(),
+    ...decideMiscFields(),
+  ]
 }
 
 /** @deprecated 勿用；保留一版别名以免遗漏引用时可 grep */
@@ -117,6 +211,20 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     compact_summary_timeout_seconds: String(k.compact_summary_timeout_seconds),
     memory_enabled: k.memory_enabled,
     memory_auto_extract: k.memory_auto_extract,
+    decide_enabled: k.decide_enabled,
+    decide_memory_enabled: k.decide_memory_enabled,
+    decide_profile_id: k.decide_profile_id,
+    decide_tool_routing_enabled: k.decide_tool_routing_enabled,
+    decide_tool_shadow: k.decide_tool_shadow,
+    decide_tool_threshold: String(k.decide_tool_threshold),
+    decide_tool_topk: String(k.decide_tool_topk),
+    decide_tool_pre_topk: String(k.decide_tool_pre_topk),
+    decide_tool_choice_enabled: k.decide_tool_choice_enabled,
+    decide_tool_prune_enabled: k.decide_tool_prune_enabled,
+    decide_tool_prune_threshold: String(k.decide_tool_prune_threshold),
+    decide_tool_prune_max_judged: String(k.decide_tool_prune_max_judged),
+    decide_route_enabled: k.decide_route_enabled,
+    decide_route_min_runes: String(k.decide_route_min_runes),
   }
 }
 
@@ -177,6 +285,55 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   const summaryTimeout = int(form.compact_summary_timeout_seconds)
   if (summaryTimeout !== null && summaryTimeout !== effective.compact_summary_timeout_seconds) {
     patch.compact_summary_timeout_seconds = summaryTimeout
+  }
+  // Decision layer.
+  if (form.decide_enabled !== effective.decide_enabled) {
+    patch.decide_enabled = form.decide_enabled
+  }
+  if (form.decide_memory_enabled !== effective.decide_memory_enabled) {
+    patch.decide_memory_enabled = form.decide_memory_enabled
+  }
+  if (form.decide_profile_id !== effective.decide_profile_id) {
+    patch.decide_profile_id = form.decide_profile_id
+  }
+  if (form.decide_tool_routing_enabled !== effective.decide_tool_routing_enabled) {
+    patch.decide_tool_routing_enabled = form.decide_tool_routing_enabled
+  }
+  if (form.decide_tool_shadow !== effective.decide_tool_shadow) {
+    patch.decide_tool_shadow = form.decide_tool_shadow
+  }
+  if (form.decide_tool_choice_enabled !== effective.decide_tool_choice_enabled) {
+    patch.decide_tool_choice_enabled = form.decide_tool_choice_enabled
+  }
+  const toolThreshold = int(form.decide_tool_threshold)
+  if (toolThreshold !== null && toolThreshold !== effective.decide_tool_threshold) {
+    patch.decide_tool_threshold = toolThreshold
+  }
+  const toolTopK = int(form.decide_tool_topk)
+  if (toolTopK !== null && toolTopK !== effective.decide_tool_topk) {
+    patch.decide_tool_topk = toolTopK
+  }
+  const toolPreTopK = int(form.decide_tool_pre_topk)
+  if (toolPreTopK !== null && toolPreTopK !== effective.decide_tool_pre_topk) {
+    patch.decide_tool_pre_topk = toolPreTopK
+  }
+  if (form.decide_tool_prune_enabled !== effective.decide_tool_prune_enabled) {
+    patch.decide_tool_prune_enabled = form.decide_tool_prune_enabled
+  }
+  const pruneThreshold = int(form.decide_tool_prune_threshold)
+  if (pruneThreshold !== null && pruneThreshold !== effective.decide_tool_prune_threshold) {
+    patch.decide_tool_prune_threshold = pruneThreshold
+  }
+  const pruneMaxJudged = int(form.decide_tool_prune_max_judged)
+  if (pruneMaxJudged !== null && pruneMaxJudged !== effective.decide_tool_prune_max_judged) {
+    patch.decide_tool_prune_max_judged = pruneMaxJudged
+  }
+  if (form.decide_route_enabled !== effective.decide_route_enabled) {
+    patch.decide_route_enabled = form.decide_route_enabled
+  }
+  const routeMinRunes = int(form.decide_route_min_runes)
+  if (routeMinRunes !== null && routeMinRunes !== effective.decide_route_min_runes) {
+    patch.decide_route_min_runes = routeMinRunes
   }
   return patch
 }

@@ -21,6 +21,20 @@ const baseKnobs: RuntimeKnobs = {
   compact_summary_timeout_seconds: 60,
   memory_enabled: true,
   memory_auto_extract: true,
+  decide_enabled: true,
+  decide_memory_enabled: true,
+  decide_profile_id: '',
+  decide_tool_routing_enabled: true,
+  decide_tool_shadow: true,
+  decide_tool_threshold: 12,
+  decide_tool_topk: 8,
+  decide_tool_pre_topk: 16,
+  decide_tool_choice_enabled: false,
+  decide_tool_prune_enabled: true,
+  decide_tool_prune_threshold: 500,
+  decide_tool_prune_max_judged: 8,
+  decide_route_enabled: false,
+  decide_route_min_runes: 400,
 }
 
 const overridden = Object.fromEntries(
@@ -43,6 +57,7 @@ async function renderRuntime() {
     admin_set: true,
     operators: [],
   })
+  vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
   await act(async () => {
     root.render(
       createElement(
@@ -115,6 +130,11 @@ describe('RuntimeSettings humanize shell', () => {
     expect(host.textContent).toContain(RUNTIME.sectionMemory)
     expect(host.textContent).toContain(RUNTIME.memoryEnabled)
     expect(host.textContent).toContain(RUNTIME.memoryAutoExtract)
+    expect(host.textContent).toContain(RUNTIME.sectionDecide)
+    expect(host.textContent).toContain(RUNTIME.decideEnabled)
+    expect(host.textContent).toContain(RUNTIME.decideToolRoutingEnabled)
+    expect(host.textContent).toContain(RUNTIME.decideToolPruneEnabled)
+    expect(host.textContent).toContain(RUNTIME.decideRouteEnabled)
     expect(host.textContent).toContain(RUNTIME.sectionCreds)
     // 高级区内字段默认不可见：details 未 open，或不在 DOM 可见区
     const details = host.querySelector('details')

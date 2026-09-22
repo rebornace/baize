@@ -60,6 +60,22 @@ func (e *Engine) effectiveDecideToolEnforce() bool {
 	return k.DecideEnabled && k.DecideToolRoutingEnabled && !k.DecideToolShadow
 }
 
+// effectiveDecideToolChoice reports whether DP-2b is live: send the narrowed
+// tool set with tool_choice=required so the main model must pick one of them.
+// It is only meaningful together with DP-2a ENFORCE — in shadow mode the full
+// catalog is still sent, so forcing a choice over it would both alter behavior
+// and be pointless. Guarded by the same master + routing switches.
+func (e *Engine) effectiveDecideToolChoice() bool {
+	if e.Settings == nil || e.Decider == nil {
+		return false
+	}
+	k := e.Settings.Knobs()
+	return k.DecideEnabled &&
+		k.DecideToolRoutingEnabled &&
+		!k.DecideToolShadow &&
+		k.DecideToolChoiceEnabled
+}
+
 // effectiveDecidePreTopK returns the deterministic keyword-prefilter width:
 // how many candidates survive keyword matching before the decision model picks.
 // Zero/missing is treated as the spec default of 32.
