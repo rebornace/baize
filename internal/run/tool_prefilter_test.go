@@ -1,6 +1,7 @@
 package run
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rebornace/baize/internal/llm"
@@ -98,5 +99,90 @@ func TestPrefilterEdgeInputs(t *testing.T) {
 	}
 	if _, noMatch := prefilterTools("订单", prefilterSpecs(), 0); !noMatch {
 		t.Fatalf("limit<=0 must be noMatch")
+	}
+}
+
+// A query made entirely of function/filler words ("帮我查询一下") must be
+// treated as no match rather than matching every tool that says "查询".
+func TestPrefilterAllStopwordsIsNoMatch(t *testing.T) {
+	if _, noMatch := prefilterTools("帮我查询一下", prefilterSpecs(), 5); !noMatch {
+		t.Fatalf("all-stopword query must be noMatch")
+	}
+}
+
+// Stopwords must be stripped but a real content word still matches: "查一下
+// 订单" keeps only 订单 and still finds the order tool.
+func TestPrefilterStopwordStrippedKeepsContent(t *testing.T) {
+	picked, noMatch := prefilterTools("查一下订单", prefilterSpecs(), 1)
+	if noMatch {
+		t.Fatalf("unexpected noMatch")
+	}
+	if picked[0].Name != "OmsOrderController_list" {
+		t.Fatalf("top=%q want OmsOrderController_list", picked[0].Name)
+	}
+}
+
+// A tool whose description shares many weak words but NOT the rare intent word
+// must not outrank one that shares the rare word. Here the order tools match
+// 订单; no fabricated weak-word tool should beat them.
+func TestPrefilterRareWordBeatsWeakOverlap(t *testing.T) {
+	specs := append(prefilterSpecs(), llm.ToolSpec{
+		Name:        "NoisyController_list",
+		Description: "查询列表信息分页", // only weak/generic words, no 订单
+	})
+	picked, noMatch := prefilterTools("查一下最近的订单", specs, 2)
+	if noMatch {
+		t.Fatalf("unexpected noMatch")
+	}
+	if picked[0].Name != "OmsOrderController_list" {
+		t.Fatalf("top=%q want OmsOrderController_list (rare 订单 beats weak overlap)", picked[0].Name)
+	}
+}
+
+func TestBuildCompactTrajectoryShape(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: "忽略"},
+		{
+			Role: llm.RoleAssistant,
+			ToolCalls: []llm.ToolCall{
+				{ID: "c1", Name: "tool_a", Arguments: map[string]any{"id": "sku-9"}},
+			},
+		},
+		{Role: llm.RoleTool, ToolCallID: "c1", Content: "查询到结果"},
+	}
+	out := buildCompactTrajectory(msgs, 800)
+	if !strings.Contains(out, "-> tool_a(id=sku-9)") {
+		t.Fatalf("missing call line: %q", out)
+	}
+	if !strings.Contains(out, "<- 查询到结果") {
+		t.Fatalf("missing result line: %q", out)
+	}
+	if strings.Contains(out, "忽略") {
+		t.Fatalf("plain prose must not enter trajectory: %q", out)
+	}
+}
+
+func TestBuildCompactTrajectoryEmptyOnFirstStep(t *testing.T) {
+	msgs := []llm.Message{{Role: llm.RoleUser, Content: "你好"}}
+	if got := buildCompactTrajectory(msgs, 800); got != "" {
+		t.Fatalf("first step trajectory must be empty, got %q", got)
+	}
+}
+
+func TestBuildCompactTrajectoryTruncatesLongResult(t *testing.T) {
+	long := strings.Repeat("数", 500)
+	msgs := []llm.Message{
+		{
+			Role:      llm.RoleAssistant,
+			ToolCalls: []llm.ToolCall{{ID: "c1", Name: "tool_a"}},
+		},
+		{Role: llm.RoleTool, ToolCallID: "c1", Content: long},
+	}
+	out := buildCompactTrajectory(msgs, 800)
+	if r := []rune(out); len(r) > 800 {
+		t.Fatalf("trajectory must be capped, got %d runes", len(r))
+	}
+	if strings.Contains(out, strings.Repeat("数", 121)) {
+		t.Fatalf("individual result must be truncated to item limit")
 	}
 }

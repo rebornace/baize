@@ -12,10 +12,11 @@ import (
 // named candidates. response_format cannot be relied on across OpenAI-
 // compatible endpoints, so the contract is enforced by the prompt and
 // validated by parsing.
-const remoteMultiSystemPrompt = `你是工具选择器。任务：从给定候选工具中，只选出完成“用户这一轮请求”直接需要的工具（通常 1-8 个）。
+const remoteMultiSystemPrompt = `你是工具选择器。任务：先在心里为“用户这一轮请求”拟一个完整的多步执行计划，然后从给定候选工具中，选出执行这个计划从头到尾会用到的全部工具（通常 2-10 个）。
+要点：要覆盖整个计划，包括前置查询/校验动作和后续动作，而不只是第一步。例如“关闭订单”通常需要先查订单再关闭，两个工具都要选。
 只输出一个 JSON 字符串数组，元素必须是候选工具里的确切名称，例如 ["tool_a","tool_b"]。
 不要输出解释、markdown 代码块或候选之外的名称。
-务必做减法：与本轮请求无关、用不到的工具不要选；宁少勿滥。即使不完全确定，也只选最可能用到的少数几个，不要返回全部。`
+仍然要做减法：只选计划真正会用到的工具，与请求无关的不要选；但不要因为“宁少勿滥”而漏掉计划后续步骤确定需要的工具。`
 
 // RemoteMulti wraps an llm.Provider and coerces its reply into the subset of
 // Question.Options the model chose. A chat error, unparseable reply, or empty

@@ -37,7 +37,7 @@ func fail(format string, a ...any) (map[string]any, bool, error) {
 func Tools(svc *Service) []ToolMeta {
 	listSpec := llm.ToolSpec{
 		Name:        "list_files",
-		Description: "List files and folders in your persistent workspace. Optional 'path' lists a subfolder (default: root). Returns entries with name and type (file/dir). Uploaded files are under uploads/. " + workspaceToolHint,
+		Description: "列出工作区里的文件和目录（可选项 path 指定子目录，默认根目录；返回每个条目的名称和类型，上传的文件在 uploads/ 目录下）。List files and folders in your persistent workspace. Optional 'path' lists a subfolder (default: root). Returns entries with name and type (file/dir). Uploaded files are under uploads/. " + workspaceToolHint,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -47,7 +47,7 @@ func Tools(svc *Service) []ToolMeta {
 	}
 	readSpec := llm.ToolSpec{
 		Name:        "read_file",
-		Description: "Read a UTF-8 text file from your workspace (e.g. an uploaded document under uploads/). Returns content (truncated if large). Use read_image for images. " + workspaceToolHint,
+		Description: "读取工作区里的 UTF-8 文本文件（例如 uploads/ 目录下上传的文档），返回文件内容（过大时截断）；查看图片请用 read_image。Read a UTF-8 text file from your workspace (e.g. an uploaded document under uploads/). Returns content (truncated if large). Use read_image for images. " + workspaceToolHint,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -58,7 +58,7 @@ func Tools(svc *Service) []ToolMeta {
 	}
 	writeSpec := llm.ToolSpec{
 		Name:        "write_file",
-		Description: "Write (create or overwrite) a UTF-8 text file in your workspace, e.g. to save notes or intermediate results for later turns. Parent folders are created automatically. Max 256 KiB. " + workspaceToolHint,
+		Description: "在工作区写入（新建或覆盖）UTF-8 文本文件，例如保存笔记或供后续轮次使用的中间结果；父目录会自动创建，最大 256 KiB。Write (create or overwrite) a UTF-8 text file in your workspace, e.g. to save notes or intermediate results for later turns. Parent folders are created automatically. Max 256 KiB. " + workspaceToolHint,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -70,7 +70,7 @@ func Tools(svc *Service) []ToolMeta {
 	}
 	deleteSpec := llm.ToolSpec{
 		Name:        "delete_file",
-		Description: "Delete a file from your workspace. Idempotent (deleting a missing file succeeds). " + workspaceToolHint,
+		Description: "删除工作区里的文件（幂等：删除不存在的文件也算成功）。Delete a file from your workspace. Idempotent (deleting a missing file succeeds). " + workspaceToolHint,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -81,7 +81,7 @@ func Tools(svc *Service) []ToolMeta {
 	}
 	imageSpec := llm.ToolSpec{
 		Name:        "read_image",
-		Description: "View an image file from your workspace (e.g. an uploaded image under uploads/). The image is attached to this tool result for you to see. Requires a vision-capable model. " + workspaceToolHint,
+		Description: "查看工作区里的图片文件（例如 uploads/ 目录下上传的图片），图片会附加到工具结果中供你查看；需要支持视觉的模型。View an image file from your workspace (e.g. an uploaded image under uploads/). The image is attached to this tool result for you to see. Requires a vision-capable model. " + workspaceToolHint,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -14,6 +14,31 @@ import (
 // signal (e.g. "order", "SkuStock").
 const nameTokenWeight = 2.0
 
+// queryStop removes CJK function-word bigrams and Latin generic words that
+// appear in nearly every tool description. They carry no intent and, left in
+// the query, a tool incidentally matching them steals score from the rare,
+// discriminative content words (e.g. 订单, SKU).
+var queryStop = map[string]bool{
+	// CJK function / filler bigrams.
+	"一下": true, "查询": true, "帮我": true, "最近": true, "怎么": true,
+	"一个": true, "某个": true, "多少": true, "操作": true,
+	// Latin generic operation words.
+	"controller": true, "list": true, "get": true, "query": true,
+	"info": true, "page": true,
+}
+
+// cleanQueryTokens returns the query's content tokens, dropping function words
+// via queryStop. A single surviving content word is still intent-bearing.
+func cleanQueryTokens(raw map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(raw))
+	for t := range raw {
+		if !queryStop[t] {
+			out[t] = true
+		}
+	}
+	return out
+}
+
 // prefilterTools deterministically narrows specs to the at most limit tools
 // whose name/description best overlap the query's rare keywords. It scores
 // IDF-weighted overlap over Latin word tokens and CJK bigrams so a cheap
@@ -29,7 +54,7 @@ func prefilterTools(query string, specs []llm.ToolSpec, limit int) (picked []llm
 		return nil, true
 	}
 
-	queryTokens := tokenSet(query)
+	queryTokens := cleanQueryTokens(tokenSet(query))
 	if len(queryTokens) == 0 {
 		return nil, true
 	}
@@ -59,14 +84,21 @@ func prefilterTools(query string, specs []llm.ToolSpec, limit int) (picked []llm
 		if !ok || d == 0 {
 			continue
 		}
-		// IDF downwords ubiquitous terms ("查询", "list", "Controller") and
+		// IDF downweights ubiquitous terms ("查询", "list", "Controller") and
 		// upweights rare, discriminative ones ("订单", "SkuStock").
 		w := 1.0 + math.Log(n/float64(d))
 		for i := range specs {
+			// Take the STRONGEST token match per tool (max, not sum) so an
+			// incidental overlap with many weak words cannot inflate a tool
+			// past one that shares the query's rarest intent token.
+			var s float64
 			if nameSets[i][qt] {
-				scores[i] += nameTokenWeight * w
+				s = nameTokenWeight * w
 			} else if descSets[i][qt] {
-				scores[i] += w
+				s = w
+			}
+			if s > scores[i] {
+				scores[i] = s
 			}
 		}
 	}

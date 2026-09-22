@@ -468,7 +468,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		// changing the specs sent below. Only consulted when the tool count
 		// exceeds the threshold; small sets are left untouched.
 		if e.effectiveDecideTool() && len(specs) > e.effectiveDecideToolThreshold() {
-			e.recordToolShadow(ctx, runID, turn, specs)
+			e.recordToolShadow(ctx, runID, turn, specs, messages)
 		}
 		chatCtx := ctx
 		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
