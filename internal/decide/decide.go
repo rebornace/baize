@@ -41,6 +41,12 @@ const (
 	// names come back in Answer.Values. OnFail is VerdictYes (keep all tools)
 	// so a layer outage preserves today's behavior.
 	KindToolCandidates = "tool_candidates"
+	// KindPruneToolResult asks whether one bulky tool result already produced
+	// in this run is worth keeping verbatim in later turns (DP-3, redirected).
+	// Binary verdict; the engine probes the result content (trimmed). OnFail
+	// is VerdictYes: if the layer is down, keep the full result rather than
+	// silently drop information.
+	KindPruneToolResult = "tool_result_worth_keeping"
 )
 
 // ErrUnavailable reports that an implementation currently abstains or is

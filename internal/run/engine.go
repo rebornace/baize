@@ -48,6 +48,10 @@ const (
 	// layer would keep. Shadow mode writes this without changing the tools
 	// actually sent to the model.
 	EventDecideToolShadow = "decide.tool_shadow"
+	// EventDecideToolPruned (DP-3, redirected) records one bulky tool result
+	// replaced by a short placeholder inside the run so it stops growing the
+	// per-turn prompt. The raw result remains in the tool.result event.
+	EventDecideToolPruned = "decide.tool_pruned"
 
 	DefaultToolTimeout = 60 * time.Second
 )
@@ -451,6 +455,12 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		}
 		if e.isCancelled(runID) {
 			return context.Canceled
+		}
+		// DP-3 (redirected): before sending this turn, prune bulky tool
+		// results accumulated earlier in the run so they stop inflating the
+		// prompt. Fail open; on the first turn there is nothing to prune.
+		if e.effectiveDecidePrune() {
+			e.pruneToolResults(ctx, runID, messages)
 		}
 		turn := step
 		specs := e.specsForRun(runID)

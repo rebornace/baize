@@ -34,6 +34,9 @@ type KnobsPatch struct {
 	DecideToolShadow             *bool    `json:"decide_tool_shadow,omitempty"`
 	DecideToolThreshold          *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolTopK               *int     `json:"decide_tool_topk,omitempty"`
+	DecideToolPruneEnabled       *bool    `json:"decide_tool_prune_enabled,omitempty"`
+	DecideToolPruneThreshold     *int     `json:"decide_tool_prune_threshold,omitempty"`
+	DecideToolPruneMaxJudged     *int     `json:"decide_tool_prune_max_judged,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 }
 
@@ -149,6 +152,16 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 		*p.DecideToolThreshold < *p.DecideToolTopK {
 		return fmt.Errorf("%w: decide_tool_threshold must be >= decide_tool_topk", ErrBadRange)
 	}
+	// DP-3 (redirected): prune threshold is an absolute estimated-token size;
+	// MaxJudged bounds how many bulky results are judged per turn.
+	if p.DecideToolPruneThreshold != nil &&
+		(*p.DecideToolPruneThreshold < 1 || *p.DecideToolPruneThreshold > 100000) {
+		return fmt.Errorf("%w: decide_tool_prune_threshold must be 1-100000", ErrBadRange)
+	}
+	if p.DecideToolPruneMaxJudged != nil &&
+		(*p.DecideToolPruneMaxJudged < 1 || *p.DecideToolPruneMaxJudged > 100) {
+		return fmt.Errorf("%w: decide_tool_prune_max_judged must be 1-100", ErrBadRange)
+	}
 	return nil
 }
 
@@ -214,6 +227,15 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.DecideToolTopK != nil {
 		next.DecideToolTopK = p.DecideToolTopK
+	}
+	if p.DecideToolPruneEnabled != nil {
+		next.DecideToolPruneEnabled = p.DecideToolPruneEnabled
+	}
+	if p.DecideToolPruneThreshold != nil {
+		next.DecideToolPruneThreshold = p.DecideToolPruneThreshold
+	}
+	if p.DecideToolPruneMaxJudged != nil {
+		next.DecideToolPruneMaxJudged = p.DecideToolPruneMaxJudged
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

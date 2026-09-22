@@ -25,6 +25,9 @@ type runtimeKnobsJSON struct {
 	DecideToolShadow             bool    `json:"decide_tool_shadow"`
 	DecideToolThreshold          int     `json:"decide_tool_threshold"`
 	DecideToolTopK               int     `json:"decide_tool_topk"`
+	DecideToolPruneEnabled       bool    `json:"decide_tool_prune_enabled"`
+	DecideToolPruneThreshold     int     `json:"decide_tool_prune_threshold"`
+	DecideToolPruneMaxJudged     int     `json:"decide_tool_prune_max_judged"`
 }
 
 func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
@@ -45,6 +48,9 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		DecideToolShadow:             k.DecideToolShadow,
 		DecideToolThreshold:          k.DecideToolThreshold,
 		DecideToolTopK:               k.DecideToolTopK,
+		DecideToolPruneEnabled:       k.DecideToolPruneEnabled,
+		DecideToolPruneThreshold:     k.DecideToolPruneThreshold,
+		DecideToolPruneMaxJudged:     k.DecideToolPruneMaxJudged,
 	}
 }
 

@@ -43,6 +43,10 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			DecideToolShadow:    true,
 			DecideToolThreshold: 12,
 			DecideToolTopK:      8,
+			// DP-3 (redirected): prune master defaults off, but size/cap
+			// defaults are populated so GET reports real effective values.
+			DecideToolPruneThreshold: 500,
+			DecideToolPruneMaxJudged: 8,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: operatorToken,

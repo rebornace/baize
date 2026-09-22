@@ -35,6 +35,13 @@ type Knobs struct {
 	DecideToolShadow         bool // record only (never change sent tools)
 	DecideToolThreshold      int  // only consult when tool count exceeds this
 	DecideToolTopK           int  // candidates the layer would keep
+	// DP-3 (redirected): prune bulky accumulated tool results inside a single
+	// run's ReAct loop so they stop growing the per-turn prompt. Only tool
+	// results estimated above the threshold are judged; at most MaxJudged are
+	// judged per turn; failures keep the full result (fail open).
+	DecideToolPruneEnabled   bool // consult the layer whether a tool result is worth keeping
+	DecideToolPruneThreshold int  // only judge tool results estimated above this
+	DecideToolPruneMaxJudged int  // max tool results judged per turn
 }
 
 // Credentials is the effective control-plane credential set.
@@ -77,6 +84,9 @@ type knobsOverride struct {
 	DecideToolShadow         *bool    `json:"decide_tool_shadow,omitempty"`
 	DecideToolThreshold      *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolTopK           *int     `json:"decide_tool_topk,omitempty"`
+	DecideToolPruneEnabled   *bool    `json:"decide_tool_prune_enabled,omitempty"`
+	DecideToolPruneThreshold *int     `json:"decide_tool_prune_threshold,omitempty"`
+	DecideToolPruneMaxJudged *int     `json:"decide_tool_prune_max_judged,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -209,6 +219,15 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideToolTopK != nil {
 		k.DecideToolTopK = *ko.DecideToolTopK
 	}
+	if ko.DecideToolPruneEnabled != nil {
+		k.DecideToolPruneEnabled = *ko.DecideToolPruneEnabled
+	}
+	if ko.DecideToolPruneThreshold != nil {
+		k.DecideToolPruneThreshold = *ko.DecideToolPruneThreshold
+	}
+	if ko.DecideToolPruneMaxJudged != nil {
+		k.DecideToolPruneMaxJudged = *ko.DecideToolPruneMaxJudged
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -251,6 +270,9 @@ type KnobsFieldFlags struct {
 	DecideToolShadow      bool `json:"decide_tool_shadow"`
 	DecideToolThreshold   bool `json:"decide_tool_threshold"`
 	DecideToolTopK        bool `json:"decide_tool_topk"`
+	DecideToolPrune       bool `json:"decide_tool_prune_enabled"`
+	DecideToolPruneThresh bool `json:"decide_tool_prune_threshold"`
+	DecideToolPruneMax    bool `json:"decide_tool_prune_max_judged"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -286,6 +308,9 @@ func (h *Holder) KnobsView() KnobsView {
 			DecideToolShadow:      ko.DecideToolShadow != nil,
 			DecideToolThreshold:   ko.DecideToolThreshold != nil,
 			DecideToolTopK:        ko.DecideToolTopK != nil,
+			DecideToolPrune:       ko.DecideToolPruneEnabled != nil,
+			DecideToolPruneThresh: ko.DecideToolPruneThreshold != nil,
+			DecideToolPruneMax:    ko.DecideToolPruneMaxJudged != nil,
 		},
 	}
 }
