@@ -186,3 +186,62 @@ func TestBuildCompactTrajectoryTruncatesLongResult(t *testing.T) {
 		t.Fatalf("individual result must be truncated to item limit")
 	}
 }
+
+// Multi-system quota: when tools come from two connectors and the total limit
+// is small, the round-robin merge must give BOTH systems a share instead of
+// letting one system flood the flat top-K. Each system also needs its own
+// discriminative content word so its tool ranks within that group.
+func TestPrefilterBySystemSharesSlotsAcrossSystems(t *testing.T) {
+	specs := []llm.ToolSpec{
+		{Name: "OmsOrderController_list", Description: "查询订单", Source: "mall"},
+		{Name: "OmsOrderController_detail", Description: "订单详情", Source: "mall"},
+		{Name: "PetsAdminController_findPage", Description: "列出宠物", Source: "doctor-miao"},
+		{Name: "PetsAdminController_findOne", Description: "宠物详情", Source: "doctor-miao"},
+	}
+	allowed := map[string]bool{"mall": true, "doctor-miao": true}
+	picked, noMatch := prefilterToolsBySystem("订单和宠物", specs, allowed, 4)
+	if noMatch {
+		t.Fatalf("unexpected noMatch")
+	}
+	sources := make(map[string]int)
+	for _, s := range picked {
+		sources[s.Source]++
+	}
+	if sources["mall"] == 0 || sources["doctor-miao"] == 0 {
+		t.Fatalf("both systems must get a share, got sources=%v picked=%+v", sources, picked)
+	}
+}
+
+// buildSystemDescriptions must surface a system's own discriminative domain
+// words (宠物 for doctor-miao, 订单 for mall) so the routing model is not
+// choosing from meaningless bare ids, and shared filler words must not dominate.
+func TestBuildSystemDescriptions(t *testing.T) {
+	specs := []llm.ToolSpec{
+		{Name: "PetsAdminController_findPage", Description: "列出宠物", Source: "doctor-miao"},
+		{Name: "FamiliesAdminController_findPage", Description: "家庭列表", Source: "doctor-miao"},
+		{Name: "OmsOrderController_list", Description: "查询订单", Source: "mall"},
+		{Name: "OmsOrderController_detail", Description: "订单详情", Source: "mall"},
+	}
+	d := buildSystemDescriptions(specs, []string{"doctor-miao", "mall"})
+	if !strings.Contains(d["doctor-miao"], "宠物") {
+		t.Fatalf("doctor-miao desc should contain 宠物, got %q", d["doctor-miao"])
+	}
+	if !strings.Contains(d["mall"], "订单") {
+		t.Fatalf("mall desc should contain 订单, got %q", d["mall"])
+	}
+}
+func TestPrefilterBySystemRespectsAllowed(t *testing.T) {
+	specs := []llm.ToolSpec{
+		{Name: "OmsOrderController_list", Description: "查询订单", Source: "mall"},
+		{Name: "PetsAdminController_findPage", Description: "列出宠物", Source: "doctor-miao"},
+	}
+	picked, noMatch := prefilterToolsBySystem("订单和宠物", specs, map[string]bool{"mall": true}, 5)
+	if noMatch {
+		t.Fatalf("unexpected noMatch")
+	}
+	for _, s := range picked {
+		if s.Source == "doctor-miao" {
+			t.Fatalf("non-selected system tool must be excluded, got %+v", picked)
+		}
+	}
+}

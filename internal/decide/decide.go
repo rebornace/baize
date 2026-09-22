@@ -47,6 +47,12 @@ const (
 	// is VerdictYes: if the layer is down, keep the full result rather than
 	// silently drop information.
 	KindPruneToolResult = "tool_result_worth_keeping"
+	// KindSystemTargets asks which backend systems (connectors) a turn needs
+	// before tools within them are considered (two-level routing, multi-system
+	// support). It is a pick-many question whose Options are connector IDs and
+	// chosen IDs come back in Answer.Values. OnFail is VerdictYes (keep every
+	// system) so a layer outage degrades to the flat-catalog behavior.
+	KindSystemTargets = "system_targets"
 )
 
 // ErrUnavailable reports that an implementation currently abstains or is
@@ -66,6 +72,10 @@ type Question struct {
 	// Options, when non-empty, makes this a pick-one-or-more question; chosen
 	// items are returned in Answer.Values. Empty means a binary verdict.
 	Options []string
+	// Descriptions optionally annotates each Option with a short human-readable
+	// explanation (e.g. connector id -> what that backend system is) shown to
+	// the model. Nil implementations may ignore it.
+	Descriptions map[string]string
 	// OnFail is the verdict used when every implementation abstains/fails.
 	OnFail Verdict
 	// TraceID correlates the judgment with a run / conversation.

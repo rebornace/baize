@@ -59,6 +59,120 @@ func prefilterTools(query string, specs []llm.ToolSpec, limit int) (picked []llm
 		return nil, true
 	}
 
+	ranked := rankWithin(queryTokens, specs)
+	if len(ranked) == 0 {
+		return nil, true
+	}
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	return ranked, false
+}
+
+// prefilterToolsBySystem is the two-level version. Tools are grouped by
+// ToolSpec.Source (connector id); each eligible system is ranked independently
+// with its own IDF (so a word ubiquitous within one domain but rare within
+// another is weighted correctly there), and slots are handed out round-robin
+// across systems until totalLimit is reached. Round-robin guarantees every
+// eligible system a minimum share instead of letting one system's tools flood
+// a flat top-K, and a system with few matches simply yields its unused slots.
+//
+// The builtin group (Source="") is always eligible; other groups require
+// allowed[s]=true. When allowed is nil every system is eligible.
+func prefilterToolsBySystem(query string, specs []llm.ToolSpec, allowed map[string]bool, totalLimit int) (picked []llm.ToolSpec, noMatch bool) {
+	if totalLimit <= 0 || len(specs) == 0 {
+		return nil, true
+	}
+	queryTokens := cleanQueryTokens(tokenSet(query))
+	if len(queryTokens) == 0 {
+		return nil, true
+	}
+
+	bySystem, order := groupBySource(specs, allowed)
+	// Rank each eligible system independently with its own local IDF, mapping
+	// ranked local positions back to global spec indices.
+	rankedBySystem := make(map[string][]int, len(order))
+	for _, s := range order {
+		members := bySystem[s]
+		localSpecs := make([]llm.ToolSpec, len(members))
+		for i, idx := range members {
+			localSpecs[i] = specs[idx]
+		}
+		rankedBySystem[s] = rankWithinIndices(queryTokens, localSpecs, members)
+	}
+
+	// Round-robin merge across systems in deterministic order.
+	out := make([]llm.ToolSpec, 0, totalLimit)
+	for len(out) < totalLimit {
+		progressed := false
+		for _, s := range order {
+			if len(rankedBySystem[s]) == 0 {
+				continue
+			}
+			idx := rankedBySystem[s][0]
+			rankedBySystem[s] = rankedBySystem[s][1:]
+			out = append(out, specs[idx])
+			progressed = true
+			if len(out) == totalLimit {
+				break
+			}
+		}
+		if !progressed {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil, true
+	}
+	return out, false
+}
+
+// groupBySource buckets spec indices by ToolSpec.Source, returning the
+// per-source index lists and the deterministic (sorted) list of source ids.
+// The builtin group ("") always comes first. Groups are filtered by allowed
+// (nil means all connector groups pass; "" always passes).
+func groupBySource(specs []llm.ToolSpec, allowed map[string]bool) (map[string][]int, []string) {
+	groups := make(map[string][]int)
+	for i, s := range specs {
+		groups[s.Source] = append(groups[s.Source], i)
+	}
+	ids := make([]string, 0, len(groups))
+	for s := range groups {
+		if s == "" {
+			continue
+		}
+		if allowed != nil && !allowed[s] {
+			delete(groups, s)
+			continue
+		}
+		ids = append(ids, s)
+	}
+	sort.Strings(ids)
+	order := make([]string, 0, len(ids)+1)
+	if _, ok := groups[""]; ok {
+		order = append(order, "")
+	}
+	order = append(order, ids...)
+	return groups, order
+}
+
+// rankWithin ranks specs by IDF-weighted query overlap computed within this
+// group, returning matched specs in deterministic order (score desc, original
+// index asc).
+func rankWithin(queryTokens map[string]bool, specs []llm.ToolSpec) []llm.ToolSpec {
+	idxs := rankWithinIndices(queryTokens, specs, nil)
+	out := make([]llm.ToolSpec, 0, len(idxs))
+	for _, i := range idxs {
+		out = append(out, specs[i])
+	}
+	return out
+}
+
+// rankWithinIndices is the scoring core. It returns local spec indices ranked
+// by overlap; memberMap (when non-nil) is unused for ranking but kept so the
+// caller can pass global indices through, in which case specs are the local
+// slice and the returned values are global indices.
+func rankWithinIndices(queryTokens map[string]bool, specs []llm.ToolSpec, globalIdx []int) []int {
 	nameSets := make([]map[string]bool, len(specs))
 	descSets := make([]map[string]bool, len(specs))
 	df := make(map[string]int)
@@ -113,9 +227,6 @@ func prefilterTools(query string, specs []llm.ToolSpec, limit int) (picked []llm
 			ranked = append(ranked, scored{i, sc})
 		}
 	}
-	if len(ranked) == 0 {
-		return nil, true
-	}
 	// Deterministic order: score desc, then original index asc.
 	sort.SliceStable(ranked, func(a, b int) bool {
 		if ranked[a].score != ranked[b].score {
@@ -123,14 +234,15 @@ func prefilterTools(query string, specs []llm.ToolSpec, limit int) (picked []llm
 		}
 		return ranked[a].idx < ranked[b].idx
 	})
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
-	}
-	out := make([]llm.ToolSpec, 0, len(ranked))
+	out := make([]int, 0, len(ranked))
 	for _, r := range ranked {
-		out = append(out, specs[r.idx])
+		if globalIdx != nil {
+			out = append(out, globalIdx[r.idx])
+		} else {
+			out = append(out, r.idx)
+		}
 	}
-	return out, false
+	return out
 }
 
 func firstLine(s string) string {

@@ -94,6 +94,11 @@ type ToolSpec struct {
 	Name        string
 	Description string
 	InputSchema map[string]any
+	// Source identifies the connector (backend system) that provides the
+	// tool, e.g. "doctor-miao" / "mall". Empty for built-in tools. It lets the
+	// decision layer route to a system before choosing a tool within it and
+	// allocate the prefilter budget per system instead of over a flat catalog.
+	Source string
 }
 
 type Provider interface {

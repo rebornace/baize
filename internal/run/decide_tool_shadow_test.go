@@ -9,6 +9,7 @@ import (
 	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/runtimecfg"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 )
@@ -24,7 +25,7 @@ func toolShadowKnobs(threshold int) fakeKnobs {
 	}}
 }
 
-func newShadowEngine(t *testing.T, nTools int, decider decide.Ask, settings fakeKnobs) (*Engine, *store.Run, *int) {
+func newShadowEngine(t *testing.T, nTools int, decider decide.Ask, settings fakeKnobs, input, source string) (*Engine, *store.Run, *int) {
 	t.Helper()
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
@@ -33,14 +34,16 @@ func newShadowEngine(t *testing.T, nTools int, decider decide.Ask, settings fake
 	}
 	for i := 0; i < nTools; i++ {
 		name := "tool_" + strconv.Itoa(i)
-		reg.RegisterSpec(llm.ToolSpec{Name: name, Description: "does thing " + strconv.Itoa(i)}, noop)
+		reg.RegisterSpecApproved(llm.ToolSpec{
+			Name: name, Description: "does thing " + strconv.Itoa(i), Source: source,
+		}, noop, false)
 	}
 	sent := 0
 	llmStub := &captureLLM{onChat: func(_ []llm.Message, tools []llm.ToolSpec) llm.Message {
 		sent = len(tools)
 		return llm.Message{Role: llm.RoleAssistant, Content: "done"}
 	}}
-	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "thing"})
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: input})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +61,7 @@ func TestToolShadowSendsFullSetAndRecordsEvent(t *testing.T) {
 		Values:  []string{"tool_0", "tool_1"},
 		Source:  decide.SourceRules,
 	}}
-	eng, r, sent := newShadowEngine(t, 15, decider, toolShadowKnobs(12))
+	eng, r, sent := newShadowEngine(t, 15, decider, toolShadowKnobs(12), "thing", "sys_a")
 
 	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
 		{Role: llm.RoleUser, Content: "go"},
@@ -103,7 +106,7 @@ func TestToolShadowSkipsBelowThreshold(t *testing.T) {
 	decider := &stubDecider{ans: decide.Answer{
 		Values: []string{"tool_0"}, Source: decide.SourceRules,
 	}}
-	eng, r, sent := newShadowEngine(t, 10, decider, toolShadowKnobs(12))
+	eng, r, sent := newShadowEngine(t, 10, decider, toolShadowKnobs(12), "thing", "sys_a")
 
 	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
 		{Role: llm.RoleUser, Content: "go"},
@@ -141,7 +144,7 @@ func TestToolShadowPrefilterNarrowsCandidates(t *testing.T) {
 		DecideToolTopK:           8,
 		DecideToolPreTopK:        5,
 	}}
-	eng, r, _ := newShadowEngine(t, 20, decider, knobs)
+	eng, r, _ := newShadowEngine(t, 20, decider, knobs, "thing", "sys_a")
 
 	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
 		{Role: llm.RoleUser, Content: "go"},
@@ -202,7 +205,7 @@ func TestToolShadowDisabledByDefault(t *testing.T) {
 		DecideEnabled: false, DecideToolRoutingEnabled: true,
 		DecideToolThreshold: 12,
 	}}
-	eng, r, _ := newShadowEngine(t, 15, decider, off)
+	eng, r, _ := newShadowEngine(t, 15, decider, off, "thing", "sys_a")
 
 	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
 		{Role: llm.RoleUser, Content: "go"},
@@ -211,6 +214,136 @@ func TestToolShadowDisabledByDefault(t *testing.T) {
 	}
 	if len(decider.got.Options) != 0 {
 		t.Fatalf("decider must not run when master switch off")
+	}
+}
+
+// enforceKnobs builds knobs with DP-2a enabled in ENFORCE mode (shadow=false).
+func enforceKnobs(threshold, preTopK int) fakeKnobs {
+	return fakeKnobs{k: runtimecfg.Knobs{
+		DecideEnabled:            true,
+		DecideToolRoutingEnabled: true,
+		DecideToolShadow:         false,
+		DecideToolThreshold:      threshold,
+		DecideToolTopK:           8,
+		DecideToolPreTopK:        preTopK,
+	}}
+}
+
+// AC-enforce-1: in enforce mode the model must receive ONLY the narrowed
+// two-level prefilter set (not the full catalog). The tool-level decision
+// model must not be consulted (only the tiny system-routing decision is), so
+// no per-tool model tokens are spent. The shadow event records enforce=true.
+func TestToolEnforceNarrowsAndSkipsToolModel(t *testing.T) {
+	// All fixture tools belong to sys_a. System routing returns it; the
+	// tool-level pick must never be asked in enforce.
+	decider := &stubDecider{byKind: map[string]decide.Answer{
+		decide.KindSystemTargets: {Verdict: decide.VerdictYes, Values: []string{"sys_a"}, Source: decide.SourceRemote},
+	}}
+	eng, r, sent := newShadowEngine(t, 40, decider, enforceKnobs(12, 5), "thing 3", "sys_a")
+
+	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
+		{Role: llm.RoleUser, Content: "thing 3"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if *sent != 5 {
+		t.Fatalf("enforce must send only the narrowed set, sent=%d want 5", *sent)
+	}
+	// System routing was consulted; tool candidates were not.
+	sawSystem, sawTool := false, false
+	for _, c := range decider.calls {
+		switch c.Kind {
+		case decide.KindSystemTargets:
+			sawSystem = true
+			if len(c.Options) != 1 || c.Options[0] != "sys_a" {
+				t.Fatalf("system options=%v want [sys_a]", c.Options)
+			}
+		case decide.KindToolCandidates:
+			sawTool = true
+		}
+	}
+	if !sawSystem {
+		t.Fatal("system routing must be consulted in enforce")
+	}
+	if sawTool {
+		t.Fatal("tool-level model must not be consulted in enforce")
+	}
+	evs, _ := eng.Store.ListEvents(r.ID)
+	var shadow *store.Event
+	for i := range evs {
+		if evs[i].Type == EventDecideToolShadow {
+			shadow = &evs[i]
+		}
+	}
+	if shadow == nil {
+		t.Fatal("missing shadow event")
+	}
+	if b, _ := shadow.Data["enforce"].(bool); !b {
+		t.Fatalf("enforce=%v want true", shadow.Data["enforce"])
+	}
+	if asInt(shadow.Data, "sent_count") != 5 {
+		t.Fatalf("sent_count=%v want 5", shadow.Data["sent_count"])
+	}
+	if b, _ := shadow.Data["model_consulted"].(bool); b {
+		t.Fatalf("model_consulted=%v want false", shadow.Data["model_consulted"])
+	}
+	if b, _ := shadow.Data["systems_degraded"].(bool); b {
+		t.Fatalf("systems_degraded=%v want false", shadow.Data["systems_degraded"])
+	}
+}
+
+// AC-enforce-2: if keyword matching finds nothing in common with the catalog,
+// enforce fails open and sends the full set so the model is never starved.
+func TestToolEnforceFailsOpenOnNoMatch(t *testing.T) {
+	decider := &stubDecider{}
+	eng, r, sent := newShadowEngine(t, 40, decider, enforceKnobs(12, 5), "zzz qqq unrelated gibberish", "sys_a")
+
+	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
+		{Role: llm.RoleUser, Content: "zzz qqq unrelated gibberish"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if *sent != 40 {
+		t.Fatalf("enforce must fail open to full set on no match, sent=%d want 40", *sent)
+	}
+	evs, _ := eng.Store.ListEvents(r.ID)
+	for _, ev := range evs {
+		if ev.Type == EventDecideToolShadow {
+			if b, _ := ev.Data["prefilter_empty"].(bool); !b {
+				t.Fatalf("prefilter_empty=%v want true", ev.Data["prefilter_empty"])
+			}
+			if asInt(ev.Data, "sent_count") != 40 {
+				t.Fatalf("sent_count=%v want 40", ev.Data["sent_count"])
+			}
+		}
+	}
+}
+
+// AC-enforce-3: protected system tools (activate_skill) survive enforce even
+// though keyword matching would otherwise drop them. Plain Source="" tools are
+// NOT blanket-preserved (they route via keyword prefilter), and a
+// connector-owned tool that was filtered stays dropped.
+func TestPreserveEssentialTools(t *testing.T) {
+	full := []llm.ToolSpec{
+		{Name: "builtin_a"},            // Source="" -> not forced
+		{Name: skill.ActivateToolName}, // protected -> appended
+		{Name: "b", Source: "x"},       // connector tool -> not appended
+	}
+	picked := []llm.ToolSpec{{Name: "z", Source: "z"}}
+	out := preserveEssentialTools(picked, full)
+	names := make(map[string]bool, len(out))
+	for _, s := range out {
+		names[s.Name] = true
+	}
+	if !names[skill.ActivateToolName] {
+		t.Fatalf("activate_skill must be preserved, got %v", names)
+	}
+	for _, dropped := range []string{"builtin_a", "b"} {
+		if names[dropped] {
+			t.Fatalf("%q must not be blanket re-added, got %v", dropped, names)
+		}
 	}
 }
 

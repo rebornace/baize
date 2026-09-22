@@ -173,7 +173,15 @@ func (r *Registry) Specs() []llm.ToolSpec {
 	sort.Strings(names)
 	out := make([]llm.ToolSpec, len(names))
 	for i, name := range names {
-		out[i] = r.tools[name].spec
+		s := r.tools[name].spec
+		// Surface the owning connector for two-level routing. Prefer the
+		// connectorID recorded via RegisterMeta; fall back to a Source set
+		// directly on the spec (RegisterSpecApproved) so both registration
+		// paths preserve ownership.
+		if src := r.tools[name].connectorID; src != "" {
+			s.Source = src
+		}
+		out[i] = s
 	}
 	return out
 }

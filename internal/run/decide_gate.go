@@ -47,17 +47,32 @@ func (e *Engine) effectiveDecideToolThreshold() int {
 	return 12
 }
 
+// effectiveDecideToolEnforce reports whether DP-2a is in enforce mode: the
+// layer's narrowed candidate set actually replaces the full tool list sent to
+// the main model. When false (shadow, the default) the full set is still sent
+// and the pick is only recorded. Guarded by the same master+routing switches
+// as effectiveDecideTool.
+func (e *Engine) effectiveDecideToolEnforce() bool {
+	if e.Settings == nil || e.Decider == nil {
+		return false
+	}
+	k := e.Settings.Knobs()
+	return k.DecideEnabled && k.DecideToolRoutingEnabled && !k.DecideToolShadow
+}
+
 // effectiveDecidePreTopK returns the deterministic keyword-prefilter width:
 // how many candidates survive keyword matching before the decision model picks.
 // Zero/missing is treated as the spec default of 32.
 func (e *Engine) effectiveDecidePreTopK() int {
+	// Default 16: the empirically validated cost/success sweet spot (see
+	// runtime_settings.go). Used only when knobs are unset/unavailable.
 	if e.Settings == nil {
-		return 32
+		return 16
 	}
 	if k := e.Settings.Knobs().DecideToolPreTopK; k > 0 {
 		return k
 	}
-	return 32
+	return 16
 }
 
 // buildExtractProbe assembles the (truncated) context for the worth-extracting

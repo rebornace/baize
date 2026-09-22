@@ -14,15 +14,23 @@ import (
 
 // stubDecider is a controllable decide.Ask for DP-1 tests.
 type stubDecider struct {
-	ans decide.Answer
-	err error
-	got decide.Question
+	ans    decide.Answer
+	byKind map[string]decide.Answer
+	err    error
+	got    decide.Question
+	calls  []decide.Question
 }
 
 func (d *stubDecider) Enabled() bool { return true }
 
 func (d *stubDecider) Ask(_ context.Context, q decide.Question) (decide.Answer, error) {
 	d.got = q
+	d.calls = append(d.calls, q)
+	if d.byKind != nil {
+		if a, ok := d.byKind[q.Kind]; ok {
+			return a, d.err
+		}
+	}
 	return d.ans, d.err
 }
 
