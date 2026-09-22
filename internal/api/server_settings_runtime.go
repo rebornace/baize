@@ -21,6 +21,10 @@ type runtimeKnobsJSON struct {
 	MemoryAutoExtract            bool    `json:"memory_auto_extract"`
 	DecideEnabled                bool    `json:"decide_enabled"`
 	DecideMemoryEnabled          bool    `json:"decide_memory_enabled"`
+	DecideToolRoutingEnabled     bool    `json:"decide_tool_routing_enabled"`
+	DecideToolShadow             bool    `json:"decide_tool_shadow"`
+	DecideToolThreshold          int     `json:"decide_tool_threshold"`
+	DecideToolTopK               int     `json:"decide_tool_topk"`
 }
 
 func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
@@ -37,6 +41,10 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		MemoryAutoExtract:            k.MemoryAutoExtract,
 		DecideEnabled:                k.DecideEnabled,
 		DecideMemoryEnabled:          k.DecideMemoryEnabled,
+		DecideToolRoutingEnabled:     k.DecideToolRoutingEnabled,
+		DecideToolShadow:             k.DecideToolShadow,
+		DecideToolThreshold:          k.DecideToolThreshold,
+		DecideToolTopK:               k.DecideToolTopK,
 	}
 }
 

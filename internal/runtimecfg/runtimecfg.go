@@ -29,6 +29,12 @@ type Knobs struct {
 	// Decide
 	DecideEnabled       bool // master switch for the decision layer
 	DecideMemoryEnabled bool // DP-1: pre-extract worth-it judgment
+	// DP-2a: tool-candidate narrowing. Shadow records the layer's pick but
+	// never changes the tools sent; enforce is a later, data-gated step.
+	DecideToolRoutingEnabled bool // consult the layer for tool candidates
+	DecideToolShadow         bool // record only (never change sent tools)
+	DecideToolThreshold      int  // only consult when tool count exceeds this
+	DecideToolTopK           int  // candidates the layer would keep
 }
 
 // Credentials is the effective control-plane credential set.
@@ -67,6 +73,10 @@ type knobsOverride struct {
 	MemoryAutoExtract        *bool    `json:"memory_auto_extract,omitempty"`
 	DecideEnabled            *bool    `json:"decide_enabled,omitempty"`
 	DecideMemoryEnabled      *bool    `json:"decide_memory_enabled,omitempty"`
+	DecideToolRoutingEnabled *bool    `json:"decide_tool_routing_enabled,omitempty"`
+	DecideToolShadow         *bool    `json:"decide_tool_shadow,omitempty"`
+	DecideToolThreshold      *int     `json:"decide_tool_threshold,omitempty"`
+	DecideToolTopK           *int     `json:"decide_tool_topk,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -187,6 +197,18 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideMemoryEnabled != nil {
 		k.DecideMemoryEnabled = *ko.DecideMemoryEnabled
 	}
+	if ko.DecideToolRoutingEnabled != nil {
+		k.DecideToolRoutingEnabled = *ko.DecideToolRoutingEnabled
+	}
+	if ko.DecideToolShadow != nil {
+		k.DecideToolShadow = *ko.DecideToolShadow
+	}
+	if ko.DecideToolThreshold != nil {
+		k.DecideToolThreshold = *ko.DecideToolThreshold
+	}
+	if ko.DecideToolTopK != nil {
+		k.DecideToolTopK = *ko.DecideToolTopK
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -225,6 +247,10 @@ type KnobsFieldFlags struct {
 	MemoryAutoExtract     bool `json:"memory_auto_extract"`
 	DecideEnabled         bool `json:"decide_enabled"`
 	DecideMemoryEnabled   bool `json:"decide_memory_enabled"`
+	DecideToolRouting     bool `json:"decide_tool_routing_enabled"`
+	DecideToolShadow      bool `json:"decide_tool_shadow"`
+	DecideToolThreshold   bool `json:"decide_tool_threshold"`
+	DecideToolTopK        bool `json:"decide_tool_topk"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -256,6 +282,10 @@ func (h *Holder) KnobsView() KnobsView {
 			MemoryAutoExtract:     ko.MemoryAutoExtract != nil,
 			DecideEnabled:         ko.DecideEnabled != nil,
 			DecideMemoryEnabled:   ko.DecideMemoryEnabled != nil,
+			DecideToolRouting:     ko.DecideToolRoutingEnabled != nil,
+			DecideToolShadow:      ko.DecideToolShadow != nil,
+			DecideToolThreshold:   ko.DecideToolThreshold != nil,
+			DecideToolTopK:        ko.DecideToolTopK != nil,
 		},
 	}
 }

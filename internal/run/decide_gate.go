@@ -22,6 +22,31 @@ func (e *Engine) effectiveDecideMemory() bool {
 	return k.DecideEnabled && k.DecideMemoryEnabled
 }
 
+// effectiveDecideTool reports whether DP-2a is live (shadow or enforce): the
+// master switch and the tool-routing switch are both on. With no Settings or
+// Decider it stays off, preserving legacy behavior.
+func (e *Engine) effectiveDecideTool() bool {
+	if e.Settings == nil || e.Decider == nil {
+		return false
+	}
+	k := e.Settings.Knobs()
+	return k.DecideEnabled && k.DecideToolRoutingEnabled
+}
+
+// effectiveDecideToolThreshold returns the tool-count threshold above which
+// the decision layer is consulted. Zero means "not configured" and is treated
+// as the spec default of 12 so a partially-configured holder still behaves
+// sanely.
+func (e *Engine) effectiveDecideToolThreshold() int {
+	if e.Settings == nil {
+		return 12
+	}
+	if t := e.Settings.Knobs().DecideToolThreshold; t > 0 {
+		return t
+	}
+	return 12
+}
+
 // buildExtractProbe assembles the (truncated) context for the worth-extracting
 // judgment. It mirrors the shape of the extraction payload but is capped.
 func buildExtractProbe(input, output string) string {

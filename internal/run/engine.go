@@ -44,6 +44,10 @@ const (
 	// EventModelRouted (DP-0) records the desired capability tier and the
 	// resolved profile id when a run is created. Observability only.
 	EventModelRouted = "model.routed"
+	// EventDecideToolShadow (DP-2a) records the tool candidates the decision
+	// layer would keep. Shadow mode writes this without changing the tools
+	// actually sent to the model.
+	EventDecideToolShadow = "decide.tool_shadow"
 
 	DefaultToolTimeout = 60 * time.Second
 )
@@ -450,6 +454,12 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		}
 		turn := step
 		specs := e.specsForRun(runID)
+		// DP-2a shadow: record which tools the layer would keep without
+		// changing the specs sent below. Only consulted when the tool count
+		// exceeds the threshold; small sets are left untouched.
+		if e.effectiveDecideTool() && len(specs) > e.effectiveDecideToolThreshold() {
+			e.recordToolShadow(ctx, runID, turn, specs)
+		}
 		chatCtx := ctx
 		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
 			if rec.ModelProfileID != "" {

@@ -37,6 +37,12 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			// Memory knobs: no YAML yet; baseline always on (KV can override).
 			MemoryEnabled:     true,
 			MemoryAutoExtract: true,
+			// DP-2a defaults: the feature master is off, but the shadow/TopK
+			// defaults are populated so GET reports real effective values once
+			// an operator turns decide + tool routing on.
+			DecideToolShadow:    true,
+			DecideToolThreshold: 12,
+			DecideToolTopK:      8,
 		},
 		Creds: runtimecfg.Credentials{
 			OperatorToken: operatorToken,
