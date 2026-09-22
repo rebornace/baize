@@ -47,6 +47,19 @@ func (e *Engine) effectiveDecideToolThreshold() int {
 	return 12
 }
 
+// effectiveDecidePreTopK returns the deterministic keyword-prefilter width:
+// how many candidates survive keyword matching before the decision model picks.
+// Zero/missing is treated as the spec default of 16.
+func (e *Engine) effectiveDecidePreTopK() int {
+	if e.Settings == nil {
+		return 16
+	}
+	if k := e.Settings.Knobs().DecideToolPreTopK; k > 0 {
+		return k
+	}
+	return 16
+}
+
 // buildExtractProbe assembles the (truncated) context for the worth-extracting
 // judgment. It mirrors the shape of the extraction payload but is capped.
 func buildExtractProbe(input, output string) string {

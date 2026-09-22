@@ -40,7 +40,7 @@ func newShadowEngine(t *testing.T, nTools int, decider decide.Ask, settings fake
 		sent = len(tools)
 		return llm.Message{Role: llm.RoleAssistant, Content: "done"}
 	}}
-	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "go"})
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "thing"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +124,76 @@ func TestToolShadowSkipsBelowThreshold(t *testing.T) {
 	}
 }
 
-// With the master switch off, the layer is not consulted and no shadow event
-// is written.
+// The deterministic prefilter must narrow the options handed to the decision
+// model to DecideToolPreTopK, and the shadow event records that prefilter set
+// separately from the model's final kept pick.
+func TestToolShadowPrefilterNarrowsCandidates(t *testing.T) {
+	decider := &stubDecider{ans: decide.Answer{
+		Verdict: decide.VerdictYes,
+		Values:  []string{"tool_10"},
+		Source:  decide.SourceRules,
+	}}
+	knobs := fakeKnobs{k: runtimecfg.Knobs{
+		DecideEnabled:            true,
+		DecideToolRoutingEnabled: true,
+		DecideToolShadow:         true,
+		DecideToolThreshold:      12,
+		DecideToolTopK:           8,
+		DecideToolPreTopK:        5,
+	}}
+	eng, r, _ := newShadowEngine(t, 20, decider, knobs)
+
+	if err := eng.runLoop(context.Background(), r.ID, []llm.Message{
+		{Role: llm.RoleUser, Content: "go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The decision model only saw the prefiltered five.
+	if len(decider.got.Options) != 5 {
+		t.Fatalf("decider options=%d want 5: %v", len(decider.got.Options), decider.got.Options)
+	}
+	validOpts := make(map[string]bool)
+	for i := 0; i < 20; i++ {
+		validOpts["tool_"+strconv.Itoa(i)] = true
+	}
+	uniq := make(map[string]bool)
+	for _, o := range decider.got.Options {
+		if !validOpts[o] {
+			t.Fatalf("option %q is not a registered tool", o)
+		}
+		if uniq[o] {
+			t.Fatalf("duplicate prefilter option %q", o)
+		}
+		uniq[o] = true
+	}
+
+	evs, _ := eng.Store.ListEvents(r.ID)
+	var shadow *store.Event
+	for i := range evs {
+		if evs[i].Type == EventDecideToolShadow {
+			shadow = &evs[i]
+		}
+	}
+	if shadow == nil {
+		t.Fatalf("missing shadow event")
+	}
+	if asInt(shadow.Data, "prefilter_count") != 5 {
+		t.Fatalf("prefilter_count=%v want 5", shadow.Data["prefilter_count"])
+	}
+	if asInt(shadow.Data, "total") != 20 {
+		t.Fatalf("total=%v want 20", shadow.Data["total"])
+	}
+	pre, _ := shadow.Data["prefilter"].([]string)
+	if len(pre) != 5 || pre[0] != "tool_0" {
+		t.Fatalf("prefilter=%v want first five", shadow.Data["prefilter"])
+	}
+	kept, _ := shadow.Data["kept"].([]string)
+	if len(kept) != 1 || kept[0] != "tool_10" {
+		t.Fatalf("kept=%v want [tool_10]", shadow.Data["kept"])
+	}
+}
+
 func TestToolShadowDisabledByDefault(t *testing.T) {
 	decider := &stubDecider{ans: decide.Answer{
 		Values: []string{"tool_0"}, Source: decide.SourceRules,

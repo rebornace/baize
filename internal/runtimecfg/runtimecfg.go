@@ -29,12 +29,17 @@ type Knobs struct {
 	// Decide
 	DecideEnabled       bool // master switch for the decision layer
 	DecideMemoryEnabled bool // DP-1: pre-extract worth-it judgment
+	// DecideProfileID selects the model profile used for decision calls (a
+	// cheap model, decoupled from the main model). Empty = no dedicated
+	// decision model (the pick-many implementation stays inert).
+	DecideProfileID string
 	// DP-2a: tool-candidate narrowing. Shadow records the layer's pick but
 	// never changes the tools sent; enforce is a later, data-gated step.
 	DecideToolRoutingEnabled bool // consult the layer for tool candidates
 	DecideToolShadow         bool // record only (never change sent tools)
 	DecideToolThreshold      int  // only consult when tool count exceeds this
 	DecideToolTopK           int  // candidates the layer would keep
+	DecideToolPreTopK        int  // deterministic keyword prefilter width before the model picks
 	// DP-3 (redirected): prune bulky accumulated tool results inside a single
 	// run's ReAct loop so they stop growing the per-turn prompt. Only tool
 	// results estimated above the threshold are judged; at most MaxJudged are
@@ -80,10 +85,12 @@ type knobsOverride struct {
 	MemoryAutoExtract        *bool    `json:"memory_auto_extract,omitempty"`
 	DecideEnabled            *bool    `json:"decide_enabled,omitempty"`
 	DecideMemoryEnabled      *bool    `json:"decide_memory_enabled,omitempty"`
+	DecideProfileID          *string  `json:"decide_profile_id,omitempty"`
 	DecideToolRoutingEnabled *bool    `json:"decide_tool_routing_enabled,omitempty"`
 	DecideToolShadow         *bool    `json:"decide_tool_shadow,omitempty"`
 	DecideToolThreshold      *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolTopK           *int     `json:"decide_tool_topk,omitempty"`
+	DecideToolPreTopK        *int     `json:"decide_tool_pre_topk,omitempty"`
 	DecideToolPruneEnabled   *bool    `json:"decide_tool_prune_enabled,omitempty"`
 	DecideToolPruneThreshold *int     `json:"decide_tool_prune_threshold,omitempty"`
 	DecideToolPruneMaxJudged *int     `json:"decide_tool_prune_max_judged,omitempty"`
@@ -207,6 +214,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideMemoryEnabled != nil {
 		k.DecideMemoryEnabled = *ko.DecideMemoryEnabled
 	}
+	if ko.DecideProfileID != nil {
+		k.DecideProfileID = *ko.DecideProfileID
+	}
 	if ko.DecideToolRoutingEnabled != nil {
 		k.DecideToolRoutingEnabled = *ko.DecideToolRoutingEnabled
 	}
@@ -218,6 +228,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	}
 	if ko.DecideToolTopK != nil {
 		k.DecideToolTopK = *ko.DecideToolTopK
+	}
+	if ko.DecideToolPreTopK != nil {
+		k.DecideToolPreTopK = *ko.DecideToolPreTopK
 	}
 	if ko.DecideToolPruneEnabled != nil {
 		k.DecideToolPruneEnabled = *ko.DecideToolPruneEnabled
@@ -266,10 +279,12 @@ type KnobsFieldFlags struct {
 	MemoryAutoExtract     bool `json:"memory_auto_extract"`
 	DecideEnabled         bool `json:"decide_enabled"`
 	DecideMemoryEnabled   bool `json:"decide_memory_enabled"`
+	DecideProfileID       bool `json:"decide_profile_id"`
 	DecideToolRouting     bool `json:"decide_tool_routing_enabled"`
 	DecideToolShadow      bool `json:"decide_tool_shadow"`
 	DecideToolThreshold   bool `json:"decide_tool_threshold"`
 	DecideToolTopK        bool `json:"decide_tool_topk"`
+	DecideToolPreTopK     bool `json:"decide_tool_pre_topk"`
 	DecideToolPrune       bool `json:"decide_tool_prune_enabled"`
 	DecideToolPruneThresh bool `json:"decide_tool_prune_threshold"`
 	DecideToolPruneMax    bool `json:"decide_tool_prune_max_judged"`
@@ -304,10 +319,12 @@ func (h *Holder) KnobsView() KnobsView {
 			MemoryAutoExtract:     ko.MemoryAutoExtract != nil,
 			DecideEnabled:         ko.DecideEnabled != nil,
 			DecideMemoryEnabled:   ko.DecideMemoryEnabled != nil,
+			DecideProfileID:       ko.DecideProfileID != nil,
 			DecideToolRouting:     ko.DecideToolRoutingEnabled != nil,
 			DecideToolShadow:      ko.DecideToolShadow != nil,
 			DecideToolThreshold:   ko.DecideToolThreshold != nil,
 			DecideToolTopK:        ko.DecideToolTopK != nil,
+			DecideToolPreTopK:     ko.DecideToolPreTopK != nil,
 			DecideToolPrune:       ko.DecideToolPruneEnabled != nil,
 			DecideToolPruneThresh: ko.DecideToolPruneThreshold != nil,
 			DecideToolPruneMax:    ko.DecideToolPruneMaxJudged != nil,

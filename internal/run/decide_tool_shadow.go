@@ -46,22 +46,48 @@ func toolNames(specs []llm.ToolSpec) []string {
 // no narrowed list, and the caller keeps sending the full set (today's
 // behavior).
 func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, specs []llm.ToolSpec) {
-	ans, _ := e.Decider.Ask(ctx, decide.Question{
-		Kind:    decide.KindToolCandidates,
-		Context: buildToolProbe(specs),
-		Options: toolNames(specs),
-		OnFail:  decide.VerdictYes,
-		TraceID: runID,
-	})
+	// The decision model must see what the user actually wants; without it
+	// there is no basis to drop tools and it returns everything. The request
+	// is capped (cheap probe) and followed by the name+description candidates.
+	userRequest := ""
+	if runRec, err := e.Store.GetRun(runID); err == nil && runRec != nil {
+		userRequest = strings.TrimSpace(runRec.Input)
+		if r := []rune(userRequest); len(r) > decideProbeMaxRunes {
+			userRequest = string(r[:decideProbeMaxRunes])
+		}
+	}
+
+	// Deterministic keyword prefilter first: narrow the catalog to a short,
+	// high-recall candidate list so the cheap decision model only scans a
+	// handful of tools. Shadow-only, so the full specs the main model receives
+	// are untouched; the prefilter set itself is recorded so its recall can be
+	// measured independently of the model's final pick.
+	preSpecs, noMatch := prefilterTools(userRequest, specs, e.effectiveDecidePreTopK())
+	preNames := toolNames(preSpecs)
+
+	decisionContext := "用户这一轮请求：\n" + userRequest + "\n\n候选工具（名称: 说明首行）：\n" + buildToolProbe(preSpecs)
+	ans := decide.Answer{}
+	if !noMatch {
+		ans, _ = e.Decider.Ask(ctx, decide.Question{
+			Kind:    decide.KindToolCandidates,
+			Context: decisionContext,
+			Options: preNames,
+			OnFail:  decide.VerdictYes,
+			TraceID: runID,
+		})
+	}
 
 	kept := validCandidateNames(ans.Values, specs)
 	data := map[string]any{
-		"turn":       turn,
-		"total":      len(specs),
-		"kept":       kept,
-		"kept_count": len(kept),
-		"source":     ans.Source,
-		"degraded":   ans.Degraded,
+		"turn":            turn,
+		"total":           len(specs),
+		"prefilter":       preNames,
+		"prefilter_count": len(preNames),
+		"prefilter_empty": noMatch,
+		"kept":            kept,
+		"kept_count":      len(kept),
+		"source":          ans.Source,
+		"degraded":        ans.Degraded,
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventDecideToolShadow,

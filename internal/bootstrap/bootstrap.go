@@ -51,6 +51,7 @@ import (
 	_ "github.com/rebornace/baize/internal/middleware/memory"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skill/loginmanage"
@@ -418,11 +419,28 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		}
 	}
 
-	// Decision layer (DP-1): a Rules-first chain that is zero-cost and always
-	// available. The feature stays behind the hot decide knobs (default off);
-	// when a dedicated small-model profile is added later, prepend a
-	// decide.Remote built from it without touching engine call sites.
-	decider := decide.NewChain(decide.NewRules())
+	// Decision layer. Order: a dedicated cheap model first (RemoteMulti for
+	// tool-candidate narrowing), deterministic Rules last. The pick-many
+	// remote stays inert until an operator configures decide_profile_id; the
+	// whole feature remains behind the hot decide knobs (default off).
+	//
+	// decideSettingsHolder is assigned once the runtime holder is built below.
+	// The getter reads decide_profile_id live from it, so a runtime PATCH
+	// applies without re-wiring.
+	var decideSettingsHolder *runtimecfg.Holder
+	decisionProvider := decideProfileProvider{
+		next: provider,
+		profileID: func() string {
+			if decideSettingsHolder != nil {
+				return decideSettingsHolder.Knobs().DecideProfileID
+			}
+			return ""
+		},
+	}
+	decider := decide.NewChain(
+		decide.NewRemoteMulti(decisionProvider),
+		decide.NewRules(),
+	)
 
 	engine := &run.Engine{
 		Store:       st,
@@ -534,6 +552,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	// cross-replica PATCHes converge. nil holder never happens here (always
 	// built), but consumers still nil-guard for tests.
 	runtimeHolder := buildRuntimeHolder(cfg, st, op, adm, operators)
+	decideSettingsHolder = runtimeHolder
 	engine.Settings = runtimeHolder
 	srv.Settings = runtimeHolder
 	// Prefer effective (YAML + KV) over the YAML-only value captured earlier.

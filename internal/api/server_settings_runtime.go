@@ -21,10 +21,12 @@ type runtimeKnobsJSON struct {
 	MemoryAutoExtract            bool    `json:"memory_auto_extract"`
 	DecideEnabled                bool    `json:"decide_enabled"`
 	DecideMemoryEnabled          bool    `json:"decide_memory_enabled"`
+	DecideProfileID              string  `json:"decide_profile_id"`
 	DecideToolRoutingEnabled     bool    `json:"decide_tool_routing_enabled"`
 	DecideToolShadow             bool    `json:"decide_tool_shadow"`
 	DecideToolThreshold          int     `json:"decide_tool_threshold"`
 	DecideToolTopK               int     `json:"decide_tool_topk"`
+	DecideToolPreTopK            int     `json:"decide_tool_pre_topk"`
 	DecideToolPruneEnabled       bool    `json:"decide_tool_prune_enabled"`
 	DecideToolPruneThreshold     int     `json:"decide_tool_prune_threshold"`
 	DecideToolPruneMaxJudged     int     `json:"decide_tool_prune_max_judged"`
@@ -44,10 +46,12 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		MemoryAutoExtract:            k.MemoryAutoExtract,
 		DecideEnabled:                k.DecideEnabled,
 		DecideMemoryEnabled:          k.DecideMemoryEnabled,
+		DecideProfileID:              k.DecideProfileID,
 		DecideToolRoutingEnabled:     k.DecideToolRoutingEnabled,
 		DecideToolShadow:             k.DecideToolShadow,
 		DecideToolThreshold:          k.DecideToolThreshold,
 		DecideToolTopK:               k.DecideToolTopK,
+		DecideToolPreTopK:            k.DecideToolPreTopK,
 		DecideToolPruneEnabled:       k.DecideToolPruneEnabled,
 		DecideToolPruneThreshold:     k.DecideToolPruneThreshold,
 		DecideToolPruneMaxJudged:     k.DecideToolPruneMaxJudged,

@@ -30,10 +30,12 @@ type KnobsPatch struct {
 	MemoryAutoExtract            *bool    `json:"memory_auto_extract,omitempty"`
 	DecideEnabled                *bool    `json:"decide_enabled,omitempty"`
 	DecideMemoryEnabled          *bool    `json:"decide_memory_enabled,omitempty"`
+	DecideProfileID              *string  `json:"decide_profile_id,omitempty"`
 	DecideToolRoutingEnabled     *bool    `json:"decide_tool_routing_enabled,omitempty"`
 	DecideToolShadow             *bool    `json:"decide_tool_shadow,omitempty"`
 	DecideToolThreshold          *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolTopK               *int     `json:"decide_tool_topk,omitempty"`
+	DecideToolPreTopK            *int     `json:"decide_tool_pre_topk,omitempty"`
 	DecideToolPruneEnabled       *bool    `json:"decide_tool_prune_enabled,omitempty"`
 	DecideToolPruneThreshold     *int     `json:"decide_tool_prune_threshold,omitempty"`
 	DecideToolPruneMaxJudged     *int     `json:"decide_tool_prune_max_judged,omitempty"`
@@ -145,6 +147,13 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 	if p.DecideToolTopK != nil && (*p.DecideToolTopK < 1 || *p.DecideToolTopK > 200) {
 		return fmt.Errorf("%w: decide_tool_topk must be 1-200", ErrBadRange)
 	}
+	if p.DecideToolPreTopK != nil && (*p.DecideToolPreTopK < 1 || *p.DecideToolPreTopK > 500) {
+		return fmt.Errorf("%w: decide_tool_pre_topk must be 1-500", ErrBadRange)
+	}
+	if p.DecideToolPreTopK != nil && p.DecideToolTopK != nil &&
+		*p.DecideToolPreTopK < *p.DecideToolTopK {
+		return fmt.Errorf("%w: decide_tool_pre_topk must be >= decide_tool_topk", ErrBadRange)
+	}
 	if p.DecideToolThreshold != nil && (*p.DecideToolThreshold < 1 || *p.DecideToolThreshold > 500) {
 		return fmt.Errorf("%w: decide_tool_threshold must be 1-500", ErrBadRange)
 	}
@@ -216,6 +225,9 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	if p.DecideMemoryEnabled != nil {
 		next.DecideMemoryEnabled = p.DecideMemoryEnabled
 	}
+	if p.DecideProfileID != nil {
+		next.DecideProfileID = p.DecideProfileID
+	}
 	if p.DecideToolRoutingEnabled != nil {
 		next.DecideToolRoutingEnabled = p.DecideToolRoutingEnabled
 	}
@@ -227,6 +239,9 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.DecideToolTopK != nil {
 		next.DecideToolTopK = p.DecideToolTopK
+	}
+	if p.DecideToolPreTopK != nil {
+		next.DecideToolPreTopK = p.DecideToolPreTopK
 	}
 	if p.DecideToolPruneEnabled != nil {
 		next.DecideToolPruneEnabled = p.DecideToolPruneEnabled
