@@ -120,8 +120,23 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 		visibleNames = skill.VisibleTools(e.Skills, st.activated, enabled)
 	}
 
-	// Skills declare guidance tools; connectors added at runtime must still reach the model.
-	visibleNames = unionEnabledToolNames(visibleNames, enabled)
+	// DP-2a Phase-2 tail. Historically the full enabled set was unioned back
+	// so connector tools added at runtime always reached the model; but that
+	// union cancelled the skill scoping above, so every turn sent the whole
+	// catalog. Once tool routing is in ENFORCE and the catalog is large enough
+	// to be worth routing, keep the skill-scoped set (plus a minimal auth
+	// floor) and let recordToolShadow narrow it further. In shadow, with
+	// routing off, for small sets, or when scoping resolved empty, the union
+	// stays: legacy fail-open behavior that never regresses connector reach.
+	skillScoped := e.effectiveDecideToolEnforce() &&
+		len(all) > e.effectiveDecideToolThreshold() &&
+		len(visibleNames) > 0
+	if skillScoped {
+		visibleNames = appendSkillScopeAuthFloor(all, visibleNames)
+	} else {
+		// Skills declare guidance tools; connectors added at runtime must still reach the model.
+		visibleNames = unionEnabledToolNames(visibleNames, enabled)
+	}
 
 	byName := make(map[string]llm.ToolSpec, len(all))
 	for _, spec := range all {
@@ -150,6 +165,36 @@ func unionEnabledToolNames(skillNames []string, enabled map[string]bool) []strin
 	out := make([]string, 0, len(seen))
 	for name := range seen {
 		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// appendSkillScopeAuthFloor is the minimal bootstrap floor used when the full
+// union is skipped (DP-2a enforce). The skill-scoped set contains only tools
+// its skills declare; if none declared a connector's login/session primitives,
+// the model could not recover from a 401. For every connector Source already
+// represented among the scoped names, force that source's *_login / *_me tools
+// back in. It never pulls tools from an unrelated system into the scope and
+// never introduces a tool the run did not have.
+func appendSkillScopeAuthFloor(all []llm.ToolSpec, scoped []string) []string {
+	sources := make(map[string]bool)
+	scopedSet := make(map[string]bool, len(scoped))
+	for _, name := range scoped {
+		scopedSet[name] = true
+	}
+	for _, s := range all {
+		if s.Source != "" && scopedSet[s.Name] {
+			sources[s.Source] = true
+		}
+	}
+	out := append([]string(nil), scoped...)
+	for _, s := range all {
+		if s.Source == "" || !sources[s.Source] || !isAuthSessionTool(s) || scopedSet[s.Name] {
+			continue
+		}
+		out = append(out, s.Name)
+		scopedSet[s.Name] = true
 	}
 	sort.Strings(out)
 	return out
