@@ -12,10 +12,9 @@ interface ProfileFieldsProps {
   form: ProfileFormState
   setForm: (updater: (f: ProfileFormState) => ProfileFormState) => void
   busy: boolean
-  isEdit: boolean
 }
 
-export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProps) {
+export function ProfileFields({ form, setForm, busy }: ProfileFieldsProps) {
   return (
     <div className="connector-form">
       <Field label={MODELS.fieldName} required>
@@ -48,7 +47,7 @@ export function ProfileFields({ form, setForm, busy, isEdit }: ProfileFieldsProp
           value={form.apiKey}
           onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
           disabled={busy}
-          placeholder={isEdit ? MODELS.phApiKeyEdit : MODELS.phApiKeyCreate}
+          placeholder={MODELS.phApiKeyEdit}
           autoComplete="off"
         />
       </Field>

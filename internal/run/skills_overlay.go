@@ -123,12 +123,12 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 	// DP-2a Phase-2 tail. Historically the full enabled set was unioned back
 	// so connector tools added at runtime always reached the model; but that
 	// union cancelled the skill scoping above, so every turn sent the whole
-	// catalog. Once tool routing is in ENFORCE and the catalog is large enough
-	// to be worth routing, keep the skill-scoped set (plus a minimal auth
-	// floor) and let recordToolShadow narrow it further. In shadow, with
-	// routing off, for small sets, or when scoping resolved empty, the union
-	// stays: legacy fail-open behavior that never regresses connector reach.
-	skillScoped := e.effectiveDecideToolEnforce() &&
+	// catalog. Once tool routing is on and the catalog is large enough to be
+	// worth routing, keep the skill-scoped set (plus a minimal auth floor) and
+	// let narrowTools narrow it further. With routing off, for small sets, or
+	// when scoping resolved empty, the union stays: legacy fail-open behavior
+	// that never regresses connector reach.
+	skillScoped := e.effectiveDecideTool() &&
 		len(all) > e.effectiveDecideToolThreshold() &&
 		len(visibleNames) > 0
 	if skillScoped {

@@ -4,7 +4,7 @@ Minimal end-to-end story: an external monitor (or this script) POSTs a signed al
 
 ## Prerequisites
 
-1. Baize Runtime running (e.g. `.\demo.cmd` or `go run ./cmd/baize demo`).
+1. Baize Runtime running (Windows: `.\serve.cmd`; macOS / Linux: `./scripts/serve.sh`).
 2. An Inbox channel (default id `alerts`) bound to an Agent — e.g. **Settings → Inbox** in `/ui`, or seed via YAML:
 
    ```yaml

@@ -6,27 +6,28 @@ import (
 	"strings"
 )
 
-// ValidateStart checks production defaults for baize start (minimal config, real LLM).
-func ValidateStart(cfg Config) error {
+// Validate checks that the config can run a real Runtime: an OpenAI-compatible
+// LLM with its API key, base URL and model configured.
+func Validate(cfg Config) error {
 	prov := strings.ToLower(strings.TrimSpace(cfg.LLM.Provider))
 	if prov == "" || prov == "mock" {
-		return fmt.Errorf("baize start requires a real LLM (openai_compatible in configs/minimal.yaml); use baize demo for the mock trial stack")
+		return fmt.Errorf("a real LLM is required (llm.provider=openai_compatible); the mock provider is for tests")
 	}
 	if prov != "openai_compatible" {
-		return fmt.Errorf("baize start: unsupported llm.provider %q (use openai_compatible or baize demo)", cfg.LLM.Provider)
+		return fmt.Errorf("unsupported llm.provider %q (use openai_compatible)", cfg.LLM.Provider)
 	}
 	env := cfg.LLM.APIKeyEnv
 	if env == "" {
 		env = "BAIZE_API_KEY"
 	}
 	if strings.TrimSpace(os.Getenv(env)) == "" {
-		return fmt.Errorf("%s is not set; export it (e.g. export BAIZE_API_KEY=sk-...) or set llm settings in configs/minimal.local.yaml", env)
+		return fmt.Errorf("%s is not set; export it (e.g. export BAIZE_API_KEY=sk-...) or set llm settings in the config", env)
 	}
 	if strings.TrimSpace(cfg.LLM.BaseURL) == "" {
-		return fmt.Errorf("llm.base_url is required (set in configs/minimal.yaml or configs/minimal.local.yaml)")
+		return fmt.Errorf("llm.base_url is required (set it in the config)")
 	}
 	if strings.TrimSpace(cfg.LLM.Model) == "" {
-		return fmt.Errorf("llm.model is required (set in configs/minimal.yaml or configs/minimal.local.yaml)")
+		return fmt.Errorf("llm.model is required (set it in the config)")
 	}
 	return nil
 }

@@ -28,9 +28,7 @@ const baseKnobs: RuntimeKnobs = {
   decide_memory_enabled: true,
   decide_profile_id: '',
   decide_tool_routing_enabled: true,
-  decide_tool_shadow: true,
   decide_tool_threshold: 12,
-  decide_tool_topk: 8,
   decide_tool_pre_topk: 16,
   decide_tool_choice_enabled: false,
   decide_tool_prune_enabled: true,
@@ -68,7 +66,6 @@ describe('field groups', () => {
     expect(decideToolFields().map((f) => f.key)).toEqual([
       'decide_tool_threshold',
       'decide_tool_pre_topk',
-      'decide_tool_topk',
     ])
     expect(decideMiscFields().map((f) => f.key)).toEqual([
       'decide_tool_prune_threshold',
@@ -77,8 +74,8 @@ describe('field groups', () => {
     ])
   })
 
-  it('allKnobFieldSpecs covers all thirteen numeric fields', () => {
-    expect(allKnobFieldSpecs()).toHaveLength(13)
+  it('allKnobFieldSpecs covers all twelve numeric fields', () => {
+    expect(allKnobFieldSpecs()).toHaveLength(12)
   })
 })
 
@@ -156,11 +153,6 @@ describe('buildKnobsPatch', () => {
       decide_enabled: false,
       decide_profile_id: 'flash',
     })
-  })
-
-  it('includes tool-shadow switch to enforce', () => {
-    const form: KnobsForm = { ...knobsToForm(baseKnobs), decide_tool_shadow: false }
-    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ decide_tool_shadow: false })
   })
 
   it('includes tool-choice toggle', () => {

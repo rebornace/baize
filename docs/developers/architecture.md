@@ -70,7 +70,7 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 - 目录行在 store（`source`：`spec` / `plugin` / `mcp` / `extra`）。`spec`/`plugin`/`mcp` 可启停不可删；`extra` 可删。
 - Registry **只**挂 `enabled=true` 的行；引擎与 HITL 读 Registry，`GET /v0/tools` 读目录（可见停用行）。
-- Agent **不**绑定 Connector 子集：每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。
+- Agent **不**绑定 Connector 子集：默认每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。开启 DP-2a 工具收敛且工具数超过阈值时，会先经关键词预筛 + 决策层收敛，只把候选子集下发给主模型（详见「运行参数」页的工具收敛设置）。
 
 ## Agent 运行形态
 

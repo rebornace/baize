@@ -2,7 +2,7 @@
 
 # Configuration: YAML, environment variables, and CLI
 
-Authoritative shapes live in `internal/config/config.go`; the tables below summarize commonly used keys. Samples are under `configs/` (`minimal.yaml`, `demo.yaml`, `docker-*.yaml`, and so on).
+Authoritative shapes live in `internal/config/config.go`; the tables below summarize commonly used keys. Samples are under `configs/` (`config.yaml`, `config.local.yaml.example`, `docker-*.yaml`, and so on).
 
 The entrypoint calls `LoadDotEnv(".env")`: process environment variables that already exist are **not** overwritten by `.env`.
 
@@ -10,9 +10,8 @@ The entrypoint calls `LoadDotEnv(".env")`: process environment variables that al
 
 | Command | Role |
 |------|------|
-| `baize start` | Production default: `configs/minimal.yaml` (prefer `minimal.local.yaml` when present); must pass `ValidateStart` (including API Key) |
-| `baize demo` | Trial stack: layered merge of `demo.yaml` plus optional `default.local.yaml` / `demo.local.yaml` |
-| `baize serve -config <path>` | Start Runtime with an explicit single config file |
+| `baize serve` | Start Runtime with the default `configs/config.yaml`; must pass `Validate` (including API Key) |
+| `baize serve -config <path>` | Start with an explicit single config file (e.g. `configs/config.local.yaml` locally) |
 | `baize reset-credentials -config <path>` | Clear control-plane hot-update credentials in the store; fall back to YAML break-glass |
 
 Sidecar process: `weixin-adapter` (see [Deployment](./deployment.md), [English](./deployment.en.md)).
@@ -68,6 +67,8 @@ Sample default connector: `id`, `type` (default `openapi`), `spec`, `base_url`, 
 | `max_steps` | 16 |
 | `tool_timeout_sec` | 60 (per tool call) |
 
+> The decision layer (`internal/decide`) behaviors — DP-1 memory pre-extraction judgment, DP-2a tool-candidate narrowing, DP-2b tool-choice enum constraint, DP-3 bulky tool-result pruning, DP-4 Auto-tier fallback, and the decision-model selection — are **not YAML keys**. They are in-store hot-reloadable settings tuned on the Runtime page and read/written via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline.
+
 ### `conversation`
 
 | Field | Default / notes |
@@ -86,10 +87,6 @@ Queue: `driver` defaults to `memory`, or `redis` (`addr` / `db` / `username` / `
 ### `storage`
 
 Blob: `driver` is `file` / `s3` / `memory` (empty → bootstrap defaults to memory). `file.root_dir`; `s3.*` (`endpoint`, `region`, `bucket`, `prefix` default `baize`, `access_key_env` / `secret_key_env` default `S3_ACCESS_KEY` / `S3_SECRET_KEY`, `use_ssl`, `path_style`, `auto_create_bucket`).
-
-### `mock_ticket`
-
-`listen`: demo mock-ticket sidecar, default `:18080`; set `off` to disable.
 
 ### `control_plane`
 
@@ -137,7 +134,7 @@ channels:
 |------|------|
 | `BAIZE_LISTEN` | When non-empty, overrides YAML `listen` |
 | `BAIZE_API_KEY` | Default LLM key (rename via `llm.api_key_env`) |
-| `BAIZE_SETTINGS_KEY` | Sealing for settings / inbox / MCP OAuth, etc.; `demo` uses a temporary demo key when unset |
+| `BAIZE_SETTINGS_KEY` | Sealing for settings / inbox / MCP OAuth, etc.; when unset, secrets cannot be sealed or opened (the related write endpoints return 400) — required in production |
 | `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN`, etc. | Referenced via YAML `env:…`, not hard-coded names |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Default credential env names for `storage.s3` |
 | `BAIZE_TEST_PG_DSN` | Postgres for **tests / CI only** |

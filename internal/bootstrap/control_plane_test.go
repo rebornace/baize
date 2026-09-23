@@ -100,6 +100,5 @@ func minimalControlPlaneCfg(t *testing.T) config.Config {
 	cfg.Connector.Type = "openapi"
 	cfg.Connector.Spec = filepath.Join("..", "..", "examples", "mock-ticket", "openapi.yaml")
 	cfg.Connector.BaseURL = "http://127.0.0.1:1"
-	cfg.MockTicket.Listen = "off"
 	return cfg
 }

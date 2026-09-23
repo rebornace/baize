@@ -17,8 +17,6 @@ agent:
   id: ticket-agent
   skills:
     - data-analytics
-mock_ticket:
-  listen: ":18080"
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +25,6 @@ llm:
   provider: openai_compatible
   base_url: https://api.example.com
   model: test-model
-mock_ticket:
-  listen: off
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -43,14 +39,14 @@ mock_ticket:
 	if cfg.LLM.Provider != "openai_compatible" {
 		t.Fatalf("llm.provider=%q", cfg.LLM.Provider)
 	}
+	if cfg.LLM.Model != "test-model" {
+		t.Fatalf("llm.model=%q", cfg.LLM.Model)
+	}
 	if cfg.Agent.ID != "ticket-agent" {
 		t.Fatalf("agent.id=%q want ticket-agent from base", cfg.Agent.ID)
 	}
 	if len(cfg.Agent.Skills) != 1 || cfg.Agent.Skills[0] != "data-analytics" {
 		t.Fatalf("agent.skills=%v", cfg.Agent.Skills)
-	}
-	if cfg.MockTicket.Listen != "off" {
-		t.Fatalf("mock_ticket.listen=%q", cfg.MockTicket.Listen)
 	}
 }
 

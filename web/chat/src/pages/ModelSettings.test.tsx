@@ -446,7 +446,7 @@ describe('ModelSettings create modal', () => {
     vi.restoreAllMocks()
   })
 
-  it('opens create modal with main fields; advanced collapsed by default', async () => {
+  it('opens create wizard; endpoint + optional key up front, manual entry reveals advanced', async () => {
     vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
     const { host, root } = await renderModelSettings()
     const addBtn = [...host.querySelectorAll('button')].find((b) =>
@@ -457,21 +457,33 @@ describe('ModelSettings create modal', () => {
       addBtn!.click()
     })
     expect(host.querySelector('[role="dialog"]')).toBeTruthy()
-    expect(host.textContent).toContain(MODELS.fieldBaseUrl)
-    expect(host.textContent).toContain(MODELS.fieldTier)
-    expect(host.textContent).toContain(MODELS.fieldThinkingLevel)
-    expect(host.textContent).not.toContain('禁用思考')
-    const keyInput = host.querySelector('[role="dialog"] input[type="password"]') as HTMLInputElement
-    expect(keyInput.placeholder).toBe('留空则使用环境变量')
-    const details = host.querySelector('details.settings-advanced') as HTMLDetailsElement | null
+
+    // Discovery-first: endpoint + optional key, fetch is the primary action.
+    const wizard = host.querySelector('[data-testid="add-model-wizard"]')!
+    expect(wizard.textContent).toContain(MODELS.fieldBaseUrl)
+    expect(wizard.textContent).toContain(MODELS.fieldApiKey)
+    expect(wizard.textContent).toContain(MODELS.keyOptionalHint)
+
+    // Switch to manual entry: model/name/tier + collapsed advanced options.
+    const manualEntryBtn = [...wizard.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.manualEntry),
+    )
+    expect(manualEntryBtn).toBeTruthy()
+    await act(async () => {
+      manualEntryBtn!.click()
+    })
+    const manual = host.querySelector('[data-testid="manual-model-form"]')!
+    expect(manual.textContent).toContain(MODELS.fieldModel)
+    expect(manual.textContent).toContain(MODELS.fieldTier)
+    const details = manual.querySelector('details.settings-advanced') as HTMLDetailsElement
     expect(details).toBeTruthy()
-    expect(details?.open).toBe(false)
-    expect(details?.textContent).toContain(MODELS.fieldThinkingDialect)
-    const summary = details!.querySelector('summary')
+    expect(details.open).toBe(false)
+    expect(details.textContent).toContain(MODELS.fieldThinkingDialect)
+    const summary = details.querySelector('summary')
     await act(async () => {
       summary!.click()
     })
-    expect(details!.open).toBe(true)
+    expect(details.open).toBe(true)
     root.unmount()
     host.remove()
   })
@@ -531,7 +543,7 @@ describe('ModelSettings create modal', () => {
     host.remove()
   })
 
-  it('saves create via createModelProfile then closes dialog with toast', async () => {
+  it('saves a manually entered model via createModelProfile then closes dialog with toast', async () => {
     vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
     const createSpy = vi.spyOn(api, 'createModelProfile').mockResolvedValue(
       profile({ id: 'mp_new', name: '新模型' }),
@@ -543,34 +555,54 @@ describe('ModelSettings create modal', () => {
     await act(async () => {
       addBtn!.click()
     })
-    const dialog = host.querySelector('[role="dialog"]')!
-    const inputs = [...dialog.querySelectorAll('input')] as HTMLInputElement[]
-    const nameInput = inputs.find((i) => i.getAttribute('placeholder')?.includes('工作模型'))!
+
+    // Endpoint + key on the wizard...
+    const wizard = host.querySelector('[data-testid="add-model-wizard"]')!
+    let inputs = [...wizard.querySelectorAll('input')] as HTMLInputElement[]
     const urlInput = inputs.find((i) => i.getAttribute('placeholder')?.includes('api.openai'))!
-    const modelInput = inputs.find((i) => i.getAttribute('placeholder') === 'gpt-4o')!
-    const keyInput = inputs.find((i) => i.getAttribute('type') === 'password')!
+    const keyInput = inputs.find((i) => i.type === 'password')!
     await act(async () => {
-      setNativeValue(nameInput, '新模型')
       setNativeValue(urlInput, 'https://api.example.com/v1')
-      setNativeValue(modelInput, 'gpt-4o')
       setNativeValue(keyInput, 'sk-test')
     })
-    const saveBtn = [...dialog.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes(MODELS.save),
+
+    // ...then switch to manual entry and fill the model-specific fields.
+    const manualEntryBtn = [...wizard.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.manualEntry),
     )
     await act(async () => {
-      saveBtn!.click()
+      manualEntryBtn!.click()
+    })
+    const manual = host.querySelector('[data-testid="manual-model-form"]')!
+    inputs = [...manual.querySelectorAll('input')] as HTMLInputElement[]
+    const nameInput = inputs.find((i) => i.getAttribute('placeholder')?.includes('工作模型'))!
+    const modelInput = inputs.find((i) => i.getAttribute('placeholder') === 'gpt-4o')!
+    await act(async () => {
+      setNativeValue(nameInput, '新模型')
+      setNativeValue(modelInput, 'gpt-4o')
+    })
+    const saveBtn = [...host.querySelectorAll('[role="dialog"] button')].find((b) =>
+      b.textContent?.includes(MODELS.save),
+    ) as HTMLButtonElement
+    await act(async () => {
+      saveBtn.click()
       await new Promise((r) => setTimeout(r, 0))
       await new Promise((r) => setTimeout(r, 0))
     })
-    expect(createSpy).toHaveBeenCalled()
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: '新模型',
+        base_url: 'https://api.example.com/v1',
+        model: 'gpt-4o',
+        api_key: 'sk-test',
+      }),
+    )
     expect(host.querySelector('[role="dialog"]')).toBeNull()
-    expect(host.textContent).toContain(MODELS.toastSaved)
     root.unmount()
     host.remove()
   })
 
-  it('shows validation error inside modal instead of only toast', async () => {
+  it('shows an inline error when fetching/manual-saving without a model', async () => {
     vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
     const { host, root } = await renderModelSettings()
     const addBtn = [...host.querySelectorAll('button')].find((b) =>
@@ -579,14 +611,29 @@ describe('ModelSettings create modal', () => {
     await act(async () => {
       addBtn!.click()
     })
-    const dialog = host.querySelector('[role="dialog"]')!
-    const saveBtn = [...dialog.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes(MODELS.save),
+    const wizard = host.querySelector('[data-testid="add-model-wizard"]')!
+
+    // Provide an endpoint, then go straight to manual entry without a model id.
+    const urlInput = [...wizard.querySelectorAll('input')].find((i) =>
+      i.getAttribute('placeholder')?.includes('api.openai'),
+    ) as HTMLInputElement
+    await act(async () => {
+      setNativeValue(urlInput, 'https://api.example.com/v1')
+    })
+    const manualEntryBtn = [...wizard.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.manualEntry),
     )
     await act(async () => {
-      saveBtn!.click()
+      manualEntryBtn!.click()
     })
-    expect(dialog.querySelector('.ui-inline-error')?.textContent).toBe(MODELS.errNameRequired)
+    const saveBtn = [...host.querySelectorAll('[role="dialog"] button')].find((b) =>
+      b.textContent?.includes(MODELS.save),
+    ) as HTMLButtonElement
+    await act(async () => {
+      saveBtn.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(host.querySelector('.ui-inline-error')?.textContent).toBeTruthy()
     expect(host.querySelector('[role="dialog"]')).toBeTruthy()
     root.unmount()
     host.remove()
@@ -628,6 +675,71 @@ describe('ModelSettings create modal', () => {
     expect(updateSpy).toHaveBeenCalledWith('mp_1', expect.objectContaining({ name: '标准模型-改' }))
     expect(host.querySelector('[role="dialog"]')).toBeNull()
     expect(host.textContent).toContain(MODELS.toastSaved)
+    root.unmount()
+    host.remove()
+  })
+
+  it('fetches models and batch-imports the selected ones', async () => {
+    vi.spyOn(api, 'listModelProfiles').mockResolvedValue([])
+    const discoverSpy = vi.spyOn(api, 'discoverModels').mockResolvedValue([
+      { id: 'fast-model' }, { id: 'deep-reasoner' },
+    ])
+    const batchSpy = vi
+      .spyOn(api, 'batchImportModels')
+      .mockResolvedValue({ created: [], skipped: [] })
+
+    const { host, root } = await renderModelSettings()
+    const addBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MODELS.add),
+    )
+    await act(async () => {
+      addBtn!.click()
+    })
+
+    // The add wizard is discovery-first: fill endpoint + optional key.
+    const wizard = host.querySelector('[data-testid="add-model-wizard"]')!
+    const inputs = [...wizard.querySelectorAll('input')] as HTMLInputElement[]
+    const urlInput = inputs.find((i) =>
+      i.getAttribute('placeholder')?.includes('api.openai'),
+    )!
+    const keyInput = inputs.find((i) => i.type === 'password')!
+    await act(async () => {
+      setNativeValue(urlInput, 'https://api.example.com/v1')
+      setNativeValue(keyInput, 'sk-test-1234')
+    })
+
+    // Fetch via the dialog footer button.
+    const fetchBtn = [...host.querySelectorAll('[role="dialog"] button')].find((b) =>
+      b.textContent?.includes(MODELS.batchFetch),
+    ) as HTMLButtonElement
+    await act(async () => {
+      fetchBtn.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(discoverSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        base_url: 'https://api.example.com/v1',
+        api_key: 'sk-test-1234',
+      }),
+    )
+
+    // The catalog defaults to all selected; import right away.
+    const list = host.querySelector('[data-testid="batch-model-list"]')!
+    expect(list).toBeTruthy()
+    const importBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('导入选中的 2'),
+    )
+    expect(importBtn).toBeTruthy()
+    await act(async () => {
+      importBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(batchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        models: [{ id: 'fast-model' }, { id: 'deep-reasoner' }],
+      }),
+    )
+
     root.unmount()
     host.remove()
   })

@@ -70,7 +70,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 
 - Catalog rows live in the store (`source`: `spec` / `plugin` / `mcp` / `extra`). `spec`/`plugin`/`mcp` can be disabled but not deleted; `extra` can be deleted.
 - Registry mounts **only** `enabled=true` rows; the engine and approval path read the Registry; `GET /v0/tools` reads the catalog (disabled rows visible).
-- Agents are **not** bound to a connector subset: each Run gives the model all enabled tools (tool names unique across connectors).
+- Agents are **not** bound to a connector subset: by default each Run gives the model all enabled tools (tool names unique across connectors). When DP-2a tool narrowing is on and the tool count exceeds the threshold, a keyword prefilter plus the decision layer first narrow the set, and only the candidate subset is sent to the main model (see the tool-narrowing settings on the Runtime page).
 
 ## Agent run shapes
 

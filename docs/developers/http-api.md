@@ -38,4 +38,15 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
 
+## 模型发现与批量导入
+
+模型配置支持从 OpenAI 兼容端点拉取目录后批量创建，两个接口均需 **admin**：
+
+| 路径 | 作用 |
+|------|------|
+| `POST /v0/settings/models/discover` | 仅查询不持久化：按 `base_url`（+ 可选 `api_key` / `api_key_env` / `profile_id`）GET 上游 `/models`，返回模型列表 |
+| `POST /v0/settings/models/batch` | 按选中的模型批量创建 profile，共用同一 `base_url` 与凭证；返回 `created` 与 `skipped`（如重名）明细 |
+
+编辑已有 profile 时可不传 `api_key` 而传 `profile_id`，由服务端复用已存密钥，明文密钥不会下发到浏览器。
+
 集成时优先读代码注册表与现有集成测试，而不是假定未列出的路径存在。

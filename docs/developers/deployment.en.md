@@ -11,7 +11,7 @@ Baize is a single static Go binary. **Message channels** are extensible and conn
 
 Pick one mode per host: **Autostart** or **Standalone**.
 
-## Autostart (desktop / demo / single host, including Windows)
+## Autostart (desktop / single host, including Windows)
 
 baize launches and supervises the adapter subprocess: exponential backoff restart on crash; graceful shutdown of the child on exit. Leave `secret` empty to auto-generate and persist a shared HMAC. `creds.json` defaults under `adapter_creds_dir` (for example `./data/channels/weixin`).
 
@@ -19,10 +19,10 @@ Build the adapter first (baize looks on `PATH` or under `./bin/`):
 
 ```bash
 go build -o bin/weixin-adapter ./cmd/weixin-adapter   # Windows: bin/weixin-adapter.exe
-go run ./cmd/baize demo                               # or Windows: .\demo.cmd
+# then start baize (Windows: .\serve.cmd; macOS / Linux: ./scripts/serve.sh)
 ```
 
-Sample channel block (aligned with `configs/demo.yaml`: **dynamic port by default**; do not put a fixed `-addr` in `adapter_args`; `outbound_url` / `admin_url` are placeholders overwritten after start via `credsDir/listen.port`):
+Sample channel block (aligned with `configs/config.yaml`: **dynamic port by default**; do not put a fixed `-addr` in `adapter_args`; `outbound_url` / `admin_url` are placeholders overwritten after start via `credsDir/listen.port`):
 
 ```yaml
 channels:

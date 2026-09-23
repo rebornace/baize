@@ -936,6 +936,34 @@
   font-size: 0.9rem;
 }
 
+/* Runtime-settings spacing rhythm. The form's uniform flex gap puts a hint at
+   the same distance from both the control it describes and the next setting,
+   making it ambiguous which control the hint belongs to. Pull hints that
+   directly follow a checkbox up toward that checkbox, and push the following
+   item farther away to re-establish grouping. */
+.settings-form .settings-checkbox + .settings-muted {
+  margin-top: -0.28rem;
+  margin-bottom: 0.62rem;
+  line-height: 1.5;
+}
+/* Neutralize the checkbox's own outer margins inside this form; the flex gap
+   plus the hint margins above define the spacing rhythm. */
+.settings-form .settings-checkbox {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+/* Group stacked number fields: more space between fields than within one. */
+.settings-form .ui-field + .ui-field {
+  margin-top: 0.6rem;
+}
+/* Section headings clearly start a new block. */
+.settings-form .settings-subheading {
+  margin-top: 0.75rem;
+}
+.settings-form .settings-subheading:first-child {
+  margin-top: 0;
+}
+
 .settings-empty {
   color: var(--text-muted);
   font-size: 0.95rem;
@@ -1633,6 +1661,59 @@
 .tool-card-login-actions {
   flex-wrap: wrap;
   align-items: center;
+}
+
+/* ---- Batch model import ---- */
+.batch-import {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.batch-model-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.batch-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.batch-model-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.875rem;
+}
+.batch-model-row + .batch-model-row {
+  border-top: 1px solid var(--border);
+}
+.batch-model-id {
+  font-family: var(--font-mono, monospace);
+}
+.batch-model-owner {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.batch-result-count {
+  margin: 0;
+  font-weight: 600;
+}
+.batch-skip-count {
+  color: var(--text-muted);
+}
+.batch-skip-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
 }
 
 .tool-card-login-msg {

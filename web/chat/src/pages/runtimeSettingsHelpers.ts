@@ -18,9 +18,7 @@ export interface KnobsForm {
   decide_memory_enabled: boolean
   decide_profile_id: string
   decide_tool_routing_enabled: boolean
-  decide_tool_shadow: boolean
   decide_tool_threshold: string
-  decide_tool_topk: string
   decide_tool_pre_topk: string
   decide_tool_choice_enabled: boolean
   decide_tool_prune_enabled: boolean
@@ -39,7 +37,6 @@ type NonNumericKnobKeys =
   | 'decide_memory_enabled'
   | 'decide_profile_id'
   | 'decide_tool_routing_enabled'
-  | 'decide_tool_shadow'
   | 'decide_tool_choice_enabled'
   | 'decide_tool_prune_enabled'
   | 'decide_route_enabled'
@@ -146,14 +143,6 @@ export function decideToolFields(): KnobFieldSpec[] {
       max: 500,
       integer: true,
     },
-    {
-      key: 'decide_tool_topk',
-      label: RUNTIME.fieldDecideToolTopK,
-      hint: RUNTIME.hintDecideToolTopK,
-      min: 1,
-      max: 200,
-      integer: true,
-    },
   ]
 }
 
@@ -215,9 +204,7 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     decide_memory_enabled: k.decide_memory_enabled,
     decide_profile_id: k.decide_profile_id,
     decide_tool_routing_enabled: k.decide_tool_routing_enabled,
-    decide_tool_shadow: k.decide_tool_shadow,
     decide_tool_threshold: String(k.decide_tool_threshold),
-    decide_tool_topk: String(k.decide_tool_topk),
     decide_tool_pre_topk: String(k.decide_tool_pre_topk),
     decide_tool_choice_enabled: k.decide_tool_choice_enabled,
     decide_tool_prune_enabled: k.decide_tool_prune_enabled,
@@ -299,19 +286,12 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   if (form.decide_tool_routing_enabled !== effective.decide_tool_routing_enabled) {
     patch.decide_tool_routing_enabled = form.decide_tool_routing_enabled
   }
-  if (form.decide_tool_shadow !== effective.decide_tool_shadow) {
-    patch.decide_tool_shadow = form.decide_tool_shadow
-  }
   if (form.decide_tool_choice_enabled !== effective.decide_tool_choice_enabled) {
     patch.decide_tool_choice_enabled = form.decide_tool_choice_enabled
   }
   const toolThreshold = int(form.decide_tool_threshold)
   if (toolThreshold !== null && toolThreshold !== effective.decide_tool_threshold) {
     patch.decide_tool_threshold = toolThreshold
-  }
-  const toolTopK = int(form.decide_tool_topk)
-  if (toolTopK !== null && toolTopK !== effective.decide_tool_topk) {
-    patch.decide_tool_topk = toolTopK
   }
   const toolPreTopK = int(form.decide_tool_pre_topk)
   if (toolPreTopK !== null && toolPreTopK !== effective.decide_tool_pre_topk) {

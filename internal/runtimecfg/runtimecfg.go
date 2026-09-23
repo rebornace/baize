@@ -33,16 +33,15 @@ type Knobs struct {
 	// cheap model, decoupled from the main model). Empty = no dedicated
 	// decision model (the pick-many implementation stays inert).
 	DecideProfileID string
-	// DP-2a: tool-candidate narrowing. Shadow records the layer's pick but
-	// never changes the tools sent; enforce is a later, data-gated step.
-	DecideToolRoutingEnabled bool // consult the layer for tool candidates
-	DecideToolShadow         bool // record only (never change sent tools)
-	DecideToolThreshold      int  // only consult when tool count exceeds this
-	DecideToolTopK           int  // candidates the layer would keep
-	DecideToolPreTopK        int  // deterministic keyword prefilter width before the model picks
+	// DP-2a: tool-candidate narrowing. When on and the tool count exceeds the
+	// threshold, the narrowed set replaces the full tool list sent to the main
+	// model (there is no separate observe-only mode).
+	DecideToolRoutingEnabled bool // narrow tool candidates before the main model
+	DecideToolThreshold      int  // only narrow when tool count exceeds this
+	DecideToolPreTopK        int  // deterministic keyword prefilter width
 	// DP-2b: enum constraint on the main-model call. When true (and DP-2a is
-	// in enforce), the narrowed tools are sent with tool_choice=required so the
-	// model must select one of them. Inert in shadow mode.
+	// on), the narrowed tools are sent with tool_choice=required so the model
+	// must select one of them.
 	DecideToolChoiceEnabled bool
 	// DP-3 (redirected): prune bulky accumulated tool results inside a single
 	// run's ReAct loop so they stop growing the per-turn prompt. Only tool
@@ -97,9 +96,7 @@ type knobsOverride struct {
 	DecideMemoryEnabled      *bool    `json:"decide_memory_enabled,omitempty"`
 	DecideProfileID          *string  `json:"decide_profile_id,omitempty"`
 	DecideToolRoutingEnabled *bool    `json:"decide_tool_routing_enabled,omitempty"`
-	DecideToolShadow         *bool    `json:"decide_tool_shadow,omitempty"`
 	DecideToolThreshold      *int     `json:"decide_tool_threshold,omitempty"`
-	DecideToolTopK           *int     `json:"decide_tool_topk,omitempty"`
 	DecideToolPreTopK        *int     `json:"decide_tool_pre_topk,omitempty"`
 	DecideToolChoiceEnabled  *bool    `json:"decide_tool_choice_enabled,omitempty"`
 	DecideToolPruneEnabled   *bool    `json:"decide_tool_prune_enabled,omitempty"`
@@ -233,14 +230,8 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideToolRoutingEnabled != nil {
 		k.DecideToolRoutingEnabled = *ko.DecideToolRoutingEnabled
 	}
-	if ko.DecideToolShadow != nil {
-		k.DecideToolShadow = *ko.DecideToolShadow
-	}
 	if ko.DecideToolThreshold != nil {
 		k.DecideToolThreshold = *ko.DecideToolThreshold
-	}
-	if ko.DecideToolTopK != nil {
-		k.DecideToolTopK = *ko.DecideToolTopK
 	}
 	if ko.DecideToolPreTopK != nil {
 		k.DecideToolPreTopK = *ko.DecideToolPreTopK
@@ -303,9 +294,7 @@ type KnobsFieldFlags struct {
 	DecideMemoryEnabled   bool `json:"decide_memory_enabled"`
 	DecideProfileID       bool `json:"decide_profile_id"`
 	DecideToolRouting     bool `json:"decide_tool_routing_enabled"`
-	DecideToolShadow      bool `json:"decide_tool_shadow"`
 	DecideToolThreshold   bool `json:"decide_tool_threshold"`
-	DecideToolTopK        bool `json:"decide_tool_topk"`
 	DecideToolPreTopK     bool `json:"decide_tool_pre_topk"`
 	DecideToolChoice      bool `json:"decide_tool_choice_enabled"`
 	DecideToolPrune       bool `json:"decide_tool_prune_enabled"`
@@ -346,9 +335,7 @@ func (h *Holder) KnobsView() KnobsView {
 			DecideMemoryEnabled:   ko.DecideMemoryEnabled != nil,
 			DecideProfileID:       ko.DecideProfileID != nil,
 			DecideToolRouting:     ko.DecideToolRoutingEnabled != nil,
-			DecideToolShadow:      ko.DecideToolShadow != nil,
 			DecideToolThreshold:   ko.DecideToolThreshold != nil,
-			DecideToolTopK:        ko.DecideToolTopK != nil,
 			DecideToolPreTopK:     ko.DecideToolPreTopK != nil,
 			DecideToolChoice:      ko.DecideToolChoiceEnabled != nil,
 			DecideToolPrune:       ko.DecideToolPruneEnabled != nil,

@@ -61,62 +61,7 @@ import (
 	"github.com/rebornace/baize/internal/workspace"
 )
 
-// Run starts Runtime (and optionally mock-ticket) in-process and blocks on the API server.
-func Run(cfg config.Config, configPath string) error {
-	ticketListen := strings.TrimSpace(cfg.MockTicket.Listen)
-	useMockTicket := true
-	switch strings.ToLower(ticketListen) {
-	case "off", "false", "none", "-":
-		useMockTicket = false
-	case "":
-		ticketListen = ":18080"
-	}
-
-	var ticketBase string
-	if useMockTicket {
-		go func() {
-			log.Printf("mock-ticket listening on %s", ticketListen)
-			if err := http.ListenAndServe(ticketListen, mockticket.NewHandler()); err != nil {
-				log.Printf("mock-ticket server error: %v", err)
-			}
-		}()
-		ticketBase = localHTTPBase(ticketListen)
-		cfg.Connector.BaseURL = ticketBase
-		if err := waitHealthy(ticketBase+"/healthz", 5*time.Second); err != nil {
-			return fmt.Errorf("mock-ticket health check failed: %w", err)
-		}
-	} else {
-		ticketBase = cfg.Connector.BaseURL
-	}
-
-	srv, closer, err := newAPIServer(cfg, configPath)
-	if err != nil {
-		return err
-	}
-
-	listen := cfg.Listen
-	if listen == "" {
-		listen = ":8080"
-	}
-	runtimeBase := localHTTPBase(listen)
-	printCurlHints(runtimeBase, cfg.Agent.ID, ticketBase)
-	logUIHint(cfg, runtimeBase)
-	log.Printf("baize runtime listening on %s", listen)
-	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
-	srv.Shutdown = httpSrv.Shutdown
-	srv.RestartProcess = Reexec
-	reloadCtx, stopReload := context.WithCancel(context.Background())
-	defer stopReload()
-	watchConfigReloadSignal(reloadCtx, srv.ReloadConfig)
-	sigCtx, stopSig := newShutdownSignalContext()
-	defer stopSig()
-	shutdownOnSignal(sigCtx, httpSrv)
-	err = httpSrv.ListenAndServe()
-	_ = closer.Close()
-	return normalizeShutdownErr(err)
-}
-
-// Serve starts Runtime only (no mock-ticket) and blocks on the API server.
+// Serve starts the Runtime and blocks on the API server.
 func Serve(cfg config.Config, configPath string) error {
 	srv, closer, err := newAPIServer(cfg, configPath)
 	if err != nil {
@@ -127,7 +72,7 @@ func Serve(cfg config.Config, configPath string) error {
 		listen = ":8080"
 	}
 	runtimeBase := localHTTPBase(listen)
-	printCurlHints(runtimeBase, cfg.Agent.ID, cfg.Connector.BaseURL)
+	printCurlHints(runtimeBase, cfg.Agent.ID)
 	logUIHint(cfg, runtimeBase)
 	log.Printf("baize runtime listening on %s", listen)
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
@@ -1382,16 +1327,12 @@ func resolveCallbackSecret(configured string) ([]byte, bool) {
 	return buf, true
 }
 
-func printCurlHints(runtimeBase, agentID, ticketBase string) {
+func printCurlHints(runtimeBase, agentID string) {
 	if agentID == "" {
-		agentID = "ticket-agent"
-	}
-	if ticketBase == "" {
-		ticketBase = "http://127.0.0.1:18080"
+		agentID = "default-agent"
 	}
 	log.Printf("baize ready. try:")
-	log.Printf(`  curl -s -X POST %s/v0/runs -H "Content-Type: application/json" -d "{\"agent_id\":\"%s\",\"input\":\"创建一个紧急工单：VPN 挂了\"}"`, runtimeBase, agentID)
-	log.Printf(`  curl -s %s/tickets`, ticketBase)
+	log.Printf(`  curl -s -X POST %s/v0/runs -H "Content-Type: application/json" -d "{\"agent_id\":\"%s\",\"input\":\"你好\"}"`, runtimeBase, agentID)
 }
 
 func logUIHint(cfg config.Config, runtimeBase string) {

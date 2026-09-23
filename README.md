@@ -39,6 +39,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - Default flow: think → pick a tool → run it → report; skill packs can add step-by-step flows (with optional approval points).
 - The console can **follow along** as reasoning and tool steps happen.
 - Switch among multiple model setups; tune thinking-related options when the model supports them.
+- To add models, you can **fetch the endpoint's model list and batch-import**: enter the base URL (API key optional — add it if you get a 401), pull the models advertised by that OpenAI-compatible endpoint, select the ones you want, and create profiles in one go; you can also enter a single model manually when the endpoint has no list.
 - **Skill packs**: instructions + tools; set defaults, or enable more skills for the current conversation.
 
 ### Where tools come from
@@ -93,29 +94,54 @@ After APIs and plugins are connected in Baize, export them over MCP to Cursor an
 
 ---
 
-## Try it in 30 seconds
+## Architecture: the decision layer
 
-**Requirements:** Go 1.25+ (matches CI; no C compiler)
+As more connectors are added, a turn may carry a large number of tool schemas, and the prefill cost grows with that number. Baize addresses this with a **decision layer** that moves high-frequency routing decisions out of generative calls into a cheap, deterministic step. The idea is inspired by the **Jev** approach to calibrated decisions; because Baize uses OpenAI-compatible APIs and cannot read logits, it does not use probability scores or depend on any external service. The layer is local, pluggable, and always fails open.
+
+When the tool count is above a threshold, a **two-level router** runs before the main model:
+
+1. **System routing** — choose which connectors the turn needs. It uses hybrid routing: discriminative terms in the query force a connector, and the model's choice is added on top (it cannot remove a forced connector).
+2. **Within-system prefilter** — a deterministic keyword prefilter (per-system IDF over Latin terms and Chinese bigrams) keeps the top candidates, so the main model receives a shorter list.
+
+The narrowing affects only **which schemas are in the prompt**, not tool availability: a registered tool still runs if requested. If nothing matches, it fails open and sends the full set; system and login tools are always kept.
+
+### Benchmark (reproducible)
+
+Setup: **37** real read-only business requests spanning **3** connected backends (**390** tools total), run against DeepSeek-Flash; stability measured over **5 rounds (185 requests)**. Corpus and scripts live in [`scripts/tool-routing-eval`](scripts/tool-routing-eval/README.md).
+
+| Prefilter width | Run success | Avg. tools sent | Avg. turn-0 prompt | Prompt vs. width 32 |
+|---|---|---|---|---|
+| 32 | 36/37 | 43.1 | 4,703 | — |
+| 24 | 37/37 | 37.4 | 3,980 | −15% |
+| **16 (default)** | **37/37** | 30.6 | **3,090** | **−34%** |
+| 12 | 37/37 | 27.1 | 3,033 | −36% |
+| 8 | 35/37 | 23.6 | 2,600 | −45% |
+
+Sending the **full 390-tool** catalog measured roughly **85k prompt tokens** on turn 0; at width 16 it measured about **1.4k–3.8k**. Over **5 repeated rounds (185 requests)** width 16 had a **99.5% run-success rate (184/185)**; the one failure came from an unrelated workflow, not from a tool being unavailable. At width 8, two multi-step requests failed. The default width is **16**.
+
+The decision layer is **opt-in** and hot-reloadable via runtime settings (it is off by default); the benchmark reflects behavior once tool routing is enabled.
+
+---
+
+## Quick start
+
+**Requirements:** Go 1.25+ (matches CI; no C compiler) and an OpenAI-compatible API key.
+
+```bash
+cp .env.example .env        # then set BAIZE_API_KEY=sk-...
+```
 
 ```powershell
-# Windows
-.\demo.cmd
+.\serve.cmd                 # Windows
 ```
 
 ```bash
-# macOS / Linux
-./scripts/demo.sh
-# or: go run ./cmd/baize demo
+./scripts/serve.sh          # macOS / Linux
 ```
 
-The trial stack uses a mock model and bundled demo business HTTP — **no cloud API key**.
+- Console: http://127.0.0.1:8080/ui
 
-- Console: http://127.0.0.1:8080/ui  
-- Demo business HTTP: http://127.0.0.1:18080  
-
-Open the console, send “VPN is down, please file a record” — watch the assistant pick a tool, then **approve the write**. If ports are busy, stop the old Baize process or change the listen port and restart.
-
-Production (real model, needs `BAIZE_API_KEY`): Windows `.\start.cmd`, macOS / Linux `./scripts/start.sh`.
+Open the console and send a message. To change the model, base URL, or wire a business system, copy `configs/config.yaml` to `configs/config.local.yaml` (git-ignored), edit it, then start with `.\serve.cmd -config configs\config.local.yaml` (or `./scripts/serve.sh -config configs/config.local.yaml`).
 
 ---
 
@@ -129,7 +155,7 @@ For production on a server or laptop: download the archive for your OS/arch from
 baize/
   baize                 # or baize.exe on Windows
   weixin-adapter        # only if you use the Weixin channel
-  configs/minimal.yaml  # copy the sample from this repo
+  configs/config.yaml   # copy the sample from this repo
   .env
   data/
 ```
@@ -145,10 +171,10 @@ BAIZE_SETTINGS_KEY=a-long-random-string
 **3. Start**
 
 ```bash
-# from the unpack directory; prefers configs/minimal.local.yaml when present
-./baize start
-# or pin the config file:
-./baize serve -config configs/minimal.yaml
+# from the unpack directory (uses configs/config.yaml)
+./baize serve
+# or pin another config file:
+./baize serve -config configs/config.local.yaml
 ```
 
 Console: http://127.0.0.1:8080/ui  

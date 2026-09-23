@@ -14,25 +14,6 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
-// buildToolProbe assembles a cheap description of the candidate tools: name
-// plus the first line of the description only. It never includes InputSchema;
-// the probe must stay far cheaper than the prefill it might one day save.
-func buildToolProbe(specs []llm.ToolSpec) string {
-	var b strings.Builder
-	for _, s := range specs {
-		firstLine := strings.TrimSpace(s.Description)
-		if i := strings.IndexByte(firstLine, '\n'); i >= 0 {
-			firstLine = strings.TrimSpace(firstLine[:i])
-		}
-		b.WriteString("- ")
-		b.WriteString(s.Name)
-		b.WriteString(": ")
-		b.WriteString(firstLine)
-		b.WriteByte('\n')
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
 // toolNames returns the candidate tool names in spec order.
 func toolNames(specs []llm.ToolSpec) []string {
 	names := make([]string, 0, len(specs))
@@ -42,30 +23,19 @@ func toolNames(specs []llm.ToolSpec) []string {
 	return names
 }
 
-// recordToolShadow consults the decision layer for which tools to keep and
-// writes a decide.tool_shadow event. It returns the specs the caller should
-// actually send to the main model:
+// narrowTools consults the decision layer's system routing and returns the
+// specs actually sent to the main model. First a tiny system-routing decision
+// chooses which connectors the turn needs; then the deterministic keyword
+// prefilter runs WITHIN each chosen system (local IDF) and merges slots
+// round-robin. Built-in tools (Source="") and activate_skill are always
+// retained. If system routing abstains or keyword matching finds nothing, it
+// fails open (all systems / full set) so ordinary chit-chat is never starved.
 //
-//   - Shadow mode (DecideToolShadow=true, the default): returns specs
-//     unchanged; the layer's pick is only recorded so recall can be measured.
-//   - Enforce mode (shadow=false): returns the deterministic keyword
-//     two-level prefilter set. First a tiny system-routing decision chooses
-//     which connectors the turn needs; then the deterministic keyword
-//     prefilter runs WITHIN each chosen system (local IDF) and merges slots
-//     round-robin across systems, so one system's tools cannot flood the
-//     budget and a word ubiquitous in one domain but rare in another is
-//     weighted correctly. Built-in tools (Source="") and activate_skill are
-//     always retained. If system routing abstains, or keyword matching finds
-//     nothing, it fails open (all systems / full set) so ordinary chit-chat or
-//     a fallback path is never starved of tools.
-//
-// OnFail is VerdictYes: if every implementation abstains, the answer carries
-// no narrowed list.
-func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, specs []llm.ToolSpec, messages []llm.Message) []llm.ToolSpec {
-	enforce := e.effectiveDecideToolEnforce()
-	// The decision model must see what the user actually wants; without it
-	// there is no basis to drop tools and it returns everything. The request
-	// is capped (cheap probe) and followed by the name+description candidates.
+// OnFail is VerdictYes: if system routing abstains, every connector remains
+// eligible.
+func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs []llm.ToolSpec, messages []llm.Message) []llm.ToolSpec {
+	// The decision model must see what the user actually wants; the request is
+	// capped (cheap probe).
 	userRequest := ""
 	if runRec, err := e.Store.GetRun(runID); err == nil && runRec != nil {
 		userRequest = strings.TrimSpace(runRec.Input)
@@ -85,11 +55,10 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 		matchQuery = userRequest + "\n" + trajectory
 	}
 
-	// --- Level 1: system routing -----------------------------------------
+	// --- System routing --------------------------------------------------
 	// Choose among connector ids (a handful), far easier than choosing a tool
-	// from hundreds. Consulted in both modes: shadow needs the pick to measure
-	// its accuracy, enforce needs it to scope the prefilter. Built-in tools
-	// (Source="") are not a routable system; they are always kept.
+	// from hundreds. Built-in tools (Source="") are not a routable system;
+	// they are always kept.
 	systemIDs := connectorSources(specs)
 	sysContext := "用户这一轮请求：\n" + userRequest + "\n"
 	if trajectory != "" {
@@ -151,50 +120,17 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 	preSpecs = preserveAuthTools(specs, allowed, preSpecs)
 	preNames := toolNames(preSpecs)
 
-	decisionContext := "用户这一轮请求：\n" + userRequest + "\n"
-	if trajectory != "" {
-		decisionContext += "\n到此为止的执行轨迹（精简）：\n" + trajectory + "\n"
-	}
-	decisionContext += "\n候选工具（名称: 说明首行）：\n" + buildToolProbe(preSpecs)
-	ans := decide.Answer{}
-	// The tool-level model pick is only paid for in shadow, where it is
-	// measured but never acted on. In enforce the deterministic prefilter is
-	// authoritative, so this second model call is skipped (system routing was
-	// already consulted): zero added decision tokens. noMatch likewise skips.
-	modelConsulted := false
-	if !enforce && !noMatch {
-		var aerr error
-		ans, aerr = e.Decider.Ask(ctx, decide.Question{
-			Kind:    decide.KindToolCandidates,
-			Context: decisionContext,
-			Options: preNames,
-			OnFail:  decide.VerdictYes,
-			TraceID: runID,
-		})
-		if degradedFromAsk(ans, aerr) {
-			e.emitDecideDegraded(runID, decide.KindToolCandidates, map[string]any{
-				"source": ans.Source,
-				"turn":   turn,
-			})
-		}
-		modelConsulted = true
-	}
-
-	kept := validCandidateNames(ans.Values, specs)
 	sent := specs
 	sentCount := len(specs)
-	if enforce {
-		// Fail open: keyword matching found nothing in common, keep full set
-		// rather than send an empty tool list. Otherwise retain essential
-		// built-in tools + activate_skill alongside the narrowed set.
-		if !noMatch && len(preSpecs) > 0 {
-			sent = preserveEssentialTools(preSpecs, specs)
-			sentCount = len(sent)
-		}
+	// Fail open: keyword matching found nothing in common, keep full set
+	// rather than send an empty tool list. Otherwise retain protected system
+	// tools (activate_skill) alongside the narrowed set.
+	if !noMatch && len(preSpecs) > 0 {
+		sent = preserveEssentialTools(preSpecs, specs)
+		sentCount = len(sent)
 	}
 	data := map[string]any{
 		"turn":             turn,
-		"enforce":          enforce,
 		"total":            len(specs),
 		"systems":          systemIDs,
 		"systems_picked":   pickedSystems,
@@ -203,16 +139,11 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 		"prefilter":        preNames,
 		"prefilter_count":  len(preNames),
 		"prefilter_empty":  noMatch,
-		"model_consulted":  modelConsulted,
 		"tool_choice":      e.effectiveDecideToolChoice(),
-		"kept":             kept,
-		"kept_count":       len(kept),
 		"sent_count":       sentCount,
-		"source":           ans.Source,
-		"degraded":         ans.Degraded,
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
-		Type: EventDecideToolShadow,
+		Type: EventDecideToolNarrow,
 		Data: data,
 	})
 	return sent
@@ -654,24 +585,4 @@ func preserveEssentialTools(picked, full []llm.ToolSpec) []llm.ToolSpec {
 		}
 	}
 	return out
-}
-
-// validCandidateNames restricts the layer's pick to names that actually exist
-// and removes duplicates, preserving spec order, so a hallucinated tool name
-// can never pollute the recorded set.
-func validCandidateNames(picked []string, specs []llm.ToolSpec) []string {
-	allowed := make(map[string]bool, len(specs))
-	for _, s := range specs {
-		allowed[s.Name] = true
-	}
-	seen := make(map[string]bool, len(picked))
-	kept := make([]string, 0, len(picked))
-	for _, name := range picked {
-		if !allowed[name] || seen[name] {
-			continue
-		}
-		seen[name] = true
-		kept = append(kept, name)
-	}
-	return kept
 }

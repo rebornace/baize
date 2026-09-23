@@ -1,0 +1,344 @@
+﻿[
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "users_page",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -621,
+                     "estimated":  876,
+                     "estimated_incl_schema":  1147,
+                     "estimated_messages":  731,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1497,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "user_detail",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -622,
+                     "estimated":  877,
+                     "estimated_incl_schema":  1148,
+                     "estimated_messages":  732,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1499,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "pets_page",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -621,
+                     "estimated":  877,
+                     "estimated_incl_schema":  1148,
+                     "estimated_messages":  732,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1498,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "pet_detail",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -624,
+                     "estimated":  874,
+                     "estimated_incl_schema":  1145,
+                     "estimated_messages":  729,
+                     "estimated_tools":  145,
+                     "ratio":  0.58,
+                     "ratio_incl_schema":  0.76,
+                     "real":  1498,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "device_types",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -620,
+                     "estimated":  875,
+                     "estimated_incl_schema":  1146,
+                     "estimated_messages":  730,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1495,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "dashboard",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -620,
+                     "estimated":  878,
+                     "estimated_incl_schema":  1149,
+                     "estimated_messages":  733,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1498,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "mall_orders",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -619,
+                     "estimated":  877,
+                     "estimated_incl_schema":  1148,
+                     "estimated_messages":  732,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1496,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "mall_order_det",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -618,
+                     "estimated":  878,
+                     "estimated_incl_schema":  1149,
+                     "estimated_messages":  733,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1496,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "mall_products",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -619,
+                     "estimated":  877,
+                     "estimated_incl_schema":  1148,
+                     "estimated_messages":  732,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1496,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "mall_sku",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -621,
+                     "estimated":  876,
+                     "estimated_incl_schema":  1147,
+                     "estimated_messages":  731,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1497,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "notion_search",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -622,
+                     "estimated":  875,
+                     "estimated_incl_schema":  1146,
+                     "estimated_messages":  730,
+                     "estimated_tools":  145,
+                     "ratio":  0.58,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1497,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "single",
+        "case_id":  "notion_recent",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -621,
+                     "estimated":  876,
+                     "estimated_incl_schema":  1147,
+                     "estimated_messages":  731,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1497,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "multiturn",
+        "case_id":  "turn0",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -621,
+                     "estimated":  876,
+                     "estimated_incl_schema":  1147,
+                     "estimated_messages":  731,
+                     "estimated_tools":  145,
+                     "ratio":  0.59,
+                     "ratio_incl_schema":  0.77,
+                     "real":  1497,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "multiturn",
+        "case_id":  "turn1",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -611,
+                     "estimated":  912,
+                     "estimated_incl_schema":  1183,
+                     "estimated_messages":  767,
+                     "estimated_tools":  145,
+                     "ratio":  0.6,
+                     "ratio_incl_schema":  0.78,
+                     "real":  1523,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "multiturn",
+        "case_id":  "turn2",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -561,
+                     "estimated":  1130,
+                     "estimated_incl_schema":  1401,
+                     "estimated_messages":  985,
+                     "estimated_tools":  145,
+                     "ratio":  0.67,
+                     "ratio_incl_schema":  0.83,
+                     "real":  1691,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "multiturn",
+        "case_id":  "turn3",
+        "step":  0,
+        "status":  "failed",
+        "data":  {
+                     "delta":  -495,
+                     "estimated":  1364,
+                     "estimated_incl_schema":  1635,
+                     "estimated_messages":  1219,
+                     "estimated_tools":  145,
+                     "ratio":  0.73,
+                     "ratio_incl_schema":  0.88,
+                     "real":  1859,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "multiturn",
+        "case_id":  "turn4",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -483,
+                     "estimated":  1398,
+                     "estimated_incl_schema":  1669,
+                     "estimated_messages":  1253,
+                     "estimated_tools":  145,
+                     "ratio":  0.74,
+                     "ratio_incl_schema":  0.89,
+                     "real":  1881,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "enforce",
+        "kind":  "multiturn",
+        "case_id":  "turn5",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -401,
+                     "estimated":  1662,
+                     "estimated_incl_schema":  1933,
+                     "estimated_messages":  1517,
+                     "estimated_tools":  145,
+                     "ratio":  0.81,
+                     "ratio_incl_schema":  0.94,
+                     "real":  2063,
+                     "tools_with_schema":  416,
+                     "turn":  0
+                 }
+    }
+]

@@ -17,9 +17,7 @@ export interface RuntimeKnobs {
   decide_memory_enabled: boolean
   decide_profile_id: string
   decide_tool_routing_enabled: boolean
-  decide_tool_shadow: boolean
   decide_tool_threshold: number
-  decide_tool_topk: number
   decide_tool_pre_topk: number
   decide_tool_choice_enabled: boolean
   decide_tool_prune_enabled: boolean
@@ -56,9 +54,7 @@ export type RuntimeKnobsPatch = Partial<{
   decide_memory_enabled: boolean
   decide_profile_id: string
   decide_tool_routing_enabled: boolean
-  decide_tool_shadow: boolean
   decide_tool_threshold: number
-  decide_tool_topk: number
   decide_tool_pre_topk: number
   decide_tool_choice_enabled: boolean
   decide_tool_prune_enabled: boolean

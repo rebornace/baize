@@ -81,3 +81,73 @@ export async function deleteModelProfile(id: string): Promise<void> {
   })
   await parseJSON<{ status: string }>(res)
 }
+
+/** One model entry advertised by an OpenAI-compatible provider. */
+export interface UpstreamModel {
+  id: string
+  object?: string
+  created?: number
+  owned_by?: string
+}
+
+export interface DiscoverModelsInput {
+  base_url: string
+  api_key?: string
+  api_key_env?: string
+  profile_id?: string
+}
+
+/** Fetches the model list offered at the given endpoint (no persistence). */
+export async function discoverModels(input: DiscoverModelsInput): Promise<UpstreamModel[]> {
+  const res = await fetch('/v0/settings/models/discover', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(input),
+  })
+  const body = await parseJSON<{ models: UpstreamModel[] }>(res)
+  return body.models ?? []
+}
+
+export interface BatchModelChoice {
+  id: string
+  name?: string
+}
+
+export interface BatchImportModelsInput {
+  base_url: string
+  api_key?: string
+  api_key_env?: string
+  profile_id?: string
+  models: BatchModelChoice[]
+  thinking_level?: ThinkingLevel
+  thinking_dialect?: ThinkingDialect
+  supports_vision?: boolean
+  context_tokens?: number
+}
+
+export interface BatchSkipped {
+  id: string
+  name: string
+  reason: string
+}
+
+export interface BatchImportResult {
+  created: ModelProfile[]
+  skipped: BatchSkipped[]
+}
+
+/** Creates one profile per selected model, sharing one endpoint/credential. */
+export async function batchImportModels(
+  input: BatchImportModelsInput,
+): Promise<BatchImportResult> {
+  const res = await fetch('/v0/settings/models/batch', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(input),
+  })
+  const body = await parseJSON<{ result: BatchImportResult }>(res)
+  return {
+    created: body.result.created ?? [],
+    skipped: body.result.skipped ?? [],
+  }
+}

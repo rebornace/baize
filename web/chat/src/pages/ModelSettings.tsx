@@ -8,6 +8,7 @@ import {
   ToastRegion,
 } from '../components/ui'
 import { MODELS } from '../strings'
+import { AddModelModal } from './models/AddModelModal'
 import { ModelProfileList } from './models/ModelProfileList'
 import { ProfileFields } from './models/ProfileFields'
 import {
@@ -64,7 +65,7 @@ export function ModelSettings() {
       {!s.loading && s.profiles.length > 0 && (
         <ModelProfileList
           profiles={s.profiles}
-          busy={s.busy || s.modalOpen}
+          busy={s.busy || s.editOpen || s.addOpen}
           readOnly={s.readOnly}
           onEdit={s.startEdit}
           onDelete={s.beginDelete}
@@ -72,9 +73,17 @@ export function ModelSettings() {
       )}
 
       {!s.readOnly && (
+        <AddModelModal
+          open={s.addOpen}
+          onClose={s.closeCreate}
+          onImported={s.refresh}
+        />
+      )}
+
+      {!s.readOnly && (
         <Modal
-          open={s.modalOpen}
-          title={s.modalTitle}
+          open={s.editOpen}
+          title={s.editTitle}
           onClose={s.busy ? undefined : s.closeEditor}
           footer={
             <>
@@ -87,7 +96,11 @@ export function ModelSettings() {
             </>
           }
         >
-          <ProfileFields form={s.form} setForm={s.setForm} busy={s.busy} isEdit={!s.isCreate} />
+          <ProfileFields
+            form={s.form}
+            setForm={s.setForm}
+            busy={s.busy}
+          />
           {s.formError && (
             <p className="ui-inline-error" role="alert">
               {s.formError}

@@ -45,7 +45,7 @@ func resetCredentialsInStore(ctx context.Context, st store.Store) error {
 // runResetCredentials implements `baize reset-credentials -config <path>`.
 func runResetCredentials(args []string) error {
 	fs := flag.NewFlagSet("reset-credentials", flag.ContinueOnError)
-	cfgPath := fs.String("config", startConfigPath(), "path to config yaml (for store driver/path)")
+	cfgPath := fs.String("config", defaultConfigPath, "path to config yaml (for store driver/path)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

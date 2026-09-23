@@ -123,9 +123,6 @@ type Config struct {
 			AutoCreateBucket bool   `yaml:"auto_create_bucket"`
 		} `yaml:"s3"`
 	} `yaml:"storage"`
-	MockTicket struct {
-		Listen string `yaml:"listen"` // :18080；off 关闭 mock-ticket
-	} `yaml:"mock_ticket"`
 	ControlPlane struct {
 		OperatorToken string          `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
 		AdminToken    string          `yaml:"admin_token"`    // 空=未配；同上
@@ -198,8 +195,23 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// LoadLayered reads base then deep-merges each existing overlay file (later wins).
-// Returns the merged config and the list of files actually applied (base + overlays).
+func loadFile(path string) (Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("read config: %w", err)
+	}
+	m, err := unmarshalYAMLMap(raw)
+	if err != nil {
+		return Config{}, fmt.Errorf("parse config: %w", err)
+	}
+	return configFromMap(m)
+}
+
+// LoadLayered reads base then deep-merges each existing overlay file (later
+// wins). It is used by the store hot-swap reload path to recompute config
+// over a persisted store overlay — NOT for multi-file startup (baize loads a
+// single config file; see Load). Returns the merged config and the list of
+// files actually applied.
 func LoadLayered(basePath string, overlayPaths ...string) (Config, []string, error) {
 	baseRaw, err := os.ReadFile(basePath)
 	if err != nil {
@@ -235,18 +247,6 @@ func LoadLayered(basePath string, overlayPaths ...string) (Config, []string, err
 	}
 	applyDefaults(&cfg)
 	return cfg, applied, nil
-}
-
-func loadFile(path string) (Config, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return Config{}, fmt.Errorf("read config: %w", err)
-	}
-	m, err := unmarshalYAMLMap(raw)
-	if err != nil {
-		return Config{}, fmt.Errorf("parse config: %w", err)
-	}
-	return configFromMap(m)
 }
 
 func unmarshalYAMLMap(raw []byte) (map[string]interface{}, error) {
@@ -301,9 +301,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Listen == "" {
 		cfg.Listen = ":8080"
-	}
-	if cfg.MockTicket.Listen == "" {
-		cfg.MockTicket.Listen = ":18080"
 	}
 	if cfg.Connector.Type == "" {
 		cfg.Connector.Type = "openapi"

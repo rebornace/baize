@@ -47,24 +47,9 @@ func (e *Engine) effectiveDecideToolThreshold() int {
 	return 12
 }
 
-// effectiveDecideToolEnforce reports whether DP-2a is in enforce mode: the
-// layer's narrowed candidate set actually replaces the full tool list sent to
-// the main model. When false (shadow, the default) the full set is still sent
-// and the pick is only recorded. Guarded by the same master+routing switches
-// as effectiveDecideTool.
-func (e *Engine) effectiveDecideToolEnforce() bool {
-	if e.Settings == nil || e.Decider == nil {
-		return false
-	}
-	k := e.Settings.Knobs()
-	return k.DecideEnabled && k.DecideToolRoutingEnabled && !k.DecideToolShadow
-}
-
 // effectiveDecideToolChoice reports whether DP-2b is live: send the narrowed
 // tool set with tool_choice=required so the main model must pick one of them.
-// It is only meaningful together with DP-2a ENFORCE — in shadow mode the full
-// catalog is still sent, so forcing a choice over it would both alter behavior
-// and be pointless. Guarded by the same master + routing switches.
+// Guarded by the same master + routing switches as DP-2a.
 func (e *Engine) effectiveDecideToolChoice() bool {
 	if e.Settings == nil || e.Decider == nil {
 		return false
@@ -72,7 +57,6 @@ func (e *Engine) effectiveDecideToolChoice() bool {
 	k := e.Settings.Knobs()
 	return k.DecideEnabled &&
 		k.DecideToolRoutingEnabled &&
-		!k.DecideToolShadow &&
 		k.DecideToolChoiceEnabled
 }
 

@@ -19,10 +19,10 @@ baize 拉起并托管适配器子进程：崩溃指数退避重启；关机时�
 
 ```bash
 go build -o bin/weixin-adapter ./cmd/weixin-adapter   # Windows: bin/weixin-adapter.exe
-go run ./cmd/baize demo                               # 或 Windows: .\demo.cmd
+# 然后启动 baize（Windows：.\serve.cmd；macOS / Linux：./scripts/serve.sh）
 ```
 
-渠道块示例（与样板 `configs/demo.yaml` 一致：**默认动态端口**，`adapter_args` 勿写固定 `-addr`；`outbound_url` / `admin_url` 为占位，启动后由 `credsDir/listen.port` 覆盖）：
+渠道块示例（与样板 `configs/config.yaml` 一致：**默认动态端口**，`adapter_args` 勿写固定 `-addr`；`outbound_url` / `admin_url` 为占位，启动后由 `credsDir/listen.port` 覆盖）：
 
 ```yaml
 channels:

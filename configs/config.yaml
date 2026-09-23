@@ -1,5 +1,6 @@
-# 生产默认：baize start。无演示 Connector；须 export BAIZE_API_KEY。
-# 覆盖：复制为 configs/minimal.local.yaml（gitignore）后改 llm.base_url / model 等。
+# 默认配置：baize serve（等价 baize serve -config configs/config.yaml）。
+# 本地覆盖：复制为 configs/config.local.yaml（已 gitignore）后修改，再用 -config 指定。
+# 启动前须 export BAIZE_API_KEY（见 llm.api_key_env）。
 listen: ":8080"
 # runtime:
 #   public_base_url: "https://baize.example:8080"  # 空则不向侧车注入 callback_urls
@@ -21,7 +22,7 @@ llm:
   # supports_vision: false   # default; set true for vision-capable models (e.g. gpt-4o)
   api_key_env: BAIZE_API_KEY
 skills:
-  # 核心内置 Skill（minimal 仅扫描此目录）
+  # 核心内置 Skill（默认仅扫描此目录）
   builtin_dir: ./skills
   user_dir: ./data/skills
 agent:
@@ -55,8 +56,6 @@ storage:
   #   use_ssl: false
   #   path_style: true                # MinIO/自建设 true；AWS 设 false
   #   auto_create_bucket: false
-mock_ticket:
-  listen: off
 inbox:
   channels: []
 # 渠道声明式启用。微信已迁移为「进程外 webhook 适配器」：baize 通过子进程
@@ -85,7 +84,7 @@ channels:
 #
 # 其它 IM（飞书/钉钉等）用同一 webhook 机制独立部署适配器。一个实例 = 一个 IM 账号；
 # 多账号写多条。适配器独立部署（不由 baize 托管）时省略 adapter_*、自行填 secret：
-#   - name: feishu            # 实例名（缺省=type）；同 type 多实例时必填且唯一
+#   - name: feishu            # 实例名（缺省=type）；同 type 多账号时必填且唯一
 #     type: webhook
 #     enabled: true
 #     config:

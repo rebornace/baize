@@ -488,6 +488,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/keys/{id}", s.handleDeleteMCPExportKey)
 	s.mux.HandleFunc("GET /v0/settings/models", s.handleListModelProfiles)
 	s.mux.HandleFunc("POST /v0/settings/models", s.handlePostModelProfile)
+	s.mux.HandleFunc("POST /v0/settings/models/discover", s.handleDiscoverModels)
+	s.mux.HandleFunc("POST /v0/settings/models/batch", s.handleBatchImportModels)
 	s.mux.HandleFunc("PATCH /v0/settings/models/{id}", s.handlePatchModelProfile)
 	s.mux.HandleFunc("DELETE /v0/settings/models/{id}", s.handleDeleteModelProfile)
 	s.mux.HandleFunc("GET /v0/settings/memory", s.handleListMemory)

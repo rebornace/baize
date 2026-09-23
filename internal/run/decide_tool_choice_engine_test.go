@@ -34,25 +34,23 @@ func (c *choiceLLM) ChatStreamWithChoice(
 	return llm.Message{Role: llm.RoleAssistant, Content: "done"}, nil
 }
 
-func choiceEnforceKnobs(choice bool) fakeKnobs {
+func choiceNarrowKnobs(choice bool) fakeKnobs {
 	return fakeKnobs{k: runtimecfg.Knobs{
 		DecideEnabled:            true,
 		DecideToolRoutingEnabled: true,
-		DecideToolShadow:         false, // enforce
 		DecideToolThreshold:      12,
-		DecideToolTopK:           8,
 		DecideToolPreTopK:        5,
 		DecideToolChoiceEnabled:  choice,
 	}}
 }
 
-// When DP-2b is enabled in enforce, the engine must use the streaming
-// constrained call and never the unconstrained Chat.
+// When DP-2b is enabled, the engine must use the streaming constrained call
+// and never the unconstrained Chat.
 func TestEngineUsesChoiceWhenEnabled(t *testing.T) {
 	decider := &stubDecider{byKind: map[string]decide.Answer{
 		decide.KindSystemTargets: {Verdict: decide.VerdictYes, Values: []string{"sys_a"}, Source: decide.SourceRemote},
 	}}
-	eng, r, _ := newShadowEngine(t, 40, decider, choiceEnforceKnobs(true), "thing 3", "sys_a")
+	eng, r, _ := newNarrowEngine(t, 40, decider, choiceNarrowKnobs(true), "thing 3", "sys_a")
 	cLLM := &choiceLLM{}
 	eng.LLM = cLLM
 
@@ -73,7 +71,7 @@ func TestEngineUsesChoiceWhenEnabled(t *testing.T) {
 
 	evs, _ := eng.Store.ListEvents(r.ID)
 	for _, ev := range evs {
-		if ev.Type == EventDecideToolShadow {
+		if ev.Type == EventDecideToolNarrow {
 			if b, _ := ev.Data["tool_choice"].(bool); !b {
 				t.Fatalf("tool_choice=%v want true", ev.Data["tool_choice"])
 			}
@@ -81,12 +79,12 @@ func TestEngineUsesChoiceWhenEnabled(t *testing.T) {
 	}
 }
 
-// When DP-2b is off (even in enforce), the ordinary streamer path is used.
+// When DP-2b is off, the ordinary streamer path is used.
 func TestEngineSkipsChoiceWhenDisabled(t *testing.T) {
 	decider := &stubDecider{byKind: map[string]decide.Answer{
 		decide.KindSystemTargets: {Verdict: decide.VerdictYes, Values: []string{"sys_a"}, Source: decide.SourceRemote},
 	}}
-	eng, r, _ := newShadowEngine(t, 40, decider, choiceEnforceKnobs(false), "thing 3", "sys_a")
+	eng, r, _ := newNarrowEngine(t, 40, decider, choiceNarrowKnobs(false), "thing 3", "sys_a")
 	cLLM := &choiceLLM{}
 	eng.LLM = cLLM
 

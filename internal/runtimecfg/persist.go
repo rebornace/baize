@@ -32,9 +32,7 @@ type KnobsPatch struct {
 	DecideMemoryEnabled          *bool    `json:"decide_memory_enabled,omitempty"`
 	DecideProfileID              *string  `json:"decide_profile_id,omitempty"`
 	DecideToolRoutingEnabled     *bool    `json:"decide_tool_routing_enabled,omitempty"`
-	DecideToolShadow             *bool    `json:"decide_tool_shadow,omitempty"`
 	DecideToolThreshold          *int     `json:"decide_tool_threshold,omitempty"`
-	DecideToolTopK               *int     `json:"decide_tool_topk,omitempty"`
 	DecideToolPreTopK            *int     `json:"decide_tool_pre_topk,omitempty"`
 	DecideToolChoiceEnabled      *bool    `json:"decide_tool_choice_enabled,omitempty"`
 	DecideToolPruneEnabled       *bool    `json:"decide_tool_prune_enabled,omitempty"`
@@ -144,25 +142,13 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 			return err
 		}
 	}
-	// DP-2a: TopK must keep at least one tool; the consult threshold must not
-	// sit below TopK (otherwise the layer would be asked on sets already
-	// smaller than what it is allowed to keep).
-	if p.DecideToolTopK != nil && (*p.DecideToolTopK < 1 || *p.DecideToolTopK > 200) {
-		return fmt.Errorf("%w: decide_tool_topk must be 1-200", ErrBadRange)
-	}
+	// DP-2a: the deterministic prefilter width and the tool-count threshold
+	// that decides whether narrowing runs at all.
 	if p.DecideToolPreTopK != nil && (*p.DecideToolPreTopK < 1 || *p.DecideToolPreTopK > 500) {
 		return fmt.Errorf("%w: decide_tool_pre_topk must be 1-500", ErrBadRange)
 	}
-	if p.DecideToolPreTopK != nil && p.DecideToolTopK != nil &&
-		*p.DecideToolPreTopK < *p.DecideToolTopK {
-		return fmt.Errorf("%w: decide_tool_pre_topk must be >= decide_tool_topk", ErrBadRange)
-	}
 	if p.DecideToolThreshold != nil && (*p.DecideToolThreshold < 1 || *p.DecideToolThreshold > 500) {
 		return fmt.Errorf("%w: decide_tool_threshold must be 1-500", ErrBadRange)
-	}
-	if p.DecideToolThreshold != nil && p.DecideToolTopK != nil &&
-		*p.DecideToolThreshold < *p.DecideToolTopK {
-		return fmt.Errorf("%w: decide_tool_threshold must be >= decide_tool_topk", ErrBadRange)
 	}
 	// DP-3 (redirected): prune threshold is an absolute estimated-token size;
 	// MaxJudged bounds how many bulky results are judged per turn.
@@ -239,14 +225,8 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	if p.DecideToolRoutingEnabled != nil {
 		next.DecideToolRoutingEnabled = p.DecideToolRoutingEnabled
 	}
-	if p.DecideToolShadow != nil {
-		next.DecideToolShadow = p.DecideToolShadow
-	}
 	if p.DecideToolThreshold != nil {
 		next.DecideToolThreshold = p.DecideToolThreshold
-	}
-	if p.DecideToolTopK != nil {
-		next.DecideToolTopK = p.DecideToolTopK
 	}
 	if p.DecideToolPreTopK != nil {
 		next.DecideToolPreTopK = p.DecideToolPreTopK

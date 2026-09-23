@@ -16,7 +16,7 @@ import (
 // primitives, and enough unrelated connector tools to push the catalog above
 // the default routing threshold (12). The union-vs-scope decision is taken in
 // specsForRun before any DP-2a narrowing.
-func newScopedEngine(t *testing.T, enforce bool) (*Engine, string) {
+func newScopedEngine(t *testing.T, routing bool) (*Engine, string) {
 	t.Helper()
 	cat := loadTestCatalog(t, map[string]struct {
 		desc  string
@@ -50,8 +50,7 @@ func newScopedEngine(t *testing.T, enforce bool) (*Engine, string) {
 
 	settings := fakeKnobs{k: runtimecfg.Knobs{
 		DecideEnabled:            true,
-		DecideToolRoutingEnabled: true,
-		DecideToolShadow:         !enforce,
+		DecideToolRoutingEnabled: routing,
 	}}
 	eng := &Engine{Tools: reg, Skills: cat, Settings: settings, Decider: stubAsk{}}
 	eng.beginRunSkills("run_1", []string{"demo"}, "sys")
@@ -59,7 +58,7 @@ func newScopedEngine(t *testing.T, enforce bool) (*Engine, string) {
 }
 
 // stubAsk is a no-op decide.Ask: specsForRun only needs a non-nil Decider for
-// its enforce gate; recordToolShadow is not exercised here.
+// its routing gate; narrowTools is not exercised here.
 type stubAsk struct{}
 
 func (stubAsk) Enabled() bool { return true }
@@ -76,11 +75,11 @@ func specSet(specs []llm.ToolSpec) map[string]bool {
 	return out
 }
 
-// TestSpecsForRunEnforceSkipsUnionAndKeepsAuthFloor: in enforce mode the
+// TestSpecsForRunRoutingOnSkipsUnionAndKeepsAuthFloor: with routing on the
 // unrelated connector tools must not be unioned back, the skill-scoped tool is
 // kept, and the auth floor restores that same system's login/me so the model
 // can recover from a 401 even though the skill did not declare them.
-func TestSpecsForRunEnforceSkipsUnionAndKeepsAuthFloor(t *testing.T) {
+func TestSpecsForRunRoutingOnSkipsUnionAndKeepsAuthFloor(t *testing.T) {
 	eng, runID := newScopedEngine(t, true)
 	got := specSet(eng.specsForRun(runID))
 
@@ -97,25 +96,25 @@ func TestSpecsForRunEnforceSkipsUnionAndKeepsAuthFloor(t *testing.T) {
 	}
 }
 
-// TestSpecsForRunShadowKeepsLegacyUnion: shadow mode must retain the fail-open
-// union so every connector tool still reaches the model.
-func TestSpecsForRunShadowKeepsLegacyUnion(t *testing.T) {
+// TestSpecsForRunRoutingOffKeepsLegacyUnion: with the routing switch off the
+// fail-open union stays so every connector tool still reaches the model.
+func TestSpecsForRunRoutingOffKeepsLegacyUnion(t *testing.T) {
 	eng, runID := newScopedEngine(t, false)
 	got := specSet(eng.specsForRun(runID))
 
 	if !got["list_tickets"] || !got["unrelated_0"] || !got["unrelated_14"] {
-		t.Fatalf("shadow must keep the full union; got %v", got)
+		t.Fatalf("routing off must keep the full union; got %v", got)
 	}
 }
 
-// TestSpecsForRunRoutingOffKeepsLegacyUnion: with the routing switch off the
-// union stays even though default skills are present.
-func TestSpecsForRunRoutingOffKeepsLegacyUnion(t *testing.T) {
+// TestSpecsForRunMasterOffKeepsLegacyUnion: with the master switch off the
+// union stays even though the routing switch itself is on.
+func TestSpecsForRunMasterOffKeepsLegacyUnion(t *testing.T) {
 	eng, runID := newScopedEngine(t, true)
 	eng.Settings = fakeKnobs{k: runtimecfg.Knobs{DecideEnabled: false}}
 	got := specSet(eng.specsForRun(runID))
 
 	if !got["list_tickets"] || !got["unrelated_0"] {
-		t.Fatalf("routing off must keep the full union; got %v", got)
+		t.Fatalf("master off must keep the full union; got %v", got)
 	}
 }

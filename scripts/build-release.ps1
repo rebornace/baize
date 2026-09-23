@@ -46,14 +46,17 @@ try {
         go build -trimpath -ldflags $ldflags -o $baizeOut ./cmd/baize
         go build -trimpath -ldflags $ldflags -o $adapterOut ./cmd/weixin-adapter
 
-        Copy-Item (Join-Path $Root "configs\minimal.yaml") (Join-Path $stage "configs\minimal.yaml")
+        $cfgStage = Join-Path $stage "configs"
+        New-Item -ItemType Directory -Force -Path $cfgStage | Out-Null
+        Copy-Item (Join-Path $Root "configs\config.yaml") (Join-Path $cfgStage "config.yaml")
+        Copy-Item (Join-Path $Root "configs\config.local.yaml.example") (Join-Path $cfgStage "config.local.yaml.example")
         Copy-Item (Join-Path $Root ".env.example") (Join-Path $stage ".env.example")
         @"
 Baize $Version ($($t.GOOS)/$($t.GOARCH))
 
 1. Copy .env.example to .env and set BAIZE_API_KEY / BAIZE_SETTINGS_KEY.
-2. Optionally edit configs/minimal.yaml (or create configs/minimal.local.yaml).
-3. Run: ./baize start   (Windows: .\baize.exe start)
+2. Optionally edit configs/config.yaml (or create configs/config.local.yaml).
+3. Run: ./baize serve   (Windows: .\baize.exe serve)
 4. Open http://127.0.0.1:8080/ui
 
 weixin-adapter is only needed for the Weixin channel.

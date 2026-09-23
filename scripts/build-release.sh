@@ -32,14 +32,15 @@ echo "$TARGETS" | while read -r GOOS GOARCH ARCHIVE; do
 	echo "Building $name ..."
 	GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags "$LDFLAGS" -o "$stage/baize$ext" ./cmd/baize
 	GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags "$LDFLAGS" -o "$stage/weixin-adapter$ext" ./cmd/weixin-adapter
-	cp configs/minimal.yaml "$stage/configs/minimal.yaml"
+	cp configs/config.yaml "$stage/configs/config.yaml"
+	cp configs/config.local.yaml.example "$stage/configs/config.local.yaml.example"
 	cp .env.example "$stage/.env.example"
 	cat >"$stage/README.txt" <<EOF
 Baize $VERSION ($GOOS/$GOARCH)
 
 1. Copy .env.example to .env and set BAIZE_API_KEY / BAIZE_SETTINGS_KEY.
-2. Optionally edit configs/minimal.yaml (or create configs/minimal.local.yaml).
-3. Run: ./baize start   (Windows: .\\baize.exe start)
+2. Optionally edit configs/config.yaml (or create configs/config.local.yaml).
+3. Run: ./baize serve   (Windows: .\\baize.exe serve)
 4. Open http://127.0.0.1:8080/ui
 
 weixin-adapter is only needed for the Weixin channel.

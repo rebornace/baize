@@ -36,11 +36,6 @@ const (
 	// KindMemoryExtract asks whether a turn carries facts worth extracting
 	// (DP-1). OnFail is VerdictYes: if the layer is down, extract anyway.
 	KindMemoryExtract = "memory_worth_extracting"
-	// KindToolCandidates asks which tools are worth keeping in the prompt for
-	// a run (DP-2a). It is a pick-many question over Question.Options; chosen
-	// names come back in Answer.Values. OnFail is VerdictYes (keep all tools)
-	// so a layer outage preserves today's behavior.
-	KindToolCandidates = "tool_candidates"
 	// KindPruneToolResult asks whether one bulky tool result already produced
 	// in this run is worth keeping verbatim in later turns (DP-3, redirected).
 	// Binary verdict; the engine probes the result content (trimmed). OnFail

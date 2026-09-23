@@ -153,7 +153,7 @@ function CredentialsSection({ push }: { push: ToastApi['push'] }) {
   return (
     <section className="settings-form">
       <h2 className="settings-subheading">{RUNTIME.sectionCreds}</h2>
-      {loading && <p className="settings-muted">加载中…</p>}
+      {loading && <p className="settings-muted">RUNTIME.loading</p>}
       {view && (
         <>
           <p className="settings-muted">
@@ -426,7 +426,7 @@ export function RuntimeSettings() {
         </div>
       </section>
 
-      {loading && <p className="settings-muted">加载中…</p>}
+      {loading && <p className="settings-muted">RUNTIME.loading</p>}
 
       {!loading && knobView && (
         <form className="settings-form" onSubmit={(e) => void onSubmitPublicBase(e)}>
@@ -564,7 +564,7 @@ export function RuntimeSettings() {
                 <option value="">{RUNTIME.decideProfileNone}</option>
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}（{p.model}）
+                    {p.name} ({p.model})
                   </option>
                 ))}
               </Select>
@@ -608,27 +608,13 @@ export function RuntimeSettings() {
           <label className="settings-checkbox" style={{ marginLeft: '1.25rem' }}>
             <input
               type="checkbox"
-              checked={form.decide_tool_shadow}
-              onChange={(e) => setField('decide_tool_shadow', e.target.checked)}
-              disabled={busy || readOnly || !form.decide_enabled || !form.decide_tool_routing_enabled}
-            />
-            {RUNTIME.decideToolShadow}
-            {knobView.overridden.decide_tool_shadow && <Badge>{RUNTIME.badgeOverridden}</Badge>}
-          </label>
-          <p className="settings-muted" style={{ marginLeft: '1.25rem' }}>
-            {RUNTIME.decideToolShadowHint}
-          </p>
-          <label className="settings-checkbox" style={{ marginLeft: '1.25rem' }}>
-            <input
-              type="checkbox"
               checked={form.decide_tool_choice_enabled}
               onChange={(e) => setField('decide_tool_choice_enabled', e.target.checked)}
               disabled={
                 busy ||
                 readOnly ||
                 !form.decide_enabled ||
-                !form.decide_tool_routing_enabled ||
-                form.decide_tool_shadow
+                !form.decide_tool_routing_enabled
               }
             />
             {RUNTIME.decideToolChoice}
@@ -640,7 +626,7 @@ export function RuntimeSettings() {
             {RUNTIME.decideToolChoiceHint}
           </p>
           <details>
-            <summary>{RUNTIME.decideToolRoutingEnabled}</summary>
+            <summary>{RUNTIME.advancedSettings}</summary>
             {decideToolFields().map((spec) => (
               <Field
                 key={spec.key}
@@ -674,7 +660,7 @@ export function RuntimeSettings() {
           </label>
           <p className="settings-muted">{RUNTIME.decideToolPruneHint}</p>
           <details>
-            <summary>{RUNTIME.decideToolPruneEnabled}</summary>
+            <summary>{RUNTIME.advancedSettings}</summary>
             {decideMiscFields()
               .filter((s) => s.key.startsWith('decide_tool_prune'))
               .map((spec) => (
@@ -710,7 +696,7 @@ export function RuntimeSettings() {
           </label>
           <p className="settings-muted">{RUNTIME.decideRouteHint}</p>
           <details>
-            <summary>{RUNTIME.decideRouteEnabled}</summary>
+            <summary>{RUNTIME.advancedSettings}</summary>
             {decideMiscFields()
               .filter((s) => s.key === 'decide_route_min_runes')
               .map((spec) => (

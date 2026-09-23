@@ -38,4 +38,15 @@ This is not downstream business IAM or multi-tenant SSO.
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 
+## Model discovery and batch import
+
+Model profiles can be created in bulk by fetching the catalog from an OpenAI-compatible endpoint. Both endpoints require **admin**:
+
+| Path | Role |
+|------|------|
+| `POST /v0/settings/models/discover` | Query only, nothing persisted: GETs the upstream `/models` using `base_url` (+ optional `api_key` / `api_key_env` / `profile_id`) and returns the model list |
+| `POST /v0/settings/models/batch` | Creates one profile per selected model, all sharing one `base_url` and credential; returns `created` and `skipped` (e.g. name collisions) detail |
+
+When editing an existing profile you can omit `api_key` and pass `profile_id`; the server then reuses the stored key, and the plaintext key is never sent to the browser.
+
 Prefer the code registry and existing integration tests over assuming unlisted paths exist.

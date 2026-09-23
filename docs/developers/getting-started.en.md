@@ -41,14 +41,14 @@ npm test
 npx tsc --noEmit
 ```
 
-## Local trial
+## Run locally
 
-From the repo root:
+Set `BAIZE_API_KEY` in `.env`, then from the repo root:
 
-- Windows: `.\demo.cmd`
-- Unix: `./scripts/demo.sh`
+- Windows: `.\serve.cmd`
+- Unix: `./scripts/serve.sh`
 
-Production-oriented start: `start` / `baize start` in the root README (needs `BAIZE_API_KEY`). More deploy detail: [Deployment](./deployment.en.md) ([中文](./deployment.md)).
+Uses `configs/config.yaml` by default; to override, copy it to `configs/config.local.yaml` (git-ignored) and pass `-config`. More deploy detail: [Deployment](./deployment.en.md) ([中文](./deployment.md)).
 
 ## Directory map (contributors)
 

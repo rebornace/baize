@@ -34,7 +34,7 @@ func TestRemoteMultiParsesChosenNames(t *testing.T) {
 		t.Fatal("remote multi with provider must be enabled")
 	}
 	ans, err := r.Ask(context.Background(), Question{
-		Kind:    KindToolCandidates,
+		Kind:    KindSystemTargets,
 		Options: []string{"search_orders", "get_order", "delete_order"},
 	})
 	if err != nil {
@@ -53,7 +53,7 @@ func TestRemoteMultiFiltersUnknownNames(t *testing.T) {
 	p := &capturingProvider{reply: llm.Message{Content: `["search_orders", "hallucinated"]`}}
 	r := NewRemoteMulti(p)
 	ans, err := r.Ask(context.Background(), Question{
-		Kind:    KindToolCandidates,
+		Kind:    KindSystemTargets,
 		Options: []string{"search_orders", "get_order"},
 	})
 	if err != nil {
@@ -69,7 +69,7 @@ func TestRemoteMultiPromptListsOptions(t *testing.T) {
 	p := &capturingProvider{reply: llm.Message{Content: `[]`}}
 	r := NewRemoteMulti(p)
 	_, _ = r.Ask(context.Background(), Question{
-		Kind:    KindToolCandidates,
+		Kind:    KindSystemTargets,
 		Options: []string{"alpha", "beta"},
 	})
 	if !strings.Contains(p.prompt, "alpha") || !strings.Contains(p.prompt, "beta") {
@@ -81,7 +81,7 @@ func TestRemoteMultiBadJSONIsUnavailable(t *testing.T) {
 	p := &capturingProvider{reply: llm.Message{Content: "我觉得这些都不错"}}
 	r := NewRemoteMulti(p)
 	_, err := r.Ask(context.Background(), Question{
-		Kind: KindToolCandidates, Options: []string{"alpha"},
+		Kind: KindSystemTargets, Options: []string{"alpha"},
 	})
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err=%v want ErrUnavailable", err)
@@ -92,7 +92,7 @@ func TestRemoteMultiChatErrorIsUnavailable(t *testing.T) {
 	p := &capturingProvider{err: errors.New("network down")}
 	r := NewRemoteMulti(p)
 	_, err := r.Ask(context.Background(), Question{
-		Kind: KindToolCandidates, Options: []string{"alpha"},
+		Kind: KindSystemTargets, Options: []string{"alpha"},
 	})
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err=%v want ErrUnavailable", err)
@@ -110,7 +110,7 @@ func TestRemoteMultiNilProviderDisabled(t *testing.T) {
 func TestRemoteMultiNoOptionsUnavailable(t *testing.T) {
 	p := &capturingProvider{reply: llm.Message{Content: `[]`}}
 	r := NewRemoteMulti(p)
-	_, err := r.Ask(context.Background(), Question{Kind: KindToolCandidates})
+	_, err := r.Ask(context.Background(), Question{Kind: KindSystemTargets})
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err=%v want ErrUnavailable", err)
 	}

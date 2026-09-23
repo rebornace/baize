@@ -41,14 +41,14 @@ npm test
 npx tsc --noEmit
 ```
 
-## 本地试用
+## 本地启动
 
-仓库根目录：
+仓库根目录，先在 `.env` 中配好 `BAIZE_API_KEY`：
 
-- Windows：`.\demo.cmd`
-- Unix：`./scripts/demo.sh`
+- Windows：`.\serve.cmd`
+- Unix：`./scripts/serve.sh`
 
-生产向启动见根 README 的 `start` / `baize start`（需 `BAIZE_API_KEY`）。更多部署见 [部署](./deployment.md)（[English](./deployment.en.md)）。
+默认使用 `configs/config.yaml`；要覆盖则复制为 `configs/config.local.yaml`（gitignore）并用 `-config` 指定。更多部署见 [部署](./deployment.md)（[English](./deployment.en.md)）。
 
 ## 目录地图（贡献者）
 

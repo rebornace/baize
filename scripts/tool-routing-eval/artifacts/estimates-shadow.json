@@ -1,0 +1,667 @@
+﻿[
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "users_page",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60034,
+                     "estimated":  25809,
+                     "estimated_incl_schema":  74794,
+                     "estimated_messages":  731,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85843,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "users_page",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60072,
+                     "estimated":  25836,
+                     "estimated_incl_schema":  74821,
+                     "estimated_messages":  758,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85908,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "user_detail",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60035,
+                     "estimated":  25810,
+                     "estimated_incl_schema":  74795,
+                     "estimated_messages":  732,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85845,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "user_detail",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60089,
+                     "estimated":  25837,
+                     "estimated_incl_schema":  74822,
+                     "estimated_messages":  759,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85926,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "pets_page",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60034,
+                     "estimated":  25810,
+                     "estimated_incl_schema":  74795,
+                     "estimated_messages":  732,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85844,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "pets_page",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60073,
+                     "estimated":  25844,
+                     "estimated_incl_schema":  74829,
+                     "estimated_messages":  766,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85917,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "pet_detail",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60037,
+                     "estimated":  25807,
+                     "estimated_incl_schema":  74792,
+                     "estimated_messages":  729,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85844,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "pet_detail",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60093,
+                     "estimated":  25844,
+                     "estimated_incl_schema":  74829,
+                     "estimated_messages":  766,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85937,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "device_types",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60033,
+                     "estimated":  25808,
+                     "estimated_incl_schema":  74793,
+                     "estimated_messages":  730,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85841,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "device_types",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60070,
+                     "estimated":  25846,
+                     "estimated_incl_schema":  74831,
+                     "estimated_messages":  768,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85916,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "device_types",
+        "step":  2,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60106,
+                     "estimated":  25879,
+                     "estimated_incl_schema":  74864,
+                     "estimated_messages":  801,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85985,
+                     "tools_with_schema":  74063,
+                     "turn":  2
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "dashboard",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60033,
+                     "estimated":  25811,
+                     "estimated_incl_schema":  74796,
+                     "estimated_messages":  733,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85844,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "dashboard",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60066,
+                     "estimated":  25849,
+                     "estimated_incl_schema":  74834,
+                     "estimated_messages":  771,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85915,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_orders",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60032,
+                     "estimated":  25810,
+                     "estimated_incl_schema":  74795,
+                     "estimated_messages":  732,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85842,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_orders",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60051,
+                     "estimated":  25863,
+                     "estimated_incl_schema":  74848,
+                     "estimated_messages":  785,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85914,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_order_det",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60031,
+                     "estimated":  25811,
+                     "estimated_incl_schema":  74796,
+                     "estimated_messages":  733,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85842,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_order_det",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60051,
+                     "estimated":  25863,
+                     "estimated_incl_schema":  74848,
+                     "estimated_messages":  785,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85914,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_products",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60032,
+                     "estimated":  25810,
+                     "estimated_incl_schema":  74795,
+                     "estimated_messages":  732,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85842,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_products",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60052,
+                     "estimated":  25864,
+                     "estimated_incl_schema":  74849,
+                     "estimated_messages":  786,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85916,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "mall_sku",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60034,
+                     "estimated":  25809,
+                     "estimated_incl_schema":  74794,
+                     "estimated_messages":  731,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85843,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "notion_search",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60035,
+                     "estimated":  25808,
+                     "estimated_incl_schema":  74793,
+                     "estimated_messages":  730,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85843,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "notion_search",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60306,
+                     "estimated":  26938,
+                     "estimated_incl_schema":  75923,
+                     "estimated_messages":  1860,
+                     "estimated_tools":  25078,
+                     "ratio":  0.31,
+                     "ratio_incl_schema":  0.87,
+                     "real":  87244,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "notion_search",
+        "step":  2,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60368,
+                     "estimated":  27021,
+                     "estimated_incl_schema":  76006,
+                     "estimated_messages":  1943,
+                     "estimated_tools":  25078,
+                     "ratio":  0.31,
+                     "ratio_incl_schema":  0.87,
+                     "real":  87389,
+                     "tools_with_schema":  74063,
+                     "turn":  2
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "notion_recent",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60034,
+                     "estimated":  25809,
+                     "estimated_incl_schema":  74794,
+                     "estimated_messages":  731,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85843,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "single",
+        "case_id":  "notion_recent",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60077,
+                     "estimated":  25833,
+                     "estimated_incl_schema":  74818,
+                     "estimated_messages":  755,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85910,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn0",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60034,
+                     "estimated":  25809,
+                     "estimated_incl_schema":  74794,
+                     "estimated_messages":  731,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85843,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn0",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60071,
+                     "estimated":  25845,
+                     "estimated_incl_schema":  74830,
+                     "estimated_messages":  767,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85916,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn0",
+        "step":  2,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60104,
+                     "estimated":  25882,
+                     "estimated_incl_schema":  74867,
+                     "estimated_messages":  804,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85986,
+                     "tools_with_schema":  74063,
+                     "turn":  2
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn1",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60018,
+                     "estimated":  25894,
+                     "estimated_incl_schema":  74879,
+                     "estimated_messages":  816,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85912,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn2",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60005,
+                     "estimated":  25965,
+                     "estimated_incl_schema":  74950,
+                     "estimated_messages":  887,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  85970,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn3",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -59973,
+                     "estimated":  26070,
+                     "estimated_incl_schema":  75055,
+                     "estimated_messages":  992,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  86043,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn4",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -59940,
+                     "estimated":  26204,
+                     "estimated_incl_schema":  75189,
+                     "estimated_messages":  1126,
+                     "estimated_tools":  25078,
+                     "ratio":  0.3,
+                     "ratio_incl_schema":  0.87,
+                     "real":  86144,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn5",
+        "step":  0,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -59889,
+                     "estimated":  26356,
+                     "estimated_incl_schema":  75341,
+                     "estimated_messages":  1278,
+                     "estimated_tools":  25078,
+                     "ratio":  0.31,
+                     "ratio_incl_schema":  0.87,
+                     "real":  86245,
+                     "tools_with_schema":  74063,
+                     "turn":  0
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn5",
+        "step":  1,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -59915,
+                     "estimated":  26413,
+                     "estimated_incl_schema":  75398,
+                     "estimated_messages":  1335,
+                     "estimated_tools":  25078,
+                     "ratio":  0.31,
+                     "ratio_incl_schema":  0.87,
+                     "real":  86328,
+                     "tools_with_schema":  74063,
+                     "turn":  1
+                 }
+    },
+    {
+        "mode":  "shadow",
+        "kind":  "multiturn",
+        "case_id":  "turn5",
+        "step":  2,
+        "status":  "succeeded",
+        "data":  {
+                     "delta":  -60047,
+                     "estimated":  26636,
+                     "estimated_incl_schema":  75621,
+                     "estimated_messages":  1558,
+                     "estimated_tools":  25078,
+                     "ratio":  0.31,
+                     "ratio_incl_schema":  0.87,
+                     "real":  86683,
+                     "tools_with_schema":  74063,
+                     "turn":  2
+                 }
+    }
+]

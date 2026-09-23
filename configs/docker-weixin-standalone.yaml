@@ -35,8 +35,6 @@ run:
 conversation:
   max_messages: 40
   persist_identities: true
-mock_ticket:
-  listen: off
 channels:
   - name: weixin
     type: webhook

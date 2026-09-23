@@ -2,7 +2,7 @@
 
 # 配置：YAML、环境变量与 CLI
 
-权威结构见 `internal/config/config.go`；下列为现行常用键摘要。样板见 `configs/`（`minimal.yaml`、`demo.yaml`、`docker-*.yaml` 等）。
+权威结构见 `internal/config/config.go`；下列为现行常用键摘要。样板见 `configs/`（`config.yaml`、`config.local.yaml.example`、`docker-*.yaml` 等）。
 
 入口会 `LoadDotEnv(".env")`：已存在的进程环境变量**不会**被 `.env` 覆盖。
 
@@ -10,9 +10,8 @@
 
 | 命令 | 作用 |
 |------|------|
-| `baize start` | 生产默认：`configs/minimal.yaml`（若存在则优先 `minimal.local.yaml`）；须通过 `ValidateStart`（含 API Key） |
-| `baize demo` | 试用栈：分层合并 `demo.yaml` + 可选 `default.local.yaml` / `demo.local.yaml` |
-| `baize serve -config <path>` | 显式单文件配置启动 Runtime |
+| `baize serve` | 以默认 `configs/config.yaml` 启动 Runtime；须通过 `Validate`（含 API Key） |
+| `baize serve -config <path>` | 显式单文件配置启动（如本地用 `configs/config.local.yaml`） |
 | `baize reset-credentials -config <path>` | 清空 store 中控制面热更新口令，回退 YAML break-glass |
 
 旁路进程：`weixin-adapter`（见 [部署](./deployment.md)，[English](./deployment.en.md)）。
@@ -68,6 +67,8 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 | `max_steps` | 16 |
 | `tool_timeout_sec` | 60（单次工具调用） |
 
+> 决策层（`internal/decide`）相关行为——DP-1 记忆预抽取判断、DP-2a 工具候选收敛、DP-2b 工具枚举约束、DP-3 大体积工具结果裁剪、DP-4 Auto 档位回退，以及决策模型选择——**不在 YAML**，而是库内的热更新参数，在 UI「运行参数」页调节，经 `GET/PATCH /v0/settings/runtime` 读写。YAML 只提供启动基线。
+
 ### `conversation`
 
 | 字段 | 默认 / 说明 |
@@ -86,10 +87,6 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 ### `storage`
 
 Blob：`driver` 为 `file` / `s3` / `memory`（空则 bootstrap 默认 memory）。`file.root_dir`；`s3.*`（`endpoint`、`region`、`bucket`、`prefix` 默认 `baize`、`access_key_env` / `secret_key_env` 默认 `S3_ACCESS_KEY` / `S3_SECRET_KEY`、`use_ssl`、`path_style`、`auto_create_bucket`）。
-
-### `mock_ticket`
-
-`listen`：演示 mock-ticket 侧车，默认 `:18080`；`off` 可关。
 
 ### `control_plane`
 
@@ -137,7 +134,7 @@ channels:
 |------|------|
 | `BAIZE_LISTEN` | 非空时覆盖 YAML `listen` |
 | `BAIZE_API_KEY` | 默认 LLM Key（可由 `llm.api_key_env` 改名） |
-| `BAIZE_SETTINGS_KEY` | 设置 / 收件箱 / MCP OAuth 等密封；`demo` 未设时用临时 demo key |
+| `BAIZE_SETTINGS_KEY` | 设置 / 收件箱 / MCP OAuth 等密封；未设置时无法密封或打开密钥（相关写接口返回 400），生产必须配置 |
 | `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN` 等 | 经 YAML `env:…` 引用，非硬编码名 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `storage.s3` 默认凭证 env |
 | `BAIZE_TEST_PG_DSN` | **仅测试 / CI** Postgres |
