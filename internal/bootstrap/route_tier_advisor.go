@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rebornace/baize/internal/decide"
+	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -25,17 +26,19 @@ type routeTierAdvisor struct {
 	decider  decide.Ask
 }
 
-// AdviseTier returns light/power only when the master + DP-4 switches are on,
-// the turn meets the length floor, and the layer gives a usable answer. Every
-// other case (off, short, degraded, unrecognized value) returns ok=false so the
-// router keeps ClassifyTask's original standard tier.
-func (a *routeTierAdvisor) AdviseTier(ctx context.Context, text string) (string, bool) {
+// AdviseTier returns a usable tier (TierAdviceOK) only when the master + DP-4
+// switches are on, the turn meets the length floor, and the layer gives a
+// usable answer. Off/short returns TierAdviceSkipped (point never consulted).
+// Errors, degraded answers, and unrecognized values return TierAdviceDegraded
+// (it was consulted but failed open) so the router can record the degradation
+// while keeping ClassifyTask's original standard tier.
+func (a *routeTierAdvisor) AdviseTier(ctx context.Context, text string) llm.TierAdvice {
 	if a.settings == nil || a.decider == nil {
-		return "", false
+		return llm.TierAdvice{Outcome: llm.TierAdviceSkipped}
 	}
 	k := a.settings.Knobs()
 	if !k.DecideEnabled || !k.DecideRouteEnabled {
-		return "", false
+		return llm.TierAdvice{Outcome: llm.TierAdviceSkipped}
 	}
 	minRunes := k.DecideRouteMinRunes
 	if minRunes <= 0 {
@@ -43,7 +46,7 @@ func (a *routeTierAdvisor) AdviseTier(ctx context.Context, text string) (string,
 	}
 	text = strings.TrimSpace(text)
 	if len([]rune(text)) < minRunes {
-		return "", false
+		return llm.TierAdvice{Outcome: llm.TierAdviceSkipped}
 	}
 
 	probe := text
@@ -60,11 +63,11 @@ func (a *routeTierAdvisor) AdviseTier(ctx context.Context, text string) (string,
 		},
 	})
 	if err != nil || ans.Degraded {
-		return "", false
+		return llm.TierAdvice{Outcome: llm.TierAdviceDegraded}
 	}
 	tier := store.NormalizeAutoTier(ans.Value)
 	if tier != store.AutoTierLight && tier != store.AutoTierPower {
-		return "", false
+		return llm.TierAdvice{Outcome: llm.TierAdviceDegraded}
 	}
-	return tier, true
+	return llm.TierAdvice{Outcome: llm.TierAdviceOK, Tier: tier}
 }

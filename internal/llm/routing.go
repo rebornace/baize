@@ -38,6 +38,13 @@ type ProfileSelection struct {
 	// manual choice it is the selected profile's tier. It lets the DP-0 event
 	// record the tier actually used without recomputing the classification.
 	Tier string
+	// RouteAdvisorDegraded is true when the DP-4 advisor was consulted (the
+	// Auto turn landed on standard) but the layer failed open, so the tier
+	// stayed standard. Since the advisor runs before the run exists, the
+	// caller records the unified decide.degraded event right after run
+	// creation. False when the point was skipped or the advisor returned a
+	// usable tier.
+	RouteAdvisorDegraded bool
 }
 
 // TaskSignals are the deterministic, per-turn inputs used to judge task
@@ -236,20 +243,30 @@ func ResolveModel(choice string, sig TaskSignals, profiles []RoutingProfile, opt
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		if picked, ok := cfg.advisor.AdviseTier(ctx, sig.Text); ok {
-			switch store.NormalizeAutoTier(picked) {
+		if adv := cfg.advisor.AdviseTier(ctx, sig.Text); adv.Outcome == TierAdviceOK {
+			switch store.NormalizeAutoTier(adv.Tier) {
 			case store.AutoTierLight, store.AutoTierPower:
-				desired = store.NormalizeAutoTier(picked)
+				desired = store.NormalizeAutoTier(adv.Tier)
 			}
+		} else if adv.Outcome == TierAdviceDegraded {
+			// Layer was consulted but failed open; carry the signal out so the
+			// caller can record decide.degraded once the run exists.
+			sel.RouteAdvisorDegraded = true
 		}
 	}
 	requireVision := sig.HasImages
 	id, _ := pickByTier(profiles, desired, requireVision)
 	if requireVision {
 		// No vision model at all: caller degrades images to a text note / warns.
-		return ProfileSelection{ProfileID: id, Auto: true, Tier: desired}, id != ""
+		sel.ProfileID = id
+		sel.Auto = true
+		sel.Tier = desired
+		return sel, id != ""
 	}
-	return ProfileSelection{ProfileID: id, Auto: true, Tier: desired}, true
+	sel.ProfileID = id
+	sel.Auto = true
+	sel.Tier = desired
+	return sel, true
 }
 
 // RoutingProfilesFrom converts stored profiles to the compact router form.

@@ -8,11 +8,35 @@ import "context"
 // acyclic (decide already imports llm); bootstrap supplies an adapter over the
 // decide layer.
 //
-// AdviseTier returns the chosen tier (store.AutoTierLight / AutoTierPower) and
-// ok=true. Any abstention, error, or unrecognized tier returns ok=false, in
-// which case the caller keeps the original classifier result (standard).
+// TierAdviceOutcome distinguishes the advisor's three results so the caller
+// knows when to record a unified decide.degraded event:
+type TierAdviceOutcome int
+
+const (
+	// TierAdviceSkipped means the point was never eligible (switches off or
+	// turn shorter than the floor) — the classifier tier stands, no event.
+	TierAdviceSkipped TierAdviceOutcome = iota
+	// TierAdviceDegraded means it WAS consulted but the layer failed open
+	// (error / degraded / unrecognized tier) — caller keeps standard and this
+	// is a decision-layer degradation worth recording.
+	TierAdviceDegraded
+	// TierAdviceOK means a usable tier was returned in Tier.
+	TierAdviceOK
+)
+
+// TierAdvice is the structured DP-4 result. Tier is set when Outcome is
+// TierAdviceOK (store.AutoTierLight / AutoTierPower).
+type TierAdvice struct {
+	Outcome TierAdviceOutcome
+	Tier    string
+}
+
+// AdviseTier returns the chosen tier (store.AutoTierLight / AutoTierPower) with
+// Outcome=TierAdviceOK. When the point is ineligible it returns TierAdviceSkipped;
+// when it was consulted but the layer failed open it returns TierAdviceDegraded.
+// In both non-OK cases the caller keeps the original classifier result.
 type TierAdvisor interface {
-	AdviseTier(ctx context.Context, text string) (tier string, ok bool)
+	AdviseTier(ctx context.Context, text string) TierAdvice
 }
 
 // ResolveOption configures ResolveModel. The functional-options shape keeps

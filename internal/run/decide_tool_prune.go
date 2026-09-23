@@ -61,12 +61,18 @@ func (e *Engine) pruneToolResults(ctx context.Context, runID string, messages []
 	maxJudged := e.effectiveDecidePruneMaxJudged()
 	for _, idx := range bulkyToolCandidates(messages, threshold, maxJudged) {
 		m := messages[idx]
-		ans, _ := e.Decider.Ask(ctx, decide.Question{
+		ans, perr := e.Decider.Ask(ctx, decide.Question{
 			Kind:    decide.KindPruneToolResult,
 			Context: buildPruneProbe(m),
 			OnFail:  decide.VerdictYes,
 			TraceID: runID,
 		})
+		if degradedFromAsk(ans, perr) {
+			e.emitDecideDegraded(runID, decide.KindPruneToolResult, map[string]any{
+				"source":       ans.Source,
+				"tool_call_id": m.ToolCallID,
+			})
+		}
 		// Fail open: only a positive, non-degraded No prunes.
 		if ans.Degraded || ans.Verdict != decide.VerdictNo {
 			continue

@@ -95,7 +95,7 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 	if trajectory != "" {
 		sysContext += "\n到此为止的执行轨迹（精简）：\n" + trajectory + "\n"
 	}
-	sysAns, _ := e.Decider.Ask(ctx, decide.Question{
+	sysAns, sysErr := e.Decider.Ask(ctx, decide.Question{
 		Kind:         decide.KindSystemTargets,
 		Context:      sysContext,
 		Options:      systemIDs,
@@ -103,6 +103,12 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 		OnFail:       decide.VerdictYes,
 		TraceID:      runID,
 	})
+	if degradedFromAsk(sysAns, sysErr) {
+		e.emitDecideDegraded(runID, decide.KindSystemTargets, map[string]any{
+			"source": sysAns.Source,
+			"turn":   turn,
+		})
+	}
 	pickedSystems := validSystemNames(sysAns.Values, systemIDs)
 	// Hybrid routing: systems hit deterministically by the query's own
 	// discriminative domain words (宠物/订单…) are FORCED and can never be
@@ -157,13 +163,20 @@ func (e *Engine) recordToolShadow(ctx context.Context, runID string, turn int, s
 	// already consulted): zero added decision tokens. noMatch likewise skips.
 	modelConsulted := false
 	if !enforce && !noMatch {
-		ans, _ = e.Decider.Ask(ctx, decide.Question{
+		var aerr error
+		ans, aerr = e.Decider.Ask(ctx, decide.Question{
 			Kind:    decide.KindToolCandidates,
 			Context: decisionContext,
 			Options: preNames,
 			OnFail:  decide.VerdictYes,
 			TraceID: runID,
 		})
+		if degradedFromAsk(ans, aerr) {
+			e.emitDecideDegraded(runID, decide.KindToolCandidates, map[string]any{
+				"source": ans.Source,
+				"turn":   turn,
+			})
+		}
 		modelConsulted = true
 	}
 

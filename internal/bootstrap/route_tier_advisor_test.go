@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rebornace/baize/internal/decide"
+	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -33,9 +34,9 @@ func TestRouteTierAdvisorPower(t *testing.T) {
 	}
 	ask := &stubAsk{ans: decide.Answer{Value: store.AutoTierPower, Source: decide.SourceRemote}}
 	a := newAdvisor(t, k, ask)
-	got, ok := a.AdviseTier(context.Background(), "这是一段足够长的请求文本用来触发档位判断")
-	if !ok || got != store.AutoTierPower {
-		t.Fatalf("got=%q ok=%v want power", got, ok)
+	got := a.AdviseTier(context.Background(), "这是一段足够长的请求文本用来触发档位判断")
+	if got.Outcome != llm.TierAdviceOK || got.Tier != store.AutoTierPower {
+		t.Fatalf("got=%+v want OK/power", got)
 	}
 }
 
@@ -47,8 +48,8 @@ func TestRouteTierAdvisorShortRejected(t *testing.T) {
 	called := false
 	ask := &recordingAsk{record: &called}
 	a := newAdvisor(t, k, ask)
-	if _, ok := a.AdviseTier(context.Background(), "短"); ok {
-		t.Fatal("short turn must not be advised")
+	if got := a.AdviseTier(context.Background(), "短"); got.Outcome != llm.TierAdviceSkipped {
+		t.Fatalf("got=%+v want skipped", got)
 	}
 	if called {
 		t.Fatal("decider must not be called for a short turn")
@@ -64,21 +65,21 @@ func TestRouteTierAdvisorSwitchesOff(t *testing.T) {
 	}
 	for i, k := range cases {
 		a := newAdvisor(t, k, ask)
-		if _, ok := a.AdviseTier(context.Background(), "这是一段足够长的文本内容用来触发判断"); ok {
-			t.Fatalf("case %d: must abstain when a switch is off", i)
+		if got := a.AdviseTier(context.Background(), "这是一段足够长的文本内容用来触发判断"); got.Outcome != llm.TierAdviceSkipped {
+			t.Fatalf("case %d: got=%+v want skipped when a switch is off", i, got)
 		}
 	}
 }
 
-// Degraded answer -> abstain (keep standard).
+// Degraded answer -> TierAdviceDegraded (keep standard; recorded).
 func TestRouteTierAdvisorDegraded(t *testing.T) {
 	k := runtimecfg.Knobs{
 		DecideEnabled: true, DecideRouteEnabled: true, DecideRouteMinRunes: 1,
 	}
 	ask := &stubAsk{ans: decide.Answer{Value: store.AutoTierPower, Degraded: true}}
 	a := newAdvisor(t, k, ask)
-	if _, ok := a.AdviseTier(context.Background(), "这是一段足够长的文本内容用来触发判断"); ok {
-		t.Fatal("degraded answer must be rejected")
+	if got := a.AdviseTier(context.Background(), "这是一段足够长的文本内容用来触发判断"); got.Outcome != llm.TierAdviceDegraded {
+		t.Fatalf("got=%+v want degraded", got)
 	}
 }
 

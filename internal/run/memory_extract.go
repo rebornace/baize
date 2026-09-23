@@ -52,6 +52,11 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 			OnFail:  decide.VerdictYes,
 			TraceID: runID,
 		})
+		// Unified observability: when the layer fails open, record it once.
+		// The extraction below still proceeds (OnFail=Yes).
+		if degradedFromAsk(ans, derr) {
+			e.emitDecideDegraded(runID, decide.KindMemoryExtract, map[string]any{"source": ans.Source})
+		}
 		// A returned error is treated as fail-open (extract as today). The
 		// production *decide.Chain never errors, so this only happens with a
 		// raw implementation; safety wins over a saved call.

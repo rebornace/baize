@@ -11,6 +11,7 @@ import (
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/authcred"
+	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/plugincallback"
@@ -291,6 +292,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// DP-4 fail-open happens before the run exists, so the unified
+	// decide.degraded event is attached as a pre-event (written with the run
+	// at creation). Skipped points and successful overrides add nothing.
+	preEvents := []store.Event{modelRoutedEvent}
+	if sel.RouteAdvisorDegraded {
+		preEvents = append(preEvents, store.Event{
+			Type: run.EventDecideDegraded,
+			Data: map[string]any{"kind": decide.KindRouteTier},
+		})
+	}
+
 	updated, err := s.startRun(r.Context(), startRunInput{
 		AgentID:        body.AgentID,
 		Input:          displayText,
@@ -300,7 +312,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		Webhook:        webhookCfg,
 		Passthrough:    passthrough,
 		UserParts:      userParts,
-		PreEvents:      []store.Event{modelRoutedEvent},
+		PreEvents:      preEvents,
 		ModelProfileID: modelProfileID,
 		ThinkingLevel:  lvl,
 		BubbleContent:  bubbleContent,

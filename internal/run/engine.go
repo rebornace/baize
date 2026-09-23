@@ -52,6 +52,13 @@ const (
 	// replaced by a short placeholder inside the run so it stops growing the
 	// per-turn prompt. The raw result remains in the tool.result event.
 	EventDecideToolPruned = "decide.tool_pruned"
+	// EventDecideDegraded is the unified observability event for decision-layer
+	// fail-open. Every decision point (DP-1/2a/3/4) emits this once when its
+	// verdict comes back degraded (or the raw implementation errors), so a
+	// single subscription can monitor layer health across all kinds instead of
+	// stitching per-event `degraded` flags. The point's normal fail-open
+	// behavior is unchanged; this event records only.
+	EventDecideDegraded = "decide.degraded"
 
 	DefaultToolTimeout = 60 * time.Second
 )
