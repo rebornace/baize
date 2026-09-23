@@ -1,6 +1,7 @@
 package run
 
 import (
+	"encoding/json"
 	"unicode"
 	"unicode/utf8"
 
@@ -66,11 +67,23 @@ func EstimateMessagesTokens(msgs []llm.Message) int {
 	return total
 }
 
-// EstimateToolsTokens approximates the cost of tool schemas by name+description.
+// EstimateToolsTokens approximates the cost of the tool schemas actually
+// sent to the model. It counts name + description PLUS the serialized
+// InputSchema: the parameter schemas are typically several times larger than
+// name+description and omitting them under-counted prompt projections by
+// ~70% with a full catalog (measured via tokens.estimate), making
+// compaction trigger too late and risking a context overflow on long
+// conversations. Marshal failure on one schema simply contributes no
+// schema tokens for that tool (best-effort).
 func EstimateToolsTokens(tools []llm.ToolSpec) int {
 	total := 0
 	for _, t := range tools {
 		total += EstimateTextTokens(t.Name) + EstimateTextTokens(t.Description) + perMessageTokens
+		if len(t.InputSchema) > 0 {
+			if raw, err := json.Marshal(t.InputSchema); err == nil {
+				total += EstimateTextTokens(string(raw))
+			}
+		}
 	}
 	return total
 }

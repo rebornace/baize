@@ -59,6 +59,12 @@ const (
 	// stitching per-event `degraded` flags. The point's normal fail-open
 	// behavior is unchanged; this event records only.
 	EventDecideDegraded = "decide.degraded"
+	// EventTokenEstimate is an observability-only event comparing the
+	// token estimator's prompt projection for the payload actually sent with
+	// the provider-reported prompt_tokens. It changes no behavior (compaction
+	// triggering is untouched); it exists to quantify estimator bias before
+	// deciding whether the tool-schema accounting should be corrected.
+	EventTokenEstimate = "tokens.estimate"
 
 	DefaultToolTimeout = 60 * time.Second
 )
@@ -572,6 +578,9 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					Type: EventLLMUsage,
 					Data: usageData(turn, msg.Usage),
 				})
+				// Estimator-bias observation (no behavior change): messages
+				// here is exactly the payload sent; msg is appended below.
+				e.emitTokenEstimate(runID, turn, messages, specs, msg.Usage)
 			}
 			// Strip thinking so in-run history never re-feeds it to the model
 			// (eventsAfterInput / buildMessages already omit it).
@@ -638,6 +647,8 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			for k, v := range usageData(turn, msg.Usage) {
 				msgData[k] = v
 			}
+			// Estimator-bias observation (no behavior change).
+			e.emitTokenEstimate(runID, turn, messages, specs, msg.Usage)
 		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMMessage,

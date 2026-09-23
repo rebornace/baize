@@ -1,6 +1,7 @@
 package run
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -67,9 +68,15 @@ func TestEstimateToolsTokens(t *testing.T) {
 	if EstimateToolsTokens(nil) != 0 {
 		t.Fatal("nil tools -> 0")
 	}
-	// Name "get_weather" 11 字符 -> ceil(11/4)=3；Description 40 字符 -> 10；开销 4 = 17
-	tools := []llm.ToolSpec{{Name: "get_weather", Description: strings.Repeat("d", 40)}}
-	if got := EstimateToolsTokens(tools); got != 17 {
-		t.Fatalf("tool: 3 name + 10 desc + 4 overhead = 17, got %d", got)
+	// Name "get_weather" -> ceil(11/4)=3；Description 40 字符 -> 10；开销 4；
+	// InputSchema `{"type":"object"}` 序列化 15 ASCII 字节 -> ceil(15/4)=4 = 21
+	schema := map[string]any{"type": "object"}
+	raw, _ := json.Marshal(schema)
+	tools := []llm.ToolSpec{{Name: "get_weather", Description: strings.Repeat("d", 40), InputSchema: schema}}
+	want := EstimateTextTokens("get_weather") +
+		EstimateTextTokens(strings.Repeat("d", 40)) + perMessageTokens +
+		EstimateTextTokens(string(raw))
+	if got := EstimateToolsTokens(tools); got != want {
+		t.Fatalf("tool tokens=%d want %d (incl. InputSchema)", got, want)
 	}
 }
