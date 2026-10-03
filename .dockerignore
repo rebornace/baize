@@ -1,0 +1,13 @@
+.git
+.cursor
+.superpowers
+.worktrees
+data
+.env
+.env.*
+configs/default.local.yaml
+web/chat/node_modules
+*.exe
+*.test
+baize-stdout.log
+baize-stderr.log

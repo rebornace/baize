@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: Mock Ticket API
+  version: 0.1.0
+paths:
+  /tickets:
+    get:
+      operationId: list_tickets
+      responses:
+        "200":
+          description: ok
+        "400":
+          description: bad request
+    post:
+      operationId: create_ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                priority: { type: string }
+      responses:
+        "201":
+          description: created
+        "400":
+          description: bad request
+  /tickets/{id}:
+    get:
+      operationId: get_ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+        "404":
+          description: not found
+    patch:
+      operationId: update_ticket_status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string }
+      responses:
+        "200":
+          description: ok
+        "400":
+          description: bad request
+        "404":
+          description: not found

@@ -1,0 +1,11 @@
+services:
+  baize:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      BAIZE_API_KEY: ${BAIZE_API_KEY:?set BAIZE_API_KEY for production compose}
+    volumes:
+      - baize-data:/app/data
+volumes:
+  baize-data:
