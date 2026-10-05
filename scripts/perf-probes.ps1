@@ -1,7 +1,6 @@
 # CLEAN-PERF-HOT: run four local perf probes (bench x3) and print summary path.
 # Usage: .\scripts\perf-probes.ps1
 $ErrorActionPreference = "Stop"
-$env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
 
 $out = Join-Path $env:TEMP "baize-perf-probes.txt"
 if (Test-Path $out) {

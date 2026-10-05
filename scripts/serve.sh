@@ -24,7 +24,7 @@ if [ -z "${GOSUMDB:-}" ]; then
 fi
 
 if ! command -v go >/dev/null 2>&1; then
-	echo "go not found. Install Go 1.22+ or put it on PATH." >&2
+	echo "go not found. Install Go 1.25+ or put it on PATH." >&2
 	exit 1
 fi
 

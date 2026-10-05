@@ -5,7 +5,6 @@
 For contributors reproducing hot-path timings on their machine. Use your local Go (`go version`); results vary with hardware and load.
 
 ```powershell
-$env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
 .\scripts\perf-probes.ps1
 ```
 

@@ -106,10 +106,6 @@ try {
     Write-Host "job-object attach skipped: $($_.Exception.Message)"
 }
 
-$sdkGo = Join-Path $env:USERPROFILE "sdk\go\bin"
-if (Test-Path (Join-Path $sdkGo "go.exe")) {
-    $env:Path = "$sdkGo;" + $env:Path
-}
 if (-not $env:GOPROXY) {
     $env:GOPROXY = "https://goproxy.cn,direct"
 }
@@ -117,9 +113,32 @@ if (-not $env:GOSUMDB) {
     $env:GOSUMDB = "sum.golang.google.cn"
 }
 
+# serve.cmd starts a new PowerShell that may still have a stale PATH from an
+# older terminal. Prefer `go` already on PATH; if missing, merge User+Machine
+# PATH (and User GOROOT\bin) from the registry so a normal Go install works
+# without hardcoding a machine-specific SDK folder.
 $go = Get-Command go -ErrorAction SilentlyContinue
 if (-not $go) {
-    Write-Error "go not found. Install Go 1.22+ or put it on PATH (e.g. %USERPROFILE%\sdk\go\bin)."
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userRoot = [Environment]::GetEnvironmentVariable("GOROOT", "User")
+    if (-not $userRoot) {
+        $userRoot = [Environment]::GetEnvironmentVariable("GOROOT", "Machine")
+    }
+    $prefix = @()
+    if ($userRoot) {
+        $prefix += (Join-Path $userRoot "bin")
+        if (-not $env:GOROOT) { $env:GOROOT = $userRoot }
+    }
+    $env:Path = (@($prefix) + @($userPath, $machinePath, $env:Path) | Where-Object { $_ }) -join ";"
+    $userToolchain = [Environment]::GetEnvironmentVariable("GOTOOLCHAIN", "User")
+    if ($userToolchain -and -not $env:GOTOOLCHAIN) {
+        $env:GOTOOLCHAIN = $userToolchain
+    }
+    $go = Get-Command go -ErrorAction SilentlyContinue
+}
+if (-not $go) {
+    Write-Error "go not found. Install Go 1.25+ and add it to PATH."
     exit 1
 }
 

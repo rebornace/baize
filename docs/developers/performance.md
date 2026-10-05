@@ -5,7 +5,6 @@
 给贡献者在本机复现热点路径耗时用。使用当前机器的 Go（`go version`）；结果因硬件与负载而异。
 
 ```powershell
-$env:PATH = "$env:USERPROFILE\.local\go1.25.0\bin;$env:PATH"
 .\scripts\perf-probes.ps1
 ```
 
