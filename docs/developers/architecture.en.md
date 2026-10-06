@@ -73,6 +73,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 - Agents are **not** bound to a connector subset: by default each Run gives the model all enabled tools (tool names unique across connectors). When DP-2a tool narrowing is on and the tool count exceeds the threshold, a keyword prefilter plus the decision layer first narrow the set, and only the candidate subset is sent to the main model (see the tool-narrowing settings on the Runtime page). Skill `tools:` is a **floor**: declared tools are preserved through narrowing; undeclared enabled connector tools remain candidates and are not hidden by the skill list alone.
 - **Workspaces:** Web chats carry `workspace_id` (default `default`). Captured logins are shared inside a workspace; other workspaces, channel sessions (`source:account:peer`), and MCP-export identities stay isolated. v1 does not move existing chats between workspaces.
 - **Model-facing projection** (Runtime “keep important facts in long chats”, default off): edits only the projection fed to the model (pin / summary / drop bulky tool results); it does **not** rewrite `conversation.Messages`. Fail-open to the Compactor. Does not promise lower cloud API tokens.
+- **Rolling summary (Compactor):** when over budget, older turns become a structured checkpoint (goal, progress, decisions, facts to keep). Raw messages stay; the prompt must not encode a global “do this before exploring” policy.
 
 ## Agent run shapes
 

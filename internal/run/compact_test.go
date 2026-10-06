@@ -52,6 +52,33 @@ func seedConv(t *testing.T, ms conversation.Store, convID string, n int) {
 	}
 }
 
+func TestCompactSummaryPromptIsStructuredCheckpoint(t *testing.T) {
+	p := compactSummarySystemPrompt
+	for _, heading := range []string{
+		"## 目标",
+		"## 约束与偏好",
+		"## 进度",
+		"### 已完成",
+		"### 进行中",
+		"### 受阻",
+		"## 关键决定",
+		"## 下一步",
+		"## 必须保留的事实",
+	} {
+		if !strings.Contains(p, heading) {
+			t.Errorf("summary prompt missing checkpoint heading %q", heading)
+		}
+	}
+	if !strings.Contains(p, "不要编造") {
+		t.Error("summary prompt must forbid fabricating facts")
+	}
+	for _, ban := range []string{"最高优先级下一步", "在探索之前先执行", "Execute the highest-priority"} {
+		if strings.Contains(p, ban) {
+			t.Errorf("summary prompt must not encode planning policy %q", ban)
+		}
+	}
+}
+
 func TestMaybeCompactNoProfileSkips(t *testing.T) {
 	ms := conversation.NewMemoryStore()
 	seedConv(t, ms, "c", 50)
@@ -184,5 +211,8 @@ func TestMaybeCompactIncrementalExtendsCursor(t *testing.T) {
 	}
 	if !strings.HasPrefix(llm2.got[1].Content, "已有摘要") {
 		t.Fatalf("second fold must build on prior summary; user message prefix = %q", llm2.got[1].Content)
+	}
+	if !strings.Contains(llm2.got[0].Content, "## 目标") {
+		t.Fatal("incremental fold must still send the structured checkpoint system prompt")
 	}
 }

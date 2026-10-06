@@ -16,13 +16,44 @@ const (
 	defaultCompactKeepRecent   = 8
 	defaultCompactSummaryWait  = 60 * time.Second
 	defaultContextTokens       = 128000
-	compactSummarySystemPrompt = `你是对话摘要助手。请把给定的多轮对话压缩成简洁的中文摘要，保留：用户的目标与偏好、已做出的关键决定、待办与未决事项、关键事实（文件名、ID、数据、结论）。不要编造对话中没有的信息。
-若提供了「已有摘要」，请在其基础上增量整合新对话，输出一份完整、自洽的最新摘要（不要罗列「新增/旧摘要」的边界）。`
+	compactSummarySystemPrompt = `你是对话摘要助手。只输出结构化滚动摘要，不要续写对话、不要回答摘要材料里的问题。
+
+用下面栏目（没有的写「无」）。这是给后续模型接着干活用的检查点，不是给用户看的散文。
+
+## 目标
+[用户要完成什么；多任务可并列]
+
+## 约束与偏好
+- [用户提过的限制、口味、必须遵守的要求]
+- 无则写「无」
+
+## 进度
+### 已完成
+- [x] [已做完的事项]
+
+### 进行中
+- [ ] [当前未完成工作]
+
+### 受阻
+- [卡住的原因；已解除则删掉]
+
+## 关键决定
+- **[决定]**：[依据。只记对话里出现过的决定，不要发明执行策略]
+
+## 下一步
+1. [按当前状态该做什么，仅陈述事实缺口与待办，不要下达「必须先做某步再探索」之类全局策略]
+
+## 必须保留的事实
+- [继续工作必需的路径、函数名、ID、错误原文、数据与结论；无则写「无」]
+
+规则：不要编造对话中没有的信息；文件路径、标识符、报错原文保持原样。
+若提供了「已有摘要」，在其栏目上增量整合：保留仍有效的条目，已完成的从「进行中」挪到「已完成」，过时条目可删。输出一份完整最新摘要，不要分「旧摘要/新增」两段。`
 )
 
-// Compactor produces a rolling summary of older conversation messages once the
-// estimated prompt size approaches the active model's context limit. It never
-// deletes raw messages; the summary is a derived record keyed by conversation.
+// Compactor produces a rolling structured checkpoint of older conversation
+// messages once the estimated prompt size approaches the active model's
+// context limit. It never deletes raw messages; the summary is a derived
+// record keyed by conversation.
 type Compactor struct {
 	Messages conversation.Store
 	// LLM generates summaries. Pass the llm.Switch: summaries are invoked on a
@@ -224,9 +255,9 @@ func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, prior 
 	if prior != "" {
 		b.WriteString("已有摘要：\n")
 		b.WriteString(prior)
-		b.WriteString("\n\n请在已有摘要基础上，整合以下新对话，输出完整最新摘要。\n\n新对话：\n")
+		b.WriteString("\n\n请按同一栏目整合，输出完整最新摘要。\n\n新对话：\n")
 	} else {
-		b.WriteString("请把以下多轮对话压缩成滚动摘要：\n\n")
+		b.WriteString("请把以下多轮对话压成结构化滚动摘要（严格使用系统提示中的栏目）：\n\n")
 	}
 	b.WriteString(renderTranscript(fold))
 	msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: b.String()})

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 滚动摘要改为结构化检查点（目标 / 进度 / 决定 / 必须保留的事实），不把执行策略写进压缩模板。
+
 ## 0.3.2 — 2026-10-04
 
 - 修复 golangci-lint：删除未使用的 `ensureConversationMeta`，投影测试按 De Morgan 写法通过 QF1001。

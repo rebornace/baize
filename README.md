@@ -63,7 +63,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 
 - **Memory**: store account-level facts the assistant can retrieve across chats.
 - **Attachments and object storage**: keep materials locally or in object storage.
-- **Context compaction**: long threads get rolling summaries so space goes to what still matters.
+- **Context compaction**: long threads get rolling structured checkpoints (goal / progress / decisions / facts to keep) so space goes to what still matters.
 - **Keep important facts in long chats** (optional Runtime knob, default off): when a thread gets long, the assistant may keep a model-facing projection of facts it still needs; on failure it falls back to compaction. This does not promise lower cloud API token use.
 - Conversation fork / rollback for everyday ops (console and API).
 - Web login identities are shared **per workspace**; channel sessions (e.g. WeChat) and MCP-export identities stay on their own isolation keys.
