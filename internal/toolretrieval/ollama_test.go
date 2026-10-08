@@ -11,11 +11,11 @@ import (
 
 func TestProbeOllamaAndEmbedding(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/tags":
+		switch r.URL.Path {
+		case "/api/tags":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"models":[]}`))
-		case r.URL.Path == "/v1/embeddings":
+		case "/v1/embeddings":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{{"embedding": []float32{0.1, 0.2}}},
 			})

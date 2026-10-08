@@ -2,7 +2,6 @@ package run
 
 import (
 	"context"
-	"sort"
 	"sync"
 
 	"github.com/rebornace/baize/internal/llm"
@@ -81,33 +80,6 @@ func prefilterRetrieve(eng *Engine, ctx context.Context, query string, specs []l
 		return nil, true, res.Widened, res.Mode
 	}
 	return toolindex.SpecsFromHits(res.Hits), false, res.Widened, res.Mode
-}
-
-// groupBySource buckets spec indices by ToolSpec.Source (used by system
-// description helpers).
-func groupBySource(specs []llm.ToolSpec, allowed map[string]bool) (map[string][]int, []string) {
-	groups := make(map[string][]int)
-	for i, s := range specs {
-		groups[s.Source] = append(groups[s.Source], i)
-	}
-	ids := make([]string, 0, len(groups))
-	for s := range groups {
-		if s == "" {
-			continue
-		}
-		if allowed != nil && !allowed[s] {
-			delete(groups, s)
-			continue
-		}
-		ids = append(ids, s)
-	}
-	sort.Strings(ids)
-	order := make([]string, 0, len(ids)+1)
-	if _, ok := groups[""]; ok {
-		order = append(order, "")
-	}
-	order = append(order, ids...)
-	return groups, order
 }
 
 func cleanQueryTokens(raw map[string]bool) map[string]bool {

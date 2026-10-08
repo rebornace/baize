@@ -485,20 +485,6 @@ func hasDeleteIntent(query string) bool { return toolindex.HasDestructiveIntent(
 func hasDetailIntent(query string) bool { return toolindex.HasDetailIntent(query) }
 func hasListIntent(query string) bool   { return toolindex.HasListIntent(query) }
 
-// anyOverlap reports whether two token sets share a token.
-func anyOverlap(a, b map[string]bool) bool {
-	small, large := a, b
-	if len(b) < len(a) {
-		small, large = b, a
-	}
-	for t := range small {
-		if large[t] {
-			return true
-		}
-	}
-	return false
-}
-
 // preserveAuthTools forces a selected system's login/session primitives into
 // the candidate set. After a backend returns 401 the model must be able to call
 // *_login (establish a session) or *_me / current-session probes (check it),

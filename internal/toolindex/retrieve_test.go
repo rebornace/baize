@@ -112,7 +112,13 @@ func TestRetrievePathTokensHelpEnglishOps(t *testing.T) {
 
 func TestCatalogFingerprintStable(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "a", Description: "x"}}
-	if CatalogFingerprint(specs) != CatalogFingerprint(specs) {
-		t.Fatal("fingerprint must be stable")
+	a := CatalogFingerprint(specs)
+	b := CatalogFingerprint(specs)
+	if a == "" || a != b {
+		t.Fatal("fingerprint must be stable and non-empty")
+	}
+	other := CatalogFingerprint([]llm.ToolSpec{{Name: "b", Description: "y"}})
+	if a == other {
+		t.Fatal("different catalogs must fingerprint differently")
 	}
 }
