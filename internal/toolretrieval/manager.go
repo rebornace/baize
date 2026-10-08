@@ -43,11 +43,11 @@ const (
 
 // Status is the GET /settings/tool-retrieval payload.
 type Status struct {
-	Mode          string            `json:"mode"` // "standard" | "enhanced"
-	Phase         Phase             `json:"phase"`
-	Detail        string            `json:"detail,omitempty"`
-	Error         string            `json:"error,omitempty"`
-	Provider      string            `json:"provider"` // "local" | "api"
+	Mode                string            `json:"mode"` // "standard" | "enhanced"
+	Phase               Phase             `json:"phase"`
+	Detail              string            `json:"detail,omitempty"`
+	Error               string            `json:"error,omitempty"`
+	Provider            string            `json:"provider"`         // "local" | "api"
 	OllamaInstalled     bool              `json:"ollama_installed"` // app/binary present on disk
 	OllamaRunning       bool              `json:"ollama_running"`   // API answering
 	EmbeddingOK         bool              `json:"embedding_ok"`
@@ -105,10 +105,10 @@ type ApplyEmbedder func(emb toolindex.Embedder)
 // Manager orchestrates Ollama GUI install + model pull + engine wiring,
 // or OpenAI-compatible remote/self-hosted embedding APIs.
 type Manager struct {
-	Store  SettingsRW
-	Apply  ApplyEmbedder
-	Model  string
-	Base   string // ollama root for local, default DefaultOllamaBaseURL
+	Store     SettingsRW
+	Apply     ApplyEmbedder
+	Model     string
+	Base      string // ollama root for local, default DefaultOllamaBaseURL
 	APIURL    string // openai-compatible …/v1 for api provider
 	APIKey    string
 	Prov      string // ProviderLocal | ProviderAPI

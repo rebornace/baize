@@ -250,7 +250,7 @@ func PullModel(ctx context.Context, ollamaBase, model string, onProgress func(In
 // InstallerHint describes how the current OS installs Ollama without a CLI.
 type InstallerHint struct {
 	GOOS            string   `json:"goos"`
-	Mode            string   `json:"mode"` // "windows_exe" | "open_download_page"
+	Mode            string   `json:"mode"`                    // "windows_exe" | "open_download_page"
 	InstallerURL    string   `json:"installer_url,omitempty"` // preferred (usually CN mirror)
 	MirrorURLs      []string `json:"mirror_urls,omitempty"`
 	DownloadPageURL string   `json:"download_page_url"`

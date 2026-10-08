@@ -372,4 +372,3 @@ func SpecsFromHits(hits []Hit) []llm.ToolSpec {
 	}
 	return out
 }
-

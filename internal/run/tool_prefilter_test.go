@@ -252,6 +252,7 @@ func TestBuildSystemDescriptions(t *testing.T) {
 		t.Fatalf("mall desc should contain 订单, got %q", d["mall"])
 	}
 }
+
 // Soft source boost (not hard exclude): a wrong/incomplete preferred set must
 // not hide strongly matching tools from other connectors — that hard gate was
 // the failure mode for delete-user when routing picked the wrong system.

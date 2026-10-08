@@ -9,11 +9,11 @@ const (
 )
 
 type bm25Index struct {
-	docs     []Document
-	df       map[string]int
-	avgLen   float64
-	docLens  []int
-	nDocs    int
+	docs    []Document
+	df      map[string]int
+	avgLen  float64
+	docLens []int
+	nDocs   int
 }
 
 func buildBM25(docs []Document) bm25Index {
