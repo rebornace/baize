@@ -66,17 +66,11 @@ func ResolveModelsDir(baizeOverride string) (dir, source string) {
 // DiscoverPaths returns current path info for the UI.
 func DiscoverPaths(baizeModelsDir string) LocalPaths {
 	models, src := ResolveModelsDir(baizeModelsDir)
-	p := LocalPaths{
-		AppDir:            DefaultAppDir(),
+	return LocalPaths{
+		AppDir:            resolveAppDir(),
 		ConfigDir:         DefaultConfigDir(),
 		ModelsDir:         models,
 		ModelsDirSource:   src,
 		InstallerCacheDir: InstallerCacheDir(),
 	}
-	if runtime.GOOS == "windows" {
-		if gui := findLocalOllamaGUI(); gui != "" {
-			p.AppDir = filepath.Dir(gui)
-		}
-	}
-	return p
 }

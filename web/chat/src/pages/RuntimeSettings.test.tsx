@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 import type { RuntimeKnobs } from '../api'
@@ -60,12 +61,16 @@ async function renderRuntime() {
   await act(async () => {
     root.render(
       createElement(
-        LocaleProvider,
+        MemoryRouter,
         null,
         createElement(
-          GateContext.Provider,
-          { value: { role: 'admin', gateEnabled: true, operatorId: 'admin' } },
-          createElement(RuntimeSettings),
+          LocaleProvider,
+          null,
+          createElement(
+            GateContext.Provider,
+            { value: { role: 'admin', gateEnabled: true, operatorId: 'admin' } },
+            createElement(RuntimeSettings),
+          ),
         ),
       ),
     )
@@ -73,6 +78,15 @@ async function renderRuntime() {
     await new Promise((r) => setTimeout(r, 0))
   })
   return { host, root }
+}
+
+async function selectTab(host: HTMLElement, id: 'basics' | 'speed' | 'memory' | 'security') {
+  const btn = host.querySelector(`[data-testid="runtime-tab-${id}"]`) as HTMLButtonElement | null
+  expect(btn).toBeTruthy()
+  await act(async () => {
+    btn!.click()
+    await new Promise((r) => setTimeout(r, 0))
+  })
 }
 
 describe('RuntimeSettings reset credentials ConfirmDialog', () => {
@@ -89,6 +103,7 @@ describe('RuntimeSettings reset credentials ConfirmDialog', () => {
     })
     const confirmSpy = vi.spyOn(window, 'confirm')
     const { host, root } = await renderRuntime()
+    await selectTab(host, 'security')
 
     expect(host.textContent).toContain(RUNTIME.credsSourceOverride)
 
@@ -125,25 +140,32 @@ describe('RuntimeSettings humanize shell', () => {
     expect(host.textContent).not.toContain('运行时设置')
     expect(host.textContent).toContain(RUNTIME.sectionPublicBase)
     expect(host.textContent).toContain(RUNTIME.sectionBehavior)
+
+    await selectTab(host, 'memory')
     expect(host.textContent).toContain(RUNTIME.sectionCompact)
     expect(host.textContent).toContain(RUNTIME.contextProjectionEnabled)
     expect(host.textContent).toContain(RUNTIME.sectionMemory)
     expect(host.textContent).toContain(RUNTIME.memoryEnabled)
     expect(host.textContent).toContain(RUNTIME.memoryAutoExtract)
+    // 高级区内字段默认不可见：details 未 open
+    const details = host.querySelector('details')
+    expect(details).toBeTruthy()
+    expect(details!.open).toBe(false)
+    const advInputs = details!.querySelectorAll('input')
+    expect(advInputs.length).toBeGreaterThanOrEqual(4)
+
+    await selectTab(host, 'speed')
     expect(host.textContent).toContain(RUNTIME.sectionDecide)
     expect(host.textContent).toContain(RUNTIME.decideEnabled)
     expect(host.textContent).toContain(RUNTIME.decideToolRoutingEnabled)
     expect(host.textContent).toContain(RUNTIME.decideToolPruneEnabled)
     expect(host.textContent).toContain(RUNTIME.decideRouteEnabled)
+
+    await selectTab(host, 'security')
     expect(host.textContent).toContain(RUNTIME.sectionCreds)
-    // 高级区内字段默认不可见：details 未 open，或不在 DOM 可见区
-    const details = host.querySelector('details')
-    expect(details).toBeTruthy()
-    expect(details!.open).toBe(false)
+
+    await selectTab(host, 'basics')
     expect(host.textContent).toContain(RUNTIME.fieldMaxMessages)
-    // 折叠未开时，高级 label 仍可能在 summary 旁；字段 input 应在 details 内
-    const advInputs = details!.querySelectorAll('input')
-    expect(advInputs.length).toBeGreaterThanOrEqual(4)
     root.unmount()
     host.remove()
   })
@@ -151,6 +173,7 @@ describe('RuntimeSettings humanize shell', () => {
   it('credentials section uses humanized labels and empty named-ops copy', async () => {
     localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
     const { host, root } = await renderRuntime()
+    await selectTab(host, 'security')
     expect(host.textContent).toContain(RUNTIME.fieldOperatorToken)
     expect(host.textContent).toContain(RUNTIME.fieldAdminToken)
     expect(host.textContent).toContain(RUNTIME.namedOpsEmpty)
