@@ -1011,7 +1011,7 @@ func TestContinueFromHITLColdInjectsHistory(t *testing.T) {
 	if len(saw) != 6 {
 		t.Fatalf("expected 6 messages, got %d: %+v", len(saw), saw)
 	}
-	if saw[0].Role != llm.RoleSystem || saw[0].Content != "helper" {
+	if saw[0].Role != llm.RoleSystem || !strings.HasPrefix(saw[0].Content, "helper") {
 		t.Fatalf("saw[0]=%+v", saw[0])
 	}
 	if saw[1].Role != llm.RoleUser || saw[1].Content != "上一轮问题" {

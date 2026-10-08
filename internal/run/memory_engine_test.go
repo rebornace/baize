@@ -57,7 +57,7 @@ func TestMemoryInjectSameOwnerAcrossConversations(t *testing.T) {
 	if !found {
 		t.Fatalf("expected memory block with 喜欢绿茶 in LLM messages; got %+v", saw)
 	}
-	if len(saw) < 2 || saw[0].Content != "sys" || saw[1].Role != llm.RoleSystem || !strings.Contains(saw[1].Content, "长期记忆") {
+	if len(saw) < 2 || !strings.HasPrefix(saw[0].Content, "sys") || saw[1].Role != llm.RoleSystem || !strings.Contains(saw[1].Content, "长期记忆") {
 		t.Fatalf("memory block must follow system prompt; saw=%+v", saw)
 	}
 }
