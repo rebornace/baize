@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### 新功能
+
+- **决策模型（System One）**：设置「匹配与决策」一点启用本机 Ollama `tev1`（需 ≥0.35）或兼容 API；写入 `decide_systemone_*`；`/v0/settings/systemone*`。
+- 判断链：System One → 可选 `decide_profile_id` 聊天兜底 → Rules；留空兜底不会改用主助手。
+
+### 体验 / 性能
+
+- 国内 Windows Ollama 安装优先 [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files)，跳过体积不符的陈旧镜像。
+- 智能提速文案澄清：总闸 + 子开关才省主模型 token；「备用聊天小助手」仅为兜底。
+
+### 文档
+
+- README / 架构 / 配置 / HTTP API / JEV Spec 变更记录与现实现状对齐。
+
 ## 0.4.0 — 2026-10-08
 
 工具匹配增强：可选本机 Ollama / 云端 Embedding，设置页傻瓜式安装与清理。向后兼容；选 **minor**（v0.4.0）。

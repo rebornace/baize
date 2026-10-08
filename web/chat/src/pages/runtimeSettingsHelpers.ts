@@ -18,6 +18,10 @@ export interface KnobsForm {
   decide_enabled: boolean
   decide_memory_enabled: boolean
   decide_profile_id: string
+  decide_systemone_base_url: string
+  decide_systemone_api_key: string
+  decide_systemone_api_key_set: boolean
+  decide_systemone_model: string
   decide_tool_routing_enabled: boolean
   decide_tool_threshold: string
   decide_tool_pre_topk: string
@@ -38,6 +42,10 @@ type NonNumericKnobKeys =
   | 'decide_enabled'
   | 'decide_memory_enabled'
   | 'decide_profile_id'
+  | 'decide_systemone_base_url'
+  | 'decide_systemone_api_key'
+  | 'decide_systemone_api_key_set'
+  | 'decide_systemone_model'
   | 'decide_tool_routing_enabled'
   | 'decide_tool_choice_enabled'
   | 'decide_tool_prune_enabled'
@@ -206,6 +214,10 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     decide_enabled: k.decide_enabled,
     decide_memory_enabled: k.decide_memory_enabled,
     decide_profile_id: k.decide_profile_id,
+    decide_systemone_base_url: k.decide_systemone_base_url ?? '',
+    decide_systemone_api_key: '',
+    decide_systemone_api_key_set: Boolean(k.decide_systemone_api_key_set),
+    decide_systemone_model: k.decide_systemone_model ?? '',
     decide_tool_routing_enabled: k.decide_tool_routing_enabled,
     decide_tool_threshold: String(k.decide_tool_threshold),
     decide_tool_pre_topk: String(k.decide_tool_pre_topk),
@@ -288,6 +300,15 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   }
   if (form.decide_profile_id !== effective.decide_profile_id) {
     patch.decide_profile_id = form.decide_profile_id
+  }
+  if (form.decide_systemone_base_url !== (effective.decide_systemone_base_url ?? '')) {
+    patch.decide_systemone_base_url = form.decide_systemone_base_url
+  }
+  if (form.decide_systemone_api_key.trim() !== '') {
+    patch.decide_systemone_api_key = form.decide_systemone_api_key.trim()
+  }
+  if (form.decide_systemone_model !== (effective.decide_systemone_model ?? '')) {
+    patch.decide_systemone_model = form.decide_systemone_model
   }
   if (form.decide_tool_routing_enabled !== effective.decide_tool_routing_enabled) {
     patch.decide_tool_routing_enabled = form.decide_tool_routing_enabled

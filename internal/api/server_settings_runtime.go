@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/rebornace/baize/internal/runtimecfg"
 )
@@ -22,6 +23,9 @@ type runtimeKnobsJSON struct {
 	DecideEnabled                bool    `json:"decide_enabled"`
 	DecideMemoryEnabled          bool    `json:"decide_memory_enabled"`
 	DecideProfileID              string  `json:"decide_profile_id"`
+	DecideSystemOneBaseURL       string  `json:"decide_systemone_base_url"`
+	DecideSystemOneAPIKeySet     bool    `json:"decide_systemone_api_key_set"`
+	DecideSystemOneModel         string  `json:"decide_systemone_model"`
 	DecideToolRoutingEnabled     bool    `json:"decide_tool_routing_enabled"`
 	DecideToolThreshold          int     `json:"decide_tool_threshold"`
 	DecideToolPreTopK            int     `json:"decide_tool_pre_topk"`
@@ -49,6 +53,9 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		DecideEnabled:                k.DecideEnabled,
 		DecideMemoryEnabled:          k.DecideMemoryEnabled,
 		DecideProfileID:              k.DecideProfileID,
+		DecideSystemOneBaseURL:       k.DecideSystemOneBaseURL,
+		DecideSystemOneAPIKeySet:     strings.TrimSpace(k.DecideSystemOneAPIKey) != "",
+		DecideSystemOneModel:         k.DecideSystemOneModel,
 		DecideToolRoutingEnabled:     k.DecideToolRoutingEnabled,
 		DecideToolThreshold:          k.DecideToolThreshold,
 		DecideToolPreTopK:            k.DecideToolPreTopK,

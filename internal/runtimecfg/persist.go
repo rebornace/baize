@@ -31,6 +31,9 @@ type KnobsPatch struct {
 	DecideEnabled                *bool    `json:"decide_enabled,omitempty"`
 	DecideMemoryEnabled          *bool    `json:"decide_memory_enabled,omitempty"`
 	DecideProfileID              *string  `json:"decide_profile_id,omitempty"`
+	DecideSystemOneBaseURL       *string  `json:"decide_systemone_base_url,omitempty"`
+	DecideSystemOneAPIKey        *string  `json:"decide_systemone_api_key,omitempty"`
+	DecideSystemOneModel         *string  `json:"decide_systemone_model,omitempty"`
 	DecideToolRoutingEnabled     *bool    `json:"decide_tool_routing_enabled,omitempty"`
 	DecideToolThreshold          *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolPreTopK            *int     `json:"decide_tool_pre_topk,omitempty"`
@@ -222,6 +225,15 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.DecideProfileID != nil {
 		next.DecideProfileID = p.DecideProfileID
+	}
+	if p.DecideSystemOneBaseURL != nil {
+		next.DecideSystemOneBaseURL = p.DecideSystemOneBaseURL
+	}
+	if p.DecideSystemOneAPIKey != nil {
+		next.DecideSystemOneAPIKey = p.DecideSystemOneAPIKey
+	}
+	if p.DecideSystemOneModel != nil {
+		next.DecideSystemOneModel = p.DecideSystemOneModel
 	}
 	if p.DecideToolRoutingEnabled != nil {
 		next.DecideToolRoutingEnabled = p.DecideToolRoutingEnabled

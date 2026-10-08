@@ -31,7 +31,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); multiple model setups and thinking options; account-level memory, attachments, and workspace files.
 - **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace and isolated across workspaces.
 - **Can explain Baize itself**: the built-in `baize-help` skill answers (in English or Chinese) how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
-- **Stays usable with many tools**: when backends pile up, turn on enhanced matching under Settings → Tool matching — one-click local Ollama + embedding model, or a cloud / self-hosted OpenAI-compatible embedding API. Standard matching needs no extra components and remains the fail-open default.
+- **Stays usable with many tools**: when backends pile up, open Settings → Matching & decisions — one-click local Ollama for the matching model and the decision model (`tev1`), or point either at a cloud / self-hosted API. Standard matching needs no extras and remains the fail-open default.
 
 ---
 
@@ -79,7 +79,7 @@ Channels are a **general, extensible** capability: alerts, tickets, and instant 
 
 ### For product, ops, and integrators
 
-- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security); tool matching has its own page.
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security); Matching & decisions is its own page (tool prefilter + decision service).
 - Full HTTP management surface for scripts and platforms — no mandatory language SDK.
 - Some runtime knobs hot-reload; a local database is enough to start, with larger databases when you need them.
 
@@ -101,14 +101,21 @@ After APIs and plugins are connected in Baize, export them over MCP to Cursor an
 
 ---
 
-## Architecture: decision layer and tool matching
+## Architecture: decision layer and matching
 
-As more connectors are added, a turn may carry a large number of tool schemas, and the prefill cost grows with that number. Baize addresses this with a **decision layer** that moves high-frequency routing decisions out of generative calls into a cheap, deterministic step. The idea is inspired by the **Jev** approach to calibrated decisions; because Baize uses OpenAI-compatible APIs and cannot read logits, it does not use probability scores. The layer is local, pluggable, and always fails open.
+As more connectors are added, a turn may carry a large number of tool schemas, and the prefill cost grows with that number. Baize addresses this with a **decision layer** that moves high-frequency routing decisions out of generative calls into a cheap, deterministic step. The idea is inspired by the **Jev** approach to calibrated decisions.
+
+**Two steps to enable:**
+
+1. Settings → **Matching & decisions**: one-click **System One** with local **Ollama ≥0.35** (pulls **`tev1`**, CPU-friendly) or a cloud / self-hosted API (`POST /v1/systemone`). On CN networks, the Windows installer prefers the [ModelScope community sync](https://www.modelscope.cn/models/Lixiang/ollama-release/files) (tracks GitHub release tags), then other mirrors.
+2. Runtime → **Smart speed-up**: turn on the master switch and the sub-features you need (tool narrowing, tool-result prune, memory gate, long-turn tier advice, …). **Configuring the decision model alone does not cut main-model tokens** until those toggles are on.
+
+Ask chain order: **System One → optional fallback chat profile (`decide_profile_id`) → Rules**. When System One is set, leave the fallback blank; blank does **not** bill the main assistant—those judgments are skipped (fail-open). Probability scores are never exposed to callers.
 
 When the tool count is above a threshold and DP-2a tool narrowing is on, candidates are narrowed before the main model:
 
 1. **System routing** (optional) — which connectors the turn needs. Discriminative query terms force a connector; the model can only add connectors, not remove forced ones.
-2. **Tool prefilter** — **standard matching** by default (BM25 over Latin terms and Chinese bigrams; no extra components). For many backends or mixed Chinese/English phrasing, open Settings → **Tool matching** and enable **enhanced matching**: install Ollama locally and pull an embedding model (e.g. `bge-m3`), or point at a cloud / self-hosted OpenAI-compatible embedding API. Enhanced mode uses BM25 + dense retrieval (RRF) and falls back to standard matching on failure so chat keeps working.
+2. **Tool prefilter** — **standard matching** by default (BM25 over Latin terms and Chinese bigrams; no extra components). For many backends or mixed Chinese/English phrasing, enable **enhanced matching** on the same page (local Ollama `bge-m3` or an Embedding API) and **System One** (`tev1` on the same Ollama, or an API). Enhanced matching uses BM25 + dense retrieval (RRF) and fails open to standard matching.
 
 The console shows install progress, app/model paths, optional custom model directory, and cleanup (including optional Ollama uninstall).
 

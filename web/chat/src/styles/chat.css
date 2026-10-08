@@ -1186,6 +1186,31 @@
   margin-bottom: 1rem;
 }
 
+.tool-matching-advanced {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border, #e5e5e5);
+  padding-top: 0.75rem;
+}
+
+.tool-matching-advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0.5rem;
+}
+
+.tool-matching-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-matching-advanced > summary::before {
+  content: '▸ ';
+  opacity: 0.6;
+}
+
+.tool-matching-advanced[open] > summary::before {
+  content: '▾ ';
+}
+
 .tool-matching-hero {
   max-width: 40rem;
 }

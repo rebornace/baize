@@ -1,30 +1,41 @@
 package toolretrieval
 
 import (
+	"context"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestWindowsInstallerMirrorsRegionOrder(t *testing.T) {
 	t.Setenv("BAIZE_OLLAMA_MIRROR", "official")
 	m := windowsInstallerMirrors()
 	if len(m) < 3 {
-		t.Fatalf("expected 3 mirrors, got %d", len(m))
+		t.Fatalf("expected >=3 mirrors, got %d", len(m))
 	}
 	if m[0].ID != "official" {
 		t.Fatalf("global first want official, got %q", m[0].ID)
 	}
 	if preferredDownloadPage() != downloadPageOfficial {
-		t.Fatalf("global download page want official, got %q", preferredDownloadPage())
+		t.Fatalf("download page want official, got %q", preferredDownloadPage())
 	}
 
 	t.Setenv("BAIZE_OLLAMA_MIRROR", "cn")
 	m = windowsInstallerMirrors()
-	if m[0].ID != "cn" {
-		t.Fatalf("cn first want cn, got %q", m[0].ID)
+	if m[0].ID != "modelscope" {
+		t.Fatalf("cn first want modelscope, got %q", m[0].ID)
 	}
-	if preferredDownloadPage() != downloadPageCN {
-		t.Fatalf("cn download page want CN, got %q", preferredDownloadPage())
+	if !strings.Contains(m[0].URL, "modelscope.cn") || !strings.Contains(m[0].URL, "OllamaSetup.exe") {
+		t.Fatalf("cn first URL want ModelScope resolve, got %q", m[0].URL)
+	}
+	if preferredDownloadPage() != downloadPageModelScope {
+		t.Fatalf("cn download page want ModelScope, got %q", preferredDownloadPage())
+	}
+	for _, mir := range m {
+		if strings.Contains(mir.URL, "cnb.cool") {
+			t.Fatal("stale CNB mirror must not be in the default list")
+		}
 	}
 }
 
@@ -38,6 +49,10 @@ func TestPreferChineseMirrorsEnvOverridesLocale(t *testing.T) {
 	t.Setenv("LANG", "en_US.UTF-8")
 	if !preferChineseMirrors() {
 		t.Fatal("BAIZE_OLLAMA_MIRROR=cn must win over LANG")
+	}
+	t.Setenv("BAIZE_OLLAMA_MIRROR", "modelscope")
+	if !preferChineseMirrors() {
+		t.Fatal("BAIZE_OLLAMA_MIRROR=modelscope should prefer CN")
 	}
 }
 
@@ -64,5 +79,47 @@ func TestInstallerForGOOSListsMirrors(t *testing.T) {
 	}
 	if hint.DownloadPageURL != downloadPageOfficial {
 		t.Fatalf("with official override, page=%q", hint.DownloadPageURL)
+	}
+}
+
+func TestInstallerSizeLooksStale(t *testing.T) {
+	want := int64(1578290696)
+	if installerSizeLooksStale(want, want) {
+		t.Fatal("same size must not be stale")
+	}
+	if !installerSizeLooksStale(1573069568, want) {
+		t.Fatal("older build with different size must look stale")
+	}
+	if installerSizeLooksStale(0, want) {
+		t.Fatal("unknown got size must not reject")
+	}
+}
+
+func TestModelScopeResolveURL(t *testing.T) {
+	u := modelScopeResolveURL("v0.40.1")
+	if !strings.Contains(u, "Lixiang/ollama-release/resolve/v0.40.1/OllamaSetup.exe") {
+		t.Fatalf("unexpected url %q", u)
+	}
+	if modelScopeResolveURL("") != modelScopeResolveURL(modelScopeFallbackRevision) {
+		t.Fatal("empty rev should use fallback")
+	}
+}
+
+func TestLatestModelScopeStableTagLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("network")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tag := latestModelScopeStableTag(ctx)
+	if tag == "" {
+		t.Skip("ModelScope unreachable")
+	}
+	if !modelScopeStableTagRE.MatchString(tag) {
+		t.Fatalf("unstable tag %q", tag)
+	}
+	size := modelScopeOllamaSetupSize(ctx, tag)
+	if size < 100*1024*1024 {
+		t.Fatalf("OllamaSetup.exe size too small: %d", size)
 	}
 }

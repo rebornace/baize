@@ -57,6 +57,7 @@ import (
 	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/systemoneenable"
 	"github.com/rebornace/baize/internal/toolindex"
 	"github.com/rebornace/baize/internal/toolretrieval"
 	"github.com/rebornace/baize/internal/webhook"
@@ -367,25 +368,30 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		}
 	}
 
-	// Decision layer. Order: a dedicated cheap model first (RemoteMulti for
-	// tool-candidate narrowing), deterministic Rules last. The pick-many
-	// remote stays inert until an operator configures decide_profile_id; the
-	// whole feature remains behind the hot decide knobs (default off).
+	// Decision layer. Order: System One (Ollama tev1 / compatible cloud or self-host)
+	// when decide_systemone_base_url is set, then a dedicated chat profile
+	// (RemoteMulti), then deterministic Rules. System One and the chat remote
+	// stay inert until configured; the whole feature remains behind the hot
+	// decide knobs (default off).
 	//
 	// decideSettingsHolder is assigned once the runtime holder is built below.
-	// The getter reads decide_profile_id live from it, so a runtime PATCH
-	// applies without re-wiring.
+	// Getters read knobs live from it, so a runtime PATCH applies without
+	// re-wiring.
 	var decideSettingsHolder *runtimecfg.Holder
+	liveKnobs := func() runtimecfg.Knobs {
+		if decideSettingsHolder != nil {
+			return decideSettingsHolder.Knobs()
+		}
+		return runtimecfg.Knobs{}
+	}
 	decisionProvider := decideProfileProvider{
 		next: provider,
 		profileID: func() string {
-			if decideSettingsHolder != nil {
-				return decideSettingsHolder.Knobs().DecideProfileID
-			}
-			return ""
+			return liveKnobs().DecideProfileID
 		},
 	}
 	decider := decide.NewChain(
+		newSystemOneLive(liveKnobs),
 		decide.NewRemoteMulti(decisionProvider),
 		decide.NewRules(),
 	)
@@ -439,6 +445,18 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
 	srv.ToolRetrieval = toolRet
+	sysOneRet := systemoneenable.NewManager(st, func(c systemoneenable.Config) {
+		if decideSettingsHolder == nil {
+			return
+		}
+		base, key, model := c.BaseURL, c.APIKey, c.Model
+		_ = decideSettingsHolder.ApplyKnobs(context.Background(), st, runtimecfg.KnobsPatch{
+			DecideSystemOneBaseURL: &base,
+			DecideSystemOneAPIKey:  &key,
+			DecideSystemOneModel:   &model,
+		})
+	})
+	srv.SystemOneEnable = sysOneRet
 	srv.CallbackSecret = callbackSecret
 	srv.CallbackLimiter = callbackLimiter
 	srv.CallbackSigner = callbackSigner
@@ -519,6 +537,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	decideSettingsHolder = runtimeHolder
 	engine.Settings = runtimeHolder
 	srv.Settings = runtimeHolder
+	sysOneRet.Restore(context.Background())
 	// DP-4: adapt the decide layer to llm.TierAdvisor. The advisor reads the
 	// hot decide knobs live, so this single wiring survives settings changes.
 	srv.TierAdvisor = &routeTierAdvisor{settings: runtimeHolder, decider: decider}

@@ -527,6 +527,19 @@ export function RuntimeSettings() {
             {knobView.overridden.decide_enabled && <Badge>{RUNTIME.badgeOverridden}</Badge>}
           </label>
 
+          <p className="settings-muted">
+            {RUNTIME.decideSystemOneMovedHint}{' '}
+            <Link to="/settings/tool-matching">{RUNTIME.toolMatchMovedLink}</Link>
+          </p>
+          <p className="settings-muted">
+            {form.decide_systemone_base_url.trim()
+              ? RUNTIME.decideBackendSystemOne(
+                  form.decide_systemone_model.trim() || 'tev1',
+                )
+              : RUNTIME.decideBackendChatFallback}{' '}
+            <Link to="/settings/tool-matching">{RUNTIME.decideBackendHintLink}</Link>
+          </p>
+
           <Field
             label={knobFieldLabel(RUNTIME.fieldDecideProfile, knobView.overridden.decide_profile_id)}
             hint={RUNTIME.hintDecideProfile}

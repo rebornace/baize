@@ -17,6 +17,9 @@ export interface RuntimeKnobs {
   decide_enabled: boolean
   decide_memory_enabled: boolean
   decide_profile_id: string
+  decide_systemone_base_url: string
+  decide_systemone_api_key_set: boolean
+  decide_systemone_model: string
   decide_tool_routing_enabled: boolean
   decide_tool_threshold: number
   decide_tool_pre_topk: number
@@ -55,6 +58,9 @@ export type RuntimeKnobsPatch = Partial<{
   decide_enabled: boolean
   decide_memory_enabled: boolean
   decide_profile_id: string
+  decide_systemone_base_url: string
+  decide_systemone_api_key: string
+  decide_systemone_model: string
   decide_tool_routing_enabled: boolean
   decide_tool_threshold: number
   decide_tool_pre_topk: number

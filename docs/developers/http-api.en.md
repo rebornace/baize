@@ -39,9 +39,11 @@ This is not downstream business IAM or multi-tenant SSO.
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 
-## Tool matching (enhanced / standard)
+## Matching & decisions (tool prefilter + System One)
 
-How DP-2a prefilters tools is controlled from Settings → Tool matching. These endpoints require **admin** (reads also need an authenticated role when the gate is on):
+Settings → Matching & decisions covers both enhanced matching and the decision model. These endpoints require **admin** (reads also need an authenticated role when the gate is on).
+
+### Tool matching (enhanced / standard)
 
 | Path | Role |
 |------|------|
@@ -51,7 +53,18 @@ How DP-2a prefilters tools is controlled from Settings → Tool matching. These 
 | `POST /v0/settings/tool-retrieval/cleanup` | Disable enhanced matching, remove embed model and installer cache; optional body `{"remove_ollama":true}` also uninstalls Ollama |
 | `PUT /v0/settings/tool-retrieval/paths` | Body `{"models_dir":"..."}` sets a custom models dir (empty string clears); may restart local Ollama with `OLLAMA_MODELS` |
 
-If the manager is not wired, `GET` still returns a standard-matching snapshot; writes may return `503 tool_retrieval_unavailable`.
+If the manager is not wired, `GET` still returns a standard-matching snapshot; writes may return `503 tool_retrieval_unavailable`. On CN Windows, installer download prefers the ModelScope sync.
+
+### Decision model (System One)
+
+| Path | Role |
+|------|------|
+| `GET /v0/settings/systemone` | Phase, local / API mode, model (default `tev1`), paths, download progress |
+| `POST /v0/settings/systemone/enable` | Empty body or `{"provider":"local"}`: async local Ollama (≥0.35) install + pull `tev1`; `{"provider":"api","base_url","model?","api_key?"}`: probe then write `decide_systemone_*` |
+| `POST /v0/settings/systemone/disable` | Clear decision-service knobs (does not delete local files) |
+| `POST /v0/settings/systemone/cleanup` | Clean decision-related download cache; optional body `{"remove_ollama":true}` |
+
+If unwired, writes may return `503 systemone_unavailable`. The **smart speed-up master switch** remains on `PATCH /v0/settings/runtime` (`decide_enabled` and sub-features).
 
 ## Model discovery and batch import
 

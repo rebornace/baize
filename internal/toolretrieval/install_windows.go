@@ -97,20 +97,22 @@ func ollamaLaunchCandidates(localAppData, pathCLI string) []string {
 	return out
 }
 
-// downloadAndLaunchInstaller tries region-ordered mirrors (CN first on
-// Chinese locales; official first elsewhere), then falls back.
+// downloadAndLaunchInstaller tries region-ordered mirrors (CN: ModelScope first),
+// skipping stale sizes, then falls back to opening a browser download link.
 func downloadAndLaunchInstaller(ctx context.Context, onProgress func(InstallProgress)) (string, error) {
 	mirrors := windowsInstallerMirrors()
 	if len(mirrors) == 0 {
 		return "", fmt.Errorf("no windows installer mirrors")
 	}
+	wantSize := expectedInstallerSize(ctx)
 
 	var lastErr error
-	for i, m := range mirrors {
+	attempt := 0
+	for _, m := range mirrors {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		if i > 0 && onProgress != nil {
+		if attempt > 0 && onProgress != nil {
 			note := "上一源失败，改用其他源重新下载（进度会从 0 开始）"
 			if lastErr != nil {
 				note = fmt.Sprintf("上一源失败（%s），改用其他源重新下载", truncateErr(lastErr))
@@ -121,7 +123,8 @@ func downloadAndLaunchInstaller(ctx context.Context, onProgress func(InstallProg
 				Note:   note,
 			})
 		}
-		dest, err := downloadInstaller(ctx, m.URL, m.ID, onProgress)
+		attempt++
+		dest, err := downloadInstaller(ctx, m.URL, m.ID, wantSize, onProgress)
 		if err != nil {
 			lastErr = err
 			continue
@@ -141,9 +144,13 @@ func downloadAndLaunchInstaller(ctx context.Context, onProgress func(InstallProg
 	}
 
 	if onProgress != nil {
-		onProgress(InstallProgress{Event: "open_page", Note: "自动下载均失败，已打开国内下载页"})
+		onProgress(InstallProgress{Event: "open_page", Note: "自动下载均失败，已打开安装包直链"})
 	}
-	_ = openDownloadPage()
+	if len(mirrors) > 0 {
+		_ = openURL(mirrors[0].URL)
+	} else {
+		_ = openDownloadPage()
+	}
 	return "", nil
 }
 
@@ -158,7 +165,7 @@ func truncateErr(err error) string {
 	return s
 }
 
-func downloadInstaller(ctx context.Context, url, mirrorID string, onProgress func(InstallProgress)) (string, error) {
+func downloadInstaller(ctx context.Context, url, mirrorID string, wantSize int64, onProgress func(InstallProgress)) (string, error) {
 	dir := InstallerCacheDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -201,6 +208,7 @@ func downloadInstaller(ctx context.Context, url, mirrorID string, onProgress fun
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("User-Agent", installerHTTPUserAgent)
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -230,6 +238,10 @@ func downloadInstaller(ctx context.Context, url, mirrorID string, onProgress fun
 		if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > 0 {
 			total = n
 		}
+	}
+	if installerSizeLooksStale(total, wantSize) {
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 64))
+		return "", fmt.Errorf("stale installer size %d (want ~%d)", total, wantSize)
 	}
 
 	f, err := os.Create(dest)
@@ -292,10 +304,26 @@ func downloadInstaller(ctx context.Context, url, mirrorID string, onProgress fun
 	return dest, nil
 }
 
+func openURL(u string) error {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return fmt.Errorf("empty url")
+	}
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
+}
+
 func openDownloadPage() error {
 	var firstErr error
+	// Prefer a direct installer link when available (browser download manager).
+	for _, m := range windowsInstallerMirrors() {
+		if err := openURL(m.URL); err == nil {
+			return nil
+		} else if firstErr == nil {
+			firstErr = err
+		}
+	}
 	for _, u := range downloadPageFallbacks() {
-		err := exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
+		err := openURL(u)
 		if err == nil {
 			return nil
 		}

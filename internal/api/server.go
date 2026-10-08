@@ -30,6 +30,7 @@ import (
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/systemoneenable"
 	"github.com/rebornace/baize/internal/toolretrieval"
 	"github.com/rebornace/baize/internal/ui"
 	"github.com/rebornace/baize/internal/webhook"
@@ -180,6 +181,10 @@ type Server struct {
 	// ToolRetrieval optionally manages foolproof Ollama + embedding enablement
 	// for DP-2a dense Tool-RAG. nil = status reports standard mode only.
 	ToolRetrieval *toolretrieval.Manager
+
+	// SystemOneEnable optionally manages foolproof Ollama tev1 / API enablement
+	// for the System One decision backend. nil = status reports off only.
+	SystemOneEnable *systemoneenable.Manager
 
 	// OAuthSessions holds in-flight MCP OAuth PKCE state (single-process).
 	OAuthSessions *mcpoauth.SessionStore
@@ -503,6 +508,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/tool-retrieval/disable", s.handlePostToolRetrievalDisable)
 	s.mux.HandleFunc("POST /v0/settings/tool-retrieval/cleanup", s.handlePostToolRetrievalCleanup)
 	s.mux.HandleFunc("PUT /v0/settings/tool-retrieval/paths", s.handlePutToolRetrievalPaths)
+	s.mux.HandleFunc("GET /v0/settings/systemone", s.handleGetSystemOne)
+	s.mux.HandleFunc("POST /v0/settings/systemone/enable", s.handlePostSystemOneEnable)
+	s.mux.HandleFunc("POST /v0/settings/systemone/disable", s.handlePostSystemOneDisable)
+	s.mux.HandleFunc("POST /v0/settings/systemone/cleanup", s.handlePostSystemOneCleanup)
 	s.mux.HandleFunc("GET /v0/settings/credentials", s.handleGetCredentials)
 	s.mux.HandleFunc("PATCH /v0/settings/credentials", s.handlePatchCredentials)
 

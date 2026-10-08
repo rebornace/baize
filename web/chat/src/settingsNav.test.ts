@@ -55,7 +55,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/models']).toBe('模型')
     expect(byTo['/settings/tools']).toBe('助手功能')
     expect(byTo['/settings/memory']).toBe('账号记忆')
-    expect(byTo['/settings/tool-matching']).toBe('工具匹配')
+    expect(byTo['/settings/tool-matching']).toBe('匹配与决策')
     expect(byTo['/settings/openapi']).toBe('业务系统')
     expect(byTo['/settings/plugins']).toBe('插件服务')
     expect(byTo['/settings/mcp']).toBe('外部工具服务')
@@ -69,7 +69,7 @@ describe('settingsNavItems(admin)', () => {
     const byTo = Object.fromEntries(settingsNavItems('admin').map((i) => [i.to, i.label]))
     expect(byTo['/settings/models']).toBe('Models')
     expect(byTo['/settings/tools']).toBe('Assistant capabilities')
-    expect(byTo['/settings/tool-matching']).toBe('Tool matching')
+    expect(byTo['/settings/tool-matching']).toBe('Matching & decisions')
     expect(byTo['/settings/runtime']).toBe('Runtime settings')
   })
 

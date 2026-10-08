@@ -39,9 +39,11 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
 
-## 工具匹配（增强 / 标准）
+## 匹配与决策（工具预筛 + System One）
 
-DP-2a 预筛的匹配方式由设置页「工具匹配」控制；下列接口均需 **admin**（读接口在 Gate 下亦需已登录角色）：
+设置页「匹配与决策」同时管理增强匹配与决策模型；下列接口均需 **admin**（读接口在 Gate 下亦需已登录角色）。
+
+### 工具匹配（增强 / 标准）
 
 | 路径 | 作用 |
 |------|------|
@@ -51,7 +53,18 @@ DP-2a 预筛的匹配方式由设置页「工具匹配」控制；下列接口�
 | `POST /v0/settings/tool-retrieval/cleanup` | 关增强匹配、删匹配模型与安装包缓存；体可选 `{"remove_ollama":true}` 同时卸载 Ollama 本体 |
 | `PUT /v0/settings/tool-retrieval/paths` | 体 `{"models_dir":"..."}` 自定义模型目录（空串清除覆盖）；会尝试带 `OLLAMA_MODELS` 重启本机 Ollama |
 
-未接线管理器时 `GET` 仍返回标准匹配快照；写接口可能 `503 tool_retrieval_unavailable`。
+未接线管理器时 `GET` 仍返回标准匹配快照；写接口可能 `503 tool_retrieval_unavailable`。国内 Windows 安装优先 ModelScope 同步源。
+
+### 决策模型（System One）
+
+| 路径 | 作用 |
+|------|------|
+| `GET /v0/settings/systemone` | 当前阶段、本机 / API 模式、模型（默认 `tev1`）、路径与下载进度 |
+| `POST /v0/settings/systemone/enable` | 空体或 `{"provider":"local"}`：异步本机 Ollama（≥0.35）安装并拉 `tev1`；`{"provider":"api","base_url","model?","api_key?"}`：探测后写入 `decide_systemone_*` |
+| `POST /v0/settings/systemone/disable` | 清除决策服务 knobs（不删本机文件） |
+| `POST /v0/settings/systemone/cleanup` | 清理决策相关下载缓存等；体可选 `{"remove_ollama":true}` |
+
+未接线时写接口可能 `503 systemone_unavailable`。**智能提速总闸仍在** `PATCH /v0/settings/runtime`（`decide_enabled` 及子开关）。
 
 ## 模型发现与批量导入
 

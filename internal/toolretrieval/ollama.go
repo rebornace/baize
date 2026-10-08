@@ -229,7 +229,7 @@ func PullModel(ctx context.Context, ollamaBase, model string, onProgress func(In
 			return err
 		}
 		if line.Error != "" {
-			return fmt.Errorf("pull: %s", line.Error)
+			return fmt.Errorf("pull: %s", classifyPullError(line.Error))
 		}
 		if onProgress != nil {
 			onProgress(InstallProgress{
@@ -280,6 +280,17 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// classifyPullError maps known Ollama pull failures to stable codes the UI can
+// localize. Unrecognized messages are returned unchanged.
+func classifyPullError(msg string) string {
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "requires a newer version of ollama") ||
+		(strings.Contains(lower, "412") && strings.Contains(lower, "newer version")) {
+		return "ollama_version_too_old"
+	}
+	return msg
 }
 
 // OpenAIBaseFromOllama converts http://host:11434 → http://host:11434/v1.

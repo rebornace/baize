@@ -33,6 +33,15 @@ type Knobs struct {
 	// cheap model, decoupled from the main model). Empty = no dedicated
 	// decision model (the pick-many implementation stays inert).
 	DecideProfileID string
+	// DecideSystemOneBaseURL, when non-empty, enables the System One HTTP
+	// backend (recommended: local Ollama at http://127.0.0.1:11434 with model
+	// tev1; also Laya / Clef / self-hosted). Empty disables it so the chain
+	// falls through to the chat profile / rules.
+	DecideSystemOneBaseURL string
+	DecideSystemOneAPIKey  string
+	// DecideSystemOneModel is the System One model id. Empty uses the client
+	// default (tev1) when a base URL is set.
+	DecideSystemOneModel string
 	// DP-2a: tool-candidate narrowing. When on and the tool count exceeds the
 	// threshold, the narrowed set replaces the full tool list sent to the main
 	// model (there is no separate observe-only mode).
@@ -100,6 +109,9 @@ type knobsOverride struct {
 	DecideEnabled            *bool    `json:"decide_enabled,omitempty"`
 	DecideMemoryEnabled      *bool    `json:"decide_memory_enabled,omitempty"`
 	DecideProfileID          *string  `json:"decide_profile_id,omitempty"`
+	DecideSystemOneBaseURL   *string  `json:"decide_systemone_base_url,omitempty"`
+	DecideSystemOneAPIKey    *string  `json:"decide_systemone_api_key,omitempty"`
+	DecideSystemOneModel     *string  `json:"decide_systemone_model,omitempty"`
 	DecideToolRoutingEnabled *bool    `json:"decide_tool_routing_enabled,omitempty"`
 	DecideToolThreshold      *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolPreTopK        *int     `json:"decide_tool_pre_topk,omitempty"`
@@ -233,6 +245,15 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.DecideProfileID != nil {
 		k.DecideProfileID = *ko.DecideProfileID
 	}
+	if ko.DecideSystemOneBaseURL != nil {
+		k.DecideSystemOneBaseURL = *ko.DecideSystemOneBaseURL
+	}
+	if ko.DecideSystemOneAPIKey != nil {
+		k.DecideSystemOneAPIKey = *ko.DecideSystemOneAPIKey
+	}
+	if ko.DecideSystemOneModel != nil {
+		k.DecideSystemOneModel = *ko.DecideSystemOneModel
+	}
 	if ko.DecideToolRoutingEnabled != nil {
 		k.DecideToolRoutingEnabled = *ko.DecideToolRoutingEnabled
 	}
@@ -302,6 +323,9 @@ type KnobsFieldFlags struct {
 	DecideEnabled         bool `json:"decide_enabled"`
 	DecideMemoryEnabled   bool `json:"decide_memory_enabled"`
 	DecideProfileID       bool `json:"decide_profile_id"`
+	DecideSystemOneBase   bool `json:"decide_systemone_base_url"`
+	DecideSystemOneKey    bool `json:"decide_systemone_api_key"`
+	DecideSystemOneModel  bool `json:"decide_systemone_model"`
 	DecideToolRouting     bool `json:"decide_tool_routing_enabled"`
 	DecideToolThreshold   bool `json:"decide_tool_threshold"`
 	DecideToolPreTopK     bool `json:"decide_tool_pre_topk"`
@@ -344,6 +368,9 @@ func (h *Holder) KnobsView() KnobsView {
 			DecideEnabled:         ko.DecideEnabled != nil,
 			DecideMemoryEnabled:   ko.DecideMemoryEnabled != nil,
 			DecideProfileID:       ko.DecideProfileID != nil,
+			DecideSystemOneBase:   ko.DecideSystemOneBaseURL != nil,
+			DecideSystemOneKey:    ko.DecideSystemOneAPIKey != nil,
+			DecideSystemOneModel:  ko.DecideSystemOneModel != nil,
 			DecideToolRouting:     ko.DecideToolRoutingEnabled != nil,
 			DecideToolThreshold:   ko.DecideToolThreshold != nil,
 			DecideToolPreTopK:     ko.DecideToolPreTopK != nil,

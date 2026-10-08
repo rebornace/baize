@@ -58,7 +58,7 @@ describe('SettingsHome', () => {
     })
     render('admin')
     await settle()
-    for (const name of ['模型', '助手功能', '技能', '账号记忆', '工具匹配', '业务系统', '外部工具服务', '插件', '对外提供能力', '微信', '消息回调', '外部来信', '账号', '存储', '运行参数']) {
+    for (const name of ['模型', '助手功能', '技能', '账号记忆', '匹配与决策', '业务系统', '外部工具服务', '插件', '对外提供能力', '微信', '消息回调', '外部来信', '账号', '存储', '运行参数']) {
       expect(host.textContent).toContain(name)
     }
     for (const g of ['助手', '连接', '消息', '系统']) expect(host.textContent).toContain(g)
@@ -98,7 +98,7 @@ describe('SettingsHome', () => {
     await settle()
     const cards = Array.from(host.querySelectorAll('[data-testid="ui-card"]'))
     const buttons = cards.filter((c) => c.getAttribute('role') === 'button')
-    // 8 reachable cards: 模型/助手功能/技能/账号记忆/工具匹配/微信/账号/运行参数
+    // 8 reachable cards: 模型/助手功能/技能/账号记忆/匹配与决策/微信/账号/运行参数
     expect(buttons).toHaveLength(8)
     const locked = cards.filter((c) => c.getAttribute('role') !== 'button')
     expect(locked.length).toBe(7)

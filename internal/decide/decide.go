@@ -26,9 +26,10 @@ const (
 
 // Source labels identify where an answer came from (observability only).
 const (
-	SourceRules    = "rules"
-	SourceRemote   = "remote"
-	SourceFallback = "fallback"
+	SourceRules     = "rules"
+	SourceRemote    = "remote"
+	SourceSystemOne = "systemone"
+	SourceFallback  = "fallback"
 )
 
 // Kind identifiers for the decision points.
