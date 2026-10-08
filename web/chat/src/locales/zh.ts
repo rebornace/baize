@@ -339,7 +339,7 @@ export const zhPack = {
   toolMatchProviderAPI: 'API',
   toolMatchLocalTitle: '本机安装（免费）',
   toolMatchLocalHint:
-    '优先从国内镜像下载「桌面版」安装包（OllamaSetup，带托盘图标，不是命令行 zip）。装好后请从开始菜单打开 Ollama，右下角会出现托盘图标。装好后白泽会自动拉取匹配模型。',
+    '按本机语言/地区选择下载源：中文环境优先国内镜像，其他环境优先官网（失败自动换源）。安装的是「桌面版」OllamaSetup（带托盘图标，不是命令行 zip）。装好后请从开始菜单打开 Ollama；随后白泽会自动拉取匹配模型。',
   toolMatchMirrorCN: '国内源',
   toolMatchMirrorOfficial: '官网',
   toolMatchMirrorGitHub: 'GitHub',
@@ -365,7 +365,7 @@ export const zhPack = {
   toolMatchPhase: {
     idle: '待命',
     checking: '正在检测本机环境…',
-    downloading_installer: '正在下载安装程序（优先国内源，失败自动换源）…',
+    downloading_installer: '正在下载安装程序（按地区选源，失败自动换源）…',
     launching_installer: '正在打开安装向导，请在弹出的窗口中确认安装…',
     waiting_ollama: '等待 Ollama 就绪：请完成安装向导，并从开始菜单打开 Ollama（托盘图标），无需命令行…',
     pulling_model: '正在下载匹配模型…',

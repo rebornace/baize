@@ -251,7 +251,7 @@ func PullModel(ctx context.Context, ollamaBase, model string, onProgress func(In
 type InstallerHint struct {
 	GOOS            string   `json:"goos"`
 	Mode            string   `json:"mode"`                    // "windows_exe" | "open_download_page"
-	InstallerURL    string   `json:"installer_url,omitempty"` // preferred (usually CN mirror)
+	InstallerURL    string   `json:"installer_url,omitempty"` // first mirror for this host (CN or official)
 	MirrorURLs      []string `json:"mirror_urls,omitempty"`
 	DownloadPageURL string   `json:"download_page_url"`
 }

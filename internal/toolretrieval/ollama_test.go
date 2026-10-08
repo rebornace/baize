@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 )
 
@@ -84,23 +83,6 @@ func TestDownloadPercent(t *testing.T) {
 	}
 	if downloadPercent(10, 0) != 0 {
 		t.Fatal()
-	}
-}
-
-func TestWindowsInstallerMirrorsPreferCN(t *testing.T) {
-	m := windowsInstallerMirrors()
-	if len(m) < 2 {
-		t.Fatalf("expected multiple mirrors, got %d", len(m))
-	}
-	if m[0].ID != "cn" {
-		t.Fatalf("first mirror want cn, got %q", m[0].ID)
-	}
-	hint := InstallerForGOOS()
-	if hint.DownloadPageURL == downloadPageOfficial {
-		t.Fatalf("download page should prefer CN, got %q", hint.DownloadPageURL)
-	}
-	if len(hint.MirrorURLs) == 0 && runtime.GOOS == "windows" {
-		t.Fatal("windows hint should list mirror_urls")
 	}
 }
 

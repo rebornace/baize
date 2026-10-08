@@ -332,7 +332,7 @@ export const enPack = {
     toolMatchProviderAPI: 'API',
     toolMatchLocalTitle: 'Install on this computer (free)',
     toolMatchLocalHint:
-      'Downloads the desktop installer (OllamaSetup with tray UI — not the CLI zip). After install, open Ollama from the Start menu; a tray icon should appear. We then pull the matching model automatically.',
+      'Picks a download source by this computer’s language/region: Chinese locales prefer a CN mirror; others use the official site first (auto-fallback on failure). Installs the desktop OllamaSetup (tray UI — not the CLI zip). After install, open Ollama from the Start menu; we then pull the matching model.',
     toolMatchMirrorCN: 'CN mirror',
     toolMatchMirrorOfficial: 'Official',
     toolMatchMirrorGitHub: 'GitHub',
@@ -358,7 +358,7 @@ export const enPack = {
     toolMatchPhase: {
       idle: 'Idle',
       checking: 'Checking this computer…',
-      downloading_installer: 'Downloading the installer (CN mirror first, then other sources)…',
+      downloading_installer: 'Downloading the installer (region-based source, auto-fallback)…',
       launching_installer: 'Opening the installer — confirm in the window that appears…',
       waiting_ollama: 'Waiting for Ollama — finish the wizard and open Ollama from the Start menu (tray icon; no CLI needed)…',
       pulling_model: 'Downloading the matching model…',

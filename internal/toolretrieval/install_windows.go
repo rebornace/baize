@@ -97,7 +97,8 @@ func ollamaLaunchCandidates(localAppData, pathCLI string) []string {
 	return out
 }
 
-// downloadAndLaunchInstaller tries CN mirrors first, then official/GitHub.
+// downloadAndLaunchInstaller tries region-ordered mirrors (CN first on
+// Chinese locales; official first elsewhere), then falls back.
 func downloadAndLaunchInstaller(ctx context.Context, onProgress func(InstallProgress)) (string, error) {
 	mirrors := windowsInstallerMirrors()
 	if len(mirrors) == 0 {
