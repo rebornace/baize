@@ -57,6 +57,8 @@ import (
 	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/toolindex"
+	"github.com/rebornace/baize/internal/toolretrieval"
 	"github.com/rebornace/baize/internal/webhook"
 	"github.com/rebornace/baize/internal/workspace"
 )
@@ -402,6 +404,18 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		Memory:      mem,
 		Decider:     decider,
 	}
+	if em := strings.TrimSpace(cfg.LLM.EmbeddingModel); em != "" {
+		env := cfg.LLM.APIKeyEnv
+		if env == "" {
+			env = "BAIZE_API_KEY"
+		}
+		engine.SetToolEmbedder(toolindex.NewOpenAIEmbedder(cfg.LLM.BaseURL, os.Getenv(env), em))
+	}
+	toolRet := toolretrieval.NewManager(st, engine.SetToolEmbedder)
+	// YAML embedding_model wins when set; otherwise restore UI-persisted Ollama preference.
+	if strings.TrimSpace(cfg.LLM.EmbeddingModel) == "" {
+		toolRet.Restore(context.Background())
+	}
 	if meta, ok := messages.(conversation.MetaStore); ok {
 		engine.Meta = meta
 	}
@@ -423,6 +437,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.Memory = mem
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
+	srv.ToolRetrieval = toolRet
 	srv.CallbackSecret = callbackSecret
 	srv.CallbackLimiter = callbackLimiter
 	srv.CallbackSigner = callbackSigner

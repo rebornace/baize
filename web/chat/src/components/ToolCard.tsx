@@ -5,6 +5,7 @@ import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
 import { isLoginRequiredContent, loginSkillID, resolveConnectorId } from '../loginEntry'
+import type { PriorEvidenceItem } from '../priorEvidence'
 import { CHAT, HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
 import { Button } from './ui'
@@ -20,6 +21,8 @@ export interface ToolCardProps {
   onError?: (e: unknown) => void
   /** login_required 时「去登录」；传入 `login-<connector_id>` skill id。 */
   onGoLoginSkill?: (skillId: string) => void
+  /** 本轮写操作前已成功（或失败）的查询结果摘要，供审批核对。 */
+  priorEvidence?: PriorEvidenceItem[]
 }
 
 export function ToolCard({
@@ -28,6 +31,7 @@ export function ToolCard({
   readOnly = false,
   onError,
   onGoLoginSkill,
+  priorEvidence,
 }: ToolCardProps) {
   const waiting = block.status === 'waiting_human' && !readOnly
   const loginRequired = !readOnly && isLoginRequiredContent(block.result)
@@ -96,6 +100,28 @@ export function ToolCard({
             {label}
             {description ? ` · ${description}` : ''}
           </p>
+          {priorEvidence !== undefined && (
+            <div className="hitl-evidence" data-testid="hitl-evidence">
+              <p className="hitl-evidence-title">{HITL.evidenceTitle}</p>
+              {priorEvidence.length === 0 ? (
+                <p className="hitl-evidence-empty">{HITL.evidenceEmpty}</p>
+              ) : (
+                <ul className="hitl-evidence-list">
+                  {priorEvidence.map((item, idx) => (
+                    <li key={`${item.name}-${idx}`} className="hitl-evidence-item">
+                      <span className="hitl-evidence-name">
+                        {friendlyToolName(item.name, catalog)}
+                        {item.isError ? ` (${HITL.evidenceError})` : ''}
+                      </span>
+                      {item.preview ? (
+                        <span className="hitl-evidence-preview">{item.preview}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <button

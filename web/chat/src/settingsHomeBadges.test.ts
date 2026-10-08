@@ -110,6 +110,21 @@ describe('resolveBadge', () => {
     expect(resolveBadge('runtime', view({}))).toEqual({ tone: 'neutral', text: '默认' })
     expect(resolveBadge('runtime', view({ max_messages: true }))).toEqual({ tone: 'neutral', text: '已自定义' })
   })
+
+  it('toolMatching: standard / enhanced / busy / failed', () => {
+    expect(resolveBadge('toolMatching', {
+      mode: 'standard', phase: 'idle', busy: false,
+    })).toEqual({ tone: 'neutral', text: '标准匹配' })
+    expect(resolveBadge('toolMatching', {
+      mode: 'enhanced', phase: 'ready', busy: false,
+    })).toEqual({ tone: 'success', text: '增强已启用' })
+    expect(resolveBadge('toolMatching', {
+      mode: 'standard', phase: 'pulling_model', busy: true,
+    })).toEqual({ tone: 'warning', text: '安装中' })
+    expect(resolveBadge('toolMatching', {
+      mode: 'standard', phase: 'failed', busy: false,
+    })).toEqual({ tone: 'warning', text: '未就绪' })
+  })
 })
 
 // ---- useSettingsBadges ----
@@ -166,6 +181,14 @@ describe('useSettingsBadges', () => {
       if (u === '/v0/settings/store') return jsonResponse({ driver: 'sqlite' })
       if (u === '/v0/settings/runtime') return jsonResponse({ effective: {}, overridden: {} })
       if (u === '/v0/settings/mcp-export/identities') return jsonResponse([])
+      if (u === '/v0/settings/tool-retrieval') {
+        return jsonResponse({
+          mode: 'standard', phase: 'idle', busy: false, provider: 'local',
+          ollama_running: false, embedding_ok: false, model: 'bge-m3',
+          base_url: '', ollama_base_url: '', openai_base_url: '', api_key_set: false,
+          installer: { goos: 'windows', mode: 'windows_exe', download_page_url: '' },
+        })
+      }
       return jsonResponse(null)
     })
     const h = runHook(() => useSettingsBadges(settingsNavItems('admin'), 'admin', 0))
@@ -176,6 +199,7 @@ describe('useSettingsBadges', () => {
     expect(badges.models).toEqual({ tone: 'success', text: '已配置 1 个' })
     expect(badges.weixin).toEqual({ tone: 'success', text: '运行中' })
     expect(badges.store).toEqual({ tone: 'neutral', text: '本地文件' })
+    expect(badges.toolMatching).toEqual({ tone: 'neutral', text: '标准匹配' })
   })
 
   it('operator: never requests locked kinds (no webhook/inbox/store/mcp-export)', async () => {

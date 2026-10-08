@@ -99,6 +99,14 @@ type ToolSpec struct {
 	// decision layer route to a system before choosing a tool within it and
 	// allocate the prefilter budget per system instead of over a flat catalog.
 	Source string
+	// Method / Path are from the connector (OpenAPI HTTP, etc.). Empty for
+	// tools that have no HTTP shape. Routing uses them instead of guessing
+	// framework-specific operationId suffixes.
+	Method string
+	Path   string
+	// RequireLogin is copied from the registry so session recovery can keep
+	// login/probe tools without matching a vendor controller name.
+	RequireLogin bool
 }
 
 type Provider interface {

@@ -38,7 +38,7 @@ type Knobs struct {
 	// model (there is no separate observe-only mode).
 	DecideToolRoutingEnabled bool // narrow tool candidates before the main model
 	DecideToolThreshold      int  // only narrow when tool count exceeds this
-	DecideToolPreTopK        int  // deterministic keyword prefilter width
+	DecideToolPreTopK        int  // hybrid Tool-RAG retrieve width (Top-K)
 	// DP-2b: enum constraint on the main-model call. When true (and DP-2a is
 	// on), the narrowed tools are sent with tool_choice=required so the model
 	// must select one of them.

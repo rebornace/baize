@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/toolindex"
 )
 
 // toolNames returns the candidate tool names in spec order.
@@ -25,11 +25,11 @@ func toolNames(specs []llm.ToolSpec) []string {
 
 // narrowTools consults the decision layer's system routing and returns the
 // specs actually sent to the main model. First a tiny system-routing decision
-// chooses which connectors the turn needs; then the deterministic keyword
-// prefilter runs WITHIN each chosen system (local IDF) and merges slots
-// round-robin. Built-in tools (Source="") and activate_skill are always
-// retained. If system routing abstains or keyword matching finds nothing, it
-// fails open (all systems / full set) so ordinary chit-chat is never starved.
+// chooses preferred connectors; then hybrid Tool-RAG retrieval (BM25 + sparse
+// TF-IDF cosine) ranks the full catalog with a soft source boost — wrong
+// routing cannot hard-hide the right tool. Built-in tools and activate_skill
+// are always retained. If retrieval finds nothing, it fails open (full set)
+// so ordinary chit-chat is never starved.
 //
 // OnFail is VerdictYes: if system routing abstains, every connector remains
 // eligible.
@@ -104,15 +104,16 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 			allowed = nil
 		}
 	}
+	allowed = expandAllowedForHTTPIntent(matchQuery, specs, allowed)
 
-	// --- Level 2: per-system keyword prefilter with slot quota -----------
-	preSpecs, noMatch := prefilterToolsBySystem(matchQuery, specs, allowed, e.effectiveDecidePreTopK())
+	// --- Level 2: Tool-RAG retrieve (dense+BM25 or lexical; soft source boost)
+	preSpecs, noMatch, widened, retrievalMode := prefilterRetrieve(e, ctx, matchQuery, specs, allowed, e.effectiveDecidePreTopK())
 	// Category-listing floor: a generic entity word ("用户"/"宠物") is too
 	// common within its own system for the backend *_findPage tool to survive
-	// IDF ranking, yet an explicit list/page request needs exactly it. Force
+	// ranking, yet an explicit list/page request needs exactly it. Force
 	// the matching admin pagination tool into the set so basic list queries
 	// can never be silently starved of the right tool.
-	preSpecs = preserveCategoryAdminTools(matchQuery, specs, allowed, preSpecs)
+	preSpecs = preserveHTTPIntentTools(matchQuery, specs, allowed, preSpecs)
 	// Auth/session floor: when a system is selected, its login + session-probe
 	// primitives are always kept so the model can recover from an expired
 	// session (401) via *_me / *_login without the query having to mention
@@ -123,7 +124,7 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 
 	sent := specs
 	sentCount := len(specs)
-	// Fail open: keyword matching found nothing in common, keep full set
+	// Fail open: retrieval found nothing in common, keep full set
 	// rather than send an empty tool list. Otherwise retain protected system
 	// tools (activate_skill) alongside the narrowed set.
 	if !noMatch && len(preSpecs) > 0 {
@@ -140,6 +141,8 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		"prefilter":        preNames,
 		"prefilter_count":  len(preNames),
 		"prefilter_empty":  noMatch,
+		"retrieval":        retrievalMode,
+		"retrieval_widen":  widened,
 		"tool_choice":      e.effectiveDecideToolChoice(),
 		"sent_count":       sentCount,
 	}
@@ -199,7 +202,7 @@ func rankSystemTerms(specs []llm.ToolSpec, systems []string) map[string][]system
 		counts := make(map[string]int)
 		for _, s := range members[sys] {
 			for t := range tokenSet(s.Name + " " + s.Description) {
-				if queryStop[t] {
+				if toolindex.IsStopword(t) {
 					continue
 				}
 				counts[t]++
@@ -247,8 +250,8 @@ func deterministicSystems(specs []llm.ToolSpec, systems, queryTokens []string) [
 		if s.Source == "" {
 			continue
 		}
-		for t := range tokenSet(s.Name + " " + s.Description) {
-			if queryStop[t] {
+		for t := range tokenSet(s.Name + " " + s.Description + " " + s.Path + " " + s.Method) {
+			if toolindex.IsStopword(t) {
 				continue
 			}
 			if systemsByToken[t] == nil {
@@ -259,18 +262,43 @@ func deterministicSystems(specs []llm.ToolSpec, systems, queryTokens []string) [
 	}
 	forced := make(map[string]bool)
 	totalSystems := len(systems)
+	size := make(map[string]int)
+	for _, s := range specs {
+		if s.Source != "" {
+			size[s.Source]++
+		}
+	}
+	tokenDF := make(map[string]map[string]int)
+	for _, s := range specs {
+		if s.Source == "" {
+			continue
+		}
+		for t := range tokenSet(s.Name + " " + s.Description + " " + s.Path + " " + s.Method) {
+			if toolindex.IsStopword(t) {
+				continue
+			}
+			if tokenDF[t] == nil {
+				tokenDF[t] = make(map[string]int)
+			}
+			tokenDF[t][s.Source]++
+		}
+	}
 	for _, qt := range queryTokens {
 		owners := systemsByToken[qt]
 		// A token present in EVERY system carries no routing signal (id,
 		// generic operation words that survived the stoplist) and forcing all
 		// owners would just fail-open every run. Only tokens belonging to a
-		// STRICT SUBSET of systems force those owners: exclusive tokens pin
-		// one system (dashboard) and shared-but-not-universal entity tokens
-		// (用户 in two of three) preserve the genuine ambiguity.
+		// STRICT SUBSET of systems force those owners.
 		if len(owners) == 0 || len(owners) >= totalSystems {
 			continue
 		}
 		for sys := range owners {
+			// Skip tokens that label almost every tool in that system
+			// (e.g. 「用户」on an auth connector). They are not a domain pin.
+			n := size[sys]
+			if n >= 4 && tokenDF[qt][sys]*2 >= n {
+				continue
+			}
 			forced[sys] = true
 		}
 	}
@@ -294,36 +322,35 @@ func queryContentTokens(query string) []string {
 	return out
 }
 
-// listIntentPatterns detect an explicit "show me a paged list" request.
-var listIntentPatterns = []string{
-	"列出", "列表", "分页", "前几", "多少个", "几条",
-	"page", "list",
+// expandAllowedForHTTPIntent re-opens connectors that expose ops matching the
+// query verb. Delete intent uses isDestructiveOp (HTTP DELETE, or a mutating
+// method whose operation name is a destroy verb) — many OpenAPI backends map
+// remove/delete to POST, so Method==DELETE alone is not enough.
+func expandAllowedForHTTPIntent(query string, specs []llm.ToolSpec, allowed map[string]bool) map[string]bool {
+	if allowed == nil {
+		return nil
+	}
+	if !hasDeleteIntent(query) {
+		return allowed
+	}
+	out := make(map[string]bool, len(allowed)+4)
+	for k, v := range allowed {
+		out[k] = v
+	}
+	for _, s := range specs {
+		if s.Source != "" && isDestructiveOp(s) {
+			out[s.Source] = true
+		}
+	}
+	return out
 }
 
-// detailIntentPatterns detect an explicit single-record detail request.
-var detailIntentPatterns = []string{
-	"详情", "详细", "具体信息",
-	"detail", "getone",
-}
-
-// preserveCategoryAdminTools forces the backend admin read tool matching a
-// query's entity word into the prefilter:
-//   - list/page intent  -> *_findPage
-//   - detail/id intent  -> *_findOne
-//
-// Generic entity words (用户/宠物) are so common within their own system that
-// these admin tools' IDF score cannot make the cut, but an explicit listing or
-// detail request needs exactly that tool. The tool must share a content token
-// with the query and belong to an allowed system, so unrelated admin reads are
-// never pulled in.
-func preserveCategoryAdminTools(query string, full []llm.ToolSpec, allowed map[string]bool, picked []llm.ToolSpec) []llm.ToolSpec {
-	suffix := ""
-	switch {
-	case hasListIntent(query):
-		suffix = "_findPage"
-	case hasDetailIntent(query):
-		suffix = "_findOne"
-	default:
+// preserveHTTPIntentTools keeps catalog ops that match the query's verb.
+// Delete: any destructive op with token overlap (verb overlap is enough).
+// List/detail: GET with optional path-template shape + entity overlap.
+func preserveHTTPIntentTools(query string, full []llm.ToolSpec, allowed map[string]bool, picked []llm.ToolSpec) []llm.ToolSpec {
+	shape := httpIntentShape(query)
+	if shape == intentNone {
 		return picked
 	}
 	qToks := cleanQueryTokens(tokenSet(query))
@@ -333,15 +360,25 @@ func preserveCategoryAdminTools(query string, full []llm.ToolSpec, allowed map[s
 	}
 	out := picked
 	for _, s := range full {
-		if !strings.HasSuffix(s.Name, suffix) || have[s.Name] {
+		if have[s.Name] {
 			continue
 		}
 		if allowed != nil && s.Source != "" && !allowed[s.Source] {
 			continue
 		}
-		sToks := cleanQueryTokens(tokenSet(s.Name + " " + s.Description))
-		if !anyOverlap(qToks, sToks) {
+		if !matchesHTTPIntent(s, shape) {
 			continue
+		}
+		switch shape {
+		case intentDelete:
+			// matchesHTTPIntent already required a destroy-shaped op. Do not
+			// require lexical delete↔remove overlap — that was synonym-table
+			// coupling; dense retrieve + Method/operationId shape are enough.
+		default:
+			sToks := cleanQueryTokens(tokenSet(s.Name + " " + s.Description + " " + s.Path))
+			if !entityTokenOverlap(qToks, sToks) {
+				continue
+			}
 		}
 		out = append(out, s)
 		have[s.Name] = true
@@ -349,38 +386,104 @@ func preserveCategoryAdminTools(query string, full []llm.ToolSpec, allowed map[s
 	return out
 }
 
-// hasDetailIntent reports whether the query explicitly asks for one record's
-// detail (or identifies it by id).
-func hasDetailIntent(query string) bool {
-	q := strings.ToLower(query)
-	for _, p := range detailIntentPatterns {
-		if strings.Contains(q, p) {
-			return true
+type httpIntent int
+
+const (
+	intentNone httpIntent = iota
+	intentDelete
+	intentList
+	intentDetail
+)
+
+func httpIntentShape(query string) httpIntent {
+	switch {
+	case hasDeleteIntent(query):
+		return intentDelete
+	case hasListIntent(query):
+		return intentList
+	case hasDetailIntent(query):
+		return intentDetail
+	default:
+		return intentNone
+	}
+}
+
+func matchesHTTPIntent(s llm.ToolSpec, shape httpIntent) bool {
+	switch shape {
+	case intentDelete:
+		return isDestructiveOp(s)
+	case intentList:
+		return strings.EqualFold(s.Method, "GET") && !pathHasTemplate(s.Path)
+	case intentDetail:
+		return strings.EqualFold(s.Method, "GET") && (s.Path == "" || pathHasTemplate(s.Path))
+	default:
+		return false
+	}
+}
+
+func pathHasTemplate(path string) bool {
+	return strings.Contains(path, "{")
+}
+
+// isDestructiveOp reports a catalog op that removes state. Prefer HTTP DELETE;
+// also accept mutating methods whose trailing operation token is a destroy verb
+// (UsersAdminController_remove, items.delete, …).
+func isDestructiveOp(s llm.ToolSpec) bool {
+	if strings.EqualFold(s.Method, "DELETE") {
+		return true
+	}
+	switch strings.ToUpper(s.Method) {
+	case "GET", "HEAD", "OPTIONS":
+		return false
+	case "POST", "PUT", "PATCH", "":
+		// Empty method: MCP/plugin tools without HTTP metadata can still be
+		// recognized by a destroy verb on the operation name.
+		return toolindex.IsDestroyOpToken(trailingOpToken(s.Name))
+	default:
+		return toolindex.IsDestroyOpToken(trailingOpToken(s.Name))
+	}
+}
+
+func trailingOpToken(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if i := strings.LastIndex(name, "_"); i >= 0 && i+1 < len(name) {
+		return strings.ToLower(name[i+1:])
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 && i+1 < len(name) {
+		return strings.ToLower(name[i+1:])
+	}
+	// camelCase …Remove / …Delete
+	runes := []rune(name)
+	for i := len(runes) - 1; i > 0; i-- {
+		if runes[i] >= 'A' && runes[i] <= 'Z' {
+			return strings.ToLower(string(runes[i:]))
 		}
 	}
-	if matched, _ := regexp.MatchString(`\bid\b\s*=?\s*\d+`, q); matched {
-		return true
+	return strings.ToLower(name)
+}
+
+func entityTokenOverlap(a, b map[string]bool) bool {
+	small, large := a, b
+	if len(b) < len(a) {
+		small, large = b, a
+	}
+	for t := range small {
+		if toolindex.IsIntentVerbToken(t) {
+			continue
+		}
+		if large[t] {
+			return true
+		}
 	}
 	return false
 }
 
-// hasListIntent reports whether the query explicitly asks for a paged list.
-func hasListIntent(query string) bool {
-	q := strings.ToLower(query)
-	for _, p := range listIntentPatterns {
-		if strings.Contains(q, p) {
-			return true
-		}
-	}
-	// "前5个" / "第1页" numeric forms.
-	if matched, _ := regexp.MatchString(`前\s*\d+\s*(个|条|名)`, q); matched {
-		return true
-	}
-	if matched, _ := regexp.MatchString(`第\s*\d+\s*页`, q); matched {
-		return true
-	}
-	return false
-}
+func hasDeleteIntent(query string) bool { return toolindex.HasDestructiveIntent(query) }
+func hasDetailIntent(query string) bool { return toolindex.HasDetailIntent(query) }
+func hasListIntent(query string) bool   { return toolindex.HasListIntent(query) }
 
 // anyOverlap reports whether two token sets share a token.
 func anyOverlap(a, b map[string]bool) bool {
@@ -421,21 +524,22 @@ func preserveAuthTools(full []llm.ToolSpec, allowed map[string]bool, picked []ll
 	return out
 }
 
-// isAuthSessionTool conservatively identifies login / current-session tools by
-// name: an "*AuthController_*" operation restricted to login/me/session, or an
-// operation explicitly ending in "_login". Register/setPassword/phoneLogin are
-// excluded: they are not needed to recover an existing session.
+// isAuthSessionTool keeps login / current-identity probes so a 401 can recover
+// without the user mentioning login. It uses HTTP path and RequireLogin-adjacent
+// name tokens, not a vendor controller prefix (AuthController, …).
 func isAuthSessionTool(s llm.ToolSpec) bool {
-	n := s.Name
-	if strings.HasSuffix(n, "_login") {
+	p := strings.ToLower(s.Path)
+	if strings.Contains(p, "/login") || strings.HasSuffix(strings.TrimSuffix(p, "/"), "/me") {
 		return true
 	}
-	idx := strings.Index(n, "AuthController_")
-	if idx < 0 {
-		return false
+	n := strings.ToLower(s.Name)
+	if strings.HasSuffix(n, "_login") || strings.HasSuffix(n, ".login") {
+		return true
 	}
-	op := n[idx+len("AuthController_"):]
-	return op == "login" || op == "me"
+	if strings.HasSuffix(n, "_me") || strings.HasSuffix(n, ".me") {
+		return true
+	}
+	return false
 }
 
 // connectorSources returns the distinct non-empty ToolSpec.Source ids, sorted.

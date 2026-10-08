@@ -4,6 +4,7 @@ import {
   getInboxChannels,
   getRuntimeSettings,
   getStoreSettings,
+  getToolRetrieval,
   getWeixinSettings,
   listMCPExportIdentities,
   listModelProfiles,
@@ -18,6 +19,7 @@ import type {
   SkillSummary,
   StoreSettings,
   ToolInfo,
+  ToolRetrievalStatus,
   WeixinChannelSettings,
 } from './api'
 import { getPack, subscribePack } from './locale/pack'
@@ -123,6 +125,19 @@ export function resolveBadge(kind: BadgeKind, data: unknown): BadgeResult | null
       return custom
         ? { tone: 'neutral', text: B.runtimeCustom }
         : { tone: 'neutral', text: B.runtimeDefault }
+    }
+    case 'toolMatching': {
+      const st = data as ToolRetrievalStatus
+      if (st.mode === 'enhanced' && st.phase === 'ready') {
+        return { tone: 'success', text: B.toolMatchingEnhanced }
+      }
+      if (st.busy || ['checking', 'downloading_installer', 'launching_installer', 'waiting_ollama', 'pulling_model', 'probing'].includes(st.phase)) {
+        return { tone: 'warning', text: B.toolMatchingBusy }
+      }
+      if (st.phase === 'failed') {
+        return { tone: 'warning', text: B.toolMatchingFailed }
+      }
+      return { tone: 'neutral', text: B.toolMatchingStandard }
     }
     default: {
       const _exhaustive: never = kind
@@ -230,6 +245,11 @@ export function useSettingsBadges(
         tasks.push(listMCPExportIdentities()
           .then((s) => { next.mcpExport = s })
           .catch(() => { next.mcpExport = null }))
+      }
+      if (kinds.has('toolMatching')) {
+        tasks.push(getToolRetrieval()
+          .then((s) => { next.toolMatching = s })
+          .catch(() => { next.toolMatching = null }))
       }
 
       const tools = await toolsP

@@ -122,6 +122,28 @@ func TestPrefilterStopwordStrippedKeepsContent(t *testing.T) {
 	}
 }
 
+// Chinese entity overlap in descriptions must surface *_remove without a
+// delete↔remove synonym table (dense Embedder covers EN↔ZH in production).
+func TestPrefilterDeleteQueryRanksRemoveViaDescription(t *testing.T) {
+	for _, q := range []string{"删除用户", "后台删用户id为116的账号"} {
+		picked, noMatch := prefilterTools(q, []llm.ToolSpec{
+			{Name: "UsersAdminController_findPage", Description: "用户分页"},
+			{Name: "UsersAdminController_remove", Description: "移除用户记录", Method: "POST"},
+			{Name: "PetsAdminController_remove", Description: "移除宠物", Method: "POST"},
+		}, 2)
+		if noMatch {
+			t.Fatalf("%q should match via 用户 overlap in descriptions", q)
+		}
+		names := map[string]bool{}
+		for _, p := range picked {
+			names[p.Name] = true
+		}
+		if !names["UsersAdminController_remove"] {
+			t.Fatalf("%q: want UsersAdminController_remove in %v", q, picked)
+		}
+	}
+}
+
 // A tool whose description shares many weak words but NOT the rare intent word
 // must not outrank one that shares the rare word. Here the order tools match
 // 订单; no fabricated weak-word tool should beat them.
@@ -230,18 +252,40 @@ func TestBuildSystemDescriptions(t *testing.T) {
 		t.Fatalf("mall desc should contain 订单, got %q", d["mall"])
 	}
 }
-func TestPrefilterBySystemRespectsAllowed(t *testing.T) {
+// Soft source boost (not hard exclude): a wrong/incomplete preferred set must
+// not hide strongly matching tools from other connectors — that hard gate was
+// the failure mode for delete-user when routing picked the wrong system.
+func TestPrefilterBySystemSoftBoostKeepsCrossSystemHits(t *testing.T) {
 	specs := []llm.ToolSpec{
 		{Name: "OmsOrderController_list", Description: "查询订单", Source: "mall"},
 		{Name: "PetsAdminController_findPage", Description: "列出宠物", Source: "pets-admin"},
+		{Name: "UsersAdminController_remove", Description: "移除用户记录", Source: "pets-admin", Method: "POST", Path: "/users/{id}/remove"},
 	}
 	picked, noMatch := prefilterToolsBySystem("订单和宠物", specs, map[string]bool{"mall": true}, 5)
 	if noMatch {
 		t.Fatalf("unexpected noMatch")
 	}
+	sources := map[string]bool{}
 	for _, s := range picked {
-		if s.Source == "pets-admin" {
-			t.Fatalf("non-selected system tool must be excluded, got %+v", picked)
-		}
+		sources[s.Source] = true
+	}
+	if !sources["mall"] {
+		t.Fatalf("preferred mall must appear, got %+v", picked)
+	}
+	if !sources["pets-admin"] {
+		t.Fatalf("soft boost must still surface pets-admin for 宠物, got %+v", picked)
+	}
+
+	// Wrong preferred system + delete query: remove tool must still recall.
+	picked2, noMatch2 := prefilterToolsBySystem("删用户id为116", specs, map[string]bool{"mall": true}, 4)
+	if noMatch2 {
+		t.Fatal("delete-user must match")
+	}
+	names := map[string]bool{}
+	for _, s := range picked2 {
+		names[s.Name] = true
+	}
+	if !names["UsersAdminController_remove"] {
+		t.Fatalf("want UsersAdminController_remove despite preferred=mall, got %+v", picked2)
 	}
 }

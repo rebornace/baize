@@ -14,6 +14,7 @@ import type { ChatBlock, UsageMeta } from '../../foldEvents'
 import type { ToolCatalog } from '../../friendlyTool'
 import { isFirstAssistantMessageOfRun, type ToolOrWorkflowBlock } from '../../historyBlocks'
 import { liveAssistantKey, messageRowKey } from '../../liveCommit'
+import { collectPriorEvidence } from '../../priorEvidence'
 import { ACTIONS, WELCOME } from '../../strings'
 
 export type ChatMessageListProps = {
@@ -292,6 +293,11 @@ export function ChatMessageList({
                     catalog={toolCatalog}
                     onError={reportError}
                     onGoLoginSkill={onGoLoginSkill}
+                    priorEvidence={
+                      block.status === 'waiting_human'
+                        ? collectPriorEvidence(liveBlocks, i)
+                        : undefined
+                    }
                   />
                 </div>
               )

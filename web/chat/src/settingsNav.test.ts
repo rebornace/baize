@@ -32,11 +32,11 @@ describe('SETTINGS_GROUPS', () => {
 })
 
 describe('settingsNavItems(admin)', () => {
-  it('returns 14 items with unique routes and complete metadata', () => {
+  it('returns 15 items with unique routes and complete metadata', () => {
     const adminItems = settingsNavItems('admin')
-    expect(adminItems).toHaveLength(14)
+    expect(adminItems).toHaveLength(15)
     const tos = adminItems.map((i) => i.to)
-    expect(new Set(tos).size).toBe(14)
+    expect(new Set(tos).size).toBe(15)
     for (const item of adminItems) {
       expect(item.label).toBeTruthy()
       expect(item.desc).toBeTruthy()
@@ -55,6 +55,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/models']).toBe('模型')
     expect(byTo['/settings/tools']).toBe('助手功能')
     expect(byTo['/settings/memory']).toBe('账号记忆')
+    expect(byTo['/settings/tool-matching']).toBe('工具匹配')
     expect(byTo['/settings/openapi']).toBe('业务系统')
     expect(byTo['/settings/plugins']).toBe('插件服务')
     expect(byTo['/settings/mcp']).toBe('外部工具服务')
@@ -68,6 +69,7 @@ describe('settingsNavItems(admin)', () => {
     const byTo = Object.fromEntries(settingsNavItems('admin').map((i) => [i.to, i.label]))
     expect(byTo['/settings/models']).toBe('Models')
     expect(byTo['/settings/tools']).toBe('Assistant capabilities')
+    expect(byTo['/settings/tool-matching']).toBe('Tool matching')
     expect(byTo['/settings/runtime']).toBe('Runtime settings')
   })
 
@@ -79,6 +81,7 @@ describe('settingsNavItems(admin)', () => {
       '/settings/tools',
       '/settings/skills',
       '/settings/memory',
+      '/settings/tool-matching',
     ])
     expect(inGroup('connect')).toEqual([
       '/settings/openapi',
@@ -98,6 +101,7 @@ describe('settingsNavItems(admin)', () => {
     const adminItems = settingsNavItems('admin')
     const badgeByTo = Object.fromEntries(adminItems.map((i) => [i.to, i.badge]))
     expect(badgeByTo['/settings/models']).toBe('models')
+    expect(badgeByTo['/settings/tool-matching']).toBe('toolMatching')
     expect(badgeByTo['/settings/identities']).toBeUndefined()
     expect(badgeByTo['/settings/memory']).toBeUndefined()
   })
@@ -111,6 +115,7 @@ describe('settingsNavItems(operator) access levels', () => {
     expect(access('/settings/tools')).toBe('read')
     expect(access('/settings/skills')).toBe('read')
     expect(access('/settings/memory')).toBe('full')
+    expect(access('/settings/tool-matching')).toBe('read')
     expect(access('/settings/runtime')).toBe('read')
     expect(access('/settings/channels/weixin')).toBe('login')
     expect(access('/settings/identities')).toBe('full')
@@ -121,16 +126,17 @@ describe('settingsNavItems(operator) access levels', () => {
 
 describe('visibleNavItems', () => {
   it('admin sees every item', () => {
-    expect(visibleNavItems('admin')).toHaveLength(14)
+    expect(visibleNavItems('admin')).toHaveLength(15)
   })
 
-  it('operator sidebar hides locked items (no connect group), keeps 7', () => {
+  it('operator sidebar hides locked items (no connect group), keeps 8', () => {
     const visible = visibleNavItems('operator')
     expect(visible.map((i) => i.to)).toEqual([
       '/settings/models',
       '/settings/tools',
       '/settings/skills',
       '/settings/memory',
+      '/settings/tool-matching',
       '/settings/channels/weixin',
       '/settings/identities',
       '/settings/runtime',

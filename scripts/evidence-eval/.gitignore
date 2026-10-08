@@ -1,0 +1,4 @@
+# Generated run artifacts (per-case events, summaries).
+out/
+artifacts/
+*.req.json

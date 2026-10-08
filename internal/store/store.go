@@ -150,6 +150,10 @@ const SettingKeyInboxChannels = "inbox_channels"
 // settings (engine knobs + control-plane credential overrides).
 const SettingKeyRuntimeSettings = "runtime_settings"
 
+// SettingKeyToolRetrieval persists optional dense Tool-RAG embed preference
+// (Ollama-backed embedding enablement from the settings UI).
+const SettingKeyToolRetrieval = "tool_retrieval"
+
 // WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.
 const WebhookOutboxMaxAttempts = 5
 

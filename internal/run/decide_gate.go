@@ -60,9 +60,9 @@ func (e *Engine) effectiveDecideToolChoice() bool {
 		k.DecideToolChoiceEnabled
 }
 
-// effectiveDecidePreTopK returns the deterministic keyword-prefilter width:
-// how many candidates survive keyword matching before the decision model picks.
-// Zero/missing is treated as the spec default of 32.
+// effectiveDecidePreTopK returns the hybrid Tool-RAG retrieve width: how many
+// candidates survive ranking before the main model sees them.
+// Zero/missing is treated as the runtime default of 16.
 func (e *Engine) effectiveDecidePreTopK() int {
 	// Default 16: the empirically validated cost/success sweet spot (see
 	// runtime_settings.go). Used only when knobs are unset/unavailable.

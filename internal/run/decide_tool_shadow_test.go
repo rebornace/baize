@@ -191,6 +191,127 @@ func TestToolNarrowDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestHasDeleteIntentShortChinese(t *testing.T) {
+	// User phrasing often omits 除:「删用户」≠ substring「删除」.
+	if !hasDeleteIntent("后台删用户id为116的账号") {
+		t.Fatal("删用户 must count as delete intent")
+	}
+	if !hasDeleteIntent("删除用户") {
+		t.Fatal("删除用户 must count as delete intent")
+	}
+	if !hasDeleteIntent("please delete user 116") {
+		t.Fatal("English delete must count as delete intent")
+	}
+}
+
+func TestExpandAllowedForHTTPIntentAddsDeleteBackends(t *testing.T) {
+	specs := []llm.ToolSpec{
+		{Name: "login", Method: "POST", Path: "/login", Source: "app-api"},
+		{Name: "register", Method: "POST", Path: "/register", Source: "app-api"},
+		{Name: "delete_record", Method: "DELETE", Path: "/items/{id}", Source: "admin-api"},
+		{Name: "UsersAdminController_remove", Method: "POST", Path: "/users/{id}", Source: "pets-admin"},
+	}
+	got := expandAllowedForHTTPIntent("删除这条记录", specs, map[string]bool{"app-api": true})
+	if !got["admin-api"] || !got["pets-admin"] || !got["app-api"] {
+		t.Fatalf("delete intent must reopen DELETE and POST-remove backends, got %v", got)
+	}
+}
+
+func TestPreserveHTTPIntentToolsUsesMethodNotSuffix(t *testing.T) {
+	full := []llm.ToolSpec{
+		{Name: "list_people", Method: "GET", Path: "/people", Description: "分页", Source: "admin-api"},
+		{Name: "destroy_person", Method: "DELETE", Path: "/people/{id}", Description: "destroy", Source: "admin-api"},
+		{Name: "UsersAdminController_remove", Method: "POST", Path: "/admin/users/{id}", Description: "", Source: "pets-admin"},
+	}
+	picked := []llm.ToolSpec{full[0]}
+	out := preserveHTTPIntentTools("delete this person", full, map[string]bool{
+		"admin-api": true, "pets-admin": true,
+	}, picked)
+	names := map[string]bool{}
+	for _, s := range out {
+		names[s.Name] = true
+	}
+	if !names["destroy_person"] {
+		t.Fatalf("DELETE op must be preserved, got %v", names)
+	}
+	if !names["UsersAdminController_remove"] {
+		t.Fatalf("POST …_remove must be preserved as destructive, got %v", names)
+	}
+}
+
+// Auth-only system pick must not hide admin remove when the user asks to delete.
+func TestNarrowToolsDeleteReopensAdminPOSTRemove(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	noop := func(_ context.Context, _ map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	}
+	reg.RegisterMeta(tool.Meta{
+		Spec:        llm.ToolSpec{Name: "AuthController_login", Description: "用户登录"},
+		ConnectorID: "app-api", Method: "POST", Path: "/auth/login",
+	}, noop, false)
+	reg.RegisterMeta(tool.Meta{
+		Spec:        llm.ToolSpec{Name: "AuthController_register", Description: "用户注册"},
+		ConnectorID: "app-api", Method: "POST", Path: "/auth/register",
+	}, noop, false)
+	reg.RegisterMeta(tool.Meta{
+		Spec:        llm.ToolSpec{Name: "AdminAuthController_me", Description: "当前用户"},
+		ConnectorID: "app-api", Method: "GET", Path: "/admin/me",
+	}, noop, false)
+	reg.RegisterMeta(tool.Meta{
+		Spec:        llm.ToolSpec{Name: "UsersAdminController_remove", Description: ""},
+		ConnectorID: "pets-admin", Method: "POST", Path: "/admin/users/{id}",
+	}, noop, false)
+	reg.RegisterMeta(tool.Meta{
+		Spec:        llm.ToolSpec{Name: "UsersAdminController_findPage", Description: "用户分页"},
+		ConnectorID: "pets-admin", Method: "GET", Path: "/admin/users",
+	}, noop, false)
+
+	decider := &stubDecider{byKind: map[string]decide.Answer{
+		decide.KindSystemTargets: {
+			Verdict: decide.VerdictYes, Values: []string{"app-api"}, Source: decide.SourceRemote,
+		},
+	}}
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, Content: "ok"}
+	}}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "后台删用户id为116的账号"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: reg, Decider: decider,
+		Settings: narrowKnobs(2, 8),
+	}
+	sent := eng.narrowTools(context.Background(), r.ID, 0, eng.specsForRun(r.ID), nil)
+	names := map[string]bool{}
+	for _, s := range sent {
+		names[s.Name] = true
+	}
+	if !names["UsersAdminController_remove"] {
+		t.Fatalf("narrowed set must include UsersAdminController_remove for「删用户」, got %v", names)
+	}
+}
+
+func TestDeterministicSystemsHighDFAuthTokenDoesNotHideAdmin(t *testing.T) {
+	specs := []llm.ToolSpec{
+		{Name: "login", Description: "用户登录", Source: "app-api"},
+		{Name: "register", Description: "用户注册", Source: "app-api"},
+		{Name: "profile", Description: "用户资料", Source: "app-api"},
+		{Name: "reset", Description: "用户找回密码", Source: "app-api"},
+		{Name: "destroy_person", Method: "DELETE", Path: "/people/{id}", Source: "admin-api"},
+	}
+	systems := []string{"app-api", "admin-api"}
+	q := queryContentTokens("删除用户")
+	got := map[string]bool{}
+	for _, s := range deterministicSystems(specs, systems, q) {
+		got[s] = true
+	}
+	if got["app-api"] && !got["admin-api"] {
+		t.Fatalf("high-DF「用户」on auth must not be the only forced system, got %v", got)
+	}
+}
+
 // AC-5: protected system tools (activate_skill) survive narrowing even though
 // keyword matching would otherwise drop them. Plain Source="" tools are not
 // blanket-preserved, and a filtered connector tool stays dropped.

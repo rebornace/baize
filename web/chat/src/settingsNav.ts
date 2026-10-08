@@ -11,6 +11,7 @@ import {
   Share2,
   SlidersHorizontal,
   Sparkles,
+  Target,
   Users,
   Webhook,
   Wrench,
@@ -27,6 +28,7 @@ export type SettingsAccess = 'full' | 'read' | 'login' | 'locked'
 export type BadgeKind =
   | 'models' | 'tools' | 'skills' | 'openapi' | 'mcp' | 'plugins'
   | 'mcpExport' | 'weixin' | 'webhook' | 'inbox' | 'store' | 'runtime'
+  | 'toolMatching'
 
 export interface SettingsNavItem {
   to: string
@@ -67,6 +69,11 @@ const ITEM_META: NavMeta[] = [
   {
     to: '/settings/memory', group: 'assistant', icon: Brain, operator: 'full',
     labelKey: 'memory', descKey: 'memoryDesc',
+  },
+  {
+    to: '/settings/tool-matching', group: 'assistant', icon: Target, operator: 'read',
+    badge: 'toolMatching',
+    labelKey: 'toolMatching', descKey: 'toolMatchingDesc',
   },
   {
     to: '/settings/openapi', group: 'connect', icon: Network, operator: 'locked', badge: 'openapi',
@@ -140,7 +147,7 @@ function buildItems(): SettingsNavItem[] {
   }))
 }
 
-/** Full catalog; admin sees all 14, operator items carry their access level. */
+/** Full catalog; admin sees all 15, operator items carry their access level. */
 export function settingsNavItems(_role: SettingsRole): SettingsNavItem[] {
   return buildItems()
 }

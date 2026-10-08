@@ -20,6 +20,7 @@ import (
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/toolindex"
 )
 
 const (
@@ -121,6 +122,13 @@ type Engine struct {
 	// Settings optionally supplies hot-reloadable engine knobs. nil = use the
 	// struct fields above (YAML defaults); non-nil overrides per-field.
 	Settings KnobReader
+	// ToolEmbedder optionally dense-embeds tool docs + queries for DP-2a
+	// Tool-RAG (ToolBench-style). nil ⇒ lexical BM25/sparse fallback only.
+	// Mutate only via SetToolEmbedder so the catalog cache is invalidated.
+	ToolEmbedder toolindex.Embedder
+
+	toolIdxCache toolIndexCache
+	embedMu      sync.Mutex
 
 	runMu sync.Mutex
 	runs  map[string]*runSkillState
@@ -142,6 +150,21 @@ type RunOptions struct {
 	// trailing persisted user message (which carries only the display text)
 	// with this multimodal version so the LLM sees exactly one user turn.
 	UserParts []llm.ContentPart
+}
+
+// SetToolEmbedder hot-swaps the DP-2a dense embedder and clears the tool
+// index cache. Pass nil to fall back to lexical retrieval.
+func (e *Engine) SetToolEmbedder(emb toolindex.Embedder) {
+	if e == nil {
+		return
+	}
+	e.embedMu.Lock()
+	defer e.embedMu.Unlock()
+	e.ToolEmbedder = emb
+	e.toolIdxCache.mu.Lock()
+	e.toolIdxCache.fp = ""
+	e.toolIdxCache.index = nil
+	e.toolIdxCache.mu.Unlock()
 }
 
 func (e *Engine) Execute(ctx context.Context, runID string, ag agent.Def, input string) error {

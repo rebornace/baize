@@ -189,20 +189,38 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 	isError := false
 	content := map[string]any{}
 
+	// High-confidence name remap (delete→remove under the same Controller_
+	// prefix) so a typo'd call still reaches HITL / Invoke. Ambiguous misses
+	// stay on the requested name and surface suggestions in the tool error.
+	resolved := name
+	var resolvedFrom string
+	if e.Tools != nil {
+		if canon, err := e.Tools.ResolveName(name); err == nil {
+			if canon != name {
+				resolvedFrom = name
+			}
+			resolved = canon
+		}
+	}
+
 	rejected, rerr := func() (bool, error) {
+		callData := map[string]any{"id": callID, "name": resolved, "arguments": redactToolArgs(args)}
+		if resolvedFrom != "" {
+			callData["resolved_from"] = resolvedFrom
+		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMToolCall,
-			Data: map[string]any{"id": callID, "name": name, "arguments": redactToolArgs(args)},
+			Data: callData,
 		})
 
-		if e.blockedByLogin(ctx, name) {
+		if e.blockedByLogin(ctx, resolved) {
 			content = tool.LoginRequiredContent()
 			isError = true
 			return false, nil
 		}
 
-		if !skipApproval && e.Tools.RequiresApproval(name) {
-			if err := e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: name, Arguments: args}); err != nil {
+		if !skipApproval && e.Tools.RequiresApproval(resolved) {
+			if err := e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: resolved, Arguments: args}); err != nil {
 				if !errors.Is(err, ErrHITLRejected) {
 					if ctx.Err() != nil || e.isCancelled(runID) {
 						return false, context.Canceled
@@ -218,7 +236,7 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 
 		invokeCtx := identity.WithToolCallID(ctx, callID)
 		toolCtx, cancel := context.WithTimeout(invokeCtx, e.toolTimeout())
-		c, toolIsErr, ierr := e.Tools.Invoke(toolCtx, name, args)
+		c, toolIsErr, ierr := e.Tools.Invoke(toolCtx, resolved, args)
 		cancel()
 		isError = toolIsErr
 		if ierr != nil {
@@ -227,6 +245,12 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 				msg := ierr.Error()
 				if errors.Is(ierr, context.DeadlineExceeded) {
 					msg = fmt.Sprintf("tool timed out after %s", e.toolTimeout())
+				}
+				// If resolve failed earlier, attach near-name suggestions.
+				if resolved == name && e.Tools != nil {
+					if _, rerr := e.Tools.ResolveName(name); rerr != nil {
+						msg = rerr.Error()
+					}
 				}
 				c = map[string]any{"error": msg}
 			}
@@ -244,7 +268,7 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 		return nil, false, context.Canceled
 	}
 
-	e.persistToolResult(runID, callID, name, content, isError)
+	e.persistToolResult(runID, callID, resolved, content, isError)
 	return content, isError, nil
 }
 

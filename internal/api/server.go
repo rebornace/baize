@@ -30,6 +30,7 @@ import (
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/toolretrieval"
 	"github.com/rebornace/baize/internal/ui"
 	"github.com/rebornace/baize/internal/webhook"
 )
@@ -170,6 +171,10 @@ type Server struct {
 	CallbackSigner     httpplugin.CallbackSigner
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
+
+	// ToolRetrieval optionally manages foolproof Ollama + embedding enablement
+	// for DP-2a dense Tool-RAG. nil = status reports standard mode only.
+	ToolRetrieval *toolretrieval.Manager
 
 	// OAuthSessions holds in-flight MCP OAuth PKCE state (single-process).
 	OAuthSessions *mcpoauth.SessionStore
@@ -488,6 +493,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/settings/channels/{name}", s.handlePutChannelSettings)
 	s.mux.HandleFunc("GET /v0/settings/runtime", s.handleGetRuntimeSettings)
 	s.mux.HandleFunc("PATCH /v0/settings/runtime", s.handlePatchRuntimeSettings)
+	s.mux.HandleFunc("GET /v0/settings/tool-retrieval", s.handleGetToolRetrieval)
+	s.mux.HandleFunc("POST /v0/settings/tool-retrieval/enable", s.handlePostToolRetrievalEnable)
+	s.mux.HandleFunc("POST /v0/settings/tool-retrieval/disable", s.handlePostToolRetrievalDisable)
+	s.mux.HandleFunc("POST /v0/settings/tool-retrieval/cleanup", s.handlePostToolRetrievalCleanup)
+	s.mux.HandleFunc("PUT /v0/settings/tool-retrieval/paths", s.handlePutToolRetrievalPaths)
 	s.mux.HandleFunc("GET /v0/settings/credentials", s.handleGetCredentials)
 	s.mux.HandleFunc("PATCH /v0/settings/credentials", s.handlePatchCredentials)
 

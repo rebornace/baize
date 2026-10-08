@@ -30,6 +30,10 @@ type Config struct {
 		// SupportsVision declares whether the backing model accepts image parts.
 		// Defaults to false; enable for vision-capable OpenAI-compatible models.
 		SupportsVision bool `yaml:"supports_vision"`
+		// EmbeddingModel is an OpenAI-compatible embedding model id used by
+		// DP-2a Tool-RAG dense retrieval (same base_url / api key as chat).
+		// Empty ⇒ lexical BM25 fallback only.
+		EmbeddingModel string `yaml:"embedding_model"`
 	} `yaml:"llm"`
 	Skills struct {
 		BuiltinDir  string   `yaml:"builtin_dir"`

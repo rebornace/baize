@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   getCredentials,
   getRuntimeSettings,
@@ -35,6 +36,8 @@ import {
   validateKnobField,
   type KnobsForm,
 } from './runtimeSettingsHelpers'
+
+type RuntimeTab = 'basics' | 'speed' | 'memory' | 'security'
 
 function CredentialsSection({ push }: { push: ToastApi['push'] }) {
   const { role } = useGate()
@@ -147,13 +150,11 @@ function CredentialsSection({ push }: { push: ToastApi['push'] }) {
     }
   }
 
-  // 凭据（含 operator 列表）仅 admin 可见；hooks 必须保持无条件执行，故早退放在全部 hooks 之后。
   if (role !== 'admin') return null
 
   return (
-    <section className="settings-form">
-      <h2 className="settings-subheading">{RUNTIME.sectionCreds}</h2>
-      {loading && <p className="settings-muted">RUNTIME.loading</p>}
+    <>
+      {loading && <p className="settings-muted">{RUNTIME.loading}</p>}
       {view && (
         <>
           <p className="settings-muted">
@@ -173,7 +174,6 @@ function CredentialsSection({ push }: { push: ToastApi['push'] }) {
                 value={operatorToken}
                 onChange={(e) => setOperatorToken(e.target.value)}
                 disabled={busy}
-                placeholder="••••••"
               />
             </Field>
             <Field label={RUNTIME.fieldAdminToken} hint={RUNTIME.hintAdminToken}>
@@ -183,7 +183,6 @@ function CredentialsSection({ push }: { push: ToastApi['push'] }) {
                 value={adminToken}
                 onChange={(e) => setAdminToken(e.target.value)}
                 disabled={busy}
-                placeholder="••••••"
               />
             </Field>
             <Button type="submit" variant="primary" disabled={busy}>
@@ -234,7 +233,6 @@ function CredentialsSection({ push }: { push: ToastApi['push'] }) {
                 value={newOpToken}
                 onChange={(e) => setNewOpToken(e.target.value)}
                 disabled={busy}
-                placeholder="••••••"
               />
             </Field>
             <Button type="submit" variant="primary" disabled={busy}>
@@ -272,7 +270,7 @@ function CredentialsSection({ push }: { push: ToastApi['push'] }) {
         }}
         onConfirm={() => void resetAll()}
       />
-    </section>
+    </>
   )
 }
 
@@ -290,6 +288,7 @@ export function RuntimeSettings() {
   const { locale, setLocale, strings } = useLocale()
   const readOnly = role !== 'admin'
   const { toasts, push, dismiss } = useToast()
+  const [tab, setTab] = useState<RuntimeTab>('basics')
   const [knobView, setKnobView] = useState<RuntimeKnobsView | null>(null)
   const [form, setForm] = useState<KnobsForm | null>(null)
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
@@ -305,7 +304,7 @@ export function RuntimeSettings() {
         if (alive) setProfiles(ps)
       })
       .catch(() => {
-        // 模型下拉加载失败时退化为自由输入，不阻塞页面。
+        /* ignore */
       })
     return () => {
       alive = false
@@ -391,6 +390,13 @@ export function RuntimeSettings() {
     }
   }
 
+  const tabs: { id: RuntimeTab; label: string }[] = [
+    { id: 'basics', label: RUNTIME.tabBasics },
+    { id: 'speed', label: RUNTIME.tabSpeed },
+    { id: 'memory', label: RUNTIME.tabMemory },
+    { id: 'security', label: RUNTIME.tabSecurity },
+  ]
+
   return (
     <div className="settings-section">
       <PageHeader
@@ -399,161 +405,117 @@ export function RuntimeSettings() {
       />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
-      <section className="settings-form" aria-labelledby="locale-section-title">
-        <h2 id="locale-section-title" className="settings-subheading">
-          {L.sectionTitle}
-        </h2>
-        <p className="settings-muted">{L.sectionHint}</p>
-        <div className="locale-choice" role="group" aria-label={L.sectionTitle} data-testid="locale-choice">
+      <div className="locale-choice runtime-tabs" role="tablist" aria-label={RUNTIME.title}>
+        {tabs.map((t) => (
           <button
+            key={t.id}
             type="button"
+            role="tab"
             className="locale-choice-option"
-            aria-pressed={locale === 'zh-CN'}
-            data-testid="locale-zh"
-            onClick={() => setLocale('zh-CN')}
+            aria-selected={tab === t.id}
+            data-testid={`runtime-tab-${t.id}`}
+            onClick={() => setTab(t.id)}
           >
-            {L.optionZh}
+            {t.label}
           </button>
-          <button
-            type="button"
-            className="locale-choice-option"
-            aria-pressed={locale === 'en'}
-            data-testid="locale-en"
-            onClick={() => setLocale('en')}
-          >
-            {L.optionEn}
-          </button>
-        </div>
-      </section>
+        ))}
+      </div>
 
-      {loading && <p className="settings-muted">RUNTIME.loading</p>}
+      {loading && <p className="settings-muted">{RUNTIME.loading}</p>}
 
-      {!loading && knobView && (
-        <form className="settings-form" onSubmit={(e) => void onSubmitPublicBase(e)}>
-          <h2 className="settings-subheading">{RUNTIME.sectionPublicBase}</h2>
-          {!knobView.public_base_url && (
-            <p className="settings-muted">{RUNTIME.publicBaseRequiredHint}</p>
-          )}
-          <Field
-            label={knobFieldLabel(RUNTIME.fieldPublicBase, knobView.public_base_url_overridden)}
-            hint={RUNTIME.hintPublicBase}
-          >
-            <Input
-              type="url"
-              placeholder="http://127.0.0.1:8080"
-              value={publicBase}
-              onChange={(e) => setPublicBase(e.target.value)}
-              disabled={busy || readOnly}
-            />
-          </Field>
-          {!readOnly && (
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? RUNTIME.saving : RUNTIME.savePublicBase}
-            </Button>
-          )}
-        </form>
-      )}
+      {tab === 'basics' && (
+        <>
+          <section className="settings-form" aria-labelledby="locale-section-title">
+            <h2 id="locale-section-title" className="settings-subheading">
+              {L.sectionTitle}
+            </h2>
+            <p className="settings-muted">{L.sectionHint}</p>
+            <div className="locale-choice" role="group" aria-label={L.sectionTitle} data-testid="locale-choice">
+              <button
+                type="button"
+                className="locale-choice-option"
+                aria-pressed={locale === 'zh-CN'}
+                data-testid="locale-zh"
+                onClick={() => setLocale('zh-CN')}
+              >
+                {L.optionZh}
+              </button>
+              <button
+                type="button"
+                className="locale-choice-option"
+                aria-pressed={locale === 'en'}
+                data-testid="locale-en"
+                onClick={() => setLocale('en')}
+              >
+                {L.optionEn}
+              </button>
+            </div>
+          </section>
 
-      {!loading && knobView && form && (
-        <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
-          <h2 className="settings-subheading">{RUNTIME.sectionBehavior}</h2>
-          {mainKnobFields().map((spec) => (
-            <Field
-              key={spec.key}
-              label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
-              hint={spec.hint}
-            >
-              <Input
-                type="number"
-                step={spec.integer ? 1 : 'any'}
-                min={spec.min}
-                max={spec.max}
-                value={form[spec.key]}
-                onChange={(e) => setField(spec.key, e.target.value)}
-                disabled={busy || readOnly}
-              />
-            </Field>
-          ))}
-
-          <h2 className="settings-subheading">{RUNTIME.sectionCompact}</h2>
-          <p className="settings-muted">{RUNTIME.compactHint}</p>
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={form.compaction_enabled}
-              onChange={(e) => setField('compaction_enabled', e.target.checked)}
-              disabled={busy || readOnly}
-            />
-            {RUNTIME.compactEnabled}
-            {knobView.overridden.compaction_enabled && (
-              <Badge>{RUNTIME.badgeOverridden}</Badge>
-            )}
-          </label>
-          <details>
-            <summary>{RUNTIME.compactAdvanced}</summary>
-            {compactAdvFields().map((spec) => (
+          {!loading && knobView && (
+            <form className="settings-form" onSubmit={(e) => void onSubmitPublicBase(e)}>
+              <h2 className="settings-subheading">{RUNTIME.sectionPublicBase}</h2>
+              {!knobView.public_base_url && (
+                <p className="settings-muted">{RUNTIME.publicBaseRequiredHint}</p>
+              )}
               <Field
-                key={spec.key}
-                label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
-                hint={spec.hint}
+                label={knobFieldLabel(RUNTIME.fieldPublicBase, knobView.public_base_url_overridden)}
+                hint={RUNTIME.hintPublicBase}
               >
                 <Input
-                  type="number"
-                  step={spec.integer ? 1 : 'any'}
-                  min={spec.min}
-                  max={spec.max}
-                  value={form[spec.key]}
-                  onChange={(e) => setField(spec.key, e.target.value)}
+                  type="url"
+                  placeholder="http://127.0.0.1:8080"
+                  value={publicBase}
+                  onChange={(e) => setPublicBase(e.target.value)}
                   disabled={busy || readOnly}
                 />
               </Field>
-            ))}
-          </details>
+              {!readOnly && (
+                <Button type="submit" variant="primary" disabled={busy}>
+                  {busy ? RUNTIME.saving : RUNTIME.savePublicBase}
+                </Button>
+              )}
+            </form>
+          )}
 
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={form.context_projection_enabled}
-              onChange={(e) => setField('context_projection_enabled', e.target.checked)}
-              disabled={busy || readOnly}
-            />
-            {RUNTIME.contextProjectionEnabled}
-            {knobView.overridden.context_projection_enabled && (
-              <Badge>{RUNTIME.badgeOverridden}</Badge>
-            )}
-          </label>
-          <p className="settings-muted">{RUNTIME.contextProjectionHint}</p>
+          {!loading && knobView && form && (
+            <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
+              <h2 className="settings-subheading">{RUNTIME.sectionBehavior}</h2>
+              {mainKnobFields().map((spec) => (
+                <Field
+                  key={spec.key}
+                  label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+                  hint={spec.hint}
+                >
+                  <Input
+                    type="number"
+                    step={spec.integer ? 1 : 'any'}
+                    min={spec.min}
+                    max={spec.max}
+                    value={form[spec.key]}
+                    onChange={(e) => setField(spec.key, e.target.value)}
+                    disabled={busy || readOnly}
+                  />
+                </Field>
+              ))}
+              {!readOnly && (
+                <Button type="submit" variant="primary" disabled={busy}>
+                  {busy ? RUNTIME.saving : RUNTIME.saveKnobs}
+                </Button>
+              )}
+            </form>
+          )}
+        </>
+      )}
 
-          <h2 className="settings-subheading">{RUNTIME.sectionMemory}</h2>
-          <p className="settings-muted">{RUNTIME.memoryEnabledHint}</p>
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={form.memory_enabled}
-              onChange={(e) => setField('memory_enabled', e.target.checked)}
-              disabled={busy || readOnly}
-            />
-            {RUNTIME.memoryEnabled}
-            {knobView.overridden.memory_enabled && (
-              <Badge>{RUNTIME.badgeOverridden}</Badge>
-            )}
-          </label>
-          <label className="settings-checkbox">
-            <input
-              type="checkbox"
-              checked={form.memory_auto_extract}
-              onChange={(e) => setField('memory_auto_extract', e.target.checked)}
-              disabled={busy || readOnly || !form.memory_enabled}
-            />
-            {RUNTIME.memoryAutoExtract}
-            {knobView.overridden.memory_auto_extract && (
-              <Badge>{RUNTIME.badgeOverridden}</Badge>
-            )}
-          </label>
-          <p className="settings-muted">{RUNTIME.memoryAutoExtractHint}</p>
-
+      {tab === 'speed' && !loading && knobView && form && (
+        <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
           <h2 className="settings-subheading">{RUNTIME.sectionDecide}</h2>
           <p className="settings-muted">{RUNTIME.decideHint}</p>
+          <p className="settings-muted">
+            {RUNTIME.toolMatchMovedHint}{' '}
+            <Link to="/settings/tool-matching">{RUNTIME.toolMatchMovedLink}</Link>
+          </p>
           <label className="settings-checkbox">
             <input
               type="checkbox"
@@ -625,10 +587,7 @@ export function RuntimeSettings() {
               checked={form.decide_tool_choice_enabled}
               onChange={(e) => setField('decide_tool_choice_enabled', e.target.checked)}
               disabled={
-                busy ||
-                readOnly ||
-                !form.decide_enabled ||
-                !form.decide_tool_routing_enabled
+                busy || readOnly || !form.decide_enabled || !form.decide_tool_routing_enabled
               }
             />
             {RUNTIME.decideToolChoice}
@@ -740,7 +699,99 @@ export function RuntimeSettings() {
         </form>
       )}
 
-      <CredentialsSection push={push} />
+      {tab === 'memory' && !loading && knobView && form && (
+        <form className="settings-form" onSubmit={(e) => void onSubmitKnobs(e)}>
+          <h2 className="settings-subheading">{RUNTIME.sectionCompact}</h2>
+          <p className="settings-muted">{RUNTIME.compactHint}</p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.compaction_enabled}
+              onChange={(e) => setField('compaction_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.compactEnabled}
+            {knobView.overridden.compaction_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <details>
+            <summary>{RUNTIME.compactAdvanced}</summary>
+            {compactAdvFields().map((spec) => (
+              <Field
+                key={spec.key}
+                label={knobFieldLabel(spec.label, knobView.overridden[spec.key])}
+                hint={spec.hint}
+              >
+                <Input
+                  type="number"
+                  step={spec.integer ? 1 : 'any'}
+                  min={spec.min}
+                  max={spec.max}
+                  value={form[spec.key]}
+                  onChange={(e) => setField(spec.key, e.target.value)}
+                  disabled={busy || readOnly}
+                />
+              </Field>
+            ))}
+          </details>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.context_projection_enabled}
+              onChange={(e) => setField('context_projection_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.contextProjectionEnabled}
+            {knobView.overridden.context_projection_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.contextProjectionHint}</p>
+
+          <h2 className="settings-subheading">{RUNTIME.sectionMemory}</h2>
+          <p className="settings-muted">{RUNTIME.memoryEnabledHint}</p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.memory_enabled}
+              onChange={(e) => setField('memory_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.memoryEnabled}
+            {knobView.overridden.memory_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.memory_auto_extract}
+              onChange={(e) => setField('memory_auto_extract', e.target.checked)}
+              disabled={busy || readOnly || !form.memory_enabled}
+            />
+            {RUNTIME.memoryAutoExtract}
+            {knobView.overridden.memory_auto_extract && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.memoryAutoExtractHint}</p>
+
+          {!readOnly && (
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? RUNTIME.saving : RUNTIME.saveKnobs}
+            </Button>
+          )}
+        </form>
+      )}
+
+      {tab === 'security' && (
+        <section className="settings-form">
+          <h2 className="settings-subheading">{RUNTIME.sectionCreds}</h2>
+          <CredentialsSection push={push} />
+        </section>
+      )}
     </div>
   )
 }

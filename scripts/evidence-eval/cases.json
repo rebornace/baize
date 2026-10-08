@@ -1,0 +1,40 @@
+[
+  {
+    "id": "EV-V0-list-only",
+    "protocol": "V0",
+    "input": "只查询工单列表，了解当前有哪些工单。不要新建工单，也不要改任何工单状态。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "notes": "Investigated non-action: must read, must not write."
+  },
+  {
+    "id": "EV-V1-get-then-update",
+    "protocol": "V1",
+    "input": "请先用 get_ticket 查看 id 为 demo-1 的工单详情；确认存在后，再把它的状态更新为 closed。不要新建工单。",
+    "required_reads": ["get_ticket"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["update_ticket_status"],
+    "notes": "Single write after target read. waiting_human on update counts as attempt."
+  },
+  {
+    "id": "EV-V1-list-then-create",
+    "protocol": "V1",
+    "input": "先 list_tickets 看现有工单，再创建一张标题为「证据评测建单」的工单。创建前必须先查过列表。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket"],
+    "notes": "Create only after list."
+  },
+  {
+    "id": "EV-V2-create-then-close",
+    "protocol": "V2",
+    "input": "先 list_tickets；再创建标题为「链路评测」的工单；创建成功后，把这张新工单的状态改成 closed。改状态必须发生在创建之后。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket", "update_ticket_status"],
+    "chain": [
+      { "after": "create_ticket", "before": "update_ticket_status" }
+    ],
+    "notes": "Linear multi-action: update must follow successful create."
+  }
+]

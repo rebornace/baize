@@ -91,6 +91,79 @@ func TestEngineReActToolThenMessage(t *testing.T) {
 	}
 }
 
+// Model invents *_delete; catalog only has *_remove with HITL — resolve and
+// wait for approval on the real tool so the operator only confirms the write.
+func TestEngineResolvesDeleteToRemoveBeforeHITL(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "admin-agent", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "UsersAdminController_remove"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"ok": true}, false, nil
+	}, true)
+
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, tools []llm.ToolSpec) llm.Message {
+		for _, m := range msgs {
+			if m.Role == llm.RoleTool {
+				return llm.Message{Role: llm.RoleAssistant, Content: "已删除"}
+			}
+		}
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "UsersAdminController_delete", Arguments: map[string]any{"id": "1"}},
+		}}
+	}}
+
+	ag := agent.Def{ID: "admin-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "删除用户 1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := NewGate()
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: gate}
+	errCh := make(chan error, 1)
+	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
+
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if calls.Load() != 0 {
+		t.Fatalf("must not invoke before approve: %d", calls.Load())
+	}
+	hitl, err := st.GetHITL(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hitl.ToolName != "UsersAdminController_remove" {
+		t.Fatalf("HITL tool=%q want UsersAdminController_remove", hitl.ToolName)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	var sawResolved bool
+	for _, ev := range evs {
+		if ev.Type != EventLLMToolCall {
+			continue
+		}
+		if ev.Data["name"] == "UsersAdminController_remove" && ev.Data["resolved_from"] == "UsersAdminController_delete" {
+			sawResolved = true
+		}
+	}
+	if !sawResolved {
+		t.Fatalf("expected llm.tool_call with resolved_from; events=%+v", evs)
+	}
+	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute timed out")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("invoke count=%d want 1", calls.Load())
+	}
+}
+
 func TestEngineHITLApproveInvokesOnce(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})

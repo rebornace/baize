@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 import type { ChatBlock } from '../foldEvents'
@@ -108,6 +109,26 @@ describe('ToolCard HITL 两段式拒绝链路', () => {
 
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenCalledWith('r1', 'reject', '')
+  })
+
+  it('waiting_human 展示本轮已查依据', () => {
+    const html = renderToStaticMarkup(
+      <ToolCard
+        block={block}
+        catalog={[]}
+        priorEvidence={[{ name: 'get_ticket', preview: '{"id":"demo-1"}' }]}
+      />,
+    )
+    expect(html).toContain('hitl-evidence')
+    expect(html).toContain('get_ticket')
+    expect(html).toContain('demo-1')
+  })
+
+  it('waiting_human 无依据时提示先查清', () => {
+    const html = renderToStaticMarkup(
+      <ToolCard block={block} catalog={[]} priorEvidence={[]} />,
+    )
+    expect(html).toContain('hitl-evidence-empty')
   })
 
   it('直接点同意以空 comment 调用 approve', async () => {

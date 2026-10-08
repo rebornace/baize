@@ -178,9 +178,17 @@ func (r *Registry) Specs() []llm.ToolSpec {
 		// connectorID recorded via RegisterMeta; fall back to a Source set
 		// directly on the spec (RegisterSpecApproved) so both registration
 		// paths preserve ownership.
-		if src := r.tools[name].connectorID; src != "" {
+		e := r.tools[name]
+		if src := e.connectorID; src != "" {
 			s.Source = src
 		}
+		if e.method != "" {
+			s.Method = e.method
+		}
+		if e.path != "" {
+			s.Path = e.path
+		}
+		s.RequireLogin = e.requireLogin
 		out[i] = s
 	}
 	return out
