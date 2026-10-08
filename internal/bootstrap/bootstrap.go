@@ -274,9 +274,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 
 	st.UpsertAgent(store.Agent{
-		ID:     cfg.Agent.ID,
-		System: cfg.Agent.System,
-		Skills: append([]string(nil), cfg.Agent.Skills...),
+		ID:          cfg.Agent.ID,
+		System:      cfg.Agent.System,
+		Skills:      append([]string(nil), cfg.Agent.Skills...),
+		ToolBinding: cfg.Agent.ToolBinding,
 	})
 
 	messages, identities, err := openConversationAndIdentities(st, cfg)

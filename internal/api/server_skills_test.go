@@ -101,6 +101,66 @@ func zipSkillBytes(t *testing.T, name, desc string, tools []string) []byte {
 	return buf.Bytes()
 }
 
+func TestListSkillsLocalePicksEnglishDescription(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	dir := filepath.Join(builtin, "help")
+	mustWriteSkillDir(t, dir, "help", "中文简介", nil)
+	en := "---\nname: help\ndescription: English blurb\n---\n\nEnglish body\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.en.md"), []byte(en), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blobs, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := store.NewMemory()
+	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
+	srv.SkillCatalog = cat
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/skills?locale=en", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var list struct {
+		Skills []struct {
+			ID            string `json:"id"`
+			Description   string `json:"description"`
+			DescriptionEN string `json:"description_en"`
+		} `json:"skills"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Skills) != 1 {
+		t.Fatalf("skills=%v", list.Skills)
+	}
+	got := list.Skills[0]
+	if got.Description != "English blurb" {
+		t.Fatalf("description=%q want English blurb", got.Description)
+	}
+	if got.DescriptionEN != "English blurb" {
+		t.Fatalf("description_en=%q", got.DescriptionEN)
+	}
+
+	reqZH := httptest.NewRequest(http.MethodGet, "/v0/skills?locale=zh-CN", nil)
+	rrZH := httptest.NewRecorder()
+	h.ServeHTTP(rrZH, reqZH)
+	if err := json.NewDecoder(rrZH.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if list.Skills[0].Description != "中文简介" {
+		t.Fatalf("zh description=%q", list.Skills[0].Description)
+	}
+}
+
 func TestSkillsUploadMDListGet(t *testing.T) {
 	_, _, h, _ := skillsServer(t)
 	body, ctype := multipartFile(t, "file", "demo.md", skillMDBytes("demo", "user-demo", []string{"t1"}))

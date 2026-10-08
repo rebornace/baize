@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS messages (
   thinking TEXT,
   thinking_redacted INTEGER NOT NULL DEFAULT 0,
   run_id TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  pinned_skills TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
 CREATE TABLE IF NOT EXISTS conversation_meta (
@@ -80,8 +81,8 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 	}
 
 	_, err := s.exec(
-		`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.ID, msg.ConversationID, msg.Role, msg.Content, nullIfEmpty(msg.Thinking), msg.ThinkingRedacted, runID, msg.CreatedAt.Format(time.RFC3339Nano),
+		`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.ConversationID, msg.Role, msg.Content, nullIfEmpty(msg.Thinking), msg.ThinkingRedacted, runID, msg.CreatedAt.Format(time.RFC3339Nano), encodeJSONList(msg.PinnedSkills),
 	)
 	if err != nil {
 		return Message{}, err
@@ -91,7 +92,7 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 
 func (s *SQLiteStore) List(conversationID string) []Message {
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
 		 FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,
 		conversationID,
 	)
@@ -202,7 +203,7 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 		return "", 0, err
 	}
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
 		 FROM messages WHERE conversation_id = ? AND created_at <= ? ORDER BY created_at ASC`,
 		srcConversationID, createdAt,
 	)
@@ -236,8 +237,8 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 			runID = newMsg.RunID
 		}
 		_, err := s.exec(
-			`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, nullIfEmpty(newMsg.Thinking), newMsg.ThinkingRedacted, runID, newMsg.CreatedAt.Format(time.RFC3339Nano),
+			`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, nullIfEmpty(newMsg.Thinking), newMsg.ThinkingRedacted, runID, newMsg.CreatedAt.Format(time.RFC3339Nano), encodeJSONList(newMsg.PinnedSkills),
 		)
 		if err != nil {
 			return "", 0, err
@@ -387,9 +388,9 @@ func scanMessage(scanner interface {
 }) (Message, error) {
 	var m Message
 	var createdAt string
-	var thinking, runID sql.NullString
+	var thinking, runID, pinnedSkills sql.NullString
 	var redacted bool
-	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &thinking, &redacted, &runID, &createdAt); err != nil {
+	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &thinking, &redacted, &runID, &createdAt, &pinnedSkills); err != nil {
 		return Message{}, err
 	}
 	if thinking.Valid {
@@ -398,6 +399,9 @@ func scanMessage(scanner interface {
 	m.ThinkingRedacted = redacted
 	if runID.Valid {
 		m.RunID = runID.String
+	}
+	if pinnedSkills.Valid {
+		m.PinnedSkills = decodeJSONList(pinnedSkills.String)
 	}
 	ts, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {

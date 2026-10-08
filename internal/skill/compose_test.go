@@ -61,6 +61,30 @@ func TestComposeSystemEmptyDescriptionUsesName(t *testing.T) {
 	}
 }
 
+func TestComposeSystemPicksEnglishBody(t *testing.T) {
+	cat := newTestCatalog([]Package{
+		{
+			ID: "help", Name: "help",
+			Description: "中文简介", DescriptionEN: "English blurb",
+			Body: "中文正文", BodyEN: "English body",
+		},
+	})
+	zh := ComposeSystem("base", cat, []string{"help"}, "zh-CN")
+	if !strings.Contains(zh, "中文简介") || !strings.Contains(zh, "中文正文") {
+		t.Fatalf("zh: %s", zh)
+	}
+	if strings.Contains(zh, "English body") {
+		t.Fatalf("zh must not include English body: %s", zh)
+	}
+	en := ComposeSystem("base", cat, []string{"help"}, "en")
+	if !strings.Contains(en, "English blurb") || !strings.Contains(en, "English body") {
+		t.Fatalf("en: %s", en)
+	}
+	if strings.Contains(en, "中文正文") {
+		t.Fatalf("en must not include Chinese body: %s", en)
+	}
+}
+
 func TestVisibleToolsUnionAndSort(t *testing.T) {
 	cat := newTestCatalog([]Package{
 		{ID: "a", Name: "a", Tools: []string{"t2", "t1"}},

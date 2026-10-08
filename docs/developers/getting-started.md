@@ -48,6 +48,8 @@ npx tsc --noEmit
 - Windows：`.\serve.cmd`
 - Unix：`./scripts/serve.sh`
 
+启动脚本在 `web/chat` 源码新于 `internal/ui/dist` 时会先跑 `npm run build`（Chat UI 经 `go:embed` 打进二进制），再 `go build`。跳过前端：`-SkipUI` / `BAIZE_SKIP_UI=1`；强制重建：`-ForceUI` / `BAIZE_FORCE_UI=1`。Windows 上脚本走 `npm.cmd`，避免 Node 自带 `npm.ps1` 把 `& npm run build` 误解析成 `pm`。
+
 默认使用 `configs/config.yaml`；要覆盖则复制为 `configs/config.local.yaml`（gitignore）并用 `-config` 指定。更多部署见 [部署](./deployment.md)（[English](./deployment.en.md)）。
 
 ## 目录地图（贡献者）

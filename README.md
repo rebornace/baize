@@ -30,7 +30,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Downstream login supported**: the assistant can guide a login flow, then call systems with session credentials.
 - **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); multiple model setups and thinking options; account-level memory, attachments, and workspace files.
 - **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace and isolated across workspaces.
-- **Can explain Baize itself**: the built-in `baize-help` skill answers how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
+- **Can explain Baize itself**: the built-in `baize-help` skill answers (in English or Chinese) how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
 - **Stays usable with many tools**: when backends pile up, turn on enhanced matching under Settings → Tool matching — one-click local Ollama + embedding model, or a cloud / self-hosted OpenAI-compatible embedding API. Standard matching needs no extra components and remains the fail-open default.
 
 ---
@@ -43,7 +43,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - The console can **follow along** as reasoning and tool steps happen.
 - Switch among multiple model setups; tune thinking-related options when the model supports them.
 - To add models, you can **fetch the endpoint's model list and batch-import**: enter the base URL (API key optional — add it if you get a 401), pull the models advertised by that OpenAI-compatible endpoint, select the ones you want, and create profiles in one go; you can also enter a single model manually when the endpoint has no list.
-- **Skill packs**: instructions + tools; set defaults, or enable more skills for the current conversation. Tools listed on a skill are a **floor** (kept available), not an allowlist that hides other connector tools.
+- **Skill packs**: instructions + tools. Checking skills in Settings and saving the **default configuration** only sets the **pre-activation** starting set for new chats; unchecked skills stay discoverable via `@`/`/` (including `/reload` in the completion popup) or `activate_skill`. Pins are stored on the user message so history bubbles keep the tags. Skill `tools:` is a **floor** by default (kept available), not an allowlist that hides other connector tools; agents may opt into **strict tool binding** (`tool_binding: exclusive`, still expandable via `activate_skill`). Catalog changes realign on the next turn (`skills_reload` / `/reload`, or automatically when the conversation is behind). Prefer `@login-…` for login skills—do not check them as defaults.
 - **Workspaces**: switch or create a workspace in the sidebar; new chats land in the current workspace. v1 does not move existing chats between workspaces.
 - Thinking is a one-line row by default (expand to read); token usage is written onto the reply when the run finishes.
 
@@ -134,21 +134,23 @@ The decision layer is **opt-in** and hot-reloadable via runtime settings (it is 
 
 ## Quick start
 
-**Requirements:** Go 1.25+ (matches CI; no C compiler) and an OpenAI-compatible API key.
+**Requirements:** Go 1.25+ (matches CI; no C compiler), Node.js 20+ (npm; Chat UI is embedded via `go:embed`), and an OpenAI-compatible API key.
 
 ```bash
 cp .env.example .env        # then set BAIZE_API_KEY=sk-...
 ```
 
 ```powershell
-.\serve.cmd                 # Windows
+.\serve.cmd                 # Windows — rebuilds web/chat → internal/ui/dist when sources change, then go build
 ```
 
 ```bash
-./scripts/serve.sh          # macOS / Linux
+./scripts/serve.sh          # macOS / Linux — same UI freshness check
 ```
 
 - Console: http://127.0.0.1:8080/ui
+- UI-only skip (reuse existing `internal/ui/dist`): `.\serve.cmd -SkipUI` / `BAIZE_SKIP_UI=1`
+- Force UI rebuild: `.\serve.cmd -ForceUI` / `BAIZE_FORCE_UI=1`
 
 Open the console and send a message. To change the model, base URL, or wire a business system, copy `configs/config.yaml` to `configs/config.local.yaml` (git-ignored), edit it, then start with `.\serve.cmd -config configs\config.local.yaml` (or `./scripts/serve.sh -config configs/config.local.yaml`).
 

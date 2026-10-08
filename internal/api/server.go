@@ -99,6 +99,11 @@ type Server struct {
 	SkillCatalog *skill.Catalog
 	Identities   identity.Store
 	Messages     conversation.Store // optional; nil = no message persistence
+	// skillsConvGen tracks the Catalog.Generation last aligned for each
+	// conversation (skills reload / auto-dirty). Process-local; after restart
+	// missing keys are treated as 0 so the first run realigns.
+	skillsConvGen   map[string]uint64
+	skillsConvGenMu sync.Mutex
 	// Memory is the account-scoped fact store (P6 settings CRUD). nil = routes unavailable.
 	Memory         memory.Store
 	Hub            *eventbus.Hub // optional; nil = SSE replay only (no live fan-out)

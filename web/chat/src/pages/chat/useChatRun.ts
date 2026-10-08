@@ -17,6 +17,7 @@ import {
   type ThinkingLevel,
 } from '../../api'
 import { buildLocalPreview } from '../../localAttachments'
+import { useLocale } from '../../locale/LocaleContext'
 import { buildRunOptions, visionGate } from '../../modelSelect'
 import { CHAT } from '../../strings'
 import type { ChatLiveControls } from './useChatSession'
@@ -75,6 +76,7 @@ export function useChatRun({
   setVisionWarning,
   workspaceId,
 }: UseChatRunArgs) {
+  const { locale } = useLocale()
   const stream = useChatRunStream({
     conversationIdRef,
     setMessages,
@@ -284,6 +286,7 @@ export function useChatRun({
         attachments,
         ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
         workspaceId,
+        locale,
       })
       const created = await createRun(agentId, text, sentConversationId, runOptions)
       // Model choice is persisted via onChooseModel; do not reset after send.
@@ -295,7 +298,11 @@ export function useChatRun({
         const copy = [...prev]
         for (let i = copy.length - 1; i >= 0; i--) {
           if (copy[i].role === 'user' && copy[i].id.startsWith('local_') && !copy[i].run_id) {
-            copy[i] = { ...copy[i], run_id: created.run_id }
+            copy[i] = {
+              ...copy[i],
+              run_id: created.run_id,
+              pinned_skills: created.pinned_skills ?? [],
+            }
             break
           }
         }

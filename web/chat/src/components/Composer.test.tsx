@@ -31,19 +31,26 @@ describe('Composer', () => {
     expect(inputMatch![0]).not.toContain('aria-label="添加附件"')
   })
 
-  it('lists available skill ids as a hint when skills are provided', () => {
+  it('lists available skill ids and reload hint when skills are provided', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, skills }),
     )
     expect(html).toContain('composer-hint')
     expect(html).toContain('search')
     expect(html).toContain('sum')
+    expect(html).toContain('/reload')
   })
 
-  it('omits the skill hint when no skills are available', () => {
+  it('still shows the reload hint when the skill list is empty', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, skills: [] }),
     )
+    expect(html).toContain('composer-hint')
+    expect(html).toContain('/reload')
+  })
+
+  it('omits the hint when skills prop is omitted', () => {
+    const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
     expect(html).not.toContain('composer-hint')
   })
 

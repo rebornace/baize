@@ -51,7 +51,9 @@ describe('Composer skill completion placement (regression: off-screen popup)', (
     // The popup is absolutely positioned relative to .composer-box; it must be
     // a descendant of it or it anchors to the page and renders off-screen.
     expect(box?.contains(popup())).toBe(true)
-    expect(popup()?.querySelectorAll('.composer-complete-item')).toHaveLength(2)
+    // reload command + 2 skills
+    expect(popup()?.querySelectorAll('.composer-complete-item')).toHaveLength(3)
+    expect(popup()?.textContent).toContain('reload')
   })
 
   it('opens the completion popup inside .composer-box for "/" trigger', () => {
@@ -60,11 +62,32 @@ describe('Composer skill completion placement (regression: off-screen popup)', (
     const box = host.querySelector('.composer-box')
     expect(popup()).not.toBeNull()
     expect(box?.contains(popup())).toBe(true)
+    expect(popup()?.textContent).toContain('reload')
   })
 
-  it('does not render a popup when no skills are provided', () => {
+  it('surfaces /reload even when the skill list is empty', () => {
     render(<Composer onSend={() => true} skills={[]} />)
+    typeText('/')
+    expect(popup()).not.toBeNull()
+    expect(popup()?.querySelectorAll('.composer-complete-item')).toHaveLength(1)
+    expect(popup()?.textContent).toContain('reload')
+  })
+
+  it('does not render a popup when skills prop is omitted', () => {
+    render(<Composer onSend={() => true} />)
     typeText('@')
+    expect(popup()).toBeNull()
+  })
+
+  it('inserts /reload when the reload suggestion is accepted', () => {
+    render(<Composer onSend={() => true} skills={[]} />)
+    typeText('/re')
+    expect(popup()).not.toBeNull()
+    const ta = textarea()
+    act(() => {
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(ta.value).toBe('/reload ')
     expect(popup()).toBeNull()
   })
 })

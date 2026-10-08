@@ -217,6 +217,66 @@ func TestExpandAllowedForHTTPIntentAddsDeleteBackends(t *testing.T) {
 	}
 }
 
+// Fail-open (allowed=nil) must not dump every connector's login/me onto Top-K.
+func TestPreserveAuthToolsFailOpenOnlyPickedSystems(t *testing.T) {
+	full := []llm.ToolSpec{
+		{Name: "order_list", Method: "GET", Path: "/orders", Source: "mall"},
+		{Name: "mall_login", Method: "POST", Path: "/login", Source: "mall"},
+		{Name: "mall_me", Method: "GET", Path: "/me", Source: "mall"},
+		{Name: "crm_login", Method: "POST", Path: "/auth/login", Source: "crm"},
+		{Name: "crm_me", Method: "GET", Path: "/me", Source: "crm"},
+	}
+	picked := []llm.ToolSpec{full[0]} // only mall task tool
+	out := preserveAuthTools(full, nil, picked, false)
+	names := map[string]bool{}
+	for _, s := range out {
+		names[s.Name] = true
+	}
+	if !names["mall_login"] || !names["mall_me"] {
+		t.Fatalf("mall auth must be kept for picked system, got %v", names)
+	}
+	if names["crm_login"] || names["crm_me"] {
+		t.Fatalf("crm auth must not flood fail-open Top-K, got %v", names)
+	}
+}
+
+func TestPreserveAuthToolsAllowedSystemsStillGetAuth(t *testing.T) {
+	full := []llm.ToolSpec{
+		{Name: "order_list", Method: "GET", Path: "/orders", Source: "mall"},
+		{Name: "mall_login", Method: "POST", Path: "/login", Source: "mall"},
+		{Name: "crm_login", Method: "POST", Path: "/login", Source: "crm"},
+	}
+	picked := []llm.ToolSpec{full[0]}
+	out := preserveAuthTools(full, map[string]bool{"mall": true, "crm": true}, picked, false)
+	names := map[string]bool{}
+	for _, s := range out {
+		names[s.Name] = true
+	}
+	if !names["mall_login"] || !names["crm_login"] {
+		t.Fatalf("explicitly allowed systems keep auth even if not in Top-K yet, got %v", names)
+	}
+}
+
+func TestPreserveAuthToolsSkipsLoginAfterSessionAuthed(t *testing.T) {
+	full := []llm.ToolSpec{
+		{Name: "order_list", Method: "GET", Path: "/orders", Source: "mall"},
+		{Name: "mall_login", Method: "POST", Path: "/login", Source: "mall"},
+		{Name: "mall_me", Method: "GET", Path: "/me", Source: "mall"},
+	}
+	picked := []llm.ToolSpec{full[0]}
+	out := preserveAuthTools(full, map[string]bool{"mall": true}, picked, true)
+	names := map[string]bool{}
+	for _, s := range out {
+		names[s.Name] = true
+	}
+	if names["mall_login"] {
+		t.Fatalf("login-establish must not floor after session auth, got %v", names)
+	}
+	if !names["mall_me"] {
+		t.Fatalf("session probe *_me may still be kept, got %v", names)
+	}
+}
+
 func TestPreserveHTTPIntentToolsUsesMethodNotSuffix(t *testing.T) {
 	full := []llm.ToolSpec{
 		{Name: "list_people", Method: "GET", Path: "/people", Description: "分页", Source: "admin-api"},

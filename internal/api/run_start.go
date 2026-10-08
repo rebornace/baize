@@ -23,11 +23,15 @@ type startRunInput struct {
 	ModelProfileID                             string
 	ThinkingLevel                              string // empty = profile default
 	WorkspaceID                                string
+	Locale                                     string // UI locale for skill bodies (en / zh-CN)
 	// BubbleContent is the exact text persisted to the conversation message
 	// for display. It may carry UI-only attachment reference lines
 	// (![图片](…)/[file:…](…)) that must not reach the model or a mirrored
 	// channel peer. When empty, Input is persisted.
 	BubbleContent string
+	// PinnedSkills is stored on the user message so Chat history can show pin
+	// tags after reload (same list returned as create_run pinned_skills).
+	PinnedSkills []string
 }
 
 func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, error) {
@@ -66,9 +70,10 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	}
 	if s.Messages != nil && conv != "" {
 		_, _ = s.Messages.Append(conv, conversation.Message{
-			Role:    conversation.RoleUser,
-			Content: bubble,
-			RunID:   runRec.ID,
+			Role:         conversation.RoleUser,
+			Content:      bubble,
+			RunID:        runRec.ID,
+			PinnedSkills: append([]string(nil), in.PinnedSkills...),
 		})
 		s.deliverUserOutbound(ctx, runRec.ID, conv, in.Input)
 	}
@@ -77,8 +82,13 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		_ = s.Store.AppendEvent(runRec.ID, ev)
 	}
 
-	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
-	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts}
+	def := agent.Def{
+		ID:          ag.ID,
+		System:      ag.System,
+		Skills:      append([]string(nil), ag.Skills...),
+		ToolBinding: ag.ToolBinding,
+	}
+	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts, Locale: in.Locale}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
 	job := middleware.Job{
 		RunID:     runRec.ID,
@@ -87,6 +97,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		Input:     in.Input,
 		Skills:    runOpts.Skills,
 		UserParts: PartsToMiddleware(runOpts.UserParts),
+		Locale:    runOpts.Locale,
 	}
 	s.Dispatch(ctx, job)
 

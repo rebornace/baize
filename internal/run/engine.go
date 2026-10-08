@@ -150,6 +150,9 @@ type RunOptions struct {
 	// trailing persisted user message (which carries only the display text)
 	// with this multimodal version so the LLM sees exactly one user turn.
 	UserParts []llm.ContentPart
+	// Locale selects localized skill bodies (e.g. "en", "zh-CN"). Empty uses
+	// the default SKILL.md body.
+	Locale string
 }
 
 // SetToolEmbedder hot-swaps the DP-2a dense embedder and clears the tool
@@ -194,7 +197,8 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 	if skills == nil {
 		skills = ag.Skills
 	}
-	e.beginRunSkills(runID, skills, ag.System, beginRunInput(input))
+	exclusive := strings.EqualFold(strings.TrimSpace(ag.ToolBinding), "exclusive")
+	e.beginRunSkillsOpts(runID, skills, ag.System, exclusive, opts.Locale, beginRunInput(input))
 	e.armContextProjection(runID, runRec)
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)

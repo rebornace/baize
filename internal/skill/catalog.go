@@ -37,6 +37,9 @@ type Catalog struct {
 	builtinDirs []string
 	userDir     string // retained for API paths; user packages live in Blobs
 	Blobs       blob.Store
+	// generation increments on every successful Reload (including the initial
+	// LoadCatalog Reload). Callers use it to detect catalog changes across runs.
+	generation uint64
 }
 
 func LoadCatalog(builtinDirs []string, userDir string, blobs blob.Store) (*Catalog, error) {
@@ -81,6 +84,17 @@ func (c *Catalog) UserDir() string {
 	return c.userDir
 }
 
+// Generation returns the monotonic catalog generation (0 before any successful
+// Reload; LoadCatalog performs an initial Reload so a live catalog starts at 1).
+func (c *Catalog) Generation() uint64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.generation
+}
+
 func (c *Catalog) Reload() error {
 	byID := make(map[string]Package)
 	for _, dir := range c.builtinDirs {
@@ -96,6 +110,7 @@ func (c *Catalog) Reload() error {
 	}
 	c.mu.Lock()
 	c.byID = byID
+	c.generation++
 	c.mu.Unlock()
 	return nil
 }
@@ -135,6 +150,16 @@ func (c *Catalog) loadSkillsFromBlobs(prefix, source string, byID map[string]Pac
 		}
 		pkg.ID = id
 		pkg.Source = source
+		enKey := blob.SkillObjectKey(source, id, "SKILL.en.md")
+		if enRaw, enErr := c.Blobs.Get(ctx, enKey); enErr == nil {
+			en, perr := ParseSKILLMD(enRaw)
+			if perr != nil {
+				return fmt.Errorf("%s: %w", enKey, perr)
+			}
+			pkg.ApplyEnglishOverlay(en)
+		} else if !errors.Is(enErr, blob.ErrNotFound) {
+			return fmt.Errorf("%s: %w", enKey, enErr)
+		}
 		wfKey := blob.SkillObjectKey(source, id, "workflow.yaml")
 		wfRaw, wfErr := c.Blobs.Get(ctx, wfKey)
 		if wfErr == nil {
@@ -198,6 +223,9 @@ func scanDir(dir, source string, byID map[string]Package) error {
 		pkg.ID = id
 		pkg.Source = source
 		pkg.Dir = filepath.Join(dir, id)
+		if err := loadEnglishOverlayFile(&pkg, filepath.Join(pkg.Dir, "SKILL.en.md")); err != nil {
+			return err
+		}
 		wfPath := filepath.Join(pkg.Dir, "workflow.yaml")
 		wfRaw, wfErr := os.ReadFile(wfPath)
 		if wfErr == nil {
@@ -214,6 +242,22 @@ func scanDir(dir, source string, byID map[string]Package) error {
 		}
 		byID[id] = pkg
 	}
+	return nil
+}
+
+func loadEnglishOverlayFile(pkg *Package, path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	en, err := ParseSKILLMD(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	pkg.ApplyEnglishOverlay(en)
 	return nil
 }
 

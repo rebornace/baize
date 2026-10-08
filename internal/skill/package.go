@@ -13,14 +13,62 @@ type Package struct {
 	ID                 string
 	Name               string
 	Description        string
+	DescriptionEN      string // optional English catalog blurb (SKILL.en.md)
 	Tools              []string
 	Body               string
+	BodyEN             string // optional English body (SKILL.en.md)
 	Source             string // builtin | user | managed
 	Dir                string
 	Workflow           *workflow.Workflow // optional pipeline from workflow.yaml
 	Managed            bool
 	ManagedKind        string
 	ManagedConnectorID string
+}
+
+// NormalizeLocale maps UI/API locale tags to the skill locale keys we support.
+// Unknown or empty values return "" (use the default Chinese/SKILL.md body).
+func NormalizeLocale(locale string) string {
+	l := strings.ToLower(strings.TrimSpace(locale))
+	l = strings.ReplaceAll(l, "_", "-")
+	switch {
+	case l == "en" || strings.HasPrefix(l, "en-"):
+		return "en"
+	case l == "zh" || l == "zh-cn" || l == "zh-hans" || strings.HasPrefix(l, "zh-"):
+		return "zh-CN"
+	default:
+		return ""
+	}
+}
+
+// LocalizedBody returns BodyEN when locale is English and BodyEN is set;
+// otherwise the default Body (SKILL.md).
+func (p Package) LocalizedBody(locale string) string {
+	if NormalizeLocale(locale) == "en" && strings.TrimSpace(p.BodyEN) != "" {
+		return p.BodyEN
+	}
+	return p.Body
+}
+
+// LocalizedDescription returns DescriptionEN when locale is English and set;
+// otherwise Description.
+func (p Package) LocalizedDescription(locale string) string {
+	if NormalizeLocale(locale) == "en" && strings.TrimSpace(p.DescriptionEN) != "" {
+		return p.DescriptionEN
+	}
+	return p.Description
+}
+
+// ApplyEnglishOverlay merges an English SKILL.en.md parse into p.
+func (p *Package) ApplyEnglishOverlay(en Package) {
+	if p == nil {
+		return
+	}
+	if strings.TrimSpace(en.Body) != "" {
+		p.BodyEN = en.Body
+	}
+	if strings.TrimSpace(en.Description) != "" {
+		p.DescriptionEN = en.Description
+	}
 }
 
 type frontmatter struct {

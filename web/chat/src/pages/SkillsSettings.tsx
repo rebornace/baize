@@ -19,8 +19,15 @@ import {
   useToast,
 } from '../components/ui'
 import { useGate } from '../gateContext'
+import { useLocale } from '../locale/LocaleContext'
 import { SKILLS, skillErrorText } from '../strings'
-import { skillDisplayName, skillSourceLabel } from './skills/skillDisplay'
+import {
+  skillDisplayName,
+  skillLocalizedDescription,
+  skillShowSecondaryDescription,
+  skillSourceLabel,
+  skillToolsCountLabel,
+} from './skills/skillDisplay'
 
 export function toggleSkillSelection(prev: Set<string>, id: string, checked: boolean): Set<string> {
   const next = new Set(prev)
@@ -50,19 +57,16 @@ export function mergeSkillSelection(
   return out
 }
 
-function toolsSummary(tools: string[]): string {
-  if (tools.length === 0) return '—'
-  return tools.join(', ')
-}
-
 export function SkillsSettings() {
   const { role } = useGate()
   const readOnly = role !== 'admin'
+  const { locale } = useLocale()
   const { toasts, push, dismiss } = useToast()
   const [skills, setSkills] = useState<SkillSummary[] | null>(null)
   const [agentId, setAgentId] = useState('ticket-agent')
   const [system, setSystem] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [exclusiveBinding, setExclusiveBinding] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -83,7 +87,7 @@ export function SkillsSettings() {
       setAgentId(resolvedAgentId)
 
       // Skill list is the read-only core payload; its success must not depend on getAgent.
-      const { skills: list } = await listSkills()
+      const { skills: list } = await listSkills(locale)
       setSkills(list ?? [])
       setLoadError(null)
 
@@ -96,6 +100,7 @@ export function SkillsSettings() {
         const agent = await getAgent(resolvedAgentId)
         setSystem(agent.system ?? '')
         setSelected(new Set(agent.skills ?? []))
+        setExclusiveBinding(agent.tool_binding === 'exclusive')
       } catch {
         /* non-fatal: skill list remains visible without saved selection/system */
       }
@@ -105,14 +110,14 @@ export function SkillsSettings() {
       setLoadError(f.detail ? `${f.title} ${f.detail}` : f.title)
       push({ tone: 'error', title: f.title, detail: f.detail })
     }
-  }, [readOnly, push])
+  }, [locale, readOnly, push])
 
   useEffect(() => {
     void load()
   }, [load])
 
   const refreshList = async () => {
-    const { skills: list } = await listSkills()
+    const { skills: list } = await listSkills(locale)
     setSkills(list ?? [])
   }
 
@@ -173,7 +178,11 @@ export function SkillsSettings() {
       const agent = await getAgent(agentId)
       const catalogOrder = skills.map((s) => s.id)
       const skillsIds = mergeSkillSelection(agent.skills ?? [], selected, catalogOrder)
-      await putAgent(agentId, { system: agent.system ?? system, skills: skillsIds })
+      await putAgent(agentId, {
+        system: agent.system ?? system,
+        skills: skillsIds,
+        tool_binding: exclusiveBinding ? 'exclusive' : '',
+      })
       setSystem(agent.system ?? system)
       push({ tone: 'success', title: SKILLS.toastSaved })
     } catch (err) {
@@ -263,12 +272,34 @@ export function SkillsSettings() {
         />
       )}
 
+      {!readOnly && skills !== null && (
+        <label className="settings-login-toggle settings-skill-exclusive">
+          <input
+            type="checkbox"
+            checked={exclusiveBinding}
+            disabled={busy}
+            onChange={(e) => setExclusiveBinding(e.target.checked)}
+          />
+          <span>
+            <span className="settings-tool-title">{SKILLS.exclusiveBinding}</span>
+            <span className="settings-muted">{SKILLS.exclusiveBindingHint}</span>
+          </span>
+        </label>
+      )}
+
+      {skills !== null && skills.length > 0 && (
+        <p className="settings-muted settings-skill-selection-hint">{SKILLS.selectionHint}</p>
+      )}
+
       {skills !== null && skills.length > 0 && (
         <ul className="settings-list">
           {skills.map((s) => {
-            const title = skillDisplayName(s)
-            const showId = Boolean(s.description?.trim() && s.id !== title)
-            const toolsLine = toolsSummary(s.tools)
+            const title = skillDisplayName(s, locale)
+            const desc = skillLocalizedDescription(s, locale)
+            // Show id when the title is a human blurb (not the bare id).
+            const showId = title !== s.id
+            // Never dump raw English tool ids under a localized title — count only.
+            const toolsLine = skillToolsCountLabel(s.tools?.length ?? 0)
             const sourceBadge = (
               <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{skillSourceLabel(s.source)}</Badge>
             )
@@ -276,9 +307,10 @@ export function SkillsSettings() {
               <span className="settings-skill-line">
                 <span className="settings-tool-title">{title}</span>
                 {showId ? <span className="settings-tool-sub">{s.id}</span> : null}
-                {toolsLine !== '—' ? (
-                  <span className="settings-muted">{toolsLine}</span>
+                {skillShowSecondaryDescription(s, locale) ? (
+                  <span className="settings-muted">{desc}</span>
                 ) : null}
+                {toolsLine ? <span className="settings-muted">{toolsLine}</span> : null}
               </span>
             )
             return (

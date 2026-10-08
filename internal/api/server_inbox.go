@@ -18,6 +18,7 @@ import (
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/settingscrypto"
+	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -182,11 +183,30 @@ func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, ch
 
 	convID := resolveConversation(s.Store, channel, payload)
 	inputText := strings.TrimSpace(payload.Input)
+	parsed := skillparse.Parse(inputText)
+	skillsReload := parsed.Reload
+	if v, ok := payload.Metadata["skills_reload"].(bool); ok && v {
+		skillsReload = true
+	}
+	_ = s.alignSkillsCatalog(convID, skillsReload)
+	if parsed.Reload || len(parsed.IDs) > 0 {
+		inputText = parsed.Cleaned
+		if inputText == "" && (len(parsed.IDs) > 0 || parsed.Reload) {
+			inputText = skillparse.MentionOnlyFallback
+		}
+	}
 
 	var runSkills []string
+	skillsOverride := false
 	if len(channel.Skills) > 0 {
 		runSkills = append([]string(nil), channel.Skills...)
+		skillsOverride = true
+	} else if len(parsed.IDs) > 0 {
+		runSkills = append([]string(nil), parsed.IDs...)
+		skillsOverride = true
 	}
+	ag, _ := s.Store.GetAgent(channel.AgentID)
+	pinnedSkills := resolvePinnedSkills(ag, runSkills, skillsOverride, s.SkillCatalog)
 
 	var webhookCfg *store.WebhookConfig
 	if u := strings.TrimSpace(channel.WebhookURL); u != "" || len(channel.WebhookHeaders) > 0 {
@@ -216,6 +236,7 @@ func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, ch
 		ConversationID: convID,
 		Skills:         runSkills,
 		Webhook:        webhookCfg,
+		PinnedSkills:   pinnedSkills,
 		PreEvents: []store.Event{{
 			Type: run.EventInboxReceived,
 			Data: preEventData,

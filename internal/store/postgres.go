@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS messages (
   thinking TEXT,
   thinking_redacted BOOLEAN NOT NULL DEFAULT false,
   run_id TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  pinned_skills TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
 CREATE TABLE IF NOT EXISTS conversation_meta (
@@ -247,6 +248,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS thinking_redacted BOOLEAN NOT NULL DEFAULT false`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate messages thinking_redacted: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS pinned_skills TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate messages pinned_skills: %w", err)
 	}
 	if err := migrateToolsColumns(db); err != nil {
 		_ = db.Close()

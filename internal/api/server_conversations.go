@@ -10,6 +10,7 @@ import (
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/run"
 )
 
 func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
@@ -333,6 +334,7 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 	var body struct {
 		Regenerate bool   `json:"regenerate"`
 		AgentID    string `json:"agent_id"`
+		Locale     string `json:"locale"`
 	}
 	if r.Body != nil {
 		dec := json.NewDecoder(r.Body)
@@ -382,6 +384,7 @@ func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) 
 		runRec, err := s.createAndExecuteRun(r, agentID, input, convID, "", executeRunOpts{
 			skipUserAppend: reuseUser,
 			rebindUserID:   lastUserID(lastUser),
+			runOpts:        run.RunOptions{Locale: strings.TrimSpace(body.Locale)},
 		})
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())

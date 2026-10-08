@@ -74,6 +74,34 @@ func TestSQLiteAppendThinking(t *testing.T) {
 	}
 }
 
+func TestSQLiteAppendPinnedSkills(t *testing.T) {
+	db, path := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append("c1", conversation.Message{
+		Role: conversation.RoleUser, Content: "hi", PinnedSkills: []string{"data-analytics", "ticket-triage"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := conversation.OpenSQLite(reopenTestDB(t, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := s2.List("c1")
+	if len(list) != 1 {
+		t.Fatalf("%+v", list)
+	}
+	got := list[0].PinnedSkills
+	if len(got) != 2 || got[0] != "data-analytics" || got[1] != "ticket-triage" {
+		t.Fatalf("pinned_skills=%v", got)
+	}
+}
+
 func TestSQLiteAppendListClearWindow(t *testing.T) {
 	db, _ := openTestDB(t)
 	s, err := conversation.OpenSQLite(db)

@@ -212,6 +212,15 @@ export function ChatMessageList({
                 ) : (
                   <UserBubble content={m.content} />
                 )}
+                {m.role === 'user' && m.pinned_skills && m.pinned_skills.length > 0 && (
+                  <div className="msg-pinned-skills" data-testid="pinned-skills">
+                    {m.pinned_skills.map((id) => (
+                      <span key={id} className="msg-pinned-skill">
+                        {id}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {pages.length > 0 && (
                 <div className="msg-analysis-pages">

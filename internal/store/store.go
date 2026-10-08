@@ -22,10 +22,19 @@ const (
 	StatusRejected Status = "rejected"
 )
 
+// Agent tool_binding values. Empty / "floor" keeps all enabled tools visible
+// (skill tools: are a DP-2a floor). "exclusive" exposes only tools listed on
+// currently activated skills (plus activate_skill).
+const (
+	ToolBindingFloor     = "floor"
+	ToolBindingExclusive = "exclusive"
+)
+
 type Agent struct {
-	ID     string   `json:"id"`
-	System string   `json:"system"`
-	Skills []string `json:"skills,omitempty"`
+	ID          string   `json:"id"`
+	System      string   `json:"system"`
+	Skills      []string `json:"skills,omitempty"`
+	ToolBinding string   `json:"tool_binding,omitempty"`
 }
 
 func cloneAgent(a Agent) Agent {

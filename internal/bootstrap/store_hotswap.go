@@ -158,9 +158,10 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	}
 
 	newRaw.UpsertAgent(store.Agent{
-		ID:     cfgSnap.Agent.ID,
-		System: cfgSnap.Agent.System,
-		Skills: append([]string(nil), cfgSnap.Agent.Skills...),
+		ID:          cfgSnap.Agent.ID,
+		System:      cfgSnap.Agent.System,
+		Skills:      append([]string(nil), cfgSnap.Agent.Skills...),
+		ToolBinding: cfgSnap.Agent.ToolBinding,
 	})
 
 	wrapped := eventbus.Notify(newRaw, rt.hub)

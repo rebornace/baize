@@ -27,6 +27,8 @@ export interface CreateRunResponse {
   run_id: string
   status: RunStatus
   conversation_id?: string
+  /** Skills activated before the first model call for this run. */
+  pinned_skills?: string[]
 }
 
 export interface ResumeResponse {
@@ -63,4 +65,6 @@ export interface ChatMessage {
   /** Persisted model thinking for this assistant turn (optional). */
   thinking?: string
   thinking_redacted?: boolean
+  /** Skills activated for this user turn (from createRun / listMessages). */
+  pinned_skills?: string[]
 }

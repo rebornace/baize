@@ -5,7 +5,11 @@ import (
 	"strings"
 )
 
-func ComposeSystem(base string, cat *Catalog, activated []string) string {
+func ComposeSystem(base string, cat *Catalog, activated []string, locale ...string) string {
+	loc := ""
+	if len(locale) > 0 {
+		loc = locale[0]
+	}
 	var b strings.Builder
 	b.WriteString(base)
 	pkgs := cat.List()
@@ -14,7 +18,7 @@ func ComposeSystem(base string, cat *Catalog, activated []string) string {
 	}
 	b.WriteString("\n\n## Available skills\n")
 	for _, p := range pkgs {
-		desc := p.Description
+		desc := p.LocalizedDescription(loc)
 		if desc == "" {
 			desc = p.Name
 		}
@@ -32,7 +36,7 @@ func ComposeSystem(base string, cat *Catalog, activated []string) string {
 		b.WriteString("\n## Skill: ")
 		b.WriteString(id)
 		b.WriteString("\n")
-		b.WriteString(p.Body)
+		b.WriteString(p.LocalizedBody(loc))
 		b.WriteString("\n")
 	}
 	return b.String()

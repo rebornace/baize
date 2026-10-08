@@ -20,6 +20,7 @@ import {
   type ToolOrWorkflowBlock,
 } from '../../historyBlocks'
 import type { UsageMeta } from '../../foldEvents'
+import { useLocale } from '../../locale/LocaleContext'
 import { CHAT } from '../../strings'
 import { uuid } from '../../uuid'
 
@@ -76,6 +77,7 @@ export function useChatSession({
   liveRef,
   agentId,
 }: UseChatSessionArgs) {
+  const { locale } = useLocale()
   const [conversationId, setConversationIdState] = useState(loadConversationId)
   const [workspaceId, setWorkspaceIdState] = useState(loadWorkspaceId)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -367,6 +369,7 @@ export function useChatSession({
         const res = await rollbackMessages(conversationIdRef.current, m.id, {
           regenerate: true,
           agentId,
+          locale,
         })
         setMessages(res.messages)
         setComposerDraft(undefined)
@@ -384,7 +387,7 @@ export function useChatSession({
         setHistoryMutating(false)
       }
     },
-    [agentId, historyMutating, liveRef, refreshConversations, reportError],
+    [agentId, historyMutating, liveRef, locale, refreshConversations, reportError],
   )
 
   const onRollbackTo = useCallback(

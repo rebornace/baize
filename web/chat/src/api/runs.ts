@@ -21,6 +21,8 @@ export interface CreateRunOptions {
   /** Chat per-conversation override; omit to use the model profile default. */
   thinkingLevel?: ThinkingLevel
   workspaceId?: string
+  /** UI locale for localized skill bodies (zh-CN | en). */
+  locale?: string
 }
 
 export async function createRun(
@@ -49,6 +51,7 @@ export async function createRun(
   if (options?.modelProfileId) body.model_profile_id = options.modelProfileId
   if (options?.thinkingLevel) body.thinking_level = options.thinkingLevel
   if (options?.workspaceId) body.workspace_id = options.workspaceId
+  if (options?.locale) body.locale = options.locale
   const res = await fetch('/v0/runs', {
     method: 'POST',
     headers: authInit({ 'Content-Type': 'application/json' }),

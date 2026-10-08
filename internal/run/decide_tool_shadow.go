@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rebornace/baize/internal/decide"
+	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
@@ -37,11 +38,16 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 	// The decision model must see what the user actually wants; the request is
 	// capped (cheap probe).
 	userRequest := ""
+	sessionAuthed := false
 	if runRec, err := e.Store.GetRun(runID); err == nil && runRec != nil {
 		userRequest = strings.TrimSpace(runRec.Input)
 		if r := []rune(userRequest); len(r) > decideProbeMaxRunes {
 			userRequest = string(r[:decideProbeMaxRunes])
 		}
+		// Each chat message is a new Run, so tools are re-narrowed from scratch.
+		// If this conversation already has credentials, do not keep re-flooring
+		// login tools into Top-K on every subsequent message.
+		sessionAuthed = identity.ConversationHasSessionAuth(e.Identities, runRec.ConversationID)
 	}
 
 	// Trajectory-aware narrowing: after the first ReAct step the decision
@@ -114,12 +120,12 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 	// the matching admin pagination tool into the set so basic list queries
 	// can never be silently starved of the right tool.
 	preSpecs = preserveHTTPIntentTools(matchQuery, specs, allowed, preSpecs)
-	// Auth/session floor: when a system is selected, its login + session-probe
-	// primitives are always kept so the model can recover from an expired
-	// session (401) via *_me / *_login without the query having to mention
-	// login. There are very few such tools, so the cost is negligible.
-	preSpecs = preserveAuthTools(specs, allowed, preSpecs)
-	preSpecs = e.preserveSkillDeclaredTools(runID, specs, preSpecs)
+	// Auth/session floor: when a system is selected, keep login/session probes
+	// so a 401 can recover without the query mentioning login. Once the
+	// conversation already has credentials, skip login-establish tools so they
+	// stop occupying the prefilter budget after a successful login.
+	preSpecs = preserveAuthTools(specs, allowed, preSpecs, sessionAuthed)
+	preSpecs = e.preserveSkillDeclaredTools(runID, specs, preSpecs, sessionAuthed)
 	preNames := toolNames(preSpecs)
 
 	sent := specs
@@ -488,20 +494,40 @@ func hasListIntent(query string) bool   { return toolindex.HasListIntent(query) 
 // preserveAuthTools forces a selected system's login/session primitives into
 // the candidate set. After a backend returns 401 the model must be able to call
 // *_login (establish a session) or *_me / current-session probes (check it),
-// and those names never appear in the user query. Only systems in allowed (or
-// every system when allowed is nil) contribute, and a short, conservative name
-// match keeps the set tiny.
-func preserveAuthTools(full []llm.ToolSpec, allowed map[string]bool, picked []llm.ToolSpec) []llm.ToolSpec {
+// and those names never appear in the user query.
+//
+// When allowed is set, auth tools for those systems are kept. When allowed is
+// nil (routing fail-open), only systems already present in picked get auth
+// tools — otherwise every connector's login/me would pile onto Top-K and crowd
+// out task tools.
+//
+// When sessionAuthed is true, login-establish tools are skipped (credentials
+// already exist); *_me probes may still be kept for light session checks.
+func preserveAuthTools(full []llm.ToolSpec, allowed map[string]bool, picked []llm.ToolSpec, sessionAuthed bool) []llm.ToolSpec {
 	have := make(map[string]bool, len(picked))
+	systemsInPicked := make(map[string]bool)
 	for _, s := range picked {
 		have[s.Name] = true
+		if s.Source != "" {
+			systemsInPicked[s.Source] = true
+		}
 	}
 	out := picked
 	for _, s := range full {
 		if !isAuthSessionTool(s) || have[s.Name] {
 			continue
 		}
-		if allowed != nil && s.Source != "" && !allowed[s.Source] {
+		if sessionAuthed && isLoginEstablishTool(s) {
+			continue
+		}
+		if s.Source == "" {
+			continue
+		}
+		if allowed != nil {
+			if !allowed[s.Source] {
+				continue
+			}
+		} else if !systemsInPicked[s.Source] {
 			continue
 		}
 		out = append(out, s)
@@ -526,6 +552,23 @@ func isAuthSessionTool(s llm.ToolSpec) bool {
 		return true
 	}
 	return false
+}
+
+// isLoginEstablishTool reports auth tools that create a session (login), as
+// opposed to lightweight current-user probes (*_me).
+func isLoginEstablishTool(s llm.ToolSpec) bool {
+	if !isAuthSessionTool(s) {
+		return false
+	}
+	p := strings.ToLower(s.Path)
+	n := strings.ToLower(s.Name)
+	if strings.HasSuffix(n, "_me") || strings.HasSuffix(n, ".me") {
+		return false
+	}
+	if strings.HasSuffix(strings.TrimSuffix(p, "/"), "/me") {
+		return false
+	}
+	return true
 }
 
 // connectorSources returns the distinct non-empty ToolSpec.Source ids, sorted.
@@ -664,7 +707,11 @@ var protectedToolNames = map[string]bool{
 // preserveSkillDeclaredTools keeps tools listed on the run's activated skills
 // even when keyword routing would drop them. Skills inject workflow; their
 // tools: list is a floor, not a substitute for connector reach.
-func (e *Engine) preserveSkillDeclaredTools(runID string, full, picked []llm.ToolSpec) []llm.ToolSpec {
+//
+// When sessionAuthed is true, managed connector_login skills are excluded from
+// the floor — after login their large companion tool lists would otherwise
+// keep crowding every subsequent message's Top-K.
+func (e *Engine) preserveSkillDeclaredTools(runID string, full, picked []llm.ToolSpec, sessionAuthed bool) []llm.ToolSpec {
 	if e.Skills == nil {
 		return picked
 	}
@@ -672,8 +719,20 @@ func (e *Engine) preserveSkillDeclaredTools(runID string, full, picked []llm.Too
 	if st == nil || len(st.activated) == 0 {
 		return picked
 	}
+	activated := st.activated
+	if sessionAuthed {
+		filtered := make([]string, 0, len(activated))
+		for _, id := range activated {
+			p, ok := e.Skills.Get(id)
+			if ok && p.Managed && p.ManagedKind == "connector_login" {
+				continue
+			}
+			filtered = append(filtered, id)
+		}
+		activated = filtered
+	}
 	want := make(map[string]bool)
-	for _, name := range skill.VisibleTools(e.Skills, st.activated, e.enabledToolMap()) {
+	for _, name := range skill.VisibleTools(e.Skills, activated, e.enabledToolMap()) {
 		want[name] = true
 	}
 	if len(want) == 0 {

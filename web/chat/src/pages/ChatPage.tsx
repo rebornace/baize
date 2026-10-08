@@ -38,7 +38,7 @@ const AGENT_FALLBACK = 'ticket-agent'
 export function ChatPage() {
   const { role, gateEnabled } = useGate()
   // Subscribe so chat chrome rebuilds when language changes (without full reload).
-  useLocale()
+  const { locale } = useLocale()
   const drawer = useDrawer()
   const toast = useToast()
   const pushToast = toast.push
@@ -144,7 +144,8 @@ export function ChatPage() {
       })
     // Skills drive the Composer @-completion popup. GET /v0/skills is operator
     // readable; load failures just disable the popup rather than blocking chat.
-    void listSkills()
+    // Pass UI locale so catalog descriptions match the console language.
+    void listSkills(locale)
       .then((res) => {
         if (!cancelled) setSkills(res.skills ?? [])
       })
@@ -191,8 +192,9 @@ export function ChatPage() {
     return () => {
       cancelled = true
     }
-    // toast.push is identity-stable (useCallback); effect runs once on mount.
-  }, [])
+    // toast.push is identity-stable (useCallback); re-run when UI locale changes
+    // so skill descriptions refresh with the console language.
+  }, [locale])
 
   // Sticky thinking override is keyed by conversationId; switching chats resets
   // to that chat's stored choice (or '' = follow model default).
@@ -204,7 +206,7 @@ export function ChatPage() {
   const onGoLoginSkill = async (skillId: string) => {
     let list = skills
     try {
-      const res = await listSkills()
+      const res = await listSkills(locale)
       list = res.skills ?? []
       setSkills(list)
     } catch {

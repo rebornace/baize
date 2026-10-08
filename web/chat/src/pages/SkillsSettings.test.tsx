@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 import { GateContext } from '../gateContext'
+import { LocaleProvider } from '../locale/LocaleContext'
 import { SKILLS } from '../strings'
 import { SkillsSettings } from './SkillsSettings'
 
@@ -14,9 +15,13 @@ async function renderSkills(role: 'admin' | 'operator' = 'admin') {
   await act(async () => {
     root.render(
       createElement(
-        GateContext.Provider,
-        { value: { role, gateEnabled: true, operatorId: role } },
-        createElement(SkillsSettings),
+        LocaleProvider,
+        null,
+        createElement(
+          GateContext.Provider,
+          { value: { role, gateEnabled: true, operatorId: role } },
+          createElement(SkillsSettings),
+        ),
       ),
     )
     await new Promise((r) => setTimeout(r, 0))
@@ -65,7 +70,10 @@ describe('SkillsSettings humanized shell', () => {
     expect(host.textContent).not.toMatch(/默认 Agent/)
     expect(host.textContent).toContain(SKILLS.saveDefaults)
     expect(host.textContent).toContain(SKILLS.description)
-    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(2)
+    expect(host.textContent).toContain(SKILLS.selectionHint)
+    // 2 skill toggles + 1 exclusive tool-binding toggle
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(3)
+    expect(host.textContent).toContain(SKILLS.exclusiveBinding)
 
     const deleteBtn = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes(SKILLS.confirmDeleteOk),

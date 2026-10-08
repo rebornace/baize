@@ -16,6 +16,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skillparse"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -31,9 +32,11 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		WebhookURL     string                `json:"webhook_url"`
 		WebhookHeaders map[string]string     `json:"webhook_headers"`
 		Skills         []string              `json:"skills"`
+		SkillsReload   bool                  `json:"skills_reload"`
 		Attachments    []attach.AttachmentIn `json:"attachments"`
 		ModelProfileID string                `json:"model_profile_id"`
 		ThinkingLevel  string                `json:"thinking_level"`
+		Locale         string                `json:"locale"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -203,15 +206,26 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// with body.skills. Omitting skills with no mentions keeps agent defaults;
 	// any explicit input (non-nil body.skills or a mention) overrides for this
 	// run, with an empty merged set meaning "no default skill active".
-	cleanedInput, mentionIDs := skillparse.Parse(runInput)
+	// @reload / /reload sets skills_reload without activating a skill id.
+	parsed := skillparse.Parse(runInput)
+	cleanedInput := parsed.Cleaned
+	mentionIDs := parsed.IDs
 	originalInput := strings.TrimSpace(runInput)
-	mentionOnly := cleanedInput == "" && len(mentionIDs) > 0
+	mentionOnly := cleanedInput == "" && (len(mentionIDs) > 0 || parsed.Reload)
 	modelInput := cleanedInput
 	if mentionOnly {
 		modelInput = skillparse.MentionOnlyFallback
 	}
+
+	skillsReload := body.SkillsReload || parsed.Reload
+	if s.alignSkillsCatalog(conv, skillsReload) != nil {
+		// Reload failures are logged inside alignSkillsCatalog; continue with
+		// the in-memory catalog so a transient blob blip does not block chat.
+	}
+
 	var runSkills []string
-	if body.Skills != nil || len(mentionIDs) > 0 {
+	skillsOverride := body.Skills != nil || len(mentionIDs) > 0
+	if skillsOverride {
 		merged := mergeSkillIDs(mentionIDs, body.Skills)
 		if s.SkillCatalog != nil {
 			var unknown []string
@@ -228,6 +242,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		}
 		runSkills = merged
 	}
+
+	ag, _ := s.Store.GetAgent(body.AgentID)
+	pinnedSkills := resolvePinnedSkills(ag, runSkills, skillsOverride, s.SkillCatalog)
 
 	// Build the LLM-bound user content (cleaned text + text-attachment blocks)
 	// and the multimodal Parts payload when any attachments are present. The
@@ -318,6 +335,8 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		ThinkingLevel:  lvl,
 		BubbleContent:  bubbleContent,
 		WorkspaceID:    strings.TrimSpace(body.WorkspaceID),
+		Locale:         strings.TrimSpace(body.Locale),
+		PinnedSkills:   pinnedSkills,
 	})
 	if err != nil {
 		if errors.Is(err, errConversationForbidden) || err.Error() == "无权访问该会话" {
@@ -335,7 +354,92 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		"run_id":          updated.ID,
 		"status":          updated.Status,
 		"conversation_id": conv,
+		"pinned_skills":   pinnedSkills,
 	})
+}
+
+// alignSkillsCatalog reloads the skill catalog when explicit reload is
+// requested or the conversation's last-seen generation is behind Catalog.
+// It always advances the conversation watermark on success when conv is set.
+func (s *Server) alignSkillsCatalog(convID string, explicit bool) error {
+	if s.SkillCatalog == nil {
+		return nil
+	}
+	need := explicit
+	if convID != "" && !need {
+		need = s.conversationSkillsGen(convID) < s.SkillCatalog.Generation()
+	}
+	if !need && convID == "" {
+		return nil
+	}
+	if need {
+		if err := s.SkillCatalog.Reload(); err != nil {
+			log.Printf("skills: catalog reload: %v", err)
+			return err
+		}
+	}
+	if convID != "" {
+		s.setConversationSkillsGen(convID, s.SkillCatalog.Generation())
+	}
+	return nil
+}
+
+func (s *Server) conversationSkillsGen(convID string) uint64 {
+	if convID == "" {
+		return 0
+	}
+	s.skillsConvGenMu.Lock()
+	defer s.skillsConvGenMu.Unlock()
+	if s.skillsConvGen == nil {
+		return 0
+	}
+	return s.skillsConvGen[convID]
+}
+
+func (s *Server) setConversationSkillsGen(convID string, gen uint64) {
+	if convID == "" {
+		return
+	}
+	s.skillsConvGenMu.Lock()
+	defer s.skillsConvGenMu.Unlock()
+	if s.skillsConvGen == nil {
+		s.skillsConvGen = make(map[string]uint64)
+	}
+	s.skillsConvGen[convID] = gen
+}
+
+// resolvePinnedSkills returns the skill ids that will be in the initial
+// activation set for this run (present in the catalog). When override is
+// false, agent defaults are used; when true, runSkills (possibly empty) wins.
+func resolvePinnedSkills(ag store.Agent, runSkills []string, override bool, cat *skill.Catalog) []string {
+	var ids []string
+	if override {
+		ids = runSkills
+	} else {
+		ids = ag.Skills
+	}
+	if ids == nil {
+		return []string{}
+	}
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		if cat != nil {
+			if _, ok := cat.Get(id); !ok {
+				continue
+			}
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // writeAttachmentError maps an attach.Process error to the spec's API error

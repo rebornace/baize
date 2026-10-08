@@ -1,10 +1,100 @@
-# Windows launcher: loads .env (if present), then runs `baize serve` with the
-# default configs/config.yaml. Pass -config to use another file, e.g.
+# Windows launcher: loads .env (if present), rebuilds the embedded Chat UI when
+# web/chat sources are newer than internal/ui/dist, then builds and runs baize.
+#
+# Examples:
+#   .\serve.cmd
 #   .\serve.cmd -config configs\config.local.yaml
+#   .\serve.cmd -SkipUI          # go-only rebuild (use when UI is unchanged)
+#   .\serve.cmd -ForceUI         # always npm run build before go build
+# Env: BAIZE_SKIP_UI=1 / BAIZE_FORCE_UI=1
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $Root
+
+# Split launcher flags from baize serve args.
+$baizeArgs = New-Object System.Collections.Generic.List[string]
+$skipUI = $false
+$forceUI = $false
+foreach ($a in $args) {
+    $s = [string]$a
+    if ($s -match '^(?i)(-SkipUI|--skip-ui)$') {
+        $skipUI = $true
+    } elseif ($s -match '^(?i)(-ForceUI|--force-ui)$') {
+        $forceUI = $true
+    } else {
+        [void]$baizeArgs.Add($s)
+    }
+}
+if ($env:BAIZE_SKIP_UI -eq '1') { $skipUI = $true }
+if ($env:BAIZE_FORCE_UI -eq '1') { $forceUI = $true }
+
+function Get-NewestWriteTimeUtc([string[]]$Paths) {
+    $newest = [datetime]::MinValue
+    foreach ($p in $Paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        Get-ChildItem -LiteralPath $p -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.LastWriteTimeUtc -gt $newest) { $newest = $_.LastWriteTimeUtc }
+        }
+    }
+    return $newest
+}
+
+function Test-ChatUINeedsRebuild {
+    $distDir = Join-Path $Root "internal\ui\dist"
+    $distIndex = Join-Path $distDir "index.html"
+    if (-not (Test-Path -LiteralPath $distIndex)) { return $true }
+
+    $srcRoots = @(
+        (Join-Path $Root "web\chat\src"),
+        (Join-Path $Root "web\chat\index.html"),
+        (Join-Path $Root "web\chat\package.json"),
+        (Join-Path $Root "web\chat\package-lock.json"),
+        (Join-Path $Root "web\chat\vite.config.ts"),
+        (Join-Path $Root "web\chat\tsconfig.json"),
+        (Join-Path $Root "web\chat\tsconfig.node.json")
+    )
+    $srcNewest = Get-NewestWriteTimeUtc $srcRoots
+    $distNewest = Get-NewestWriteTimeUtc @($distDir)
+    if ($srcNewest -eq [datetime]::MinValue) { return $false }
+    return ($srcNewest -gt $distNewest)
+}
+
+function Ensure-ChatUI([bool]$Force) {
+    $chatDir = Join-Path $Root "web\chat"
+    if (-not (Test-Path -LiteralPath (Join-Path $chatDir "package.json"))) {
+        Write-Host "web/chat missing; skipping UI build"
+        return
+    }
+    if (-not $Force -and -not (Test-ChatUINeedsRebuild)) {
+        Write-Host "chat UI up to date (internal/ui/dist newer than web/chat sources)"
+        return
+    }
+
+    # Prefer npm.cmd on Windows. Node's npm.ps1 re-parses the caller's statement
+    # when Line is set; `& npm run build` becomes `pm run build` (drops "& n")
+    # and fails with: Unknown command: "pm".
+    $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    $npm = if ($npmCmd) { $npmCmd } else { Get-Command npm -ErrorAction SilentlyContinue }
+    if (-not $npm) {
+        Write-Error @"
+npm not found, but the Chat UI needs a rebuild (web/chat is newer than internal/ui/dist).
+Install Node.js 20+ and ensure npm is on PATH, then re-run .\serve.cmd
+Or pass -SkipUI / set BAIZE_SKIP_UI=1 to reuse the existing embedded UI (may be stale).
+"@
+        exit 1
+    }
+
+    Write-Host "npm run build  (cwd=$chatDir) -> internal/ui/dist"
+    Push-Location $chatDir
+    try {
+        # Pass args as an array so nothing depends on statement-text reparsing.
+        & $npm.Source @('run', 'build')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } finally {
+        Pop-Location
+    }
+}
 
 # 把整个进程树放进一个 Job Object，并设置「句柄关闭即终止全部进程」。
 # 这样当本外壳（powershell/cmd）以任何方式结束——Ctrl+C 之外，也包括被
@@ -155,14 +245,26 @@ if (Test-Path $envFile) {
     }
 }
 
+# Chat UI is go:embed'd from internal/ui/dist. Rebuild when sources drift so
+# locale/strings/UI fixes actually show up after .\serve.cmd.
+if ($skipUI) {
+    Write-Host "skipping chat UI build (-SkipUI / BAIZE_SKIP_UI=1)"
+} else {
+    Ensure-ChatUI -Force:$forceUI
+}
+
 $serveArgs = @("serve")
-if ($args.Count -gt 0) {
-    $serveArgs += $args
+if ($baizeArgs.Count -gt 0) {
+    $serveArgs += $baizeArgs
 }
 # 用 go build 编译后直接运行，而不是 go run：
 # Windows 下 go run 会额外包一层子进程，Ctrl+C 无法可靠地把信号传给
 # baize 进程，导致优雅退出失效、临时 exe 残留。
 $exe = Join-Path $Root "bin\baize.exe"
+$binDir = Split-Path -Parent $exe
+if (-not (Test-Path -LiteralPath $binDir)) {
+    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+}
 Write-Host "go build -o bin\baize.exe ./cmd/baize  (cwd=$Root)"
 & go build -o $exe ./cmd/baize
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

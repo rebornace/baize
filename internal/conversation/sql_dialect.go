@@ -22,6 +22,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if err := migrateMessagesThinkingColumns(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
+		if err := migrateMessagesPinnedSkillsColumn(db, store.DialectSQLite); err != nil {
+			return nil, err
+		}
 		if err := migrateConversationProjections(db); err != nil {
 			return nil, err
 		}
@@ -56,6 +59,9 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 		if err := migrateMessagesThinkingColumns(db, store.DialectPostgres); err != nil {
 			return nil, err
 		}
+		if err := migrateMessagesPinnedSkillsColumn(db, store.DialectPostgres); err != nil {
+			return nil, err
+		}
 		if err := migrateConversationProjections(db); err != nil {
 			return nil, err
 		}
@@ -85,6 +91,21 @@ func migrateMessagesThinkingColumns(db *sql.DB, dialect store.SQLDialect) error 
 		if _, err := db.Exec(q); err != nil && !isDuplicateColumnErr(err) {
 			return err
 		}
+	}
+	return nil
+}
+
+// migrateMessagesPinnedSkillsColumn stores the per-turn skill pin list on user
+// messages so Chat history can show the same tags after reload.
+func migrateMessagesPinnedSkillsColumn(db *sql.DB, dialect store.SQLDialect) error {
+	if dialect == store.DialectPostgres {
+		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS pinned_skills TEXT NOT NULL DEFAULT '[]'`); err != nil {
+			return fmt.Errorf("migrate messages pinned_skills: %w", err)
+		}
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN pinned_skills TEXT NOT NULL DEFAULT '[]'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
 	}
 	return nil
 }

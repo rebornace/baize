@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { CHAT } from '../strings'
-import { activeMention, replaceMention } from '../skillMention'
 import type { SkillSummary } from '../api'
+import type { Locale } from '../locale/types'
+import { skillDisplayName, skillLocalizedDescription } from '../pages/skills/skillDisplay'
+import {
+  activeMention,
+  matchesReloadQuery,
+  RELOAD_TOKEN,
+  replaceMention,
+} from '../skillMention'
+import { CHAT } from '../strings'
+
+function composerLocale(): Locale {
+  if (typeof document !== 'undefined' && document.documentElement.lang === 'en') {
+    return 'en'
+  }
+  return 'zh-CN'
+}
 
 const ACCEPT =
   '.txt,.md,.csv,.docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.gif'
@@ -14,17 +28,25 @@ export interface ComposerProps {
    */
   onSend: (text: string, files: File[]) => void | boolean | Promise<void | boolean>
   draft?: string
-  /** Skills available for @-completion. Omit to disable the popup. */
+  /**
+   * Skills available for @-completion. Omit to disable the popup entirely.
+   * Pass [] to still surface the reserved `/reload` command.
+   */
   skills?: SkillSummary[]
   /** Optional leading slot inside composer-box (before the attach button). */
   toolbar?: ReactNode
 }
 
+type CompleteItem =
+  | { kind: 'reload'; id: typeof RELOAD_TOKEN }
+  | { kind: 'skill'; id: string; skill: SkillSummary }
+
 interface Completion {
   start: number
   end: number
+  trigger: string
   query: string
-  skillMatches: SkillSummary[]
+  items: CompleteItem[]
   activeIndex: number
 }
 
@@ -38,6 +60,7 @@ export function Composer({
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [completion, setCompletion] = useState<Completion | null>(null)
+  const locale = composerLocale()
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -65,8 +88,8 @@ export function Composer({
   }, [skills])
 
   const updateCompletion = (value: string, caret: number) => {
-    const skillList = skills ?? []
-    if (skillList.length === 0) {
+    // undefined = completion disabled; [] still shows /reload.
+    if (skills === undefined) {
       setCompletion(null)
       return
     }
@@ -76,23 +99,39 @@ export function Composer({
       return
     }
     const q = active.query.toLowerCase()
-    const skillMatches = skillList.filter((s) => s.id.toLowerCase().startsWith(q))
-    if (skillMatches.length === 0) {
+    const items: CompleteItem[] = []
+    if (matchesReloadQuery(active.query)) {
+      items.push({ kind: 'reload', id: RELOAD_TOKEN })
+    }
+    for (const s of skills) {
+      if (s.id === RELOAD_TOKEN) continue
+      if (s.id.toLowerCase().startsWith(q)) {
+        items.push({ kind: 'skill', id: s.id, skill: s })
+      }
+    }
+    if (items.length === 0) {
       setCompletion(null)
       return
     }
     setCompletion({
       start: active.start,
       end: active.end,
+      trigger: active.trigger,
       query: active.query,
-      skillMatches,
+      items,
       activeIndex: 0,
     })
   }
 
-  const applySkill = (pick: SkillSummary) => {
+  const applyItem = (pick: CompleteItem) => {
     if (!completion) return
-    const { text: next, caret } = replaceMention(text, completion.start, completion.end, pick.id)
+    const { text: next, caret } = replaceMention(
+      text,
+      completion.start,
+      completion.end,
+      pick.id,
+      completion.trigger,
+    )
     setText(next)
     setCompletion(null)
     requestAnimationFrame(() => {
@@ -105,8 +144,8 @@ export function Composer({
 
   const pickActive = () => {
     if (!completion) return
-    const pick = completion.skillMatches[completion.activeIndex]
-    if (pick) applySkill(pick)
+    const pick = completion.items[completion.activeIndex]
+    if (pick) applyItem(pick)
   }
 
   const submit = async () => {
@@ -123,7 +162,7 @@ export function Composer({
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (completion) {
-      const total = completion.skillMatches.length
+      const total = completion.items.length
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setCompletion((c) =>
@@ -182,7 +221,8 @@ export function Composer({
     fileInputRef.current?.click()
   }
 
-  const showPopup = completion != null && completion.skillMatches.length > 0
+  const showPopup = completion != null && completion.items.length > 0
+  const showHint = skills !== undefined
 
   return (
     <div className="composer">
@@ -275,38 +315,55 @@ export function Composer({
         </button>
         {showPopup && completion && (
           <ul className="composer-complete" role="listbox" aria-label={CHAT.skillCompleteAria}>
-            {completion.skillMatches.map((s, i) => (
-              <li
-                key={`skill:${s.id}`}
-                role="option"
-                aria-selected={i === completion.activeIndex}
-                className={
-                  i === completion.activeIndex
-                    ? 'composer-complete-item active'
-                    : 'composer-complete-item'
-                }
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  applySkill(s)
-                }}
-                onMouseEnter={() =>
-                  setCompletion((c) => (c ? { ...c, activeIndex: i } : c))
-                }
-              >
-                <span className="composer-complete-id">{s.id}</span>
-                {s.description ? (
-                  <span className="composer-complete-desc">{s.description}</span>
-                ) : null}
-              </li>
-            ))}
+            {completion.items.map((item, i) => {
+              const desc =
+                item.kind === 'reload'
+                  ? CHAT.reloadCompleteDesc
+                  : skillLocalizedDescription(item.skill, locale) ||
+                    skillDisplayName(item.skill, locale)
+              const showDesc = Boolean(desc && desc !== item.id)
+              return (
+                <li
+                  key={`${item.kind}:${item.id}`}
+                  role="option"
+                  aria-selected={i === completion.activeIndex}
+                  className={
+                    i === completion.activeIndex
+                      ? 'composer-complete-item active'
+                      : 'composer-complete-item'
+                  }
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    applyItem(item)
+                  }}
+                  onMouseEnter={() =>
+                    setCompletion((c) => (c ? { ...c, activeIndex: i } : c))
+                  }
+                >
+                  <span className="composer-complete-id">
+                    {completion.trigger}
+                    {item.id}
+                  </span>
+                  {showDesc ? (
+                    <span className="composer-complete-desc">{desc}</span>
+                  ) : null}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
-      {skillsById.size > 0 && (
+      {showHint && (
         <span className="composer-hint" aria-hidden="true">
-          {CHAT.availableSkills}
-          {Array.from(skillsById.keys()).slice(0, 6).join(CHAT.skillListSep)}
-          {skillsById.size > 6 ? '…' : ''}
+          {skillsById.size > 0 && (
+            <>
+              {CHAT.availableSkills}
+              {Array.from(skillsById.keys()).slice(0, 6).join(CHAT.skillListSep)}
+              {skillsById.size > 6 ? '…' : ''}
+              {CHAT.skillListSep}
+            </>
+          )}
+          {CHAT.reloadHint}
         </span>
       )}
     </div>

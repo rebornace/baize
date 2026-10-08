@@ -4,6 +4,8 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
+import { LocaleProvider } from '../locale/LocaleContext'
+import { LOCALE_STORAGE_KEY } from '../locale/types'
 import { TOOLS } from '../strings'
 import { ToolsSettings } from './ToolsSettings'
 import { SkillsSettings } from './SkillsSettings'
@@ -15,18 +17,25 @@ let host: HTMLDivElement
 beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
+  localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
   vi.stubGlobal('fetch', vi.fn())
 })
-afterEach(() => { host.remove(); vi.unstubAllGlobals() })
+afterEach(() => {
+  host.remove()
+  localStorage.removeItem(LOCALE_STORAGE_KEY)
+  vi.unstubAllGlobals()
+})
 
 async function renderOperator(el: React.ReactNode) {
   await act(async () => {
     createRoot(host).render(
-      <MemoryRouter>
-        <GateContext.Provider value={{ role: 'operator', gateEnabled: true, operatorId: 'op' }}>
-          {el}
-        </GateContext.Provider>
-      </MemoryRouter>,
+      <LocaleProvider>
+        <MemoryRouter>
+          <GateContext.Provider value={{ role: 'operator', gateEnabled: true, operatorId: 'op' }}>
+            {el}
+          </GateContext.Provider>
+        </MemoryRouter>
+      </LocaleProvider>,
     )
     await new Promise((r) => setTimeout(r, 0))
     await new Promise((r) => setTimeout(r, 0))
@@ -78,7 +87,7 @@ describe('SkillsSettings read-only for operator', () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url: unknown) => {
       urls.push(String(url))
       const u = String(url)
-      if (u === '/v0/skills') return jsonResponse({ skills: [
+      if (u.startsWith('/v0/skills')) return jsonResponse({ skills: [
         // SkillsSettings renders s.id (name is not displayed); align fixture with real DOM
         { id: '分诊', name: '分诊', description: '', tools: [], source: 'builtin' },
         { id: '自定义', name: '自定义', description: '', tools: [], source: 'user' },
@@ -100,6 +109,7 @@ describe('SkillsSettings read-only for operator', () => {
     expect(urls.some((u) => u.startsWith('/v0/agents/'))).toBe(false)
     expect(host.querySelector('input[type="file"]')).toBeNull()
     expect(host.textContent).not.toContain('保存为默认技能')
+    expect(host.textContent).not.toContain('保存默认配置')
     expect(host.textContent).not.toContain('保存默认勾选')
     // user-source skill shows a delete button for admins; it must be hidden for operators
     expect(host.textContent).not.toContain('删除')

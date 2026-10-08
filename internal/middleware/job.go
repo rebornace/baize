@@ -20,6 +20,7 @@ type Job struct {
 	Input      string    `json:"input"`
 	Skills     []string  `json:"skills,omitempty"`
 	UserParts  []Part    `json:"user_parts,omitempty"`
+	Locale     string    `json:"locale,omitempty"`
 	EnqueuedAt time.Time `json:"enqueued_at"`
 }
 

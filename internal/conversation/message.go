@@ -21,6 +21,9 @@ type Message struct {
 	ThinkingRedacted bool      `json:"thinking_redacted,omitempty"`
 	RunID            string    `json:"run_id"`
 	CreatedAt        time.Time `json:"created_at"`
+	// PinnedSkills is the skill activation set for this user turn (agent
+	// defaults and/or @id mentions). Empty for assistant / system_note rows.
+	PinnedSkills []string `json:"pinned_skills,omitempty"`
 }
 
 // mediaRefLine matches a persisted user-message line that references a

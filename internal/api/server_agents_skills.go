@@ -19,16 +19,34 @@ func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		System string   `json:"system"`
-		Skills []string `json:"skills"`
+		System      string   `json:"system"`
+		Skills      []string `json:"skills"`
+		ToolBinding string   `json:"tool_binding"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
 		return
 	}
-	ag := store.Agent{ID: id, System: body.System, Skills: body.Skills}
+	binding, err := normalizeToolBinding(body.ToolBinding)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ag := store.Agent{ID: id, System: body.System, Skills: body.Skills, ToolBinding: binding}
 	s.Store.UpsertAgent(ag)
 	writeJSON(w, http.StatusOK, ag)
+}
+
+func normalizeToolBinding(v string) (string, error) {
+	v = strings.TrimSpace(strings.ToLower(v))
+	switch v {
+	case "", store.ToolBindingFloor:
+		return "", nil // omit floor in JSON; empty means floor
+	case store.ToolBindingExclusive:
+		return store.ToolBindingExclusive, nil
+	default:
+		return "", errors.New("tool_binding must be empty, floor, or exclusive")
+	}
 }
 
 func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
@@ -46,11 +64,12 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 type skillSummary struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tools       []string `json:"tools"`
-	Source      string   `json:"source"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	DescriptionEN string   `json:"description_en,omitempty"`
+	Tools         []string `json:"tools"`
+	Source        string   `json:"source"`
 }
 
 func skillSummaryFrom(p skill.Package) skillSummary {
@@ -59,12 +78,22 @@ func skillSummaryFrom(p skill.Package) skillSummary {
 		tools = []string{}
 	}
 	return skillSummary{
-		ID:          p.ID,
-		Name:        p.Name,
-		Description: p.Description,
-		Tools:       tools,
-		Source:      p.Source,
+		ID:            p.ID,
+		Name:          p.Name,
+		Description:   p.Description,
+		DescriptionEN: p.DescriptionEN,
+		Tools:         tools,
+		Source:        p.Source,
 	}
+}
+
+// skillSummaryForLocale returns a summary whose Description field is already
+// localized for the request locale (en / zh-CN). DescriptionEN is still
+// included when present so clients can switch without another round-trip.
+func skillSummaryForLocale(p skill.Package, locale string) skillSummary {
+	sum := skillSummaryFrom(p)
+	sum.Description = p.LocalizedDescription(locale)
+	return sum
 }
 
 func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
@@ -72,10 +101,11 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "skill catalog not configured")
 		return
 	}
+	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
 	pkgs := s.SkillCatalog.List()
 	out := make([]skillSummary, 0, len(pkgs))
 	for _, p := range pkgs {
-		out = append(out, skillSummaryFrom(p))
+		out = append(out, skillSummaryForLocale(p, locale))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": out})
 }
@@ -95,14 +125,16 @@ func (s *Server) handleGetSkill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "skill not found")
 		return
 	}
-	sum := skillSummaryFrom(p)
+	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
+	sum := skillSummaryForLocale(p, locale)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":          sum.ID,
-		"name":        sum.Name,
-		"description": sum.Description,
-		"tools":       sum.Tools,
-		"source":      sum.Source,
-		"body":        p.Body,
+		"id":             sum.ID,
+		"name":           sum.Name,
+		"description":    sum.Description,
+		"description_en": sum.DescriptionEN,
+		"tools":          sum.Tools,
+		"source":         sum.Source,
+		"body":           p.LocalizedBody(locale),
 	})
 }
 

@@ -103,12 +103,21 @@ func (s *Server) resolveJob(job middleware.Job, cur *store.Run) (agent.Def, stri
 	if err != nil {
 		return agent.Def{}, "", run.RunOptions{}, err
 	}
-	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+	def := agent.Def{
+		ID:          ag.ID,
+		System:      ag.System,
+		Skills:      append([]string(nil), ag.Skills...),
+		ToolBinding: ag.ToolBinding,
+	}
 	input := job.Input
 	if strings.TrimSpace(input) == "" {
 		input = cur.Input
 	}
-	opts := run.RunOptions{Skills: job.Skills, UserParts: partsFromMiddleware(job.UserParts)}
+	opts := run.RunOptions{
+		Skills:    job.Skills,
+		UserParts: partsFromMiddleware(job.UserParts),
+		Locale:    job.Locale,
+	}
 	return def, input, opts, nil
 }
 
@@ -202,7 +211,12 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 			RunID:   runRec.ID,
 		})
 	}
-	def := agent.Def{ID: ag.ID, System: ag.System, Skills: append([]string(nil), ag.Skills...)}
+	def := agent.Def{
+		ID:          ag.ID,
+		System:      ag.System,
+		Skills:      append([]string(nil), ag.Skills...),
+		ToolBinding: ag.ToolBinding,
+	}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
 	s.Dispatch(r.Context(), middleware.Job{
 		RunID:     runRec.ID,
@@ -211,6 +225,7 @@ func (s *Server) createAndExecuteRun(r *http.Request, agentID, input, convID, id
 		Input:     input,
 		Skills:    opts.runOpts.Skills,
 		UserParts: PartsToMiddleware(opts.runOpts.UserParts),
+		Locale:    opts.runOpts.Locale,
 	})
 	return runRec, nil
 }

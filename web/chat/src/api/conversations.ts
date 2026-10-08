@@ -83,7 +83,7 @@ export interface RollbackMessagesResult {
 export async function rollbackMessages(
   conversationId: string,
   messageId: string,
-  opts?: { regenerate?: boolean; agentId?: string },
+  opts?: { regenerate?: boolean; agentId?: string; locale?: string },
 ): Promise<RollbackMessagesResult> {
   const res = await fetch(
     `/v0/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/rollback`,
@@ -93,6 +93,7 @@ export async function rollbackMessages(
       body: JSON.stringify({
         regenerate: opts?.regenerate ?? false,
         agent_id: opts?.agentId,
+        ...(opts?.locale ? { locale: opts.locale } : {}),
       }),
     },
   )

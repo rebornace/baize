@@ -24,6 +24,34 @@ func testMemoryBlobs(t *testing.T) blob.Store {
 	return s
 }
 
+func TestCatalogGenerationIncrementsOnReload(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	mustWriteSkill(t, filepath.Join(builtin, "only"), "only", "d", nil)
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), testMemoryBlobs(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen1 := cat.Generation()
+	if gen1 == 0 {
+		t.Fatal("LoadCatalog Reload should bump generation above 0")
+	}
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	gen2 := cat.Generation()
+	if gen2 != gen1+1 {
+		t.Fatalf("generation after Reload=%d want %d", gen2, gen1+1)
+	}
+	raw := []byte("---\nname: extra\ndescription: x\ntools: []\n---\n\nbody\n")
+	if _, err := cat.InstallMD("extra.md", raw); err != nil {
+		t.Fatal(err)
+	}
+	if cat.Generation() != gen2+1 {
+		t.Fatalf("InstallMD should Reload and bump generation, got %d", cat.Generation())
+	}
+}
+
 func TestCatalogUserSkillBlobInstallReloadDelete(t *testing.T) {
 	root := t.TempDir()
 	builtin := filepath.Join(root, "builtin")
@@ -465,8 +493,18 @@ func TestLoadRepoDataAnalytics(t *testing.T) {
 	if !ok {
 		t.Fatal("data-analytics not found in skills/")
 	}
-	if _, ok := cat.Get("baize-help"); !ok {
+	help, ok := cat.Get("baize-help")
+	if !ok {
 		t.Fatal("baize-help not found in skills/")
+	}
+	if help.BodyEN == "" || !strings.Contains(help.BodyEN, "Baize product help") {
+		t.Fatalf("baize-help BodyEN missing English overlay: %q", help.BodyEN)
+	}
+	if !strings.Contains(help.Body, "白泽产品帮助") {
+		t.Fatalf("baize-help Body should be Chinese")
+	}
+	if strings.Contains(help.Body, "Settings → Models") {
+		t.Fatal("Chinese body must not include English menu table")
 	}
 	if p.Source != skill.SourceBuiltin {
 		t.Fatalf("source=%q want builtin", p.Source)

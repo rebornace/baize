@@ -4,10 +4,21 @@
 //
 // Backend rule (internal/skillparse/parse.go):
 //   mentionRe = `(^|[\s])[@/]([a-zA-Z0-9][a-zA-Z0-9_-]*)\b`
+// Reserved token `reload` (@reload / /reload) is stripped server-side and sets
+// skills_reload; it is not a skill id.
 
 const MENTION_RE = /(^|[\s])[@/]([a-zA-Z0-9][a-zA-Z0-9_-]*)\b/g
 const ID_CHAR = /[a-zA-Z0-9_-]/
 const ID_START = /[a-zA-Z0-9]/
+
+/** Reserved mention id that triggers skills_reload (not a skill package). */
+export const RELOAD_TOKEN = 'reload'
+
+/** Whether the in-progress @/ query should surface the reload command. */
+export function matchesReloadQuery(query: string): boolean {
+  const q = query.toLowerCase()
+  return RELOAD_TOKEN.startsWith(q)
+}
 
 export interface MentionMatch {
   /** Index of the trigger character (@ or /). */
@@ -72,19 +83,22 @@ export function activeMention(text: string, caret: number): ActiveMention | null
 }
 
 /**
- * Replace the active mention at [start, end) with the selected skill id and
- * return the new text plus the caret position to place after the inserted id.
- * A trailing space is added so the user can keep typing the message.
+ * Replace the active mention at [start, end) with the selected id and return
+ * the new text plus the caret position to place after the inserted id.
+ * Preserves the typed trigger (@ or /). A trailing space is added so the user
+ * can keep typing the message.
  */
 export function replaceMention(
   text: string,
   start: number,
   end: number,
   id: string,
+  trigger: string = '@',
 ): { text: string; caret: number } {
   const before = text.slice(0, start)
   const after = text.slice(end)
-  const inserted = `@${id} `
+  const t = trigger === '/' ? '/' : '@'
+  const inserted = `${t}${id} `
   const next = before + inserted + after
   return { text: next, caret: before.length + inserted.length }
 }

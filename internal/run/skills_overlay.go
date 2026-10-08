@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
@@ -14,6 +15,12 @@ type runSkillState struct {
 	activated       []string
 	defaultNonEmpty bool
 	baseSystem      string
+	// exclusive when true: specsForRun only exposes tools listed on activated
+	// skills (plus activate_skill). When false (floor), all enabled tools stay
+	// visible and skill tools: is only a DP-2a floor.
+	exclusive bool
+	// locale selects localized skill bodies (e.g. "en", "zh-CN"). Empty = default.
+	locale string
 
 	// workflow pipeline mode: set once when an activated skill carries a
 	// workflow.yaml; workflowResults is the template data tree (input +
@@ -31,6 +38,10 @@ func (e *Engine) ensureRuns() {
 }
 
 func (e *Engine) beginRunSkills(runID string, defaultSkills []string, baseSystem string, input ...map[string]any) {
+	e.beginRunSkillsOpts(runID, defaultSkills, baseSystem, false, "", input...)
+}
+
+func (e *Engine) beginRunSkillsOpts(runID string, defaultSkills []string, baseSystem string, exclusive bool, locale string, input ...map[string]any) {
 	e.runMu.Lock()
 	defer e.runMu.Unlock()
 	e.ensureRuns()
@@ -38,6 +49,8 @@ func (e *Engine) beginRunSkills(runID string, defaultSkills []string, baseSystem
 	state := &runSkillState{
 		defaultNonEmpty: len(defaultSkills) > 0,
 		baseSystem:      baseSystem,
+		exclusive:       exclusive,
+		locale:          locale,
 		workflowResults: map[string]any{"input": map[string]any{}},
 	}
 	if len(input) > 0 && input[0] != nil {
@@ -63,18 +76,53 @@ func (e *Engine) getRunSkillState(runID string) *runSkillState {
 }
 
 func (e *Engine) composeSystem(base string, runID string) string {
-	if e.Skills == nil {
-		return base
-	}
 	st := e.getRunSkillState(runID)
-	var activated []string
+	locale := ""
 	if st != nil {
-		activated = append([]string(nil), st.activated...)
+		locale = st.locale
 		if st.baseSystem != "" {
 			base = st.baseSystem
 		}
 	}
-	return skill.ComposeSystem(base, e.Skills, activated)
+	if e.Skills == nil {
+		return appendClockHint(base, locale)
+	}
+	var activated []string
+	if st != nil {
+		activated = append([]string(nil), st.activated...)
+	}
+	return appendClockHint(skill.ComposeSystem(base, e.Skills, activated, locale), locale)
+}
+
+// appendClockHint gives the model an absolute "now" so it can interpret
+// timestamps in tool results (expiry, ranges, "today") instead of claiming it
+// cannot judge time from the tool schema alone.
+func appendClockHint(system, locale string) string {
+	if strings.Contains(system, "当前时间：") || strings.Contains(system, "Current time:") {
+		return system
+	}
+	now := time.Now()
+	if isChineseLocale(locale) {
+		if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+			now = now.In(loc)
+		}
+	}
+	stamp := now.Format(time.RFC3339)
+	var line string
+	if isChineseLocale(locale) {
+		line = "当前时间：" + stamp + "。解读工具返回或用户提到的日期/时间时，请以此为「现在」，结合结果里的时间字段判断，不要只看工具定义就声称无法判断时间。"
+	} else {
+		line = "Current time: " + stamp + ". Use this as \"now\" when interpreting dates/times in tool results or user requests; read timestamp fields in results—do not claim you cannot determine time from the tool schema alone."
+	}
+	if strings.TrimSpace(system) == "" {
+		return line
+	}
+	return system + "\n\n" + line
+}
+
+func isChineseLocale(locale string) bool {
+	l := strings.ToLower(strings.TrimSpace(locale))
+	return l == "" || strings.HasPrefix(l, "zh")
 }
 
 func (e *Engine) appendSessionAuthHint(system, conversationID string) string {
@@ -110,13 +158,30 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 		return e.withContextTools(all, all, runID)
 	}
 
-	// Skills inject workflow guidance via composeSystem; their `tools:` list
-	// is a floor for DP-2a (preserveSkillDeclaredTools), not an allowlist.
-	// OpenAPI connectors registered at runtime must remain routing candidates
-	// or a default skill such as data-analytics would hide every undeclared
-	// operation and the model would tell the user to widen the skill's tools.
 	enabled := e.enabledToolMap()
-	visibleNames := unionEnabledToolNames(nil, enabled)
+	st := e.getRunSkillState(runID)
+	exclusive := st != nil && st.exclusive
+
+	var visibleNames []string
+	if exclusive {
+		// Allowlist: only tools declared on currently activated skills.
+		// Empty activated must stay empty (do not use VisibleTools' empty→all
+		// floor fallback — that is for the default non-exclusive path).
+		var activated []string
+		if st != nil {
+			activated = st.activated
+		}
+		if len(activated) > 0 {
+			visibleNames = skill.VisibleTools(e.Skills, activated, enabled)
+		}
+	} else {
+		// Floor mode (default): Skills inject workflow guidance via
+		// composeSystem; their `tools:` list is a floor for DP-2a
+		// (preserveSkillDeclaredTools), not an allowlist. OpenAPI connectors
+		// registered at runtime must remain routing candidates or a default
+		// skill such as data-analytics would hide every undeclared operation.
+		visibleNames = unionEnabledToolNames(nil, enabled)
+	}
 
 	byName := make(map[string]llm.ToolSpec, len(all))
 	for _, spec := range all {

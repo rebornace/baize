@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { activeMention, findMentions, replaceMention } from './skillMention'
+import {
+  activeMention,
+  findMentions,
+  matchesReloadQuery,
+  replaceMention,
+} from './skillMention'
 
 describe('findMentions', () => {
   it('finds @id and /id mentions aligned with the server regex', () => {
@@ -79,12 +84,32 @@ describe('activeMention', () => {
   })
 })
 
+describe('matchesReloadQuery', () => {
+  it('matches empty and reload prefixes', () => {
+    expect(matchesReloadQuery('')).toBe(true)
+    expect(matchesReloadQuery('re')).toBe(true)
+    expect(matchesReloadQuery('reload')).toBe(true)
+    expect(matchesReloadQuery('RE')).toBe(true)
+  })
+
+  it('rejects non-prefixes', () => {
+    expect(matchesReloadQuery('x')).toBe(false)
+    expect(matchesReloadQuery('reloadx')).toBe(false)
+  })
+})
+
 describe('replaceMention', () => {
   it('replaces the active mention with @id and a trailing space', () => {
     const text = 'hi @sear rest'
     const r = replaceMention(text, 3, 8, 'search')
     expect(r.text).toBe('hi @search  rest')
     expect(r.caret).toBe(11)
+  })
+
+  it('preserves a / trigger when provided', () => {
+    const r = replaceMention('/re', 0, 3, 'reload', '/')
+    expect(r.text).toBe('/reload ')
+    expect(r.caret).toBe(8)
   })
 
   it('handles replacement at the end of text', () => {

@@ -41,9 +41,10 @@ type Config struct {
 		UserDir     string   `yaml:"user_dir"`
 	} `yaml:"skills"`
 	Agent struct {
-		ID     string   `yaml:"id"`
-		System string   `yaml:"system"`
-		Skills []string `yaml:"skills"`
+		ID          string   `yaml:"id"`
+		System      string   `yaml:"system"`
+		Skills      []string `yaml:"skills"`
+		ToolBinding string   `yaml:"tool_binding"` // empty/floor | exclusive
 	} `yaml:"agent"`
 	Connector struct {
 		ID                      string   `yaml:"id"`
