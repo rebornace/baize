@@ -218,10 +218,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	skillsReload := body.SkillsReload || parsed.Reload
-	if s.alignSkillsCatalog(conv, skillsReload) != nil {
-		// Reload failures are logged inside alignSkillsCatalog; continue with
-		// the in-memory catalog so a transient blob blip does not block chat.
-	}
+	// Reload failures are logged inside alignSkillsCatalog; continue with the
+	// in-memory catalog so a transient blob blip does not block chat.
+	_ = s.alignSkillsCatalog(conv, skillsReload)
 
 	var runSkills []string
 	skillsOverride := body.Skills != nil || len(mentionIDs) > 0
