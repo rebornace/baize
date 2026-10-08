@@ -70,7 +70,8 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 - 目录行在 store（`source`：`spec` / `plugin` / `mcp` / `extra`）。`spec`/`plugin`/`mcp` 可启停不可删；`extra` 可删。
 - Registry **只**挂 `enabled=true` 的行；引擎与 HITL 读 Registry，`GET /v0/tools` 读目录（可见停用行）。
-- Agent **不**绑定 Connector 子集：默认每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。开启 DP-2a 工具收敛且工具数超过阈值时，会先经关键词预筛 + 决策层收敛，只把候选子集下发给主模型（详见「运行参数」页的工具收敛设置）。技能 `tools:` 是**保底集合**：声明过的工具在收口时尽量保留，未声明的启用连接器工具仍是候选，不会被技能名单单独关掉。
+- Agent **不**绑定 Connector 子集：默认每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。开启 DP-2a 工具收敛且工具数超过阈值时，会先经工具预筛（默认标准匹配：BM25；可选增强匹配：BM25 + Embedding 混合检索，见设置「工具匹配」与 `internal/toolindex`）+ 决策层收敛，只把候选子集下发给主模型（开关与 TopK 在「运行参数 → 智能提速」）。技能 `tools:` 是**保底集合**：声明过的工具在收口时尽量保留，未声明的启用连接器工具仍是候选，不会被技能名单单独关掉。
+- **工具匹配（增强）**：`internal/toolretrieval` 管理本机 Ollama 傻瓜式安装 / 模型拉取 / 路径与清理，或 OpenAI 兼容 Embedding API；状态经 `GET/PATCH…` 见 [HTTP API](./http-api.md)。未启用或探测失败时仍用标准匹配，fail-open。
 - **工作区**：Web 对话带 `workspace_id`（缺省 `default`）。同一工作区内的捕获登录身份共享；不同工作区、渠道会话（`source:account:peer`）与 MCP 导出身份隔离。v1 不迁移已有对话到其他工作区。
 - **给模型看的投影**（运行参数「长对话保留重点」，默认关）：只改模型输入侧的投影（钉住 / 摘要 / 丢掉过大工具结果），**不改写** `conversation.Messages`。失败则 fail-open 回退 Compactor。不承诺降低云端 API token。
 - **滚动摘要（Compactor）**：超预算时把较旧轮次压成结构化检查点（目标、进度、决定、必须保留的事实），不删原文、不把「先执行某步再探索」写成全局策略。

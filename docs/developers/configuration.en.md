@@ -67,7 +67,10 @@ Sample default connector: `id`, `type` (default `openapi`), `spec`, `base_url`, 
 | `max_steps` | 16 |
 | `tool_timeout_sec` | 60 (per tool call) |
 
-> The decision layer (`internal/decide`) behaviors — DP-1 memory pre-extraction judgment, DP-2a tool-candidate narrowing, DP-2b tool-choice enum constraint, DP-3 bulky tool-result pruning, DP-4 Auto-tier fallback, and the decision-model selection — are **not YAML keys**. They are in-store hot-reloadable settings tuned on the Runtime page and read/written via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline. The same page has “keep important facts in long chats” (`context_projection_enabled`, default off): a model-facing projection only; saved messages are not rewritten.
+> The decision layer (`internal/decide`) behaviors — DP-1 memory pre-extraction judgment, DP-2a tool-candidate narrowing, DP-2b tool-choice enum constraint, DP-3 bulky tool-result pruning, DP-4 Auto-tier fallback, and the decision-model selection — are **not YAML keys**. They are in-store hot-reloadable settings tuned on the Runtime page (tabs: Basics / Smart speed-up / Memory & compaction / Security) and read/written via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline. Under Memory & compaction, “keep important facts in long chats” (`context_projection_enabled`, default off) is a model-facing projection only; saved messages are not rewritten.
+>
+> **Tool matching** (standard / enhanced) is configured on its own settings page via `/v0/settings/tool-retrieval*` (see [HTTP API](./http-api.en.md)): enhanced mode can install local Ollama + an embedding model, or use an OpenAI-compatible embedding `base_url` / `model` / `api_key`; the models directory is optional (injected as `OLLAMA_MODELS`). Not in YAML.
+
 
 ### `conversation`
 

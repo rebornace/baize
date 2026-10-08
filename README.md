@@ -31,6 +31,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); multiple model setups and thinking options; account-level memory, attachments, and workspace files.
 - **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace and isolated across workspaces.
 - **Can explain Baize itself**: the built-in `baize-help` skill answers how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
+- **Stays usable with many tools**: when backends pile up, turn on enhanced matching under Settings → Tool matching — one-click local Ollama + embedding model, or a cloud / self-hosted OpenAI-compatible embedding API. Standard matching needs no extra components and remains the fail-open default.
 
 ---
 
@@ -78,7 +79,7 @@ Channels are a **general, extensible** capability: alerts, tickets, and instant 
 
 ### For product, ops, and integrators
 
-- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs.
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security); tool matching has its own page.
 - Full HTTP management surface for scripts and platforms — no mandatory language SDK.
 - Some runtime knobs hot-reload; a local database is enough to start, with larger databases when you need them.
 
@@ -100,14 +101,16 @@ After APIs and plugins are connected in Baize, export them over MCP to Cursor an
 
 ---
 
-## Architecture: the decision layer
+## Architecture: decision layer and tool matching
 
-As more connectors are added, a turn may carry a large number of tool schemas, and the prefill cost grows with that number. Baize addresses this with a **decision layer** that moves high-frequency routing decisions out of generative calls into a cheap, deterministic step. The idea is inspired by the **Jev** approach to calibrated decisions; because Baize uses OpenAI-compatible APIs and cannot read logits, it does not use probability scores or depend on any external service. The layer is local, pluggable, and always fails open.
+As more connectors are added, a turn may carry a large number of tool schemas, and the prefill cost grows with that number. Baize addresses this with a **decision layer** that moves high-frequency routing decisions out of generative calls into a cheap, deterministic step. The idea is inspired by the **Jev** approach to calibrated decisions; because Baize uses OpenAI-compatible APIs and cannot read logits, it does not use probability scores. The layer is local, pluggable, and always fails open.
 
-When the tool count is above a threshold, a **two-level router** runs before the main model:
+When the tool count is above a threshold and DP-2a tool narrowing is on, candidates are narrowed before the main model:
 
-1. **System routing** — choose which connectors the turn needs. It uses hybrid routing: discriminative terms in the query force a connector, and the model's choice is added on top (it cannot remove a forced connector).
-2. **Within-system prefilter** — a deterministic keyword prefilter (per-system IDF over Latin terms and Chinese bigrams) keeps the top candidates, so the main model receives a shorter list.
+1. **System routing** (optional) — which connectors the turn needs. Discriminative query terms force a connector; the model can only add connectors, not remove forced ones.
+2. **Tool prefilter** — **standard matching** by default (BM25 over Latin terms and Chinese bigrams; no extra components). For many backends or mixed Chinese/English phrasing, open Settings → **Tool matching** and enable **enhanced matching**: install Ollama locally and pull an embedding model (e.g. `bge-m3`), or point at a cloud / self-hosted OpenAI-compatible embedding API. Enhanced mode uses BM25 + dense retrieval (RRF) and falls back to standard matching on failure so chat keeps working.
+
+The console shows install progress, app/model paths, optional custom model directory, and cleanup (including optional Ollama uninstall).
 
 The narrowing affects only **which schemas are in the prompt**, not tool availability: a registered tool still runs if requested. If nothing matches, it fails open and sends the full set; system and login tools are always kept.
 

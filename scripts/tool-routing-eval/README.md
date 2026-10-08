@@ -1,12 +1,14 @@
 # Tool-routing evaluation harness
 
 Regression benchmark for the DP-2a tool-candidate narrowing (the
-`decide` layer). Candidates are ranked by Tool-RAG retrieval: when
-`llm.embedding_model` is set, dense embeddings + BM25 (RRF); otherwise
-lexical BM25 + sparse TF-IDF. System routing is a soft boost, not a
-hard connector gate. The harness drives a running baize server over a
-fixed set of realistic requests and measures whether the correct tool
-is reachable and selected, plus the token cost of doing so.
+`decide` layer). Candidates are ranked by tool retrieval: when an
+embedder is wired (Settings → Tool matching / enhanced mode), dense
+embeddings + BM25 (RRF); otherwise lexical BM25. Product overview:
+root README section “decision layer and tool matching”. System routing
+is a soft boost, not a hard connector gate. The harness drives a
+running baize server over a fixed set of realistic requests and
+measures whether the correct tool is reachable and selected, plus the
+token cost of doing so.
 
 For “was required evidence established before a write?”, see the sibling
 harness [`../evidence-eval`](../evidence-eval).

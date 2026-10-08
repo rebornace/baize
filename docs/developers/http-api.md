@@ -33,11 +33,25 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等 | 会话与身份；列表可带 `?workspace_id=` |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份 |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
-| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、mcp-export… |
+| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、mcp-export、tool-retrieval… |
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
+
+## 工具匹配（增强 / 标准）
+
+DP-2a 预筛的匹配方式由设置页「工具匹配」控制；下列接口均需 **admin**（读接口在 Gate 下亦需已登录角色）：
+
+| 路径 | 作用 |
+|------|------|
+| `GET /v0/settings/tool-retrieval` | 当前模式 / 阶段、Ollama 是否已装/在跑、模型是否在库、路径与下载进度 |
+| `POST /v0/settings/tool-retrieval/enable` | 空体或 `{"provider":"local"}`：异步本机 Ollama 傻瓜式安装并拉取嵌入模型；`{"provider":"api","base_url","model","api_key?"}`：云端 / 自建 Embedding |
+| `POST /v0/settings/tool-retrieval/disable` | 改回标准匹配（不删本机文件） |
+| `POST /v0/settings/tool-retrieval/cleanup` | 关增强匹配、删匹配模型与安装包缓存；体可选 `{"remove_ollama":true}` 同时卸载 Ollama 本体 |
+| `PUT /v0/settings/tool-retrieval/paths` | 体 `{"models_dir":"..."}` 自定义模型目录（空串清除覆盖）；会尝试带 `OLLAMA_MODELS` 重启本机 Ollama |
+
+未接线管理器时 `GET` 仍返回标准匹配快照；写接口可能 `503 tool_retrieval_unavailable`。
 
 ## 模型发现与批量导入
 
