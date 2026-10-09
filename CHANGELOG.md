@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-09
+
+决策模型 System One 一点启用，国内安装源 ModelScope。向后兼容；选 **minor**（v0.5.0）。
+
 ### 新功能
 
 - **决策模型（System One）**：设置「匹配与决策」一点启用本机 Ollama `tev1`（需 ≥0.35）或兼容 API；写入 `decide_systemone_*`；`/v0/settings/systemone*`。
@@ -14,7 +18,11 @@
 
 ### 文档
 
-- README / 架构 / 配置 / HTTP API / JEV Spec 变更记录与现实现状对齐。
+- README / 架构 / 配置 / HTTP API 与现实现状对齐。
+
+### 修复
+
+- CI：gofmt、硬编码色、Linux 下 unused 安装探测函数。
 
 ## 0.4.0 — 2026-10-08
 
