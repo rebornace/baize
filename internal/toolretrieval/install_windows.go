@@ -97,6 +97,55 @@ func ollamaLaunchCandidates(localAppData, pathCLI string) []string {
 	return out
 }
 
+// probeInstallerContentLength HEADs url and returns Content-Length, or 0.
+// Windows-only: used by the desktop installer download path.
+func probeInstallerContentLength(ctx context.Context, url string) int64 {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("User-Agent", installerHTTPUserAgent)
+	client := &http.Client{Timeout: 6 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 400 {
+		return 0
+	}
+	if cl := res.Header.Get("Content-Length"); cl != "" {
+		if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// expectedInstallerSize returns the Content-Length of a known-fresh installer as
+// a freshness reference. Zero means "unknown — skip checks".
+func expectedInstallerSize(ctx context.Context) int64 {
+	if preferChineseMirrors() {
+		rev := latestModelScopeStableTag(ctx)
+		if rev == "" {
+			rev = modelScopeFallbackRevision
+		}
+		if n := modelScopeOllamaSetupSize(ctx, rev); n > 0 {
+			return n
+		}
+		if n := probeInstallerContentLength(ctx, modelScopeResolveURL(rev)); n > 0 {
+			return n
+		}
+	}
+	candidates := []string{windowsInstallerOfficial, windowsInstallerGitHub, windowsInstallerGHProxy}
+	for _, u := range candidates {
+		if n := probeInstallerContentLength(ctx, u); n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 // downloadAndLaunchInstaller tries region-ordered mirrors (CN: ModelScope first),
 // skipping stale sizes, then falls back to opening a browser download link.
 func downloadAndLaunchInstaller(ctx context.Context, onProgress func(InstallProgress)) (string, error) {
