@@ -8,7 +8,7 @@
 
 | Harness | 主要问题 |
 |---------|----------|
-| tool-routing-eval | 选得到对的工具吗？（DP-2a） |
+| tool-routing-eval | 选得到对的工具吗？（工具收窄 / 预筛） |
 | **evidence-eval** | 动手改状态前，该查的查了吗？多步依赖满足了吗？ |
 
 本 harness 只通过 HTTP API 驱动白泽，不 import Go 代码。评分对事件轨迹做确定性检查，**不用 LLM 裁判**。

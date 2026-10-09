@@ -67,7 +67,7 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 | `max_steps` | 16 |
 | `tool_timeout_sec` | 60（单次工具调用） |
 
-> 决策层（`internal/decide`）相关行为——DP-1 记忆预抽取判断、DP-2a 工具候选收敛、DP-2b 工具枚举约束、DP-3 大体积工具结果裁剪、DP-4 Auto 档位回退——**不在 YAML**，而是库内的热更新参数，在 UI「运行参数 → 智能提速」调节（总闸 `decide_enabled` + 各子开关，默认均关），经 `GET/PATCH /v0/settings/runtime` 读写。YAML 只提供启动基线。同页「记忆与压缩」含「长对话保留重点」（`context_projection_enabled`，默认关）：只整理给模型看的投影，不改写已保存消息。
+> 决策层（`internal/decide`）相关行为——记忆预抽取判断、工具候选收敛、工具枚举约束、大体积工具结果裁剪、Auto 档位回退——**不在 YAML**，而是库内的热更新参数，在 UI「运行参数 → 智能提速」调节（总闸 `decide_enabled` + 各子开关，默认均关），经 `GET/PATCH /v0/settings/runtime` 读写。YAML 只提供启动基线。同页「记忆与压缩」含「长对话保留重点」（`context_projection_enabled`，默认关）：只整理给模型看的投影，不改写已保存消息。
 >
 > **匹配与决策**（工具预筛 + System One）在独立设置页配置：增强匹配经 `/v0/settings/tool-retrieval*`；决策模型经 `/v0/settings/systemone*`（本机 Ollama ≥0.35 拉 `tev1`，或 API）。`decide_systemone_*` 由启用流程写入 knobs；`decide_profile_id` 仅为 System One 不可用时的**聊天模型兜底**（留空不会改用主助手）。不在 YAML。
 

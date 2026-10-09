@@ -134,7 +134,7 @@ export const MAIN_KNOB_FIELDS = mainKnobFields()
 /** @deprecated Prefer compactAdvFields() — live labels. */
 export const COMPACT_ADV_FIELDS = compactAdvFields()
 
-/** Numeric knobs for tool-candidate routing (DP-2a). */
+/** Numeric knobs for tool-candidate routing / narrowing. */
 export function decideToolFields(): KnobFieldSpec[] {
   return [
     {
@@ -156,7 +156,7 @@ export function decideToolFields(): KnobFieldSpec[] {
   ]
 }
 
-/** Numeric knobs for bulky tool-result pruning (DP-3) and route fallback (DP-4). */
+/** Numeric knobs for bulky tool-result pruning and Auto route fallback. */
 export function decideMiscFields(): KnobFieldSpec[] {
   return [
     {

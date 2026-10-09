@@ -22,9 +22,11 @@ func (e *Engine) effectiveDecideMemory() bool {
 	return k.DecideEnabled && k.DecideMemoryEnabled
 }
 
-// effectiveDecideTool reports whether DP-2a is live (shadow or enforce): the
-// master switch and the tool-routing switch are both on. With no Settings or
-// Decider it stays off, preserving legacy behavior.
+// effectiveDecideTool reports whether DP-2a tool narrowing is live: the
+// master switch and the tool-routing switch are both on (no separate shadow
+// mode — when on, narrowTools actually shrinks the schema set sent to the
+// main model). With no Settings or Decider it stays off, preserving legacy
+// behavior.
 func (e *Engine) effectiveDecideTool() bool {
 	if e.Settings == nil || e.Decider == nil {
 		return false

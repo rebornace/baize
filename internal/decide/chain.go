@@ -10,8 +10,9 @@ type Chain struct {
 	items []Ask
 }
 
-// NewChain builds a chain. Production order is typically Remote first, Rules
-// last (Rules is the always-available deterministic backstop).
+// NewChain builds a chain. Production wiring (see bootstrap) is typically
+// System One → RemoteMulti (decide_profile_id chat fallback) → Rules last
+// (Rules is the always-available deterministic backstop for kinds it covers).
 func NewChain(items ...Ask) *Chain {
 	return &Chain{items: items}
 }

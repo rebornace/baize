@@ -112,7 +112,7 @@ As more connectors are added, a turn may carry a large number of tool schemas, a
 
 Ask chain order: **System One → optional fallback chat profile (`decide_profile_id`) → Rules**. When System One is set, leave the fallback blank; blank does **not** bill the main assistant—those judgments are skipped (fail-open). Probability scores are never exposed to callers.
 
-When the tool count is above a threshold and DP-2a tool narrowing is on, candidates are narrowed before the main model:
+When the tool count is above a threshold and tool narrowing is on, candidates are narrowed before the main model:
 
 1. **System routing** (optional) — which connectors the turn needs. Discriminative query terms force a connector; the model can only add connectors, not remove forced ones.
 2. **Tool prefilter** — **standard matching** by default (BM25 over Latin terms and Chinese bigrams; no extra components). For many backends or mixed Chinese/English phrasing, enable **enhanced matching** on the same page (local Ollama `bge-m3` or an Embedding API) and **System One** (`tev1` on the same Ollama, or an API). Enhanced matching uses BM25 + dense retrieval (RRF) and fails open to standard matching.
@@ -135,7 +135,27 @@ Setup: **37** real read-only business requests spanning **3** connected backends
 
 Sending the **full 390-tool** catalog measured roughly **85k prompt tokens** on turn 0; at width 16 it measured about **1.4k–3.8k**. Over **5 repeated rounds (185 requests)** width 16 had a **99.5% run-success rate (184/185)**; the one failure came from an unrelated workflow, not from a tool being unavailable. At width 8, two multi-step requests failed. The default width is **16**.
 
-The decision layer is **opt-in** and hot-reloadable via runtime settings (it is off by default); the benchmark reflects behavior once tool routing is enabled.
+The decision layer is **opt-in** and hot-reloadable via runtime settings (it is off by default). The table above measures **main-model prompt cost after tool narrowing + prefilter** (not a full end-to-end bill for every Smart speed-up feature). Pair it with the process list below: connecting a decision model pays off when those judgments stop billing a generative model.
+
+**What moves off the main / chat LLM onto the decision model** (when Smart speed-up toggles are on):
+
+| Process | Without decision model | With System One (or cheap Ask backend) |
+|---|---|---|
+| Worth extracting memory? | Usually another generative extract call | Cheap Ask first; skip extract when “no” |
+| Which backends matter this turn? | Full tool schemas (or a chat small model to ask) | Decision Ask + prefilter; main model sees a narrowed set |
+| Keep this bulky tool result? | Often kept / summarized at full cost | Ask first; drop useless bulk from later context |
+| Auto route light vs power? | Heuristic (or chat arbitration) | Optional decision Ask for tier advice |
+
+Width-sweep scripts: [`scripts/tool-routing-eval`](scripts/tool-routing-eval/README.md). **The table above (layer A) is the existing reproducible result — already run; no need to re-sweep widths just because System One landed.**
+
+**Ask-backend comparison (layer B, same 37-case corpus, width 16, one pass each on the same machine):**
+
+| Ask backend | Run success | Expected tool hit | Prefilter recall | Avg. turn-0 prompt | Wall clock |
+|---|---|---|---|---|---|
+| **System One (local tev1)** | **37/37** | **31/37** | **37/37** | 4,435 | **~376 s** (~10.2 s/case) |
+| Chat fallback (`deepseek-flash` profile) | 37/37 | 29/37 | 37/37 | 4,205 | ~556 s (~15.0 s/case) |
+
+`systems_source` on narrow events was `systemone` (126) vs `remote` (124). Main-model prompt stays in the same band (same width); **wall clock ≈ 1.48×** with chat Ask — swapping Ask to the decision model is the budget/latency lever. Local summary: `scripts/tool-routing-eval/out/layerB_compare.json` (gitignored artifact).
 
 ---
 
