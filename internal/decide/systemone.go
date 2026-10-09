@@ -59,15 +59,15 @@ func (s *SystemOne) Enabled() bool {
 }
 
 type systemOneRequest struct {
-	Model     string                         `json:"model,omitempty"`
-	State     string                         `json:"state"`
-	Questions map[string]systemOneQuestion   `json:"questions"`
+	Model     string                       `json:"model,omitempty"`
+	State     string                       `json:"state"`
+	Questions map[string]systemOneQuestion `json:"questions"`
 }
 
 type systemOneQuestion struct {
-	Type         string            `json:"type"`
-	Instructions string            `json:"instructions,omitempty"`
-	Criteria     any               `json:"criteria,omitempty"`
+	Type         string `json:"type"`
+	Instructions string `json:"instructions,omitempty"`
+	Criteria     any    `json:"criteria,omitempty"`
 }
 
 type systemOneResponse struct {

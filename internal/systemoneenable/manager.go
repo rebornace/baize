@@ -50,21 +50,21 @@ type ApplyConfig func(cfg Config)
 
 // Status is the GET /settings/systemone payload.
 type Status struct {
-	Mode            string                        `json:"mode"` // "off" | "on"
-	Phase           Phase                         `json:"phase"`
-	Detail          string                        `json:"detail,omitempty"`
-	Error           string                        `json:"error,omitempty"`
-	Provider        string                        `json:"provider"`
-	OllamaInstalled bool                          `json:"ollama_installed"`
-	OllamaRunning   bool                          `json:"ollama_running"`
-	SystemOneOK     bool                          `json:"systemone_ok"`
-	Model           string                        `json:"model"`
-	BaseURL         string                        `json:"base_url"`
-	APIKeySet       bool                          `json:"api_key_set"`
-	ModelPresent    bool                          `json:"model_present"`
-	Installer       toolretrieval.InstallerHint   `json:"installer"`
+	Mode            string                          `json:"mode"` // "off" | "on"
+	Phase           Phase                           `json:"phase"`
+	Detail          string                          `json:"detail,omitempty"`
+	Error           string                          `json:"error,omitempty"`
+	Provider        string                          `json:"provider"`
+	OllamaInstalled bool                            `json:"ollama_installed"`
+	OllamaRunning   bool                            `json:"ollama_running"`
+	SystemOneOK     bool                            `json:"systemone_ok"`
+	Model           string                          `json:"model"`
+	BaseURL         string                          `json:"base_url"`
+	APIKeySet       bool                            `json:"api_key_set"`
+	ModelPresent    bool                            `json:"model_present"`
+	Installer       toolretrieval.InstallerHint     `json:"installer"`
 	Download        *toolretrieval.DownloadProgress `json:"download,omitempty"`
-	Busy            bool                          `json:"busy"`
+	Busy            bool                            `json:"busy"`
 }
 
 // EnableAPIRequest is the body for cloud / self-hosted System One enablement.
@@ -93,10 +93,10 @@ type persisted struct {
 
 // Manager orchestrates local Ollama + tev1 pull, or remote System One API.
 type Manager struct {
-	Store SettingsRW
-	Apply ApplyConfig
-	Model string
-	Base  string // ollama root for local
+	Store  SettingsRW
+	Apply  ApplyConfig
+	Model  string
+	Base   string // ollama root for local
 	APIURL string
 	APIKey string
 	Prov   string

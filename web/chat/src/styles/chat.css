@@ -1188,7 +1188,7 @@
 
 .tool-matching-advanced {
   margin-top: 1.25rem;
-  border-top: 1px solid var(--border, #e5e5e5);
+  border-top: 1px solid var(--border);
   padding-top: 0.75rem;
 }
 
