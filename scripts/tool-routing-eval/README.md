@@ -19,23 +19,23 @@ The harness talks to baize over its HTTP API; it does not import Go code.
 | Layer | What you prove | Typical command |
 |---|---|---|
 | **A. Main-model prompt** | Narrowing + prefilter cut turn-0 prompt tokens while runs still succeed | `sweep.ps1` / `stability.ps1` |
-| **B. Ask backend cost** | System One vs chat fallback for the same judgments (cheaper Ask, same success) | Manual A/B below |
+| **B. Judgment-service cost** | System One vs standby model for the same judgments (cheaper judgment, same success) | Manual A/B below |
 
 Published README width tables are **layer A** (already measured; re-run only if
 the corpus, connectors, or narrowing logic change). **Layer B** shows that
 wiring a decision-model API (or local `tev1`) is a real latency/budget lever
-versus using a chat model for the same Ask — not “another small chat buddy.”
+versus using an LLM for the same judgments.
 
 ### Layer B result (2026-10-09, this machine)
 
 Same 37 requests, `decide_tool_pre_topk=16`, agent `default-agent`, one pass each:
 
-| Arm | `systems_source` | Success | Expected hit | Wall |
+| Arm | `systems_source` | Success | Expected hit | End-to-end |
 |---|---|---|---|---|
 | System One (`tev1`) | `systemone` ×126 | 37/37 | 31/37 | ~376 s |
-| Chat profile (`deepseek-flash`) | `remote` ×124 | 37/37 | 29/37 | ~556 s |
+| LLM profile (`deepseek-flash`) | `remote` ×124 | 37/37 | 29/37 | ~556 s |
 
-Chat Ask wall ≈ **1.48×** System One; main-model prompt averages stayed comparable.
+LLM path ≈ **1.48×** System One wall time; main-model prompt averages stayed comparable.
 Artifacts: `out/layerB_systemone/`, `out/layerB_chat/`, `out/layerB_compare.json`.
 
 ## Requirements
@@ -88,19 +88,19 @@ previously effective `decide_enabled` / `decide_tool_routing_enabled` /
 error). Generated artifacts go under `out/` and `artifacts/`, which are
 git-ignored.
 
-## Optional: System One vs chat-fallback Ask (layer B)
+## Optional: System One vs standby model (layer B)
 
-Same corpus and TopK; only the Ask backend changes. Goal: show that
-decision-model Ask keeps run success / tool reachability while Ask latency
-(and billed Ask tokens, if any) drop vs a chat small model.
+Same corpus and TopK; only the judgment service changes. Goal: show that
+decision-model judgments keep run success / tool reachability while latency
+(and billed judgment tokens, if any) drop vs an LLM.
 
 1. Enable Smart speed-up master + tool narrowing (and any other sub-features
    you want in the “full decision layer” story: memory gate, prune, route).
 2. **Run A — System One:** Matching & decisions → enable System One
    (`tev1` or API). Leave `decide_profile_id` **empty**. Run
    `.\stability.ps1 -Rounds 5 -TopK 16` (or `.\run_batch.ps1`).
-3. **Run B — chat fallback:** Disable System One knobs; set
-   `decide_profile_id` to a cheap chat profile. Repeat the same script.
+3. **Run B — standby model:** Disable System One knobs; set
+   `decide_profile_id` to a low-cost LLM profile. Repeat the same script.
 4. Compare: run success, `expected_called` / `prefilter_recall`, turn-0
    `prompt_tokens` (should stay in the same band if narrowing width is
    fixed), plus wall time and—if your provider reports it—Ask-side usage

@@ -19,7 +19,7 @@ type SettingsRW interface {
 	UpsertSetting(key string, jsonRaw []byte) error
 }
 
-// Phase is the foolproof enablement progress shown in the UI.
+// Phase is the one-click enablement progress shown in the UI.
 type Phase string
 
 const (
@@ -37,7 +37,7 @@ const (
 
 // Provider selects how dense embeddings are obtained.
 const (
-	ProviderLocal = "local" // foolproof Ollama on this machine
+	ProviderLocal = "local" // one-click Ollama on this machine
 	ProviderAPI   = "api"   // OpenAI-compatible HTTP (cloud or self-hosted)
 )
 
@@ -269,7 +269,7 @@ func (m *Manager) Snapshot(ctx context.Context) Status {
 	}
 }
 
-// StartEnable begins the local (Ollama) foolproof flow in the background.
+// StartEnable begins the local (Ollama) one-click flow in the background.
 func (m *Manager) StartEnable(parent context.Context) error {
 	if m == nil {
 		return nil

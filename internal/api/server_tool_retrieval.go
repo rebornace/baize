@@ -37,7 +37,7 @@ func (s *Server) handlePostToolRetrievalEnable(w http.ResponseWriter, r *http.Re
 		return
 	}
 	trimmed := strings.TrimSpace(string(body))
-	// Empty body / {} ⇒ local Ollama foolproof install (async).
+	// Empty body / {} ⇒ local Ollama one-click install (async).
 	if trimmed == "" || trimmed == "{}" {
 		if err := s.ToolRetrieval.StartEnable(context.Background()); err != nil {
 			writeError(w, http.StatusConflict, "tool_retrieval_busy", err.Error())

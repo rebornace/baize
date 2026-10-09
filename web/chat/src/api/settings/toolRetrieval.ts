@@ -81,7 +81,7 @@ export async function getToolRetrieval(): Promise<ToolRetrievalStatus> {
   return parseJSON<ToolRetrievalStatus>(res)
 }
 
-/** Local Ollama foolproof install (async). */
+/** Local Ollama one-click install (async). */
 export async function enableToolRetrieval(): Promise<ToolRetrievalStatus> {
   const res = await fetch('/v0/settings/tool-retrieval/enable', {
     method: 'POST',

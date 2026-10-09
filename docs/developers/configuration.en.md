@@ -69,7 +69,7 @@ Sample default connector: `id`, `type` (default `openapi`), `spec`, `base_url`, 
 
 > The decision layer (`internal/decide`) behaviors — memory pre-extraction judgment, tool-candidate narrowing, tool-choice enum constraint, bulky tool-result pruning, Auto-tier fallback — are **not YAML keys**. They are in-store hot-reloadable settings under Runtime → Smart speed-up (master `decide_enabled` plus per-feature toggles, all off by default) via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline. Under Memory & compaction, “keep important facts in long chats” (`context_projection_enabled`, default off) is a model-facing projection only; saved messages are not rewritten.
 >
-> **Matching & decisions** (tool prefilter + System One) lives on its own settings page: enhanced matching via `/v0/settings/tool-retrieval*`; the decision model via `/v0/settings/systemone*` (local Ollama ≥0.35 pulls `tev1`, or an API). Enablement writes `decide_systemone_*` knobs; `decide_profile_id` is only a **chat fallback** when System One is unavailable (empty never bills the main assistant). Not in YAML.
+> **Matching & decisions** (tool prefilter + System One) lives on its own settings page: enhanced matching via `/v0/settings/tool-retrieval*`; the decision model via `/v0/settings/systemone*` (local Ollama ≥0.35 pulls `tev1`, or an API). Enablement writes `decide_systemone_*` knobs; `decide_profile_id` is only a **standby model** when System One is unavailable (empty never bills the main model). Not in YAML.
 
 
 ### `conversation`

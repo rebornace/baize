@@ -231,7 +231,7 @@ func (m *Manager) Snapshot(ctx context.Context) Status {
 	}
 }
 
-// StartEnable begins the local (Ollama + tev1) foolproof flow in the background.
+// StartEnable begins the local (Ollama + tev1) one-click flow in the background.
 func (m *Manager) StartEnable(parent context.Context) error {
 	if m == nil {
 		return nil

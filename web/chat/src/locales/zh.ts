@@ -137,9 +137,9 @@ export const zhPack = {
   // Token 用量（真实 usage）
   usageLine: (prompt: number, completion: number, total: number, cached = 0) =>
     `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${completion} · 共 ${total} tokens`,
-  usageSavedLine: (saved: number) => `智能提速为你节省约 ${saved} tokens`,
+  usageSavedLine: (saved: number) => `智能提速约节省 ${saved} tokens`,
   usageBothLine: (prompt: number, completion: number, total: number, saved: number, cached = 0) =>
-    `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${completion} · 共 ${total} tokens · 智能提速为你节省约 ${saved} tokens`,
+    `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${completion} · 共 ${total} tokens · 智能提速约节省 ${saved} tokens`,
 },
   MEMORY: {
   title: '账号记忆',
@@ -274,18 +274,18 @@ export const zhPack = {
   memoryAutoExtractHint: '对话成功结束后尝试抽出短事实；总开关关闭时无效。',
   sectionDecide: '智能提速',
   decideHint:
-    '让一个更便宜、更快的小助手先帮你做一些简单判断，从而少花主助手的费用、响应也更快。任何一步出问题都会自动按原来的方式继续，不影响正常使用。',
+    '由决策模型先完成高频的是/否与筛选判断，降低主模型费用并加快响应。任一步失败时自动沿用原路径，不影响正常使用。',
   decideEnabled: '开启智能提速',
   decideMemoryEnabled: '先判断这轮是否值得记住',
-  decideMemoryEnabledHint: '正式回复前，先让小助手判断这轮对话有没有需要长期记住的内容。',
-  fieldDecideProfile: '备用聊天小助手（兜底）',
+  decideMemoryEnabledHint: '正式回复前，先由决策模型判断这轮对话是否包含需要长期记住的内容。',
+  fieldDecideProfile: '备用模型',
   hintDecideProfile:
-    '仅在决策模型（System One）不可用时才会用到。请优先在「匹配与决策」配置 tev1；留空表示不调用任何聊天大模型做判断（失败则跳过，不会改用主助手）。',
+    '仅在决策模型（System One）不可用时使用。请优先在「匹配与决策」配置 tev1；留空表示不调用备用模型做判断（失败则跳过，不会改用主模型）。',
   decideProfileNone: '不使用（推荐：已配决策模型时留空）',
   decideBackendSystemOne: (model: string) =>
-    `当前优先：决策模型 System One${model ? `（${model}）` : ''}。下方聊天模型仅作兜底，可留空。`,
+    `当前优先：决策模型 System One${model ? `（${model}）` : ''}。下方模型仅作备用，可留空。`,
   decideBackendChatFallback:
-    '当前未检测到决策模型地址。判断会走下方备用聊天模型；若也留空，则相关判断会跳过（不会偷用主助手）。',
+    '当前未检测到决策模型地址。判断将使用下方备用模型；若也留空，则相关判断会跳过（不会改用主模型）。',
   decideBackendHintLink: '去配置决策模型',
   fieldDecideSystemOneURL: '服务地址',
   hintDecideSystemOneURL:
@@ -297,10 +297,10 @@ export const zhPack = {
   fieldDecideSystemOneModel: '模型名（可选）',
   hintDecideSystemOneModel:
     '留空默认 tev1（纯 CPU 推荐）；也可填 tev1:0.8b、nimble，或云端 model id。',
-  decideToolRoutingEnabled: '只给主助手看相关的功能',
-  decideToolRoutingHint: '可用功能很多时，先挑出和当前问题相关的，再交给主助手，既省钱又更不容易选错。',
-  decideToolChoice: '要求必须从挑出的功能里选择',
-  decideToolChoiceHint: '要求主助手只能在挑出的相关功能中做选择，进一步减少选错。',
+  decideToolRoutingEnabled: '只向主模型提供相关功能',
+  decideToolRoutingHint: '可用功能很多时，先筛选与当前问题相关的，再交给主模型，既降低费用也不容易选错。',
+  decideToolChoice: '要求必须从筛选出的功能里选择',
+  decideToolChoiceHint: '要求主模型只能在已筛选的相关功能中选择，进一步减少选错。',
   fieldDecideToolThreshold: '功能达到多少个时开始筛选',
   hintDecideToolThreshold: '可填 1–500；功能少于这个数时无需筛选。',
   fieldDecideToolPreTopK: '初步按关键词保留多少个功能',
@@ -311,13 +311,13 @@ export const zhPack = {
   tabSecurity: '安全',
   sectionToolMatch: '匹配与决策',
   toolMatchHint:
-    '匹配模型与决策模型都支持：本机 Ollama 一点安装启用，或对接云端 / 自建 API。两者可共用同一台 Ollama。智能提速总开关仍在「运行参数」。',
+    '匹配模型与决策模型都支持：本机 Ollama 一键安装启用，或对接云端 / 自建 API。两者可共用同一台 Ollama。智能提速总开关仍在「运行参数」。',
   toolMatchSectionEmbed: '工具匹配模型',
   toolMatchSectionEmbedHint:
-    '增强匹配用嵌入模型做工具预筛。本机一点安装，或填 Embedding API。失败自动回退标准匹配。',
+    '增强匹配用嵌入模型做工具预筛。本机一键安装，或填 Embedding API。失败自动回退标准匹配。',
   toolMatchSectionDecide: '决策模型',
   toolMatchSectionDecideHint:
-    'System One 决策模型（默认 tev1）。本机一点安装，或填兼容 API。需在「运行参数 → 智能提速」打开总开关后生效。',
+    'System One 决策模型（默认 tev1）。本机一键安装，或填兼容 API。需在「运行参数 → 智能提速」打开总开关后生效。',
   toolMatchDecideNeedEnable: '仍需在「运行参数 → 智能提速」打开总开关，决策层才会生效。',
   toolMatchDecideOpenRuntime: '打开运行参数',
   toolMatchDecideModeOff: '决策服务未启用',
@@ -331,7 +331,7 @@ export const zhPack = {
   toolMatchDecideStartAndEnable: '启动 Ollama 并启用决策',
   toolMatchDecideDisable: '关闭决策服务',
   toolMatchDecideRetry: '重试',
-  toolMatchDecideLocalTitle: '本机 Ollama（一点启用）',
+  toolMatchDecideLocalTitle: '本机 Ollama（一键启用）',
   toolMatchDecideLocalHint:
     '与匹配模型共用本机 Ollama：未安装则引导安装（国内优先最新版加速源），已安装则自动拉取 tev1。若版本过旧请先覆盖安装新版。无需命令行。',
   toolMatchDecideAPITitle: '云端 / 自建 API',
@@ -396,7 +396,7 @@ export const zhPack = {
   toolMatchToastPathsSaved: '模型目录已更新',
   toolMatchProviderLocal: '本机',
   toolMatchProviderAPI: 'API',
-  toolMatchLocalTitle: '本机 Ollama（一点启用）',
+  toolMatchLocalTitle: '本机 Ollama（一键启用）',
   toolMatchLocalHint:
     '一点安装桌面版 Ollama（国内优先 ModelScope 同步源，失败再试其他镜像）。装好后打开托盘即可。不想下本机大包时，用下方「API」。',
   toolMatchMirrorModelScope: 'ModelScope 同步源',
@@ -452,11 +452,11 @@ export const zhPack = {
   hintDecidePruneThreshold: '可填 1–100000（单位：字）。',
   fieldDecidePruneMaxJudged: '每轮最多精简几条结果',
   hintDecidePruneMaxJudged: '可填 1–100。',
-  decideRouteEnabled: '长文自动选择合适的助手',
-  decideRouteHint: '遇到较长的内容时，让小助手判断该用快速还是更深入的主助手，简单任务不多花钱。',
+  decideRouteEnabled: '长文自动选择合适的模型档位',
+  decideRouteHint: '遇到较长内容时，由决策模型判断应使用轻量还是更深入的主模型，简单任务少消耗额度。',
   fieldDecideRouteMinRunes: '内容超过多少字才启用',
   hintDecideRouteMinRunes: '可填 1–100000（单位：字）；太短的内容无需判断。',
-  fieldMaxMessages: '向主助手提供多少条最近的对话',
+  fieldMaxMessages: '向主模型提供多少条最近的对话',
   hintMaxMessages: '可填 1–500；越大记得越久，但花费越高。',
   fieldMaxSteps: '一件事最多允许操作多少步',
   hintMaxSteps: '可填 1–100；防止助手反复操作停不下来。',
@@ -1089,7 +1089,7 @@ export const zhPack = {
   SETTINGS_NAV: {
     title: '设置',
     overview: '总览',
-    backToChat: '返回聊天',
+    backToChat: '返回对话',
     closeMenu: '关闭菜单',
     openMenu: '打开设置菜单',
     navAria: '设置导航',
@@ -1109,7 +1109,7 @@ export const zhPack = {
     memoryDesc: '查看与管理本账号跨会话记住的事实；仅本人可见，运行开关在「运行参数」',
     toolMatching: '匹配与决策',
     toolMatchingDesc:
-      '匹配与决策模型：本机 Ollama 一点启用，或对接 API',
+      '匹配与决策模型：本机 Ollama 一键启用，或对接 API',
     openapi: '业务系统',
     openapiDesc: '上传一份接口文档，即可对接公司内部的各类业务系统，不用写代码',
     mcp: '外部工具服务',

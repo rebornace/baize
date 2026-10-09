@@ -48,7 +48,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | 路径 | 作用 |
 |------|------|
 | `GET /v0/settings/tool-retrieval` | 当前模式 / 阶段、Ollama 是否已装/在跑、模型是否在库、路径与下载进度 |
-| `POST /v0/settings/tool-retrieval/enable` | 空体或 `{"provider":"local"}`：异步本机 Ollama 傻瓜式安装并拉取嵌入模型；`{"provider":"api","base_url","model","api_key?"}`：云端 / 自建 Embedding |
+| `POST /v0/settings/tool-retrieval/enable` | 空体或 `{"provider":"local"}`：异步本机 Ollama 一键安装并拉取嵌入模型；`{"provider":"api","base_url","model","api_key?"}`：云端 / 自建 Embedding |
 | `POST /v0/settings/tool-retrieval/disable` | 改回标准匹配（不删本机文件） |
 | `POST /v0/settings/tool-retrieval/cleanup` | 关增强匹配、删匹配模型与安装包缓存；体可选 `{"remove_ollama":true}` 同时卸载 Ollama 本体 |
 | `PUT /v0/settings/tool-retrieval/paths` | 体 `{"models_dir":"..."}` 自定义模型目录（空串清除覆盖）；会尝试带 `OLLAMA_MODELS` 重启本机 Ollama |
@@ -64,7 +64,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | `POST /v0/settings/systemone/disable` | 清除决策服务 knobs（不删本机文件） |
 | `POST /v0/settings/systemone/cleanup` | 清理决策相关下载缓存等；体可选 `{"remove_ollama":true}` |
 
-未接线时写接口可能 `503 systemone_unavailable`。**智能提速总闸仍在** `PATCH /v0/settings/runtime`（`decide_enabled` 及子开关）。
+未接线时写接口可能 `503 systemone_unavailable`。**智能提速总开关仍在** `PATCH /v0/settings/runtime`（`decide_enabled` 及各功能开关）。
 
 ## 模型发现与批量导入
 

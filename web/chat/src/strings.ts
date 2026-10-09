@@ -96,13 +96,13 @@ export function friendlyError(e: unknown): FriendlyError {
   return { title: p.ERRORS.unknown, detail: detail || undefined }
 }
 
-/** 身份来源 -> 人话；未知来源原值兜底，不吞信息。 */
+/** 身份来源 -> 界面文案；未知来源显示原值，不吞信息。 */
 export function identitySourceLabel(source: string): string {
   const map = getPack().IDENTITY_SOURCES as Record<string, string>
   return map[source] ?? source
 }
 
-/** 存储驱动 -> 人话选项；未知驱动原值兜底。提交值仍用英文 driver。 */
+/** 存储驱动 -> 界面选项；未知驱动显示原值。提交值仍用英文 driver。 */
 export function driverLabel(driver: string): string {
   return (getPack().DRIVER_LABELS as Record<string, string>)[driver] ?? driver
 }

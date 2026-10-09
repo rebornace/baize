@@ -30,7 +30,7 @@ Baize Runtime (Go)
 ```
 
 - **MCP 桥（客户端）**：`PUT /v0/connectors/{id}` 注册 `type: mcp`；`tools/list` → 目录 `source=mcp`，Run 内 `tools/call`。
-- **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop 等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的对话模型。
+- **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop 等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的大语言模型。
 - **存储**：默认 SQLite；支持 `postgres` / `memory`。Blob：`file` / `s3` / `memory`。
 - **控制面鉴权**：可选 operator / admin 口令；详见 [http-api](./http-api.md) 与 [configuration](./configuration.md)。
 
@@ -70,11 +70,11 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 - 目录行在 store（`source`：`spec` / `plugin` / `mcp` / `extra`）。`spec`/`plugin`/`mcp` 可启停不可删；`extra` 可删。
 - Registry **只**挂 `enabled=true` 的行；引擎与 HITL 读 Registry，`GET /v0/tools` 读目录（可见停用行）。
-- Agent **不**绑定 Connector 子集：默认每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。开启工具收敛且工具数超过阈值时，会先经工具预筛（默认标准匹配：BM25；可选增强匹配：BM25 + Embedding 混合检索，见设置「匹配与决策」与 `internal/toolindex`）+ 决策层收敛，只把候选子集下发给主模型（总闸与子开关、TopK 在「运行参数 → 智能提速」；开总闸前需先配决策后端才有收益）。技能 `tools:` 默认是**保底集合**（除非 Agent 设置 `tool_binding: exclusive`）：声明过的工具在收口时尽量保留，未声明的启用连接器工具仍是候选，不会被技能名单单独关掉。exclusive 模式下仅暴露当前已激活技能声明的工具（另加 `activate_skill`）。每条用户消息是新 Run，工具集会重新预筛；会话已有登录凭证后，预筛不再把登录建立类工具（及 managed `connector_login` 技能的 tools 保底）硬塞进 Top-K，避免登录成功后仍占满名额。System 会注入当前时间，便于解读工具结果里的时间字段。
-- **工具匹配（增强）**：`internal/toolretrieval` 管理本机 Ollama 傻瓜式安装 / 模型拉取 / 路径与清理，或 OpenAI 兼容 Embedding API；状态经 `GET/POST…/tool-retrieval*` 见 [HTTP API](./http-api.md)。Windows 国内安装优先 [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files)（按稳定 tag 解析 `OllamaSetup.exe`），再回退 ghproxy / 官网等；体积与官方不符的陈旧镜像会跳过。未启用或探测失败时仍用标准匹配，fail-open。
-- **决策服务（System One）**：`internal/systemoneenable` 对称管理本机 Ollama 拉取 `tev1`（需 Ollama ≥0.35，复用同一安装链路）或 System One 兼容 API；启用后写入 `decide_systemone_*` knobs；`GET/POST…/systemone*`。判断链为 System One → `decide_profile_id`（可选聊天兜底，空则不调用主助手）→ Rules。
+- Agent **不**绑定 Connector 子集：默认每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。开启工具收敛且工具数超过阈值时，会先经工具预筛（默认标准匹配：BM25；可选增强匹配：BM25 + Embedding 混合检索，见设置「匹配与决策」与 `internal/toolindex`）+ 决策层收敛，只把候选子集下发给主模型（总开关与各功能、TopK 在「运行参数 → 智能提速」；开总开关前需先配决策后端才有收益）。技能 `tools:` 默认是**最低保留集合**（除非 Agent 设置 `tool_binding: exclusive`）：声明过的工具在筛选时尽量保留，未声明的启用连接器工具仍是候选，不会被技能名单单独关掉。exclusive 模式下仅暴露当前已激活技能声明的工具（另加 `activate_skill`）。每条用户消息是新 Run，工具集会重新预筛；会话已有登录凭证后，预筛不再把登录建立类工具（及 managed `connector_login` 技能的 tools 最低保留）硬塞进 Top-K，避免登录成功后仍占满名额。System 会注入当前时间，便于解读工具结果里的时间字段。
+- **工具匹配（增强）**：`internal/toolretrieval` 管理本机 Ollama 一键安装 / 模型拉取 / 路径与清理，或 OpenAI 兼容 Embedding API；状态经 `GET/POST…/tool-retrieval*` 见 [HTTP API](./http-api.md)。Windows 国内安装优先 [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files)（按稳定 tag 解析 `OllamaSetup.exe`），再回退 ghproxy / 官网等；体积与官方不符的陈旧镜像会跳过。未启用或探测失败时仍用标准匹配，失败则回退原路径。
+- **决策服务（System One）**：`internal/systemoneenable` 对称管理本机 Ollama 拉取 `tev1`（需 Ollama ≥0.35，复用同一安装链路）或 System One 兼容 API；启用后写入 `decide_systemone_*` knobs；`GET/POST…/systemone*`。判定链路为 System One → `decide_profile_id`（可选备用模型，空则不调用主模型）→ Rules。
 - **工作区**：Web 对话带 `workspace_id`（缺省 `default`）。同一工作区内的捕获登录身份共享；不同工作区、渠道会话（`source:account:peer`）与 MCP 导出身份隔离。v1 不迁移已有对话到其他工作区。
-- **给模型看的投影**（运行参数「长对话保留重点」，默认关）：只改模型输入侧的投影（钉住 / 摘要 / 丢掉过大工具结果），**不改写** `conversation.Messages`。失败则 fail-open 回退 Compactor。不承诺降低云端 API token。
+- **给模型看的投影**（运行参数「长对话保留重点」，默认关）：只改模型输入侧的投影（钉住 / 摘要 / 丢掉过大工具结果），**不改写** `conversation.Messages`。失败则回退 Compactor。不承诺降低云端 API token。
 - **滚动摘要（Compactor）**：超预算时把较旧轮次压成结构化检查点（目标、进度、决定、必须保留的事实），不删原文、不把「先执行某步再探索」写成全局策略。
 
 ## Agent 运行形态

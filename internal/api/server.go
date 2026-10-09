@@ -178,11 +178,11 @@ type Server struct {
 	CallbackPublicBase string
 	CallbackTTL        time.Duration
 
-	// ToolRetrieval optionally manages foolproof Ollama + embedding enablement
+	// ToolRetrieval optionally manages one-click Ollama + embedding enablement
 	// for DP-2a dense Tool-RAG. nil = status reports standard mode only.
 	ToolRetrieval *toolretrieval.Manager
 
-	// SystemOneEnable optionally manages foolproof Ollama tev1 / API enablement
+	// SystemOneEnable optionally manages one-click Ollama tev1 / API enablement
 	// for the System One decision backend. nil = status reports off only.
 	SystemOneEnable *systemoneenable.Manager
 

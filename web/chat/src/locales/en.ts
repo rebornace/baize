@@ -266,18 +266,18 @@ export const enPack = {
     memoryAutoExtractHint: 'After a successful chat, try extracting short facts; ignored when the master switch is off.',
     sectionDecide: 'Smart speed-up',
     decideHint:
-      'Let a cheaper, faster helper make quick, simple decisions first, so you spend less on the main assistant and get replies sooner. If anything goes wrong, it automatically falls back to the usual way, with no impact on normal use.',
+      'A decision model handles frequent yes/no and routing judgments first, lowering main-model cost and latency. If a step fails, the original path continues without interrupting normal use.',
     decideEnabled: 'Turn on smart speed-up',
     decideMemoryEnabled: 'First decide whether this turn is worth remembering',
-    decideMemoryEnabledHint: 'Before the main reply, let the quick helper judge whether the conversation contains anything worth keeping long term.',
-    fieldDecideProfile: 'Fallback chat helper',
+    decideMemoryEnabledHint: 'Before the main reply, the decision model judges whether the conversation contains anything worth keeping long term.',
+    fieldDecideProfile: 'Standby model',
     hintDecideProfile:
-      'Used only when the System One decision model is unavailable. Prefer tev1 under Matching & decisions; leave blank to skip chat-LLM judgments (never bills the main assistant).',
+      'Used only when the System One decision model is unavailable. Prefer tev1 under Matching & decisions; leave blank to skip standby-model judgments (never bills the main model).',
     decideProfileNone: 'None (recommended when System One is set)',
     decideBackendSystemOne: (model: string) =>
-      `Active: System One decision model${model ? ` (${model})` : ''}. The chat helper below is fallback only — leave blank.`,
+      `Active: System One decision model${model ? ` (${model})` : ''}. The model below is standby only — leave blank.`,
     decideBackendChatFallback:
-      'No decision-model URL detected. Judgments will use the fallback chat helper below; if blank, those steps are skipped (never the main assistant).',
+      'No decision-model URL detected. Judgments will use the standby model below; if blank, those steps are skipped (never the main model).',
     decideBackendHintLink: 'Configure decision model',
     fieldDecideSystemOneURL: 'Service URL',
     hintDecideSystemOneURL:
@@ -289,11 +289,11 @@ export const enPack = {
     fieldDecideSystemOneModel: 'Model id (optional)',
     hintDecideSystemOneModel:
       'Leave blank for tev1 (CPU-friendly default); or set tev1:0.8b, nimble, or a cloud model id.',
-    decideToolRoutingEnabled: 'Show the main assistant only relevant features',
-    decideToolRoutingHint: 'When many features are available, pick the ones related to the current question first, which saves cost and reduces wrong choices.',
-    decideToolChoice: 'Require a choice from the picked features',
+    decideToolRoutingEnabled: 'Send the main model only relevant features',
+    decideToolRoutingHint: 'When many features are available, filter to those related to the current question first, which saves cost and reduces wrong choices.',
+    decideToolChoice: 'Require a choice from the filtered features',
     decideToolChoiceHint:
-      'Require the main assistant to choose only among the picked features to further reduce mistakes.',
+      'Require the main model to choose only among the filtered features to further reduce mistakes.',
     fieldDecideToolThreshold: 'Number of features that triggers picking',
     hintDecideToolThreshold: 'Enter 1–500; no picking is needed below this number.',
     fieldDecideToolPreTopK: 'Features kept after the first keyword pass',
@@ -450,8 +450,8 @@ export const enPack = {
     hintDecidePruneThreshold: 'Enter 1–100000 (in characters).',
     fieldDecidePruneMaxJudged: 'Max results shortened per turn',
     hintDecidePruneMaxJudged: 'Enter 1–100.',
-    decideRouteEnabled: 'Pick the right assistant for long text',
-    decideRouteHint: 'For longer content, let the quick helper choose between a fast and a more thorough main assistant, so simple tasks cost less.',
+    decideRouteEnabled: 'Pick the right model tier for long text',
+    decideRouteHint: 'For longer content, the decision model chooses a light or more thorough main model, so simple tasks cost less.',
     fieldDecideRouteMinRunes: 'Text length required to enable this',
     hintDecideRouteMinRunes: 'Enter 1–100000 (in characters); very short content needs no judgment.',
     fieldMaxMessages: 'How many recent messages to provide',
@@ -1108,7 +1108,7 @@ export const enPack = {
   SETTINGS_NAV: {
     title: 'Settings',
     overview: 'Overview',
-    backToChat: 'Back to chat',
+    backToChat: 'Back to conversation',
     closeMenu: 'Close menu',
     openMenu: 'Open settings menu',
     navAria: 'Settings navigation',

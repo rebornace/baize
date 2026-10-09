@@ -164,7 +164,7 @@ const SettingKeyRuntimeSettings = "runtime_settings"
 const SettingKeyToolRetrieval = "tool_retrieval"
 
 // SettingKeySystemOneEnable persists optional System One decision-service
-// foolproof enablement (local Ollama tev1 or API) from the settings UI.
+// one-click enablement (local Ollama tev1 or API) from the settings UI.
 const SettingKeySystemOneEnable = "systemone_enable"
 
 // WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.

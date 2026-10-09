@@ -69,7 +69,7 @@ describe('SettingsLayout locale', () => {
   it('updates sidebar labels immediately when locale changes', () => {
     render()
     expect(host.textContent).toContain('运行参数')
-    expect(host.textContent).toContain('返回聊天')
+    expect(host.textContent).toContain('返回对话')
     expect(host.textContent).not.toContain('Runtime settings')
 
     act(() => {
@@ -77,7 +77,7 @@ describe('SettingsLayout locale', () => {
     })
 
     expect(host.textContent).toContain('Runtime settings')
-    expect(host.textContent).toContain('Back to chat')
+    expect(host.textContent).toContain('Back to conversation')
     expect(host.textContent).not.toContain('运行参数')
   })
 })

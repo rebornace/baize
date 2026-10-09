@@ -110,7 +110,7 @@ As more connectors are added, a turn may carry a large number of tool schemas, a
 1. Settings → **Matching & decisions**: one-click **System One** with local **Ollama ≥0.35** (pulls **`tev1`**, CPU-friendly) or a cloud / self-hosted API (`POST /v1/systemone`). On CN networks, the Windows installer prefers the [ModelScope community sync](https://www.modelscope.cn/models/Lixiang/ollama-release/files) (tracks GitHub release tags), then other mirrors.
 2. Runtime → **Smart speed-up**: turn on the master switch and the sub-features you need (tool narrowing, tool-result prune, memory gate, long-turn tier advice, …). **Configuring the decision model alone does not cut main-model tokens** until those toggles are on.
 
-Ask chain order: **System One → optional fallback chat profile (`decide_profile_id`) → Rules**. When System One is set, leave the fallback blank; blank does **not** bill the main assistant—those judgments are skipped (fail-open). Probability scores are never exposed to callers.
+Judgment chain: **System One → optional standby model (`decide_profile_id`) → Rules**. When System One is set, leave the standby blank; blank does **not** bill the main model—those judgments are skipped (original path continues). Probability scores are never exposed to callers.
 
 When the tool count is above a threshold and tool narrowing is on, candidates are narrowed before the main model:
 
@@ -137,25 +137,25 @@ Sending the **full 390-tool** catalog measured roughly **85k prompt tokens** on 
 
 The decision layer is **opt-in** and hot-reloadable via runtime settings (it is off by default). The table above measures **main-model prompt cost after tool narrowing + prefilter** (not a full end-to-end bill for every Smart speed-up feature). Pair it with the process list below: connecting a decision model pays off when those judgments stop billing a generative model.
 
-**What moves off the main / chat LLM onto the decision model** (when Smart speed-up toggles are on):
+**What moves off the main / conversation LLM onto the decision model** (when Smart speed-up toggles are on):
 
-| Process | Without decision model | With System One (or cheap Ask backend) |
+| Process | Without decision model | With System One (or another low-cost judgment service) |
 |---|---|---|
-| Worth extracting memory? | Usually another generative extract call | Cheap Ask first; skip extract when “no” |
-| Which backends matter this turn? | Full tool schemas (or a chat small model to ask) | Decision Ask + prefilter; main model sees a narrowed set |
-| Keep this bulky tool result? | Often kept / summarized at full cost | Ask first; drop useless bulk from later context |
-| Auto route light vs power? | Heuristic (or chat arbitration) | Optional decision Ask for tier advice |
+| Worth extracting memory? | Usually another generative extract call | Decision model first; skip extract when “no” |
+| Which backends matter this turn? | Full tool schemas (or another LLM to ask) | Decision judgment + prefilter; main model sees a narrowed set |
+| Keep this bulky tool result? | Often kept / summarized at full cost | Judge first; drop useless bulk from later context |
+| Auto route light vs power? | Heuristic (or LLM arbitration) | Optional decision-model tier advice |
 
 Width-sweep scripts: [`scripts/tool-routing-eval`](scripts/tool-routing-eval/README.md). **The table above (layer A) is the existing reproducible result — already run; no need to re-sweep widths just because System One landed.**
 
-**Ask-backend comparison (layer B, same 37-case corpus, width 16, one pass each on the same machine):**
+**Judgment-service comparison (layer B, same 37-case corpus, width 16, one pass each on the same machine):**
 
-| Ask backend | Run success | Expected tool hit | Prefilter recall | Avg. turn-0 prompt | Wall clock |
+| Judgment service | Run success | Expected tool hit | Prefilter recall | Avg. turn-0 prompt | End-to-end time |
 |---|---|---|---|---|---|
 | **System One (local tev1)** | **37/37** | **31/37** | **37/37** | 4,435 | **~376 s** (~10.2 s/case) |
-| Chat fallback (`deepseek-flash` profile) | 37/37 | 29/37 | 37/37 | 4,205 | ~556 s (~15.0 s/case) |
+| Standby model (`deepseek-flash` profile) | 37/37 | 29/37 | 37/37 | 4,205 | ~556 s (~15.0 s/case) |
 
-`systems_source` on narrow events was `systemone` (126) vs `remote` (124). Main-model prompt stays in the same band (same width); **wall clock ≈ 1.48×** with chat Ask — swapping Ask to the decision model is the budget/latency lever. Local summary: `scripts/tool-routing-eval/out/layerB_compare.json` (gitignored artifact).
+`systems_source` on narrow events was `systemone` (126) vs `remote` (124). Main-model prompt stays in the same band (same width); **end-to-end time ≈ 1.48×** with the LLM path — moving judgments onto the decision model is the budget/latency lever. Local summary: `scripts/tool-routing-eval/out/layerB_compare.json` (gitignored artifact).
 
 ---
 

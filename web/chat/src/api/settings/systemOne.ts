@@ -42,7 +42,7 @@ export async function getSystemOne(): Promise<SystemOneStatus> {
   return parseJSON<SystemOneStatus>(res)
 }
 
-/** Local Ollama foolproof install + pull tev1 (async). */
+/** Local Ollama one-click install + pull tev1 (async). */
 export async function enableSystemOneLocal(): Promise<SystemOneStatus> {
   const res = await fetch('/v0/settings/systemone/enable', {
     method: 'POST',
