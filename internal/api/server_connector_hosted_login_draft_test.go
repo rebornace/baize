@@ -37,7 +37,7 @@ func TestPostConnectorHostedLoginDraft(t *testing.T) {
 	}
 	var body struct {
 		HostedLogin store.HostedLoginRecipe `json:"hosted_login"`
-		Source      string                   `json:"source"`
+		Source      string                  `json:"source"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)

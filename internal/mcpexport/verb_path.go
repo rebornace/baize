@@ -5,16 +5,16 @@ import (
 )
 
 var verbPathSegments = map[string]struct{}{
-	"approve":  {},
-	"export":   {},
-	"run":      {},
-	"delete":   {},
-	"create":   {},
-	"update":   {},
-	"trigger":  {},
-	"execute":  {},
-	"sync":     {},
-	"send":     {},
+	"approve": {},
+	"export":  {},
+	"run":     {},
+	"delete":  {},
+	"create":  {},
+	"update":  {},
+	"trigger": {},
+	"execute": {},
+	"sync":    {},
+	"send":    {},
 }
 
 // SuggestForceDenyExport returns true when a GET/HEAD path segment matches a mutating verb heuristic.

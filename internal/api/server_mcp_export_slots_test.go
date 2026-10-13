@@ -50,8 +50,8 @@ func TestMCPExportKeyIdentitySlotsCRUD(t *testing.T) {
 		t.Fatalf("create key: %d %s", rr.Code, rr.Body.String())
 	}
 	var created struct {
-		ID            string                       `json:"id"`
-		IdentityID    string                       `json:"identity_id"`
+		ID            string                        `json:"id"`
+		IdentityID    string                        `json:"identity_id"`
 		IdentitySlots []store.MCPExportIdentitySlot `json:"identity_slots"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {

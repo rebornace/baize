@@ -461,15 +461,15 @@ type MCPExportIdentitySlot struct {
 // IdentityID remains the default/legacy binding; IdentitySlots holds per-connector
 // (and optional role) overrides. Empty IdentitySlots are normalized from IdentityID.
 type MCPExportKey struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name"`
-	IdentityID    string                 `json:"identity_id"`
+	ID            string                  `json:"id"`
+	Name          string                  `json:"name"`
+	IdentityID    string                  `json:"identity_id"`
 	IdentitySlots []MCPExportIdentitySlot `json:"identity_slots,omitempty"`
-	KeyHash       string                 `json:"-"`
-	Prefix        string                 `json:"prefix"`
-	AllowedTools  []string               `json:"allowed_tools"`
-	RevokedAt     *time.Time             `json:"revoked_at,omitempty"`
-	CreatedAt     time.Time              `json:"created_at"`
+	KeyHash       string                  `json:"-"`
+	Prefix        string                  `json:"prefix"`
+	AllowedTools  []string                `json:"allowed_tools"`
+	RevokedAt     *time.Time              `json:"revoked_at,omitempty"`
+	CreatedAt     time.Time               `json:"created_at"`
 }
 
 // Store persists agents, connectors, runs, events, and HITL payloads.

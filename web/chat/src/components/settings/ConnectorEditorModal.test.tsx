@@ -484,7 +484,9 @@ describe('ConnectorEditorModal advanced', () => {
     expect(host.textContent).toContain(TOOLS.captureToolGlob)
     expect(host.textContent).toContain(TOOLS.captureIntro)
     expect(host.textContent).toContain(TOOLS.captureToolGlobHint)
-    expect(host.querySelectorAll('.settings-advanced-block').length).toBe(2)
+    // callback + capture + hosted login
+    expect(host.querySelectorAll('.settings-advanced-block').length).toBe(3)
+    expect(host.textContent).toContain(CONNECTORS.hostedLoginSection)
     expect(host.textContent).toContain(TOOLS.captureTokenPaths)
     expect(host.textContent).not.toContain('token_json_paths')
 

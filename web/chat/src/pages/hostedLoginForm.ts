@@ -98,6 +98,19 @@ export function mergeAuthWithHostedLogin(
   if (base?.passthrough) auth.passthrough = { ...base.passthrough }
   if (base?.vault_ref) auth.vault_ref = { ...base.vault_ref }
   if (base?.capture) auth.capture = { ...base.capture }
-  auth.hosted_login = buildHostedLoginFromDraft(draft)
+  const recipe = buildHostedLoginFromDraft(draft)
+  const meaningful =
+    Boolean(recipe.enabled) ||
+    Boolean(recipe.login_tool) ||
+    (recipe.fields?.length ?? 0) > 0 ||
+    Boolean(recipe.oauth)
+  if (meaningful) {
+    auth.hosted_login = recipe
+  } else if (base?.hosted_login) {
+    // Explicitly disable so an edit can clear a previously saved recipe.
+    auth.hosted_login = { enabled: false }
+  } else {
+    delete auth.hosted_login
+  }
   return auth
 }

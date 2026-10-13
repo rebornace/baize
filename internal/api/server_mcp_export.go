@@ -183,10 +183,10 @@ func (s *Server) handleListMCPExportKeys(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handlePostMCPExportKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name          string                       `json:"name"`
-		IdentityID    string                       `json:"identity_id"`
+		Name          string                        `json:"name"`
+		IdentityID    string                        `json:"identity_id"`
 		IdentitySlots []store.MCPExportIdentitySlot `json:"identity_slots"`
-		AllowedTools  []string                     `json:"allowed_tools"`
+		AllowedTools  []string                      `json:"allowed_tools"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -257,8 +257,8 @@ func (s *Server) handlePatchMCPExportKey(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var body struct {
-		Name          *string                       `json:"name"`
-		AllowedTools  *[]string                     `json:"allowed_tools"`
+		Name          *string                        `json:"name"`
+		AllowedTools  *[]string                      `json:"allowed_tools"`
 		IdentitySlots *[]store.MCPExportIdentitySlot `json:"identity_slots"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

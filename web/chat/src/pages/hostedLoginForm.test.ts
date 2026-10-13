@@ -48,4 +48,17 @@ describe('hostedLoginForm', () => {
     expect(recipe.oauth?.client_id).toBe('cid')
     expect(recipe.oauth?.scopes).toEqual(['openid'])
   })
+
+  it('omits default empty hosted_login on create; clears when previously set', () => {
+    const empty = hostedLoginToDraft(undefined)
+    const created = mergeAuthWithHostedLogin({ mode: 'static', capture: {} }, empty)
+    expect(created).toEqual({ mode: 'static', capture: {} })
+    expect(created.hosted_login).toBeUndefined()
+
+    const cleared = mergeAuthWithHostedLogin(
+      { mode: 'static', capture: {}, hosted_login: { enabled: true, mode: 'basic' } },
+      empty,
+    )
+    expect(cleared.hosted_login).toEqual({ enabled: false })
+  })
 })
