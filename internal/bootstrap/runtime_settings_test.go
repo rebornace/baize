@@ -10,6 +10,15 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
+func TestActiveGoalBaselineInBuildRuntimeHolder(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{}
+	h := buildRuntimeHolder(cfg, st, "op", "adm", nil)
+	if !h.Knobs().ActiveGoalEnabled || h.Knobs().ActiveGoalMaxDepth != 8 || h.Knobs().ActiveGoalMaxTextRunes != 500 {
+		t.Fatalf("baseline active goal knobs wrong: %+v", h.Knobs())
+	}
+}
+
 func TestBuildRuntimeHolderBaselineAndOverride(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{}
@@ -29,6 +38,9 @@ func TestBuildRuntimeHolderBaselineAndOverride(t *testing.T) {
 	}
 	if !h.Knobs().MemoryEnabled || !h.Knobs().MemoryAutoExtract {
 		t.Fatalf("baseline memory knobs must default to true: %+v", h.Knobs())
+	}
+	if !h.Knobs().ActiveGoalEnabled || h.Knobs().ActiveGoalMaxDepth != 8 || h.Knobs().ActiveGoalMaxTextRunes != 500 {
+		t.Fatalf("baseline active goal knobs wrong: %+v", h.Knobs())
 	}
 
 	// persist an override, then rebuild (simulates restart) -> override loaded

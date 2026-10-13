@@ -502,6 +502,74 @@ func TestApplyContextProjectionEnabled(t *testing.T) {
 	}
 }
 
+func TestApplyActiveGoalKnobs(t *testing.T) {
+	h := New(Snapshot{
+		Knobs: Knobs{
+			ActiveGoalEnabled: true, ActiveGoalMaxDepth: 8, ActiveGoalMaxTextRunes: 500,
+		},
+	})
+	if !h.Knobs().ActiveGoalEnabled || h.Knobs().ActiveGoalMaxDepth != 8 || h.Knobs().ActiveGoalMaxTextRunes != 500 {
+		t.Fatalf("baseline active goal wrong: %+v", h.Knobs())
+	}
+	off := false
+	depth := 12
+	textRunes := 600
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{
+		ActiveGoalEnabled: &off, ActiveGoalMaxDepth: &depth, ActiveGoalMaxTextRunes: &textRunes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view := h.KnobsView()
+	if view.Effective.ActiveGoalEnabled || view.Effective.ActiveGoalMaxDepth != 12 || view.Effective.ActiveGoalMaxTextRunes != 600 {
+		t.Fatalf("effective wrong: %+v", view.Effective)
+	}
+	if !view.Overridden.ActiveGoalEnabled || !view.Overridden.ActiveGoalMaxDepth || !view.Overridden.ActiveGoalMaxTextRunes {
+		t.Fatalf("expected all active goal fields overridden: %+v", view.Overridden)
+	}
+}
+
+func TestApplyActiveGoalKnobsPersistRoundtrip(t *testing.T) {
+	st := store.NewMemory()
+	base := baseSnapshot()
+	base.Knobs.ActiveGoalEnabled = true
+	base.Knobs.ActiveGoalMaxDepth = 8
+	base.Knobs.ActiveGoalMaxTextRunes = 500
+	h := New(base)
+	ctx := context.Background()
+	off := false
+	depth := 12
+	textRunes := 600
+	if err := h.ApplyKnobs(ctx, st, KnobsPatch{
+		ActiveGoalEnabled: &off, ActiveGoalMaxDepth: &depth, ActiveGoalMaxTextRunes: &textRunes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	k := h.Knobs()
+	if k.ActiveGoalEnabled || k.ActiveGoalMaxDepth != 12 || k.ActiveGoalMaxTextRunes != 600 {
+		t.Fatalf("active goal knobs not applied: %+v", k)
+	}
+	view := h.KnobsView()
+	if !view.Overridden.ActiveGoalEnabled || !view.Overridden.ActiveGoalMaxDepth || !view.Overridden.ActiveGoalMaxTextRunes {
+		t.Fatalf("override flags wrong: %+v", view.Overridden)
+	}
+
+	h2 := New(base)
+	if err := h2.Load(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	k2 := h2.Knobs()
+	if k2.ActiveGoalEnabled || k2.ActiveGoalMaxDepth != 12 || k2.ActiveGoalMaxTextRunes != 600 {
+		t.Fatalf("active goal knobs must survive reload: %+v", k2)
+	}
+	if !h2.KnobsView().Overridden.ActiveGoalEnabled || !h2.KnobsView().Overridden.ActiveGoalMaxDepth ||
+		!h2.KnobsView().Overridden.ActiveGoalMaxTextRunes {
+		t.Fatalf("override flags must survive reload: %+v", h2.KnobsView().Overridden)
+	}
+	if !k2.CompactionEnabled || k2.MaxSteps != 16 {
+		t.Fatalf("unrelated knobs must keep baseline: %+v", k2)
+	}
+}
+
 func TestPublicBaseURLBaselineAndOverride(t *testing.T) {
 	h := New(Snapshot{PublicBaseURL: "http://yaml.example:8080"})
 	if h.PublicBaseURL() != "http://yaml.example:8080" || h.PublicBaseURLOverridden() {

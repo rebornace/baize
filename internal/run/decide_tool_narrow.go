@@ -702,6 +702,10 @@ var protectedToolNames = map[string]bool{
 	ContextDropName:        true,
 	ContextRewriteName:     true,
 	ContextCompactName:     true,
+	GoalSetName:            true,
+	GoalPushName:           true,
+	GoalCompleteName:       true,
+	GoalUpdateName:         true,
 }
 
 // preserveSkillDeclaredTools keeps tools listed on the run's activated skills

@@ -200,8 +200,10 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 	exclusive := strings.EqualFold(strings.TrimSpace(ag.ToolBinding), "exclusive")
 	e.beginRunSkillsOpts(runID, skills, ag.System, exclusive, opts.Locale, beginRunInput(input))
 	e.armContextProjection(runID, runRec)
+	e.maybeSeedGoal(runID, runRec.ConversationID, input)
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)
+	sys = e.appendActiveGoalHint(sys)
 	if e.Compactor != nil && runRec.ConversationID != "" {
 		changed, cerr := e.Compactor.MaybeCompact(ctx, runRec.ConversationID, e.specsForRun(runID), runRec.ModelProfileID)
 		if cerr != nil {
@@ -320,6 +322,7 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 		messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: block})
 	}
 	if e.Messages != nil && conversationID != "" {
+		messages = e.appendActiveGoal(messages, conversationID)
 		hist := e.Messages.ListWindow(conversationID, e.effectiveMaxMessages())
 		var sum conversation.RollingSummary
 		hasSummary := false
@@ -476,6 +479,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	}
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, run.ConversationID)
+	sys = e.appendActiveGoalHint(sys)
 	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
 }
@@ -507,6 +511,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		}
 		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
 			e.applyDroppedToolStubs(messages, rec.ConversationID)
+			messages = e.refreshActiveGoalMessage(messages, rec.ConversationID)
 		}
 		turn := step
 		specs := e.specsForRun(runID)

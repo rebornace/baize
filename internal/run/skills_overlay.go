@@ -199,20 +199,19 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 
 func (e *Engine) withContextTools(specs, all []llm.ToolSpec, runID string) []llm.ToolSpec {
 	specs = filterContextTools(specs, false)
-	if !e.contextArmed(runID) {
-		return specs
-	}
-	have := make(map[string]bool, len(specs))
-	for _, s := range specs {
-		have[s.Name] = true
-	}
-	for _, spec := range all {
-		if contextToolNames[spec.Name] && !have[spec.Name] {
-			specs = append(specs, spec)
-			have[spec.Name] = true
+	if e.contextArmed(runID) {
+		have := make(map[string]bool, len(specs))
+		for _, s := range specs {
+			have[s.Name] = true
+		}
+		for _, spec := range all {
+			if contextToolNames[spec.Name] && !have[spec.Name] {
+				specs = append(specs, spec)
+				have[spec.Name] = true
+			}
 		}
 	}
-	return specs
+	return e.withGoalTools(specs, all)
 }
 
 func unionEnabledToolNames(skillNames []string, enabled map[string]bool) []string {

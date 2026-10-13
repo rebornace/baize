@@ -11,6 +11,9 @@ export interface RuntimeKnobs {
   compact_keep_recent: number
   compact_summary_timeout_seconds: number
   context_projection_enabled: boolean
+  active_goal_enabled: boolean
+  active_goal_max_depth: number
+  active_goal_max_text_runes: number
   memory_enabled: boolean
   memory_auto_extract: boolean
   // Decision layer (decide).
@@ -53,6 +56,9 @@ export type RuntimeKnobsPatch = Partial<{
   compact_keep_recent: number
   compact_summary_timeout_seconds: number
   context_projection_enabled: boolean
+  active_goal_enabled: boolean
+  active_goal_max_depth: number
+  active_goal_max_text_runes: number
   memory_enabled: boolean
   memory_auto_extract: boolean
   decide_enabled: boolean

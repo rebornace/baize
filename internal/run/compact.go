@@ -47,7 +47,8 @@ const (
 - [继续工作必需的路径、函数名、ID、错误原文、数据与结论；无则写「无」]
 
 规则：不要编造对话中没有的信息；文件路径、标识符、报错原文保持原样。
-若提供了「已有摘要」，在其栏目上增量整合：保留仍有效的条目，已完成的从「进行中」挪到「已完成」，过时条目可删。输出一份完整最新摘要，不要分「旧摘要/新增」两段。`
+若提供了「已有摘要」，在其栏目上增量整合：保留仍有效的条目，已完成的从「进行中」挪到「已完成」，过时条目可删。输出一份完整最新摘要，不要分「旧摘要/新增」两段。
+若用户材料前附带了「系统 Active Goal」块，摘要中「## 目标」栏目必须与该块中的主目标/当前焦点句逐字对齐（可另写进度，但不得改写、省略或替换目标句）。`
 )
 
 // Compactor produces a rolling structured checkpoint of older conversation
@@ -219,7 +220,7 @@ func (c *Compactor) foldOlder(ctx context.Context, convID string, full []convers
 	}
 	newFold := full[covered:keepStart]
 
-	newSummary, err := c.summarize(ctx, summaryTimeout, existing.Summary, newFold)
+	newSummary, err := c.summarize(ctx, summaryTimeout, convID, existing.Summary, newFold)
 	if err != nil {
 		return false, err
 	}
@@ -249,7 +250,7 @@ func (c *Compactor) resolveView(profileID string) (llm.ModelProfileView, error) 
 	return llm.PrimaryModelProfile(list)
 }
 
-func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, prior string, fold []conversation.Message) (string, error) {
+func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, convID, prior string, fold []conversation.Message) (string, error) {
 	msgs := []llm.Message{{Role: llm.RoleSystem, Content: compactSummarySystemPrompt}}
 	var b strings.Builder
 	if prior != "" {
@@ -258,6 +259,14 @@ func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, prior 
 		b.WriteString("\n\n请按同一栏目整合，输出完整最新摘要。\n\n新对话：\n")
 	} else {
 		b.WriteString("请把以下多轮对话压成结构化滚动摘要（严格使用系统提示中的栏目）：\n\n")
+	}
+	if c.Messages != nil && convID != "" {
+		if stack, ok := c.Messages.GetGoalStack(convID); ok {
+			if block := compactSummaryGoalBlock(stack); block != "" {
+				b.WriteString(block)
+				b.WriteString("\n\n")
+			}
+		}
 	}
 	b.WriteString(renderTranscript(fold))
 	msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: b.String()})
@@ -270,6 +279,46 @@ func (c *Compactor) summarize(ctx context.Context, timeout time.Duration, prior 
 		return "", fmt.Errorf("summarize: %w", err)
 	}
 	return strings.TrimSpace(out.Content), nil
+}
+
+// compactSummaryGoalBlock is the compactor-facing Active Goal anchor (distinct
+// from the live-prompt goalBlock wording).
+func compactSummaryGoalBlock(stack conversation.GoalStack) string {
+	root, hasRoot := conversation.Root(stack)
+	if !hasRoot {
+		return ""
+	}
+	tip, hasTip := conversation.Tip(stack)
+	if !hasTip {
+		if !conversation.HasInterruptedFrame(stack) {
+			return ""
+		}
+		text := strings.TrimSpace(root.Text)
+		if text == "" {
+			return ""
+		}
+		var b strings.Builder
+		b.WriteString("【系统 Active Goal——摘要正文的「## 目标」栏目必须与此一致，不得改写、省略或模糊化】\n")
+		b.WriteString("主目标：")
+		b.WriteString(text)
+		b.WriteString("\n当前焦点：（已暂停，可继续）")
+		return b.String()
+	}
+	var b strings.Builder
+	b.WriteString("【系统 Active Goal——摘要正文的「## 目标」栏目必须与此一致，不得改写、省略或模糊化】\n")
+	if len(stack.Frames) == 1 {
+		text := strings.TrimSpace(tip.Text)
+		b.WriteString("主目标：")
+		b.WriteString(text)
+		b.WriteString("\n当前焦点：")
+		b.WriteString(text)
+	} else {
+		b.WriteString("主目标：")
+		b.WriteString(strings.TrimSpace(root.Text))
+		b.WriteString("\n当前焦点：")
+		b.WriteString(strings.TrimSpace(tip.Text))
+	}
+	return b.String()
 }
 
 func renderTranscript(msgs []conversation.Message) string {

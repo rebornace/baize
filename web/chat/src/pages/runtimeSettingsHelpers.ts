@@ -12,6 +12,9 @@ export interface KnobsForm {
   compact_keep_recent: string
   compact_summary_timeout_seconds: string
   context_projection_enabled: boolean
+  active_goal_enabled: boolean
+  active_goal_max_depth: string
+  active_goal_max_text_runes: string
   memory_enabled: boolean
   memory_auto_extract: boolean
   // Decision layer (decide).
@@ -37,6 +40,7 @@ export interface KnobsForm {
 type NonNumericKnobKeys =
   | 'compaction_enabled'
   | 'context_projection_enabled'
+  | 'active_goal_enabled'
   | 'memory_enabled'
   | 'memory_auto_extract'
   | 'decide_enabled'
@@ -156,6 +160,28 @@ export function decideToolFields(): KnobFieldSpec[] {
   ]
 }
 
+/** Numeric knobs for active goal stack limits. */
+export function activeGoalFields(): KnobFieldSpec[] {
+  return [
+    {
+      key: 'active_goal_max_depth',
+      label: RUNTIME.fieldActiveGoalMaxDepth,
+      hint: RUNTIME.hintActiveGoalMaxDepth,
+      min: 1,
+      max: 32,
+      integer: true,
+    },
+    {
+      key: 'active_goal_max_text_runes',
+      label: RUNTIME.fieldActiveGoalMaxTextRunes,
+      hint: RUNTIME.hintActiveGoalMaxTextRunes,
+      min: 1,
+      max: 10000,
+      integer: true,
+    },
+  ]
+}
+
 /** Numeric knobs for bulky tool-result pruning and Auto route fallback. */
 export function decideMiscFields(): KnobFieldSpec[] {
   return [
@@ -190,6 +216,7 @@ export function allKnobFieldSpecs(): KnobFieldSpec[] {
   return [
     ...mainKnobFields(),
     ...compactAdvFields(),
+    ...activeGoalFields(),
     ...decideToolFields(),
     ...decideMiscFields(),
   ]
@@ -209,6 +236,9 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     compact_keep_recent: String(k.compact_keep_recent),
     compact_summary_timeout_seconds: String(k.compact_summary_timeout_seconds),
     context_projection_enabled: Boolean(k.context_projection_enabled),
+    active_goal_enabled: k.active_goal_enabled,
+    active_goal_max_depth: String(k.active_goal_max_depth),
+    active_goal_max_text_runes: String(k.active_goal_max_text_runes),
     memory_enabled: k.memory_enabled,
     memory_auto_extract: k.memory_auto_extract,
     decide_enabled: k.decide_enabled,
@@ -268,6 +298,17 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   }
   if (form.context_projection_enabled !== effective.context_projection_enabled) {
     patch.context_projection_enabled = form.context_projection_enabled
+  }
+  if (form.active_goal_enabled !== effective.active_goal_enabled) {
+    patch.active_goal_enabled = form.active_goal_enabled
+  }
+  const goalDepth = int(form.active_goal_max_depth)
+  if (goalDepth !== null && goalDepth !== effective.active_goal_max_depth) {
+    patch.active_goal_max_depth = goalDepth
+  }
+  const goalTextRunes = int(form.active_goal_max_text_runes)
+  if (goalTextRunes !== null && goalTextRunes !== effective.active_goal_max_text_runes) {
+    patch.active_goal_max_text_runes = goalTextRunes
   }
   if (form.memory_enabled !== effective.memory_enabled) {
     patch.memory_enabled = form.memory_enabled

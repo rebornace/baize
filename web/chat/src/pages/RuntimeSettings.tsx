@@ -763,6 +763,20 @@ export function RuntimeSettings() {
           </label>
           <p className="settings-muted">{RUNTIME.contextProjectionHint}</p>
 
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.active_goal_enabled}
+              onChange={(e) => setField('active_goal_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+            />
+            {RUNTIME.activeGoalEnabled}
+            {knobView.overridden.active_goal_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.activeGoalHint}</p>
+
           <h2 className="settings-subheading">{RUNTIME.sectionMemory}</h2>
           <p className="settings-muted">{RUNTIME.memoryEnabledHint}</p>
           <label className="settings-checkbox">

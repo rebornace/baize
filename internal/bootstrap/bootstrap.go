@@ -429,6 +429,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	for _, tm := range engine.ContextTools() {
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
+	for _, tm := range engine.GoalTools() {
+		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+	}
 	srv := api.NewServer(st, reg, engine)
 	cfgCopy := cfg
 	srv.Config = &cfgCopy

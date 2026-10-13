@@ -70,6 +70,12 @@ type Knobs struct {
 	// off. When on, the four context_* tools arm only after the prompt estimate
 	// exceeds the same Compactor budget as rolling summaries.
 	ContextProjectionEnabled bool
+	// ActiveGoalEnabled injects the conversation goal stack into each turn
+	// (independent of context projection). Default on; KV can override.
+	ActiveGoalEnabled bool
+	// ActiveGoalMaxDepth caps push depth; ActiveGoalMaxTextRunes caps frame text.
+	ActiveGoalMaxDepth     int
+	ActiveGoalMaxTextRunes int
 }
 
 // Credentials is the effective control-plane credential set.
@@ -122,6 +128,9 @@ type knobsOverride struct {
 	DecideRouteEnabled       *bool    `json:"decide_route_enabled,omitempty"`
 	DecideRouteMinRunes      *int     `json:"decide_route_min_runes,omitempty"`
 	ContextProjectionEnabled *bool    `json:"context_projection_enabled,omitempty"`
+	ActiveGoalEnabled        *bool    `json:"active_goal_enabled,omitempty"`
+	ActiveGoalMaxDepth       *int     `json:"active_goal_max_depth,omitempty"`
+	ActiveGoalMaxTextRunes   *int     `json:"active_goal_max_text_runes,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -284,6 +293,15 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.ContextProjectionEnabled != nil {
 		k.ContextProjectionEnabled = *ko.ContextProjectionEnabled
 	}
+	if ko.ActiveGoalEnabled != nil {
+		k.ActiveGoalEnabled = *ko.ActiveGoalEnabled
+	}
+	if ko.ActiveGoalMaxDepth != nil {
+		k.ActiveGoalMaxDepth = *ko.ActiveGoalMaxDepth
+	}
+	if ko.ActiveGoalMaxTextRunes != nil {
+		k.ActiveGoalMaxTextRunes = *ko.ActiveGoalMaxTextRunes
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -336,6 +354,9 @@ type KnobsFieldFlags struct {
 	DecideRoute           bool `json:"decide_route_enabled"`
 	DecideRouteMinRunes   bool `json:"decide_route_min_runes"`
 	ContextProjection     bool `json:"context_projection_enabled"`
+	ActiveGoalEnabled     bool `json:"active_goal_enabled"`
+	ActiveGoalMaxDepth    bool `json:"active_goal_max_depth"`
+	ActiveGoalMaxTextRunes bool `json:"active_goal_max_text_runes"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -380,7 +401,10 @@ func (h *Holder) KnobsView() KnobsView {
 			DecideToolPruneMax:    ko.DecideToolPruneMaxJudged != nil,
 			DecideRoute:           ko.DecideRouteEnabled != nil,
 			DecideRouteMinRunes:   ko.DecideRouteMinRunes != nil,
-			ContextProjection:     ko.ContextProjectionEnabled != nil,
+			ContextProjection:      ko.ContextProjectionEnabled != nil,
+			ActiveGoalEnabled:      ko.ActiveGoalEnabled != nil,
+			ActiveGoalMaxDepth:     ko.ActiveGoalMaxDepth != nil,
+			ActiveGoalMaxTextRunes: ko.ActiveGoalMaxTextRunes != nil,
 		},
 	}
 }

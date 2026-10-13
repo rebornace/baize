@@ -28,6 +28,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if err := migrateConversationProjections(db); err != nil {
 			return nil, err
 		}
+		if err := migrateConversationGoals(db); err != nil {
+			return nil, err
+		}
 		if err := migrateChatWorkspaces(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
@@ -63,6 +66,9 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 			return nil, err
 		}
 		if err := migrateConversationProjections(db); err != nil {
+			return nil, err
+		}
+		if err := migrateConversationGoals(db); err != nil {
 			return nil, err
 		}
 		if err := migrateChatWorkspaces(db, store.DialectPostgres); err != nil {
@@ -117,6 +123,17 @@ CREATE TABLE IF NOT EXISTS conversation_projections (
   pins TEXT NOT NULL DEFAULT '[]',
   summary TEXT NOT NULL DEFAULT '',
   dropped TEXT NOT NULL DEFAULT '[]',
+  revision INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);`)
+	return err
+}
+
+func migrateConversationGoals(db *sql.DB) error {
+	_, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS conversation_goals (
+  conversation_id TEXT PRIMARY KEY,
+  frames TEXT NOT NULL DEFAULT '[]',
   revision INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );`)

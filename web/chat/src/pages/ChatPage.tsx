@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  getGoal,
   getUIConfig,
   listModelProfiles,
   listSkills,
   listTools,
+  patchGoalTip,
+  popGoal,
+  pushGoal,
+  putGoal,
+  resumeGoal,
+  stopGoal,
+  type GoalStackView,
   type ModelProfile,
   type SkillSummary,
   type ToolInfo,
@@ -23,10 +31,12 @@ import { useLocale } from '../locale/LocaleContext'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { AUTO_MODEL_ID } from '../modelSelect'
-import { CHAT, friendlyError, LOGIN_AT } from '../strings'
+import { CHAT, friendlyError, GOAL, LOGIN_AT } from '../strings'
 import { replaceMention } from '../skillMention'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
+import { GoalBar } from './chat/GoalBar'
+import { goalCandidatesFromMessages } from './chat/goalCandidates'
 import { ChatMessageList, copyText } from './chat/ChatMessageList'
 import { ChatSidebar } from './chat/ChatSidebar'
 import { ChatComposerToolbar, ChatTopBar } from './chat/ChatTopBar'
@@ -52,6 +62,9 @@ export function ChatPage() {
   const [selectedModelId, setSelectedModelId] = useState(loadModelChoice)
   const [toolCatalog, setToolCatalog] = useState<ToolCatalog>([])
   const [visionWarning, setVisionWarning] = useState<string | null>(null)
+  const [goalView, setGoalView] = useState<GoalStackView | null>(null)
+  const [goalLoadError, setGoalLoadError] = useState(false)
+  const runWasBusyRef = useRef(false)
 
   const liveRef = useRef<ChatLiveControls>({
     busy: false,
@@ -202,6 +215,101 @@ export function ChatPage() {
     setThinkingLevel(loadThinkingChoice(session.conversationId))
   }, [session.conversationId])
 
+  const refreshGoal = useCallback(
+    async (resetView = false) => {
+      const id = session.conversationId
+      if (!id) {
+        setGoalView(null)
+        setGoalLoadError(false)
+        return
+      }
+      if (resetView && session.conversationIdRef.current === id) {
+        setGoalView(null)
+        setGoalLoadError(false)
+      }
+      try {
+        const view = await getGoal(id)
+        if (session.conversationIdRef.current !== id) return
+        setGoalView(view)
+        setGoalLoadError(false)
+      } catch {
+        if (session.conversationIdRef.current !== id) return
+        setGoalLoadError(true)
+      }
+    },
+    [session.conversationId, session.conversationIdRef],
+  )
+
+  useEffect(() => {
+    void refreshGoal(true)
+  }, [session.conversationId, refreshGoal])
+
+  useEffect(() => {
+    const wasBusy = runWasBusyRef.current
+    runWasBusyRef.current = run.busy
+    if (wasBusy && !run.busy) void refreshGoal(false)
+  }, [run.busy, refreshGoal])
+
+  const goalWriteDisabled = run.busy || session.historyMutating
+
+  const runGoalAction = useCallback(
+    (fn: () => Promise<GoalStackView>) => {
+      void fn()
+        .then((view) => {
+          if (session.conversationIdRef.current === view.conversation_id) {
+            setGoalView(view)
+            setGoalLoadError(false)
+          }
+        })
+        .catch(reportError)
+    },
+    [reportError, session.conversationIdRef],
+  )
+
+  const onGoalEdit = () => {
+    const depth = goalView?.frames.length ?? 0
+    if (depth <= 1) {
+      const current = goalView?.root?.text ?? ''
+      const text = window.prompt(GOAL.editRootPrompt, current)
+      if (text === null) return
+      const trimmed = text.trim()
+      if (!trimmed) return
+      runGoalAction(() => putGoal(session.conversationId, trimmed))
+      return
+    }
+    const current = goalView?.tip?.text ?? ''
+    const text = window.prompt(GOAL.editFocusPrompt, current)
+    if (text === null) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => patchGoalTip(session.conversationId, trimmed))
+  }
+
+  const onGoalPush = () => {
+    const text = window.prompt(GOAL.pushPrompt, '')
+    if (text === null) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => pushGoal(session.conversationId, trimmed))
+  }
+
+  const goalCandidates = useMemo(
+    () => goalCandidatesFromMessages(session.messages),
+    [session.messages],
+  )
+
+  const onPickMain = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => putGoal(session.conversationId, trimmed))
+  }
+
+  const onPickSide = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => pushGoal(session.conversationId, trimmed))
+  }
+
   /** login_required「去登录」→ 刷新 skills 后写入 @login-<id>，聚焦输入框，不自动发送。 */
   const onGoLoginSkill = async (skillId: string) => {
     let list = skills
@@ -310,6 +418,21 @@ export function ChatPage() {
               )}
             </div>
           )}
+
+          <GoalBar
+            view={goalView}
+            candidates={goalCandidates}
+            loadError={goalLoadError}
+            writeDisabled={goalWriteDisabled}
+            onRetry={() => void refreshGoal(false)}
+            onEdit={onGoalEdit}
+            onPush={onGoalPush}
+            onPop={() => runGoalAction(() => popGoal(session.conversationId))}
+            onStop={() => runGoalAction(() => stopGoal(session.conversationId))}
+            onResume={() => runGoalAction(() => resumeGoal(session.conversationId))}
+            onPickMain={onPickMain}
+            onPickSide={onPickSide}
+          />
 
           <Composer
             disabled={composerDisabled}

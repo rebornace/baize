@@ -28,6 +28,9 @@ type Store interface {
 	GetContextProjection(conversationID string) (ContextProjection, bool)
 	UpsertContextProjection(p ContextProjection) error
 	ClearContextProjection(conversationID string)
+	GetGoalStack(conversationID string) (GoalStack, bool)
+	UpsertGoalStack(s GoalStack) error
+	ClearGoalStack(conversationID string)
 }
 
 // MemoryStore is an in-memory Store implementation.
@@ -37,6 +40,7 @@ type MemoryStore struct {
 	meta        map[string]Meta
 	summaries   map[string]RollingSummary
 	projections map[string]ContextProjection
+	goals       map[string]GoalStack
 	workspaces  map[string]Workspace
 }
 
@@ -47,6 +51,7 @@ func NewMemoryStore() *MemoryStore {
 		meta:        map[string]Meta{},
 		summaries:   map[string]RollingSummary{},
 		projections: map[string]ContextProjection{},
+		goals:       map[string]GoalStack{},
 		workspaces:  map[string]Workspace{},
 	}
 }
@@ -158,11 +163,11 @@ func (s *MemoryStore) ListSummaries() []Summary {
 
 func (s *MemoryStore) Clear(conversationID string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	delete(s.msgs, conversationID)
 	delete(s.summaries, conversationID)
 	delete(s.projections, conversationID)
+	s.mu.Unlock()
+	s.ClearGoalStack(conversationID)
 }
 
 func (s *MemoryStore) GetRollingSummary(conversationID string) (RollingSummary, bool) {
@@ -223,6 +228,35 @@ func (s *MemoryStore) ClearContextProjection(conversationID string) {
 	delete(s.projections, conversationID)
 }
 
+func (s *MemoryStore) GetGoalStack(conversationID string) (GoalStack, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.goals[conversationID]
+	return v, ok
+}
+
+func (s *MemoryStore) UpsertGoalStack(stack GoalStack) error {
+	if err := validateGoalStack(stack); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.goals == nil {
+		s.goals = map[string]GoalStack{}
+	}
+	if stack.UpdatedAt.IsZero() {
+		stack.UpdatedAt = time.Now().UTC()
+	}
+	s.goals[stack.ConversationID] = stack
+	return nil
+}
+
+func (s *MemoryStore) ClearGoalStack(conversationID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clearGoalStackLocked(conversationID)
+}
+
 func (s *MemoryStore) TruncateFrom(conversationID, messageID string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -242,7 +276,12 @@ func (s *MemoryStore) TruncateFrom(conversationID, messageID string) (int, error
 	s.msgs[conversationID] = msgs[:anchorIdx]
 	delete(s.summaries, conversationID)
 	delete(s.projections, conversationID)
+	s.clearGoalStackLocked(conversationID)
 	return deleted, nil
+}
+
+func (s *MemoryStore) clearGoalStackLocked(conversationID string) {
+	delete(s.goals, conversationID)
 }
 
 func (s *MemoryStore) Fork(srcConversationID, throughMessageID string) (string, int, error) {
@@ -270,6 +309,12 @@ func (s *MemoryStore) Fork(srcConversationID, throughMessageID string) (string, 
 		copied = append(copied, cp)
 	}
 	s.msgs[newID] = copied
+	if srcStack, ok := s.goals[srcConversationID]; ok && len(srcStack.Frames) > 0 {
+		if s.goals == nil {
+			s.goals = map[string]GoalStack{}
+		}
+		s.goals[newID] = cloneGoalStackForFork(srcStack, newID)
+	}
 	return newID, len(copied), nil
 }
 

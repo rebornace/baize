@@ -208,6 +208,211 @@
   min-height: 100vh;
 }
 
+.goal-bar {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.goal-bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.goal-bar-summary {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  overflow: hidden;
+}
+
+.goal-bar-mark {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.goal-bar-crumb {
+  flex-shrink: 1;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.65;
+}
+
+.goal-bar-crumb::after {
+  content: ' ·';
+  margin-left: 0.15rem;
+}
+
+.goal-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.goal-bar-paused {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  opacity: 0.75;
+}
+
+.goal-bar-more {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.15rem 0.45rem;
+  min-height: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface, var(--bg));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.goal-bar-more:hover:not(:disabled),
+.goal-bar-more:focus-visible {
+  border-color: var(--accent, var(--border));
+  background: var(--surface-hover, rgba(0, 0, 0, 0.05));
+  outline: none;
+}
+
+.goal-bar-more:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.goal-bar-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 2px);
+  top: auto;
+  z-index: 20;
+  min-width: 9.5rem;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface, var(--bg));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.goal-bar-menu-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.goal-bar-menu-item:hover:not(:disabled),
+.goal-bar-menu-item:focus-visible {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  outline: none;
+}
+
+.goal-bar-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.goal-bar-error {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--danger);
+}
+
+.goal-bar-error .btn.linkish {
+  color: var(--danger);
+  text-decoration: underline;
+}
+
+.goal-bar-picker {
+  max-height: 11rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface, var(--bg));
+  padding: var(--space-2);
+}
+
+.goal-bar-picker-title {
+  margin: 0 0 var(--space-1);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.goal-bar-picker-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.goal-bar-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.goal-bar-picker-item:hover:not(:disabled),
+.goal-bar-picker-item:focus-visible {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  outline: none;
+}
+
+.goal-bar-picker-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.goal-bar-picker-type {
+  margin-top: var(--space-1);
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;

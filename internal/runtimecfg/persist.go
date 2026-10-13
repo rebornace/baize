@@ -44,6 +44,9 @@ type KnobsPatch struct {
 	DecideRouteEnabled           *bool    `json:"decide_route_enabled,omitempty"`
 	DecideRouteMinRunes          *int     `json:"decide_route_min_runes,omitempty"`
 	ContextProjectionEnabled     *bool    `json:"context_projection_enabled,omitempty"`
+	ActiveGoalEnabled            *bool    `json:"active_goal_enabled,omitempty"`
+	ActiveGoalMaxDepth           *int     `json:"active_goal_max_depth,omitempty"`
+	ActiveGoalMaxTextRunes       *int     `json:"active_goal_max_text_runes,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 }
 
@@ -169,6 +172,13 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 		(*p.DecideRouteMinRunes < 1 || *p.DecideRouteMinRunes > 100000) {
 		return fmt.Errorf("%w: decide_route_min_runes must be 1-100000", ErrBadRange)
 	}
+	if p.ActiveGoalMaxDepth != nil && (*p.ActiveGoalMaxDepth < 1 || *p.ActiveGoalMaxDepth > 32) {
+		return fmt.Errorf("%w: active_goal_max_depth must be 1-32", ErrBadRange)
+	}
+	if p.ActiveGoalMaxTextRunes != nil &&
+		(*p.ActiveGoalMaxTextRunes < 1 || *p.ActiveGoalMaxTextRunes > 10000) {
+		return fmt.Errorf("%w: active_goal_max_text_runes must be 1-10000", ErrBadRange)
+	}
 	return nil
 }
 
@@ -264,6 +274,15 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.ContextProjectionEnabled != nil {
 		next.ContextProjectionEnabled = p.ContextProjectionEnabled
+	}
+	if p.ActiveGoalEnabled != nil {
+		next.ActiveGoalEnabled = p.ActiveGoalEnabled
+	}
+	if p.ActiveGoalMaxDepth != nil {
+		next.ActiveGoalMaxDepth = p.ActiveGoalMaxDepth
+	}
+	if p.ActiveGoalMaxTextRunes != nil {
+		next.ActiveGoalMaxTextRunes = p.ActiveGoalMaxTextRunes
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

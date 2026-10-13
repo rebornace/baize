@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -45,6 +46,12 @@ CREATE TABLE IF NOT EXISTS conversation_projections (
   pins TEXT NOT NULL DEFAULT '[]',
   summary TEXT NOT NULL DEFAULT '',
   dropped TEXT NOT NULL DEFAULT '[]',
+  revision INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS conversation_goals (
+  conversation_id TEXT PRIMARY KEY,
+  frames TEXT NOT NULL DEFAULT '[]',
   revision INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
@@ -163,6 +170,7 @@ func (s *SQLiteStore) Clear(conversationID string) {
 	_, _ = s.exec(`DELETE FROM messages WHERE conversation_id = ?`, conversationID)
 	s.ClearRollingSummary(conversationID)
 	s.ClearContextProjection(conversationID)
+	s.ClearGoalStack(conversationID)
 }
 
 func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error) {
@@ -186,6 +194,7 @@ func (s *SQLiteStore) TruncateFrom(conversationID, messageID string) (int, error
 	}
 	s.ClearRollingSummary(conversationID)
 	s.ClearContextProjection(conversationID)
+	s.ClearGoalStack(conversationID)
 	n, _ := res.RowsAffected()
 	return int(n), nil
 }
@@ -241,6 +250,11 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, nullIfEmpty(newMsg.Thinking), newMsg.ThinkingRedacted, runID, newMsg.CreatedAt.Format(time.RFC3339Nano), encodeJSONList(newMsg.PinnedSkills),
 		)
 		if err != nil {
+			return "", 0, err
+		}
+	}
+	if srcStack, ok := s.GetGoalStack(srcConversationID); ok && len(srcStack.Frames) > 0 {
+		if err := s.UpsertGoalStack(cloneGoalStackForFork(srcStack, newID)); err != nil {
 			return "", 0, err
 		}
 	}
@@ -499,6 +513,63 @@ func (s *SQLiteStore) UpsertContextProjection(p ContextProjection) error {
 
 func (s *SQLiteStore) ClearContextProjection(conversationID string) {
 	_, _ = s.exec(`DELETE FROM conversation_projections WHERE conversation_id = ?`, conversationID)
+}
+
+func (s *SQLiteStore) GetGoalStack(conversationID string) (GoalStack, bool) {
+	var framesRaw, updated string
+	var revision int
+	err := s.queryRow(
+		`SELECT frames, revision, updated_at FROM conversation_goals WHERE conversation_id = ?`,
+		conversationID,
+	).Scan(&framesRaw, &revision, &updated)
+	if err != nil {
+		return GoalStack{}, false
+	}
+	var frames []GoalFrame
+	if err := json.Unmarshal([]byte(framesRaw), &frames); err != nil {
+		return GoalStack{}, false
+	}
+	stack := GoalStack{
+		ConversationID: conversationID,
+		Frames:         frames,
+		Revision:       revision,
+	}
+	if t, perr := time.Parse(time.RFC3339Nano, updated); perr == nil {
+		stack.UpdatedAt = t
+	}
+	if err := validateGoalStack(stack); err != nil {
+		return GoalStack{}, false
+	}
+	return stack, true
+}
+
+func (s *SQLiteStore) UpsertGoalStack(stack GoalStack) error {
+	if err := validateGoalStack(stack); err != nil {
+		return err
+	}
+	if stack.UpdatedAt.IsZero() {
+		stack.UpdatedAt = time.Now().UTC()
+	}
+	framesRaw, err := json.Marshal(stack.Frames)
+	if err != nil {
+		return err
+	}
+	_, err = s.exec(
+		`INSERT INTO conversation_goals
+		   (conversation_id, frames, revision, updated_at)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(conversation_id) DO UPDATE SET
+		   frames = excluded.frames,
+		   revision = excluded.revision,
+		   updated_at = excluded.updated_at`,
+		stack.ConversationID, string(framesRaw), stack.Revision,
+		stack.UpdatedAt.Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+func (s *SQLiteStore) ClearGoalStack(conversationID string) {
+	_, _ = s.exec(`DELETE FROM conversation_goals WHERE conversation_id = ?`, conversationID)
 }
 
 var _ WorkspaceStore = (*SQLiteStore)(nil)

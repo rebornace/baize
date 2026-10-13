@@ -23,6 +23,9 @@ const baseKnobs: RuntimeKnobs = {
   compact_keep_recent: 8,
   compact_summary_timeout_seconds: 60,
   context_projection_enabled: false,
+  active_goal_enabled: true,
+  active_goal_max_depth: 8,
+  active_goal_max_text_runes: 500,
   memory_enabled: true,
   memory_auto_extract: true,
   decide_enabled: true,
@@ -78,8 +81,8 @@ describe('field groups', () => {
     ])
   })
 
-  it('allKnobFieldSpecs covers all twelve numeric fields', () => {
-    expect(allKnobFieldSpecs()).toHaveLength(12)
+  it('allKnobFieldSpecs covers all fourteen numeric fields', () => {
+    expect(allKnobFieldSpecs()).toHaveLength(14)
   })
 })
 
@@ -133,6 +136,11 @@ describe('buildKnobsPatch', () => {
   it('includes context projection toggle', () => {
     const form: KnobsForm = { ...knobsToForm(baseKnobs), context_projection_enabled: true }
     expect(buildKnobsPatch(form, baseKnobs)).toEqual({ context_projection_enabled: true })
+  })
+
+  it('includes active goal toggle', () => {
+    const form: KnobsForm = { ...knobsToForm(baseKnobs), active_goal_enabled: false }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ active_goal_enabled: false })
   })
 
   it('includes memory toggles', () => {
