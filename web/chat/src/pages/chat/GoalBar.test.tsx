@@ -73,7 +73,7 @@ describe('GoalBar', () => {
       <GoalBar
         view={{ conversation_id: 'c1', revision: 0, frames: [] }}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={() => {}}
         onStop={() => {}}
@@ -90,7 +90,7 @@ describe('GoalBar', () => {
         view={{ conversation_id: 'c1', revision: 0, frames: [] }}
         candidates={[{ id: 'm1', text: '修好登录', preview: '修好登录' }]}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={() => {}}
         onStop={() => {}}
@@ -106,7 +106,7 @@ describe('GoalBar', () => {
       <GoalBar
         view={baseView}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={() => {}}
         onStop={() => {}}
@@ -116,13 +116,93 @@ describe('GoalBar', () => {
     )
     expect(host.textContent).toContain('目标')
     expect(host.textContent).toContain('主任务')
-    expect(host.querySelector('.goal-bar-summary')).not.toBeNull()
+    expect(host.querySelector('[data-testid="goal-bar-summary"]')).not.toBeNull()
     expect(host.textContent).toContain('更多')
     expect(host.querySelector('[data-testid="goal-bar-menu"]')).toBeNull()
   })
 
+  it('opens details panel on summary click and edits via save', () => {
+    const onSave = vi.fn()
+    render(
+      <GoalBar
+        view={{
+          ...baseView,
+          frames: [
+            {
+              id: 'f1',
+              text: '主任务',
+              details: '需要兼容旧登录',
+              status: 'active',
+              source: 'user',
+              revision: 1,
+            },
+          ],
+          root: {
+            id: 'f1',
+            text: '主任务',
+            details: '需要兼容旧登录',
+            status: 'active',
+            source: 'user',
+            revision: 1,
+          },
+          tip: {
+            id: 'f1',
+            text: '主任务',
+            details: '需要兼容旧登录',
+            status: 'active',
+            source: 'user',
+            revision: 1,
+          },
+        }}
+        writeDisabled={false}
+        onSave={onSave}
+        onPush={() => {}}
+        onPop={() => {}}
+        onStop={() => {}}
+        onResume={() => {}}
+        {...noopPick}
+      />,
+    )
+    expect(host.textContent).toContain('有详情')
+    act(() => {
+      host.querySelector<HTMLButtonElement>('[data-testid="goal-bar-summary"]')?.click()
+    })
+    expect(host.querySelector('[data-testid="goal-bar-detail"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="goal-bar-details"]')?.textContent).toContain(
+      '需要兼容旧登录',
+    )
+    act(() => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((b) => b.textContent === '编辑')
+        ?.click()
+    })
+    const title = host.querySelector<HTMLInputElement>('.goal-bar-edit input')
+    const details = host.querySelector<HTMLTextAreaElement>('.goal-bar-edit textarea')
+    expect(title?.value).toBe('主任务')
+    expect(details?.value).toBe('需要兼容旧登录')
+    const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    const setArea = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    act(() => {
+      if (title && setInput) {
+        setInput.call(title, '修好登录')
+        title.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      if (details && setArea) {
+        setArea.call(details, '先查 OAuth')
+        details.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+    act(() => {
+      host.querySelector<HTMLFormElement>('[data-testid="goal-bar-edit"]')?.requestSubmit()
+    })
+    expect(onSave).toHaveBeenCalledWith({
+      text: '修好登录',
+      details: '先查 OAuth',
+      scope: 'root',
+    })
+  })
+
   it('fires action callbacks from the overflow menu', () => {
-    const onEdit = vi.fn()
     const onPush = vi.fn()
     const onPop = vi.fn()
     const onStop = vi.fn()
@@ -143,7 +223,7 @@ describe('GoalBar', () => {
           },
         }}
         writeDisabled={false}
-        onEdit={onEdit}
+        onSave={() => {}}
         onPush={onPush}
         onPop={onPop}
         onStop={onStop}
@@ -154,62 +234,14 @@ describe('GoalBar', () => {
     expect(host.textContent).toContain('主任务')
     expect(host.textContent).toContain('临时')
     openMenu()
-    menuItem('编辑焦点')?.click()
-    openMenu()
     menuItem('先做别的')?.click()
     openMenu()
     menuItem('回到上一层')?.click()
     openMenu()
     menuItem('暂停')?.click()
-    expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onPush).toHaveBeenCalledTimes(1)
     expect(onPop).toHaveBeenCalledTimes(1)
     expect(onStop).toHaveBeenCalledTimes(1)
-  })
-
-  it('uses edit label at depth 1 and edit focus when deeper', () => {
-    render(
-      <GoalBar
-        view={baseView}
-        writeDisabled={false}
-        onEdit={() => {}}
-        onPush={() => {}}
-        onPop={() => {}}
-        onStop={() => {}}
-        onResume={() => {}}
-        {...noopPick}
-      />,
-    )
-    openMenu()
-    expect(host.textContent).toContain('编辑')
-
-    render(
-      <GoalBar
-        view={{
-          ...baseView,
-          frames: [
-            { id: 'f1', text: '主任务', status: 'active', source: 'user', revision: 1 },
-            { id: 'f2', text: '临时', status: 'active', source: 'user', revision: 1 },
-          ],
-          tip: {
-            id: 'f2',
-            text: '临时',
-            status: 'active',
-            source: 'user',
-            revision: 1,
-          },
-        }}
-        writeDisabled={false}
-        onEdit={() => {}}
-        onPush={() => {}}
-        onPop={() => {}}
-        onStop={() => {}}
-        onResume={() => {}}
-        {...noopPick}
-      />,
-    )
-    openMenu()
-    expect(host.textContent).toContain('编辑焦点')
   })
 
   it('opens side picker from push when candidates exist', () => {
@@ -220,7 +252,7 @@ describe('GoalBar', () => {
         view={baseView}
         candidates={[{ id: 'm1', text: '查日志', preview: '查日志' }]}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={onPush}
         onPop={() => {}}
         onStop={() => {}}
@@ -249,7 +281,7 @@ describe('GoalBar', () => {
         loadError
         onRetry={onRetry}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={() => {}}
         onStop={() => {}}
@@ -270,7 +302,7 @@ describe('GoalBar', () => {
         loadError
         onRetry={() => {}}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={() => {}}
         onStop={() => {}}
@@ -310,7 +342,7 @@ describe('GoalBar', () => {
           },
         }}
         writeDisabled={false}
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={onPop}
         onStop={() => {}}
@@ -337,7 +369,7 @@ describe('GoalBar', () => {
       <GoalBar
         view={baseView}
         writeDisabled
-        onEdit={() => {}}
+        onSave={() => {}}
         onPush={() => {}}
         onPop={() => {}}
         onStop={() => {}}

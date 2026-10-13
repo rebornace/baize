@@ -31,11 +31,16 @@ export async function putGoal(
   conversationId: string,
   text: string,
   criteria?: string[],
+  details?: string,
 ): Promise<GoalStackView> {
   const res = await fetch(goalURL(conversationId), {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ text, criteria: criteria ?? undefined }),
+    body: JSON.stringify({
+      text,
+      criteria: criteria ?? undefined,
+      details: details ?? undefined,
+    }),
   })
   return parseJSON<GoalStackView>(res)
 }
@@ -73,11 +78,18 @@ export async function resumeGoal(conversationId: string): Promise<GoalStackView>
   return parseJSON<GoalStackView>(res)
 }
 
-export async function patchGoalTip(conversationId: string, text: string): Promise<GoalStackView> {
+export async function patchGoalTip(
+  conversationId: string,
+  text: string,
+  details?: string,
+): Promise<GoalStackView> {
   const res = await fetch(goalURL(conversationId, '/tip'), {
     method: 'PATCH',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      details: details !== undefined ? details : undefined,
+    }),
   })
   return parseJSON<GoalStackView>(res)
 }

@@ -266,23 +266,15 @@ export function ChatPage() {
     [reportError, session.conversationIdRef],
   )
 
-  const onGoalEdit = () => {
-    const depth = goalView?.frames.length ?? 0
-    if (depth <= 1) {
-      const current = goalView?.root?.text ?? ''
-      const text = window.prompt(GOAL.editRootPrompt, current)
-      if (text === null) return
-      const trimmed = text.trim()
-      if (!trimmed) return
-      runGoalAction(() => putGoal(session.conversationId, trimmed))
+  const onGoalSave = (payload: { text: string; details: string; scope: 'root' | 'tip' }) => {
+    const text = payload.text.trim()
+    if (!text) return
+    const details = payload.details.trim()
+    if (payload.scope === 'root') {
+      runGoalAction(() => putGoal(session.conversationId, text, undefined, details))
       return
     }
-    const current = goalView?.tip?.text ?? ''
-    const text = window.prompt(GOAL.editFocusPrompt, current)
-    if (text === null) return
-    const trimmed = text.trim()
-    if (!trimmed) return
-    runGoalAction(() => patchGoalTip(session.conversationId, trimmed))
+    runGoalAction(() => patchGoalTip(session.conversationId, text, details))
   }
 
   const onGoalPush = () => {
@@ -425,7 +417,7 @@ export function ChatPage() {
             loadError={goalLoadError}
             writeDisabled={goalWriteDisabled}
             onRetry={() => void refreshGoal(false)}
-            onEdit={onGoalEdit}
+            onSave={onGoalSave}
             onPush={onGoalPush}
             onPop={() => runGoalAction(() => popGoal(session.conversationId))}
             onStop={() => runGoalAction(() => stopGoal(session.conversationId))}
