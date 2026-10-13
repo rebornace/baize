@@ -1,7 +1,7 @@
 import { Button, Field, Input, Textarea } from '../../components/ui'
 import { MCP_EXPORTS } from '../../strings'
-import { formatKeyValueMap } from '../connectorForms/lines'
 import type { McpExportSettingsController } from './useMcpExportSettings'
+import { formatIdentityHeadersPreview } from './mcpExportHelpers'
 
 type Props = Pick<
   McpExportSettingsController,
@@ -102,7 +102,9 @@ export function McpExportIdentitiesSection({
                     ) : null}
                   </span>
                   {identity.headers && Object.keys(identity.headers).length > 0 ? (
-                    <pre className="settings-muted">{formatKeyValueMap(identity.headers)}</pre>
+                    <pre className="settings-muted settings-identity-headers-preview">
+                      {formatIdentityHeadersPreview(identity.headers)}
+                    </pre>
                   ) : null}
                   <div className="settings-toolbar">
                     <Button

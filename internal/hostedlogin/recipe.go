@@ -14,6 +14,7 @@ const (
 	ModeTokenPaste   = "token_paste"
 	ModeBasic        = "basic"
 	ModeHeaderPairs  = "header_pairs"
+	ModeOAuth        = "oauth"
 )
 
 var passwordArgRE = regexp.MustCompile(`(?i)pass|secret`)
@@ -23,7 +24,7 @@ var passwordArgRE = regexp.MustCompile(`(?i)pass|secret`)
 // completeness rules are enforced.
 func ValidateRecipe(r store.HostedLoginRecipe) error {
 	switch r.Mode {
-	case "", ModePasswordForm, ModeTokenPaste, ModeBasic, ModeHeaderPairs:
+	case "", ModePasswordForm, ModeTokenPaste, ModeBasic, ModeHeaderPairs, ModeOAuth:
 	default:
 		return fmt.Errorf("unsupported hosted login mode %q", r.Mode)
 	}
@@ -64,11 +65,29 @@ func ValidateRecipe(r store.HostedLoginRecipe) error {
 			}
 		}
 		return nil
+	case ModeOAuth:
+		return validateOAuth(r.OAuth)
 	case "":
 		return fmt.Errorf("enabled recipe requires mode")
 	default:
 		return fmt.Errorf("unsupported hosted login mode %q", r.Mode)
 	}
+}
+
+func validateOAuth(o *store.HostedLoginOAuth) error {
+	if o == nil {
+		return fmt.Errorf("oauth mode requires oauth config")
+	}
+	if strings.TrimSpace(o.AuthorizeURL) == "" {
+		return fmt.Errorf("oauth requires authorize_url")
+	}
+	if strings.TrimSpace(o.TokenURL) == "" {
+		return fmt.Errorf("oauth requires token_url")
+	}
+	if strings.TrimSpace(o.ClientID) == "" {
+		return fmt.Errorf("oauth requires client_id")
+	}
+	return nil
 }
 
 func hasPasswordField(fields []store.HostedLoginField) bool {

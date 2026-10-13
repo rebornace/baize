@@ -31,4 +31,21 @@ describe('hostedLoginForm', () => {
     expect(auth.capture?.tool_name_glob).toBe('*login*')
     expect(auth.hosted_login?.mode).toBe('basic')
   })
+
+  it('builds oauth recipe', () => {
+    const draft = hostedLoginToDraft({
+      enabled: true,
+      mode: 'oauth',
+      oauth: {
+        authorize_url: 'https://idp/authorize',
+        token_url: 'https://idp/token',
+        client_id: 'cid',
+        scopes: ['openid'],
+      },
+    })
+    const recipe = buildHostedLoginFromDraft(draft)
+    expect(recipe.oauth?.authorize_url).toBe('https://idp/authorize')
+    expect(recipe.oauth?.client_id).toBe('cid')
+    expect(recipe.oauth?.scopes).toEqual(['openid'])
+  })
 })

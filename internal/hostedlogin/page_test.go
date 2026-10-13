@@ -9,7 +9,8 @@ import (
 
 func TestRenderPasswordFormContainsFieldsAndCSRF(t *testing.T) {
 	html := RenderPage(Session{
-		CSRF: "csrf1", Mode: ModePasswordForm, ConnectorID: "mall",
+		ID: "sid1", CSRF: "csrf1", Mode: ModePasswordForm, ConnectorID: "mall",
+		PublicOrigin: "http://127.0.0.1:8080",
 		Fields: []store.HostedLoginField{
 			{Name: "user", Label: "用户名", Arg: "username", Input: "text"},
 			{Name: "pass", Label: "密码", Arg: "password", Input: "password"},
@@ -23,5 +24,8 @@ func TestRenderPasswordFormContainsFieldsAndCSRF(t *testing.T) {
 	}
 	if !strings.Contains(html, "mall") {
 		t.Fatal(html)
+	}
+	if !strings.Contains(html, "data:image/png;base64,") {
+		t.Fatal("expected QR data URL")
 	}
 }

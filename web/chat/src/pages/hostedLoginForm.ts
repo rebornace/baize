@@ -5,6 +5,11 @@ export interface HostedLoginDraft {
   loginTool: string
   mode: string
   fieldsText: string
+  oauthAuthorizeURL: string
+  oauthTokenURL: string
+  oauthClientID: string
+  oauthClientSecret: string
+  oauthScopes: string
 }
 
 export const EMPTY_HOSTED_LOGIN_DRAFT: HostedLoginDraft = {
@@ -12,6 +17,11 @@ export const EMPTY_HOSTED_LOGIN_DRAFT: HostedLoginDraft = {
   loginTool: '',
   mode: 'password_form',
   fieldsText: '',
+  oauthAuthorizeURL: '',
+  oauthTokenURL: '',
+  oauthClientID: '',
+  oauthClientSecret: '',
+  oauthScopes: '',
 }
 
 /** Serialize fields as one "name|arg|input|label" line each. */
@@ -41,11 +51,17 @@ export function parseHostedLoginFields(text: string): HostedLoginField[] {
 
 export function hostedLoginToDraft(recipe: HostedLoginRecipe | undefined): HostedLoginDraft {
   if (!recipe) return { ...EMPTY_HOSTED_LOGIN_DRAFT }
+  const oauth = recipe.oauth
   return {
     enabled: Boolean(recipe.enabled),
     loginTool: recipe.login_tool ?? '',
     mode: recipe.mode || 'password_form',
     fieldsText: formatHostedLoginFields(recipe.fields),
+    oauthAuthorizeURL: oauth?.authorize_url ?? '',
+    oauthTokenURL: oauth?.token_url ?? '',
+    oauthClientID: oauth?.client_id ?? '',
+    oauthClientSecret: oauth?.client_secret ?? '',
+    oauthScopes: (oauth?.scopes ?? []).join(' '),
   }
 }
 
@@ -57,6 +73,19 @@ export function buildHostedLoginFromDraft(draft: HostedLoginDraft): HostedLoginR
     login_tool: draft.loginTool.trim() || undefined,
   }
   if (fields.length > 0) out.fields = fields
+  if (draft.mode === 'oauth') {
+    const scopes = draft.oauthScopes
+      .split(/\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    out.oauth = {
+      authorize_url: draft.oauthAuthorizeURL.trim() || undefined,
+      token_url: draft.oauthTokenURL.trim() || undefined,
+      client_id: draft.oauthClientID.trim() || undefined,
+      client_secret: draft.oauthClientSecret.trim() || undefined,
+      scopes: scopes.length > 0 ? scopes : undefined,
+    }
+  }
   return out
 }
 

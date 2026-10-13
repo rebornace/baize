@@ -43,7 +43,7 @@ func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *htt
 		return
 	}
 	recipe := conn.Auth.HostedLogin
-	if !recipe.Enabled || strings.TrimSpace(recipe.LoginTool) == "" {
+	if !recipe.Enabled {
 		writeError(w, http.StatusBadRequest, "invalid_request", "hosted login is not enabled for this connector")
 		return
 	}
@@ -57,6 +57,7 @@ func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *htt
 		Mode:           recipe.Mode,
 		ConversationID: convID,
 		Fields:         recipe.Fields,
+		OAuth:          hostedlogin.CloneOAuth(recipe.OAuth),
 		PublicOrigin:   origin,
 	})
 	if err != nil || id == "" {

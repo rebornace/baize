@@ -78,18 +78,6 @@ export function McpExportSettings() {
       )}
 
       {!s.loading && (
-        <McpExportToolsSection
-          tools={s.tools}
-          toolsError={s.toolsError}
-          toolQuery={s.toolQuery}
-          setToolQuery={s.setToolQuery}
-          filteredTools={s.filteredTools}
-          exportBusy={s.exportBusy}
-          onExportChange={s.onExportChange}
-        />
-      )}
-
-      {!s.loading && (
         <>
           <McpExportIdentitiesSection
             identities={s.identities}
@@ -133,6 +121,15 @@ export function McpExportSettings() {
             onSaveEditKey={s.onSaveEditKey}
             identityName={s.identityName}
             setConfirm={s.setConfirm}
+          />
+          <McpExportToolsSection
+            tools={s.tools}
+            toolsError={s.toolsError}
+            toolQuery={s.toolQuery}
+            setToolQuery={s.setToolQuery}
+            filteredTools={s.filteredTools}
+            exportBusy={s.exportBusy}
+            onExportChange={s.onExportChange}
           />
         </>
       )}

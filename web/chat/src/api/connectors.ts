@@ -100,11 +100,22 @@ export interface HostedLoginField {
   arg: string
 }
 
+export interface HostedLoginOAuth {
+  authorize_url?: string
+  token_url?: string
+  client_id?: string
+  client_secret?: string
+  scopes?: string[]
+  token_header?: string
+  token_prefix?: string
+}
+
 export interface HostedLoginRecipe {
   enabled?: boolean
   login_tool?: string
   mode?: string
   fields?: HostedLoginField[]
+  oauth?: HostedLoginOAuth
 }
 
 export interface ConnectorAuth {

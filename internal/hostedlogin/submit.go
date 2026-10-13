@@ -24,6 +24,7 @@ type SubmitDeps struct {
 	Registry   Invoker
 	Identities identity.Store
 	Audit      Auditor
+	Waiter     Waiter
 }
 
 // Submit maps form fields to credentials (via login tool or direct headers),
@@ -64,6 +65,9 @@ func Submit(ctx context.Context, deps SubmitDeps, sessionID, csrf string, form m
 		return err
 	}
 	deps.Sessions.Delete(sessionID)
+	if deps.Waiter != nil {
+		deps.Waiter.NotifyOK(sessionID)
+	}
 	audit(deps.Audit, AuditEvent{
 		Kind: AuditSubmitOK, SessionID: sessionID,
 		ConnectorID: sess.ConnectorID, ConversationID: convID,

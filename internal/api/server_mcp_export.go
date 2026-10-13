@@ -20,6 +20,7 @@ func (s *Server) mcpExportHTTP() http.Handler {
 		Registry:       s.Registry,
 		Identities:     s.Identities,
 		HostedSessions: s.HostedSessions,
+		HostedWaiter:   s.HostedWaiter,
 		PublicBaseURL:  s.publicBaseURL(),
 		Enabled:        s.MCPExportEnabled,
 	})

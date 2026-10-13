@@ -12,6 +12,7 @@ import {
   toolExportMode,
   validateIdentityForm,
 } from './McpExportSettings'
+import { formatIdentityHeadersPreview } from './mcp-export/mcpExportHelpers'
 
 describe('mcpExportEndpointUrl', () => {
   it('joins origin and path', () => {
@@ -100,6 +101,16 @@ describe('identityToForm', () => {
   })
 })
 
+describe('formatIdentityHeadersPreview', () => {
+  it('masks long values for list display', () => {
+    const long = `Bearer ${'a'.repeat(80)}`
+    expect(formatIdentityHeadersPreview({ Authorization: long })).toBe(
+      `Authorization=${long.slice(0, 10)}…${long.slice(-4)}`,
+    )
+    expect(formatIdentityHeadersPreview({ 'X-Team': 'ops' })).toBe('X-Team=ops')
+  })
+})
+
 function json(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' }, ...init })
 }
@@ -170,9 +181,11 @@ describe('McpExportSettings page', () => {
       return undefined
     })
     await renderExport()
-    // 「新建密钥」区名称输入：取最后一个文本输入框
-    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
-    await setValue(inputs[inputs.length - 1], 'cursor-dev')
+    const nameInput = host.querySelector(
+      `input[placeholder="${MCP_EXPORTS.phKeyName}"]`,
+    ) as HTMLInputElement
+    expect(nameInput).toBeTruthy()
+    await setValue(nameInput, 'cursor-dev')
     await act(async () => { btn('新建密钥').click(); await Promise.resolve() })
     await flush()
     expect(host.textContent).toContain('密钥仅显示这一次')
@@ -209,8 +222,11 @@ describe('McpExportSettings page', () => {
       await Promise.resolve()
     })
     await flush()
-    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
-    await setValue(inputs[inputs.length - 1], 'cursor-dev')
+    const nameInput = host.querySelector(
+      `input[placeholder="${MCP_EXPORTS.phKeyName}"]`,
+    ) as HTMLInputElement
+    expect(nameInput).toBeTruthy()
+    await setValue(nameInput, 'cursor-dev')
     await act(async () => { btn('新建密钥').click(); await Promise.resolve() })
     await flush()
     const post = fetchMock.mock.calls.find(
@@ -242,6 +258,18 @@ describe('McpExportSettings page', () => {
     await renderExport()
     expect(host.textContent).toContain(MCP_EXPORTS.toolsExportTitle)
     expect(host.textContent).toContain('查工单')
+    expect(host.querySelector('[data-testid="mcp-export-tools-list"]')).toBeTruthy()
+    expect(host.querySelector('[data-testid="mcp-export-allowlist-tree"]')).toBeTruthy()
+
+    const headings = [...host.querySelectorAll('.settings-subheading')].map((el) =>
+      el.textContent?.trim(),
+    )
+    const identityIdx = headings.indexOf(MCP_EXPORTS.identityTitle)
+    const keyIdx = headings.indexOf(MCP_EXPORTS.keyTitle)
+    const toolsIdx = headings.indexOf(MCP_EXPORTS.toolsExportTitle)
+    expect(identityIdx).toBeGreaterThanOrEqual(0)
+    expect(keyIdx).toBeGreaterThan(identityIdx)
+    expect(toolsIdx).toBeGreaterThan(keyIdx)
 
     const select = [...host.querySelectorAll('select')].find((el) =>
       el.getAttribute('aria-label')?.includes('查工单'),

@@ -2493,3 +2493,71 @@ a.model-chip-empty:hover {
   font-size: 0.92rem;
   line-height: 1.6;
 }
+
+/* MCP export: keep long tool lists self-contained so keys/actions stay reachable */
+.settings-scroll-list {
+  max-height: min(22rem, 48vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  background: var(--surface);
+}
+
+.mcp-export-allowlist-tree {
+  max-height: min(20rem, 42vh);
+}
+
+.mcp-export-allowlist-group {
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg, var(--surface));
+}
+
+.mcp-export-allowlist-group:last-child {
+  margin-bottom: 0;
+}
+
+.mcp-export-allowlist-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.mcp-export-allowlist-summary::-webkit-details-marker {
+  display: none;
+}
+
+.mcp-export-allowlist-summary::before {
+  content: '▸';
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.mcp-export-allowlist-group[open] > .mcp-export-allowlist-summary::before {
+  content: '▾';
+}
+
+.mcp-export-allowlist-group-actions {
+  padding: 0 var(--space-2) var(--space-1);
+}
+
+.mcp-export-allowlist-group .settings-list {
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.settings-identity-headers-preview {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}

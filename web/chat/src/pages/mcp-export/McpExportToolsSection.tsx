@@ -51,7 +51,7 @@ export function McpExportToolsSection({
         <p className="settings-empty">{MCP_EXPORTS.toolsExportEmpty}</p>
       )}
       {filteredTools.length > 0 && (
-        <ul className="settings-list">
+        <ul className="settings-list settings-scroll-list" data-testid="mcp-export-tools-list">
           {filteredTools.map((t) => (
             <li key={t.name} className="settings-list-item">
               <span className="settings-tool-line">

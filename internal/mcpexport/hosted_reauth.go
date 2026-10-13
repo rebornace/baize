@@ -24,7 +24,7 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 		return "", "", false
 	}
 	recipe := conn.Auth.HostedLogin
-	if !recipe.Enabled || strings.TrimSpace(recipe.LoginTool) == "" {
+	if !recipe.Enabled {
 		return "", "", false
 	}
 	if err := hostedlogin.ValidateRecipe(recipe); err != nil {
@@ -48,6 +48,7 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 		Mode:         recipe.Mode,
 		IdentityID:   identityID,
 		Fields:       recipe.Fields,
+		OAuth:        hostedlogin.CloneOAuth(recipe.OAuth),
 		PublicOrigin: origin,
 	})
 	if err != nil || id == "" {

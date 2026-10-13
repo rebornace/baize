@@ -19,6 +19,7 @@ export function HostedLoginSettingsFields({
   disabled,
   canInfer,
 }: Props) {
+  const isOAuth = draft.mode === 'oauth'
   return (
     <div className="settings-form">
       <p className="settings-meta">{CONNECTORS.hostedLoginIntro}</p>
@@ -43,37 +44,86 @@ export function HostedLoginSettingsFields({
           <option value="token_paste">token_paste</option>
           <option value="basic">basic</option>
           <option value="header_pairs">header_pairs</option>
+          <option value="oauth">oauth (enterprise IdP)</option>
         </Select>
       </Field>
-      <Field label={CONNECTORS.hostedLoginTool} hint={CONNECTORS.hostedLoginToolHint}>
-        <Input
-          value={draft.loginTool}
-          disabled={disabled}
-          onChange={(e) => onDraftChange({ loginTool: e.target.value })}
-          placeholder={CONNECTORS.phHostedLoginTool}
-        />
-      </Field>
-      <Field label={CONNECTORS.hostedLoginFields} hint={CONNECTORS.hostedLoginFieldsHint}>
-        <Textarea
-          rows={4}
-          value={draft.fieldsText}
-          disabled={disabled}
-          onChange={(e) => onDraftChange({ fieldsText: e.target.value })}
-          placeholder={CONNECTORS.phHostedLoginFields}
-        />
-      </Field>
-      {onInferDraft && (
-        <div className="settings-toolbar">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={disabled || inferBusy || !canInfer}
-            onClick={() => void onInferDraft()}
-          >
-            {inferBusy ? CONNECTORS.hostedLoginInferring : CONNECTORS.hostedLoginInfer}
-          </Button>
-        </div>
+      {!isOAuth && (
+        <>
+          <Field label={CONNECTORS.hostedLoginTool} hint={CONNECTORS.hostedLoginToolHint}>
+            <Input
+              value={draft.loginTool}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ loginTool: e.target.value })}
+              placeholder={CONNECTORS.phHostedLoginTool}
+            />
+          </Field>
+          <Field label={CONNECTORS.hostedLoginFields} hint={CONNECTORS.hostedLoginFieldsHint}>
+            <Textarea
+              rows={4}
+              value={draft.fieldsText}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ fieldsText: e.target.value })}
+              placeholder={CONNECTORS.phHostedLoginFields}
+            />
+          </Field>
+          {onInferDraft && (
+            <div className="settings-toolbar">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={disabled || inferBusy || !canInfer}
+                onClick={() => void onInferDraft()}
+              >
+                {inferBusy ? CONNECTORS.hostedLoginInferring : CONNECTORS.hostedLoginInfer}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+      {isOAuth && (
+        <>
+          <Field label={CONNECTORS.hostedLoginOAuthAuthorize} hint={CONNECTORS.hostedLoginOAuthAuthorizeHint}>
+            <Input
+              value={draft.oauthAuthorizeURL}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ oauthAuthorizeURL: e.target.value })}
+              placeholder="https://idp.example.com/authorize"
+            />
+          </Field>
+          <Field label={CONNECTORS.hostedLoginOAuthToken} hint={CONNECTORS.hostedLoginOAuthTokenHint}>
+            <Input
+              value={draft.oauthTokenURL}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ oauthTokenURL: e.target.value })}
+              placeholder="https://idp.example.com/token"
+            />
+          </Field>
+          <Field label={CONNECTORS.hostedLoginOAuthClientID}>
+            <Input
+              value={draft.oauthClientID}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ oauthClientID: e.target.value })}
+            />
+          </Field>
+          <Field label={CONNECTORS.hostedLoginOAuthClientSecret} hint={CONNECTORS.hostedLoginOAuthClientSecretHint}>
+            <Input
+              type="password"
+              value={draft.oauthClientSecret}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ oauthClientSecret: e.target.value })}
+              autoComplete="off"
+            />
+          </Field>
+          <Field label={CONNECTORS.hostedLoginOAuthScopes} hint={CONNECTORS.hostedLoginOAuthScopesHint}>
+            <Input
+              value={draft.oauthScopes}
+              disabled={disabled}
+              onChange={(e) => onDraftChange({ oauthScopes: e.target.value })}
+              placeholder="openid profile"
+            />
+          </Field>
+        </>
       )}
     </div>
   )

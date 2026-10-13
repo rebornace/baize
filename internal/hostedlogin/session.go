@@ -25,8 +25,13 @@ type Session struct {
 	IdentityID     string
 	ConversationID string
 	Fields         []store.HostedLoginField
+	OAuth          *store.HostedLoginOAuth
 	PublicOrigin   string
 	ExpiresAt      time.Time
+	// PendingTool / PendingArgs optionally describe an MCP tools/call to replay
+	// after successful login (set by export auth-expired path).
+	PendingTool string
+	PendingArgs map[string]any
 }
 
 // Sessions issues and looks up hosted-login sessions.

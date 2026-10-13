@@ -26,6 +26,15 @@ func (s *Server) handleHostedLoginGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session not found or expired", http.StatusNotFound)
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(sess.Mode), hostedlogin.ModeOAuth) {
+		authURL, err := hostedlogin.OAuthAuthorizeURL(sess)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, authURL, http.StatusFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(hostedlogin.RenderPage(sess, "")))
@@ -63,6 +72,7 @@ func (s *Server) handleHostedLoginPost(w http.ResponseWriter, r *http.Request) {
 		Registry:   s.Registry,
 		Identities: s.Identities,
 		Audit:      s.hostedAudit(),
+		Waiter:     s.HostedWaiter,
 	}, id, csrf, form)
 	if err != nil {
 		sess, ok := s.HostedSessions.Get(id)
@@ -78,6 +88,42 @@ func (s *Server) handleHostedLoginPost(w http.ResponseWriter, r *http.Request) {
 			msg = strings.TrimSpace(msg[i+len("hostedlogin: "):])
 		}
 		_, _ = w.Write([]byte(hostedlogin.RenderPage(sess, msg)))
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(hostedlogin.RenderSuccessPage()))
+}
+
+func (s *Server) handleHostedLoginOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.HostedSessions == nil || s.Store == nil {
+		http.Error(w, "hosted login unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ip := clientIP(r)
+	if !s.hostedLoginLimiter().AllowHosted(ip, id) {
+		s.hostedAudit().Record(hostedlogin.AuditEvent{
+			Kind: hostedlogin.AuditRateLimited, SessionID: id, ClientIP: ip,
+		})
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+	q := r.URL.Query()
+	if errMsg := strings.TrimSpace(q.Get("error")); errMsg != "" {
+		http.Error(w, "oauth error: "+errMsg, http.StatusBadRequest)
+		return
+	}
+	err := hostedlogin.CompleteOAuth(r.Context(), hostedlogin.SubmitDeps{
+		Sessions:   s.HostedSessions,
+		Store:      s.Store,
+		Registry:   s.Registry,
+		Identities: s.Identities,
+		Audit:      s.hostedAudit(),
+		Waiter:     s.HostedWaiter,
+	}, id, q.Get("state"), q.Get("code"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

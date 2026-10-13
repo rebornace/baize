@@ -29,6 +29,7 @@ type ServerDeps struct {
 	Registry       *tool.Registry
 	Identities     identity.Store
 	HostedSessions hostedlogin.Sessions
+	HostedWaiter   hostedlogin.Waiter
 	PublicBaseURL  string
 	Enabled        bool
 }
@@ -192,7 +193,7 @@ func invokeExportTool(
 
 	exportID, err := resolveExportIdentity(deps.Store, key, toolRow.ConnectorID, "")
 	if err != nil {
-		return authExpiredForCall(ctx, deps, auth, toolRow, req), nil
+		return authExpiredForCall(ctx, deps, auth, toolRow, req, name, args), nil
 	}
 	callAuth := auth
 	callAuth.Identity = exportID
@@ -203,7 +204,7 @@ func invokeExportTool(
 	content, isError, err := deps.Registry.Invoke(invokeCtx, name, args)
 	if err != nil {
 		if IsAuthFailure(nil, false, err) {
-			return authExpiredForCall(ctx, deps, callAuth, toolRow, req), nil
+			return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args), nil
 		}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
@@ -211,7 +212,7 @@ func invokeExportTool(
 		}, nil
 	}
 	if isError && IsAuthFailure(content, isError, err) {
-		return authExpiredForCall(ctx, deps, callAuth, toolRow, req), nil
+		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args), nil
 	}
 	text, _ := json.Marshal(content)
 	return &mcp.CallToolResult{
@@ -254,10 +255,40 @@ func exportListFilterMiddleware(deps ServerDeps, auth exportAuth) mcp.Middleware
 	}
 }
 
-func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, toolRow store.Tool, req *mcp.CallToolRequest) *mcp.CallToolResult {
+func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, toolRow store.Tool, req *mcp.CallToolRequest, toolName string, args map[string]any) *mcp.CallToolResult {
 	hostedURL, sessionID, ok := hostedReauthURL(deps, auth, toolRow)
-	if ok {
-		maybeElicitHostedLoginURL(ctx, req, hostedURL, sessionID)
+	if !ok {
+		return authExpiredResult(auth.Identity.Name, "")
 	}
-	return authExpiredResult(auth.Identity.Name, hostedURL)
+	maybeElicitHostedLoginURL(ctx, req, hostedURL, sessionID)
+	if deps.HostedWaiter == nil || deps.Registry == nil {
+		return authExpiredResult(auth.Identity.Name, hostedURL)
+	}
+	if err := deps.HostedWaiter.Await(ctx, sessionID); err != nil {
+		return authExpiredResult(auth.Identity.Name, hostedURL)
+	}
+	exportID, err := resolveExportIdentity(deps.Store, auth.Key, toolRow.ConnectorID, "")
+	if err != nil {
+		return authExpiredResult(auth.Identity.Name, hostedURL)
+	}
+	invokeCtx, err := InvokeContext(ctx, deps.Identities, exportID)
+	if err != nil {
+		return authExpiredResult(auth.Identity.Name, hostedURL)
+	}
+	content, isError, err := deps.Registry.Invoke(invokeCtx, toolName, args)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			IsError: true,
+		}
+	}
+	if isError && IsAuthFailure(content, isError, err) {
+		return authExpiredResult(exportID.Name, hostedURL)
+	}
+	text, _ := json.Marshal(content)
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
+		StructuredContent: content,
+		IsError:           isError,
+	}
 }

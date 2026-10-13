@@ -102,6 +102,8 @@ type Server struct {
 	Identities   identity.Store
 	// HostedSessions backs public /v0/auth/hosted/{id} login pages. nil = routes 503.
 	HostedSessions hostedlogin.Sessions
+	// HostedWaiter wakes MCP tools/call waiters after hosted login succeeds.
+	HostedWaiter hostedlogin.Waiter
 	// HostedLoginLimiter rate-limits public hosted login by IP + session. nil = lazy default.
 	HostedLoginLimiter *hostedlogin.RateLimiter
 	hostedLoginOnce    sync.Once
@@ -221,6 +223,7 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 		Runner:           runner,
 		Identities:       identity.NewMemoryStore(),
 		HostedSessions:   hostedlogin.NewMemorySessions(0),
+		HostedWaiter:     hostedlogin.NewMemoryWaiter(),
 		HostedLoginAudit: hostedlogin.LogAuditor{},
 		MCPExportEnabled: true,
 		OAuthSessions:    mcpoauth.NewSessionStore(),
@@ -463,6 +466,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /v0/auth/hosted/{id}", s.handleHostedLoginGet)
 	s.mux.HandleFunc("POST /v0/auth/hosted/{id}", s.handleHostedLoginPost)
+	s.mux.HandleFunc("GET /v0/auth/hosted/{id}/oauth/callback", s.handleHostedLoginOAuthCallback)
 	s.mux.HandleFunc("GET /v0/ui-config", s.handleUIConfig)
 	s.mux.HandleFunc("GET /v0/me", s.handleMe)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)

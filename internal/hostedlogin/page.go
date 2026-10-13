@@ -1,9 +1,12 @@
 package hostedlogin
 
 import (
+	"encoding/base64"
 	"fmt"
 	"html"
 	"strings"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // RenderPage returns a minimal HTML login form for the hosted session.
@@ -13,6 +16,7 @@ func RenderPage(sess Session, errMsg string) string {
 	if sess.ConnectorID != "" {
 		title = "Sign in — " + sess.ConnectorID
 	}
+	pageURL := hostedPageURL(sess)
 	var b strings.Builder
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
 	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
@@ -26,11 +30,18 @@ input{width:100%;box-sizing:border-box;padding:.5rem .6rem;border:1px solid #cfd
 button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
 .err{color:#dc2626;margin:.75rem 0}
 .meta{color:#6b7280;font-size:.85rem}
+.qr{display:block;margin:1rem auto;width:160px;height:160px}
 </style></head><body>`)
 	b.WriteString("<h1>")
 	b.WriteString(html.EscapeString(title))
 	b.WriteString("</h1>")
 	b.WriteString(`<p class="meta">Credentials are sent only to Baize, not to the AI model.</p>`)
+	if pageURL != "" {
+		if img, err := qrDataURL(pageURL); err == nil {
+			b.WriteString(`<p class="meta">Scan to open this page on your phone:</p>`)
+			b.WriteString(fmt.Sprintf(`<img class="qr" alt="Login QR" width="160" height="160" src="%s">`, img))
+		}
+	}
 	if strings.TrimSpace(errMsg) != "" {
 		b.WriteString(`<p class="err" role="alert">`)
 		b.WriteString(html.EscapeString(errMsg))
@@ -74,9 +85,26 @@ button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background
 	return b.String()
 }
 
+func hostedPageURL(sess Session) string {
+	origin := strings.TrimRight(strings.TrimSpace(sess.PublicOrigin), "/")
+	id := strings.TrimSpace(sess.ID)
+	if origin == "" || id == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/v0/auth/hosted/%s", origin, id)
+}
+
+func qrDataURL(payload string) (string, error) {
+	png, err := qrcode.Encode(payload, qrcode.Medium, 160)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
+}
+
 // RenderSuccessPage is shown after credentials are captured.
 func RenderSuccessPage() string {
 	return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>Signed in</title>
 <style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:2rem auto;padding:0 1rem}</style>
-</head><body><h1>Signed in</h1><p>You can close this page and retry the tool in your agent client.</p></body></html>`
+</head><body><h1>Signed in</h1><p>You can close this page. If a tool call was waiting, it will continue automatically.</p></body></html>`
 }

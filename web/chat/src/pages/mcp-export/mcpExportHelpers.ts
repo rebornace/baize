@@ -72,6 +72,21 @@ export function isKeyActive(key: MCPExportKey): boolean {
   return key.revoked_at == null || key.revoked_at === ''
 }
 
+/** Compact list preview: mask long header values so JWT/tokens don't blow up the page. */
+export function formatIdentityHeadersPreview(
+  headers: Record<string, string> | undefined,
+  maxValueLen = 28,
+): string {
+  if (headers == null) return ''
+  return Object.entries(headers)
+    .map(([key, value]) => {
+      const v = value ?? ''
+      if (v.length <= maxValueLen) return `${key}=${v}`
+      return `${key}=${v.slice(0, 10)}…${v.slice(-4)}`
+    })
+    .join('\n')
+}
+
 export type ConfirmState =
   | { kind: 'identity'; id: string; name: string }
   | { kind: 'key'; id: string; name: string; prefix: string }
