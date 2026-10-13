@@ -119,6 +119,7 @@ func TestEngineStreamThinkingEventsAndPersist(t *testing.T) {
 	}
 	if assistant == nil {
 		t.Fatal("missing assistant message")
+		return
 	}
 	if assistant.Thinking != joined {
 		t.Fatalf("assistant Thinking=%q want %q", assistant.Thinking, joined)
@@ -162,6 +163,7 @@ func TestEngineChatOnlyThinkingNoDeltas(t *testing.T) {
 	}
 	if msgEv == nil {
 		t.Fatal("missing llm.message")
+		return
 	}
 	if asString(msgEv.Data["content"]) != "答" {
 		t.Fatalf("content=%q", msgEv.Data["content"])
@@ -209,6 +211,7 @@ func TestEngineStreamFallbackToChat(t *testing.T) {
 	}
 	if msgEv == nil {
 		t.Fatal("missing llm.message")
+		return
 	}
 	if asString(msgEv.Data["content"]) != "答" || asString(msgEv.Data["thinking"]) != "回退想" {
 		t.Fatalf("llm.message data=%v", msgEv.Data)

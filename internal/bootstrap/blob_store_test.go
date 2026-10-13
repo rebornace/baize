@@ -23,6 +23,7 @@ func TestEnsureBlobStoreDefaultsMemory(t *testing.T) {
 	}
 	if s == nil {
 		t.Fatal("ensureBlobStore returned nil Store")
+		return
 	}
 	ctx := context.Background()
 	if err := s.Put(ctx, "probe/key", []byte("ok"), "text/plain"); err != nil {
@@ -81,6 +82,7 @@ func TestEnsureBlobStoreHonorsExplicitFile(t *testing.T) {
 	}
 	if s == nil {
 		t.Fatal("ensureBlobStore returned nil Store")
+		return
 	}
 	ctx := context.Background()
 	if err := s.Put(ctx, "a/b", []byte("x"), ""); err != nil {

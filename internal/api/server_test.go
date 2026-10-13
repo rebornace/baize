@@ -843,6 +843,7 @@ func TestConversationIdentitiesAPI(t *testing.T) {
 	}
 	if empty == nil {
 		t.Fatal("expected JSON array, got null")
+		return
 	}
 	if len(empty) != 0 {
 		t.Fatalf("expected empty, got %+v", empty)
@@ -1102,6 +1103,7 @@ func TestListMessagesNilStore(t *testing.T) {
 	}
 	if msgs == nil {
 		t.Fatal("expected non-nil JSON array, got null")
+		return
 	}
 	if len(msgs) != 0 {
 		t.Fatalf("expected empty, got %+v", msgs)
@@ -1452,6 +1454,7 @@ func TestPostRunAPIFallbackWritesSystemNote(t *testing.T) {
 	}
 	if note == nil {
 		t.Fatalf("expected system_note after API fallback; msgs=%+v", msgStore.List("conv_fail"))
+		return
 	}
 	if !strings.HasPrefix(note.Content, "运行失败：") || !strings.Contains(note.Content, "boom before status update") {
 		t.Fatalf("note.Content=%q", note.Content)

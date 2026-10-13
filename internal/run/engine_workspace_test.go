@@ -143,6 +143,7 @@ func TestColdResumeDegradesToTextWhenResolverFails(t *testing.T) {
 	}
 	if toolMsg == nil {
 		t.Fatal("no tool message")
+		return
 	}
 	if len(toolMsg.Parts) != 0 || !strings.Contains(toolMsg.Content, "read_image") {
 		t.Fatalf("expected text degradation mentioning read_image, got %+v", toolMsg)

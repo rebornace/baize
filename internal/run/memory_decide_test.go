@@ -83,6 +83,7 @@ func TestDP1DeciderNoSkipsExtract(t *testing.T) {
 	}
 	if skipped == nil {
 		t.Fatalf("missing memory.extract_skipped event; evs=%+v", evs)
+		return
 	}
 	if skipped.Data["reason"] != "decider_no" {
 		t.Fatalf("reason=%v want decider_no", skipped.Data["reason"])
@@ -114,6 +115,7 @@ func TestDP1SkipEventRecordsSavedTokens(t *testing.T) {
 	}
 	if skipped == nil {
 		t.Fatalf("missing skip event; evs=%+v", evs)
+		return
 	}
 	want := estimateExtractionInputTokens("记住我喜欢绿茶", "好的，已记下")
 	if got := asInt(skipped.Data, "saved_tokens"); got != want {

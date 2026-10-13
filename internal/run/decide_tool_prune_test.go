@@ -98,6 +98,7 @@ func TestPruneNoReplacesBulkyResult(t *testing.T) {
 	}
 	if pruned == nil {
 		t.Fatalf("missing decide.tool_pruned event; evs=%+v", evs)
+		return
 	}
 	if pruned.Data["tool_call_id"] != "c0" {
 		t.Fatalf("tool_call_id=%v want c0", pruned.Data["tool_call_id"])

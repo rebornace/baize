@@ -91,6 +91,7 @@ func TestEnginePersistsPerTurnUsage(t *testing.T) {
 
 	if terminal == nil {
 		t.Fatal("missing terminal llm.message")
+		return
 	}
 	if got := asInt(terminal.Data, "prompt_tokens"); got != 20 {
 		t.Fatalf("terminal prompt_tokens=%d want 20", got)

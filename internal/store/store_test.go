@@ -94,6 +94,7 @@ func TestSetAndGetHITL(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("expected HITL payload")
+		return
 	}
 	if got.Prompt != payload.Prompt || got.ToolName != payload.ToolName {
 		t.Fatalf("got %+v", got)

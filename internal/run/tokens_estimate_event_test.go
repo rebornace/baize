@@ -49,6 +49,7 @@ func TestEmitTokenEstimateRecordsBias(t *testing.T) {
 	ev := findTokenEstimate(evs)
 	if ev == nil {
 		t.Fatalf("missing %s event", EventTokenEstimate)
+		return
 	}
 
 	wantEst := EstimateMessagesTokens(messages) + EstimateToolsTokens(tools)

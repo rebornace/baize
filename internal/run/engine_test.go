@@ -312,6 +312,7 @@ func TestHITLRejectWritesHumanizedNote(t *testing.T) {
 	}
 	if note == nil {
 		t.Fatal("missing system_note for rejection")
+		return
 	}
 	if strings.Contains(note.Content, "运行失败") || strings.Contains(note.Content, "hitl rejected") {
 		t.Fatalf("note must be humanized, got %q", note.Content)
@@ -890,6 +891,7 @@ func TestExecuteWritesSystemNoteOnFailure(t *testing.T) {
 	}
 	if note == nil {
 		t.Fatalf("missing system_note terminal message; msgs=%+v", msgs)
+		return
 	}
 	if !strings.HasPrefix(note.Content, "运行失败：") {
 		t.Fatalf("note.Content=%q want prefix 运行失败：", note.Content)

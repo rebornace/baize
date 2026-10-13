@@ -91,6 +91,7 @@ func TestToolNarrowNarrowsAndConsultsSystemRouting(t *testing.T) {
 	}
 	if narrow == nil {
 		t.Fatalf("missing decide.tool_narrow event; evs=%+v", evs)
+		return
 	}
 	if asInt(narrow.Data, "total") != 40 {
 		t.Fatalf("total=%v want 40", narrow.Data["total"])
@@ -161,6 +162,7 @@ func TestToolNarrowFailsOpenOnNoMatch(t *testing.T) {
 	}
 	if narrow == nil {
 		t.Fatal("missing narrow event")
+		return
 	}
 	if b, _ := narrow.Data["prefilter_empty"].(bool); !b {
 		t.Fatalf("prefilter_empty=%v want true", narrow.Data["prefilter_empty"])

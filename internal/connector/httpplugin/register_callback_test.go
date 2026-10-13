@@ -75,6 +75,7 @@ func TestRegisterInjectsCallbackEventURL(t *testing.T) {
 	urls, _ := c["callback_urls"].(map[string]any)
 	if urls == nil {
 		t.Fatalf("callback_urls missing: %+v", c)
+		return
 	}
 	event, _ := urls["event"].(string)
 	wantPrefix := "https://runtime.example/v0/runs/run_42/plugin-callbacks?token="

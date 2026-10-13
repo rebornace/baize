@@ -65,6 +65,7 @@ func TestPluginCallbackHappyPath(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no plugin.callback event among %d events", len(evs))
+		return
 	}
 	if got := found.Data["name"]; got != "echo" {
 		t.Fatalf("event.data.name=%v want echo", got)
@@ -203,6 +204,7 @@ func TestPluginCallbackAcceptsEnterpriseIssuedToken(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("no plugin.callback event among %d events", len(evs))
+		return
 	}
 	if got := found.Data["name"]; got != "enterprise.note" {
 		t.Fatalf("event.data.name=%v want enterprise.note", got)

@@ -252,6 +252,7 @@ func TestHandleInboundEmitsModelRoutedEvent(t *testing.T) {
 	}
 	if routed == nil {
 		t.Fatalf("missing model.routed event; events=%+v", evs)
+		return
 	}
 	if got := routed.Data["desired_tier"]; got != store.AutoTierLight {
 		t.Fatalf("desired_tier=%v want %s", got, store.AutoTierLight)
@@ -842,6 +843,7 @@ func TestOutboundExtrasIncludesAccountAndContextToken(t *testing.T) {
 	ex := rt.OutboundExtras(convID)
 	if ex == nil {
 		t.Fatal("OutboundExtras returned nil")
+		return
 	}
 	if ex["context_token"] != "tok-abc" {
 		t.Fatalf("context_token = %q, want tok-abc", ex["context_token"])

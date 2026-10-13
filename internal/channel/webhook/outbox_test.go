@@ -252,6 +252,7 @@ func TestEnqueueAfterRestartDoesNotDropWhenDeliveredHistoryExists(t *testing.T) 
 	}
 	if newRow == nil {
 		t.Fatal("SendText after restart must enqueue a new outbox row; got only preset delivered")
+		return
 	}
 	if newRow.DeliveryKey == legacyKey {
 		t.Fatalf("new delivery_key must differ from legacy seq key %q", legacyKey)

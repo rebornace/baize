@@ -263,6 +263,7 @@ func TestModelProfilesPatchFieldLevelMerge(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("patched profile missing from list")
+		return
 	}
 	if got.Model != "m2" || !got.SupportsVision || got.APIKeyEnv != "MY_KEY" || got.APIKey != wantRedacted {
 		t.Fatalf("persisted state wrong: %+v", got)
@@ -403,6 +404,7 @@ func TestModelProfilesThinkingLevelAndDialect(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("created profile missing from list")
+		return
 	}
 	if got.ThinkingLevel != "high" || got.ThinkingDialect != "deepseek" || got.DisableThinking {
 		t.Fatalf("list echo wrong: %+v", got)

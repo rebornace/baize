@@ -100,5 +100,6 @@ func TestOpenPostgresDriver(t *testing.T) {
 	}
 	if s == nil {
 		t.Fatal("nil store")
+		return
 	}
 }

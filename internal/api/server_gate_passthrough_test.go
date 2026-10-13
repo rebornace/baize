@@ -64,6 +64,7 @@ func TestGateOnPassthroughPostRunDoesNotStoreControlPlaneToken(t *testing.T) {
 	got, _ := srv.Store.GetRun(runID)
 	if got == nil {
 		t.Fatalf("run %s not found", runID)
+		return
 	}
 	if v, ok := got.PassthroughHeaders["Authorization"]; ok {
 		t.Fatalf("control-plane Authorization leaked into store: %q headers=%+v", v, got.PassthroughHeaders)
@@ -121,6 +122,7 @@ func TestGateOnPassthroughResumeDoesNotStoreControlPlaneToken(t *testing.T) {
 	got, _ := st.GetRun(runID)
 	if got == nil {
 		t.Fatalf("run %s not found", runID)
+		return
 	}
 	if v, ok := got.PassthroughHeaders["Authorization"]; ok {
 		t.Fatalf("control-plane Authorization leaked into store via resume: %q headers=%+v", v, got.PassthroughHeaders)

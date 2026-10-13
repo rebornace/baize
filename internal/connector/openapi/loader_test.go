@@ -253,6 +253,7 @@ func TestLoadToolsFromSpec(t *testing.T) {
 	props, _ := create.InputSchema["properties"].(map[string]any)
 	if props == nil {
 		t.Fatalf("properties missing: %+v", create.InputSchema)
+		return
 	}
 	title, _ := props["title"].(map[string]any)
 	if title == nil || title["type"] != "string" {
@@ -396,6 +397,7 @@ func assertSchemaHasRequiredProp(t *testing.T, schema map[string]any, name, typ 
 	t.Helper()
 	if schema == nil {
 		t.Fatalf("schema nil, want prop %q", name)
+		return
 	}
 	props, _ := schema["properties"].(map[string]any)
 	prop, _ := props[name].(map[string]any)
