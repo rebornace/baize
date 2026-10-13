@@ -148,22 +148,14 @@ func TestAuthExpiredForCallTimeoutFallsBack(t *testing.T) {
 }
 
 type recordingSessions struct {
-	inner  hostedlogin.Sessions
-	last   string
-	muLast chan struct{} // unused placeholder avoided; use atomic string via simple field+sync
-	idCh   chan string
+	inner hostedlogin.Sessions
+	last  string
 }
 
 func (r *recordingSessions) Issue(seed hostedlogin.Session) (id, csrf string, err error) {
 	id, csrf, err = r.inner.Issue(seed)
 	if err == nil && id != "" {
 		r.last = id
-		if r.idCh != nil {
-			select {
-			case r.idCh <- id:
-			default:
-			}
-		}
 	}
 	return id, csrf, err
 }
