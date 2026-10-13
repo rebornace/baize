@@ -21,6 +21,10 @@ export interface ToolCardProps {
   onError?: (e: unknown) => void
   /** login_required 时「去登录」；传入 `login-<connector_id>` skill id。 */
   onGoLoginSkill?: (skillId: string) => void
+  /** login_required 时「浏览器登录」；传入连接器 id。 */
+  onBrowserLogin?: (connectorId: string) => void
+  /** 当前选用模型是否偏云端（影响登录风险文案）。 */
+  cloudModelRisk?: boolean
   /** 本轮写操作前已成功（或失败）的查询结果摘要，供审批核对。 */
   priorEvidence?: PriorEvidenceItem[]
 }
@@ -31,6 +35,8 @@ export function ToolCard({
   readOnly = false,
   onError,
   onGoLoginSkill,
+  onBrowserLogin,
+  cloudModelRisk = false,
   priorEvidence,
 }: ToolCardProps) {
   const waiting = block.status === 'waiting_human' && !readOnly
@@ -205,9 +211,26 @@ export function ToolCard({
       {loginRequired && (
         <div className="tool-card-actions tool-card-login-actions">
           {loginMessage ? <p className="tool-card-login-msg">{loginMessage}</p> : null}
+          <p className="tool-card-login-msg">
+            {cloudModelRisk ? LOGIN_AT.cloudRisk : LOGIN_AT.localHint}
+          </p>
           <Button size="sm" variant="primary" onClick={goLoginSkill}>
             {LOGIN_AT.goLogin}
           </Button>
+          {onBrowserLogin ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                const connectorId = resolveConnectorId(
+                  catalog.find((t) => t.name === block.name)?.connector_id,
+                )
+                if (connectorId) onBrowserLogin(connectorId)
+              }}
+            >
+              {LOGIN_AT.browserLogin}
+            </Button>
+          ) : null}
         </div>
       )}
 

@@ -52,6 +52,8 @@ func TestMinRoleTable(t *testing.T) {
 		{"POST", "/v0/mcp/export", RoleNone},
 		{"GET", "/v0/mcp/export", RoleNone},
 		{"DELETE", "/v0/mcp/export/session", RoleNone},
+		{"GET", "/v0/auth/hosted/abc", RoleNone},
+		{"POST", "/v0/auth/hosted/abc", RoleNone},
 		{"GET", "/v0/settings/mcp-export", RoleAdmin},
 		{"POST", "/v0/settings/mcp-export/identities", RoleAdmin},
 		{"GET", "/v0/settings/mcp-export/identities", RoleAdmin},

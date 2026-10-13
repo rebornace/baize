@@ -14,11 +14,19 @@ export interface MCPExportIdentity {
   updated_at?: string
 }
 
+export interface MCPExportIdentitySlot {
+  connector_id?: string
+  role?: string
+  identity_id: string
+}
+
 export interface MCPExportKey {
   id: string
   name: string
   identity_id: string
+  identity_slots?: MCPExportIdentitySlot[]
   prefix: string
+  allowed_tools: string[]
   revoked_at?: string | null
   created_at?: string
 }
@@ -27,8 +35,10 @@ export interface MCPExportKeyCreated {
   id: string
   name: string
   identity_id: string
+  identity_slots?: MCPExportIdentitySlot[]
   token: string
   prefix: string
+  allowed_tools?: string[]
 }
 
 export async function getMCPExportSettings(): Promise<MCPExportSettings> {
@@ -90,6 +100,8 @@ export async function listMCPExportKeys(identityId?: string): Promise<MCPExportK
 export async function createMCPExportKey(body: {
   name: string
   identity_id: string
+  identity_slots?: MCPExportIdentitySlot[]
+  allowed_tools?: string[]
 }): Promise<MCPExportKeyCreated> {
   const res = await fetch('/v0/settings/mcp-export/keys', {
     method: 'POST',
@@ -97,6 +109,22 @@ export async function createMCPExportKey(body: {
     body: JSON.stringify(body),
   })
   return parseJSON<MCPExportKeyCreated>(res)
+}
+
+export async function patchMCPExportKey(
+  id: string,
+  body: {
+    name?: string
+    allowed_tools?: string[]
+    identity_slots?: MCPExportIdentitySlot[]
+  },
+): Promise<MCPExportKey> {
+  const res = await fetch(`/v0/settings/mcp-export/keys/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<MCPExportKey>(res)
 }
 
 export async function revokeMCPExportKey(id: string): Promise<void> {

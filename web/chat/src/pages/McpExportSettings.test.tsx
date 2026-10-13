@@ -120,7 +120,16 @@ async function renderExport() {
 
 const settings = { enabled: true, endpoint_path: '/v0/mcp/export' }
 const identities = [{ id: 'ops', name: 'Ops', scheme: 'Bearer', headers: {} }]
-const oneKey = [{ id: 'k1', name: 'cursor-dev', identity_id: 'ops', prefix: 'mcp_ab', revoked_at: null }]
+const oneKey = [
+  {
+    id: 'k1',
+    name: 'cursor-dev',
+    identity_id: 'ops',
+    prefix: 'mcp_ab',
+    allowed_tools: ['get_status'],
+    revoked_at: null,
+  },
+]
 
 function mockExportFetches(extra?: (url: string, init?: RequestInit) => Response | undefined) {
   fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
@@ -169,6 +178,47 @@ describe('McpExportSettings page', () => {
     expect(host.textContent).toContain('密钥仅显示这一次')
     expect(host.textContent).toContain('SECRET-TOKEN')
     expect(btn('复制密钥')).toBeTruthy()
+  })
+
+  it('sends allowed_tools when creating a key with checkboxes selected', async () => {
+    mockExportFetches()
+    vi.spyOn(api, 'listTools').mockResolvedValue([
+      {
+        name: 'tickets.list',
+        title: '查工单',
+        connector_id: 'hr',
+        method: 'GET',
+        export: 'default',
+      },
+      {
+        name: 'tickets.create',
+        title: '建工单',
+        connector_id: 'hr',
+        method: 'POST',
+        export: 'default',
+      },
+    ])
+    await renderExport()
+    await flush(6)
+    const ticketBox = [...host.querySelectorAll('input[type="checkbox"]')].find((el) =>
+      el.getAttribute('aria-label')?.includes('查工单'),
+    ) as HTMLInputElement
+    expect(ticketBox).toBeTruthy()
+    await act(async () => {
+      ticketBox.click()
+      await Promise.resolve()
+    })
+    await flush()
+    const inputs = host.querySelectorAll('input[type="text"], input:not([type])')
+    await setValue(inputs[inputs.length - 1], 'cursor-dev')
+    await act(async () => { btn('新建密钥').click(); await Promise.resolve() })
+    await flush()
+    const post = fetchMock.mock.calls.find(
+      ([u, i]) => String(u).endsWith('/keys') && (i as RequestInit)?.method === 'POST',
+    )
+    expect(post).toBeTruthy()
+    const body = JSON.parse(String((post![1] as RequestInit).body))
+    expect(body.allowed_tools).toEqual(['tickets.list'])
   })
 
   it('lists tools for per-tool export and patches force_allow', async () => {

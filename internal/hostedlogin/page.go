@@ -1,0 +1,82 @@
+package hostedlogin
+
+import (
+	"fmt"
+	"html"
+	"strings"
+)
+
+// RenderPage returns a minimal HTML login form for the hosted session.
+// errMsg is optional and shown as an alert above the form.
+func RenderPage(sess Session, errMsg string) string {
+	title := "Sign in"
+	if sess.ConnectorID != "" {
+		title = "Sign in — " + sess.ConnectorID
+	}
+	var b strings.Builder
+	b.WriteString("<!DOCTYPE html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
+	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+	b.WriteString("<title>")
+	b.WriteString(html.EscapeString(title))
+	b.WriteString("</title>")
+	b.WriteString(`<style>
+body{font-family:system-ui,sans-serif;max-width:28rem;margin:2rem auto;padding:0 1rem;color:#1c1f26}
+label{display:block;margin:.75rem 0 .25rem;font-size:.9rem}
+input{width:100%;box-sizing:border-box;padding:.5rem .6rem;border:1px solid #cfd5df;border-radius:8px}
+button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
+.err{color:#dc2626;margin:.75rem 0}
+.meta{color:#6b7280;font-size:.85rem}
+</style></head><body>`)
+	b.WriteString("<h1>")
+	b.WriteString(html.EscapeString(title))
+	b.WriteString("</h1>")
+	b.WriteString(`<p class="meta">Credentials are sent only to Baize, not to the AI model.</p>`)
+	if strings.TrimSpace(errMsg) != "" {
+		b.WriteString(`<p class="err" role="alert">`)
+		b.WriteString(html.EscapeString(errMsg))
+		b.WriteString("</p>")
+	}
+	b.WriteString(`<form method="POST" action="">`)
+	b.WriteString(fmt.Sprintf(`<input type="hidden" name="csrf" value="%s">`, html.EscapeString(sess.CSRF)))
+	fields := sess.Fields
+	if len(fields) == 0 {
+		switch sess.Mode {
+		case ModeTokenPaste:
+			fields = DefaultTokenFields()
+		case ModeBasic:
+			fields = DefaultBasicFields()
+		case ModeHeaderPairs:
+			fields = DefaultHeaderPairFields()
+		}
+	}
+	for _, f := range fields {
+		name := strings.TrimSpace(f.Name)
+		if name == "" {
+			name = strings.TrimSpace(f.Arg)
+		}
+		label := strings.TrimSpace(f.Label)
+		if label == "" {
+			label = name
+		}
+		input := strings.ToLower(strings.TrimSpace(f.Input))
+		if input == "" {
+			input = "text"
+		}
+		b.WriteString("<label for=\"")
+		b.WriteString(html.EscapeString(name))
+		b.WriteString("\">")
+		b.WriteString(html.EscapeString(label))
+		b.WriteString("</label>")
+		b.WriteString(fmt.Sprintf(`<input id="%s" name="%s" type="%s" autocomplete="off" required>`,
+			html.EscapeString(name), html.EscapeString(name), html.EscapeString(input)))
+	}
+	b.WriteString(`<button type="submit">Sign in</button></form></body></html>`)
+	return b.String()
+}
+
+// RenderSuccessPage is shown after credentials are captured.
+func RenderSuccessPage() string {
+	return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>Signed in</title>
+<style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:2rem auto;padding:0 1rem}</style>
+</head><body><h1>Signed in</h1><p>You can close this page and retry the tool in your agent client.</p></body></html>`
+}

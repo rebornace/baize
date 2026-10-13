@@ -113,6 +113,9 @@ func MinRole(method, path string) Role {
 	if path == "/v0/mcp/export" || strings.HasPrefix(path, "/v0/mcp/export/") {
 		return RoleNone
 	}
+	if strings.HasPrefix(path, "/v0/auth/hosted/") {
+		return RoleNone
+	}
 	if !strings.HasPrefix(path, "/v0") {
 		return RoleAdmin
 	}

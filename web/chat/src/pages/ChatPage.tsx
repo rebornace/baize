@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  createConversationHostedLogin,
   getGoal,
   getUIConfig,
   listModelProfiles,
@@ -30,7 +31,8 @@ import { useGate } from '../gateContext'
 import { useLocale } from '../locale/LocaleContext'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
-import { AUTO_MODEL_ID } from '../modelSelect'
+import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
+import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
 import { CHAT, friendlyError, GOAL, LOGIN_AT } from '../strings'
 import { replaceMention } from '../skillMention'
 import { useStickToBottom } from '../useStickToBottom'
@@ -320,6 +322,21 @@ export function ChatPage() {
     session.setComposerDraft(text)
   }
 
+  const cloudModelRisk = useMemo(() => {
+    if (isAutoChoice(selectedModelId)) return true
+    const profile = modelProfiles.find((p) => p.id === selectedModelId)
+    return isLikelyCloudModelBaseURL(profile?.base_url)
+  }, [modelProfiles, selectedModelId])
+
+  const onBrowserLogin = async (connectorId: string) => {
+    try {
+      const { url } = await createConversationHostedLogin(session.conversationId, connectorId)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      toast.push({ tone: 'error', title: LOGIN_AT.browserLoginFailed })
+    }
+  }
+
   // Model choice persists immediately (localStorage); it survives sends and
   // reloads, and falls back to Auto when it no longer resolves (see mount effect).
   const onChooseModel = (id: string) => {
@@ -397,6 +414,8 @@ export function ChatPage() {
           onCopyMessage={onCopyMessage}
           reportError={reportError}
           onGoLoginSkill={onGoLoginSkill}
+          onBrowserLogin={onBrowserLogin}
+          cloudModelRisk={cloudModelRisk}
         />
 
         <div className="chat-footer">

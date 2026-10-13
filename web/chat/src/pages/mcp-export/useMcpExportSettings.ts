@@ -8,9 +8,11 @@ import {
   listMCPExportKeys,
   listTools,
   patchMCPExportIdentity,
+  patchMCPExportKey,
   patchTool,
   revokeMCPExportKey,
   type MCPExportIdentity,
+  type MCPExportIdentitySlot,
   type MCPExportKey,
   type MCPExportSettings as MCPExportSettingsInfo,
   type ToolExportMode,
@@ -22,11 +24,17 @@ import { toolMatchesQuery } from '../../toolCatalog'
 import {
   EMPTY_IDENTITY_FORM,
   identityToForm,
+  isKeyActive,
   mcpExportEndpointUrl,
   validateIdentityForm,
   type ConfirmState,
   type IdentityFormState,
 } from './mcpExportHelpers'
+import {
+  allowedToolsFromKey,
+  catalogToolOrder,
+  mergeAllowedToolSelection,
+} from './mcpExportAllowlist'
 
 export function useMcpExportSettings() {
   const { toasts, push, dismiss } = useToast()
@@ -45,7 +53,13 @@ export function useMcpExportSettings() {
 
   const [keyName, setKeyName] = useState('')
   const [keyIdentityId, setKeyIdentityId] = useState('')
+  const [keyAllowedTools, setKeyAllowedTools] = useState<Set<string>>(() => new Set())
   const [keyFormError, setKeyFormError] = useState<string | null>(null)
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null)
+  const [keyEditName, setKeyEditName] = useState('')
+  const [keyEditAllowedTools, setKeyEditAllowedTools] = useState<Set<string>>(() => new Set())
+  const [keyEditSlots, setKeyEditSlots] = useState<MCPExportIdentitySlot[]>([])
+  const [keyEditFormError, setKeyEditFormError] = useState<string | null>(null)
   const [tokenModal, setTokenModal] = useState<{ name: string; token: string } | null>(null)
 
   const [confirm, setConfirm] = useState<ConfirmState>(null)
@@ -102,6 +116,8 @@ export function useMcpExportSettings() {
     if (tools == null) return [] as ToolInfo[]
     return tools.filter((t) => toolMatchesQuery(t, toolQuery))
   }, [tools, toolQuery])
+
+  const toolOrder = useMemo(() => (tools == null ? [] : catalogToolOrder(tools)), [tools])
 
   const onExportChange = async (name: string, exportMode: ToolExportMode) => {
     setExportBusy(name)
@@ -213,15 +229,79 @@ export function useMcpExportSettings() {
       setKeyFormError(MCP_EXPORTS.errKeyIdentityRequired)
       return
     }
+    const allowed_tools = mergeAllowedToolSelection([], keyAllowedTools, toolOrder)
     setBusy(true)
     setKeyFormError(null)
     try {
-      const created = await createMCPExportKey({ name, identity_id: identityId })
+      const created = await createMCPExportKey({ name, identity_id: identityId, allowed_tools })
       setKeyName('')
+      setKeyAllowedTools(new Set())
       setTokenModal({ name: created.name, token: created.token })
       await load()
     } catch (err) {
       setKeyFormError(mcpExportErrorText(err).title)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startEditKey = (key: MCPExportKey) => {
+    if (!isKeyActive(key)) return
+    setEditingKeyId(key.id)
+    setKeyEditName(key.name)
+    setKeyEditAllowedTools(allowedToolsFromKey(key))
+    const slots =
+      key.identity_slots && key.identity_slots.length > 0
+        ? key.identity_slots.map((s) => ({
+            connector_id: s.connector_id ?? '',
+            role: s.role ?? '',
+            identity_id: s.identity_id,
+          }))
+        : [{ connector_id: '', role: '', identity_id: key.identity_id }]
+    setKeyEditSlots(slots)
+    setKeyEditFormError(null)
+  }
+
+  const cancelEditKey = () => {
+    setEditingKeyId(null)
+    setKeyEditName('')
+    setKeyEditAllowedTools(new Set())
+    setKeyEditSlots([])
+    setKeyEditFormError(null)
+  }
+
+  const onSaveEditKey = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!editingKeyId) return
+    const name = keyEditName.trim()
+    if (!name) {
+      setKeyEditFormError(MCP_EXPORTS.errKeyNameRequired)
+      return
+    }
+    if (keyEditSlots.some((s) => !s.identity_id.trim())) {
+      setKeyEditFormError(MCP_EXPORTS.errKeyIdentityRequired)
+      return
+    }
+    const existing = keys.find((k) => k.id === editingKeyId)
+    const allowed_tools = mergeAllowedToolSelection(
+      existing?.allowed_tools ?? [],
+      keyEditAllowedTools,
+      toolOrder,
+    )
+    const identity_slots = keyEditSlots.map((s) => ({
+      connector_id: (s.connector_id ?? '').trim() || undefined,
+      role: (s.role ?? '').trim() || undefined,
+      identity_id: s.identity_id.trim(),
+    }))
+    setBusy(true)
+    setKeyEditFormError(null)
+    try {
+      await patchMCPExportKey(editingKeyId, { name, allowed_tools, identity_slots })
+      cancelEditKey()
+      push({ tone: 'success', title: MCP_EXPORTS.savedKey })
+      await load()
+    } catch (err) {
+      setKeyEditFormError(mcpExportErrorText(err).title)
     } finally {
       setBusy(false)
     }
@@ -292,7 +372,20 @@ export function useMcpExportSettings() {
     setKeyName,
     keyIdentityId,
     setKeyIdentityId,
+    keyAllowedTools,
+    setKeyAllowedTools,
     keyFormError,
+    editingKeyId,
+    keyEditName,
+    setKeyEditName,
+    keyEditAllowedTools,
+    setKeyEditAllowedTools,
+    keyEditSlots,
+    setKeyEditSlots,
+    keyEditFormError,
+    startEditKey,
+    cancelEditKey,
+    onSaveEditKey,
     tokenModal,
     setTokenModal,
     confirm,

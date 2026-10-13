@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS tools (
   require_login INTEGER,
   require_approval INTEGER,
   operation_id TEXT,
-  export_mode TEXT
+  export_mode TEXT,
+  annotations_json TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -135,6 +136,8 @@ CREATE TABLE IF NOT EXISTS mcp_export_keys (
   identity_id TEXT NOT NULL,
   key_hash TEXT NOT NULL UNIQUE,
   prefix TEXT NOT NULL,
+  allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+  identity_slots_json TEXT NOT NULL DEFAULT '[]',
   revoked_at TEXT,
   created_at TEXT NOT NULL
 );
@@ -254,6 +257,14 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
 	}
+	if err := migrateMCPExportAllowlistColumn(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export allowlist: %w", err)
+	}
+	if err := migrateMCPExportIdentitySlotsColumn(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export identity slots: %w", err)
+	}
 	if err := migrateModelProfilesColumns(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles columns: %w", err)
@@ -308,6 +319,7 @@ func migrateToolsColumns(db *sql.DB) error {
 		`ALTER TABLE tools ADD COLUMN title TEXT`,
 		`ALTER TABLE tools ADD COLUMN description_custom INTEGER`,
 		`ALTER TABLE tools ADD COLUMN export_mode TEXT`,
+		`ALTER TABLE tools ADD COLUMN annotations_json TEXT`,
 	}
 	for _, q := range alters {
 		_, err := db.Exec(q)

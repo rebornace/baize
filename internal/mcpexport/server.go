@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rebornace/baize/internal/hostedlogin"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -15,14 +16,21 @@ import (
 
 type ctxKey int
 
-const ctxKeyExportIdentity ctxKey = 1
+const ctxKeyExportAuth ctxKey = 1
+
+type exportAuth struct {
+	Key      store.MCPExportKey
+	Identity store.MCPExportIdentity
+}
 
 // ServerDeps wires store, tool registry, and identity store into the export HTTP facade.
 type ServerDeps struct {
-	Store      store.Store
-	Registry   *tool.Registry
-	Identities identity.Store
-	Enabled    bool
+	Store          store.Store
+	Registry       *tool.Registry
+	Identities     identity.Store
+	HostedSessions hostedlogin.Sessions
+	PublicBaseURL  string
+	Enabled        bool
 }
 
 // NewHTTPHandler returns a Streamable HTTP MCP handler with Bearer key auth.
@@ -37,49 +45,57 @@ func NewHTTPHandler(deps ServerDeps) http.Handler {
 			http.Error(w, "mcp export disabled", http.StatusServiceUnavailable)
 			return
 		}
-		export, err := authenticateExport(r, deps.Store)
+		auth, err := authenticateExport(r, deps.Store)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		ctx := context.WithValue(r.Context(), ctxKeyExportIdentity, export)
+		ctx := context.WithValue(r.Context(), ctxKeyExportAuth, auth)
 		stream.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func authenticateExport(r *http.Request, st store.Store) (store.MCPExportIdentity, error) {
+func authenticateExport(r *http.Request, st store.Store) (exportAuth, error) {
 	raw := r.Header.Get("Authorization")
 	const prefix = "Bearer "
 	if !strings.HasPrefix(raw, prefix) {
-		return store.MCPExportIdentity{}, errors.New("missing bearer token")
+		return exportAuth{}, errors.New("missing bearer token")
 	}
 	plaintext := strings.TrimSpace(strings.TrimPrefix(raw, prefix))
 	if plaintext == "" {
-		return store.MCPExportIdentity{}, errors.New("empty bearer token")
+		return exportAuth{}, errors.New("empty bearer token")
 	}
 	key, err := st.LookupMCPExportKeyByHash(HashKey(plaintext))
 	if err != nil || key == nil {
-		return store.MCPExportIdentity{}, errors.New("unknown or revoked key")
+		return exportAuth{}, errors.New("unknown or revoked key")
 	}
-	return st.GetMCPExportIdentity(key.IdentityID)
+	identity, err := st.GetMCPExportIdentity(key.IdentityID)
+	if err != nil {
+		return exportAuth{}, err
+	}
+	return exportAuth{Key: *key, Identity: identity}, nil
 }
 
-func exportIdentityFrom(ctx context.Context) (store.MCPExportIdentity, bool) {
-	v, ok := ctx.Value(ctxKeyExportIdentity).(store.MCPExportIdentity)
+func exportAuthFrom(ctx context.Context) (exportAuth, bool) {
+	v, ok := ctx.Value(ctxKeyExportAuth).(exportAuth)
 	return v, ok
 }
 
 func buildExportServer(ctx context.Context, deps ServerDeps) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "baize-mcp-export", Version: "v0"}, nil)
-	export, ok := exportIdentityFrom(ctx)
+	auth, ok := exportAuthFrom(ctx)
 	if !ok {
 		return server
 	}
 
+	server.AddReceivingMiddleware(exportListFilterMiddleware(deps, auth))
+
+	registerExportWorkflowPrompt(server)
+
 	for _, t := range deps.Store.ListTools() {
 		toolRow := t
 		opts := policyOptsFor(deps.Store, toolRow.ConnectorID)
-		if !AllowExport(toolRow, opts) {
+		if !AllowExportToolGuards(toolRow, opts) {
 			continue
 		}
 		schema := toolRow.InputSchema
@@ -96,10 +112,28 @@ func buildExportServer(ctx context.Context, deps ServerDeps) *mcp.Server {
 			Description: desc,
 			InputSchema: schema,
 		}, func(callCtx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return invokeExportTool(callCtx, deps, export, name, req)
+			return invokeExportTool(callCtx, deps, auth, toolRow, req)
 		})
 	}
 	return server
+}
+
+func registerExportWorkflowPrompt(server *mcp.Server) {
+	body := ExportWorkflowSkillMarkdown()
+	server.AddPrompt(&mcp.Prompt{
+		Name:        "baize_export_workflow",
+		Title:       "Baize export workflow",
+		Description: "How to use Baize MCP export tools safely (approval, auth, errors).",
+	}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		return &mcp.GetPromptResult{
+			Messages: []*mcp.PromptMessage{{
+				Role: "user",
+				Content: &mcp.TextContent{
+					Text: body,
+				},
+			}},
+		}, nil
+	})
 }
 
 func policyOptsFor(st store.Store, connectorID string) PolicyOpts {
@@ -116,23 +150,34 @@ func policyOptsFor(st store.Store, connectorID string) PolicyOpts {
 func invokeExportTool(
 	ctx context.Context,
 	deps ServerDeps,
-	export store.MCPExportIdentity,
-	name string,
+	auth exportAuth,
+	toolRow store.Tool,
 	req *mcp.CallToolRequest,
 ) (*mcp.CallToolResult, error) {
-	toolRow, err := deps.Store.GetTool(name)
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: "tool not found"}},
-			IsError: true,
-		}, nil
-	}
+	name := toolRow.Name
 	opts := policyOptsFor(deps.Store, toolRow.ConnectorID)
-	if !AllowExport(toolRow, opts) {
+	key, err := deps.Store.GetMCPExportKey(auth.Key.ID)
+	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: "tool not exported"}},
 			IsError: true,
 		}, nil
+	}
+	if !AllowExportForKey(toolRow, opts, key) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "tool not exported"}},
+			IsError: true,
+		}, nil
+	}
+
+	if NeedsExportApproval(toolRow, ApprovalOpts{WriteHeuristicElicit: true}) {
+		gateRes, stop, err := gateExportApproval(ctx, req, name)
+		if err != nil {
+			return nil, err
+		}
+		if stop {
+			return gateRes, nil
+		}
 	}
 
 	args := map[string]any{}
@@ -145,16 +190,28 @@ func invokeExportTool(
 		}
 	}
 
-	invokeCtx, err := InvokeContext(ctx, deps.Identities, export)
+	exportID, err := resolveExportIdentity(deps.Store, key, toolRow.ConnectorID, "")
+	if err != nil {
+		return authExpiredForCall(ctx, deps, auth, toolRow, req), nil
+	}
+	callAuth := auth
+	callAuth.Identity = exportID
+	invokeCtx, err := InvokeContext(ctx, deps.Identities, exportID)
 	if err != nil {
 		return nil, err
 	}
 	content, isError, err := deps.Registry.Invoke(invokeCtx, name, args)
 	if err != nil {
+		if IsAuthFailure(nil, false, err) {
+			return authExpiredForCall(ctx, deps, callAuth, toolRow, req), nil
+		}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 			IsError: true,
 		}, nil
+	}
+	if isError && IsAuthFailure(content, isError, err) {
+		return authExpiredForCall(ctx, deps, callAuth, toolRow, req), nil
 	}
 	text, _ := json.Marshal(content)
 	return &mcp.CallToolResult{
@@ -162,4 +219,45 @@ func invokeExportTool(
 		StructuredContent: content,
 		IsError:           isError,
 	}, nil
+}
+
+func exportListFilterMiddleware(deps ServerDeps, auth exportAuth) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if err != nil {
+				return res, err
+			}
+			lr, ok := res.(*mcp.ListToolsResult)
+			if !ok {
+				return res, err
+			}
+			key, err := deps.Store.GetMCPExportKey(auth.Key.ID)
+			if err != nil {
+				lr.Tools = nil
+				return lr, nil
+			}
+			filtered := lr.Tools[:0]
+			for _, tl := range lr.Tools {
+				toolRow, err := deps.Store.GetTool(tl.Name)
+				if err != nil {
+					continue
+				}
+				opts := policyOptsFor(deps.Store, toolRow.ConnectorID)
+				if AllowExportForKey(toolRow, opts, key) {
+					filtered = append(filtered, tl)
+				}
+			}
+			lr.Tools = filtered
+			return lr, nil
+		}
+	}
+}
+
+func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, toolRow store.Tool, req *mcp.CallToolRequest) *mcp.CallToolResult {
+	hostedURL, sessionID, ok := hostedReauthURL(deps, auth, toolRow)
+	if ok {
+		maybeElicitHostedLoginURL(ctx, req, hostedURL, sessionID)
+	}
+	return authExpiredResult(auth.Identity.Name, hostedURL)
 }

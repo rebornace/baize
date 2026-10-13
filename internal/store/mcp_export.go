@@ -19,10 +19,15 @@ func cloneMCPExportIdentity(id MCPExportIdentity) MCPExportIdentity {
 }
 
 func cloneMCPExportKey(k MCPExportKey) MCPExportKey {
+	if k.AllowedTools != nil {
+		k.AllowedTools = append([]string(nil), k.AllowedTools...)
+	}
+	k.IdentitySlots = cloneIdentitySlots(k.IdentitySlots)
 	if k.RevokedAt != nil {
 		t := *k.RevokedAt
 		k.RevokedAt = &t
 	}
+	NormalizeMCPExportKey(&k)
 	return k
 }
 
@@ -46,6 +51,24 @@ func decodeHeadersJSON(raw []byte) (map[string]string, error) {
 		return nil, nil
 	}
 	var out map[string]string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func encodeAllowedToolsJSON(tools []string) ([]byte, error) {
+	if len(tools) == 0 {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(tools)
+}
+
+func decodeAllowedToolsJSON(raw []byte) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var out []string
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
@@ -92,6 +115,28 @@ func migrateMCPExportKeys(db *sql.DB) error {
 	}
 	_, _ = db.Exec(`DROP INDEX IF EXISTS idx_mcp_export_keys_hash`)
 	return nil
+}
+
+func migrateMCPExportAllowlistColumn(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE mcp_export_keys ADD COLUMN allowed_tools_json TEXT NOT NULL DEFAULT '[]'`)
+	if err == nil || isDuplicateColumnErr(err) {
+		return nil
+	}
+	if isNoSuchTableErr(err) {
+		return nil
+	}
+	return err
+}
+
+func migrateMCPExportIdentitySlotsColumn(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE mcp_export_keys ADD COLUMN identity_slots_json TEXT NOT NULL DEFAULT '[]'`)
+	if err == nil || isDuplicateColumnErr(err) {
+		return nil
+	}
+	if isNoSuchTableErr(err) {
+		return nil
+	}
+	return err
 }
 
 func isNoSuchTableErr(err error) bool {
@@ -193,6 +238,7 @@ func (s *Memory) InsertMCPExportKey(k MCPExportKey) error {
 	if k.CreatedAt.IsZero() {
 		k.CreatedAt = time.Now().UTC()
 	}
+	NormalizeMCPExportKey(&k)
 	s.mcpExportKeys[k.ID] = cloneMCPExportKey(k)
 	return nil
 }
@@ -223,6 +269,33 @@ func (s *Memory) ListMCPExportKeys(identityID string) ([]MCPExportKey, error) {
 		out = append(out, cloneMCPExportKey(s.mcpExportKeys[id]))
 	}
 	return out, nil
+}
+
+func (s *Memory) UpdateMCPExportKey(k MCPExportKey) error {
+	if k.ID == "" {
+		return fmt.Errorf("mcp export key id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.mcpExportKeys[k.ID]
+	if !ok {
+		return ErrMCPExportKeyNotFound
+	}
+	existing.Name = k.Name
+	if k.AllowedTools != nil {
+		existing.AllowedTools = append([]string(nil), k.AllowedTools...)
+	} else {
+		existing.AllowedTools = nil
+	}
+	if k.IdentitySlots != nil {
+		existing.IdentitySlots = cloneIdentitySlots(k.IdentitySlots)
+	}
+	if id := strings.TrimSpace(k.IdentityID); id != "" {
+		existing.IdentityID = id
+	}
+	NormalizeMCPExportKey(&existing)
+	s.mcpExportKeys[k.ID] = existing
+	return nil
 }
 
 func (s *Memory) RevokeMCPExportKey(id string) error {
@@ -289,10 +362,26 @@ func scanMCPExportKey(sc interface {
 	Scan(dest ...any) error
 }) (MCPExportKey, error) {
 	var k MCPExportKey
+	var allowedRaw sql.NullString
+	var slotsRaw sql.NullString
 	var revoked sql.NullString
 	var created string
-	if err := sc.Scan(&k.ID, &k.Name, &k.IdentityID, &k.KeyHash, &k.Prefix, &revoked, &created); err != nil {
+	if err := sc.Scan(&k.ID, &k.Name, &k.IdentityID, &k.KeyHash, &k.Prefix, &allowedRaw, &slotsRaw, &revoked, &created); err != nil {
 		return MCPExportKey{}, err
+	}
+	if allowedRaw.Valid && allowedRaw.String != "" {
+		tools, err := decodeAllowedToolsJSON([]byte(allowedRaw.String))
+		if err != nil {
+			return MCPExportKey{}, fmt.Errorf("parse allowed_tools_json: %w", err)
+		}
+		k.AllowedTools = tools
+	}
+	if slotsRaw.Valid && slotsRaw.String != "" {
+		slots, err := decodeIdentitySlotsJSON([]byte(slotsRaw.String))
+		if err != nil {
+			return MCPExportKey{}, fmt.Errorf("parse identity_slots_json: %w", err)
+		}
+		k.IdentitySlots = slots
 	}
 	var err error
 	k.RevokedAt, err = parseOptionalTime(revoked)
@@ -303,6 +392,7 @@ func scanMCPExportKey(sc interface {
 	if err != nil {
 		return MCPExportKey{}, fmt.Errorf("parse created_at: %w", err)
 	}
+	NormalizeMCPExportKey(&k)
 	return k, nil
 }
 
@@ -418,9 +508,18 @@ func (s *SQLStore) InsertMCPExportKey(k MCPExportKey) error {
 	if k.CreatedAt.IsZero() {
 		k.CreatedAt = time.Now().UTC()
 	}
-	_, err := s.exec(`INSERT INTO mcp_export_keys (id, name, identity_id, key_hash, prefix, revoked_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		k.ID, k.Name, k.IdentityID, k.KeyHash, k.Prefix,
+	NormalizeMCPExportKey(&k)
+	allowedJSON, err := encodeAllowedToolsJSON(k.AllowedTools)
+	if err != nil {
+		return err
+	}
+	slotsJSON, err := encodeIdentitySlotsJSON(k.IdentitySlots)
+	if err != nil {
+		return err
+	}
+	_, err = s.exec(`INSERT INTO mcp_export_keys (id, name, identity_id, key_hash, prefix, allowed_tools_json, identity_slots_json, revoked_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.ID, k.Name, k.IdentityID, k.KeyHash, k.Prefix, string(allowedJSON), string(slotsJSON),
 		formatOptionalTime(k.RevokedAt), k.CreatedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil && isUniqueViolation(err) {
@@ -429,8 +528,36 @@ func (s *SQLStore) InsertMCPExportKey(k MCPExportKey) error {
 	return err
 }
 
+func (s *SQLStore) UpdateMCPExportKey(k MCPExportKey) error {
+	if k.ID == "" {
+		return fmt.Errorf("mcp export key id is required")
+	}
+	NormalizeMCPExportKey(&k)
+	allowedJSON, err := encodeAllowedToolsJSON(k.AllowedTools)
+	if err != nil {
+		return err
+	}
+	slotsJSON, err := encodeIdentitySlotsJSON(k.IdentitySlots)
+	if err != nil {
+		return err
+	}
+	res, err := s.exec(`UPDATE mcp_export_keys SET name = ?, identity_id = ?, allowed_tools_json = ?, identity_slots_json = ?
+		WHERE id = ?`, k.Name, k.IdentityID, string(allowedJSON), string(slotsJSON), k.ID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrMCPExportKeyNotFound
+	}
+	return nil
+}
+
 func (s *SQLStore) GetMCPExportKey(id string) (MCPExportKey, error) {
-	row := s.queryRow(`SELECT id, name, identity_id, key_hash, prefix, revoked_at, created_at
+	row := s.queryRow(`SELECT id, name, identity_id, key_hash, prefix, allowed_tools_json, identity_slots_json, revoked_at, created_at
 		FROM mcp_export_keys WHERE id = ?`, id)
 	k, err := scanMCPExportKey(row)
 	if err == sql.ErrNoRows {
@@ -445,10 +572,10 @@ func (s *SQLStore) ListMCPExportKeys(identityID string) ([]MCPExportKey, error) 
 		err  error
 	)
 	if identityID == "" {
-		rows, err = s.query(`SELECT id, name, identity_id, key_hash, prefix, revoked_at, created_at
+		rows, err = s.query(`SELECT id, name, identity_id, key_hash, prefix, allowed_tools_json, identity_slots_json, revoked_at, created_at
 			FROM mcp_export_keys ORDER BY created_at ASC`)
 	} else {
-		rows, err = s.query(`SELECT id, name, identity_id, key_hash, prefix, revoked_at, created_at
+		rows, err = s.query(`SELECT id, name, identity_id, key_hash, prefix, allowed_tools_json, identity_slots_json, revoked_at, created_at
 			FROM mcp_export_keys WHERE identity_id = ? ORDER BY created_at ASC`, identityID)
 	}
 	if err != nil {
@@ -491,7 +618,7 @@ func (s *SQLStore) RevokeMCPExportKey(id string) error {
 }
 
 func (s *SQLStore) LookupMCPExportKeyByHash(hash string) (*MCPExportKey, error) {
-	row := s.queryRow(`SELECT id, name, identity_id, key_hash, prefix, revoked_at, created_at
+	row := s.queryRow(`SELECT id, name, identity_id, key_hash, prefix, allowed_tools_json, identity_slots_json, revoked_at, created_at
 		FROM mcp_export_keys WHERE key_hash = ? AND revoked_at IS NULL`, hash)
 	k, err := scanMCPExportKey(row)
 	if err == sql.ErrNoRows {

@@ -16,10 +16,12 @@ const mcpExportEndpointPath = "/v0/mcp/export"
 
 func (s *Server) mcpExportHTTP() http.Handler {
 	return mcpexport.NewHTTPHandler(mcpexport.ServerDeps{
-		Store:      s.Store,
-		Registry:   s.Registry,
-		Identities: s.Identities,
-		Enabled:    s.MCPExportEnabled,
+		Store:          s.Store,
+		Registry:       s.Registry,
+		Identities:     s.Identities,
+		HostedSessions: s.HostedSessions,
+		PublicBaseURL:  s.publicBaseURL(),
+		Enabled:        s.MCPExportEnabled,
 	})
 }
 
@@ -180,8 +182,10 @@ func (s *Server) handleListMCPExportKeys(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handlePostMCPExportKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name       string `json:"name"`
-		IdentityID string `json:"identity_id"`
+		Name          string                       `json:"name"`
+		IdentityID    string                       `json:"identity_id"`
+		IdentitySlots []store.MCPExportIdentitySlot `json:"identity_slots"`
+		AllowedTools  []string                     `json:"allowed_tools"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -197,12 +201,9 @@ func (s *Server) handlePostMCPExportKey(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_request", "name is required")
 		return
 	}
-	if _, err := s.Store.GetMCPExportIdentity(identityID); err != nil {
-		if errors.Is(err, store.ErrMCPExportIdentityNotFound) {
-			writeError(w, http.StatusBadRequest, "invalid_request", "unknown identity_id")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+	slots, err := s.validateExportIdentitySlots(identityID, body.IdentitySlots)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	plaintext, hash, prefix, err := mcpexport.GenerateKey()
@@ -210,24 +211,132 @@ func (s *Server) handlePostMCPExportKey(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	allowedTools := body.AllowedTools
+	if allowedTools == nil {
+		allowedTools = []string{}
+	}
 	key := store.MCPExportKey{
-		ID:         "mek_" + uuid.NewString(),
-		Name:       name,
-		IdentityID: identityID,
-		KeyHash:    hash,
-		Prefix:     prefix,
+		ID:            "mek_" + uuid.NewString(),
+		Name:          name,
+		IdentityID:    identityID,
+		IdentitySlots: slots,
+		KeyHash:       hash,
+		Prefix:        prefix,
+		AllowedTools:  allowedTools,
 	}
 	if err := s.Store.InsertMCPExportKey(key); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	got, _ := s.Store.GetMCPExportKey(key.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":          key.ID,
-		"name":        key.Name,
-		"identity_id": key.IdentityID,
-		"token":       plaintext,
-		"prefix":      key.Prefix,
+		"id":             got.ID,
+		"name":           got.Name,
+		"identity_id":    got.IdentityID,
+		"identity_slots": got.IdentitySlots,
+		"allowed_tools":  got.AllowedTools,
+		"token":          plaintext,
+		"prefix":         got.Prefix,
 	})
+}
+
+func (s *Server) handlePatchMCPExportKey(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing key id")
+		return
+	}
+	existing, err := s.Store.GetMCPExportKey(id)
+	if err != nil {
+		if errors.Is(err, store.ErrMCPExportKeyNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "key not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	var body struct {
+		Name          *string                       `json:"name"`
+		AllowedTools  *[]string                     `json:"allowed_tools"`
+		IdentitySlots *[]store.MCPExportIdentitySlot `json:"identity_slots"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	if body.Name != nil {
+		name := strings.TrimSpace(*body.Name)
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "name is required")
+			return
+		}
+		existing.Name = name
+	}
+	if body.AllowedTools != nil {
+		existing.AllowedTools = *body.AllowedTools
+	}
+	if body.IdentitySlots != nil {
+		slots, err := s.validateExportIdentitySlots(existing.IdentityID, *body.IdentitySlots)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		existing.IdentitySlots = slots
+	}
+	if err := s.Store.UpdateMCPExportKey(existing); err != nil {
+		if errors.Is(err, store.ErrMCPExportKeyNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "key not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	got, err := s.Store.GetMCPExportKey(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, got)
+}
+
+// validateExportIdentitySlots ensures every referenced identity exists and that
+// a default (empty connector) slot is present — synthesizing one from
+// defaultIdentityID when the client omitted it.
+func (s *Server) validateExportIdentitySlots(defaultIdentityID string, slots []store.MCPExportIdentitySlot) ([]store.MCPExportIdentitySlot, error) {
+	defaultIdentityID = strings.TrimSpace(defaultIdentityID)
+	if _, err := s.Store.GetMCPExportIdentity(defaultIdentityID); err != nil {
+		if errors.Is(err, store.ErrMCPExportIdentityNotFound) {
+			return nil, errors.New("unknown identity_id")
+		}
+		return nil, err
+	}
+	out := make([]store.MCPExportIdentitySlot, 0, len(slots)+1)
+	hasDefault := false
+	for _, slot := range slots {
+		id := strings.TrimSpace(slot.IdentityID)
+		if id == "" {
+			return nil, errors.New("identity_slots[].identity_id is required")
+		}
+		if _, err := s.Store.GetMCPExportIdentity(id); err != nil {
+			if errors.Is(err, store.ErrMCPExportIdentityNotFound) {
+				return nil, errors.New("unknown identity_slots identity_id")
+			}
+			return nil, err
+		}
+		cleaned := store.MCPExportIdentitySlot{
+			ConnectorID: strings.TrimSpace(slot.ConnectorID),
+			Role:        strings.TrimSpace(slot.Role),
+			IdentityID:  id,
+		}
+		if cleaned.ConnectorID == "" {
+			hasDefault = true
+		}
+		out = append(out, cleaned)
+	}
+	if !hasDefault {
+		out = append([]store.MCPExportIdentitySlot{{IdentityID: defaultIdentityID}}, out...)
+	}
+	return out, nil
 }
 
 func (s *Server) handleDeleteMCPExportKey(w http.ResponseWriter, r *http.Request) {

@@ -38,6 +38,8 @@ export type ChatMessageListProps = {
   onCopyMessage: (m: ChatMessage) => void
   reportError: (e: unknown) => void
   onGoLoginSkill: (skillId: string) => void
+  onBrowserLogin?: (connectorId: string) => void
+  cloudModelRisk?: boolean
 }
 
 // Copy with a legacy fallback for non-secure (HTTP/LAN) contexts without
@@ -89,6 +91,8 @@ export function ChatMessageList({
   onCopyMessage,
   reportError,
   onGoLoginSkill,
+  onBrowserLogin,
+  cloudModelRisk = false,
 }: ChatMessageListProps) {
   // Low-frequency actions live in the "more" menu. system_note additionally
   // exposes "roll back to here" at the top; it never gets a copy action.
@@ -302,6 +306,8 @@ export function ChatMessageList({
                     catalog={toolCatalog}
                     onError={reportError}
                     onGoLoginSkill={onGoLoginSkill}
+                    onBrowserLogin={onBrowserLogin}
+                    cloudModelRisk={cloudModelRisk}
                     priorEvidence={
                       block.status === 'waiting_human'
                         ? collectPriorEvidence(liveBlocks, i)

@@ -172,11 +172,14 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	// Persist the auth configuration shape (mode + references), not the
 	// resolved secrets, on the stored Connector. Capture defaults / clearing
 	// for HTTP are handled inside connector.Apply. MCP connectors ignore auth.
-	// Single GetConnector when either capture or execution_callback_url is
-	// omitted so both preserve-on-omit paths share one store read.
+	// Single GetConnector when capture, hosted_login, or execution_callback_url
+	// is omitted so preserve-on-omit paths share one store read.
 	var existingConn store.Connector
 	var hasExisting bool
-	needExisting := body.ExecutionCallbackURL == nil || (body.Type != "mcp" && body.Auth.Capture == nil) || (body.Type == "mcp" && body.MCP.OAuth != nil)
+	needExisting := body.ExecutionCallbackURL == nil ||
+		(body.Type != "mcp" && body.Auth.Capture == nil) ||
+		(body.Type != "mcp" && body.Auth.HostedLogin == nil) ||
+		(body.Type == "mcp" && body.MCP.OAuth != nil)
 	if needExisting {
 		if existing, err := s.Store.GetConnector(id); err == nil {
 			existingConn = existing
@@ -200,6 +203,14 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			// 避免一次普通保存把本人登录链路清空。
 			capture = existingConn.Auth.Capture
 		}
+		hosted := store.HostedLoginRecipe{}
+		if body.Auth.HostedLogin != nil {
+			hosted = *body.Auth.HostedLogin
+		} else if hasExisting {
+			// Same preserve-on-omit policy as capture: connector save must not
+			// wipe a recipe configured via API / advanced settings.
+			hosted = existingConn.Auth.HostedLogin
+		}
 		connectorAuth = store.ConnectorAuth{
 			Mode: body.Auth.Mode,
 			Static: store.StaticAuth{
@@ -211,7 +222,8 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			VaultRef: store.VaultRefAuth{
 				Headers: body.Auth.VaultRef.Headers,
 			},
-			Capture: capture,
+			Capture:     capture,
+			HostedLogin: hosted,
 		}
 	}
 
@@ -344,6 +356,9 @@ type authBody struct {
 		HeaderTemplate string   `json:"header_template"`
 		DefaultScheme  string   `json:"default_scheme"`
 	} `json:"capture"`
+	// HostedLogin is a pointer so omit vs explicit empty can be distinguished
+	// (nil = preserve existing; non-nil = replace, including clear).
+	HostedLogin *store.HostedLoginRecipe `json:"hosted_login"`
 }
 
 func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {

@@ -14,6 +14,7 @@ import (
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/mcpexport"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -141,6 +142,10 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			return store.Connector{}, nil, fmt.Errorf("%w: no usable operations", openapi.ErrInvalidSpec)
 		}
 		for _, r := range routes {
+			export := ""
+			if mcpexport.SuggestForceDenyExport(r.Method, r.Path) {
+				export = "force_deny"
+			}
 			discovered = append(discovered, store.Tool{
 				ConnectorID: in.ID,
 				Name:        r.Name,
@@ -151,6 +156,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 				Path:        r.Path,
 				OperationID: r.OperationID,
 				InputSchema: r.InputSchema,
+				Export:      export,
 			})
 		}
 		capture = CaptureDefaults(identity.CaptureConfig{

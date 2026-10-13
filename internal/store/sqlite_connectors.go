@@ -59,7 +59,7 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 		return err
 	}
 
-	trows, err := s.query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode FROM tools`)
+	trows, err := s.query(`SELECT name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode, annotations_json FROM tools`)
 	if err != nil {
 		return err
 	}
@@ -67,8 +67,8 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 		var t Tool
 		var enabled, requireLogin, requireApproval int
 		var descriptionCustom sql.NullInt64
-		var title, description, method, path, inputSchema, operationID, exportMode sql.NullString
-		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &title, &description, &descriptionCustom, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID, &exportMode); err != nil {
+		var title, description, method, path, inputSchema, operationID, exportMode, annotationsJSON sql.NullString
+		if err := trows.Scan(&t.Name, &t.ConnectorID, &t.Source, &enabled, &title, &description, &descriptionCustom, &method, &path, &inputSchema, &requireLogin, &requireApproval, &operationID, &exportMode, &annotationsJSON); err != nil {
 			trows.Close()
 			return err
 		}
@@ -87,6 +87,10 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 				trows.Close()
 				return fmt.Errorf("parse input_schema_json: %w", err)
 			}
+		}
+		if err := decodeToolAnnotations(annotationsJSON, &t); err != nil {
+			trows.Close()
+			return err
 		}
 		s.tools[t.Name] = t
 	}
@@ -221,16 +225,18 @@ func (s *SQLStore) UpsertTool(t Tool) {
 	if t.DescriptionCustom {
 		descriptionCustom = 1
 	}
+	annotationsJSON := encodeToolAnnotations(t)
 	_, _ = s.exec(
-		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode, annotations_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
 		   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
 		   description_custom=excluded.description_custom, method=excluded.method,
 		   path=excluded.path, input_schema_json=excluded.input_schema_json,
 		   require_login=excluded.require_login, require_approval=excluded.require_approval,
-		   operation_id=excluded.operation_id, export_mode=excluded.export_mode`,
-		t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export,
+		   operation_id=excluded.operation_id, export_mode=excluded.export_mode,
+		   annotations_json=excluded.annotations_json`,
+		t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export, annotationsJSON,
 	)
 }
 
@@ -323,16 +329,18 @@ func (s *SQLStore) ReplaceConnectorTools(connectorID string, tools []Tool) {
 		if t.DescriptionCustom {
 			descriptionCustom = 1
 		}
+		annotationsJSON := encodeToolAnnotations(t)
 		_, _ = s.exec(
-			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO tools (name, connector_id, source, enabled, title, description, description_custom, method, path, input_schema_json, require_login, require_approval, operation_id, export_mode, annotations_json)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(name) DO UPDATE SET connector_id=excluded.connector_id, source=excluded.source,
 			   enabled=excluded.enabled, title=excluded.title, description=excluded.description,
 			   description_custom=excluded.description_custom, method=excluded.method,
 			   path=excluded.path, input_schema_json=excluded.input_schema_json,
 			   require_login=excluded.require_login, require_approval=excluded.require_approval,
-			   operation_id=excluded.operation_id, export_mode=excluded.export_mode`,
-			t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export,
+			   operation_id=excluded.operation_id, export_mode=excluded.export_mode,
+			   annotations_json=excluded.annotations_json`,
+			t.Name, t.ConnectorID, t.Source, enabled, t.Title, t.Description, descriptionCustom, t.Method, t.Path, inputSchema, requireLogin, requireApproval, t.OperationID, t.Export, annotationsJSON,
 		)
 	}
 }

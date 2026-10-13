@@ -104,16 +104,19 @@ type Tool struct {
 	RequireApproval   bool           `json:"require_approval"`
 	OperationID       string         `json:"operation_id,omitempty"`
 	Export            string         `json:"export,omitempty"`
+	ReadOnlyHint      *bool          `json:"read_only_hint,omitempty"`
+	DestructiveHint   *bool          `json:"destructive_hint,omitempty"`
 }
 
 // ConnectorAuth stores the connector auth configuration shape (mode + references),
 // not resolved secrets. Mirrors internal/authcred.Config / internal/config Auth.
 type ConnectorAuth struct {
-	Mode        string       `json:"mode,omitempty"`
-	Static      StaticAuth   `json:"static,omitempty"`
-	Passthrough PassThruAuth `json:"passthrough,omitempty"`
-	VaultRef    VaultRefAuth `json:"vault_ref,omitempty"`
-	Capture     CaptureAuth  `json:"capture,omitempty"`
+	Mode        string            `json:"mode,omitempty"`
+	Static      StaticAuth        `json:"static,omitempty"`
+	Passthrough PassThruAuth      `json:"passthrough,omitempty"`
+	VaultRef    VaultRefAuth      `json:"vault_ref,omitempty"`
+	Capture     CaptureAuth       `json:"capture,omitempty"`
+	HostedLogin HostedLoginRecipe `json:"hosted_login,omitempty"`
 }
 
 type CaptureAuth struct {
@@ -166,6 +169,10 @@ const SettingKeyToolRetrieval = "tool_retrieval"
 // SettingKeySystemOneEnable persists optional System One decision-service
 // one-click enablement (local Ollama tev1 or API) from the settings UI.
 const SettingKeySystemOneEnable = "systemone_enable"
+
+// SettingKeyMCPExportAllowlistMigrated marks one-shot backfill of MCP export
+// key allowlists from legacy guard-only export rules.
+const SettingKeyMCPExportAllowlistMigrated = "mcp_export_allowlist_migrated"
 
 // WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.
 const WebhookOutboxMaxAttempts = 5
@@ -441,15 +448,28 @@ type ModelProfile struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// MCPExportKey is a hashed API key bound to an MCP export identity.
+// MCPExportIdentitySlot binds one export identity to a connector (and optional role).
+// Empty ConnectorID is the legacy/default slot used when no connector-specific
+// slot matches.
+type MCPExportIdentitySlot struct {
+	ConnectorID string `json:"connector_id,omitempty"`
+	Role        string `json:"role,omitempty"`
+	IdentityID  string `json:"identity_id"`
+}
+
+// MCPExportKey is a hashed API key bound to one or more MCP export identities.
+// IdentityID remains the default/legacy binding; IdentitySlots holds per-connector
+// (and optional role) overrides. Empty IdentitySlots are normalized from IdentityID.
 type MCPExportKey struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	IdentityID string     `json:"identity_id"`
-	KeyHash    string     `json:"-"`
-	Prefix     string     `json:"prefix"`
-	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	IdentityID    string                 `json:"identity_id"`
+	IdentitySlots []MCPExportIdentitySlot `json:"identity_slots,omitempty"`
+	KeyHash       string                 `json:"-"`
+	Prefix        string                 `json:"prefix"`
+	AllowedTools  []string               `json:"allowed_tools"`
+	RevokedAt     *time.Time             `json:"revoked_at,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
 }
 
 // Store persists agents, connectors, runs, events, and HITL payloads.
@@ -521,6 +541,7 @@ type Store interface {
 	ListMCPExportIdentities() ([]MCPExportIdentity, error)
 	DeleteMCPExportIdentity(id string) error
 	InsertMCPExportKey(MCPExportKey) error
+	UpdateMCPExportKey(MCPExportKey) error
 	GetMCPExportKey(id string) (MCPExportKey, error)
 	ListMCPExportKeys(identityID string) ([]MCPExportKey, error)
 	RevokeMCPExportKey(id string) error

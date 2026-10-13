@@ -108,7 +108,7 @@ func TestMCPExportAdminCRUDAndACL(t *testing.T) {
 
 	// create key
 	req = withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/mcp-export/keys",
-		strings.NewReader(`{"name":"k1","identity_id":"`+identity.ID+`"}`)))
+		strings.NewReader(`{"name":"k1","identity_id":"`+identity.ID+`","allowed_tools":["get_status"]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -227,7 +227,7 @@ func TestMCPExportRoleNoneKeepsAuthorization(t *testing.T) {
 	}
 	// Create via admin API to get plaintext.
 	req := withAdmin(httptest.NewRequest(http.MethodPost, "/v0/settings/mcp-export/keys",
-		strings.NewReader(`{"name":"k","identity_id":"idt_auth"}`)))
+		strings.NewReader(`{"name":"k","identity_id":"idt_auth","allowed_tools":["get_status"]}`)))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rr, req)

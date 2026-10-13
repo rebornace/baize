@@ -126,7 +126,7 @@ func DiscoverTools(ctx context.Context, session *mcp.ClientSession, connectorID 
 
 	tools := make([]store.Tool, 0, len(result.Tools))
 	for _, tool := range result.Tools {
-		tools = append(tools, store.Tool{
+		row := store.Tool{
 			ConnectorID: connectorID,
 			Name:        tool.Name,
 			Source:      store.ToolSourceMCP,
@@ -134,7 +134,9 @@ func DiscoverTools(ctx context.Context, session *mcp.ClientSession, connectorID 
 			Title:       tool.Title,
 			Description: tool.Description,
 			InputSchema: inputSchemaMap(tool.InputSchema),
-		})
+		}
+		ApplyAnnotationHints(&row, tool.Annotations)
+		tools = append(tools, row)
 	}
 	return tools, nil
 }

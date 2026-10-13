@@ -34,6 +34,20 @@ describe('ToolCard login_required', () => {
     const html = renderToStaticMarkup(<ToolCard block={tool()} catalog={catalog} />)
     expect(html).toContain(LOGIN_AT.goLogin)
     expect(html).toContain('此工具需要先登录')
+    expect(html).toContain(LOGIN_AT.localHint)
+  })
+
+  it('shows cloud risk copy and browser login when provided', () => {
+    const html = renderToStaticMarkup(
+      <ToolCard
+        block={tool()}
+        catalog={catalog}
+        cloudModelRisk
+        onBrowserLogin={() => {}}
+      />,
+    )
+    expect(html).toContain(LOGIN_AT.cloudRisk)
+    expect(html).toContain(LOGIN_AT.browserLogin)
   })
 
   it('hides 去登录 in readOnly history', () => {
@@ -93,6 +107,19 @@ describe('ToolCard onGoLoginSkill', () => {
     })
     expect(onGoLoginSkill).toHaveBeenCalledTimes(1)
     expect(onGoLoginSkill).toHaveBeenCalledWith('login-crm')
+  })
+
+  it('click 浏览器登录 calls onBrowserLogin with connector_id', () => {
+    const onBrowserLogin = vi.fn()
+    render(<ToolCard block={tool()} catalog={catalog} onBrowserLogin={onBrowserLogin} />)
+    const btn = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === LOGIN_AT.browserLogin,
+    )
+    expect(btn).toBeTruthy()
+    act(() => {
+      btn!.click()
+    })
+    expect(onBrowserLogin).toHaveBeenCalledWith('crm')
   })
 
   it('normalizes connector_id the same way as backend SkillID', () => {

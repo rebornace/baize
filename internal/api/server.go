@@ -19,6 +19,7 @@ import (
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/eventbus"
+	"github.com/rebornace/baize/internal/hostedlogin"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
@@ -99,7 +100,14 @@ type Server struct {
 	Runner       Runner
 	SkillCatalog *skill.Catalog
 	Identities   identity.Store
-	Messages     conversation.Store // optional; nil = no message persistence
+	// HostedSessions backs public /v0/auth/hosted/{id} login pages. nil = routes 503.
+	HostedSessions hostedlogin.Sessions
+	// HostedLoginLimiter rate-limits public hosted login by IP + session. nil = lazy default.
+	HostedLoginLimiter *hostedlogin.RateLimiter
+	hostedLoginOnce    sync.Once
+	// HostedLoginAudit records session issue / submit outcomes without secrets. nil = LogAuditor.
+	HostedLoginAudit hostedlogin.Auditor
+	Messages         conversation.Store // optional; nil = no message persistence
 	// skillsConvGen tracks the Catalog.Generation last aligned for each
 	// conversation (skills reload / auto-dirty). Process-local; after restart
 	// missing keys are treated as 0 so the first run realigns.
@@ -212,6 +220,8 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 		Registry:         reg,
 		Runner:           runner,
 		Identities:       identity.NewMemoryStore(),
+		HostedSessions:   hostedlogin.NewMemorySessions(0),
+		HostedLoginAudit: hostedlogin.LogAuditor{},
 		MCPExportEnabled: true,
 		OAuthSessions:    mcpoauth.NewSessionStore(),
 		mux:              http.NewServeMux(),
@@ -229,6 +239,22 @@ func (s *Server) inboxLimiter() *inbox.RateLimiter {
 		}
 	})
 	return s.InboxLimiter
+}
+
+func (s *Server) hostedLoginLimiter() *hostedlogin.RateLimiter {
+	s.hostedLoginOnce.Do(func() {
+		if s.HostedLoginLimiter == nil {
+			s.HostedLoginLimiter = hostedlogin.NewRateLimiter(hostedlogin.DefaultRateLimit, hostedlogin.DefaultRateWindow)
+		}
+	})
+	return s.HostedLoginLimiter
+}
+
+func (s *Server) hostedAudit() hostedlogin.Auditor {
+	if s.HostedLoginAudit != nil {
+		return s.HostedLoginAudit
+	}
+	return hostedlogin.LogAuditor{}
 }
 
 // publicBaseURL returns the advertised Runtime root for OAuth redirects and
@@ -435,6 +461,8 @@ func (s *Server) identityStoreKey(convID string) string {
 func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /v0/auth/hosted/{id}", s.handleHostedLoginGet)
+	s.mux.HandleFunc("POST /v0/auth/hosted/{id}", s.handleHostedLoginPost)
 	s.mux.HandleFunc("GET /v0/ui-config", s.handleUIConfig)
 	s.mux.HandleFunc("GET /v0/me", s.handleMe)
 	s.mux.HandleFunc("PUT /v0/agents/{id}", s.handlePutAgent)
@@ -442,6 +470,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors", s.handleListConnectors)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
+	s.mux.HandleFunc("POST /v0/connectors/{id}/hosted-login/draft", s.handlePostConnectorHostedLoginDraft)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/start", s.handleMCPOAuthStart)
 	s.mux.HandleFunc("GET /v0/connectors/{id}/mcp/oauth/callback", s.handleMCPOAuthCallback)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/mcp/oauth/disconnect", s.handleMCPOAuthDisconnect)
@@ -468,6 +497,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/workspaces", s.handleListWorkspaces)
 	s.mux.HandleFunc("POST /v0/workspaces", s.handleCreateWorkspace)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/hosted-login", s.handlePostConversationHostedLogin)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities", s.handlePostIdentity)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/identities/{iid}/default", s.handleSetDefaultIdentity)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/identities/{iid}", s.handleDeleteIdentity)
@@ -536,6 +566,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/identities/{id}", s.handleDeleteMCPExportIdentity)
 	s.mux.HandleFunc("GET /v0/settings/mcp-export/keys", s.handleListMCPExportKeys)
 	s.mux.HandleFunc("POST /v0/settings/mcp-export/keys", s.handlePostMCPExportKey)
+	s.mux.HandleFunc("PATCH /v0/settings/mcp-export/keys/{id}", s.handlePatchMCPExportKey)
 	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/keys/{id}", s.handleDeleteMCPExportKey)
 	s.mux.HandleFunc("GET /v0/settings/models", s.handleListModelProfiles)
 	s.mux.HandleFunc("POST /v0/settings/models", s.handlePostModelProfile)

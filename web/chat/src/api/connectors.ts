@@ -93,6 +93,20 @@ export interface MCPOAuthStartResult {
   authorization_url: string
 }
 
+export interface HostedLoginField {
+  name: string
+  label?: string
+  input?: string
+  arg: string
+}
+
+export interface HostedLoginRecipe {
+  enabled?: boolean
+  login_tool?: string
+  mode?: string
+  fields?: HostedLoginField[]
+}
+
 export interface ConnectorAuth {
   mode?: string
   static?: { headers?: Record<string, string> }
@@ -105,6 +119,7 @@ export interface ConnectorAuth {
     header_template?: string
     default_scheme?: string
   }
+  hosted_login?: HostedLoginRecipe
 }
 
 export type ImportFormat = 'auto' | 'openapi3' | 'swagger2' | 'postman'
@@ -172,6 +187,16 @@ export async function putConnector(id: string, body: PutConnectorBody): Promise<
     body: JSON.stringify(body),
   })
   return parseConnectorJSON<ConnectorInfo>(res)
+}
+
+export async function draftConnectorHostedLogin(
+  id: string,
+): Promise<{ hosted_login: HostedLoginRecipe; source: string }> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}/hosted-login/draft`, {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseConnectorJSON<{ hosted_login: HostedLoginRecipe; source: string }>(res)
 }
 
 export async function deleteConnectorTool(connectorId: string, name: string): Promise<void> {

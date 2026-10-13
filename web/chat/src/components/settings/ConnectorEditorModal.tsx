@@ -2,13 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Field, Input, Modal, Select, Textarea } from '../ui'
 import { CONNECTORS, TOOLS } from '../../strings'
 import { FilePickerButton } from './FilePickerButton'
-import type { ConnectorAuth, ImportFormat, MCPConfig } from '../../api'
+import { draftConnectorHostedLogin, type ConnectorAuth, type ImportFormat, type MCPConfig } from '../../api'
 import { CaptureSettingsFields } from '../../pages/CaptureSettingsFields'
 import {
   captureToDraft,
   mergeAuthWithCapture,
   type CaptureDraft,
 } from '../../pages/captureForm'
+import { HostedLoginSettingsFields } from '../../pages/HostedLoginSettingsFields'
+import {
+  hostedLoginToDraft,
+  mergeAuthWithHostedLogin,
+  type HostedLoginDraft,
+} from '../../pages/hostedLoginForm'
 import { validateConnection } from '../../pages/connectorForms/validate'
 import {
   connectorToMcpForm,
@@ -76,6 +82,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [mcpErrors, setMcpErrors] = useState<McpFieldErrors>({})
   const [executionCallbackUrl, setExecutionCallbackUrl] = useState('')
   const [captureDraft, setCaptureDraft] = useState<CaptureDraft>(() => captureToDraft(undefined))
+  const [hostedDraft, setHostedDraft] = useState<HostedLoginDraft>(() => hostedLoginToDraft(undefined))
+  const [hostedInferBusy, setHostedInferBusy] = useState(false)
   const isMcp = kind === 'mcp'
   const isOpenapi = kind === 'openapi'
 
@@ -97,6 +105,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setMcpErrors({})
     setExecutionCallbackUrl(init.executionCallbackUrl ?? '')
     setCaptureDraft(captureToDraft(init.auth?.capture))
+    setHostedDraft(hostedLoginToDraft(init.auth?.hosted_login))
+    setHostedInferBusy(false)
   }, [open])
 
   if (!open) return null
@@ -147,7 +157,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         return
       }
       setFieldErrors({})
-      const advancedAuth = mergeAuthWithCapture(initialRef.current.auth, captureDraft)
+      const withCapture = mergeAuthWithCapture(initialRef.current.auth, captureDraft)
+      const advancedAuth = mergeAuthWithHostedLogin(withCapture, hostedDraft)
       const callbackUrl = executionCallbackUrl.trim()
       if (kind === 'openapi') {
         conn = {
@@ -365,6 +376,29 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                 connectorType={kind === 'plugin' ? 'http' : 'openapi'}
                 draft={captureDraft}
                 onDraftChange={(patch) => setCaptureDraft((d) => ({ ...d, ...patch }))}
+              />
+            </section>
+            <section className="settings-advanced-block">
+              <h4 className="settings-advanced-title">{CONNECTORS.hostedLoginSection}</h4>
+              <HostedLoginSettingsFields
+                draft={hostedDraft}
+                disabled={saving}
+                canInfer={editing && Boolean(id.trim())}
+                inferBusy={hostedInferBusy}
+                onDraftChange={(patch) => setHostedDraft((d) => ({ ...d, ...patch }))}
+                onInferDraft={async () => {
+                  if (!id.trim()) return
+                  setHostedInferBusy(true)
+                  setFormError(null)
+                  try {
+                    const res = await draftConnectorHostedLogin(id.trim())
+                    setHostedDraft(hostedLoginToDraft(res.hosted_login))
+                  } catch (e) {
+                    setFormError(props.formatError(e) || CONNECTORS.hostedLoginInferFailed)
+                  } finally {
+                    setHostedInferBusy(false)
+                  }
+                }}
               />
             </section>
           </details>

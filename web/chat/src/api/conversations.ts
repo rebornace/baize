@@ -1,6 +1,21 @@
 import { authInit, parseJSON } from './http'
 import type { ChatMessage, IdentityView } from './types'
 
+export async function createConversationHostedLogin(
+  conversationId: string,
+  connectorId: string,
+): Promise<{ session_id: string; url: string }> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/hosted-login`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ connector_id: connectorId }),
+    },
+  )
+  return parseJSON<{ session_id: string; url: string }>(res)
+}
+
 export async function listIdentities(conversationId: string): Promise<IdentityView[]> {
   const res = await fetch(
     `/v0/conversations/${encodeURIComponent(conversationId)}/identities`,

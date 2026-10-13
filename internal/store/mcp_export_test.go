@@ -88,6 +88,24 @@ func testMCPExportIdentityKeyCRUD(t *testing.T, s store.Store) {
 		t.Fatalf("key_hash leaked in JSON: %s", raw)
 	}
 
+	key.AllowedTools = []string{"tool_a", "tool_b"}
+	if err := s.UpdateMCPExportKey(key); err != nil {
+		t.Fatalf("UpdateMCPExportKey: %v", err)
+	}
+	gotKey, err := s.GetMCPExportKey(key.ID)
+	if err != nil || len(gotKey.AllowedTools) != 2 || gotKey.AllowedTools[0] != "tool_a" {
+		t.Fatalf("after update key=%+v err=%v", gotKey, err)
+	}
+	gotKey.Name = "Renamed"
+	gotKey.AllowedTools = []string{"only_one"}
+	if err := s.UpdateMCPExportKey(gotKey); err != nil {
+		t.Fatalf("UpdateMCPExportKey rename: %v", err)
+	}
+	gotKey, err = s.GetMCPExportKey(key.ID)
+	if err != nil || gotKey.Name != "Renamed" || len(gotKey.AllowedTools) != 1 {
+		t.Fatalf("renamed key=%+v err=%v", gotKey, err)
+	}
+
 	if err := s.RevokeMCPExportKey(key.ID); err != nil {
 		t.Fatalf("RevokeMCPExportKey: %v", err)
 	}

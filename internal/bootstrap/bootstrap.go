@@ -43,6 +43,7 @@ import (
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/mcpexport"
 	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/middleware"
 	// 内置默认 middleware 驱动（memory）随 bootstrap 一起注册：它是零配置
@@ -236,6 +237,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	if err := store.MigrateStore(st); err != nil {
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("settings secrets: %w", err)
+	}
+	if err := mcpexport.MigrateAllowlists(st); err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("mcp export allowlist migration: %w", err)
 	}
 
 	// Resolve the active LLM provider. The mock/demo path (provider unset or

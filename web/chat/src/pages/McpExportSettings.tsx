@@ -110,13 +110,27 @@ export function McpExportSettings() {
           <McpExportKeysSection
             identities={s.identities}
             keys={s.keys}
+            tools={s.tools}
             busy={s.busy}
             keyName={s.keyName}
             setKeyName={s.setKeyName}
             keyIdentityId={s.keyIdentityId}
             setKeyIdentityId={s.setKeyIdentityId}
+            keyAllowedTools={s.keyAllowedTools}
+            setKeyAllowedTools={s.setKeyAllowedTools}
             keyFormError={s.keyFormError}
+            editingKeyId={s.editingKeyId}
+            keyEditName={s.keyEditName}
+            setKeyEditName={s.setKeyEditName}
+            keyEditAllowedTools={s.keyEditAllowedTools}
+            setKeyEditAllowedTools={s.setKeyEditAllowedTools}
+            keyEditSlots={s.keyEditSlots}
+            setKeyEditSlots={s.setKeyEditSlots}
+            keyEditFormError={s.keyEditFormError}
             onCreateKey={s.onCreateKey}
+            startEditKey={s.startEditKey}
+            cancelEditKey={s.cancelEditKey}
+            onSaveEditKey={s.onSaveEditKey}
             identityName={s.identityName}
             setConfirm={s.setConfirm}
           />
