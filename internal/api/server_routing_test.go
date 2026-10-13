@@ -68,6 +68,7 @@ func TestPostRunEmitsModelRoutedEvent(t *testing.T) {
 	}
 	if routed == nil {
 		t.Fatalf("missing model.routed event; events=%+v", evs)
+		return
 	}
 	if got := routed.Data["desired_tier"]; got != store.AutoTierLight {
 		t.Fatalf("desired_tier=%v want %s", got, store.AutoTierLight)

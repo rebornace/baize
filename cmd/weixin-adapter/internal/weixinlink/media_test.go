@@ -183,6 +183,7 @@ func TestMediaRefFromFileItemTypesByExtension(t *testing.T) {
 	ref := mediaRefFromItem(item)
 	if ref == nil {
 		t.Fatal("expected ref")
+		return
 	}
 	if ref.Kind != "file" {
 		t.Fatalf("Kind = %q, want file", ref.Kind)

@@ -41,6 +41,7 @@ func TestServerRegisterChannel(t *testing.T) {
 	}
 	if h == nil {
 		t.Fatal("returned handle is nil")
+		return
 	}
 	if h.Name != "weixin" {
 		t.Fatalf("handle Name=%q want %q", h.Name, "weixin")
