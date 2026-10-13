@@ -291,7 +291,7 @@
 .goal-bar-more:hover:not(:disabled),
 .goal-bar-more:focus-visible {
   border-color: var(--accent, var(--border));
-  background: var(--surface-hover, rgba(0, 0, 0, 0.05));
+  background: var(--hover);
   outline: none;
 }
 
@@ -311,7 +311,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 4px);
   background: var(--surface, var(--bg));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-2);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -334,7 +334,7 @@
 
 .goal-bar-menu-item:hover:not(:disabled),
 .goal-bar-menu-item:focus-visible {
-  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  background: var(--hover);
   outline: none;
 }
 
@@ -400,7 +400,7 @@
 
 .goal-bar-picker-item:hover:not(:disabled),
 .goal-bar-picker-item:focus-visible {
-  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+  background: var(--hover);
   outline: none;
 }
 

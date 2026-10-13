@@ -127,7 +127,7 @@ func TestSpecsForRunIncludesGoalToolsWhenEnabled(t *testing.T) {
 		return map[string]any{"ok": true}, false, nil
 	})
 	e := &Engine{
-		Tools: reg,
+		Tools:    reg,
 		Settings: fakeKnobs{k: runtimecfg.Knobs{ActiveGoalEnabled: true}},
 	}
 	for _, tm := range e.GoalTools() {

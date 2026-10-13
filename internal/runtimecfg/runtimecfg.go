@@ -328,34 +328,34 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 // KnobsFieldFlags reports which knobs are overridden in the KV. Field tags
 // are the wire keys consumed by the HTTP layer (task 6).
 type KnobsFieldFlags struct {
-	MaxMessages           bool `json:"max_messages"`
-	MaxSteps              bool `json:"max_steps"`
-	ToolTimeout           bool `json:"tool_timeout_seconds"`
-	CompactionEnabled     bool `json:"compaction_enabled"`
-	CompactThreshold      bool `json:"compact_threshold"`
-	CompactReserveTokens  bool `json:"compact_reserve_tokens"`
-	CompactKeepRecent     bool `json:"compact_keep_recent"`
-	CompactSummaryTimeout bool `json:"compact_summary_timeout_seconds"`
-	MemoryEnabled         bool `json:"memory_enabled"`
-	MemoryAutoExtract     bool `json:"memory_auto_extract"`
-	DecideEnabled         bool `json:"decide_enabled"`
-	DecideMemoryEnabled   bool `json:"decide_memory_enabled"`
-	DecideProfileID       bool `json:"decide_profile_id"`
-	DecideSystemOneBase   bool `json:"decide_systemone_base_url"`
-	DecideSystemOneKey    bool `json:"decide_systemone_api_key"`
-	DecideSystemOneModel  bool `json:"decide_systemone_model"`
-	DecideToolRouting     bool `json:"decide_tool_routing_enabled"`
-	DecideToolThreshold   bool `json:"decide_tool_threshold"`
-	DecideToolPreTopK     bool `json:"decide_tool_pre_topk"`
-	DecideToolChoice      bool `json:"decide_tool_choice_enabled"`
-	DecideToolPrune       bool `json:"decide_tool_prune_enabled"`
-	DecideToolPruneThresh bool `json:"decide_tool_prune_threshold"`
-	DecideToolPruneMax    bool `json:"decide_tool_prune_max_judged"`
-	DecideRoute           bool `json:"decide_route_enabled"`
-	DecideRouteMinRunes   bool `json:"decide_route_min_runes"`
-	ContextProjection     bool `json:"context_projection_enabled"`
-	ActiveGoalEnabled     bool `json:"active_goal_enabled"`
-	ActiveGoalMaxDepth    bool `json:"active_goal_max_depth"`
+	MaxMessages            bool `json:"max_messages"`
+	MaxSteps               bool `json:"max_steps"`
+	ToolTimeout            bool `json:"tool_timeout_seconds"`
+	CompactionEnabled      bool `json:"compaction_enabled"`
+	CompactThreshold       bool `json:"compact_threshold"`
+	CompactReserveTokens   bool `json:"compact_reserve_tokens"`
+	CompactKeepRecent      bool `json:"compact_keep_recent"`
+	CompactSummaryTimeout  bool `json:"compact_summary_timeout_seconds"`
+	MemoryEnabled          bool `json:"memory_enabled"`
+	MemoryAutoExtract      bool `json:"memory_auto_extract"`
+	DecideEnabled          bool `json:"decide_enabled"`
+	DecideMemoryEnabled    bool `json:"decide_memory_enabled"`
+	DecideProfileID        bool `json:"decide_profile_id"`
+	DecideSystemOneBase    bool `json:"decide_systemone_base_url"`
+	DecideSystemOneKey     bool `json:"decide_systemone_api_key"`
+	DecideSystemOneModel   bool `json:"decide_systemone_model"`
+	DecideToolRouting      bool `json:"decide_tool_routing_enabled"`
+	DecideToolThreshold    bool `json:"decide_tool_threshold"`
+	DecideToolPreTopK      bool `json:"decide_tool_pre_topk"`
+	DecideToolChoice       bool `json:"decide_tool_choice_enabled"`
+	DecideToolPrune        bool `json:"decide_tool_prune_enabled"`
+	DecideToolPruneThresh  bool `json:"decide_tool_prune_threshold"`
+	DecideToolPruneMax     bool `json:"decide_tool_prune_max_judged"`
+	DecideRoute            bool `json:"decide_route_enabled"`
+	DecideRouteMinRunes    bool `json:"decide_route_min_runes"`
+	ContextProjection      bool `json:"context_projection_enabled"`
+	ActiveGoalEnabled      bool `json:"active_goal_enabled"`
+	ActiveGoalMaxDepth     bool `json:"active_goal_max_depth"`
 	ActiveGoalMaxTextRunes bool `json:"active_goal_max_text_runes"`
 }
 
@@ -376,31 +376,31 @@ func (h *Holder) KnobsView() KnobsView {
 	return KnobsView{
 		Effective: h.Knobs(),
 		Overridden: KnobsFieldFlags{
-			MaxMessages:           ko.MaxMessages != nil,
-			MaxSteps:              ko.MaxSteps != nil,
-			ToolTimeout:           ko.ToolTimeoutSeconds != nil,
-			CompactionEnabled:     ko.CompactionEnabled != nil,
-			CompactThreshold:      ko.CompactThreshold != nil,
-			CompactReserveTokens:  ko.CompactReserveTokens != nil,
-			CompactKeepRecent:     ko.CompactKeepRecent != nil,
-			CompactSummaryTimeout: ko.CompactSummaryTimeoutSec != nil,
-			MemoryEnabled:         ko.MemoryEnabled != nil,
-			MemoryAutoExtract:     ko.MemoryAutoExtract != nil,
-			DecideEnabled:         ko.DecideEnabled != nil,
-			DecideMemoryEnabled:   ko.DecideMemoryEnabled != nil,
-			DecideProfileID:       ko.DecideProfileID != nil,
-			DecideSystemOneBase:   ko.DecideSystemOneBaseURL != nil,
-			DecideSystemOneKey:    ko.DecideSystemOneAPIKey != nil,
-			DecideSystemOneModel:  ko.DecideSystemOneModel != nil,
-			DecideToolRouting:     ko.DecideToolRoutingEnabled != nil,
-			DecideToolThreshold:   ko.DecideToolThreshold != nil,
-			DecideToolPreTopK:     ko.DecideToolPreTopK != nil,
-			DecideToolChoice:      ko.DecideToolChoiceEnabled != nil,
-			DecideToolPrune:       ko.DecideToolPruneEnabled != nil,
-			DecideToolPruneThresh: ko.DecideToolPruneThreshold != nil,
-			DecideToolPruneMax:    ko.DecideToolPruneMaxJudged != nil,
-			DecideRoute:           ko.DecideRouteEnabled != nil,
-			DecideRouteMinRunes:   ko.DecideRouteMinRunes != nil,
+			MaxMessages:            ko.MaxMessages != nil,
+			MaxSteps:               ko.MaxSteps != nil,
+			ToolTimeout:            ko.ToolTimeoutSeconds != nil,
+			CompactionEnabled:      ko.CompactionEnabled != nil,
+			CompactThreshold:       ko.CompactThreshold != nil,
+			CompactReserveTokens:   ko.CompactReserveTokens != nil,
+			CompactKeepRecent:      ko.CompactKeepRecent != nil,
+			CompactSummaryTimeout:  ko.CompactSummaryTimeoutSec != nil,
+			MemoryEnabled:          ko.MemoryEnabled != nil,
+			MemoryAutoExtract:      ko.MemoryAutoExtract != nil,
+			DecideEnabled:          ko.DecideEnabled != nil,
+			DecideMemoryEnabled:    ko.DecideMemoryEnabled != nil,
+			DecideProfileID:        ko.DecideProfileID != nil,
+			DecideSystemOneBase:    ko.DecideSystemOneBaseURL != nil,
+			DecideSystemOneKey:     ko.DecideSystemOneAPIKey != nil,
+			DecideSystemOneModel:   ko.DecideSystemOneModel != nil,
+			DecideToolRouting:      ko.DecideToolRoutingEnabled != nil,
+			DecideToolThreshold:    ko.DecideToolThreshold != nil,
+			DecideToolPreTopK:      ko.DecideToolPreTopK != nil,
+			DecideToolChoice:       ko.DecideToolChoiceEnabled != nil,
+			DecideToolPrune:        ko.DecideToolPruneEnabled != nil,
+			DecideToolPruneThresh:  ko.DecideToolPruneThreshold != nil,
+			DecideToolPruneMax:     ko.DecideToolPruneMaxJudged != nil,
+			DecideRoute:            ko.DecideRouteEnabled != nil,
+			DecideRouteMinRunes:    ko.DecideRouteMinRunes != nil,
 			ContextProjection:      ko.ContextProjectionEnabled != nil,
 			ActiveGoalEnabled:      ko.ActiveGoalEnabled != nil,
 			ActiveGoalMaxDepth:     ko.ActiveGoalMaxDepth != nil,
