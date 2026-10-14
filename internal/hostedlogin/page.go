@@ -40,7 +40,7 @@ button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background
 	if pageURL != "" {
 		if img, err := qrDataURL(pageURL); err == nil {
 			b.WriteString(`<p class="meta">Scan to open this page on your phone:</p>`)
-			b.WriteString(fmt.Sprintf(`<img class="qr" alt="Login QR" width="160" height="160" src="%s">`, img))
+			fmt.Fprintf(&b, `<img class="qr" alt="Login QR" width="160" height="160" src="%s">`, img)
 		}
 	}
 	if strings.TrimSpace(errMsg) != "" {
@@ -49,7 +49,7 @@ button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background
 		b.WriteString("</p>")
 	}
 	b.WriteString(`<form method="POST" action="">`)
-	b.WriteString(fmt.Sprintf(`<input type="hidden" name="csrf" value="%s">`, html.EscapeString(sess.CSRF)))
+	fmt.Fprintf(&b, `<input type="hidden" name="csrf" value="%s">`, html.EscapeString(sess.CSRF))
 	fields := sess.Fields
 	if len(fields) == 0 {
 		switch sess.Mode {
@@ -79,8 +79,8 @@ button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background
 		b.WriteString("\">")
 		b.WriteString(html.EscapeString(label))
 		b.WriteString("</label>")
-		b.WriteString(fmt.Sprintf(`<input id="%s" name="%s" type="%s" autocomplete="off" required>`,
-			html.EscapeString(name), html.EscapeString(name), html.EscapeString(input)))
+		fmt.Fprintf(&b, `<input id="%s" name="%s" type="%s" autocomplete="off" required>`,
+			html.EscapeString(name), html.EscapeString(name), html.EscapeString(input))
 	}
 	b.WriteString(`<button type="submit">Sign in</button></form></body></html>`)
 	return b.String()
@@ -109,8 +109,8 @@ func writeMethodSwitch(b *strings.Builder, sess Session) {
 		b.WriteString(`<li><form method="POST" action="`)
 		b.WriteString(html.EscapeString(action))
 		b.WriteString(`" style="display:inline">`)
-		b.WriteString(fmt.Sprintf(`<input type="hidden" name="csrf" value="%s">`, html.EscapeString(sess.CSRF)))
-		b.WriteString(fmt.Sprintf(`<input type="hidden" name="method_id" value="%s">`, html.EscapeString(m.ID)))
+		fmt.Fprintf(b, `<input type="hidden" name="csrf" value="%s">`, html.EscapeString(sess.CSRF))
+		fmt.Fprintf(b, `<input type="hidden" name="method_id" value="%s">`, html.EscapeString(m.ID))
 		b.WriteString(`<button type="submit" style="background:none;border:0;padding:0;color:#2563eb;cursor:pointer;text-decoration:underline;font:inherit">`)
 		b.WriteString(html.EscapeString(label))
 		b.WriteString(`</button></form></li>`)
