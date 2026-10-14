@@ -59,6 +59,7 @@ func MergeCatalog(opts MergeOpts) []store.Tool {
 			row = ex
 			row.Method = d.Method
 			row.Path = d.Path
+			row.InputSchema = d.InputSchema
 			if !ex.DescriptionCustom {
 				row.Description = d.Description
 			}

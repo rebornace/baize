@@ -108,6 +108,18 @@ Outbound Run events: `url`, `headers`.
 
 - `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls` and to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`). Empty → no callback injection and no externally clickable hosted-login URL. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
 - `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing.
+- `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; export failures are fail-open.
+- `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
+
+### Identity model (passthrough / export identity ≠ IdP OBO)
+
+| Mechanism | Meaning | Not |
+|-----------|---------|-----|
+| `auth.mode: passthrough` | That Chat Run forwards whitelisted request headers (often `Authorization`) to downstream HTTP | End-user IdP on-behalf-of / token exchange |
+| Export identity / `identity_slots` | Downstream **business account** credentials bound to an MCP export Key (Headers); permission boundary = what that account can do | Full OIDC OBO, mTLS, or replaying the end-user IdP token |
+| Settings → Accounts (workspace) | Captured Chat logins, isolated per product workspace | The MCP export identity pool |
+
+Per-tenant cgroup / egress sandboxing and Prometheus `/metrics` are **out of scope** for this version (sandboxing belongs to the orchestrator; metrics later).
 
 ### `inbox`
 

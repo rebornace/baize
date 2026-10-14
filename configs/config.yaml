@@ -6,6 +6,8 @@ listen: ":8080"
 #   public_base_url: "https://baize.example:8080"  # 侧车 callback + 托管登录/MCP 重登链接基址；空则不注入 callback、外网打不开托管页
 #   callback_hmac_secret: ""                       # 空则启动时生成 ephemeral 密钥
 #   callback_token_ttl_sec: 3600
+#   otel_otlp_endpoint: ""                         # 空=关闭；例 http://localhost:4318（OTLP HTTP traces）
+#   otel_service_name: "baize"                     # endpoint 非空时的服务名，默认 baize
 store:
   driver: sqlite
   sqlite_path: ./data/baize.db

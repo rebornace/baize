@@ -45,6 +45,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/mcpexport"
 	"github.com/rebornace/baize/internal/memory"
+	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/middleware"
 	// 内置默认 middleware 驱动（memory）随 bootstrap 一起注册：它是零配置
 	// 默认驱动，且 bootstrap 包自身的测试/StartForTest 集成测试不经 main。
@@ -453,6 +454,19 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
 	srv.ToolRetrieval = toolRet
+	otelExp, otelErr := otelx.Start(context.Background(), otelx.Config{
+		Endpoint:    cfg.Runtime.OtelOTLPEndpoint,
+		ServiceName: cfg.Runtime.OtelServiceName,
+	})
+	if otelErr != nil {
+		otelx.LogStartError(otelErr)
+	} else if otelExp != nil {
+		otelExp.AttachHub(hub)
+		srv.MCPExportTrace = otelExp.RecordExportCall
+		closer.stops = append(closer.stops, func() {
+			_ = otelExp.Shutdown(context.Background())
+		})
+	}
 	sysOneRet := systemoneenable.NewManager(st, func(c systemoneenable.Config) {
 		if decideSettingsHolder == nil {
 			return
@@ -1180,7 +1194,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 		approval := cfg.Connector.RequireApproval
 		requireApproval = &approval
 	}
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store:                   st,
 		Registry:                reg,
 		Identities:              identities,
@@ -1225,7 +1239,7 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 		if c.ID == cfg.Connector.ID {
 			continue
 		}
-		_, _, err := connector.Apply(connector.ApplyInput{
+		_, _, _, err := connector.Apply(connector.ApplyInput{
 			Store:                st,
 			Registry:             reg,
 			Identities:           identities,

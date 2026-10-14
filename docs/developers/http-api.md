@@ -22,7 +22,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | 组 | 代表路径 | 说明 |
 |----|----------|------|
 | Agents | `PUT/GET /v0/agents/{id}` | Agent 定义 |
-| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors` | OpenAPI / HTTP 插件 / MCP 等 |
+| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 成功响应可含 `catalog_diff`（新增/删除/变更摘要） |
 | Connector tools | `POST /v0/connectors/{id}/tools`、`DELETE .../tools/{name}` | 手加 / 删 `extra` REST 工具 |
 | Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`、`.../suggest`、`.../draft`、`.../test-session` | 规则候选 / AI 建议 / 草稿 / 测试托管 session（admin；对应设置「对外登录」） |
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |

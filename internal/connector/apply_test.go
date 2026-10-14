@@ -170,7 +170,7 @@ func TestApplyPreservesRequireLoginWhenOmitted(t *testing.T) {
 	}
 	in1 := base
 	in1.RequireLogin = ptr([]string{"getMe"})
-	if _, _, err := connector.Apply(in1); err != nil {
+	if _, _, _, err := connector.Apply(in1); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	if !reg.RequiresLogin("getMe") {
@@ -179,7 +179,7 @@ func TestApplyPreservesRequireLoginWhenOmitted(t *testing.T) {
 
 	in2 := base
 	in2.RequireLogin = nil
-	if _, _, err := connector.Apply(in2); err != nil {
+	if _, _, _, err := connector.Apply(in2); err != nil {
 		t.Fatalf("second Apply: %v", err)
 	}
 	if !reg.RequiresLogin("getMe") {
@@ -190,7 +190,7 @@ func TestApplyPreservesRequireLoginWhenOmitted(t *testing.T) {
 	in3 := base
 	in3.Spec = probeSpec
 	in3.RequireLogin = nil
-	if _, _, err := connector.Apply(in3); err != nil {
+	if _, _, _, err := connector.Apply(in3); err != nil {
 		t.Fatalf("third Apply: %v", err)
 	}
 	if !reg.RequiresLogin("getMe") {
@@ -214,7 +214,7 @@ func TestApplyOmitsRequireLoginDropsDisappearedFromStore(t *testing.T) {
 	}
 	in1 := base
 	in1.RequireLogin = ptr([]string{"getMe", "probe"})
-	if _, _, err := connector.Apply(in1); err != nil {
+	if _, _, _, err := connector.Apply(in1); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	c1, err := st.GetConnector("c")
@@ -229,7 +229,7 @@ func TestApplyOmitsRequireLoginDropsDisappearedFromStore(t *testing.T) {
 	in2 := base
 	in2.Spec = writeLoginGetMeSpec(t)
 	in2.RequireLogin = nil
-	if _, _, err := connector.Apply(in2); err != nil {
+	if _, _, _, err := connector.Apply(in2); err != nil {
 		t.Fatalf("second Apply: %v", err)
 	}
 	if !reg.RequiresLogin("getMe") {
@@ -275,12 +275,12 @@ func TestApplyEmptyRequireLoginClears(t *testing.T) {
 	}
 	in1 := base
 	in1.RequireLogin = ptr([]string{"getMe"})
-	if _, _, err := connector.Apply(in1); err != nil {
+	if _, _, _, err := connector.Apply(in1); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	in2 := base
 	in2.RequireLogin = ptr([]string{})
-	if _, _, err := connector.Apply(in2); err != nil {
+	if _, _, _, err := connector.Apply(in2); err != nil {
 		t.Fatalf("second Apply: %v", err)
 	}
 	if reg.RequiresLogin("getMe") {
@@ -304,7 +304,7 @@ func TestApplyOmitsCaptureUsesLoginGlob(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "c", Type: "openapi", Spec: spec, BaseURL: srv.URL,
 		RequireLogin: ptr([]string{}),
@@ -352,7 +352,7 @@ func TestApplyHTTPPersistsAndCaptures(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "side", Type: "http", BaseURL: srv.URL,
 		RequireLogin: ptr([]string{"secure_ping"}),
@@ -409,7 +409,7 @@ func TestApplyEmptyStaticHeadersOK(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	login := []string(nil)
-	_, _, applyErr := connector.Apply(connector.ApplyInput{
+	_, _, _, applyErr := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: identity.NewMemoryStore(),
 		ID: "bs", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
 		RequireLogin: &login,
@@ -437,7 +437,7 @@ func TestApplyCatalogDisabledAndExtra(t *testing.T) {
 	}
 	in1 := base
 	in1.RequireLogin = ptr([]string{})
-	if _, _, err := connector.Apply(in1); err != nil {
+	if _, _, _, err := connector.Apply(in1); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	if _, ok := reg.Get("login"); !ok {
@@ -467,7 +467,7 @@ func TestApplyCatalogDisabledAndExtra(t *testing.T) {
 
 	in2 := base
 	in2.RequireLogin = nil
-	if _, _, err := connector.Apply(in2); err != nil {
+	if _, _, _, err := connector.Apply(in2); err != nil {
 		t.Fatalf("second Apply: %v", err)
 	}
 
@@ -514,7 +514,7 @@ func TestApplyBadSpecPreservesRowsAndRegistry(t *testing.T) {
 	}
 	in1 := base
 	in1.RequireLogin = ptr([]string{"getMe"})
-	if _, _, err := connector.Apply(in1); err != nil {
+	if _, _, _, err := connector.Apply(in1); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 
@@ -534,7 +534,7 @@ func TestApplyBadSpecPreservesRowsAndRegistry(t *testing.T) {
 	}
 	in2 := base
 	in2.Spec = badSpec
-	_, _, err := connector.Apply(in2)
+	_, _, _, err := connector.Apply(in2)
 	if err == nil {
 		t.Fatal("expected error from bad spec")
 	}
@@ -615,7 +615,7 @@ func TestApplyPluginConnectorExtraRowNotRegistered(t *testing.T) {
 	login := []string{}
 	in1 := base
 	in1.RequireLogin = &login
-	if _, _, err := connector.Apply(in1); err != nil {
+	if _, _, _, err := connector.Apply(in1); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	if _, ok := reg.Get("echo"); !ok {
@@ -637,7 +637,7 @@ func TestApplyPluginConnectorExtraRowNotRegistered(t *testing.T) {
 
 	in2 := base
 	in2.RequireLogin = nil
-	if _, _, err := connector.Apply(in2); err != nil {
+	if _, _, _, err := connector.Apply(in2); err != nil {
 		t.Fatalf("second Apply: %v", err)
 	}
 
@@ -670,7 +670,7 @@ func TestRegisterOneFromConnectorRegistersRow(t *testing.T) {
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
 
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "c", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
 		RequireLogin: ptr([]string{}),
@@ -725,7 +725,7 @@ func TestRegisterOneFromConnectorRejectsPluginExtra(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "side", Type: "http", BaseURL: srv.URL,
 		RequireLogin: ptr([]string{}),
@@ -811,7 +811,7 @@ func TestApplyOpenAPIEnterpriseCallback(t *testing.T) {
 	spec := writeEchoSpec(t)
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store:                st,
 		Registry:             reg,
 		ID:                   "c",

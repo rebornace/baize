@@ -55,7 +55,7 @@ func TestApplyOpenAPIVerbPathGetsForceDenyExport(t *testing.T) {
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
 
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "c", Type: "openapi", Spec: spec, BaseURL: "http://example.invalid",
 		Auth: store.ConnectorAuth{Mode: "static"},

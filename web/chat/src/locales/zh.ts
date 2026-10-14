@@ -740,6 +740,8 @@ export const zhPack = {
   deleteOk: '删除',
   saved: '已保存',
   deleted: '已删除',
+  catalogDiffLine: (added: number, removed: number, changed: number) =>
+    `工具目录：新增 ${added} · 删除 ${removed} · 变更 ${changed}`,
   toolsLink: '查看工具',
   toolCount: (n: number) => `${n} 个工具`,
   stepInfo: '连接信息',

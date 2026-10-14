@@ -59,7 +59,7 @@ func TestCatalogRestartMCP(t *testing.T) {
 	ids := identity.NewMemoryStore()
 	login := []string{}
 
-	_, _, err = connector.Apply(connector.ApplyInput{
+	_, _, _, err = connector.Apply(connector.ApplyInput{
 		Store:        st,
 		Registry:     reg,
 		Identities:   ids,

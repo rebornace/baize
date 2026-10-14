@@ -244,7 +244,7 @@ func (s *Server) handleMCPOAuthCallback(w http.ResponseWriter, r *http.Request) 
 	// Re-discover tools with the new Bearer so the catalog is usable after OAuth.
 	login := append([]string(nil), c.RequireLogin...)
 	approval := append([]string(nil), c.RequireApproval...)
-	if _, _, applyErr := connector.Apply(connector.ApplyInput{
+	if _, _, _, applyErr := connector.Apply(connector.ApplyInput{
 		Store:              s.Store,
 		Registry:           s.Registry,
 		Identities:         s.Identities,

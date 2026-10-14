@@ -61,7 +61,7 @@ type ApplyInput struct {
 // Store or Registry mutation. On error the Store catalog and the Registry are
 // left in the same state as before the call (no partial unregister, no dirty
 // writes).
-func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
+func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 	authCfg := authcred.Config{
 		Mode:        in.Auth.Mode,
 		Static:      authcred.Static{Headers: in.Auth.Static.Headers},
@@ -70,7 +70,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 	}
 	headers, err := authcred.ResolveDefaults(authCfg)
 	if err != nil {
-		return store.Connector{}, nil, fmt.Errorf("resolve connector auth: %w", err)
+		return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("resolve connector auth: %w", err)
 	}
 
 	typ := strings.TrimSpace(in.Type)
@@ -91,15 +91,15 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 	switch typ {
 	case "http":
 		if strings.TrimSpace(in.BaseURL) == "" {
-			return store.Connector{}, nil, fmt.Errorf("connector.base_url is required")
+			return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("connector.base_url is required")
 		}
 		cl := httpplugin.NewClient(in.BaseURL)
 		if err := cl.Healthz(context.Background()); err != nil {
-			return store.Connector{}, nil, err
+			return store.Connector{}, nil, CatalogDiff{}, err
 		}
 		tools, err := cl.ListTools(context.Background())
 		if err != nil {
-			return store.Connector{}, nil, err
+			return store.Connector{}, nil, CatalogDiff{}, err
 		}
 		for _, td := range tools {
 			name := strings.TrimSpace(td.Name)
@@ -120,7 +120,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			})
 		}
 		if len(discovered) == 0 {
-			return store.Connector{}, nil, httpplugin.ErrInvalidPlugin
+			return store.Connector{}, nil, CatalogDiff{}, httpplugin.ErrInvalidPlugin
 		}
 		capture = CaptureDefaults(identity.CaptureConfig{
 			ToolNameGlob:   in.Auth.Capture.ToolNameGlob,
@@ -132,14 +132,14 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		client = cl
 	case "openapi":
 		if strings.TrimSpace(in.Spec) == "" {
-			return store.Connector{}, nil, fmt.Errorf("connector.spec is required")
+			return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("connector.spec is required")
 		}
 		routes, err := loadOpenAPIRoutes(context.Background(), in.Blobs, in.Spec)
 		if err != nil {
-			return store.Connector{}, nil, err
+			return store.Connector{}, nil, CatalogDiff{}, err
 		}
 		if len(routes) == 0 {
-			return store.Connector{}, nil, fmt.Errorf("%w: no usable operations", openapi.ErrInvalidSpec)
+			return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("%w: no usable operations", openapi.ErrInvalidSpec)
 		}
 		for _, r := range routes {
 			export := ""
@@ -179,37 +179,37 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		switch transport {
 		case "stdio":
 			if strings.TrimSpace(cfg.Command) == "" {
-				return store.Connector{}, nil, fmt.Errorf("%w: mcp.command is required", mcpbridge.ErrInvalidMCP)
+				return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("%w: mcp.command is required", mcpbridge.ErrInvalidMCP)
 			}
 			env, err := mcpbridge.ResolveEnv(cfg.Env)
 			if err != nil {
-				return store.Connector{}, nil, err
+				return store.Connector{}, nil, CatalogDiff{}, err
 			}
 			session, err := mcpPool.ConnectStdio(context.Background(), cfg.Command, cfg.Args, env)
 			if err != nil {
-				return store.Connector{}, nil, fmt.Errorf("%w: %w", mcpbridge.ErrInvalidMCP, err)
+				return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("%w: %w", mcpbridge.ErrInvalidMCP, err)
 			}
 			tools, err := mcpbridge.DiscoverTools(context.Background(), session, in.ID)
 			if err != nil {
 				_ = session.Close()
-				return store.Connector{}, nil, err
+				return store.Connector{}, nil, CatalogDiff{}, err
 			}
 			discovered = tools
 			mcpSession = session
 		case "http":
 			if strings.TrimSpace(cfg.URL) == "" {
-				return store.Connector{}, nil, fmt.Errorf("%w: mcp.url is required", mcpbridge.ErrInvalidMCP)
+				return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("%w: mcp.url is required", mcpbridge.ErrInvalidMCP)
 			}
 			headers, err := mcpbridge.ResolveHeaders(cfg.Headers)
 			if err != nil {
-				return store.Connector{}, nil, err
+				return store.Connector{}, nil, CatalogDiff{}, err
 			}
 			key := ensureSettingsKey(in.SettingsKey)
 			headers, reauth, oauthErr := resolveMCPHTTPOAuthHeaders(
 				context.Background(), in.Store, in.ID, key, headers, cfg.OAuth,
 			)
 			if oauthErr != nil {
-				return store.Connector{}, nil, oauthErr
+				return store.Connector{}, nil, CatalogDiff{}, oauthErr
 			}
 			// Keep refreshed sealed bundle (or needs_reauth status) on input for Upsert.
 			in.MCP.OAuth = cfg.OAuth
@@ -217,7 +217,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			// Invoker keeps static headers only; OAuth is re-resolved per call from store.
 			staticHeaders, err := mcpbridge.ResolveHeaders(cfg.Headers)
 			if err != nil {
-				return store.Connector{}, nil, err
+				return store.Connector{}, nil, CatalogDiff{}, err
 			}
 			mcpHTTPHeaders = staticHeaders
 			if reauth != nil {
@@ -236,14 +236,14 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 					discovered = existingMCPTools(in.Store, in.ID)
 					break
 				}
-				return store.Connector{}, nil, err
+				return store.Connector{}, nil, CatalogDiff{}, err
 			}
 			discovered = tools
 		default:
-			return store.Connector{}, nil, fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
+			return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
 		}
 	default:
-		return store.Connector{}, nil, fmt.Errorf("unsupported connector type: %s", typ)
+		return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("unsupported connector type: %s", typ)
 	}
 
 	// Phase 2: merge with the persisted catalog.
@@ -292,7 +292,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 			if mcpSession != nil {
 				_ = mcpSession.Close()
 			}
-			return store.Connector{}, nil, openapi.ErrToolConflict
+			return store.Connector{}, nil, CatalogDiff{}, openapi.ErrToolConflict
 		}
 	}
 
@@ -392,7 +392,8 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, error) {
 		registerOne(rctx, t)
 	}
 
-	return c, filterInfosByConnector(in.Registry, in.ID), nil
+	diff := DiffCatalog(existing, merged)
+	return c, filterInfosByConnector(in.Registry, in.ID), diff, nil
 }
 
 // filterInfosByConnector returns the Registry entries belonging to the given

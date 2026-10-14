@@ -179,11 +179,16 @@ type OperatorEntry struct {
 	Token string `yaml:"token"`
 }
 
-// RuntimeConfig holds sidecar callback configuration (Phase 2).
+// RuntimeConfig holds sidecar callback configuration (Phase 2) and optional OTel.
 type RuntimeConfig struct {
 	PublicBaseURL       string `yaml:"public_base_url"`
 	CallbackHMACSecret  string `yaml:"callback_hmac_secret"`
 	CallbackTokenTTLSec int    `yaml:"callback_token_ttl_sec"`
+	// OtelOTLPEndpoint: OTLP HTTP traces endpoint (e.g. http://localhost:4318).
+	// Empty disables OpenTelemetry export.
+	OtelOTLPEndpoint string `yaml:"otel_otlp_endpoint"`
+	// OtelServiceName defaults to "baize" when endpoint is set and this is empty.
+	OtelServiceName string `yaml:"otel_service_name"`
 }
 
 // DefaultCallbackTokenTTLSec is the default callback token lifetime (1 hour),

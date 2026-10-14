@@ -7,7 +7,7 @@ Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把
 | 做 | 不做 |
 |----|------|
 | OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow | 桌面 App、官方 TS/Python SDK、重画布 / 分支工作流、绑死单一云或 Agent 框架 |
-| SQLite 默认可跑；可选 Postgres / Redis / S3 | 把 OTel 或特定 APM 当作运行时必选能力 |
+| SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导 **CatalogDiff**；可选 OTLP（默认关） | 把 OTel/APM 当作必选；per-tenant cgroup/egress 沙箱；完整 IdP OBO / mTLS；Prometheus `/metrics`（后续）；Agent 侧 tool schema version pin |
 
 **五抽象：** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
 Skill / Memory / Channel / 线性 workflow 是配置或插件形态，不升格为第六抽象。
@@ -30,7 +30,9 @@ Baize Runtime (Go)
 ```
 
 - **MCP 桥（客户端）**：`PUT /v0/connectors/{id}` 注册 `type: mcp`；`tools/list` → 目录 `source=mcp`，Run 内 `tools/call`。
-- **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop、豆包等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的大语言模型。导出 Key 可配置 **`identity_slots`**（按连接器 / 可选角色绑定身份）。下游鉴权失败时优先 URL elicitation，客户端不支持 elicitation 时工具错误中**立即**带上公网托管登录 URL（`hosted_login_url`），勿把密码贴进 Agent 对话。
+- **CatalogDiff**：连接器重导（OpenAPI / 插件 / MCP）成功后，`PUT /v0/connectors/{id}` 响应含 `catalog_diff`（新增 / 删除 / method·path·schema 变更）；设置页保存成功提示展示摘要。目录以 Runtime 当前接线为准，不做客户端 version pinning。
+- **可选可观测性**：`runtime.otel_otlp_endpoint` 非空时订阅 eventbus，将 Run / `tool.result`（及 MCP 导出调用）导出为 OTLP span；空则零开销关闭。事件可带非密钥审计字段（如 `connector_id`），永不写 token/密码。
+- **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop、豆包等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的大语言模型。导出 Key 可配置 **`identity_slots`**（按连接器 / 可选角色绑定身份）——权限边界是**下游业务账号**，不是终端用户 IdP OBO。下游鉴权失败时优先 URL elicitation，客户端不支持 elicitation 时工具错误中**立即**带上公网托管登录 URL（`hosted_login_url`），勿把密码贴进 Agent 对话。`auth.mode: passthrough` 仅把该次 Chat Run 的白名单头带给下游，同样不是 OBO。
 - **存储**：默认 SQLite；支持 `postgres` / `memory`。Blob：`file` / `s3` / `memory`。
 - **控制面鉴权**：可选 operator / admin 口令；详见 [http-api](./http-api.md) 与 [configuration](./configuration.md)。
 

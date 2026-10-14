@@ -31,7 +31,7 @@ func TestApplyLoadsToolsFromBlobSpecKey(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	login := []string{}
-	_, infos, err := connector.Apply(connector.ApplyInput{
+	_, infos, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: identity.NewMemoryStore(),
 		Blobs: blobs,
 		ID:    "blob-c", Type: "openapi", Spec: key, BaseURL: "http://example.invalid",
@@ -65,7 +65,7 @@ func TestApplyLoadsToolsFromBlobSpecKey(t *testing.T) {
 
 func TestApplyRejectsLegacyConnectorFSPath(t *testing.T) {
 	legacy := filepath.Join(t.TempDir(), "connectors", "c1", "openapi.normalized.json")
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: store.NewMemory(), Registry: tool.NewRegistry(), Identities: identity.NewMemoryStore(),
 		ID: "c1", Type: "openapi", Spec: legacy, BaseURL: "http://example.invalid",
 		Auth: store.ConnectorAuth{Mode: "static"},

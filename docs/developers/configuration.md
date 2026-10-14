@@ -108,6 +108,18 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 
 - `public_base_url`：公网可达的 Runtime 基址（无尾斜杠）。用于向侧车注入 `callback_urls`，以及签发**托管登录页** / MCP 重登链接（`/v0/auth/hosted/...`）。空则不注入 callback，也无法生成外网可点的托管登录 URL。云端 Agent / 浏览器须能打开该地址（勿对公网场景使用仅本机可达的 `127.0.0.1`）。也可在设置「运行参数」或「对外登录」向导中填写。
 - `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名。
+- `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；失败 fail-open。
+- `otel_service_name`：OTel `service.name`，默认 `baize`（仅在 endpoint 非空时生效）。
+
+### 身份模型（透传 / 导出身份 ≠ IdP OBO）
+
+| 机制 | 含义 | 不是 |
+|------|------|------|
+| `auth.mode: passthrough` | 该次 Chat Run 把白名单请求头（常为 `Authorization`）带给下游 HTTP | 终端用户 IdP 的 on-behalf-of / 委托令牌交换 |
+| 导出身份 / `identity_slots` | MCP 导出 Key 绑定的**下游业务账号**凭证（Headers）；权限边界=该业务账号能做什么 | 完整 OIDC OBO、mTLS、按终端用户重放 IdP token |
+| 设置 → 账号（工作区） | Chat 捕获的业务登录，按产品工作区隔离 | MCP 导出身份池 |
+
+Per-tenant cgroup / egress 沙箱与 Prometheus `/metrics` **不在**本版本范围（沙箱交给编排；指标留给后续）。
 
 ### `inbox`
 

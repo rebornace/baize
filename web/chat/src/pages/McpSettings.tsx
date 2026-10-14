@@ -16,6 +16,7 @@ import { CONNECTORS, connectorErrorText } from '../strings'
 import { mcpSummary } from './connectorForms/mcp'
 import { toPermissionTools } from './connectorForms/permissions'
 import type { SavedConnection } from './connectorForms/types'
+import { catalogDiffToastLine } from './connectorForms/catalogDiff'
 
 function toRow(info: ConnectorInfo): ConnectorRowData {
   const http = info.mcp?.transport === 'http'
@@ -169,10 +170,12 @@ export function McpSettings() {
     }
   }
 
+  const pendingDiffRef = useRef('')
   const handleSaveInfo = async (conn: SavedConnection) => {
     // 判别收窄：本页 kind 恒为 mcp，非 mcp 正常不可达。
     if (conn.kind !== 'mcp') return []
     const c = await putConnector(conn.id, { type: 'mcp', mcp: conn.mcp })
+    pendingDiffRef.current = catalogDiffToastLine(c.catalog_diff)
     return toPermissionTools(c.tools)
   }
 
@@ -188,7 +191,12 @@ export function McpSettings() {
           return err.detail ? `${err.title}\n${err.detail}` : err.title
         }}
         onSaveInfo={handleSaveInfo}
-        onSavedInfo={(c) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
+        onSavedInfo={(c) => {
+          const detail = pendingDiffRef.current
+          pendingDiffRef.current = ''
+          push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}`, detail: detail || undefined })
+          void load()
+        }} />
       <Modal
         open={publicBasePrompt !== null}
         title={CONNECTORS.oauthPublicBaseTitle}

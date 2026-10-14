@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.7.0 — 2026-10-14
+
+连接器重导可见性、可选 OTel、身份边界文档。向后兼容；选 **minor**（v0.7.0）。
+
+### 新功能
+
+- **CatalogDiff**：连接器重导成功后 `PUT /v0/connectors/{id}` 返回 `catalog_diff`（新增 / 删除 / method·path·schema 变更）；设置页保存提示展示摘要。
+- **可选 OTel OTLP**：`runtime.otel_otlp_endpoint` 非空时将 Run / `tool.result`（及 MCP 导出调用）导出为 span；默认关闭、失败 fail-open。
+- **事件审计字段**：`tool.result` 等可带 `connector_id` 等非密钥字段；永不写 token/密码。
+
+### 文档
+
+- 澄清 `passthrough` / 导出身份 / `identity_slots` = 下游业务账号权限，**不是**终端用户 IdP OBO；明确不做 per-tenant 沙箱与 Prometheus `/metrics`（本版本）。
+- configuration / architecture / http-api / baize-help 与配置样板注释对齐。
+
 ## 0.6.0 — 2026-10-14
 
 托管登录页、对外登录向导与 MCP 导出下游鉴权。向后兼容；选 **minor**（v0.6.0）。

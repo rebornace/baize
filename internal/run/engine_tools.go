@@ -55,6 +55,9 @@ func (e *Engine) persistToolResult(runID, callID, name string, content map[strin
 		"content":      identity.RedactSensitive(cleaned),
 		"is_error":     isError,
 	}
+	if cid := e.connectorIDForTool(name); cid != "" {
+		data["connector_id"] = cid
+	}
 	if len(results) > 0 {
 		refs := make([]map[string]any, 0, len(results))
 		for _, r := range results {

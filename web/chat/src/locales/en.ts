@@ -748,6 +748,8 @@ export const enPack = {
     deleteOk: 'Delete',
     saved: 'Saved',
     deleted: 'Deleted',
+    catalogDiffLine: (added: number, removed: number, changed: number) =>
+      `Catalog: +${added} added · ${removed} removed · ${changed} changed`,
     toolsLink: 'View tools',
     toolCount: (n: number) => `${n} tools`,
     stepInfo: 'Connector info',

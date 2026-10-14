@@ -106,7 +106,7 @@ func TestMCPOAuthHTTPInvokeInjectsBearerOverStatic(t *testing.T) {
 	})
 	key, _ := settingscrypto.KeyFromEnv()
 
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-oauth", Type: "mcp",
 		SettingsKey: key,
@@ -170,7 +170,7 @@ func TestMCPOAuthHTTPInvokeRefreshesAndWritesBack(t *testing.T) {
 	})
 	key, _ := settingscrypto.KeyFromEnv()
 
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-refresh", Type: "mcp",
 		SettingsKey: key,
@@ -230,7 +230,7 @@ func TestMCPOAuthHTTPInvokeNeedsReauth(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	key, _ := settingscrypto.KeyFromEnv()
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-reauth", Type: "mcp",
 		SettingsKey: key,
@@ -293,7 +293,7 @@ func TestMCPOAuthHTTPInvokeRejectsMissingSettingsKey(t *testing.T) {
 	})
 	t.Setenv("BAIZE_SETTINGS_KEY", "")
 
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-nokey", Type: "mcp",
 		SettingsKey: nil,
@@ -348,7 +348,7 @@ func TestMCPOAuthHTTPInvokeAfterDisconnectHasNoBearer(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	key, _ := settingscrypto.KeyFromEnv()
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-disc", Type: "mcp",
 		SettingsKey: key,
@@ -422,7 +422,7 @@ func TestApplySoftFailsOAuthReauthKeepsExistingTools(t *testing.T) {
 		},
 		RequireLogin: &login,
 	}
-	if _, _, err := connector.Apply(in); err != nil {
+	if _, _, _, err := connector.Apply(in); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	toolsBefore := st.ListToolsByConnector("mcp-soft")
@@ -440,7 +440,7 @@ func TestApplySoftFailsOAuthReauthKeepsExistingTools(t *testing.T) {
 		ClientID:          "cid",
 		TokenBundleSealed: expired,
 	}
-	conn, _, err := connector.Apply(in)
+	conn, _, _, err := connector.Apply(in)
 	if err != nil {
 		t.Fatalf("Apply with oauth_reauth must soft-fail (save headers/URL): %v", err)
 	}
@@ -468,7 +468,7 @@ func TestApplySoftFailsSettingsKeyRequiredKeepsExistingTools(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	key, _ := settingscrypto.KeyFromEnv()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-soft-key", Type: "mcp",
 		SettingsKey: key,
@@ -491,7 +491,7 @@ func TestApplySoftFailsSettingsKeyRequiredKeepsExistingTools(t *testing.T) {
 	}
 
 	t.Setenv("BAIZE_SETTINGS_KEY", "")
-	conn, _, err := connector.Apply(connector.ApplyInput{
+	conn, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-soft-key", Type: "mcp",
 		SettingsKey: nil,
@@ -530,7 +530,7 @@ func TestMCPOAuthHTTPInvokeTransientRefreshDoesNotNeedsReauth(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	key, _ := settingscrypto.KeyFromEnv()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp-transient", Type: "mcp",
 		SettingsKey: key,

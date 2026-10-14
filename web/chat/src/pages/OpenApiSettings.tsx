@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   deleteConnector,
   getConnector,
@@ -11,6 +11,7 @@ import { ToastRegion, useToast } from '../components/ui'
 import { ConnectorShell, type ConnectorRowData } from '../components/settings/ConnectorShell'
 import { ConnectorEditorModal, type ConnectorEditorInitial } from '../components/settings/ConnectorEditorModal'
 import type { SavedConnection } from './connectorForms/types'
+import { catalogDiffToastLine } from './connectorForms/catalogDiff'
 import { toPermissionTools } from './connectorForms/permissions'
 import { CONNECTORS, connectorErrorText } from '../strings'
 
@@ -90,6 +91,7 @@ export function OpenApiSettings() {
     await load()
   }
 
+  const pendingDiffRef = useRef('')
   const handleSaveInfo = async (conn: SavedConnection) => {
     if (conn.kind !== 'openapi') throw new Error('unexpected connector kind')
     const c = await putConnector(conn.id, {
@@ -101,6 +103,7 @@ export function OpenApiSettings() {
       execution_callback_url: conn.executionCallbackUrl,
       auth: conn.auth,
     })
+    pendingDiffRef.current = catalogDiffToastLine(c.catalog_diff)
     return toPermissionTools(c.tools)
   }
 
@@ -112,7 +115,12 @@ export function OpenApiSettings() {
         onClose={() => setEditor((e) => ({ ...e, open: false }))}
         formatError={(e) => connectorErrorText(e).title}
         onSaveInfo={handleSaveInfo}
-        onSavedInfo={(c) => { push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}` }); void load() }} />
+        onSavedInfo={(c) => {
+          const detail = pendingDiffRef.current
+          pendingDiffRef.current = ''
+          push({ tone: 'success', title: `${CONNECTORS.saved} ${c.id}`, detail: detail || undefined })
+          void load()
+        }} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
     </>
   )

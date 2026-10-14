@@ -152,6 +152,20 @@ export interface ConnectorAuth {
 
 export type ImportFormat = 'auto' | 'openapi3' | 'swagger2' | 'postman'
 
+export interface CatalogChange {
+  name: string
+  method_path_changed?: boolean
+  operation_id_changed?: boolean
+  schema_changed?: boolean
+}
+
+/** Returned by PUT /v0/connectors/{id} after merge. */
+export interface CatalogDiff {
+  added?: string[]
+  removed?: string[]
+  changed?: CatalogChange[]
+}
+
 export interface ConnectorInfo {
   id: string
   type: string
@@ -164,6 +178,7 @@ export interface ConnectorInfo {
   require_approval?: string[]
   require_login?: string[]
   tools?: ToolInfo[]
+  catalog_diff?: CatalogDiff
 }
 
 export interface PutConnectorBody {

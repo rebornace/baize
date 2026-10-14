@@ -32,6 +32,8 @@ type ServerDeps struct {
 	HostedWaiter   hostedlogin.Waiter
 	PublicBaseURL  string
 	Enabled        bool
+	// TraceToolCall optionally records export tool completions (no secrets).
+	TraceToolCall func(toolName, exportKeyID, identityID string, isError bool)
 }
 
 // NewHTTPHandler returns a Streamable HTTP MCP handler with Bearer key auth.
@@ -214,6 +216,7 @@ func invokeExportTool(
 		if IsAuthFailure(nil, false, err) {
 			return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
 		}
+		traceExportTool(deps, name, key.ID, exportID.ID, true)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 			IsError: true,
@@ -222,12 +225,20 @@ func invokeExportTool(
 	if isError && IsAuthFailure(content, isError, err) {
 		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
 	}
+	traceExportTool(deps, name, key.ID, exportID.ID, isError)
 	text, _ := json.Marshal(content)
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
 		StructuredContent: content,
 		IsError:           isError,
 	}, nil
+}
+
+func traceExportTool(deps ServerDeps, toolName, exportKeyID, identityID string, isError bool) {
+	if deps.TraceToolCall == nil {
+		return
+	}
+	deps.TraceToolCall(toolName, exportKeyID, identityID, isError)
 }
 
 func exportListFilterMiddleware(deps ServerDeps, auth exportAuth) mcp.Middleware {

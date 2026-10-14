@@ -60,7 +60,7 @@ func TestApplyMCPStdioDiscoversAndInvokesEcho(t *testing.T) {
 	ids := identity.NewMemoryStore()
 	login := []string{}
 
-	_, infos, err := connector.Apply(connector.ApplyInput{
+	_, infos, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp1", Type: "mcp",
 		MCP: store.MCPConfig{
@@ -122,7 +122,7 @@ func TestApplyMCPBadCommandPreservesRegistry(t *testing.T) {
 		},
 		RequireLogin: &login,
 	}
-	if _, _, err := connector.Apply(base); err != nil {
+	if _, _, _, err := connector.Apply(base); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 	before := reg.List()
@@ -132,7 +132,7 @@ func TestApplyMCPBadCommandPreservesRegistry(t *testing.T) {
 		Transport: "stdio",
 		Command:   filepath.Join(t.TempDir(), "nonexistent-mcp-binary"),
 	}
-	_, _, err := connector.Apply(bad)
+	_, _, _, err := connector.Apply(bad)
 	if err == nil {
 		t.Fatal("expected error from bad mcp command")
 	}
@@ -188,12 +188,12 @@ func TestApplyMCPToolConflictPreservesSession(t *testing.T) {
 		},
 		RequireLogin: &login,
 	}
-	if _, _, err := connector.Apply(mcpIn); err != nil {
+	if _, _, _, err := connector.Apply(mcpIn); err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
 
 	otherSpec := writeMinimalOpenAPISpec(t, "probe")
-	_, _, err := connector.Apply(connector.ApplyInput{
+	_, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "other", Type: "openapi",
 		Spec: otherSpec, BaseURL: "http://example.invalid",
@@ -213,7 +213,7 @@ func TestApplyMCPToolConflictPreservesSession(t *testing.T) {
 		InputSchema: map[string]any{"type": "object"},
 	})
 
-	_, _, err = connector.Apply(mcpIn)
+	_, _, _, err = connector.Apply(mcpIn)
 	if !errors.Is(err, openapi.ErrToolConflict) {
 		t.Fatalf("expected tool_conflict on re-Apply, got %v", err)
 	}
@@ -233,7 +233,7 @@ func TestRegisterOneFromConnectorRejectsMCPExtra(t *testing.T) {
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
 	login := []string{}
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "mcp1", Type: "mcp",
 		MCP: store.MCPConfig{
@@ -275,7 +275,7 @@ func TestApplyHTTPMCPUnauthorizedAllowsEmptyCatalog(t *testing.T) {
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
 	login := []string{}
-	c, infos, err := connector.Apply(connector.ApplyInput{
+	c, infos, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "gugu", Type: "mcp",
 		MCP: store.MCPConfig{

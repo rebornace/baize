@@ -37,7 +37,7 @@ func TestApplyHTTPCaptureNoneDisables(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "side", Type: "http", BaseURL: srv.URL,
 		RequireLogin: ptr([]string{}),
@@ -70,7 +70,7 @@ func TestApplyHTTPCaptureSkipsWithoutConversation(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "side", Type: "http", BaseURL: srv.URL,
 		RequireLogin: ptr([]string{}),
@@ -105,7 +105,7 @@ func TestApplyHTTPCaptureSkipsOnToolError(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store: st, Registry: reg, Identities: ids,
 		ID: "side", Type: "http", BaseURL: srv.URL,
 		RequireLogin: ptr([]string{}),

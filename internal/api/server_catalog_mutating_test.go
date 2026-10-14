@@ -24,7 +24,7 @@ func TestCatalogPatchPreservesMutatingHITL(t *testing.T) {
 	ids := identity.NewMemoryStore()
 
 	emptyLogin := []string{}
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store:      st,
 		Registry:   reg,
 		Identities: ids,

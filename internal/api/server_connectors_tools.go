@@ -238,7 +238,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		mergeMCPOAuthPreserveSecrets(&body.MCP, existingConn, hasExisting)
 	}
 
-	c, infos, err := connector.Apply(connector.ApplyInput{
+	c, infos, catalogDiff, err := connector.Apply(connector.ApplyInput{
 		Store:                s.Store,
 		Registry:             s.Registry,
 		Identities:           s.Identities,
@@ -302,6 +302,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"require_login":          nonNilStrings(c.RequireLogin),
 		"auth":                   c.Auth,
 		"tools":                  infos,
+		"catalog_diff":           catalogDiff,
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = redactMCPForAPI(c.MCP)

@@ -66,7 +66,7 @@ func TestApplyRequireApprovalMutatingBakesIntoRow(t *testing.T) {
 	reg := tool.NewRegistry()
 	ids := identity.NewMemoryStore()
 
-	if _, _, err := connector.Apply(connector.ApplyInput{
+	if _, _, _, err := connector.Apply(connector.ApplyInput{
 		Store:      st,
 		Registry:   reg,
 		Identities: ids,

@@ -7,7 +7,7 @@ Baize is a standalone **Agent Runtime** (sidecar / gateway): it turns LLM, tools
 | Does | Does not |
 |------|----------|
 | OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows | Desktop app, official TS/Python SDK, heavy canvas / branching workflows, lock-in to one cloud or agent framework |
-| SQLite by default; optional Postgres / Redis / S3 | Require OTel or a specific APM as a runtime must-have |
+| SQLite by default; optional Postgres / Redis / S3; connector re-import **CatalogDiff**; optional OTLP (off by default) | Require OTel/APM; per-tenant cgroup/egress sandbox; full IdP OBO / mTLS; Prometheus `/metrics` (later); client-side tool schema version pin |
 
 **Five abstractions:** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
 Skill / Memory / Channel / linear workflow are configuration or plugin shapes — not a sixth abstraction.
@@ -30,7 +30,9 @@ Enterprise / integrator
 ```
 
 - **MCP bridge (client):** `PUT /v0/connectors/{id}` with `type: mcp`; `tools/list` → catalog `source=mcp`; `tools/call` inside a Run.
-- **MCP export:** Runtime acts as an MCP server (`/v0/mcp/export`) and exposes a read-only subset of the tool catalog to MCP-capable Agent clients such as Cursor, Claude Desktop, or Doubao. Opposite direction from the bridge; does not go through Baize’s own chat model. Export Keys support **`identity_slots`** (bind identities per connector / optional role). On downstream auth failure, prefer URL elicitation; clients without elicitation get an immediate tool error with a public hosted login URL (`hosted_login_url`) — never paste passwords into the agent chat.
+- **CatalogDiff:** After a successful connector re-import (OpenAPI / plugin / MCP), `PUT /v0/connectors/{id}` returns `catalog_diff` (added / removed / method·path·schema changes); Settings shows a short toast summary. The live catalog is source of truth — no client version pinning.
+- **Optional observability:** When `runtime.otel_otlp_endpoint` is set, the Runtime subscribes to the event bus and exports Run / `tool.result` (and MCP export calls) as OTLP spans; empty endpoint keeps the zero-cost path. Events may carry non-secret audit fields (e.g. `connector_id`); never tokens or passwords.
+- **MCP export:** Runtime acts as an MCP server (`/v0/mcp/export`) and exposes a read-only subset of the tool catalog to MCP-capable Agent clients such as Cursor, Claude Desktop, or Doubao. Opposite direction from the bridge; does not go through Baize’s own chat model. Export Keys support **`identity_slots`** (bind identities per connector / optional role) — the permission boundary is the **downstream business account**, not end-user IdP OBO. On downstream auth failure, prefer URL elicitation; clients without elicitation get an immediate tool error with a public hosted login URL (`hosted_login_url`) — never paste passwords into the agent chat. `auth.mode: passthrough` only forwards whitelisted Chat Run headers downstream; also not OBO.
 - **Storage:** SQLite by default; `postgres` / `memory` supported. Blob: `file` / `s3` / `memory`.
 - **Control-plane auth:** optional operator / admin tokens; see [HTTP API](./http-api.en.md) and [Configuration](./configuration.en.md).
 

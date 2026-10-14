@@ -151,7 +151,10 @@ type Server struct {
 	InboxGate func(channelID string) bool
 	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
 	MCPExportEnabled bool
-	DataDir          string // parent dir for sqlite / legacy paths; not used for connector specs
+	// MCPExportTrace optionally records MCP export tool completions for OTel
+	// (tool name, export key id, identity id, error flag — never secrets).
+	MCPExportTrace func(toolName, exportKeyID, identityID string, isError bool)
+	DataDir        string // parent dir for sqlite / legacy paths; not used for connector specs
 	Blobs            blob.Store
 	ConfigPath       string
 	Config           *config.Config
