@@ -35,9 +35,18 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 	if origin == "" {
 		return "", "", false
 	}
+	// Target the identity that actually failed this call so login writes headers
+	// back where the next tools/call will read them. Fall back to the key slot
+	// for the default method role when the call had no identity yet.
 	identityID := strings.TrimSpace(auth.Identity.ID)
-	if exportID, err := resolveExportIdentity(deps.Store, auth.Key, connectorID, ""); err == nil {
-		identityID = exportID.ID
+	if identityID == "" {
+		role := ""
+		if m, ok := cfg.DefaultMethod(); ok {
+			role = m.EffectiveRole()
+		}
+		if exportID, err := resolveExportIdentity(deps.Store, auth.Key, connectorID, role); err == nil {
+			identityID = exportID.ID
+		}
 	}
 	if identityID == "" {
 		return "", "", false
@@ -59,7 +68,15 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 	return fmt.Sprintf("%s/v0/auth/hosted/%s", origin, id), id, true
 }
 
-func maybeElicitHostedLoginURL(ctx context.Context, req *mcp.CallToolRequest, hostedURL, sessionID string) {
+func clientSupportsURLElicitation(ss *mcp.ServerSession) bool {
+	ip := ss.InitializeParams()
+	if ip == nil || ip.Capabilities == nil || ip.Capabilities.Elicitation == nil {
+		return false
+	}
+	return ip.Capabilities.Elicitation.URL != nil
+}
+
+func maybeElicitHostedLoginURL(ctx context.Context, req *mcp.CallToolRequest, hostedURL, sessionID, identityName string) {
 	if hostedURL == "" || req == nil {
 		return
 	}
@@ -67,9 +84,14 @@ func maybeElicitHostedLoginURL(ctx context.Context, req *mcp.CallToolRequest, ho
 	if !ok || !clientSupportsElicitation(ss) {
 		return
 	}
+	// Prefer protocol -32042 when the client advertises URL elicitation; this path
+	// is only for clients that support elicitation but not URL mode.
+	if clientSupportsURLElicitation(ss) {
+		return
+	}
 	_, _ = ss.Elicit(ctx, &mcp.ElicitParams{
 		Mode:          "url",
-		Message:       "Sign in to continue using Baize export tools for this system. Do not paste passwords into chat.",
+		Message:       HostedLoginElicitMessage(identityName),
 		URL:           hostedURL,
 		ElicitationID: sessionID,
 	})
@@ -77,8 +99,30 @@ func maybeElicitHostedLoginURL(ctx context.Context, req *mcp.CallToolRequest, ho
 
 func authExpiredResult(identityName, hostedURL string) *mcp.CallToolResult {
 	msg := AuthExpiredMessageWithURL(identityName, hostedURL)
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
-		IsError: true,
+	payload := map[string]any{
+		"code":       HostedLoginRequiredCode,
+		"message":    msg,
+		"message_zh": AuthExpiredMessageZH(identityName, hostedURL),
+		"message_en": AuthExpiredMessageEN(identityName, hostedURL),
 	}
+	if name := strings.TrimSpace(identityName); name != "" {
+		payload["identity"] = name
+	}
+	if u := strings.TrimSpace(hostedURL); u != "" {
+		payload["hosted_login_url"] = u
+	}
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: msg}},
+		StructuredContent: payload,
+		IsError:           true,
+	}
+}
+
+func urlElicitationRequired(hostedURL, sessionID, identityName string) error {
+	return mcp.URLElicitationRequiredError([]*mcp.ElicitParams{{
+		Mode:          "url",
+		Message:       HostedLoginElicitMessage(identityName),
+		URL:           hostedURL,
+		ElicitationID: sessionID,
+	}})
 }

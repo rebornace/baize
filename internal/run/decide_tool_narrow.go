@@ -47,7 +47,10 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		// Each chat message is a new Run, so tools are re-narrowed from scratch.
 		// If this conversation already has credentials, do not keep re-flooring
 		// login tools into Top-K on every subsequent message.
-		sessionAuthed = identity.ConversationHasSessionAuth(e.Identities, runRec.ConversationID)
+		sessionAuthed = identity.HasSessionAuth(
+			e.Identities,
+			identity.Key(runRec.ConversationID, e.workspaceIDFor(runRec.ConversationID)),
+		)
 	}
 
 	// Trajectory-aware narrowing: after the first ReAct step the decision

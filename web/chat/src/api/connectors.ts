@@ -114,6 +114,10 @@ export interface HostedLoginMethod {
   id: string
   label?: string
   mode?: string
+  /** Primary identity-slot key with connector_id; empty means id at runtime. */
+  role?: string
+  /** Export identities this login method may fill (multi-select). */
+  identity_ids?: string[]
   login_tool?: string
   fields?: HostedLoginField[]
   oauth?: HostedLoginOAuth

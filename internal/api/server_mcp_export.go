@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -320,7 +321,7 @@ func (s *Server) validateExportIdentitySlots(defaultIdentityID string, slots []s
 		}
 		if _, err := s.Store.GetMCPExportIdentity(id); err != nil {
 			if errors.Is(err, store.ErrMCPExportIdentityNotFound) {
-				return nil, errors.New("unknown identity_slots identity_id")
+				return nil, fmt.Errorf("unknown identity_slots identity_id %q (identity was deleted or never created)", id)
 			}
 			return nil, err
 		}

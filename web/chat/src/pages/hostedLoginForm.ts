@@ -10,6 +10,8 @@ export interface HostedLoginMethodDraft {
   id: string
   label: string
   mode: string
+  role: string
+  identityIds: string[]
   loginTool: string
   fieldsText: string
   oauthAuthorizeURL: string
@@ -29,6 +31,8 @@ export const EMPTY_HOSTED_LOGIN_METHOD_DRAFT: HostedLoginMethodDraft = {
   id: '',
   label: '',
   mode: 'password_form',
+  role: '',
+  identityIds: [],
   loginTool: '',
   fieldsText: '',
   oauthAuthorizeURL: '',
@@ -36,6 +40,11 @@ export const EMPTY_HOSTED_LOGIN_METHOD_DRAFT: HostedLoginMethodDraft = {
   oauthClientID: '',
   oauthClientSecret: '',
   oauthScopes: '',
+}
+
+/** Slot role for a method draft: explicit role, else method id. */
+export function methodDraftEffectiveRole(draft: HostedLoginMethodDraft): string {
+  return draft.role.trim() || draft.id.trim()
 }
 
 export const EMPTY_HOSTED_LOGIN_DRAFT: HostedLoginDraft = {
@@ -75,6 +84,8 @@ function methodToDraft(method: HostedLoginMethod): HostedLoginMethodDraft {
     id: method.id ?? '',
     label: method.label ?? '',
     mode: method.mode || 'password_form',
+    role: method.role ?? '',
+    identityIds: [...(method.identity_ids ?? [])].map((s) => s.trim()).filter(Boolean),
     loginTool: method.login_tool ?? '',
     fieldsText: formatHostedLoginFields(method.fields),
     oauthAuthorizeURL: oauth?.authorize_url ?? '',
@@ -117,9 +128,13 @@ function buildMethodFromDraft(draft: HostedLoginMethodDraft): HostedLoginMethod 
   const out: HostedLoginMethod = { id }
   const label = draft.label.trim()
   const mode = draft.mode.trim()
+  const role = draft.role.trim()
   const loginTool = draft.loginTool.trim()
+  const identityIds = [...new Set(draft.identityIds.map((s) => s.trim()).filter(Boolean))]
   if (label) out.label = label
   if (mode) out.mode = mode
+  if (role) out.role = role
+  if (identityIds.length > 0) out.identity_ids = identityIds
   if (loginTool) out.login_tool = loginTool
   if (fields.length > 0) out.fields = fields
   const oauth = buildOAuthFromMethodDraft(draft)

@@ -37,8 +37,9 @@ export type ChatMessageListProps = {
   onFork: (m: ChatMessage) => void
   onCopyMessage: (m: ChatMessage) => void
   reportError: (e: unknown) => void
-  onGoLoginSkill: (skillId: string) => void
   onBrowserLogin?: (connectorId: string) => void
+  /** Footer banner owns login CTAs; cards only show the message. */
+  suppressLoginActions?: boolean
   cloudModelRisk?: boolean
 }
 
@@ -90,8 +91,8 @@ export function ChatMessageList({
   onFork,
   onCopyMessage,
   reportError,
-  onGoLoginSkill,
   onBrowserLogin,
+  suppressLoginActions = false,
   cloudModelRisk = false,
 }: ChatMessageListProps) {
   // Low-frequency actions live in the "more" menu. system_note additionally
@@ -186,6 +187,10 @@ export function ChatMessageList({
                             block={b}
                             catalog={toolCatalog}
                             readOnly
+                            onError={reportError}
+                            onBrowserLogin={onBrowserLogin}
+                            suppressLoginActions={suppressLoginActions}
+                            cloudModelRisk={cloudModelRisk}
                           />
                         )
                       case 'workflow':
@@ -305,8 +310,8 @@ export function ChatMessageList({
                     block={block}
                     catalog={toolCatalog}
                     onError={reportError}
-                    onGoLoginSkill={onGoLoginSkill}
                     onBrowserLogin={onBrowserLogin}
+                    suppressLoginActions={suppressLoginActions}
                     cloudModelRisk={cloudModelRisk}
                     priorEvidence={
                       block.status === 'waiting_human'

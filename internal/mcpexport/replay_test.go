@@ -2,7 +2,6 @@ package mcpexport
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,7 +14,7 @@ import (
 	"github.com/rebornace/baize/internal/tool"
 )
 
-func TestAuthExpiredForCallReplaysAfterNotify(t *testing.T) {
+func TestAuthExpiredForCallReturnsURLWithoutBlockingWhenNoElicitation(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertConnector(store.Connector{
 		ID: "mall", Type: "openapi",
@@ -43,65 +42,46 @@ func TestAuthExpiredForCallReplaysAfterNotify(t *testing.T) {
 		return map[string]any{"ok": true, "n": float64(n)}, false, nil
 	})
 
-	// Custom sessions that records the last issued id so the test can NotifyOK.
 	base := hostedlogin.NewMemorySessions(time.Minute)
 	rec := &recordingSessions{inner: base}
-	waiter := hostedlogin.NewMemoryWaiter()
 	deps := ServerDeps{
 		Store:          st,
 		Registry:       reg,
 		Identities:     identity.NewMemoryStore(),
 		HostedSessions: rec,
-		HostedWaiter:   waiter,
+		HostedWaiter:   hostedlogin.NewMemoryWaiter(),
 		PublicBaseURL:  "http://127.0.0.1:8080",
 		Enabled:        true,
 	}
 	toolRow := store.Tool{Name: "mall.orders", ConnectorID: "mall", Method: "GET"}
 	auth := exportAuth{Key: key, Identity: idRow}
 
-	done := make(chan *mcp.CallToolResult, 1)
-	go func() {
-		done <- authExpiredForCall(context.Background(), deps, auth, toolRow, nil, "mall.orders", map[string]any{"id": 1})
-	}()
-
-	deadline := time.Now().Add(2 * time.Second)
-	var sid string
-	for time.Now().Before(deadline) {
-		sid = rec.lastID()
-		if sid != "" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	// nil CallToolRequest ⇒ no client elicitation ⇒ return URL immediately
+	// (Doubao-like agents). Do not block on HostedWaiter.
+	res, err := authExpiredForCall(context.Background(), deps, auth, toolRow, nil, "mall.orders", map[string]any{"id": 1})
+	if err != nil {
+		t.Fatalf("authExpiredForCall err=%v", err)
 	}
-	if sid == "" {
-		t.Fatal("session not issued")
+	if res == nil || !res.IsError {
+		t.Fatalf("result=%+v", res)
 	}
-	time.Sleep(20 * time.Millisecond) // let Await register
-	waiter.NotifyOK(sid)
-
-	select {
-	case res := <-done:
-		if res == nil || res.IsError {
-			t.Fatalf("result=%+v", res)
-		}
-		text := ""
-		if len(res.Content) > 0 {
-			if tc, ok := res.Content[0].(*mcp.TextContent); ok {
-				text = tc.Text
-			}
-		}
-		var payload map[string]any
-		if err := json.Unmarshal([]byte(text), &payload); err != nil {
-			t.Fatalf("text=%q err=%v", text, err)
-		}
-		if payload["ok"] != true {
-			t.Fatalf("%v", payload)
-		}
-		if calls.Load() != 1 {
-			t.Fatalf("calls=%d", calls.Load())
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout waiting for replay")
+	if calls.Load() != 0 {
+		t.Fatalf("must not replay without elicitation client, calls=%d", calls.Load())
+	}
+	if rec.lastID() == "" {
+		t.Fatal("session should still be issued")
+	}
+	text := callToolText(res)
+	if !strings.Contains(text, "/v0/auth/hosted/") {
+		t.Fatalf("want hosted url in text %q", text)
+	}
+	sc, ok := res.StructuredContent.(map[string]any)
+	if !ok || sc["code"] != HostedLoginRequiredCode {
+		t.Fatalf("structured=%+v", res.StructuredContent)
+	}
+	url, _ := sc["hosted_login_url"].(string)
+	if !strings.Contains(url, "/v0/auth/hosted/") {
+		t.Fatalf("hosted_login_url=%q", url)
 	}
 }
 
@@ -136,21 +116,40 @@ func TestAuthExpiredForCallTimeoutFallsBack(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	res := authExpiredForCall(ctx, deps, exportAuth{Key: key, Identity: idRow}, store.Tool{
+	res, err := authExpiredForCall(ctx, deps, exportAuth{Key: key, Identity: idRow}, store.Tool{
 		Name: "mall.orders", ConnectorID: "mall",
 	}, nil, "mall.orders", nil)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
 	if res == nil || !res.IsError {
 		t.Fatalf("%+v", res)
 	}
-	text := ""
-	if len(res.Content) > 0 {
-		if tc, ok := res.Content[0].(*mcp.TextContent); ok {
-			text = tc.Text
-		}
-	}
+	text := callToolText(res)
 	if !strings.Contains(text, "/v0/auth/hosted/") {
 		t.Fatalf("want hosted url in %q", text)
 	}
+	sc, ok := res.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured=%T", res.StructuredContent)
+	}
+	if sc["code"] != HostedLoginRequiredCode {
+		t.Fatalf("code=%v", sc["code"])
+	}
+	url, _ := sc["hosted_login_url"].(string)
+	if !strings.Contains(url, "/v0/auth/hosted/") {
+		t.Fatalf("hosted_login_url=%q", url)
+	}
+}
+
+func callToolText(res *mcp.CallToolResult) string {
+	if res == nil || len(res.Content) == 0 {
+		return ""
+	}
+	if tc, ok := res.Content[0].(*mcp.TextContent); ok {
+		return tc.Text
+	}
+	return ""
 }
 
 type recordingSessions struct {

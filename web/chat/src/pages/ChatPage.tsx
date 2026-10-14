@@ -11,6 +11,7 @@ import {
   pushGoal,
   putGoal,
   resumeGoal,
+  resumeRun,
   stopGoal,
   type GoalStackView,
   type ModelProfile,
@@ -33,8 +34,8 @@ import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelCh
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
 import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
+import { findPendingLoginWait, type PendingLoginWait } from '../loginEntry'
 import { CHAT, friendlyError, GOAL, LOGIN_AT } from '../strings'
-import { replaceMention } from '../skillMention'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { GoalBar } from './chat/GoalBar'
@@ -304,24 +305,6 @@ export function ChatPage() {
     runGoalAction(() => pushGoal(session.conversationId, trimmed))
   }
 
-  /** login_required「去登录」→ 刷新 skills 后写入 @login-<id>，聚焦输入框，不自动发送。 */
-  const onGoLoginSkill = async (skillId: string) => {
-    let list = skills
-    try {
-      const res = await listSkills(locale)
-      list = res.skills ?? []
-      setSkills(list)
-    } catch {
-      /* keep cached skills; still validate below */
-    }
-    if (!list.some((s) => s.id === skillId)) {
-      toast.push({ tone: 'error', title: LOGIN_AT.skillMissing })
-      return
-    }
-    const { text } = replaceMention('', 0, 0, skillId)
-    session.setComposerDraft(text)
-  }
-
   const cloudModelRisk = useMemo(() => {
     if (isAutoChoice(selectedModelId)) return true
     const profile = modelProfiles.find((p) => p.id === selectedModelId)
@@ -332,8 +315,23 @@ export function ChatPage() {
     try {
       const { url } = await createConversationHostedLogin(session.conversationId, connectorId)
       window.open(url, '_blank', 'noopener,noreferrer')
+      toast.push({ tone: 'success', title: LOGIN_AT.browserOpened })
     } catch {
       toast.push({ tone: 'error', title: LOGIN_AT.browserLoginFailed })
+    }
+  }
+
+  const onLoginResume = async (decision: 'approve' | 'reject', comment = '') => {
+    const runId = run.liveRunId
+    if (!runId) {
+      toast.push({ tone: 'error', title: LOGIN_AT.browserLoginFailed })
+      return
+    }
+    try {
+      await resumeRun(runId, decision, comment)
+    } catch (err) {
+      const f = friendlyError(err)
+      toast.push({ tone: 'error', title: f.title, detail: f.detail })
     }
   }
 
@@ -363,6 +361,23 @@ export function ChatPage() {
   const showWelcome = session.messages.length === 0 && liveBlocks.length === 0
   const composerDisabled = run.busy || session.historyMutating
   const showStop = Boolean(run.liveRunId && run.busy)
+
+  const pendingLogin = useMemo((): PendingLoginWait => {
+    if (run.liveRunId) {
+      return findPendingLoginWait(liveBlocks, toolCatalog, run.liveEvents)
+    }
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i]
+      if (m.role !== 'assistant' || !m.run_id) continue
+      const blocks = session.historyBlocks[m.run_id]
+      if (!blocks?.length) continue
+      const wait = findPendingLoginWait(blocks, toolCatalog)
+      if (wait.active) return wait
+    }
+    return { active: false }
+  }, [run.liveRunId, liveBlocks, run.liveEvents, session.messages, session.historyBlocks, toolCatalog])
+  const pendingLoginConnector = pendingLogin.connectorId
+  const showLoginBanner = pendingLogin.active
 
   return (
     <div className={`chat-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
@@ -413,12 +428,57 @@ export function ChatPage() {
           onFork={session.onFork}
           onCopyMessage={onCopyMessage}
           reportError={reportError}
-          onGoLoginSkill={onGoLoginSkill}
           onBrowserLogin={onBrowserLogin}
+          suppressLoginActions={showLoginBanner}
           cloudModelRisk={cloudModelRisk}
         />
 
         <div className="chat-footer">
+          {showLoginBanner && (
+            <div className="chat-login-banner" data-testid="chat-login-banner" role="status">
+              <p className="chat-login-banner-text">{LOGIN_AT.pendingBanner}</p>
+              <div className="chat-login-banner-actions">
+                {pendingLoginConnector ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    data-testid="chat-login-banner-action"
+                    onClick={() => void onBrowserLogin(pendingLoginConnector)}
+                  >
+                    {LOGIN_AT.pendingBannerAction}
+                  </Button>
+                ) : null}
+                {run.liveRunId && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid="chat-login-banner-continue"
+                      onClick={() => void onLoginResume('approve')}
+                    >
+                      {LOGIN_AT.pendingContinue}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid="chat-login-banner-skip"
+                      onClick={() => void onLoginResume('reject', 'skip_login')}
+                    >
+                      {LOGIN_AT.pendingSkip}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="chat-login-banner-abort"
+                      onClick={() => void onLoginResume('reject', 'abort_login')}
+                    >
+                      {LOGIN_AT.pendingAbort}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
           {(run.status || showStop) && (
             <div className="chat-status-row">
               <p className="status">{run.status}</p>

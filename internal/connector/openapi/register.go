@@ -156,6 +156,17 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			if err != nil {
 				return nil, true, err
 			}
+			// Expired / rejected credentials often surface as raw 401; remap so Chat
+			// ToolCard shows「浏览器登录」instead of only a dead error payload.
+			if conv != "" && out.IsError && LooksLikeAuthFailure(out.Content) {
+				msg := "登录已失效或未登录，请点击「浏览器登录」或「忽略此系统」"
+				if m, ok := out.Content["message"].(string); ok {
+					if t := strings.TrimSpace(m); t != "" {
+						msg = t + " — 请点击「浏览器登录」或「忽略此系统」"
+					}
+				}
+				return tool.LoginRequiredContentMsg(msg), true, nil
+			}
 			if usedID != "" && opts.Identities != nil {
 				_ = opts.Identities.Touch(identity.KeyFrom(ctx), usedID)
 			}

@@ -30,11 +30,14 @@ const tool = (over: Partial<Extract<ChatBlock, { kind: 'tool' }>> = {}) =>
   }) as Extract<ChatBlock, { kind: 'tool' }>
 
 describe('ToolCard login_required', () => {
-  it('shows 去登录 when result code is login_required and not readOnly', () => {
-    const html = renderToStaticMarkup(<ToolCard block={tool()} catalog={catalog} />)
-    expect(html).toContain(LOGIN_AT.goLogin)
+  it('shows login message without chat-login button', () => {
+    const html = renderToStaticMarkup(
+      <ToolCard block={tool()} catalog={catalog} onBrowserLogin={() => {}} />,
+    )
     expect(html).toContain('此工具需要先登录')
-    expect(html).toContain(LOGIN_AT.localHint)
+    expect(html).toContain(LOGIN_AT.preferBrowser)
+    expect(html).toContain(LOGIN_AT.browserLogin)
+    expect(html).not.toContain(LOGIN_AT.localHint)
   })
 
   it('shows cloud risk copy and browser login when provided', () => {
@@ -48,27 +51,47 @@ describe('ToolCard login_required', () => {
     )
     expect(html).toContain(LOGIN_AT.cloudRisk)
     expect(html).toContain(LOGIN_AT.browserLogin)
+    expect(html).toContain('tool-card-browser-login')
   })
 
-  it('hides 去登录 in readOnly history', () => {
+  it('keeps browser login on readOnly history cards', () => {
     const html = renderToStaticMarkup(
-      <ToolCard block={tool()} catalog={catalog} readOnly />,
+      <ToolCard
+        block={tool()}
+        catalog={catalog}
+        readOnly
+        onBrowserLogin={() => {}}
+      />,
     )
-    expect(html).not.toContain(LOGIN_AT.goLogin)
+    expect(html).toContain(LOGIN_AT.browserLogin)
   })
 
-  it('hides 去登录 when result is not login_required', () => {
+  it('points to footer banner when suppressLoginActions', () => {
+    const html = renderToStaticMarkup(
+      <ToolCard
+        block={tool()}
+        catalog={catalog}
+        suppressLoginActions
+        onBrowserLogin={() => {}}
+      />,
+    )
+    expect(html).toContain(LOGIN_AT.useBanner)
+    expect(html).not.toContain('tool-card-browser-login')
+  })
+
+  it('hides login UI when result is not login_required', () => {
     const html = renderToStaticMarkup(
       <ToolCard
         block={tool({ result: { code: 'other', message: 'x' } })}
         catalog={catalog}
+        onBrowserLogin={() => {}}
       />,
     )
-    expect(html).not.toContain(LOGIN_AT.goLogin)
+    expect(html).not.toContain(LOGIN_AT.browserLogin)
   })
 })
 
-describe('ToolCard onGoLoginSkill', () => {
+describe('ToolCard onBrowserLogin', () => {
   let host: HTMLDivElement
   let root: Root
 
@@ -94,21 +117,6 @@ describe('ToolCard onGoLoginSkill', () => {
     })
   }
 
-  it('click 去登录 calls onGoLoginSkill with login-<connector_id>', () => {
-    const onGoLoginSkill = vi.fn()
-    render(<ToolCard block={tool()} catalog={catalog} onGoLoginSkill={onGoLoginSkill} />)
-
-    const btn = Array.from(host.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === LOGIN_AT.goLogin,
-    )
-    expect(btn).toBeTruthy()
-    act(() => {
-      btn!.click()
-    })
-    expect(onGoLoginSkill).toHaveBeenCalledTimes(1)
-    expect(onGoLoginSkill).toHaveBeenCalledWith('login-crm')
-  })
-
   it('click 浏览器登录 calls onBrowserLogin with connector_id', () => {
     const onBrowserLogin = vi.fn()
     render(<ToolCard block={tool()} catalog={catalog} onBrowserLogin={onBrowserLogin} />)
@@ -120,43 +128,5 @@ describe('ToolCard onGoLoginSkill', () => {
       btn!.click()
     })
     expect(onBrowserLogin).toHaveBeenCalledWith('crm')
-  })
-
-  it('normalizes connector_id the same way as backend SkillID', () => {
-    const onGoLoginSkill = vi.fn()
-    render(
-      <ToolCard
-        block={tool()}
-        catalog={[{ name: 'order_query', title: '查询订单', connector_id: 'a/b' }]}
-        onGoLoginSkill={onGoLoginSkill}
-      />,
-    )
-    const btn = Array.from(host.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === LOGIN_AT.goLogin,
-    )
-    expect(btn).toBeTruthy()
-    act(() => {
-      btn!.click()
-    })
-    expect(onGoLoginSkill).toHaveBeenCalledWith('login-ab')
-  })
-
-  it('does not call onGoLoginSkill when connector_id is missing', () => {
-    const onGoLoginSkill = vi.fn()
-    render(
-      <ToolCard
-        block={tool()}
-        catalog={[{ name: 'order_query', title: '查询订单' }]}
-        onGoLoginSkill={onGoLoginSkill}
-      />,
-    )
-    const btn = Array.from(host.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === LOGIN_AT.goLogin,
-    )
-    expect(btn).toBeTruthy()
-    act(() => {
-      btn!.click()
-    })
-    expect(onGoLoginSkill).not.toHaveBeenCalled()
   })
 })

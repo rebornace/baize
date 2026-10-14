@@ -131,11 +131,56 @@ func TestSubmitConversationUpdatesIdentityStore(t *testing.T) {
 	}, id, csrf, map[string]string{"user": "a", "pass": "b"}); err != nil {
 		t.Fatal(err)
 	}
-	list := ids.List(identity.Scope("conv_chat_1"))
+	list := ids.List(identity.Key("conv_chat_1", ""))
 	if len(list) == 0 {
 		t.Fatal("expected conversation identity")
 	}
 	if list[0].CredentialHeaders["Authorization"] != "Bearer tok_conv_long" {
+		t.Fatalf("headers=%v", list[0].CredentialHeaders)
+	}
+}
+
+func TestSubmitConversationPersistsIntoWorkspacePool(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertConnector(store.Connector{
+		ID: "mall", Type: "openapi",
+		Auth: store.ConnectorAuth{
+			Capture: store.CaptureAuth{
+				TokenJSONPaths: []string{"accessToken"},
+				HeaderTemplate: "Bearer {{token}}",
+			},
+		},
+	})
+	sessions := NewMemorySessions(time.Minute)
+	id, csrf, err := sessions.Issue(Session{
+		ConnectorID:    "mall",
+		LoginTool:      "mall.login",
+		Mode:           ModePasswordForm,
+		ConversationID: "conv_lab_1",
+		WorkspaceID:    "lab",
+		Fields: []store.HostedLoginField{
+			{Name: "user", Arg: "username", Input: "text"},
+			{Name: "pass", Arg: "password", Input: "password"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := identity.NewMemoryStore()
+	reg := &fakeReg{content: map[string]any{"accessToken": "tok_lab_long", "email": "u@x"}}
+	if err := Submit(context.Background(), SubmitDeps{
+		Sessions: sessions, Store: st, Registry: reg, Identities: ids,
+	}, id, csrf, map[string]string{"user": "a", "pass": "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ids.List(identity.Scope("conv_lab_1"))) != 0 {
+		t.Fatal("must not write default workspace pool when WorkspaceID is set")
+	}
+	list := ids.List(identity.Key("conv_lab_1", "lab"))
+	if len(list) == 0 {
+		t.Fatal("expected identity under workspace key")
+	}
+	if list[0].CredentialHeaders["Authorization"] != "Bearer tok_lab_long" {
 		t.Fatalf("headers=%v", list[0].CredentialHeaders)
 	}
 }

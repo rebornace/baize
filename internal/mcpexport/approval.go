@@ -11,9 +11,9 @@ import (
 
 const exportApprovalInputID = "baize_export_approval"
 
-const msgExportApprovalUnsupported = "This Baize tool requires in-client approval (MCP elicitation), which this client does not support. Do not retry with different tools or workarounds. Use a client that supports elicitation, or ask an admin to expose only non-approval tools on this export key."
+const msgExportApprovalUnsupported = "【中文】此白泽工具需要客户端审批（MCP elicitation），当前客户端不支持。请勿用其它工具或变通方式重试。请改用支持 elicitation 的客户端，或请管理员仅在此导出 Key 上暴露无需审批的工具。\n\n[English] This Baize tool requires in-client approval (MCP elicitation), which this client does not support. Do not retry with different tools or workarounds. Use a client that supports elicitation, or ask an admin to expose only non-approval tools on this export key."
 
-const msgExportApprovalDeclined = "User declined Baize tool approval. Do not retry with different tools or workarounds."
+const msgExportApprovalDeclined = "【中文】用户已拒绝白泽工具审批。请勿用其它工具或变通方式重试。\n\n[English] User declined Baize tool approval. Do not retry with different tools or workarounds."
 
 // ApprovalOpts configures export approval heuristics.
 type ApprovalOpts struct {
@@ -70,8 +70,11 @@ func clientSupportsElicitation(ss *mcp.ServerSession) bool {
 
 func exportApprovalElicitParams(toolName string) *mcp.ElicitParams {
 	return &mcp.ElicitParams{
-		Mode:    "form",
-		Message: fmt.Sprintf("Approve running Baize tool %q?", toolName),
+		Mode: "form",
+		Message: fmt.Sprintf(
+			"【中文】是否允许运行白泽工具 %q？\n\n[English] Approve running Baize tool %q?",
+			toolName, toolName,
+		),
 	}
 }
 

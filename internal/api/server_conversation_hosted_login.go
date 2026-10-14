@@ -55,6 +55,7 @@ func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *htt
 	seed, err := hostedlogin.MaterializeSession(cfg, methodID, hostedlogin.Session{
 		ConnectorID:    connectorID,
 		ConversationID: convID,
+		WorkspaceID:    s.workspaceIDForConv(convID),
 		PublicOrigin:   origin,
 	})
 	if err != nil {

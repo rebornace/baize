@@ -64,7 +64,7 @@ func TestPrepareSessionAuthAddsHint(t *testing.T) {
 	if !strings.Contains(cleaned, "step") {
 		t.Fatalf("cleaned lost intent: %q", cleaned)
 	}
-	if !ConversationHasSessionAuth(st, "c1") {
+	if !HasSessionAuth(st, "c1") {
 		t.Fatal("expected session auth")
 	}
 }

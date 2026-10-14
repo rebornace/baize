@@ -30,11 +30,7 @@ func (s *Server) handlePostConnectorHostedLoginDraft(w http.ResponseWriter, r *h
 	if glob == "" {
 		glob = "*login*"
 	}
-	schemes, err := connectorSecuritySchemes(conn)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "could not read connector spec security schemes")
-		return
-	}
+	schemes, _ := s.connectorSecuritySchemes(r.Context(), conn)
 	cands := hostedlogin.BuildCandidates(s.Store.ListToolsByConnector(id), glob, schemes)
 	draft := draftConfigFromCandidates(cands)
 	writeJSON(w, http.StatusOK, map[string]any{

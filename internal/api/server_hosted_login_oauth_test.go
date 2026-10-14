@@ -57,7 +57,7 @@ func TestHostedLoginOAuthRedirectAndCallback(t *testing.T) {
 		t.Fatalf("callback code=%d body=%s", rr2.Code, rr2.Body.String())
 	}
 	body, _ := io.ReadAll(rr2.Body)
-	if !strings.Contains(string(body), "Signed in") {
+	if !strings.Contains(string(body), "已登录") && !strings.Contains(string(body), "Signed in") {
 		t.Fatalf("%s", body)
 	}
 	got, err := st.GetMCPExportIdentity("mei_1")

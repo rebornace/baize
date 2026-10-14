@@ -15,3 +15,18 @@ func resolveExportIdentity(st store.Store, key store.MCPExportKey, connectorID, 
 	}
 	return st.GetMCPExportIdentity(id)
 }
+
+// exportRoleForTool returns the hosted-login role when toolName is a configured
+// login_tool on the connector; otherwise "" (connector-default slot).
+func exportRoleForTool(st store.Store, connectorID, toolName string) string {
+	connectorID = strings.TrimSpace(connectorID)
+	toolName = strings.TrimSpace(toolName)
+	if connectorID == "" || toolName == "" || st == nil {
+		return ""
+	}
+	conn, err := st.GetConnector(connectorID)
+	if err != nil {
+		return ""
+	}
+	return conn.Auth.HostedLogin.RoleForLoginTool(toolName)
+}

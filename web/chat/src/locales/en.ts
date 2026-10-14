@@ -71,7 +71,7 @@ export const enPack = {
     cancelled: 'Cancelled',
     statusQueued: 'Queued',
     statusRunning: 'Running',
-    statusWaitingHuman: 'Waiting for approval',
+    statusWaitingHuman: 'Waiting for you (sign-in or approval)',
     statusSucceeded: 'Completed',
     statusFailed: 'Failed',
     statusCancelled: 'Cancelled',
@@ -637,15 +637,25 @@ export const enPack = {
     errInternal: 'Service issue; please try again later.',
   },
   LOGIN_AT: {
-    goLogin: 'Sign in',
+    goLogin: 'Sign in via chat',
     browserLogin: 'Browser sign-in',
     skillMissing: 'No login skill available (ensure the connector enables login-related tools)',
+    preferBrowser:
+      'Use Browser sign-in to complete login in a browser; do not send account passwords in chat.',
     cloudRisk:
       'This assistant may use a cloud model. Avoid sending account passwords in chat (they may be sent to the model provider). Prefer Browser sign-in or a local model. If you already sent credentials, change that system password soon.',
     localHint:
       'Using a local or self-hosted endpoint; still avoid leaving passwords in long-lived chat logs.',
     browserLoginFailed:
       'Could not open the hosted login page (enable hosted login on the connector and set public_base_url)',
+    browserOpened: 'Opened the browser sign-in page. Finish login there, then return to the chat.',
+    pendingBanner:
+      'The assistant paused: this business system needs sign-in. Sign in in the browser then Continue, or Skip this system so it tries another, or End this turn.',
+    pendingBannerAction: 'Browser sign-in',
+    pendingContinue: 'Signed in — continue',
+    pendingSkip: 'Skip this system',
+    pendingAbort: 'End this turn',
+    useBanner: 'Use the actions below to sign in in the browser, skip this system, or end this turn.',
   },
   TOOLS: {
     title: 'Assistant capabilities',
@@ -1183,7 +1193,7 @@ export const enPack = {
   EXTERNAL_LOGIN: {
     title: 'External login',
     intro:
-      'Configure the hosted sign-in page for a business system: detect login methods, bind the public URL and export identity, then issue a test link.',
+      'Configure the hosted sign-in page for a business system: detect login methods, bind the public URL and export identity, then issue a real sign-in link (for MCP export and integration).',
     stepsAria: 'Setup steps',
     step1: '1. Choose system',
     step2: '2. Login methods',
@@ -1193,15 +1203,24 @@ export const enPack = {
     connectorLabel: 'Business connector',
     connectorHint: 'Lists OpenAPI / HTTP connectors only.',
     connectorPlaceholder: 'Select…',
+    configuredSuffix: 'Configured',
+    configuredHint:
+      'A previously saved external login setup was found; the matching connector is preselected. You can open the sign-in page without finishing the wizard again.',
+    openLoginShortcut: 'Open sign-in page',
+    editConfig: 'Edit setup',
     connectorLinkPrefix: 'Need a connector?',
     connectorLinkOpenApi: 'Connect a business system',
     connectorLinkPlugins: 'Connect a plugin service',
     next: 'Next',
     back: 'Back',
-    methodsIntro: 'Enable login methods and pick a default. Rule-based candidates are listed automatically.',
+    methodsIntro:
+      'You can enable multiple login methods; “Default” only sets the hosted page’s first screen—users can still switch.',
     noCandidates: 'No login methods detected; ensure the connector spec includes login tools or security schemes.',
-    defaultMethod: 'Default',
+    enableMethod: 'Enable this method',
+    defaultMethod: 'Default (hosted page first screen)',
     methodLabel: 'Display name',
+    methodRoleLabel: 'Role key',
+    methodRoleHint: 'Identity-slot key with the connector; leave blank to use the method id.',
     suggest: 'Smart suggest',
     suggestEmpty: 'The model returned no suggestions; you can continue with rule-based candidates.',
     suggestApplied: 'Applied smart suggestions (review before saving).',
@@ -1209,23 +1228,31 @@ export const enPack = {
     enableHosted: 'Enable hosted external login',
     publicBaseLabel: 'Public base URL',
     publicBaseHint: 'Public origin for hosted login pages (same as Runtime settings).',
-    exportKeyLabel: 'Export key',
-    exportKeyHint: 'Pick a key for test sessions and bind this connector’s identity slot.',
-    exportKeyPlaceholder: 'Select key…',
-    identityLabel: 'Export identity',
-    identityHint: 'Login identity used for this connector in MCP export.',
-    identityPlaceholder: 'Select identity…',
+    identityMethodLabel: 'Choose login methods per export identity',
+    identityMethodHint:
+      'Each identity appears once; check which login methods it may use (one method can serve many identities). On save, export keys already linked to these identities are updated automatically—no separate key picker.',
+    noIdentities: 'No export identities yet.',
+    goMcpExport: 'Manage under External capability',
+    keysAutoHint: (n: number) =>
+      `On save, ${n} export key(s) already linked to these identities will be updated.`,
+    keysAutoHintEmpty:
+      'No export key is linked to the selected identities yet. Create or bind a key first, or sign-in links cannot be issued.',
     saveAndContinue: 'Save and continue',
-    doneIntro: 'Settings saved. Issue a test session and open the hosted login page.',
-    issueTestLink: 'Issue test link',
-    openTestLogin: 'Open test login page',
+    doneIntro:
+      'Settings saved. Issue a sign-in link and complete login in the browser (same kind of page MCP clients get on auth failure).',
+    issueTestLink: 'Issue sign-in link',
+    openTestLogin: 'Open sign-in page',
+    credentialDestHint:
+      'After sign-in, credentials are stored on the export identity under Settings → External capability (Headers)—not under Settings → System → Accounts (those are in-chat business accounts).',
     configureAnother: 'Configure another system',
     errPickConnector: 'Select a business connector first.',
     errPickMethod: 'Enable at least one login method.',
     errDefaultMethod: 'Choose a default login method.',
     errMethodsRequired: 'When enabled, at least one valid method and a default are required.',
     errPublicBase: 'Enter the public base URL.',
-    errKeyRequired: 'Select an export key and identity to bind the connector slot.',
+    errNoLinkedKey:
+      'No export key is linked to the selected identities. Create or bind a key under External capability first.',
+    errMethodIdentity: 'Select at least one login method for an export identity.',
   },
   SETTINGS_NAV: {
     title: 'Settings',

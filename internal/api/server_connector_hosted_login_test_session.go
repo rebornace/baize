@@ -51,8 +51,12 @@ func (s *Server) handlePostConnectorHostedLoginTestSession(w http.ResponseWriter
 		writeError(w, http.StatusBadRequest, "invalid_request", "hosted login has no default method configured")
 		return
 	}
+	role := ""
+	if m, ok := cfg.MethodByID(methodID); ok {
+		role = m.EffectiveRole()
+	}
 
-	key, identityID, ok := s.resolveHostedTestExportAuth(id, strings.TrimSpace(body.ExportKeyID))
+	key, identityID, ok := s.resolveHostedTestExportAuth(id, strings.TrimSpace(body.ExportKeyID), role)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid_request", "bind an MCP export key with an identity slot for this connector")
 		return
@@ -85,7 +89,7 @@ func (s *Server) handlePostConnectorHostedLoginTestSession(w http.ResponseWriter
 	})
 }
 
-func (s *Server) resolveHostedTestExportAuth(connectorID, exportKeyID string) (store.MCPExportKey, string, bool) {
+func (s *Server) resolveHostedTestExportAuth(connectorID, exportKeyID, role string) (store.MCPExportKey, string, bool) {
 	if exportKeyID != "" {
 		key, err := s.Store.GetMCPExportKey(exportKeyID)
 		if err != nil {
@@ -94,7 +98,7 @@ func (s *Server) resolveHostedTestExportAuth(connectorID, exportKeyID string) (s
 		if key.RevokedAt != nil {
 			return store.MCPExportKey{}, "", false
 		}
-		identityID, ok := store.ResolveExportIdentityID(key, connectorID, "")
+		identityID, ok := store.ResolveExportIdentityID(key, connectorID, role)
 		if !ok || strings.TrimSpace(identityID) == "" {
 			return store.MCPExportKey{}, "", false
 		}
@@ -108,7 +112,7 @@ func (s *Server) resolveHostedTestExportAuth(connectorID, exportKeyID string) (s
 		if key.RevokedAt != nil {
 			continue
 		}
-		identityID, ok := store.ResolveExportIdentityID(key, connectorID, "")
+		identityID, ok := store.ResolveExportIdentityID(key, connectorID, role)
 		if !ok || strings.TrimSpace(identityID) == "" {
 			continue
 		}

@@ -29,6 +29,10 @@ type runSkillState struct {
 	workflowSkill   string
 	workflowResults map[string]any
 	contextArmed    bool
+
+	// skippedConnectors are systems the user chose to ignore for this run
+	// after a login_required pause (multi-connector routing).
+	skippedConnectors map[string]struct{}
 }
 
 func (e *Engine) ensureRuns() {
@@ -126,7 +130,8 @@ func isChineseLocale(locale string) bool {
 }
 
 func (e *Engine) appendSessionAuthHint(system, conversationID string) string {
-	if !identity.ConversationHasSessionAuth(e.Identities, conversationID) {
+	key := identity.Key(conversationID, e.workspaceIDFor(conversationID))
+	if !identity.HasSessionAuth(e.Identities, key) {
 		return system
 	}
 	if strings.Contains(system, identity.SessionAuthReadyHint) {
@@ -187,14 +192,46 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 	for _, spec := range all {
 		byName[spec.Name] = spec
 	}
+	skipped := map[string]struct{}{}
+	if st != nil && len(st.skippedConnectors) > 0 {
+		skipped = st.skippedConnectors
+	}
 	out := make([]llm.ToolSpec, 0, len(visibleNames)+1)
 	for _, name := range visibleNames {
+		if len(skipped) > 0 && e.Tools != nil {
+			if info, ok := e.Tools.Get(name); ok {
+				if cid := strings.TrimSpace(info.ConnectorID); cid != "" {
+					if _, skip := skipped[cid]; skip {
+						continue
+					}
+				}
+			}
+		}
 		if spec, ok := byName[name]; ok {
 			out = append(out, spec)
 		}
 	}
 	out = append(out, skill.ActivateToolSpec())
 	return e.withContextTools(out, all, runID)
+}
+
+func (e *Engine) skipConnectorForRun(runID, connectorID string) {
+	connectorID = strings.TrimSpace(connectorID)
+	if connectorID == "" {
+		return
+	}
+	e.runMu.Lock()
+	defer e.runMu.Unlock()
+	e.ensureRuns()
+	st := e.runs[runID]
+	if st == nil {
+		st = &runSkillState{workflowResults: map[string]any{"input": map[string]any{}}}
+		e.runs[runID] = st
+	}
+	if st.skippedConnectors == nil {
+		st.skippedConnectors = make(map[string]struct{})
+	}
+	st.skippedConnectors[connectorID] = struct{}{}
 }
 
 func (e *Engine) withContextTools(specs, all []llm.ToolSpec, runID string) []llm.ToolSpec {

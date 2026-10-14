@@ -10,11 +10,13 @@ import {
   listMCPExportKeys,
   patchMCPExportKey,
   patchRuntimeSettings,
+  patchTool,
   putConnector,
   suggestHostedLogin,
   type ConnectorInfo,
   type HostedLoginMethod,
   type MCPExportIdentity,
+  type MCPExportIdentitySlot,
   type MCPExportKey,
 } from '../api'
 import {
@@ -30,6 +32,7 @@ import { EXTERNAL_LOGIN, friendlyError } from '../strings'
 import {
   buildHostedLoginFromDraft,
   hostedLoginToDraft,
+  methodDraftEffectiveRole,
   methodDraftFromCandidate,
   type HostedLoginMethodDraft,
 } from './hostedLoginForm'
@@ -40,12 +43,72 @@ function connectorEligible(c: ConnectorInfo): boolean {
   return c.type === 'openapi' || c.type === 'http'
 }
 
+function connectorHasHostedLogin(c: ConnectorInfo): boolean {
+  const hl = c.auth?.hosted_login
+  if (!hl?.enabled) return false
+  return (hl.methods?.length ?? 0) > 0
+}
+
 function keyHasConnectorSlot(key: MCPExportKey, connectorId: string): boolean {
   return (key.identity_slots ?? []).some((s) => s.connector_id === connectorId && s.identity_id)
 }
 
-function findKeyForConnector(keys: MCPExportKey[], connectorId: string): MCPExportKey | undefined {
-  return keys.find((k) => !k.revoked_at && keyHasConnectorSlot(k, connectorId))
+function keyReferencesIdentities(key: MCPExportKey, identityIds: Set<string>): boolean {
+  if (identityIds.has(key.identity_id)) return true
+  return (key.identity_slots ?? []).some(
+    (s) => Boolean(s.identity_id) && identityIds.has(s.identity_id),
+  )
+}
+
+/** Keys already tied to the bound export identities (or this connector). */
+function resolveLinkedExportKeys(
+  keys: MCPExportKey[],
+  methods: HostedLoginMethodDraft[],
+  connectorId: string,
+): MCPExportKey[] {
+  const identityIds = new Set(
+    methods.flatMap((m) => m.identityIds.map((x) => x.trim()).filter(Boolean)),
+  )
+  if (identityIds.size === 0) return []
+  return keys.filter(
+    (k) => keyReferencesIdentities(k, identityIds) || keyHasConnectorSlot(k, connectorId),
+  )
+}
+
+function upsertIdentitySlot(
+  slots: MCPExportIdentitySlot[],
+  slot: MCPExportIdentitySlot,
+): MCPExportIdentitySlot[] {
+  const connector = slot.connector_id ?? ''
+  const role = slot.role ?? ''
+  const next = [...slots]
+  const idx = next.findIndex(
+    (s) => (s.connector_id ?? '') === connector && (s.role ?? '') === role,
+  )
+  if (idx >= 0) next[idx] = slot
+  else next.push(slot)
+  return next
+}
+
+/** Drop slots whose identity was deleted, so PATCH does not 400. */
+function slotsWithKnownIdentities(
+  slots: MCPExportIdentitySlot[],
+  knownIds: Set<string>,
+): MCPExportIdentitySlot[] {
+  return slots.filter((s) => knownIds.has((s.identity_id ?? '').trim()))
+}
+
+function knownIdentityIdSet(identities: MCPExportIdentity[]): Set<string> {
+  return new Set(identities.map((i) => i.id.trim()).filter(Boolean))
+}
+
+function unionTools(existing: string[] | undefined, add: string[]): string[] {
+  const out = new Set((existing ?? []).map((t) => t.trim()).filter(Boolean))
+  for (const t of add) {
+    const n = t.trim()
+    if (n) out.add(n)
+  }
+  return [...out]
 }
 
 export function ExternalLoginSettings() {
@@ -65,8 +128,6 @@ export function ExternalLoginSettings() {
   const [publicBaseUrl, setPublicBaseUrl] = useState('')
   const [identities, setIdentities] = useState<MCPExportIdentity[]>([])
   const [keys, setKeys] = useState<MCPExportKey[]>([])
-  const [exportKeyId, setExportKeyId] = useState('')
-  const [identityId, setIdentityId] = useState('')
   const [testUrl, setTestUrl] = useState<string | null>(null)
   const [stepError, setStepError] = useState<string | null>(null)
 
@@ -98,10 +159,14 @@ export function ExternalLoginSettings() {
   }, [loadCatalog])
 
   useEffect(() => {
-    if (!preselectConnector || loading || connectors.length === 0) return
-    if (!connectors.some((c) => c.id === preselectConnector)) return
-    setConnectorId(preselectConnector)
-  }, [preselectConnector, loading, connectors])
+    if (loading || connectors.length === 0 || connectorId) return
+    if (preselectConnector && connectors.some((c) => c.id === preselectConnector)) {
+      setConnectorId(preselectConnector)
+      return
+    }
+    const configured = connectors.find(connectorHasHostedLogin)
+    if (configured) setConnectorId(configured.id)
+  }, [preselectConnector, loading, connectors, connectorId])
 
   const resetMethodsFromConnector = useCallback(async (id: string) => {
     setBusy(true)
@@ -128,11 +193,38 @@ export function ExternalLoginSettings() {
       setDefaultMethodId(def)
       setHostedEnabled(existing.enabled || selected.size > 0)
 
-      const boundKey = findKeyForConnector(keys, id)
-      if (boundKey) {
-        setExportKeyId(boundKey.id)
-        const slot = boundKey.identity_slots?.find((s) => s.connector_id === id)
-        setIdentityId(slot?.identity_id ?? boundKey.identity_id)
+      // Prefer identity_ids persisted on methods; else backfill from Key slots.
+      const slotSource = keys.find((k) => keyHasConnectorSlot(k, id))
+      if (slotSource) {
+        drafts = drafts.map((m) => {
+          if (m.identityIds.length > 0) return m
+          if (!selected.has(m.id)) return m
+          const role = methodDraftEffectiveRole(m)
+          const primary = slotSource.identity_slots?.find(
+            (s) => s.connector_id === id && (s.role ?? '') === role && s.identity_id,
+          )?.identity_id
+          const extras = (slotSource.identity_slots ?? [])
+            .filter(
+              (s) =>
+                s.connector_id === id &&
+                s.identity_id &&
+                (s.role ?? '') === s.identity_id &&
+                s.identity_id !== primary,
+            )
+            .map((s) => s.identity_id as string)
+          const connectorDefault = slotSource.identity_slots?.find(
+            (s) => s.connector_id === id && !(s.role ?? '') && s.identity_id,
+          )?.identity_id
+          const ids = [
+            ...new Set(
+              [primary, connectorDefault, ...extras, slotSource.identity_id]
+                .map((x) => (x ?? '').trim())
+                .filter(Boolean),
+            ),
+          ]
+          return ids.length > 0 ? { ...m, identityIds: ids } : m
+        })
+        setMethodDrafts(drafts)
       }
     } catch (err) {
       const f = friendlyError(err)
@@ -152,6 +244,16 @@ export function ExternalLoginSettings() {
     [methodDrafts, selectedIds],
   )
 
+  const linkedExportKeys = useMemo(
+    () => resolveLinkedExportKeys(keys, selectedMethods, connectorId),
+    [keys, selectedMethods, connectorId],
+  )
+
+  const selectedAlreadyConfigured = useMemo(() => {
+    const c = connectors.find((x) => x.id === connectorId)
+    return Boolean(c && connectorHasHostedLogin(c))
+  }, [connectors, connectorId])
+
   const onToggleMethod = (id: string, on: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -160,6 +262,20 @@ export function ExternalLoginSettings() {
       return next
     })
     if (!defaultMethodId && on) setDefaultMethodId(id)
+  }
+
+  /** Identity-first toggle: which login methods an export identity may use. */
+  const onToggleIdentityMethod = (identityId: string, methodId: string, on: boolean) => {
+    setMethodDrafts((drafts) =>
+      drafts.map((d) => {
+        if (d.id !== methodId) return d
+        if (on) {
+          if (d.identityIds.includes(identityId)) return d
+          return { ...d, identityIds: [...d.identityIds, identityId] }
+        }
+        return { ...d, identityIds: d.identityIds.filter((x) => x !== identityId) }
+      }),
+    )
   }
 
   const onApplySuggest = async () => {
@@ -232,22 +348,69 @@ export function ExternalLoginSettings() {
     return true
   }
 
-  const bindExportKey = async (): Promise<boolean> => {
-    if (!connectorId.trim() || !exportKeyId.trim() || !identityId.trim()) {
-      setStepError(EXTERNAL_LOGIN.errKeyRequired)
+  const bindExportKeysAndLoginTools = async (): Promise<boolean> => {
+    if (!connectorId.trim()) return false
+    const knownIds = knownIdentityIdSet(identities)
+    // Drop deleted / stale ids left on methods or key slots (common after identity cleanup).
+    const methodsWithKnown = selectedMethods.map((m) => ({
+      ...m,
+      identityIds: m.identityIds.map((x) => x.trim()).filter((id) => knownIds.has(id)),
+    }))
+    const anyBound = methodsWithKnown.some((m) => m.identityIds.length > 0)
+    if (!anyBound) {
+      setStepError(EXTERNAL_LOGIN.errMethodIdentity)
       return false
     }
-    const key = keys.find((k) => k.id === exportKeyId)
-    if (!key) {
-      setStepError(EXTERNAL_LOGIN.errKeyRequired)
+    const targetKeys = resolveLinkedExportKeys(keys, methodsWithKnown, connectorId)
+    if (targetKeys.length === 0) {
+      setStepError(EXTERNAL_LOGIN.errNoLinkedKey)
       return false
     }
-    const slots = [...(key.identity_slots ?? [])]
-    const idx = slots.findIndex((s) => s.connector_id === connectorId)
-    const slot = { connector_id: connectorId, identity_id: identityId }
-    if (idx >= 0) slots[idx] = slot
-    else slots.push(slot)
-    await patchMCPExportKey(exportKeyId, { identity_slots: slots })
+    const loginTools = [
+      ...new Set(
+        methodsWithKnown.map((m) => m.loginTool.trim()).filter(Boolean),
+      ),
+    ]
+    for (const toolName of loginTools) {
+      await patchTool(toolName, { export: 'force_allow' })
+    }
+
+    const defaultId = defaultMethodId || methodsWithKnown[0]?.id || ''
+    const defaultMethod =
+      methodsWithKnown.find((m) => m.id === defaultId) ?? methodsWithKnown[0]
+    const defaultIdentity = defaultMethod?.identityIds[0]?.trim() ?? ''
+
+    for (const key of targetKeys) {
+      let slots = slotsWithKnownIdentities(key.identity_slots ?? [], knownIds)
+      for (const m of methodsWithKnown) {
+        const ids = m.identityIds
+        if (ids.length === 0) continue
+        const primary = ids[0]
+        const role = methodDraftEffectiveRole(m)
+        slots = upsertIdentitySlot(slots, {
+          connector_id: connectorId,
+          role,
+          identity_id: primary,
+        })
+        for (const identityId of ids.slice(1)) {
+          slots = upsertIdentitySlot(slots, {
+            connector_id: connectorId,
+            role: identityId,
+            identity_id: identityId,
+          })
+        }
+      }
+      if (defaultIdentity) {
+        slots = upsertIdentitySlot(slots, {
+          connector_id: connectorId,
+          identity_id: defaultIdentity,
+        })
+      }
+      await patchMCPExportKey(key.id, {
+        identity_slots: slots,
+        allowed_tools: unionTools(key.allowed_tools, loginTools),
+      })
+    }
     return true
   }
 
@@ -293,7 +456,7 @@ export function ExternalLoginSettings() {
         setBusy(false)
         return
       }
-      if (!(await bindExportKey())) {
+      if (!(await bindExportKeysAndLoginTools())) {
         setBusy(false)
         return
       }
@@ -307,16 +470,20 @@ export function ExternalLoginSettings() {
     }
   }
 
-  const issueTestLink = async () => {
+  const issueLoginLink = async (openInNewTab: boolean) => {
     if (!connectorId.trim()) return
     setBusy(true)
     setStepError(null)
     try {
+      const firstKey = resolveLinkedExportKeys(keys, selectedMethods, connectorId)[0]?.id
       const res = await createHostedLoginTestSession(connectorId, {
-        export_key_id: exportKeyId || undefined,
+        export_key_id: firstKey || undefined,
         method_id: defaultMethodId || undefined,
       })
       setTestUrl(res.url)
+      if (openInNewTab && res.url) {
+        window.open(res.url, '_blank', 'noopener,noreferrer')
+      }
     } catch (err) {
       const f = friendlyError(err)
       setStepError(f.detail ?? f.title)
@@ -351,6 +518,11 @@ export function ExternalLoginSettings() {
 
       {!loading && step === 1 && (
         <section className="settings-form">
+          {connectors.some(connectorHasHostedLogin) && (
+            <p className="settings-meta" data-testid="external-login-configured-hint">
+              {EXTERNAL_LOGIN.configuredHint}
+            </p>
+          )}
           <Field label={EXTERNAL_LOGIN.connectorLabel} hint={EXTERNAL_LOGIN.connectorHint}>
             <Select
               value={connectorId}
@@ -361,6 +533,7 @@ export function ExternalLoginSettings() {
               {connectors.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.id} ({c.type})
+                  {connectorHasHostedLogin(c) ? ` · ${EXTERNAL_LOGIN.configuredSuffix}` : ''}
                 </option>
               ))}
             </Select>
@@ -372,9 +545,32 @@ export function ExternalLoginSettings() {
             <Link to="/settings/plugins">{EXTERNAL_LOGIN.connectorLinkPlugins}</Link>
           </p>
           <div className="settings-toolbar">
-            <Button type="button" disabled={busy} onClick={() => void goStep2()}>
-              {EXTERNAL_LOGIN.next}
-            </Button>
+            {selectedAlreadyConfigured ? (
+              <>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={busy || !connectorId}
+                  data-testid="external-login-open-shortcut"
+                  onClick={() => void issueLoginLink(true)}
+                >
+                  {EXTERNAL_LOGIN.openLoginShortcut}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy || !connectorId}
+                  data-testid="external-login-edit-config"
+                  onClick={() => void goStep2()}
+                >
+                  {EXTERNAL_LOGIN.editConfig}
+                </Button>
+              </>
+            ) : (
+              <Button type="button" disabled={busy} onClick={() => void goStep2()}>
+                {EXTERNAL_LOGIN.next}
+              </Button>
+            )}
           </div>
         </section>
       )}
@@ -394,7 +590,7 @@ export function ExternalLoginSettings() {
                     checked={selectedIds.has(m.id)}
                     onChange={(e) => onToggleMethod(m.id, e.target.checked)}
                   />{' '}
-                  {m.label || m.id}
+                  {EXTERNAL_LOGIN.enableMethod}: {m.label || m.id}
                 </label>
                 <label className="settings-check">
                   <input
@@ -412,6 +608,17 @@ export function ExternalLoginSettings() {
                     onChange={(e) =>
                       setMethodDrafts((drafts) =>
                         drafts.map((d) => (d.id === m.id ? { ...d, label: e.target.value } : d)),
+                      )
+                    }
+                  />
+                </Field>
+                <Field label={EXTERNAL_LOGIN.methodRoleLabel} hint={EXTERNAL_LOGIN.methodRoleHint}>
+                  <Input
+                    value={m.role}
+                    placeholder={m.id}
+                    onChange={(e) =>
+                      setMethodDrafts((drafts) =>
+                        drafts.map((d) => (d.id === m.id ? { ...d, role: e.target.value } : d)),
                       )
                     }
                   />
@@ -457,26 +664,46 @@ export function ExternalLoginSettings() {
               placeholder="https://baize.example.com"
             />
           </Field>
-          <Field label={EXTERNAL_LOGIN.exportKeyLabel} hint={EXTERNAL_LOGIN.exportKeyHint}>
-            <Select value={exportKeyId} onChange={(e) => setExportKeyId(e.target.value)}>
-              <option value="">{EXTERNAL_LOGIN.exportKeyPlaceholder}</option>
-              {keys.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.name} ({k.id})
-                </option>
-              ))}
-            </Select>
+          <Field label={EXTERNAL_LOGIN.identityMethodLabel} hint={EXTERNAL_LOGIN.identityMethodHint}>
+            {identities.length === 0 ? (
+              <p className="settings-muted">
+                {EXTERNAL_LOGIN.noIdentities}{' '}
+                <Link to="/settings/mcp-export">{EXTERNAL_LOGIN.goMcpExport}</Link>
+              </p>
+            ) : (
+              <ul className="settings-card-list" data-testid="external-login-identity-methods">
+                {identities.map((i) => (
+                  <li key={i.id} className="settings-card">
+                    <p className="settings-meta">
+                      {i.name} ({i.id})
+                    </p>
+                    <ul className="settings-card-list">
+                      {selectedMethods.map((m) => (
+                        <li key={m.id}>
+                          <label className="settings-check">
+                            <input
+                              type="checkbox"
+                              checked={m.identityIds.includes(i.id)}
+                              onChange={(e) =>
+                                onToggleIdentityMethod(i.id, m.id, e.target.checked)
+                              }
+                            />{' '}
+                            {m.label || m.id}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Field>
-          <Field label={EXTERNAL_LOGIN.identityLabel} hint={EXTERNAL_LOGIN.identityHint}>
-            <Select value={identityId} onChange={(e) => setIdentityId(e.target.value)}>
-              <option value="">{EXTERNAL_LOGIN.identityPlaceholder}</option>
-              {identities.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.id})
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <p className="settings-meta" data-testid="external-login-keys-auto-hint">
+            {linkedExportKeys.length > 0
+              ? EXTERNAL_LOGIN.keysAutoHint(linkedExportKeys.length)
+              : EXTERNAL_LOGIN.keysAutoHintEmpty}{' '}
+            <Link to="/settings/mcp-export">{EXTERNAL_LOGIN.goMcpExport}</Link>
+          </p>
           <div className="settings-toolbar">
             <Button type="button" variant="secondary" disabled={busy} onClick={() => setStep(2)}>
               {EXTERNAL_LOGIN.back}
@@ -491,20 +718,32 @@ export function ExternalLoginSettings() {
       {!loading && step === 4 && (
         <section className="settings-form">
           <p className="settings-meta">{EXTERNAL_LOGIN.doneIntro}</p>
+          <p className="settings-meta" data-testid="external-login-credential-dest">
+            {EXTERNAL_LOGIN.credentialDestHint}{' '}
+            <Link to="/settings/mcp-export">{EXTERNAL_LOGIN.goMcpExport}</Link>
+          </p>
           <div className="settings-toolbar">
-            <Button type="button" disabled={busy} onClick={() => void issueTestLink()}>
+            <Button type="button" disabled={busy} onClick={() => void issueLoginLink(true)}>
               {EXTERNAL_LOGIN.issueTestLink}
             </Button>
-          </div>
-          {testUrl && (
-            <p className="settings-meta">
-              <a href={testUrl} target="_blank" rel="noreferrer">
+            {testUrl && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => window.open(testUrl, '_blank', 'noopener,noreferrer')}
+              >
                 {EXTERNAL_LOGIN.openTestLogin}
-              </a>
-            </p>
-          )}
-          <div className="settings-toolbar">
-            <Button type="button" variant="secondary" onClick={() => setStep(1)}>
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setStep(1)
+                setTestUrl(null)
+                setConnectorId('')
+              }}
+            >
               {EXTERNAL_LOGIN.configureAnother}
             </Button>
           </div>

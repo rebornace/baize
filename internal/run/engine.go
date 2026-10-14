@@ -434,7 +434,21 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		return fmt.Errorf("%s", errMsg)
 	}
 
+	isLoginWait := payload.Kind == store.HITLKindLogin
+
 	if !d.Approve {
+		if isLoginWait && strings.TrimSpace(d.Comment) == store.HITLCommentSkipLogin {
+			e.skipConnectorForRun(runID, payload.ConnectorID)
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventHITLResumed,
+				Data: map[string]any{
+					"decision": "skip_login", "connector_id": payload.ConnectorID, "kind": store.HITLKindLogin,
+				},
+			})
+			_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+			_ = e.Store.SetHITL(runID, nil)
+			return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, true)
+		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventHITLRejected,
 			Data: map[string]any{"decision": "reject", "comment": d.Comment},
@@ -445,10 +459,14 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventHITLResumed,
-		Data: map[string]any{"decision": "approve", "comment": d.Comment},
+		Data: map[string]any{"decision": "approve", "comment": d.Comment, "kind": payload.Kind},
 	})
 	_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
 	_ = e.Store.SetHITL(runID, nil)
+
+	if isLoginWait {
+		return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, false)
+	}
 
 	toolCallID := lastToolCallID(e.Store, runID)
 	toolCtx, toolCancel := context.WithTimeout(ctx, e.toolTimeout())
@@ -484,9 +502,56 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	return e.runLoop(ctx, runID, messages)
 }
 
+func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, runID, connectorID string, skipped bool) error {
+	ag, err := e.Store.GetAgent(run.AgentID)
+	if err != nil {
+		return err
+	}
+	if e.getRunSkillState(runID) == nil {
+		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(run.Input))
+	}
+	evs, err := e.Store.ListEvents(runID)
+	if err != nil {
+		return err
+	}
+	sys := e.composeSystem(ag.System, runID)
+	sys = e.appendSessionAuthHint(sys, run.ConversationID)
+	sys = e.appendActiveGoalHint(sys)
+	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
+	if skipped && strings.TrimSpace(connectorID) != "" {
+		messages = append(messages, llm.Message{
+			Role: llm.RoleUser,
+			Content: fmt.Sprintf(
+				"[系统] 用户选择忽略业务系统 %q 的登录。请不要再调用该系统的工具；改用其它已登录系统或向用户说明无法完成依赖该系统的部分。",
+				connectorID,
+			),
+		})
+	} else {
+		messages = append(messages, llm.Message{
+			Role:    llm.RoleUser,
+			Content: "[系统] 用户已完成浏览器登录。请继续完成原任务，优先重试刚才因登录失败的工具。",
+		})
+	}
+	return e.runLoop(ctx, runID, messages)
+}
+
 func (e *Engine) isCancelled(runID string) bool {
 	runRec, err := e.Store.GetRun(runID)
 	return err == nil && runRec != nil && runRec.Status == store.StatusCancelled
+}
+
+// finalizeLoginPaused ends the run when there is no HITL gate to wait on.
+func (e *Engine) finalizeLoginPaused(runID string) error {
+	msg := "需要先登录才能继续。请点击「浏览器登录」，或「忽略此系统」跳过该业务系统后继续。"
+	_ = e.Store.AppendEvent(runID, store.Event{
+		Type: EventLLMMessage,
+		Data: map[string]any{"content": msg},
+	})
+	if err := e.Store.UpdateRun(runID, store.StatusSucceeded, msg, ""); err != nil {
+		return err
+	}
+	e.recordTerminalMessage(runID)
+	return nil
 }
 
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
@@ -625,12 +690,23 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			msg.Thinking = ""
 			msg.ThinkingRedacted = false
 			messages = append(messages, msg)
+			loginPaused := false
+			pauseTool := ""
 			for _, tc := range msg.ToolCalls {
 				if err := ctx.Err(); err != nil {
 					return err
 				}
 				if e.isCancelled(runID) {
 					return context.Canceled
+				}
+
+				if loginPaused {
+					// Same-turn remaining calls: do not invoke; keep provider
+					// tool_call_id pairing without burning more backend tokens.
+					stub := tool.LoginRequiredContentMsg("已暂停：请先完成浏览器登录后再继续")
+					e.persistToolResult(runID, tc.ID, tc.Name, stub, true)
+					messages = append(messages, e.toolResultMessage(tc.ID, stub))
+					continue
 				}
 
 				if tc.Name == skill.ActivateToolName {
@@ -666,6 +742,37 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					return tcErr
 				}
 				messages = append(messages, e.toolResultMessage(tc.ID, content))
+				if tool.NeedsLoginPause(content) {
+					loginPaused = true
+					pauseTool = tc.Name
+				}
+			}
+			if loginPaused {
+				connID := e.connectorIDForTool(pauseTool)
+				waitErr := e.awaitLoginDecision(ctx, runID, pauseTool, connID)
+				switch {
+				case waitErr == nil, errors.Is(waitErr, ErrLoginResumedContinue), errors.Is(waitErr, ErrLoginSkippedContinue):
+					if errors.Is(waitErr, ErrLoginSkippedContinue) && connID != "" {
+						messages = append(messages, llm.Message{
+							Role: llm.RoleUser,
+							Content: fmt.Sprintf(
+								"[系统] 用户选择忽略业务系统 %q 的登录。请不要再调用该系统的工具；改用其它已登录系统或向用户说明无法完成依赖该系统的部分。",
+								connID,
+							),
+						})
+					}
+					if errors.Is(waitErr, ErrLoginResumedContinue) {
+						messages = append(messages, llm.Message{
+							Role:    llm.RoleUser,
+							Content: "[系统] 用户已完成浏览器登录。请继续完成原任务，优先重试刚才因登录失败的工具。",
+						})
+					}
+					continue // next ReAct turn
+				case errors.Is(waitErr, ErrHITLRejected):
+					return waitErr
+				default:
+					return waitErr
+				}
 			}
 			continue
 		}

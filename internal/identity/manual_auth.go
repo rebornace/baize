@@ -183,10 +183,17 @@ func withSessionAuthHint(cleaned string) string {
 	return cleaned + "\n\n" + SessionAuthReadyHint
 }
 
-// ConversationHasSessionAuth reports whether the conversation already has a usable identity.
-func ConversationHasSessionAuth(store Store, conversationID string) bool {
-	if store == nil || conversationID == "" {
+// HasSessionAuth reports whether the identity-store key already has a usable identity.
+func HasSessionAuth(store Store, key string) bool {
+	if store == nil || strings.TrimSpace(key) == "" {
 		return false
 	}
-	return len(store.List(conversationID)) > 0
+	return len(store.List(key)) > 0
+}
+
+// ConversationHasSessionAuth reports whether the conversation's default identity
+// pool (Scope) has a usable identity. Prefer HasSessionAuth with Key(conv, workspace)
+// when the workspace is known.
+func ConversationHasSessionAuth(store Store, conversationID string) bool {
+	return HasSessionAuth(store, Scope(conversationID))
 }

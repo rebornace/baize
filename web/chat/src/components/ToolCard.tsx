@@ -4,7 +4,7 @@ import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
-import { isLoginRequiredContent, loginSkillID, resolveConnectorId } from '../loginEntry'
+import { isLoginRequiredContent, resolveConnectorId } from '../loginEntry'
 import type { PriorEvidenceItem } from '../priorEvidence'
 import { CHAT, HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
@@ -19,10 +19,13 @@ export interface ToolCardProps {
   readOnly?: boolean
   /** 决议失败时回调父级弹 toast；卡片自身只显通用提示。 */
   onError?: (e: unknown) => void
-  /** login_required 时「去登录」；传入 `login-<connector_id>` skill id。 */
-  onGoLoginSkill?: (skillId: string) => void
   /** login_required 时「浏览器登录」；传入连接器 id。 */
   onBrowserLogin?: (connectorId: string) => void
+  /**
+   * When true, hide login buttons on this card (footer banner owns the single
+   * login / continue / skip surface). Still shows the login_required message.
+   */
+  suppressLoginActions?: boolean
   /** 当前选用模型是否偏云端（影响登录风险文案）。 */
   cloudModelRisk?: boolean
   /** 本轮写操作前已成功（或失败）的查询结果摘要，供审批核对。 */
@@ -34,13 +37,15 @@ export function ToolCard({
   catalog = [],
   readOnly = false,
   onError,
-  onGoLoginSkill,
   onBrowserLogin,
+  suppressLoginActions = false,
   cloudModelRisk = false,
   priorEvidence,
 }: ToolCardProps) {
   const waiting = block.status === 'waiting_human' && !readOnly
-  const loginRequired = !readOnly && isLoginRequiredContent(block.result)
+  // Login CTA must remain on history cards (readOnly); only HITL approve is gated.
+  const loginRequired = isLoginRequiredContent(block.result)
+  const showLoginActions = loginRequired && !suppressLoginActions
   const [expanded, setExpanded] = useState(waiting || loginRequired)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -64,6 +69,10 @@ export function ToolCard({
     if (block.status === 'waiting_human' && !readOnly) setExpanded(true)
   }, [block.status, readOnly])
 
+  useEffect(() => {
+    if (loginRequired) setExpanded(true)
+  }, [loginRequired])
+
   const decide = async (decision: 'approve' | 'reject') => {
     setBusy(true)
     setFailed(false)
@@ -76,16 +85,6 @@ export function ToolCard({
     } finally {
       setBusy(false)
     }
-  }
-
-  const goLoginSkill = () => {
-    const connectorId = resolveConnectorId(
-      catalog.find((t) => t.name === block.name)?.connector_id,
-    )
-    if (!connectorId) return
-    const skillId = loginSkillID(connectorId)
-    if (!skillId) return
-    onGoLoginSkill?.(skillId)
   }
 
   const icon =
@@ -211,26 +210,35 @@ export function ToolCard({
       {loginRequired && (
         <div className="tool-card-actions tool-card-login-actions">
           {loginMessage ? <p className="tool-card-login-msg">{loginMessage}</p> : null}
-          <p className="tool-card-login-msg">
-            {cloudModelRisk ? LOGIN_AT.cloudRisk : LOGIN_AT.localHint}
-          </p>
-          <Button size="sm" variant="primary" onClick={goLoginSkill}>
-            {LOGIN_AT.goLogin}
-          </Button>
-          {onBrowserLogin ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                const connectorId = resolveConnectorId(
-                  catalog.find((t) => t.name === block.name)?.connector_id,
-                )
-                if (connectorId) onBrowserLogin(connectorId)
-              }}
-            >
-              {LOGIN_AT.browserLogin}
-            </Button>
-          ) : null}
+          {suppressLoginActions ? (
+            <p className="tool-card-login-msg">{LOGIN_AT.useBanner}</p>
+          ) : (
+            <>
+              <p className="tool-card-login-msg">{LOGIN_AT.preferBrowser}</p>
+              {cloudModelRisk ? (
+                <p className="tool-card-login-msg">{LOGIN_AT.cloudRisk}</p>
+              ) : null}
+              {showLoginActions && onBrowserLogin ? (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  data-testid="tool-card-browser-login"
+                  onClick={() => {
+                    const connectorId = resolveConnectorId(
+                      catalog.find((t) => t.name === block.name)?.connector_id,
+                    )
+                    if (connectorId) {
+                      onBrowserLogin(connectorId)
+                      return
+                    }
+                    onError?.(new Error(LOGIN_AT.browserLoginFailed))
+                  }}
+                >
+                  {LOGIN_AT.browserLogin}
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
       )}
 

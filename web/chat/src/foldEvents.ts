@@ -247,6 +247,11 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         break
       }
       case 'hitl.waiting': {
+        // Login waits keep the existing login_required tool card; do not swap
+        // it for an approve/reject HITL card.
+        if (data?.kind === 'login') {
+          break
+        }
         const name = hitlToolName(data) ?? 'tool'
         const card = findTopUnfinished(blocks, name)
         if (card) {

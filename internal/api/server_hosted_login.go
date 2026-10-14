@@ -37,7 +37,7 @@ func (s *Server) handleHostedLoginGet(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(hostedlogin.RenderPage(sess, "")))
+	_, _ = w.Write([]byte(hostedlogin.RenderPage(sess, "", hostedlogin.LocaleFromRequest(r))))
 }
 
 func (s *Server) handleHostedLoginPost(w http.ResponseWriter, r *http.Request) {
@@ -87,12 +87,12 @@ func (s *Server) handleHostedLoginPost(w http.ResponseWriter, r *http.Request) {
 		if i := strings.Index(msg, "hostedlogin: "); i >= 0 {
 			msg = strings.TrimSpace(msg[i+len("hostedlogin: "):])
 		}
-		_, _ = w.Write([]byte(hostedlogin.RenderPage(sess, msg)))
+		_, _ = w.Write([]byte(hostedlogin.RenderPage(sess, msg, hostedlogin.LocaleFromRequest(r))))
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(hostedlogin.RenderSuccessPage()))
+	_, _ = w.Write([]byte(hostedlogin.RenderSuccessPage(hostedlogin.LocaleFromRequest(r))))
 }
 
 func (s *Server) handleHostedLoginMethodPost(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +121,8 @@ func (s *Server) handleHostedLoginMethodPost(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/v0/auth/hosted/"+id, http.StatusSeeOther)
+	lang := hostedlogin.LocaleFromRequest(r)
+	http.Redirect(w, r, "/v0/auth/hosted/"+id+"?lang="+lang, http.StatusSeeOther)
 }
 
 func (s *Server) handleHostedLoginOAuthCallback(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +158,7 @@ func (s *Server) handleHostedLoginOAuthCallback(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(hostedlogin.RenderSuccessPage()))
+	_, _ = w.Write([]byte(hostedlogin.RenderSuccessPage(hostedlogin.LocaleFromRequest(r))))
 }
 
 func clientIP(r *http.Request) string {

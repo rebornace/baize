@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rebornace/baize/internal/tool"
 )
 
 var pathParamPattern = regexp.MustCompile(`\{([^}]+)\}`)
@@ -101,40 +103,22 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 
 	content := decodeBody(raw)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if content == nil {
+			content = map[string]any{}
+		}
+		content["http_status"] = resp.StatusCode
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	// Some gateways return HTTP 200 with a business auth failure body.
-	if looksLikeAuthFailure(content) {
+	if tool.LooksLikeAuthFailure(content) {
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	return InvokeResult{Content: content, IsError: false}, nil
 }
 
-func looksLikeAuthFailure(content map[string]any) bool {
-	if content == nil {
-		return false
-	}
-	switch v := content["code"].(type) {
-	case float64:
-		if int(v) == 401 || int(v) == 403 {
-			return true
-		}
-	case int:
-		if v == 401 || v == 403 {
-			return true
-		}
-	case string:
-		if v == "401" || v == "403" || strings.EqualFold(v, "unauthorized") || strings.EqualFold(v, "forbidden") {
-			return true
-		}
-	}
-	if msg, ok := content["message"].(string); ok {
-		m := strings.ToLower(strings.TrimSpace(msg))
-		if m == "unauthorized" || m == "forbidden" || strings.Contains(m, "unauthorized") {
-			return true
-		}
-	}
-	return false
+// LooksLikeAuthFailure reports HTTP/business auth failures (401/403 and common messages).
+func LooksLikeAuthFailure(content map[string]any) bool {
+	return tool.LooksLikeAuthFailure(content)
 }
 
 func mergeHeaders(base, overlay map[string]string) map[string]string {

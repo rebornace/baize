@@ -346,11 +346,25 @@ type CreateRunInput struct {
 	WebhookConfig      *WebhookConfig
 }
 
+// HITL kinds. Empty / "approval" = tool approval; "login" = wait for browser login or skip.
+const (
+	HITLKindApproval = "approval"
+	HITLKindLogin    = "login"
+)
+
 type HITLPayload struct {
-	Prompt    string         `json:"prompt"`
-	ToolName  string         `json:"tool_name"`
-	Arguments map[string]any `json:"arguments"`
+	Prompt      string         `json:"prompt"`
+	ToolName    string         `json:"tool_name"`
+	Arguments   map[string]any `json:"arguments"`
+	Kind        string         `json:"kind,omitempty"`         // approval (default) | login
+	ConnectorID string         `json:"connector_id,omitempty"` // login waits: which system
 }
+
+// HITLCommentSkipLogin is sent with reject to skip login for the connector and continue.
+const HITLCommentSkipLogin = "skip_login"
+
+// HITLCommentAbortLogin ends the run without continuing ReAct.
+const HITLCommentAbortLogin = "abort_login"
 
 // MCPExportIdentity is a persisted auth profile for MCP export callers.
 type MCPExportIdentity struct {

@@ -14,10 +14,29 @@ describe('hostedLoginForm', () => {
     const cfg = {
       enabled: true,
       default_method_id: 'pwd',
-      methods: [{ id: 'pwd', label: '密码', mode: 'basic' as const }],
+      methods: [{
+        id: 'pwd',
+        label: '密码',
+        mode: 'basic' as const,
+        role: 'admin',
+        identity_ids: ['mei_u', 'mei_a'],
+      }],
     }
     const draft = hostedLoginToDraft(cfg)
-    expect(buildHostedLoginFromDraft(draft).default_method_id).toBe('pwd')
+    const built = buildHostedLoginFromDraft(draft)
+    expect(built.default_method_id).toBe('pwd')
+    expect(built.methods?.[0]?.role).toBe('admin')
+    expect(built.methods?.[0]?.identity_ids).toEqual(['mei_u', 'mei_a'])
+  })
+
+  it('omits empty role on build; draft keeps blank for runtime fallback to id', () => {
+    const draft = hostedLoginToDraft({
+      enabled: true,
+      default_method_id: 'pwd',
+      methods: [{ id: 'pwd', mode: 'basic' }],
+    })
+    expect(draft.methods[0]?.role).toBe('')
+    expect(buildHostedLoginFromDraft(draft).methods?.[0]?.role).toBeUndefined()
   })
 
   it('round-trips fields text', () => {

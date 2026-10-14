@@ -2,6 +2,7 @@ package authresolve
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/rebornace/baize/internal/identity"
@@ -28,6 +29,15 @@ func (OpenAPISecurityResolver) Resolve(_ context.Context, in ResolveInput) Resul
 		return Result{
 			Headers: cloneHeaders(in.DefaultHeaders),
 			OK:      true,
+		}
+	}
+
+	// OpenAPI security entries are often component names (e.g. bearerAuth),
+	// while hosted-login / capture store scheme types (e.g. bearer). After
+	// static defaults, still use any usable session credential.
+	if len(in.SecuritySchemes) > 0 {
+		if id, ok := pickFromCandidates(filterActive(in.Identities)); ok {
+			return resultFromIdentity(id)
 		}
 	}
 
@@ -67,8 +77,12 @@ func filterActive(ids []identity.Identity) []identity.Identity {
 }
 
 func schemeMatches(scheme string, schemes []string) bool {
+	scheme = strings.TrimSpace(scheme)
+	if scheme == "" {
+		return false
+	}
 	for _, s := range schemes {
-		if s == scheme {
+		if strings.EqualFold(strings.TrimSpace(s), scheme) {
 			return true
 		}
 	}

@@ -83,7 +83,9 @@ func exportAuthFrom(ctx context.Context) (exportAuth, bool) {
 }
 
 func buildExportServer(ctx context.Context, deps ServerDeps) *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "baize-mcp-export", Version: "v0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "baize-mcp-export", Version: "v0"}, &mcp.ServerOptions{
+		Instructions: ExportServerInstructions(),
+	})
 	auth, ok := exportAuthFrom(ctx)
 	if !ok {
 		return server
@@ -191,12 +193,18 @@ func invokeExportTool(
 		}
 	}
 
-	exportID, err := resolveExportIdentity(deps.Store, key, toolRow.ConnectorID, "")
+	role := exportRoleForTool(deps.Store, toolRow.ConnectorID, name)
+	exportID, err := resolveExportIdentity(deps.Store, key, toolRow.ConnectorID, role)
 	if err != nil {
-		return authExpiredForCall(ctx, deps, auth, toolRow, req, name, args), nil
+		return authExpiredForCall(ctx, deps, auth, toolRow, req, name, args)
 	}
 	callAuth := auth
 	callAuth.Identity = exportID
+	// Empty export credentials: do not hit the downstream API — open hosted reauth
+	// (most connector tools are not marked require_login, so Invoke would just 401).
+	if !exportIdentityHasCredentials(exportID) {
+		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
+	}
 	invokeCtx, err := InvokeContext(ctx, deps.Identities, exportID)
 	if err != nil {
 		return nil, err
@@ -204,7 +212,7 @@ func invokeExportTool(
 	content, isError, err := deps.Registry.Invoke(invokeCtx, name, args)
 	if err != nil {
 		if IsAuthFailure(nil, false, err) {
-			return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args), nil
+			return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
 		}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
@@ -212,7 +220,7 @@ func invokeExportTool(
 		}, nil
 	}
 	if isError && IsAuthFailure(content, isError, err) {
-		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args), nil
+		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
 	}
 	text, _ := json.Marshal(content)
 	return &mcp.CallToolResult{
@@ -255,40 +263,63 @@ func exportListFilterMiddleware(deps ServerDeps, auth exportAuth) mcp.Middleware
 	}
 }
 
-func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, toolRow store.Tool, req *mcp.CallToolRequest, toolName string, args map[string]any) *mcp.CallToolResult {
-	hostedURL, sessionID, ok := hostedReauthURL(deps, auth, toolRow)
-	if !ok {
-		return authExpiredResult(auth.Identity.Name, "")
-	}
-	maybeElicitHostedLoginURL(ctx, req, hostedURL, sessionID)
-	if deps.HostedWaiter == nil || deps.Registry == nil {
-		return authExpiredResult(auth.Identity.Name, hostedURL)
-	}
-	if err := deps.HostedWaiter.Await(ctx, sessionID); err != nil {
-		return authExpiredResult(auth.Identity.Name, hostedURL)
-	}
-	exportID, err := resolveExportIdentity(deps.Store, auth.Key, toolRow.ConnectorID, "")
-	if err != nil {
-		return authExpiredResult(auth.Identity.Name, hostedURL)
-	}
-	invokeCtx, err := InvokeContext(ctx, deps.Identities, exportID)
-	if err != nil {
-		return authExpiredResult(auth.Identity.Name, hostedURL)
-	}
-	content, isError, err := deps.Registry.Invoke(invokeCtx, toolName, args)
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-			IsError: true,
+func exportIdentityHasCredentials(id store.MCPExportIdentity) bool {
+	for _, v := range id.Headers {
+		if strings.TrimSpace(v) != "" {
+			return true
 		}
 	}
-	if isError && IsAuthFailure(content, isError, err) {
-		return authExpiredResult(exportID.Name, hostedURL)
+	return false
+}
+
+func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, toolRow store.Tool, req *mcp.CallToolRequest, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
+	hostedURL, sessionID, ok := hostedReauthURL(deps, auth, toolRow)
+	if !ok {
+		return authExpiredResult(auth.Identity.Name, ""), nil
 	}
-	text, _ := json.Marshal(content)
-	return &mcp.CallToolResult{
-		Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
-		StructuredContent: content,
-		IsError:           isError,
+
+	var ss *mcp.ServerSession
+	if req != nil {
+		ss, _ = req.GetSession().(*mcp.ServerSession)
 	}
+
+	// Clients that advertise URL elicitation get -32042 and open the browser
+	// themselves; the next tools/call retries after login.
+	if ss != nil && clientSupportsURLElicitation(ss) {
+		return nil, urlElicitationRequired(hostedURL, sessionID, auth.Identity.Name)
+	}
+
+	// Clients with form/URL elicitation (but not the -32042 shortcut): push the
+	// URL via Elicit and wait for hosted submit, then replay the tool.
+	if ss != nil && clientSupportsElicitation(ss) && deps.HostedWaiter != nil && deps.Registry != nil {
+		maybeElicitHostedLoginURL(ctx, req, hostedURL, sessionID, auth.Identity.Name)
+		if err := deps.HostedWaiter.Await(ctx, sessionID); err == nil {
+			exportID, err := resolveExportIdentity(deps.Store, auth.Key, toolRow.ConnectorID, "")
+			if err == nil {
+				invokeCtx, ierr := InvokeContext(ctx, deps.Identities, exportID)
+				if ierr == nil {
+					content, isError, invErr := deps.Registry.Invoke(invokeCtx, toolName, args)
+					if invErr != nil {
+						return &mcp.CallToolResult{
+							Content: []mcp.Content{&mcp.TextContent{Text: invErr.Error()}},
+							IsError: true,
+						}, nil
+					}
+					if !(isError && IsAuthFailure(content, isError, invErr)) {
+						text, _ := json.Marshal(content)
+						return &mcp.CallToolResult{
+							Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
+							StructuredContent: content,
+							IsError:           isError,
+						}, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Doubao and other agents without elicitation: return the URL immediately.
+	// Blocking on Await here hid the link until timeout, so the agent never
+	// "naturally" opened hosted login.
+	return authExpiredResult(auth.Identity.Name, hostedURL), nil
 }

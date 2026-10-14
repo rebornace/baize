@@ -41,12 +41,23 @@ func TestPostConversationHostedLogin(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		URL string `json:"url"`
+		URL       string `json:"url"`
+		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(body.URL, "http://127.0.0.1:8080/v0/auth/hosted/") {
 		t.Fatalf("url=%q", body.URL)
+	}
+	sess, ok := srv.HostedSessions.Get(body.SessionID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if sess.ConversationID != "conv1" {
+		t.Fatalf("conversation_id=%q", sess.ConversationID)
+	}
+	if sess.WorkspaceID == "" {
+		t.Fatal("workspace_id must be set so submit persists into the Accounts pool")
 	}
 }

@@ -61,7 +61,7 @@ func TestHostedLoginMethodSwitchUpdatesFormFields(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("switch POST code=%d body=%s", rr.Code, rr.Body.String())
 	}
-	wantLoc := "/v0/auth/hosted/" + id
+	wantLoc := "/v0/auth/hosted/" + id + "?lang=zh-CN"
 	if got := rr.Header().Get("Location"); got != wantLoc {
 		t.Fatalf("Location=%q want %q", got, wantLoc)
 	}

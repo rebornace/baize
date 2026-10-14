@@ -26,6 +26,10 @@ type Session struct {
 	Mode             string
 	IdentityID       string
 	ConversationID   string
+	// WorkspaceID is the Web UI workspace for ConversationID targets.
+	// Persist must use identity.Key(ConversationID, WorkspaceID) so Accounts
+	// and the run engine read the same pool (non-default workspaces).
+	WorkspaceID      string
 	Fields           []store.HostedLoginField
 	OAuth            *store.HostedLoginOAuth
 	AvailableMethods []store.HostedLoginMethod

@@ -52,7 +52,8 @@ func TestSyncWritesManagedPackage(t *testing.T) {
 		"AuthController_sendSms",
 		"由连接器自动维护",
 		"不要再调用",
-		"立刻使用下方列出的登录相关工具",
+		"浏览器托管登录",
+		"在对话里向用户索要账号",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("SKILL.md missing %q\n%s", want, content)

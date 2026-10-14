@@ -160,6 +160,40 @@ func TestRequireLoginBlocksHTTP(t *testing.T) {
 	}
 }
 
+func TestConversation401RemapsToLoginRequired(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"暂未登录或token已经过期"}`))
+	}))
+	t.Cleanup(srv.Close)
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	_, _ = ids.Upsert(identity.Scope("conv_401"), identity.Identity{
+		Label: "stale", Scheme: "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer dead"},
+		IsDefault:         true,
+	})
+	if _, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID: "c", SpecPath: spec, BaseURL: srv.URL,
+		RequireLogin: []string{"getMe"},
+		Identities:   ids,
+		Resolver:     authresolve.OpenAPISecurityResolver{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := identity.WithConversationID(context.Background(), "conv_401")
+	content, isErr, err := reg.Invoke(ctx, "getMe", nil)
+	if err != nil || !isErr || content["code"] != "login_required" {
+		t.Fatalf("content=%v isErr=%v err=%v", content, isErr, err)
+	}
+	msg, _ := content["message"].(string)
+	if !strings.Contains(msg, "浏览器登录") {
+		t.Fatalf("message=%q", msg)
+	}
+}
+
 func writeLoginGetMeSpec(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -52,11 +52,7 @@ func (s *Server) handlePostConnectorHostedLoginSuggest(w http.ResponseWriter, r 
 		if glob == "" {
 			glob = "*login*"
 		}
-		schemes, err := connectorSecuritySchemes(conn)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "could not read connector spec security schemes")
-			return
-		}
+		schemes, _ := s.connectorSecuritySchemes(r.Context(), conn)
 		cands = hostedlogin.BuildCandidates(s.Store.ListToolsByConnector(id), glob, schemes)
 	}
 

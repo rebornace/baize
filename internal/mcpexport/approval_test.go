@@ -70,7 +70,10 @@ func setupApprovalExportFixture(t *testing.T) (st store.Store, reg *tool.Registr
 		return map[string]any{"ok": true}, false, nil
 	})
 
-	export := store.MCPExportIdentity{ID: "idt_export_1", Name: "Ops", Scheme: "Bearer"}
+	export := store.MCPExportIdentity{
+		ID: "idt_export_1", Name: "Ops", Scheme: "Bearer",
+		Headers: map[string]string{"Authorization": "Bearer test-token"},
+	}
 	if err := st.UpsertMCPExportIdentity(export); err != nil {
 		t.Fatalf("UpsertMCPExportIdentity: %v", err)
 	}
@@ -107,7 +110,10 @@ func TestSpikeStatelessElicitationDuringToolCall(t *testing.T) {
 	reg.Register("spike_tool", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
 		return map[string]any{"ok": true}, false, nil
 	})
-	export := store.MCPExportIdentity{ID: "idt_1", Name: "Ops"}
+	export := store.MCPExportIdentity{
+		ID: "idt_1", Name: "Ops",
+		Headers: map[string]string{"Authorization": "Bearer test-token"},
+	}
 	_ = st.UpsertMCPExportIdentity(export)
 	pt, hash, prefix, _ := mcpexport.GenerateKey()
 	_ = st.InsertMCPExportKey(store.MCPExportKey{

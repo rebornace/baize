@@ -56,7 +56,10 @@ func setupExportFixture(t *testing.T) (st store.Store, reg *tool.Registry, ids i
 		return map[string]any{"created": true}, false, nil
 	})
 
-	export := store.MCPExportIdentity{ID: "idt_export_1", Name: "Ops", Scheme: "Bearer"}
+	export := store.MCPExportIdentity{
+		ID: "idt_export_1", Name: "Ops", Scheme: "Bearer",
+		Headers: map[string]string{"Authorization": "Bearer test-token"},
+	}
 	if err := st.UpsertMCPExportIdentity(export); err != nil {
 		t.Fatalf("UpsertMCPExportIdentity: %v", err)
 	}

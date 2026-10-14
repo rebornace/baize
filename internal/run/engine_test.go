@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -339,30 +340,92 @@ func TestLoginGateBeforeHITL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	llmStub := &scriptLLM{}
+	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: NewGate(),
+		Store: st, LLM: llmStub, Tools: reg, Gate: gate,
 		Identities: identity.NewMemoryStore(),
 	}
-	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	got, _ := st.GetRun(r.ID)
-	if got.Status == store.StatusWaitingHuman {
-		t.Fatal("must not enter waiting_human")
-	}
+	done := make(chan error, 1)
+	go func() { done <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
 	if calls.Load() != 0 {
 		t.Fatalf("invoke=%d", calls.Load())
 	}
-	evs, _ := st.ListEvents(r.ID)
-	for _, ev := range evs {
-		if ev.Type == EventHITLWaiting {
-			t.Fatal("hitl.waiting")
-		}
-		if ev.Type == EventToolResult {
-			if ev.Data["is_error"] != true {
-				t.Fatalf("%+v", ev.Data)
-			}
-		}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: store.HITLCommentAbortLogin}); err != nil {
+		t.Fatalf("abort: %v", err)
+	}
+	if err := <-done; err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("Execute: %v", err)
+	}
+	if llmStub.calls != 1 {
+		t.Fatalf("llm calls=%d want 1 (paused at login)", llmStub.calls)
+	}
+}
+
+type multiToolLoginLLM struct{ calls int }
+
+func (s *multiToolLoginLLM) Chat(context.Context, []llm.Message, []llm.ToolSpec) (llm.Message, error) {
+	s.calls++
+	if s.calls == 1 {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "get_pets", Arguments: map[string]any{}},
+			{ID: "c2", Name: "get_dashboard", Arguments: map[string]any{}},
+		}}, nil
+	}
+	return llm.Message{Role: llm.RoleAssistant, Content: "should not reach"}, nil
+}
+
+func (s *multiToolLoginLLM) SupportsVision() bool { return false }
+
+func TestLoginRequiredPausesBeforeMoreTools(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	var pets, dash atomic.Int32
+	reg.RegisterMeta(tool.Meta{
+		Spec: llm.ToolSpec{Name: "get_pets", Description: "pets"}, ConnectorID: "mall",
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		pets.Add(1)
+		return tool.LoginRequiredContent(), true, nil
+	}, false)
+	reg.RegisterMeta(tool.Meta{
+		Spec: llm.ToolSpec{Name: "get_dashboard", Description: "dash"}, ConnectorID: "other",
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		dash.Add(1)
+		return map[string]any{"ok": true}, false, nil
+	}, false)
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: ag.ID, Input: "有多少宠物", ConversationID: "conv_pets",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	llmStub := &multiToolLoginLLM{}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(),
+		Identities: identity.NewMemoryStore(),
+	}
+	done := make(chan error, 1)
+	go func() { done <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if pets.Load() != 1 {
+		t.Fatalf("pets invoke=%d", pets.Load())
+	}
+	if dash.Load() != 0 {
+		t.Fatalf("dashboard must not run after login_required, got %d", dash.Load())
+	}
+	if llmStub.calls != 1 {
+		t.Fatalf("llm calls=%d want 1 while waiting", llmStub.calls)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: store.HITLCommentSkipLogin}); err != nil {
+		t.Fatalf("skip: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if llmStub.calls < 2 {
+		t.Fatalf("after skip, llm should continue, calls=%d", llmStub.calls)
 	}
 }
 

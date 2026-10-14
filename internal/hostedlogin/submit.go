@@ -46,6 +46,12 @@ func Submit(ctx context.Context, deps SubmitDeps, sessionID, csrf string, form m
 		return fmt.Errorf("hostedlogin: session missing identity target")
 	}
 
+	if convID != "" {
+		ctx = identity.WithConversationID(ctx, convID)
+		if ws := strings.TrimSpace(sess.WorkspaceID); ws != "" {
+			ctx = identity.WithWorkspaceID(ctx, ws)
+		}
+	}
 	headers, label, scheme, err := collectCredential(ctx, deps, sess, form)
 	if err != nil {
 		audit(deps.Audit, AuditEvent{
@@ -154,7 +160,8 @@ func persistCredential(
 		if sch == "" {
 			sch = "bearer"
 		}
-		if _, err := deps.Identities.Upsert(identity.Scope(convID), identity.Identity{
+		key := identity.Key(convID, sess.WorkspaceID)
+		if _, err := deps.Identities.Upsert(key, identity.Identity{
 			Label:             label,
 			Scheme:            sch,
 			Subject:           label,

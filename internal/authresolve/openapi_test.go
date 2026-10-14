@@ -49,6 +49,23 @@ func TestOpenAPISecurityResolverDefaultHeadersFallback(t *testing.T) {
 	}
 }
 
+func TestOpenAPISecurityResolverFallsBackToSessionWhenSchemeNameDiffers(t *testing.T) {
+	r := authresolve.OpenAPISecurityResolver{}
+	ids := []identity.Identity{
+		{
+			ID: "sess", Source: identity.SourceLoginCapture, Scheme: "bearer", IsDefault: true,
+			CredentialHeaders: map[string]string{"Authorization": "Bearer SESS"},
+		},
+	}
+	res := r.Resolve(context.Background(), authresolve.ResolveInput{
+		Identities:      ids,
+		SecuritySchemes: []string{"bearerAuth"},
+	})
+	if !res.OK || res.IdentityID != "sess" || res.Headers["Authorization"] != "Bearer SESS" {
+		t.Fatalf("%+v", res)
+	}
+}
+
 func TestOpenAPISecurityResolverSkipsExpired(t *testing.T) {
 	r := authresolve.OpenAPISecurityResolver{}
 	expired := float64(time.Now().Add(-time.Hour).Unix())

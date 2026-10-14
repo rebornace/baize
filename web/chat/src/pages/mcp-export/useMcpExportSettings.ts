@@ -288,11 +288,18 @@ export function useMcpExportSettings() {
       keyEditAllowedTools,
       toolOrder,
     )
-    const identity_slots = keyEditSlots.map((s) => ({
-      connector_id: (s.connector_id ?? '').trim() || undefined,
-      role: (s.role ?? '').trim() || undefined,
-      identity_id: s.identity_id.trim(),
-    }))
+    const knownIds = new Set(identities.map((i) => i.id.trim()).filter(Boolean))
+    const identity_slots = keyEditSlots
+      .map((s) => ({
+        connector_id: (s.connector_id ?? '').trim() || undefined,
+        role: (s.role ?? '').trim() || undefined,
+        identity_id: s.identity_id.trim(),
+      }))
+      .filter((s) => knownIds.has(s.identity_id))
+    if (identity_slots.length === 0) {
+      setKeyEditFormError(MCP_EXPORTS.errKeyIdentityRequired)
+      return
+    }
     setBusy(true)
     setKeyEditFormError(null)
     try {
