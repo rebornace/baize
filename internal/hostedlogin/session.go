@@ -13,6 +13,12 @@ import (
 
 const DefaultSessionTTL = 15 * time.Minute
 
+// MCPReauthSessionTTL is used for hosted-login links issued into MCP tool
+// errors / elicitation (they land in model transcripts). Shorter than the
+// console test-session default; GET stays idempotent — consume only on
+// CSRF-checked successful POST.
+const MCPReauthSessionTTL = 5 * time.Minute
+
 // Session is a short-lived hosted-login ticket.
 // Exactly one target must be set: IdentityID (MCP export identity) or
 // ConversationID (Chat conversation identity store).
@@ -35,6 +41,9 @@ type Session struct {
 	AvailableMethods []store.HostedLoginMethod
 	PublicOrigin     string
 	ExpiresAt        time.Time
+	// TTL, when > 0 at Issue time, overrides the Sessions store default.
+	// Not persisted meaningfully after Issue (cleared on store).
+	TTL time.Duration
 	// PendingTool / PendingArgs optionally describe an MCP tools/call to replay
 	// after successful login (set by export auth-expired path).
 	PendingTool string
@@ -79,10 +88,15 @@ func (s *memorySessions) Issue(seed Session) (id, csrf string, err error) {
 		return "", "", err
 	}
 	now := s.now()
+	ttl := s.ttl
+	if seed.TTL > 0 {
+		ttl = seed.TTL
+	}
 	sess := seed
 	sess.ID = id
 	sess.CSRF = csrf
-	sess.ExpiresAt = now.Add(s.ttl)
+	sess.TTL = 0
+	sess.ExpiresAt = now.Add(ttl)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -56,6 +56,8 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 		ConnectorID:  connectorID,
 		IdentityID:   identityID,
 		PublicOrigin: origin,
+		// Links appear in tool errors / transcripts — shorter than console test sessions.
+		TTL: hostedlogin.MCPReauthSessionTTL,
 	})
 	if err != nil {
 		return "", "", false

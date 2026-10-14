@@ -53,3 +53,26 @@ func TestSessionDelete(t *testing.T) {
 		t.Fatal("deleted session still present")
 	}
 }
+
+func TestSessionIssueTTLOverride(t *testing.T) {
+	s := NewMemorySessions(15 * time.Minute)
+	before := time.Now()
+	id, _, err := s.Issue(Session{
+		ConnectorID: "mall", LoginTool: "x", IdentityID: "i", ExportKeyID: "k",
+		TTL: MCPReauthSessionTTL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := s.Get(id)
+	if !ok {
+		t.Fatal("missing")
+	}
+	if got.TTL != 0 {
+		t.Fatalf("TTL should be cleared after Issue, got %v", got.TTL)
+	}
+	remain := time.Until(got.ExpiresAt)
+	if remain < 4*time.Minute || remain > 6*time.Minute {
+		t.Fatalf("ExpiresAt remain=%v want ~%v (from %v)", remain, MCPReauthSessionTTL, before)
+	}
+}

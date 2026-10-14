@@ -52,6 +52,10 @@ func TestHostedReauthURL(t *testing.T) {
 	if sess.MethodID != "default" {
 		t.Fatalf("method_id=%q", sess.MethodID)
 	}
+	remain := time.Until(sess.ExpiresAt)
+	if remain < 4*time.Minute || remain > 6*time.Minute {
+		t.Fatalf("MCP reauth TTL remain=%v want ~%v", remain, hostedlogin.MCPReauthSessionTTL)
+	}
 }
 
 func TestHostedReauthURLDisabled(t *testing.T) {
