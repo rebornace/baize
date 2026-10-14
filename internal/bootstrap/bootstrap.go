@@ -45,8 +45,8 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/mcpexport"
 	"github.com/rebornace/baize/internal/memory"
-	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/middleware"
+	"github.com/rebornace/baize/internal/otelx"
 	// 内置默认 middleware 驱动（memory）随 bootstrap 一起注册：它是零配置
 	// 默认驱动，且 bootstrap 包自身的测试/StartForTest 集成测试不经 main。
 	// 后续 redis 等驱动同样以 blank import 方式注册（任务 9）。

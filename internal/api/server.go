@@ -155,11 +155,11 @@ type Server struct {
 	// (tool name, export key id, identity id, error flag — never secrets).
 	MCPExportTrace func(toolName, exportKeyID, identityID string, isError bool)
 	DataDir        string // parent dir for sqlite / legacy paths; not used for connector specs
-	Blobs            blob.Store
-	ConfigPath       string
-	Config           *config.Config
-	Shutdown         func(context.Context) error
-	RestartProcess   func() error
+	Blobs          blob.Store
+	ConfigPath     string
+	Config         *config.Config
+	Shutdown       func(context.Context) error
+	RestartProcess func() error
 	// HotSwapStore optionally opens a new store in-process (F-HOT). nil = PUT
 	// without restart only writes overlay.
 	HotSwapStore func(config.StoreOverlay) error

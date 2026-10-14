@@ -10,17 +10,17 @@ import (
 
 // CatalogDiff summarizes tool-catalog changes after a connector Apply/merge.
 type CatalogDiff struct {
-	Added   []string         `json:"added"`
-	Removed []string         `json:"removed"`
-	Changed []CatalogChange  `json:"changed"`
+	Added   []string        `json:"added"`
+	Removed []string        `json:"removed"`
+	Changed []CatalogChange `json:"changed"`
 }
 
 // CatalogChange describes how one retained tool differed from its prior row.
 type CatalogChange struct {
-	Name                string `json:"name"`
-	MethodPathChanged   bool   `json:"method_path_changed,omitempty"`
-	OperationIDChanged  bool   `json:"operation_id_changed,omitempty"`
-	SchemaChanged       bool   `json:"schema_changed,omitempty"`
+	Name               string `json:"name"`
+	MethodPathChanged  bool   `json:"method_path_changed,omitempty"`
+	OperationIDChanged bool   `json:"operation_id_changed,omitempty"`
+	SchemaChanged      bool   `json:"schema_changed,omitempty"`
 }
 
 // DiffCatalog compares the previous connector catalog with the merged result.

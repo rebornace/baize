@@ -31,8 +31,8 @@ type Exporter struct {
 	tp     *sdktrace.TracerProvider
 	tracer trace.Tracer
 
-	mu    sync.Mutex
-	runs  map[string]trace.Span // runID -> root span
+	mu   sync.Mutex
+	runs map[string]trace.Span // runID -> root span
 }
 
 // Start wires an OTLP HTTP exporter when cfg.Endpoint is non-empty.
