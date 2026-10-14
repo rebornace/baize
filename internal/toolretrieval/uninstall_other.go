@@ -17,5 +17,8 @@ func stopLocalOllama() {
 func UninstallOllama(ctx context.Context) error {
 	_ = ctx
 	stopLocalOllama()
+	if !OllamaInstalled() {
+		return nil
+	}
 	return fmt.Errorf("automatic Ollama uninstall is only supported on Windows; stop the app and remove it from system settings")
 }
