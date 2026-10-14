@@ -27,9 +27,9 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Human confirmation for important writes**: creates and status changes can wait for approve / reject on a card before they run — with a clear trail.
 - **Sidecar on, clean off**: one process, config outside the app; stop it and leave almost nothing behind.
 - **One assistant, many entry points**: console, signed alert/ticket ingress, and IM channels share approvals, memory, and outbound delivery.
-- **Downstream login supported**: the assistant can guide a login flow, then call systems with session credentials.
+- **Downstream login supported**: use a login skill or “browser login” in chat, or configure a hosted login page under Settings → External login (multiple methods). Credentials never go through the LLM; the assistant then calls systems with session credentials.
 - **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); multiple model setups and thinking options; account-level memory, attachments, and workspace files.
-- **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace and isolated across workspaces.
+- **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace (Settings → Accounts) and isolated across workspaces. MCP export uses separate export identities — do not mix them with chat Accounts.
 - **Can explain Baize itself**: the built-in `baize-help` skill answers (in English or Chinese) how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
 - **Stays usable with many tools**: when backends pile up, open Settings → Matching & decisions — one-click local Ollama for the matching model and the decision model (`tev1`), or point either at a cloud / self-hosted API. Standard matching needs no extras and remains the fail-open default.
 
@@ -52,11 +52,12 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **API document → tools**: each operation joins the tool list for the assistant to call.
 - **HTTP plugins (small companion services)**: when docs are incomplete or logic lives outside the spec, run a small service that tells Baize which tools exist and how to invoke them — ideal for legacy systems, internal scripts, or custom logic. You can also have Baize call back to your own URL with the tool name and arguments so your side executes them.
 - **Connect external tool ecosystems (MCP)**: Baize can act as a client to MCP-capable tool servers (including common OAuth login flows).
-- **Export tools to everyday Agent clients**: Baize can also act as an MCP server and expose a **read-only** slice of your tool catalog to clients such as Cursor or Claude Desktop — reuse the business capabilities you already wired in Baize inside the assistants your team already uses. Export does not run through Baize’s own chat model; it is for sharing the tool catalog.
+- **Export tools to everyday Agent clients**: Baize can also act as an MCP server and expose a **read-only** slice of your tool catalog to clients such as Cursor, Claude Desktop, or Doubao — reuse the business capabilities you already wired in Baize. Export does not run through Baize’s own chat model. On downstream auth failure, URL elicitation or the tool error returns a public **hosted login URL** (open it in a browser; never paste passwords into the agent chat). One export Key can bind multiple identity slots per connector/role. Set a client-reachable `runtime.public_base_url`.
 
 ### People in the loop and safety
 
 - Sensitive writes can pause until an operator confirms in the console.
+- When downstream login is required, chat can wait for login: open the hosted page, skip that system and continue, or end the turn.
 - Tools can be disabled anytime; full secrets stay out of conversation event replay.
 - Trial can use a built-in mock model (no cloud API key); production uses a real model — paths stay separate.
 
@@ -67,7 +68,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Context compaction**: long threads get rolling structured checkpoints (goal / progress / decisions / facts to keep) so space goes to what still matters.
 - **Keep important facts in long chats** (optional Runtime knob, default off): when a thread gets long, the assistant may keep a model-facing projection of facts it still needs; on failure it falls back to compaction. This does not promise lower cloud API token use.
 - Conversation fork / rollback for everyday ops (console and API).
-- Web login identities are shared **per workspace**; channel sessions (e.g. WeChat) and MCP-export identities stay on their own isolation keys.
+- Web login identities are shared **per workspace** (Settings → Accounts); channel sessions (e.g. WeChat) and MCP-export identities (Settings → Expose capabilities) stay on their own isolation keys.
 
 ### Messaging channels
 
@@ -79,7 +80,7 @@ Channels are a **general, extensible** capability: alerts, tickets, and instant 
 
 ### For product, ops, and integrators
 
-- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security); Matching & decisions is its own page (tool prefilter + decision service).
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security); Matching & decisions is its own page; External login and Expose capabilities cover hosted login and MCP export.
 - Full HTTP management surface for scripts and platforms — no mandatory language SDK.
 - Some runtime knobs hot-reload; a local database is enough to start, with larger databases when you need them.
 
@@ -97,7 +98,7 @@ The assistant can read, draft, and suggest; status changes and commands wait for
 External tools, first-party plugins, inbox ingress, and IM — one approval and memory story.
 
 **Reuse wired tools inside everyday Agent clients**  
-After APIs and plugins are connected in Baize, export them over MCP to Cursor and similar clients so the team works in familiar apps.
+Wire APIs and plugins in Baize, configure hosted login and export identity slots under External login, then export over MCP to Cursor and similar clients. When auth expires, open the returned login link — never paste passwords into the agent chat. Ensure `public_base_url` is reachable from the client’s browser (do not use loopback-only `127.0.0.1` for cloud agents).
 
 ---
 

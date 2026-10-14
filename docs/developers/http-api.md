@@ -24,17 +24,20 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Agents | `PUT/GET /v0/agents/{id}` | Agent 定义 |
 | Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors` | OpenAPI / HTTP 插件 / MCP 等 |
 | Connector tools | `POST /v0/connectors/{id}/tools`、`DELETE .../tools/{name}` | 手加 / 删 `extra` REST 工具 |
+| Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`、`.../suggest`、`.../draft`、`.../test-session` | 规则候选 / AI 建议 / 草稿 / 测试托管 session（admin；对应设置「对外登录」） |
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |
 | Tools | `GET /v0/tools`、`PATCH /v0/tools/{name}` | 工具目录（含停用行） |
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
 | Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../plugin-callbacks` | 执行与轨迹 |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
-| Conversations | 列表 / 删会话、消息、身份、fork、rollback 等 | 会话与身份；列表可带 `?workspace_id=` |
-| Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份 |
+| Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
+| Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
-| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、mcp-export、tool-retrieval… |
+| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval… |
+| MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys` | 导出开关、导出身份（Headers）与 Key；Key 可带 `identity_slots` |
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
+| Hosted auth（公网） | `GET/POST /v0/auth/hosted/{id}`、`POST .../method`、`GET .../oauth/callback` | 托管登录页 / 提交 / 切换登录方式 / OAuth 回调（不经 `/ui`） |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
@@ -86,6 +89,8 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | `GET /v0/conversations?workspace_id=` | 只列出该工作区的会话 |
 | `POST /v0/runs` 体字段 `workspace_id` | 新对话落入该工作区（不移动已有会话） |
 
-Web 捕获的登录身份按工作区键共享。渠道与 MCP 导出会话仍用各自隔离键。
+Web 捕获的登录身份按工作区键共享（设置 → 账号）。渠道与 MCP 导出身份（设置 → 对外提供能力）仍用各自隔离键。托管登录页写入的目标由 session 决定：对话作用域进工作区账号池；MCP 作用域进对应导出身份 / `identity_slots`。
+
+鉴权失败时 MCP 导出优先返回 URL elicitation；客户端不支持时，工具错误中立即包含 `hosted_login_url`（依赖可达的 `runtime.public_base_url`）。
 
 集成时优先读代码注册表与现有集成测试，而不是假定未列出的路径存在。

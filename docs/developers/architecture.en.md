@@ -30,7 +30,7 @@ Enterprise / integrator
 ```
 
 - **MCP bridge (client):** `PUT /v0/connectors/{id}` with `type: mcp`; `tools/list` → catalog `source=mcp`; `tools/call` inside a Run.
-- **MCP export:** Runtime acts as an MCP server (`/v0/mcp/export`) and exposes a read-only subset of the tool catalog to MCP-capable Agent clients such as Cursor or Claude Desktop. Opposite direction from the bridge; does not go through Baize’s own chat model.
+- **MCP export:** Runtime acts as an MCP server (`/v0/mcp/export`) and exposes a read-only subset of the tool catalog to MCP-capable Agent clients such as Cursor, Claude Desktop, or Doubao. Opposite direction from the bridge; does not go through Baize’s own chat model. Export Keys support **`identity_slots`** (bind identities per connector / optional role). On downstream auth failure, prefer URL elicitation; clients without elicitation get an immediate tool error with a public hosted login URL (`hosted_login_url`) — never paste passwords into the agent chat.
 - **Storage:** SQLite by default; `postgres` / `memory` supported. Blob: `file` / `s3` / `memory`.
 - **Control-plane auth:** optional operator / admin tokens; see [HTTP API](./http-api.en.md) and [Configuration](./configuration.en.md).
 
@@ -62,7 +62,8 @@ Connector `execution_callback_url`: Runtime POSTs tool name, arguments, `run_id`
 
 1. Import OpenAPI 3.x → each operation → one Tool (name prefers `operationId`).
 2. Credential priority (summary): forced `identity_id` → unexpired conversation Identity → connector default headers **only when** there is no `conversation_id` → empty. With a conversation, `require_login` tools without credentials do not call downstream HTTP. Full secrets never appear in events / GET run.
-3. Logic the spec cannot cover → sidecar or execution callback.
+3. **Hosted login page** (`/v0/auth/hosted/...`): renders forms / OAuth from connector `hosted_login.methods`; submit invokes the login tool and capture. Target may be an MCP-export identity slot or the Chat workspace account pool (`conversation_id` + `workspace_id`). Credentials never go through the LLM. Configure methods and the public base URL under Settings → External login.
+4. Logic the spec cannot cover → sidecar or execution callback.
 
 Protocol major version is in the path and `v0` header; unknown major → `400 protocol_unsupported`.
 
@@ -73,7 +74,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 - Agents are **not** bound to a connector subset: by default each Run gives the model all enabled tools (tool names unique across connectors). When tool narrowing is on and the tool count exceeds the threshold, a tool prefilter (standard matching: BM25 by default; optional enhanced matching: BM25 + embedding hybrid via Settings → Matching & decisions and `internal/toolindex`) plus the decision layer first narrow the set, and only the candidate subset is sent to the main model (master switch, sub-features, and TopK live under Runtime → Smart speed-up; a decision backend must be configured before those toggles save main-model tokens). Skill `tools:` is a **floor** unless the agent sets `tool_binding: exclusive`: declared tools are preserved through narrowing; undeclared enabled connector tools remain candidates and are not hidden by the skill list alone. Exclusive mode exposes only tools on currently activated skills (plus `activate_skill`). Each user message is a new Run with fresh narrowing; once the conversation has session credentials, login-establish tools (and managed `connector_login` skill tool floors) are not force-injected into Top-K so a successful login stops crowding later turns. The system prompt includes the current wall-clock time so the model can interpret timestamps in tool results.
 - **Tool matching (enhanced):** `internal/toolretrieval` manages one-click local Ollama install / model pull / paths and cleanup, or an OpenAI-compatible embedding API; see [HTTP API](./http-api.en.md) (`/v0/settings/tool-retrieval*`). On CN Windows, the installer prefers [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files) (resolves `OllamaSetup.exe` from the latest stable tag), then ghproxy / official; size-mismatched stale mirrors are skipped. When disabled or probing fails, standard matching remains the fallback path.
 - **Decision service (System One):** `internal/systemoneenable` symmetrically manages local Ollama `tev1` pull (Ollama ≥0.35; shared installer path) or a System One-compatible API; enablement writes `decide_systemone_*` knobs (`/v0/settings/systemone*`). Judgment chain: System One → optional `decide_profile_id` standby model (empty never bills the main model) → Rules.
-- **Workspaces:** Web chats carry `workspace_id` (default `default`). Captured logins are shared inside a workspace; other workspaces, channel sessions (`source:account:peer`), and MCP-export identities stay isolated. v1 does not move existing chats between workspaces.
+- **Workspaces:** Web chats carry `workspace_id` (default `default`). Captured logins are shared inside a workspace (Settings → Accounts); other workspaces, channel sessions (`source:account:peer`), and MCP-export identities (Settings → Expose capabilities) stay isolated. v1 does not move existing chats between workspaces.
 - **Model-facing projection** (Runtime “keep important facts in long chats”, default off): edits only the projection fed to the model (pin / summary / drop bulky tool results); it does **not** rewrite `conversation.Messages`. Fail-open to the Compactor. Does not promise lower cloud API tokens.
 - **Rolling summary (Compactor):** when over budget, older turns become a structured checkpoint (goal, progress, decisions, facts to keep). Raw messages stay; the prompt must not encode a global “do this before exploring” policy.
 
@@ -89,3 +90,5 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 ## Human approval
 
 Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry.
+
+When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.

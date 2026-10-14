@@ -106,7 +106,8 @@ Outbound Run events: `url`, `headers`.
 
 ### `runtime`
 
-Sidecar callback injection: `public_base_url` (empty → no injection), `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600).
+- `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls` and to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`). Empty → no callback injection and no externally clickable hosted-login URL. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
+- `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing.
 
 ### `inbox`
 
@@ -114,7 +115,7 @@ Sidecar callback injection: `public_base_url` (empty → no injection), `callbac
 
 ### `mcp_export`
 
-`enabled`: `*bool`; omitted defaults to enabling Streamable HTTP MCP export.
+`enabled`: `*bool`; omitted defaults to enabling Streamable HTTP MCP export. Export Keys, export identities (Headers), and per-connector **`identity_slots`** are managed under Settings → Expose capabilities (HTTP: `/v0/settings/mcp-export*`), not in this YAML section.
 
 ### `channels`
 

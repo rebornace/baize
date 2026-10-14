@@ -3,7 +3,7 @@
 # 启动前须 export BAIZE_API_KEY（见 llm.api_key_env）。
 listen: ":8080"
 # runtime:
-#   public_base_url: "https://baize.example:8080"  # 空则不向侧车注入 callback_urls
+#   public_base_url: "https://baize.example:8080"  # 侧车 callback + 托管登录/MCP 重登链接基址；空则不注入 callback、外网打不开托管页
 #   callback_hmac_secret: ""                       # 空则启动时生成 ephemeral 密钥
 #   callback_token_ttl_sec: 3600
 store:

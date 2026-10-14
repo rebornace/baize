@@ -24,17 +24,20 @@ This is not downstream business IAM or multi-tenant SSO.
 | Agents | `PUT/GET /v0/agents/{id}` | Agent definitions |
 | Connectors | `PUT/GET/DELETE /v0/connectors/{id}`, `GET /v0/connectors` | OpenAPI / HTTP plugins / MCP, etc. |
 | Connector tools | `POST /v0/connectors/{id}/tools`, `DELETE .../tools/{name}` | Add / remove `extra` REST tools |
+| Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`, `.../suggest`, `.../draft`, `.../test-session` | Rule candidates / AI hints / draft / test hosted session (admin; Settings → External login) |
 | MCP OAuth | `POST .../mcp/oauth/start`, etc. | MCP connector OAuth |
 | Tools | `GET /v0/tools`, `PATCH /v0/tools/{name}` | Tool catalog (incl. disabled rows) |
 | Skills | `GET/POST /v0/skills`, `GET/DELETE /v0/skills/{id}` | Skill packs |
 | Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../plugin-callbacks` | Execution and trail |
 | Inbox | `POST /v0/inbox/{channel_id}` | Signed webhook inbox ingress |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
-| Conversations | list / delete, messages, identities, fork, rollback, etc. | Conversations and identity; list accepts `?workspace_id=` |
-| Workspaces | `GET/POST /v0/workspaces` | Web workspaces; logins shared within a workspace |
+| Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |
+| Workspaces | `GET/POST /v0/workspaces` | Web workspaces; logins shared within a workspace (Settings → Accounts) |
 | Artifacts / media | `GET /v0/artifacts/{id}`, `GET /v0/channels/media/...` | Artifacts and channel media |
-| Settings | `/v0/settings/*` | webhook, inbox, store, channels, runtime, credentials, models, memory, mcp-export, tool-retrieval… |
+| Settings | `/v0/settings/*` | webhook, inbox, store, channels, runtime, credentials, models, memory, **mcp-export** (Expose capabilities), tool-retrieval… |
+| MCP export admin | `/v0/settings/mcp-export`, `.../identities`, `.../keys` | Export toggle, export identities (Headers), and Keys; Keys may carry `identity_slots` |
 | MCP export | `HANDLE /v0/mcp/export` (and trailing slash) | MCP server exporting a read-only tool-catalog subset to Agent clients such as Cursor |
+| Hosted auth (public) | `GET/POST /v0/auth/hosted/{id}`, `POST .../method`, `GET .../oauth/callback` | Hosted login page / submit / switch method / OAuth callback (no `/ui` dependency) |
 | Meta | `GET /v0/me`, `GET /v0/ui-config` | Current identity and UI config |
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
@@ -86,6 +89,8 @@ When editing an existing profile you can omit `api_key` and pass `profile_id`; t
 | `GET /v0/conversations?workspace_id=` | List conversations in that workspace |
 | `POST /v0/runs` field `workspace_id` | New chats land in that workspace (existing chats are not moved) |
 
-Captured Web logins are shared per workspace. Channel and MCP-export sessions keep their own isolation keys.
+Captured Web logins are shared per workspace (Settings → Accounts). Channel and MCP-export identities (Settings → Expose capabilities) keep their own isolation keys. The hosted login page writes to the session target: conversation scope → workspace account pool; MCP scope → the matching export identity / `identity_slots`.
+
+On auth failure, MCP export prefers URL elicitation; without elicitation support, the tool error immediately includes `hosted_login_url` (requires a reachable `runtime.public_base_url`).
 
 Prefer the code registry and existing integration tests over assuming unlisted paths exist.

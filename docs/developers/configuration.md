@@ -106,7 +106,8 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 
 ### `runtime`
 
-侧车 callback 注入：`public_base_url`（空则不注入）、`callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）。
+- `public_base_url`：公网可达的 Runtime 基址（无尾斜杠）。用于向侧车注入 `callback_urls`，以及签发**托管登录页** / MCP 重登链接（`/v0/auth/hosted/...`）。空则不注入 callback，也无法生成外网可点的托管登录 URL。云端 Agent / 浏览器须能打开该地址（勿对公网场景使用仅本机可达的 `127.0.0.1`）。也可在设置「运行参数」或「对外登录」向导中填写。
+- `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名。
 
 ### `inbox`
 
@@ -114,7 +115,7 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 
 ### `mcp_export`
 
-`enabled`：`*bool`；省略默认开启 Streamable HTTP MCP 导出。
+`enabled`：`*bool`；省略默认开启 Streamable HTTP MCP 导出。导出 Key、导出身份（Headers）与按连接器的 **`identity_slots`** 在设置「对外提供能力」中管理（HTTP：`/v0/settings/mcp-export*`），不写在本 YAML 段。
 
 ### `channels`
 
