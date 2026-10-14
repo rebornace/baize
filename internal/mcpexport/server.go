@@ -305,7 +305,7 @@ func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, t
 							IsError: true,
 						}, nil
 					}
-					if !(isError && IsAuthFailure(content, isError, invErr)) {
+					if !isError || !IsAuthFailure(content, isError, invErr) {
 						text, _ := json.Marshal(content)
 						return &mcp.CallToolResult{
 							Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
