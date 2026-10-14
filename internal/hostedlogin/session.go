@@ -17,15 +17,15 @@ const DefaultSessionTTL = 15 * time.Minute
 // Exactly one target must be set: IdentityID (MCP export identity) or
 // ConversationID (Chat conversation identity store).
 type Session struct {
-	ID               string
-	CSRF             string
-	MethodID         string
-	ExportKeyID      string
-	ConnectorID      string
-	LoginTool        string
-	Mode             string
-	IdentityID       string
-	ConversationID   string
+	ID             string
+	CSRF           string
+	MethodID       string
+	ExportKeyID    string
+	ConnectorID    string
+	LoginTool      string
+	Mode           string
+	IdentityID     string
+	ConversationID string
 	// WorkspaceID is the Web UI workspace for ConversationID targets.
 	// Persist must use identity.Key(ConversationID, WorkspaceID) so Accounts
 	// and the run engine read the same pool (non-default workspaces).
