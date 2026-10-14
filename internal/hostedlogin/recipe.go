@@ -15,63 +15,83 @@ const (
 	ModeBasic        = "basic"
 	ModeHeaderPairs  = "header_pairs"
 	ModeOAuth        = "oauth"
+
+	draftMethodID = "draft"
 )
 
 var passwordArgRE = regexp.MustCompile(`(?i)pass|secret`)
 
-// ValidateRecipe checks a hosted-login recipe. When Enabled is false only
-// structural constraints apply (known mode). When enabled, mode-specific
-// completeness rules are enforced.
-func ValidateRecipe(r store.HostedLoginRecipe) error {
-	switch r.Mode {
+// ValidateMethod checks one hosted-login method (per-mode completeness rules).
+func ValidateMethod(m store.HostedLoginMethod) error {
+	switch m.Mode {
 	case "", ModePasswordForm, ModeTokenPaste, ModeBasic, ModeHeaderPairs, ModeOAuth:
 	default:
-		return fmt.Errorf("unsupported hosted login mode %q", r.Mode)
+		return fmt.Errorf("unsupported hosted login mode %q", m.Mode)
 	}
-	if !r.Enabled {
-		return nil
-	}
-	switch r.Mode {
+	switch m.Mode {
 	case ModePasswordForm:
-		if strings.TrimSpace(r.LoginTool) == "" {
+		if strings.TrimSpace(m.LoginTool) == "" {
 			return fmt.Errorf("password_form requires login_tool")
 		}
-		if !hasPasswordField(r.Fields) {
+		if !hasPasswordField(m.Fields) {
 			return fmt.Errorf("password_form needs a password field")
 		}
 		return nil
 	case ModeTokenPaste:
-		if len(r.Fields) != 1 {
+		if len(m.Fields) != 1 {
 			return fmt.Errorf("token_paste requires exactly one field")
 		}
-		arg := strings.ToLower(strings.TrimSpace(r.Fields[0].Arg))
+		arg := strings.ToLower(strings.TrimSpace(m.Fields[0].Arg))
 		if arg != "token" && arg != "api_key" {
 			return fmt.Errorf("token_paste field arg must be token or api_key")
 		}
 		return nil
 	case ModeBasic:
 		// LoginTool optional: empty → write Authorization Basic directly.
-		if len(effectiveBasicFields(r.Fields)) < 2 {
+		if len(effectiveBasicFields(m.Fields)) < 2 {
 			return fmt.Errorf("basic needs username and password fields")
 		}
 		return nil
 	case ModeHeaderPairs:
-		if len(r.Fields) == 0 {
+		if len(m.Fields) == 0 {
 			return fmt.Errorf("header_pairs needs at least one header field")
 		}
-		for _, f := range r.Fields {
+		for _, f := range m.Fields {
 			if strings.TrimSpace(f.Arg) == "" && strings.TrimSpace(f.Name) == "" {
 				return fmt.Errorf("header_pairs field needs name or arg (header key)")
 			}
 		}
 		return nil
 	case ModeOAuth:
-		return validateOAuth(r.OAuth)
+		return validateOAuth(m.OAuth)
 	case "":
-		return fmt.Errorf("enabled recipe requires mode")
+		return fmt.Errorf("method requires mode")
 	default:
-		return fmt.Errorf("unsupported hosted login mode %q", r.Mode)
+		return fmt.Errorf("unsupported hosted login mode %q", m.Mode)
 	}
+}
+
+// ValidateConfig checks hosted login config when enabled (methods + default_method_id).
+func ValidateConfig(c store.HostedLoginConfig) error {
+	if !c.Enabled {
+		return nil
+	}
+	if len(c.Methods) == 0 {
+		return fmt.Errorf("enabled hosted login requires methods")
+	}
+	var found bool
+	for _, m := range c.Methods {
+		if err := ValidateMethod(m); err != nil {
+			return err
+		}
+		if m.ID == c.DefaultMethodID {
+			found = true
+		}
+	}
+	if strings.TrimSpace(c.DefaultMethodID) == "" || !found {
+		return fmt.Errorf("default_method_id must reference a method")
+	}
+	return nil
 }
 
 func validateOAuth(o *store.HostedLoginOAuth) error {
@@ -131,10 +151,10 @@ func DefaultHeaderPairFields() []store.HostedLoginField {
 	}
 }
 
-// DraftRecipe builds a disabled draft recipe from a login tool name and its
+// DraftRecipe builds a disabled draft config from a login tool name and its
 // JSON Schema (input_schema). Prefer password_form when a password-like
 // argument is present; otherwise token_paste for a single token/api_key arg.
-func DraftRecipe(loginTool string, inputSchema map[string]any) store.HostedLoginRecipe {
+func DraftRecipe(loginTool string, inputSchema map[string]any) store.HostedLoginConfig {
 	props := schemaProperties(inputSchema)
 	required := schemaRequired(inputSchema)
 	keys := propertyKeys(props, required)
@@ -155,34 +175,38 @@ func DraftRecipe(loginTool string, inputSchema map[string]any) store.HostedLogin
 		})
 	}
 
-	draft := store.HostedLoginRecipe{
-		Enabled:   false,
+	method := store.HostedLoginMethod{
+		ID:        draftMethodID,
 		LoginTool: loginTool,
 		Fields:    fields,
 	}
 	switch {
 	case hasPassword:
-		draft.Mode = ModePasswordForm
+		method.Mode = ModePasswordForm
 	case len(fields) == 1:
 		arg := strings.ToLower(fields[0].Arg)
 		if arg == "token" || arg == "api_key" {
-			draft.Mode = ModeTokenPaste
+			method.Mode = ModeTokenPaste
 		} else {
-			draft.Mode = ModePasswordForm
+			method.Mode = ModePasswordForm
 		}
 	default:
-		draft.Mode = ModePasswordForm
+		method.Mode = ModePasswordForm
 	}
-	return draft
+	return store.HostedLoginConfig{
+		Enabled:         false,
+		DefaultMethodID: draftMethodID,
+		Methods:         []store.HostedLoginMethod{method},
+	}
 }
 
 // DraftRecipeFromSecurity builds a disabled draft when there is no login tool
 // but OpenAPI securitySchemes suggest bearer/apiKey/basic.
 // schemes is a map of scheme-name → scheme object (as decoded JSON).
-func DraftRecipeFromSecurity(schemes map[string]any) store.HostedLoginRecipe {
-	draft := store.HostedLoginRecipe{Enabled: false}
+func DraftRecipeFromSecurity(schemes map[string]any) store.HostedLoginConfig {
+	method := store.HostedLoginMethod{ID: draftMethodID}
 	if len(schemes) == 0 {
-		return draft
+		return store.HostedLoginConfig{Enabled: false}
 	}
 	names := make([]string, 0, len(schemes))
 	for name := range schemes {
@@ -199,26 +223,37 @@ func DraftRecipeFromSecurity(schemes map[string]any) store.HostedLoginRecipe {
 		in := strings.ToLower(mapString(raw, "in"))
 		switch {
 		case typ == "http" && scheme == "basic":
-			draft.Mode = ModeBasic
-			draft.Fields = DefaultBasicFields()
-			return draft
+			method.Mode = ModeBasic
+			method.Fields = DefaultBasicFields()
+			return draftConfigFromMethod(method)
 		case typ == "http" && (scheme == "bearer" || scheme == ""):
-			draft.Mode = ModeTokenPaste
-			draft.Fields = DefaultTokenFields()
-			return draft
+			method.Mode = ModeTokenPaste
+			method.Fields = DefaultTokenFields()
+			return draftConfigFromMethod(method)
 		case typ == "apikey" && (in == "header" || in == ""):
 			headerName := mapString(raw, "name")
 			if headerName == "" {
 				headerName = "Authorization"
 			}
-			draft.Mode = ModeHeaderPairs
-			draft.Fields = []store.HostedLoginField{{
+			method.Mode = ModeHeaderPairs
+			method.Fields = []store.HostedLoginField{{
 				Name: headerName, Label: headerName, Arg: headerName, Input: "password",
 			}}
-			return draft
+			return draftConfigFromMethod(method)
 		}
 	}
-	return draft
+	return store.HostedLoginConfig{Enabled: false}
+}
+
+func draftConfigFromMethod(m store.HostedLoginMethod) store.HostedLoginConfig {
+	if m.ID == "" {
+		m.ID = draftMethodID
+	}
+	return store.HostedLoginConfig{
+		Enabled:         false,
+		DefaultMethodID: m.ID,
+		Methods:         []store.HostedLoginMethod{m},
+	}
 }
 
 func mapString(m map[string]any, key string) string {

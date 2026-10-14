@@ -20,9 +20,12 @@ func TestAuthExpiredForCallReplaysAfterNotify(t *testing.T) {
 	st.UpsertConnector(store.Connector{
 		ID: "mall", Type: "openapi",
 		Auth: store.ConnectorAuth{
-			HostedLogin: store.HostedLoginRecipe{
-				Enabled: true, Mode: hostedlogin.ModeTokenPaste,
-				Fields: []store.HostedLoginField{{Name: "token", Arg: "token", Input: "password"}},
+			HostedLogin: store.HostedLoginConfig{
+				Enabled: true, DefaultMethodID: "default",
+				Methods: []store.HostedLoginMethod{{
+					ID: "default", Mode: hostedlogin.ModeTokenPaste,
+					Fields: []store.HostedLoginField{{Name: "token", Arg: "token", Input: "password"}},
+				}},
 			},
 		},
 	})
@@ -107,9 +110,12 @@ func TestAuthExpiredForCallTimeoutFallsBack(t *testing.T) {
 	st.UpsertConnector(store.Connector{
 		ID: "mall", Type: "openapi",
 		Auth: store.ConnectorAuth{
-			HostedLogin: store.HostedLoginRecipe{
-				Enabled: true, Mode: hostedlogin.ModeTokenPaste,
-				Fields: []store.HostedLoginField{{Name: "token", Arg: "token", Input: "password"}},
+			HostedLogin: store.HostedLoginConfig{
+				Enabled: true, DefaultMethodID: "default",
+				Methods: []store.HostedLoginMethod{{
+					ID: "default", Mode: hostedlogin.ModeTokenPaste,
+					Fields: []store.HostedLoginField{{Name: "token", Arg: "token", Input: "password"}},
+				}},
 			},
 		},
 	})
@@ -162,6 +168,10 @@ func (r *recordingSessions) Issue(seed hostedlogin.Session) (id, csrf string, er
 
 func (r *recordingSessions) Get(id string) (hostedlogin.Session, bool) {
 	return r.inner.Get(id)
+}
+
+func (r *recordingSessions) Replace(id string, sess hostedlogin.Session) bool {
+	return r.inner.Replace(id, sess)
 }
 
 func (r *recordingSessions) Delete(id string) { r.inner.Delete(id) }

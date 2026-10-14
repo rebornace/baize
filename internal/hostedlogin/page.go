@@ -36,6 +36,7 @@ button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background
 	b.WriteString(html.EscapeString(title))
 	b.WriteString("</h1>")
 	b.WriteString(`<p class="meta">Credentials are sent only to Baize, not to the AI model.</p>`)
+	writeMethodSwitch(&b, sess)
 	if pageURL != "" {
 		if img, err := qrDataURL(pageURL); err == nil {
 			b.WriteString(`<p class="meta">Scan to open this page on your phone:</p>`)
@@ -83,6 +84,46 @@ button{margin-top:1rem;padding:.55rem 1rem;border:0;border-radius:8px;background
 	}
 	b.WriteString(`<button type="submit">Sign in</button></form></body></html>`)
 	return b.String()
+}
+
+func writeMethodSwitch(b *strings.Builder, sess Session) {
+	methods := sess.AvailableMethods
+	if len(methods) <= 1 {
+		return
+	}
+	current := strings.TrimSpace(sess.MethodID)
+	action := hostedMethodSwitchURL(sess)
+	if action == "" {
+		return
+	}
+	b.WriteString(`<p class="meta">换一种登录方式：</p>`)
+	b.WriteString(`<ul class="meta">`)
+	for _, m := range methods {
+		if m.ID == current {
+			continue
+		}
+		label := strings.TrimSpace(m.Label)
+		if label == "" {
+			label = m.ID
+		}
+		b.WriteString(`<li><form method="POST" action="`)
+		b.WriteString(html.EscapeString(action))
+		b.WriteString(`" style="display:inline">`)
+		b.WriteString(fmt.Sprintf(`<input type="hidden" name="csrf" value="%s">`, html.EscapeString(sess.CSRF)))
+		b.WriteString(fmt.Sprintf(`<input type="hidden" name="method_id" value="%s">`, html.EscapeString(m.ID)))
+		b.WriteString(`<button type="submit" style="background:none;border:0;padding:0;color:#2563eb;cursor:pointer;text-decoration:underline;font:inherit">`)
+		b.WriteString(html.EscapeString(label))
+		b.WriteString(`</button></form></li>`)
+	}
+	b.WriteString(`</ul>`)
+}
+
+func hostedMethodSwitchURL(sess Session) string {
+	base := hostedPageURL(sess)
+	if base == "" {
+		return ""
+	}
+	return base + "/method"
 }
 
 func hostedPageURL(sess Session) string {

@@ -21,6 +21,7 @@ import { SkillsSettings } from './pages/SkillsSettings'
 import { StorageSettings } from './pages/StorageSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
 import { WeixinChannelSettings } from './pages/WeixinChannelSettings'
+import { ExternalLoginSettings } from './pages/ExternalLoginSettings'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/components.css'
@@ -64,6 +65,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <McpSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="external-login"
+              element={
+                <AdminOnly>
+                  <ExternalLoginSettings />
                 </AdminOnly>
               }
             />

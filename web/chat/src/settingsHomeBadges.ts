@@ -99,6 +99,8 @@ export function resolveBadge(kind: BadgeKind, data: unknown): BadgeResult | null
       const n = (data as { id: string }[]).length
       return n === 0 ? null : { tone: 'neutral', text: B.exportCount(n) }
     }
+    case 'externalLogin':
+      return null
     case 'weixin':
       return weixinBadge(data as WeixinChannelSettings)
     case 'webhook': {
@@ -150,7 +152,7 @@ export function resolveBadge(kind: BadgeKind, data: unknown): BadgeResult | null
 
 /** Kinds whose GET endpoint is admin-only; skipped (locked badge) for operators. */
 const ADMIN_ONLY_KINDS = new Set<BadgeKind>([
-  'webhook', 'inbox', 'store', 'mcpExport', 'openapi', 'mcp', 'plugins',
+  'webhook', 'inbox', 'store', 'mcpExport', 'externalLogin', 'openapi', 'mcp', 'plugins',
 ])
 
 export type BadgeMap = Partial<Record<BadgeKind, BadgeResult | null>>

@@ -110,12 +110,25 @@ export interface HostedLoginOAuth {
   token_prefix?: string
 }
 
-export interface HostedLoginRecipe {
-  enabled?: boolean
-  login_tool?: string
+export interface HostedLoginMethod {
+  id: string
+  label?: string
   mode?: string
+  login_tool?: string
   fields?: HostedLoginField[]
   oauth?: HostedLoginOAuth
+}
+
+export interface HostedLoginConfig {
+  enabled?: boolean
+  default_method_id?: string
+  methods?: HostedLoginMethod[]
+}
+
+export interface HostedLoginMethodSuggestion {
+  id: string
+  label?: string
+  recommend_default?: boolean
 }
 
 export interface ConnectorAuth {
@@ -130,7 +143,7 @@ export interface ConnectorAuth {
     header_template?: string
     default_scheme?: string
   }
-  hosted_login?: HostedLoginRecipe
+  hosted_login?: HostedLoginConfig
 }
 
 export type ImportFormat = 'auto' | 'openapi3' | 'swagger2' | 'postman'
@@ -202,12 +215,49 @@ export async function putConnector(id: string, body: PutConnectorBody): Promise<
 
 export async function draftConnectorHostedLogin(
   id: string,
-): Promise<{ hosted_login: HostedLoginRecipe; source: string }> {
+): Promise<{ hosted_login: HostedLoginConfig; source: string }> {
   const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}/hosted-login/draft`, {
     method: 'POST',
     headers: authInit(),
   })
-  return parseConnectorJSON<{ hosted_login: HostedLoginRecipe; source: string }>(res)
+  return parseConnectorJSON<{ hosted_login: HostedLoginConfig; source: string }>(res)
+}
+
+export async function fetchHostedLoginCandidates(
+  id: string,
+): Promise<{ candidates: HostedLoginMethod[] }> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}/hosted-login/candidates`, {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseConnectorJSON<{ candidates: HostedLoginMethod[] }>(res)
+}
+
+export async function suggestHostedLogin(
+  id: string,
+  body?: { candidates?: HostedLoginMethod[] },
+): Promise<{ suggestions: HostedLoginMethodSuggestion[] }> {
+  const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}/hosted-login/suggest`, {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body ?? {}),
+  })
+  return parseConnectorJSON<{ suggestions: HostedLoginMethodSuggestion[] }>(res)
+}
+
+export async function createHostedLoginTestSession(
+  id: string,
+  body?: { export_key_id?: string; method_id?: string },
+): Promise<{ url: string; session_id?: string }> {
+  const res = await fetch(
+    `/v0/connectors/${encodeURIComponent(id)}/hosted-login/test-session`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body ?? {}),
+    },
+  )
+  return parseConnectorJSON<{ url: string; session_id?: string }>(res)
 }
 
 export async function deleteConnectorTool(connectorId: string, name: string): Promise<void> {

@@ -95,6 +95,35 @@ func (s *Server) handleHostedLoginPost(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(hostedlogin.RenderSuccessPage()))
 }
 
+func (s *Server) handleHostedLoginMethodPost(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.HostedSessions == nil || s.Store == nil {
+		http.Error(w, "hosted login unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ip := clientIP(r)
+	if !s.hostedLoginLimiter().AllowHosted(ip, id) {
+		s.hostedAudit().Record(hostedlogin.AuditEvent{
+			Kind: hostedlogin.AuditRateLimited, SessionID: id, ClientIP: ip,
+		})
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	err := hostedlogin.SwitchMethod(hostedlogin.SwitchMethodDeps{
+		Sessions: s.HostedSessions,
+		Store:    s.Store,
+	}, id, r.FormValue("csrf"), r.FormValue("method_id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/v0/auth/hosted/"+id, http.StatusSeeOther)
+}
+
 func (s *Server) handleHostedLoginOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.HostedSessions == nil || s.Store == nil {

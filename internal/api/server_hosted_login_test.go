@@ -29,8 +29,11 @@ func TestHostedLoginPagePublicAndSubmit(t *testing.T) {
 				ToolNameGlob: "*login*", TokenJSONPaths: []string{"accessToken"},
 				HeaderTemplate: "Bearer {{token}}",
 			},
-			HostedLogin: store.HostedLoginRecipe{
-				Enabled: true, LoginTool: "mall.login", Mode: hostedlogin.ModePasswordForm,
+			HostedLogin: store.HostedLoginConfig{
+				Enabled: true, DefaultMethodID: "default",
+				Methods: []store.HostedLoginMethod{{
+					ID: "default", LoginTool: "mall.login", Mode: hostedlogin.ModePasswordForm,
+				}},
 			},
 		},
 	})

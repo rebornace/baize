@@ -32,11 +32,11 @@ describe('SETTINGS_GROUPS', () => {
 })
 
 describe('settingsNavItems(admin)', () => {
-  it('returns 15 items with unique routes and complete metadata', () => {
+  it('returns 16 items with unique routes and complete metadata', () => {
     const adminItems = settingsNavItems('admin')
-    expect(adminItems).toHaveLength(15)
+    expect(adminItems).toHaveLength(16)
     const tos = adminItems.map((i) => i.to)
-    expect(new Set(tos).size).toBe(15)
+    expect(new Set(tos).size).toBe(16)
     for (const item of adminItems) {
       expect(item.label).toBeTruthy()
       expect(item.desc).toBeTruthy()
@@ -59,6 +59,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/openapi']).toBe('业务系统')
     expect(byTo['/settings/plugins']).toBe('插件服务')
     expect(byTo['/settings/mcp']).toBe('外部工具服务')
+    expect(byTo['/settings/external-login']).toBe('对外登录')
     expect(byTo['/settings/mcp-export']).toBe('对外提供能力')
     expect(byTo['/settings/channels/weixin']).toBe('微信')
     expect(byTo['/settings/runtime']).toBe('运行参数')
@@ -87,6 +88,7 @@ describe('settingsNavItems(admin)', () => {
       '/settings/openapi',
       '/settings/mcp',
       '/settings/plugins',
+      '/settings/external-login',
       '/settings/mcp-export',
     ])
     expect(inGroup('messaging')).toEqual([
@@ -126,7 +128,7 @@ describe('settingsNavItems(operator) access levels', () => {
 
 describe('visibleNavItems', () => {
   it('admin sees every item', () => {
-    expect(visibleNavItems('admin')).toHaveLength(15)
+    expect(visibleNavItems('admin')).toHaveLength(16)
   })
 
   it('operator sidebar hides locked items (no connect group), keeps 8', () => {

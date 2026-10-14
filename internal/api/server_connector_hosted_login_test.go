@@ -12,7 +12,7 @@ import (
 	"github.com/rebornace/baize/internal/tool"
 )
 
-// PUT with hosted_login, then PUT omitting it, must keep the recipe.
+// PUT with hosted_login, then PUT omitting it, must keep the config.
 func TestPutConnectorOmitsHostedLoginPreservesExisting(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -32,13 +32,15 @@ func TestPutConnectorOmitsHostedLoginPreservesExisting(t *testing.T) {
 		"base_url": upstream.URL,
 		"auth": map[string]any{
 			"hosted_login": map[string]any{
-				"enabled":    true,
-				"login_tool": "login",
-				"mode":       hostedlogin.ModePasswordForm,
-				"fields": []map[string]any{
-					{"name": "user", "arg": "username", "input": "text"},
-					{"name": "pass", "arg": "password", "input": "password"},
-				},
+				"enabled":           true,
+				"default_method_id": "default",
+				"methods": []map[string]any{{
+					"id": "default", "login_tool": "login", "mode": hostedlogin.ModePasswordForm,
+					"fields": []map[string]any{
+						{"name": "user", "arg": "username", "input": "text"},
+						{"name": "pass", "arg": "password", "input": "password"},
+					},
+				}},
 			},
 		},
 	})
@@ -53,11 +55,12 @@ func TestPutConnectorOmitsHostedLoginPreservesExisting(t *testing.T) {
 		t.Fatalf("get: %v", err)
 	}
 	hl := got.Auth.HostedLogin
-	if !hl.Enabled || hl.LoginTool != "login" || hl.Mode != hostedlogin.ModePasswordForm {
+	method, ok := hl.DefaultMethod()
+	if !ok || !hl.Enabled || method.LoginTool != "login" || method.Mode != hostedlogin.ModePasswordForm {
 		t.Fatalf("hosted_login not preserved: %+v", hl)
 	}
-	if len(hl.Fields) != 2 {
-		t.Fatalf("fields not preserved: %+v", hl.Fields)
+	if len(method.Fields) != 2 {
+		t.Fatalf("fields not preserved: %+v", method.Fields)
 	}
 
 	getRR := httptest.NewRecorder()
@@ -66,7 +69,7 @@ func TestPutConnectorOmitsHostedLoginPreservesExisting(t *testing.T) {
 		t.Fatalf("GET status=%d body=%s", getRR.Code, getRR.Body.String())
 	}
 	body := getRR.Body.String()
-	for _, part := range []string{`"hosted_login"`, `"login_tool":"login"`, `"enabled":true`} {
+	for _, part := range []string{`"hosted_login"`, `"login_tool":"login"`, `"enabled":true`, `"methods"`} {
 		if !strings.Contains(body, part) {
 			t.Fatalf("GET must contain %s, got %s", part, body)
 		}
@@ -91,11 +94,15 @@ func TestPutConnectorExplicitHostedLoginOverrides(t *testing.T) {
 		"base_url": upstream.URL,
 		"auth": map[string]any{
 			"hosted_login": map[string]any{
-				"enabled": true, "login_tool": "login", "mode": hostedlogin.ModePasswordForm,
-				"fields": []map[string]any{
-					{"name": "user", "arg": "username", "input": "text"},
-					{"name": "pass", "arg": "password", "input": "password"},
-				},
+				"enabled":           true,
+				"default_method_id": "default",
+				"methods": []map[string]any{{
+					"id": "default", "login_tool": "login", "mode": hostedlogin.ModePasswordForm,
+					"fields": []map[string]any{
+						{"name": "user", "arg": "username", "input": "text"},
+						{"name": "pass", "arg": "password", "input": "password"},
+					},
+				}},
 			},
 		},
 	})
@@ -104,12 +111,15 @@ func TestPutConnectorExplicitHostedLoginOverrides(t *testing.T) {
 		"base_url": upstream.URL,
 		"auth": map[string]any{
 			"hosted_login": map[string]any{
-				"enabled": false, "login_tool": "", "mode": "",
+				"enabled": false, "methods": []any{},
 			},
 		},
 	})
 	got, _ := st.GetConnector("hl2")
-	if got.Auth.HostedLogin.Enabled || got.Auth.HostedLogin.LoginTool != "" {
+	if got.Auth.HostedLogin.Enabled {
+		t.Fatalf("explicit clear not honored: %+v", got.Auth.HostedLogin)
+	}
+	if m, ok := got.Auth.HostedLogin.DefaultMethod(); ok && m.LoginTool != "" {
 		t.Fatalf("explicit clear not honored: %+v", got.Auth.HostedLogin)
 	}
 }

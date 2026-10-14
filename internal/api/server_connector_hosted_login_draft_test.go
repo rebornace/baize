@@ -36,7 +36,7 @@ func TestPostConnectorHostedLoginDraft(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		HostedLogin store.HostedLoginRecipe `json:"hosted_login"`
+		HostedLogin store.HostedLoginConfig `json:"hosted_login"`
 		Source      string                  `json:"source"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
@@ -46,9 +46,10 @@ func TestPostConnectorHostedLoginDraft(t *testing.T) {
 		t.Fatal("draft must not be enabled")
 	}
 	if body.Source != "login_tool" {
-		t.Fatalf("source=%q recipe=%+v", body.Source, body.HostedLogin)
+		t.Fatalf("source=%q config=%+v", body.Source, body.HostedLogin)
 	}
-	if body.HostedLogin.LoginTool == "" || body.HostedLogin.Mode == "" {
-		t.Fatalf("expected inferred recipe, got %+v", body.HostedLogin)
+	m, ok := body.HostedLogin.DefaultMethod()
+	if !ok || m.LoginTool == "" || m.Mode == "" {
+		t.Fatalf("expected inferred method, got %+v", body.HostedLogin)
 	}
 }

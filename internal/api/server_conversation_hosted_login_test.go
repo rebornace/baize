@@ -17,12 +17,15 @@ func TestPostConversationHostedLogin(t *testing.T) {
 	st.UpsertConnector(store.Connector{
 		ID: "mall", Type: "openapi",
 		Auth: store.ConnectorAuth{
-			HostedLogin: store.HostedLoginRecipe{
-				Enabled: true, LoginTool: "login", Mode: hostedlogin.ModePasswordForm,
-				Fields: []store.HostedLoginField{
-					{Name: "user", Arg: "username", Input: "text"},
-					{Name: "pass", Arg: "password", Input: "password"},
-				},
+			HostedLogin: store.HostedLoginConfig{
+				Enabled: true, DefaultMethodID: "default",
+				Methods: []store.HostedLoginMethod{{
+					ID: "default", LoginTool: "login", Mode: hostedlogin.ModePasswordForm,
+					Fields: []store.HostedLoginField{
+						{Name: "user", Arg: "username", Input: "text"},
+						{Name: "pass", Arg: "password", Input: "password"},
+					},
+				}},
 			},
 		},
 	})

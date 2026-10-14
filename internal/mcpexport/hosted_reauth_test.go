@@ -14,12 +14,15 @@ func TestHostedReauthURL(t *testing.T) {
 	st.UpsertConnector(store.Connector{
 		ID: "mall", Type: "openapi",
 		Auth: store.ConnectorAuth{
-			HostedLogin: store.HostedLoginRecipe{
-				Enabled: true, LoginTool: "mall.login", Mode: hostedlogin.ModePasswordForm,
-				Fields: []store.HostedLoginField{
-					{Name: "user", Arg: "username", Input: "text"},
-					{Name: "pass", Arg: "password", Input: "password"},
-				},
+			HostedLogin: store.HostedLoginConfig{
+				Enabled: true, DefaultMethodID: "default",
+				Methods: []store.HostedLoginMethod{{
+					ID: "default", LoginTool: "mall.login", Mode: hostedlogin.ModePasswordForm,
+					Fields: []store.HostedLoginField{
+						{Name: "user", Arg: "username", Input: "text"},
+						{Name: "pass", Arg: "password", Input: "password"},
+					},
+				}},
 			},
 		},
 	})
@@ -42,8 +45,12 @@ func TestHostedReauthURL(t *testing.T) {
 	if id == "" {
 		t.Fatal("empty session id")
 	}
-	if _, ok := sessions.Get(id); !ok {
+	sess, ok := sessions.Get(id)
+	if !ok {
 		t.Fatal("session missing")
+	}
+	if sess.MethodID != "default" {
+		t.Fatalf("method_id=%q", sess.MethodID)
 	}
 }
 

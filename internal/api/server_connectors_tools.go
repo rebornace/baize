@@ -203,7 +203,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			// 避免一次普通保存把本人登录链路清空。
 			capture = existingConn.Auth.Capture
 		}
-		hosted := store.HostedLoginRecipe{}
+		hosted := store.HostedLoginConfig{}
 		if body.Auth.HostedLogin != nil {
 			hosted = *body.Auth.HostedLogin
 		} else if hasExisting {
@@ -358,7 +358,7 @@ type authBody struct {
 	} `json:"capture"`
 	// HostedLogin is a pointer so omit vs explicit empty can be distinguished
 	// (nil = preserve existing; non-nil = replace, including clear).
-	HostedLogin *store.HostedLoginRecipe `json:"hosted_login"`
+	HostedLogin *store.HostedLoginConfig `json:"hosted_login"`
 }
 
 func (s *Server) handleListConnectors(w http.ResponseWriter, r *http.Request) {

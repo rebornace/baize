@@ -23,11 +23,12 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 	if err != nil {
 		return "", "", false
 	}
-	recipe := conn.Auth.HostedLogin
-	if !recipe.Enabled {
+	cfg := conn.Auth.HostedLogin
+	if !cfg.Enabled {
 		return "", "", false
 	}
-	if err := hostedlogin.ValidateRecipe(recipe); err != nil {
+	methodID := strings.TrimSpace(cfg.DefaultMethodID)
+	if methodID == "" {
 		return "", "", false
 	}
 	origin := strings.TrimRight(strings.TrimSpace(deps.PublicBaseURL), "/")
@@ -41,16 +42,16 @@ func hostedReauthURL(deps ServerDeps, auth exportAuth, toolRow store.Tool) (stri
 	if identityID == "" {
 		return "", "", false
 	}
-	id, csrf, err := deps.HostedSessions.Issue(hostedlogin.Session{
+	seed, err := hostedlogin.MaterializeSession(cfg, methodID, hostedlogin.Session{
 		ExportKeyID:  auth.Key.ID,
 		ConnectorID:  connectorID,
-		LoginTool:    recipe.LoginTool,
-		Mode:         recipe.Mode,
 		IdentityID:   identityID,
-		Fields:       recipe.Fields,
-		OAuth:        hostedlogin.CloneOAuth(recipe.OAuth),
 		PublicOrigin: origin,
 	})
+	if err != nil {
+		return "", "", false
+	}
+	id, csrf, err := deps.HostedSessions.Issue(seed)
 	if err != nil || id == "" {
 		return "", "", false
 	}

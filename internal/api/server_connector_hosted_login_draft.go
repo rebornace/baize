@@ -2,15 +2,14 @@ package api
 
 import (
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/rebornace/baize/internal/hostedlogin"
 	"github.com/rebornace/baize/internal/store"
 )
 
-// POST /v0/connectors/{id}/hosted-login/draft — infer a disabled HostedLoginRecipe
-// from login tools (preferred) or OpenAPI security schemes.
+// POST /v0/connectors/{id}/hosted-login/draft — infer a disabled hosted login
+// config from login tools (preferred) or OpenAPI security schemes.
 func (s *Server) handlePostConnectorHostedLoginDraft(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	if id == "" {
@@ -31,43 +30,43 @@ func (s *Server) handlePostConnectorHostedLoginDraft(w http.ResponseWriter, r *h
 	if glob == "" {
 		glob = "*login*"
 	}
-	var draft store.HostedLoginRecipe
-	for _, tl := range s.Store.ListToolsByConnector(id) {
-		if !matchToolGlob(glob, tl.Name) {
-			continue
-		}
-		draft = hostedlogin.DraftRecipe(tl.Name, tl.InputSchema)
-		break
+	schemes, err := connectorSecuritySchemes(conn)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "could not read connector spec security schemes")
+		return
 	}
-	if draft.Mode == "" {
-		// Fallback: token/basic/header from nothing — leave empty mode for UI.
-		draft = store.HostedLoginRecipe{Enabled: false}
-	}
+	cands := hostedlogin.BuildCandidates(s.Store.ListToolsByConnector(id), glob, schemes)
+	draft := draftConfigFromCandidates(cands)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"hosted_login": draft,
 		"source":       draftSource(draft),
 	})
 }
 
-func draftSource(d store.HostedLoginRecipe) string {
-	if d.LoginTool != "" {
+func draftSource(c store.HostedLoginConfig) string {
+	m, ok := c.DefaultMethod()
+	if !ok {
+		return "empty"
+	}
+	if m.LoginTool != "" {
 		return "login_tool"
 	}
-	if d.Mode != "" {
+	if m.Mode != "" {
 		return "inferred"
 	}
 	return "empty"
 }
 
-func matchToolGlob(glob, name string) bool {
-	glob = strings.TrimSpace(glob)
-	name = strings.TrimSpace(name)
-	if glob == "" || glob == "*" {
-		return true
+func draftConfigFromCandidates(cands []store.HostedLoginMethod) store.HostedLoginConfig {
+	if len(cands) == 0 {
+		return store.HostedLoginConfig{Enabled: false}
 	}
-	if strings.EqualFold(glob, "__none__") {
-		return false
+	const draftID = "draft"
+	m := cands[0]
+	m.ID = draftID
+	return store.HostedLoginConfig{
+		Enabled:         false,
+		DefaultMethodID: draftID,
+		Methods:         []store.HostedLoginMethod{m},
 	}
-	ok, err := filepath.Match(glob, name)
-	return err == nil && ok
 }

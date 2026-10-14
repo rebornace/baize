@@ -9,6 +9,7 @@ import {
   Network,
   Puzzle,
   Share2,
+  LogIn,
   SlidersHorizontal,
   Sparkles,
   Target,
@@ -27,7 +28,7 @@ export type SettingsGroup = 'assistant' | 'connect' | 'messaging' | 'system'
 export type SettingsAccess = 'full' | 'read' | 'login' | 'locked'
 export type BadgeKind =
   | 'models' | 'tools' | 'skills' | 'openapi' | 'mcp' | 'plugins'
-  | 'mcpExport' | 'weixin' | 'webhook' | 'inbox' | 'store' | 'runtime'
+  | 'mcpExport' | 'externalLogin' | 'weixin' | 'webhook' | 'inbox' | 'store' | 'runtime'
   | 'toolMatching'
 
 export interface SettingsNavItem {
@@ -86,6 +87,10 @@ const ITEM_META: NavMeta[] = [
   {
     to: '/settings/plugins', group: 'connect', icon: Puzzle, operator: 'locked', badge: 'plugins',
     labelKey: 'plugins', descKey: 'pluginsDesc',
+  },
+  {
+    to: '/settings/external-login', group: 'connect', icon: LogIn, operator: 'locked', badge: 'externalLogin',
+    labelKey: 'externalLogin', descKey: 'externalLoginDesc',
   },
   {
     to: '/settings/mcp-export', group: 'connect', icon: Share2, operator: 'locked', badge: 'mcpExport',
@@ -147,7 +152,7 @@ function buildItems(): SettingsNavItem[] {
   }))
 }
 
-/** Full catalog; admin sees all 15, operator items carry their access level. */
+/** Full catalog; admin sees all 16, operator items carry their access level. */
 export function settingsNavItems(_role: SettingsRole): SettingsNavItem[] {
   return buildItems()
 }

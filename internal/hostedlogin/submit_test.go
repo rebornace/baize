@@ -44,10 +44,12 @@ func TestSubmitPasswordUpdatesIdentity(t *testing.T) {
 				TokenJSONPaths: []string{"accessToken"},
 				HeaderTemplate: "Bearer {{token}}",
 			},
-			HostedLogin: store.HostedLoginRecipe{
-				Enabled:   true,
-				LoginTool: "mall.login",
-				Mode:      ModePasswordForm,
+			HostedLogin: store.HostedLoginConfig{
+				Enabled:         true,
+				DefaultMethodID: "default",
+				Methods: []store.HostedLoginMethod{{
+					ID: "default", LoginTool: "mall.login", Mode: ModePasswordForm,
+				}},
 			},
 		},
 	})

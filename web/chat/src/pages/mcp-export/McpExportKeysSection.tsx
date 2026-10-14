@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Button, Field, Input, Select } from '../../components/ui'
 import type { ToolInfo } from '../../api'
 import { MCP_EXPORTS } from '../../strings'
@@ -73,6 +74,11 @@ export function McpExportKeysSection({
     <section className="settings-form">
       <h2 className="settings-subheading">{MCP_EXPORTS.keyTitle}</h2>
       <p className="settings-meta">{MCP_EXPORTS.keyIntro}</p>
+      <p className="settings-toolbar">
+        <Link to="/settings/external-login" data-testid="mcp-export-configure-hosted-login">
+          {MCP_EXPORTS.configureHostedLogin}
+        </Link>
+      </p>
       {keys.length === 0 && <p className="settings-empty">{MCP_EXPORTS.keyEmpty}</p>}
       {keys.length > 0 && (
         <ul className="settings-list">

@@ -1,13 +1,40 @@
 package store
 
-// HostedLoginRecipe is the connector-side login form recipe for the public
-// hosted login page. Persisted beside other ConnectorAuth fields.
-type HostedLoginRecipe struct {
-	Enabled   bool               `json:"enabled,omitempty"`
+import "strings"
+
+// HostedLoginConfig is the connector-side hosted login configuration for the
+// public login page. Persisted beside other ConnectorAuth fields.
+type HostedLoginConfig struct {
+	Enabled         bool                `json:"enabled,omitempty"`
+	DefaultMethodID string              `json:"default_method_id,omitempty"`
+	Methods         []HostedLoginMethod `json:"methods,omitempty"`
+}
+
+type HostedLoginMethod struct {
+	ID        string             `json:"id"`
+	Label     string             `json:"label,omitempty"`
+	Mode      string             `json:"mode,omitempty"`
 	LoginTool string             `json:"login_tool,omitempty"`
-	Mode      string             `json:"mode,omitempty"` // password_form | token_paste | basic | header_pairs | oauth
 	Fields    []HostedLoginField `json:"fields,omitempty"`
 	OAuth     *HostedLoginOAuth  `json:"oauth,omitempty"`
+}
+
+// DefaultMethod returns the method for DefaultMethodID, or the first method
+// when DefaultMethodID is empty.
+func (c HostedLoginConfig) DefaultMethod() (HostedLoginMethod, bool) {
+	if len(c.Methods) == 0 {
+		return HostedLoginMethod{}, false
+	}
+	id := strings.TrimSpace(c.DefaultMethodID)
+	if id != "" {
+		for _, m := range c.Methods {
+			if m.ID == id {
+				return m, true
+			}
+		}
+		return HostedLoginMethod{}, false
+	}
+	return c.Methods[0], true
 }
 
 // HostedLoginOAuth configures authorization-code login (enterprise IdP / OIDC-compatible).

@@ -42,24 +42,26 @@ func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "invalid_request", "unknown connector_id")
 		return
 	}
-	recipe := conn.Auth.HostedLogin
-	if !recipe.Enabled {
+	cfg := conn.Auth.HostedLogin
+	if !cfg.Enabled {
 		writeError(w, http.StatusBadRequest, "invalid_request", "hosted login is not enabled for this connector")
 		return
 	}
-	if err := hostedlogin.ValidateRecipe(recipe); err != nil {
+	methodID := strings.TrimSpace(cfg.DefaultMethodID)
+	if methodID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "hosted login has no default method configured")
+		return
+	}
+	seed, err := hostedlogin.MaterializeSession(cfg, methodID, hostedlogin.Session{
+		ConnectorID:    connectorID,
+		ConversationID: convID,
+		PublicOrigin:   origin,
+	})
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	id, _, err := s.HostedSessions.Issue(hostedlogin.Session{
-		ConnectorID:    connectorID,
-		LoginTool:      recipe.LoginTool,
-		Mode:           recipe.Mode,
-		ConversationID: convID,
-		Fields:         recipe.Fields,
-		OAuth:          hostedlogin.CloneOAuth(recipe.OAuth),
-		PublicOrigin:   origin,
-	})
+	id, _, err := s.HostedSessions.Issue(seed)
 	if err != nil || id == "" {
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to issue hosted login session")
 		return

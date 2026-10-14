@@ -16,13 +16,13 @@ import (
 )
 
 func TestValidateRecipeOAuth(t *testing.T) {
-	if err := hostedlogin.ValidateRecipe(store.HostedLoginRecipe{
-		Enabled: true, Mode: hostedlogin.ModeOAuth,
+	if err := hostedlogin.ValidateMethod(store.HostedLoginMethod{
+		Mode: hostedlogin.ModeOAuth,
 	}); err == nil {
 		t.Fatal("want error")
 	}
-	if err := hostedlogin.ValidateRecipe(store.HostedLoginRecipe{
-		Enabled: true, Mode: hostedlogin.ModeOAuth,
+	if err := hostedlogin.ValidateMethod(store.HostedLoginMethod{
+		Mode: hostedlogin.ModeOAuth,
 		OAuth: &store.HostedLoginOAuth{
 			AuthorizeURL: "https://idp.example/authorize",
 			TokenURL:     "https://idp.example/token",

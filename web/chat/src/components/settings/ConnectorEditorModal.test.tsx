@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectorEditorModal } from './ConnectorEditorModal'
 import { CONNECTORS, TOOLS } from '../../strings'
@@ -42,7 +43,11 @@ const baseProps: Props = {
 async function render(props: Partial<Props> = {}) {
   const merged = { ...baseProps, ...props }
   await act(async () => {
-    root.render(<ConnectorEditorModal {...merged} />)
+    root.render(
+      <MemoryRouter>
+        <ConnectorEditorModal {...merged} />
+      </MemoryRouter>,
+    )
     await new Promise((r) => setTimeout(r, 0))
   })
   return merged
@@ -50,7 +55,11 @@ async function render(props: Partial<Props> = {}) {
 
 async function rerender(props: Props) {
   await act(async () => {
-    root.render(<ConnectorEditorModal {...props} />)
+    root.render(
+      <MemoryRouter>
+        <ConnectorEditorModal {...props} />
+      </MemoryRouter>,
+    )
     await new Promise((r) => setTimeout(r, 0))
   })
 }
@@ -484,15 +493,24 @@ describe('ConnectorEditorModal advanced', () => {
     expect(host.textContent).toContain(TOOLS.captureToolGlob)
     expect(host.textContent).toContain(TOOLS.captureIntro)
     expect(host.textContent).toContain(TOOLS.captureToolGlobHint)
-    // callback + capture + hosted login
+    // callback + capture + hosted login jump link
     expect(host.querySelectorAll('.settings-advanced-block').length).toBe(3)
     expect(host.textContent).toContain(CONNECTORS.hostedLoginSection)
+    expect(host.textContent).toContain(CONNECTORS.hostedLoginConfigureHint)
+    expect(host.textContent).not.toContain(CONNECTORS.hostedLoginEnabled)
     expect(host.textContent).toContain(TOOLS.captureTokenPaths)
     expect(host.textContent).not.toContain('token_json_paths')
 
     await render({ kind: 'mcp' })
     expect(host.querySelector('details.settings-advanced')).toBeNull()
     expect(host.textContent).not.toContain(CONNECTORS.executionCallback)
+  })
+
+  it('hosted login block links to external login with connector query when id is set', async () => {
+    await render({ kind: 'plugin', editing: true, initial: editInitial })
+    const link = host.querySelector('[data-testid="connector-hosted-login-link"]') as HTMLAnchorElement
+    expect(link).toBeTruthy()
+    expect(link.getAttribute('href')).toBe('/settings/external-login?connector=o1')
   })
 
   it('onSaveInfo includes executionCallbackUrl and auth.capture', async () => {

@@ -116,7 +116,7 @@ type ConnectorAuth struct {
 	Passthrough PassThruAuth      `json:"passthrough,omitempty"`
 	VaultRef    VaultRefAuth      `json:"vault_ref,omitempty"`
 	Capture     CaptureAuth       `json:"capture,omitempty"`
-	HostedLogin HostedLoginRecipe `json:"hosted_login,omitempty"`
+	HostedLogin HostedLoginConfig `json:"hosted_login,omitempty"`
 }
 
 type CaptureAuth struct {

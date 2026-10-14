@@ -157,6 +157,14 @@ function mockExportFetches(extra?: (url: string, init?: RequestInit) => Response
 }
 
 describe('McpExportSettings page', () => {
+  it('links keys section to external login settings', async () => {
+    mockExportFetches()
+    await renderExport()
+    const link = host.querySelector('[data-testid="mcp-export-configure-hosted-login"]') as HTMLAnchorElement
+    expect(link?.textContent).toContain(MCP_EXPORTS.configureHostedLogin)
+    expect(link?.getAttribute('href')).toBe('/settings/external-login')
+  })
+
   it('asks via ConfirmDialog before revoking a key and toasts on success', async () => {
     mockExportFetches()
     await renderExport()
