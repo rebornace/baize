@@ -39,7 +39,7 @@ This is not downstream business IAM or multi-tenant SSO.
 | MCP export | `HANDLE /v0/mcp/export` (and trailing slash) | MCP server exporting a read-only tool-catalog subset to Agent clients such as Cursor |
 | Hosted auth (public) | `GET/POST /v0/auth/hosted/{id}`, `POST .../method`, `GET .../oauth/callback` | Hosted login page / submit / switch method / OAuth callback (no `/ui` dependency) |
 | Meta | `GET /v0/me`, `GET /v0/ui-config` | Current identity and UI config |
-| Observability | `GET /metrics` | Prometheus text; Admin Bearer required; always on |
+| Observability | `GET /metrics`, `GET /v0/settings/logs` | Prometheus text (Admin); recent process log ring buffer (Admin; `?limit=` default 200, max 1000). Settings → **Runtime metrics** shows both; neither is persisted across restarts |
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 

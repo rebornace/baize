@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.13.0 — 2026-10-15
+
+管理后台直接查看运行指标与近期进程日志。向后兼容；选 **minor**（v0.13.0）。
+
+### 新功能
+
+- **设置 → 运行指标**：管理员可在 `/ui` 后台同源拉取 Prometheus 文本（`GET /metrics`）与进程内近期日志（`GET /v0/settings/logs`），无需另开终端或独立刮取端。
+- **近期日志 API**：`GET /v0/settings/logs?limit=`（Admin；默认 200、上限 1000）返回内存环形缓冲中的 slog 行（约最近 500 行）；与 stderr 双写；**不持久化**，重启清空。指标仍为进程内计数，重启清零；长期留存请用外部 Prometheus 刮取。
+
+### 其他
+
+- 去掉启动时打印的示例 `curl … input:你好` 提示（避免误解为真实请求）。
+
+### 文档
+
+- architecture / configuration / http-api / baize-help 说明后台入口、日志缓冲边界与非持久化语义。
+
 ## 0.12.0 — 2026-10-15
 
 MCP HTTP 出站 mTLS。向后兼容；选 **minor**（v0.12.0）。

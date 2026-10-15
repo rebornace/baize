@@ -127,8 +127,9 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 - `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名。
 - `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；Chat `tool.result` span 在事件 Data 有时写入 `baize.contract_hash`、`baize.catalog_revision`；失败 fail-open。
 - `otel_service_name`：OTel `service.name`，默认 `baize`（仅在 endpoint 非空时生效）。
-- `log_format`：`text`（默认）或 `json`；也可用环境变量 **`BAIZE_LOG_FORMAT`**（非法值回退 `text`）。启动时初始化 `slog` 输出到 stderr。
-- **Prometheus 刮取**：根路径 **`GET /metrics`** 默认挂载（无关闭开关）；需 **Admin Bearer**（`Authorization: Bearer <admin_token>`）。Operator 口令返回 `403`。
+- `log_format`：`text`（默认）或 `json`；也可用环境变量 **`BAIZE_LOG_FORMAT`**（非法值回退 `text`）。启动时初始化 `slog` 输出到 stderr，并 tee 到进程内环形缓冲（约最近 500 行），供管理后台与 `GET /v0/settings/logs` 查看；**不写日志库**，重启清空。完整落盘取决于进程 stderr 的重定向（systemd / Docker 等）。
+- **Prometheus 刮取**：根路径 **`GET /metrics`** 默认挂载（无关闭开关）；需 **Admin Bearer**（`Authorization: Bearer <admin_token>`）。Operator 口令返回 `403`。计数器在进程内，重启清零；长期留存请外部 Prometheus 等定期 scrape。
+- **管理后台**：设置 → **运行指标**（仅管理员）可同源查看指标文本与近期日志，无需另开终端。
 
 ### 身份模型（透传 / 导出身份 ≠ IdP OBO）
 

@@ -127,8 +127,9 @@ Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbo
 - `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing.
 - `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; Chat `tool.result` spans add `baize.contract_hash` and `baize.catalog_revision` when present on event Data; export failures are fail-open.
 - `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
-- `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup.
-- **Prometheus scrape**: root **`GET /metrics`** is always mounted (no off switch); requires **Admin Bearer** (`Authorization: Bearer <admin_token>`). Operator tokens get `403`.
+- `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup and tees into an in-process ring (~last 500 lines) for Settings and `GET /v0/settings/logs`. **No log database**; cleared on restart. Durable capture depends on how you redirect process stderr (systemd / Docker / etc.).
+- **Prometheus scrape**: root **`GET /metrics`** is always mounted (no off switch); requires **Admin Bearer** (`Authorization: Bearer <admin_token>`). Operator tokens get `403`. Counters are in-process and reset on restart; scrape with an external Prometheus for long-term retention.
+- **Admin UI**: Settings → **Runtime metrics** (admin only) shows metrics text and recent logs same-origin—no separate terminal required.
 
 ### Identity model (passthrough / export identity ≠ IdP OBO)
 
