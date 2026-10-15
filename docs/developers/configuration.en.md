@@ -68,7 +68,7 @@ Optional **`tls`** (outbound mTLS, local file paths):
 | `key_file` | Client private key PEM path |
 | `ca_file` | Optional CA PEM path appended to the system RootCAs |
 
-`cert_file` and `key_file` must be a **pair** (only one set → Apply / PUT error). `ca_file` alone is valid (custom trust anchors only). All empty means no TLS config. Store keeps **path strings only** — never PEM bodies. Applies to **OpenAPI** and **HTTP plugin** tool invoke; orthogonal to `auth.mode`. **MCP** outbound mTLS is not implemented.
+`cert_file` and `key_file` must be a **pair** (only one set → Apply / PUT error). `ca_file` alone is valid (custom trust anchors only). All empty means no TLS config. Store keeps **path strings only** — never PEM bodies. Applies to **OpenAPI**, **HTTP plugin**, and **MCP HTTP** (discover + `tools/call`); orthogonal to `auth.mode`. **stdio** MCP does not use TLS.
 
 ### `run`
 

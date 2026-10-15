@@ -33,7 +33,7 @@ func TestHTTPDiscoverAndCallTool(t *testing.T) {
 	defer httpServer.Close()
 
 	ctx := context.Background()
-	session, err := mcpbridge.ConnectHTTP(ctx, httpServer.URL, nil)
+	session, err := mcpbridge.ConnectHTTP(ctx, httpServer.URL, nil, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP: %v", err)
 	}

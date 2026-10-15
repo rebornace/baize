@@ -22,7 +22,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | 组 | 代表路径 | 说明 |
 |----|----------|------|
 | Agents | `PUT/GET /v0/agents/{id}` | Agent 定义 |
-| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors`、`GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 可含 `catalog_diff` / `catalog_revision`；非空 Diff 且配置了 `events.webhook` 时另异步 POST `type=catalog.diff`；修订历史可查。可选 body `tls`：`{cert_file,key_file,ca_file}`（本机路径；`cert_file`/`key_file` 成对，否则 `400`）；省略 `tls` 保留原配置；`GET`/`LIST` 回显已存路径，**永不**返回 PEM 正文。出站 mTLS 仅 OpenAPI / HTTP 插件 |
+| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors`、`GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 可含 `catalog_diff` / `catalog_revision`；非空 Diff 且配置了 `events.webhook` 时另异步 POST `type=catalog.diff`；修订历史可查。可选 body `tls`：`{cert_file,key_file,ca_file}`（本机路径；`cert_file`/`key_file` 成对，否则 `400`）；省略 `tls` 保留原配置；`GET`/`LIST` 回显已存路径，**永不**返回 PEM 正文。出站 mTLS：OpenAPI / HTTP 插件 / MCP HTTP（stdio 不适用） |
 | Connector tools | `POST /v0/connectors/{id}/tools`、`DELETE .../tools/{name}` | 手加 / 删 `extra` REST 工具 |
 | Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`、`.../suggest`、`.../draft`、`.../test-session` | 规则候选 / AI 建议 / 草稿 / 测试托管 session（admin；对应设置「对外登录」） |
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |

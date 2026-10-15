@@ -7,7 +7,7 @@ Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把
 | 做 | 不做 |
 |----|------|
 | OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow | 桌面 App、官方 TS/Python SDK、重画布 / 分支工作流、绑死单一云或 Agent 框架 |
-| SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导 **CatalogDiff**；**run.binding** 执行期依赖闭包；可选 OTLP（默认关）；**Admin 鉴权的** Prometheus **`GET /metrics`**（默认开）；结构化 slog（`log_format` / `BAIZE_LOG_FORMAT`）；连接器出站 mTLS（文件路径，OpenAPI / HTTP 插件） | 把 OTel/APM 当作必选；per-tenant cgroup/egress 沙箱；完整 IdP OBO；服务端强制对方 mTLS；Agent 侧 tool schema version pin；保证重跑结果一致；MCP 出站 mTLS |
+| SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导 **CatalogDiff**；**run.binding** 执行期依赖闭包；可选 OTLP（默认关）；**Admin 鉴权的** Prometheus **`GET /metrics`**（默认开）；结构化 slog（`log_format` / `BAIZE_LOG_FORMAT`）；连接器出站 mTLS（文件路径：OpenAPI / HTTP 插件 / MCP HTTP） | 把 OTel/APM 当作必选；per-tenant cgroup/egress 沙箱；完整 IdP OBO；服务端强制对方 mTLS；Agent 侧 tool schema version pin；保证重跑结果一致 |
 
 **五抽象：** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
 Skill / Memory / Channel / 线性 workflow 是配置或插件形态，不升格为第六抽象。
@@ -33,7 +33,7 @@ Baize Runtime (Go)
 - **CatalogDiff**：连接器重导（OpenAPI / 插件 / MCP）成功后，`PUT /v0/connectors/{id}` 响应含 `catalog_diff`（新增 / 删除 / method·path·schema 变更）；设置页保存成功提示展示摘要。Diff **非空**且配置了 `events.webhook` 时，异步 POST `type=catalog.diff`（同 URL / 重试 / 死信；空 Diff 或无 URL 跳过；fail-open）。目录以 Runtime 当前接线为准，不做客户端 version pinning。
 - **执行期依赖闭包（R1）**：每个 Chat Run 在首次主模型调用前写入 `run.binding`（模型端点/profile、策略 knobs、记忆注入、收窄后工具契约指纹、连接器 `catalog_revision`）；写入失败则 Run 失败。工具调用事件带 `contract_hash` / `catalog_revision`，便于接口修复前后对比。`GET /v0/runs/{id}/binding`；连接器修订见 `GET /v0/connectors/{id}/catalog-revisions`。
 - **可选可观测性**：`runtime.otel_otlp_endpoint` 非空时订阅 eventbus，将 Run / `tool.result`（及 MCP 导出调用）导出为 OTLP span；Chat `tool.result` span 含 `baize.contract_hash` / `baize.catalog_revision`（事件 Data 有时）。空 endpoint 则零开销关闭。事件可带非密钥审计字段（如 `connector_id`），永不写 token/密码。CatalogDiff 出站告警走 `events.webhook`，**不是**必选 OTel。
-- **连接器出站 mTLS**：OpenAPI / HTTP 插件连接器可配 `tls`（`cert_file` / `key_file` / 可选 `ca_file`，本机文件路径）；工具 invoke 使用客户端证书。与 `auth.mode` 正交。Store 只存路径。MCP 出站 mTLS 仍后续。
+- **连接器出站 mTLS**：OpenAPI / HTTP 插件 / **MCP HTTP** 连接器可配 `tls`（`cert_file` / `key_file` / 可选 `ca_file`，本机文件路径）；工具 invoke（及 MCP HTTP discover）使用客户端证书。与 `auth.mode` 正交。Store 只存路径。**stdio** MCP 不适用。
 - **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop、豆包等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的大语言模型。导出 Key 可配置 **`identity_slots`**（按连接器 / 可选角色绑定身份）——权限边界是**下游业务账号**，不是终端用户 IdP OBO。下游鉴权失败时优先 URL elicitation，客户端不支持 elicitation 时工具错误中**立即**带上公网托管登录 URL（`hosted_login_url`），勿把密码贴进 Agent 对话。`auth.mode: passthrough` 仅把该次 Chat Run 的白名单头带给下游，同样不是 OBO。
 - **存储**：默认 SQLite；支持 `postgres` / `memory`。Blob：`file` / `s3` / `memory`。
 - **控制面鉴权**：可选 operator / admin 口令；详见 [http-api](./http-api.md) 与 [configuration](./configuration.md)。

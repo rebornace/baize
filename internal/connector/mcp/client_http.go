@@ -3,17 +3,28 @@ package mcp
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ConnectHTTP opens a Streamable HTTP MCP session.
-func ConnectHTTP(ctx context.Context, endpoint string, headers map[string]string) (*mcp.ClientSession, error) {
+// hc is optional: nil uses a client with only header injection (prior behavior).
+// When non-nil, header injection wraps hc.Transport (or http.DefaultTransport)
+// and preserves hc.Timeout.
+func ConnectHTTP(ctx context.Context, endpoint string, headers map[string]string, hc *http.Client) (*mcp.ClientSession, error) {
 	client := mcp.NewClient(baizeClientInfo, nil)
+	var next http.RoundTripper
+	var timeout time.Duration
+	if hc != nil {
+		next = hc.Transport
+		timeout = hc.Timeout
+	}
 	transport := &mcp.StreamableClientTransport{
 		Endpoint: endpoint,
 		HTTPClient: &http.Client{
-			Transport: headerRoundTripper{headers: headers},
+			Timeout:   timeout,
+			Transport: headerRoundTripper{next: next, headers: headers},
 		},
 		DisableStandaloneSSE: true,
 	}

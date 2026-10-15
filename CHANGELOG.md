@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.12.0 — 2026-10-15
+
+MCP HTTP 出站 mTLS。向后兼容；选 **minor**（v0.12.0）。
+
+### 新功能
+
+- **MCP HTTP 出站 mTLS**：`type: mcp` 且 `transport: http` 时，discover 与每次 `tools/call` 复用连接器 `tls.cert_file` / `key_file` / `ca_file`（与 OpenAPI / HTTP 插件同一字段）。未配置 `tls` 时行为与 0.11 一致。**stdio** MCP 不适用。
+
+### 文档
+
+- architecture / configuration / http-api 说明出站 mTLS 覆盖 OpenAPI + HTTP 插件 + MCP HTTP；backlog 注记 MCP 出站 mTLS 已落地。
+
 ## 0.11.0 — 2026-10-15
 
 连接器出站 mTLS（文件路径）。向后兼容；选 **minor**（v0.11.0）。

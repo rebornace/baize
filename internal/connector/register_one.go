@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -48,6 +49,7 @@ type registerOneContext struct {
 	mcpSession     *mcp.ClientSession
 	mcpHTTPURL     string
 	mcpHTTPHeaders map[string]string
+	mcpHTTPClient  *http.Client
 
 	// settingsKey + store: HTTP MCP OAuth Bearer inject / refresh write-back.
 	settingsKey settingscrypto.Key
@@ -349,7 +351,7 @@ func mcpInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 			if reauth != nil {
 				return reauth, true, nil
 			}
-			session, connErr := mcpbridge.ConnectHTTP(c, ctx.mcpHTTPURL, headers)
+			session, connErr := mcpbridge.ConnectHTTP(c, ctx.mcpHTTPURL, headers, ctx.mcpHTTPClient)
 			if connErr != nil {
 				return nil, true, connErr
 			}
@@ -447,6 +449,7 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	var mcpSession *mcp.ClientSession
 	var mcpHTTPURL string
 	var mcpHTTPHeaders map[string]string
+	var mcpHTTPClient *http.Client
 	var capture identity.CaptureConfig
 	switch typ {
 	case "http":
@@ -488,6 +491,10 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 			}
 			mcpHTTPURL = cfg.URL
 			mcpHTTPHeaders = headers
+			mcpHTTPClient, err = connectortls.HTTPClient(60*time.Second, &c.TLS)
+			if err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("%w: unsupported mcp transport: %s", mcpbridge.ErrInvalidMCP, transport)
 		}
@@ -542,6 +549,7 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 		mcpSession:         mcpSession,
 		mcpHTTPURL:         mcpHTTPURL,
 		mcpHTTPHeaders:     mcpHTTPHeaders,
+		mcpHTTPClient:      mcpHTTPClient,
 		settingsKey:        ensureSettingsKey(nil),
 		store:              st,
 		callbackURL:        strings.TrimSpace(c.ExecutionCallbackURL),

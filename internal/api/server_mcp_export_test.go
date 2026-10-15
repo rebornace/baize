@@ -147,7 +147,7 @@ func TestMCPExportAdminCRUDAndACL(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, ts.URL+"/v0/mcp/export", map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP with export key: %v", err)
 	}

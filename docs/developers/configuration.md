@@ -68,7 +68,7 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 | `key_file` | 客户端私钥 PEM 路径 |
 | `ca_file` | 可选；追加到系统 RootCAs 的 CA PEM 路径 |
 
-`cert_file` 与 `key_file` **必须成对**（仅一侧非空 → Apply / PUT 错误）。仅 `ca_file` 合法（只定制信任锚）。三者皆空等同未配置。Store **只存路径字符串**，不读入/不持久化 PEM 正文。覆盖 **OpenAPI** 与 **HTTP 插件** 工具 invoke；与 `auth.mode` **正交**。**MCP** 出站 mTLS 未做。
+`cert_file` 与 `key_file` **必须成对**（仅一侧非空 → Apply / PUT 错误）。仅 `ca_file` 合法（只定制信任锚）。三者皆空等同未配置。Store **只存路径字符串**，不读入/不持久化 PEM 正文。覆盖 **OpenAPI**、**HTTP 插件** 与 **MCP HTTP**（discover + `tools/call`）；与 `auth.mode` **正交**。**stdio** MCP 不适用。
 
 ### `run`
 

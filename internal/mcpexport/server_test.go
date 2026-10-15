@@ -91,7 +91,7 @@ func TestExportWorkflowPromptRegistered(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestHTTPHandlerListAndCall(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP: %v", err)
 	}
@@ -206,12 +206,12 @@ func TestHTTPHandlerUnauthorized(t *testing.T) {
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
 
-	if _, err := mcpbridge.ConnectHTTP(ctx, srv.URL, nil); err == nil {
+	if _, err := mcpbridge.ConnectHTTP(ctx, srv.URL, nil, nil); err == nil {
 		t.Fatal("expected connect without key to fail")
 	}
 	if _, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer not-a-real-key",
-	}); err == nil {
+	}, nil); err == nil {
 		t.Fatal("expected connect with bad key to fail")
 	}
 
@@ -220,7 +220,7 @@ func TestHTTPHandlerUnauthorized(t *testing.T) {
 	}
 	if _, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	}); err == nil {
+	}, nil); err == nil {
 		t.Fatal("expected connect with revoked key to fail")
 	}
 
@@ -255,7 +255,7 @@ func TestHTTPHandlerEmptyAllowlistExportsNothing(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestHTTPHandlerPerKeyAllowlistsDiffer(t *testing.T) {
 		t.Helper()
 		session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 			"Authorization": "Bearer " + token,
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("ConnectHTTP: %v", err)
 		}
@@ -356,7 +356,7 @@ func TestHTTPHandlerCallDeniedWhenNotOnAllowlist(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestHTTPHandlerCallRechecksAllowlistAtInvoke(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + plaintext,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ConnectHTTP: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestHTTPHandlerForceDenyHiddenDespiteAllowlist(t *testing.T) {
 	ctx := context.Background()
 	session, err := mcpbridge.ConnectHTTP(ctx, srv.URL, map[string]string{
 		"Authorization": "Bearer " + pt,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

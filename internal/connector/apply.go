@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -93,6 +94,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 	var mcpSession *mcp.ClientSession
 	var mcpHTTPURL string
 	var mcpHTTPHeaders map[string]string
+	var mcpHTTPClient *http.Client
 	var capture identity.CaptureConfig
 	switch typ {
 	case "http":
@@ -235,6 +237,10 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 				return store.Connector{}, nil, CatalogDiff{}, err
 			}
 			mcpHTTPHeaders = staticHeaders
+			mcpHTTPClient, err = connectortls.HTTPClient(60*time.Second, &in.TLS)
+			if err != nil {
+				return store.Connector{}, nil, CatalogDiff{}, err
+			}
 			if reauth != nil {
 				// Soft-fail: oauth_reauth_required / settings_key_required must not
 				// hard-block PUT. Skip OAuth-bearing discover and preserve existing
@@ -242,7 +248,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 				discovered = existingMCPTools(in.Store, in.ID)
 				break
 			}
-			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID)
+			tools, err := mcpbridge.DiscoverToolsHTTP(context.Background(), cfg.URL, headers, in.ID, mcpHTTPClient)
 			if err != nil {
 				// First-time OAuth MCP: server returns 401 before the admin has
 				// completed「去授权」. Allow saving an empty/prior catalog so the
@@ -393,6 +399,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		mcpSession:              mcpSession,
 		mcpHTTPURL:              mcpHTTPURL,
 		mcpHTTPHeaders:          mcpHTTPHeaders,
+		mcpHTTPClient:           mcpHTTPClient,
 		settingsKey:             ensureSettingsKey(in.SettingsKey),
 		store:                   in.Store,
 		callbackURL:             strings.TrimSpace(in.ExecutionCallbackURL),
