@@ -156,12 +156,12 @@ type Server struct {
 	MCPExportTrace func(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool)
 	// MCPExportMetrics optionally records MCP export invocations for Prometheus.
 	MCPExportMetrics func(connectorID string, isError bool)
-	DataDir        string // parent dir for sqlite / legacy paths; not used for connector specs
-	Blobs          blob.Store
-	ConfigPath     string
-	Config         *config.Config
-	Shutdown       func(context.Context) error
-	RestartProcess func() error
+	DataDir          string // parent dir for sqlite / legacy paths; not used for connector specs
+	Blobs            blob.Store
+	ConfigPath       string
+	Config           *config.Config
+	Shutdown         func(context.Context) error
+	RestartProcess   func() error
 	// HotSwapStore optionally opens a new store in-process (F-HOT). nil = PUT
 	// without restart only writes overlay.
 	HotSwapStore func(config.StoreOverlay) error

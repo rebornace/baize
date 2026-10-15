@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rebornace/baize/internal/connectortls"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/connectortls"
 	"github.com/rebornace/baize/internal/store"
 )
 

@@ -17,13 +17,13 @@ const mcpExportEndpointPath = "/v0/mcp/export"
 
 func (s *Server) mcpExportHTTP() http.Handler {
 	return mcpexport.NewHTTPHandler(mcpexport.ServerDeps{
-		Store:          s.Store,
-		Registry:       s.Registry,
-		Identities:     s.Identities,
-		HostedSessions: s.HostedSessions,
-		HostedWaiter:   s.HostedWaiter,
-		PublicBaseURL:  s.publicBaseURL(),
-		Enabled:        s.MCPExportEnabled,
+		Store:           s.Store,
+		Registry:        s.Registry,
+		Identities:      s.Identities,
+		HostedSessions:  s.HostedSessions,
+		HostedWaiter:    s.HostedWaiter,
+		PublicBaseURL:   s.publicBaseURL(),
+		Enabled:         s.MCPExportEnabled,
 		TraceToolCall:   s.MCPExportTrace,
 		MetricsToolCall: s.MCPExportMetrics,
 	})
