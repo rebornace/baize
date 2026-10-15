@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.14.0 — 2026-10-15
+
+已交付能力在设置页可发现，观测项可热更新；登录 HITL 弹框终态清理。向后兼容；选 **minor**（v0.14.0）。
+
+### 新功能
+
+- **观测热更新**：`GET/PATCH /v0/settings/runtime` 可改有效 `log_format` / `otel_otlp_endpoint` / `otel_service_name`（设置 → 运行参数 → 观测）；写入运行时 KV 覆盖并立即换 slog Handler / OTLP exporter，**不写回 YAML**。空 endpoint 强制关 OTel；`observability_reset: true` 清除覆盖并恢复 YAML（及启动时 `BAIZE_LOG_FORMAT` 基线）。
+- **设置页可发现性**：连接器编辑器「出站 TLS / mTLS」（本机路径）；Webhook 页说明会收 `catalog.diff`；MCP 导出「调用审计」；聊天助手消息旁「查看运行绑定」（`run.binding`）；运行指标页链到观测说明。
+
+### 修复
+
+- **登录 HITL 弹框**：对话结束后不再因历史 `login_required` 事件残留暂停横幅；仅当前 live Run 可展示。
+
+### 文档
+
+- architecture / configuration / http-api / baize-help 对齐设置入口、热更新语义与边界。
+
 ## 0.13.0 — 2026-10-15
 
 管理后台直接查看运行指标与近期进程日志。向后兼容；选 **minor**（v0.13.0）。
