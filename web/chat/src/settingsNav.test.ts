@@ -32,11 +32,11 @@ describe('SETTINGS_GROUPS', () => {
 })
 
 describe('settingsNavItems(admin)', () => {
-  it('returns 16 items with unique routes and complete metadata', () => {
+  it('returns 17 items with unique routes and complete metadata', () => {
     const adminItems = settingsNavItems('admin')
-    expect(adminItems).toHaveLength(16)
+    expect(adminItems).toHaveLength(17)
     const tos = adminItems.map((i) => i.to)
-    expect(new Set(tos).size).toBe(16)
+    expect(new Set(tos).size).toBe(17)
     for (const item of adminItems) {
       expect(item.label).toBeTruthy()
       expect(item.desc).toBeTruthy()
@@ -63,6 +63,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/mcp-export']).toBe('对外提供能力')
     expect(byTo['/settings/channels/weixin']).toBe('微信')
     expect(byTo['/settings/runtime']).toBe('运行参数')
+    expect(byTo['/settings/metrics']).toBe('运行指标')
   })
 
   it('uses English labels when en pack is active', () => {
@@ -72,6 +73,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/tools']).toBe('Assistant capabilities')
     expect(byTo['/settings/tool-matching']).toBe('Matching & decisions')
     expect(byTo['/settings/runtime']).toBe('Runtime settings')
+    expect(byTo['/settings/metrics']).toBe('Runtime metrics')
   })
 
   it('groups items correctly', () => {
@@ -96,7 +98,12 @@ describe('settingsNavItems(admin)', () => {
       '/settings/webhooks',
       '/settings/inbox',
     ])
-    expect(inGroup('system')).toEqual(['/settings/identities', '/settings/storage', '/settings/runtime'])
+    expect(inGroup('system')).toEqual([
+      '/settings/identities',
+      '/settings/storage',
+      '/settings/metrics',
+      '/settings/runtime',
+    ])
   })
 
   it('declares badge kinds for the cards that have live status', () => {
@@ -123,12 +130,13 @@ describe('settingsNavItems(operator) access levels', () => {
     expect(access('/settings/identities')).toBe('full')
     expect(access('/settings/openapi')).toBe('locked')
     expect(access('/settings/storage')).toBe('locked')
+    expect(access('/settings/metrics')).toBe('locked')
   })
 })
 
 describe('visibleNavItems', () => {
   it('admin sees every item', () => {
-    expect(visibleNavItems('admin')).toHaveLength(16)
+    expect(visibleNavItems('admin')).toHaveLength(17)
   })
 
   it('operator sidebar hides locked items (no connect group), keeps 8', () => {

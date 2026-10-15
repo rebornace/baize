@@ -1,4 +1,5 @@
 import {
+  Activity,
   Boxes,
   Brain,
   Cpu,
@@ -118,6 +119,10 @@ const ITEM_META: NavMeta[] = [
     labelKey: 'storage', descKey: 'storageDesc',
   },
   {
+    to: '/settings/metrics', group: 'system', icon: Activity, operator: 'locked',
+    labelKey: 'metrics', descKey: 'metricsDesc',
+  },
+  {
     to: '/settings/runtime', group: 'system', icon: SlidersHorizontal,
     operator: 'read', badge: 'runtime',
     labelKey: 'runtime', descKey: 'runtimeDesc',
@@ -152,7 +157,7 @@ function buildItems(): SettingsNavItem[] {
   }))
 }
 
-/** Full catalog; admin sees all 16, operator items carry their access level. */
+/** Full catalog; admin sees all items, operator items carry their access level. */
 export function settingsNavItems(_role: SettingsRole): SettingsNavItem[] {
   return buildItems()
 }

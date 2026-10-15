@@ -19,6 +19,7 @@ import { SettingsHome } from './pages/SettingsHome'
 import { SettingsLayout } from './pages/SettingsLayout'
 import { SkillsSettings } from './pages/SkillsSettings'
 import { StorageSettings } from './pages/StorageSettings'
+import { MetricsSettings } from './pages/MetricsSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
 import { WeixinChannelSettings } from './pages/WeixinChannelSettings'
 import { ExternalLoginSettings } from './pages/ExternalLoginSettings'
@@ -115,6 +116,14 @@ createRoot(document.getElementById('app')!).render(
               element={
                 <AdminOnly>
                   <StorageSettings />
+                </AdminOnly>
+              }
+            />
+            <Route
+              path="metrics"
+              element={
+                <AdminOnly>
+                  <MetricsSettings />
                 </AdminOnly>
               }
             />

@@ -80,7 +80,6 @@ func Serve(cfg config.Config, configPath string) error {
 		listen = ":8080"
 	}
 	runtimeBase := localHTTPBase(listen)
-	printCurlHints(runtimeBase, cfg.Agent.ID)
 	logUIHint(cfg, runtimeBase)
 	applog.L().Info("listening", slog.String("component", "bootstrap"), slog.String("addr", listen))
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
@@ -1399,14 +1398,6 @@ func resolveCallbackSecret(configured string) ([]byte, bool) {
 		}
 	}
 	return buf, true
-}
-
-func printCurlHints(runtimeBase, agentID string) {
-	if agentID == "" {
-		agentID = "default-agent"
-	}
-	log.Printf("baize ready. try:")
-	log.Printf(`  curl -s -X POST %s/v0/runs -H "Content-Type: application/json" -d "{\"agent_id\":\"%s\",\"input\":\"你好\"}"`, runtimeBase, agentID)
 }
 
 func logUIHint(cfg config.Config, runtimeBase string) {

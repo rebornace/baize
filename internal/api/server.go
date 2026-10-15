@@ -473,6 +473,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	s.mux.HandleFunc("GET /v0/settings/logs", s.handleGetRecentLogs)
 	s.mux.HandleFunc("GET /v0/auth/hosted/{id}", s.handleHostedLoginGet)
 	s.mux.HandleFunc("POST /v0/auth/hosted/{id}", s.handleHostedLoginPost)
 	s.mux.HandleFunc("POST /v0/auth/hosted/{id}/method", s.handleHostedLoginMethodPost)
