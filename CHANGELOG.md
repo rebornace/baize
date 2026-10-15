@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.11.0 — 2026-10-15
+
+连接器出站 mTLS（文件路径）。向后兼容；选 **minor**（v0.11.0）。
+
+### 新功能
+
+- **连接器出站 mTLS**：OpenAPI 与 HTTP 插件工具 invoke 可选用本机文件路径客户端证书 / CA（`tls.cert_file` / `key_file` / `ca_file`）。`cert_file` 与 `key_file` 必须成对；仅 `ca_file` 合法（定制 RootCAs）。Store **只存路径**，不持久化 PEM。与 `auth.mode` **正交**（TLS 握手用证书，HTTP 头仍按 auth）。未配置 `tls` 时行为与 0.10 一致。**MCP** 出站 mTLS 未做。
+
+### 文档
+
+- architecture / configuration / http-api 说明连接器 `tls` 字段与边界；backlog 注记出站 mTLS（OpenAPI/HTTP）已落地；MCP 出站 mTLS 仍后续。
+
 ## 0.10.0 — 2026-10-15
 
 CatalogDiff 出站告警 + OTel 契约属性。向后兼容；选 **minor**（v0.10.0）。

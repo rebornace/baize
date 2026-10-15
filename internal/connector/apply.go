@@ -13,6 +13,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/connectortls"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/mcpexport"
 	"github.com/rebornace/baize/internal/settingscrypto"
@@ -35,6 +36,7 @@ type ApplyInput struct {
 	RequireApprovalMutating bool
 	RequireLogin            *[]string // nil=从 Registry 保留同名；非 nil=整表（空切片=全公开）
 	Auth                    store.ConnectorAuth
+	TLS                     store.ConnectorTLS
 	MCP                     store.MCPConfig
 
 	// SettingsKey seals/opens MCP OAuth token bundles. Optional; when empty,
@@ -79,6 +81,10 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 	}
 	authMode := authcred.NormalizeMode(in.Auth.Mode)
 
+	if err := connectortls.Validate(&in.TLS); err != nil {
+		return store.Connector{}, nil, CatalogDiff{}, err
+	}
+
 	// Phase 1: discover tools without touching Store or Registry. On error,
 	// return immediately so prior state is preserved.
 	var discovered []store.Tool
@@ -93,7 +99,12 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		if strings.TrimSpace(in.BaseURL) == "" {
 			return store.Connector{}, nil, CatalogDiff{}, fmt.Errorf("connector.base_url is required")
 		}
+		hcPlugin, err := connectortls.HTTPClient(30*time.Second, &in.TLS)
+		if err != nil {
+			return store.Connector{}, nil, CatalogDiff{}, err
+		}
 		cl := httpplugin.NewClient(in.BaseURL)
+		cl.HTTPClient = hcPlugin
 		if err := cl.Healthz(context.Background()); err != nil {
 			return store.Connector{}, nil, CatalogDiff{}, err
 		}
@@ -169,7 +180,11 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		if capture.DefaultScheme == "" {
 			capture.DefaultScheme = UniqueSecurityScheme(routes)
 		}
-		inv = &openapi.Invoker{BaseURL: in.BaseURL, Tools: routes}
+		hcOpenAPI, err := connectortls.HTTPClient(60*time.Second, &in.TLS)
+		if err != nil {
+			return store.Connector{}, nil, CatalogDiff{}, err
+		}
+		inv = &openapi.Invoker{BaseURL: in.BaseURL, Tools: routes, HTTPClient: hcOpenAPI}
 	case "mcp":
 		cfg := in.MCP
 		transport := strings.TrimSpace(cfg.Transport)
@@ -327,6 +342,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		RequireApproval:      approval,
 		RequireLogin:         login,
 		Auth:                 auth,
+		TLS:                  in.TLS,
 	}
 	if typ == "mcp" {
 		c.MCP = in.MCP

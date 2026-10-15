@@ -15,6 +15,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/httpplugin"
 	mcpbridge "github.com/rebornace/baize/internal/connector/mcp"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/connectortls"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/settingscrypto"
@@ -437,6 +438,10 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	}
 	authMode := authcred.NormalizeMode(c.Auth.Mode)
 
+	if err := connectortls.Validate(&c.TLS); err != nil {
+		return err
+	}
+
 	var inv *openapi.Invoker
 	var client *httpplugin.Client
 	var mcpSession *mcp.ClientSession
@@ -445,7 +450,12 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 	var capture identity.CaptureConfig
 	switch typ {
 	case "http":
+		hcPlugin, err := connectortls.HTTPClient(30*time.Second, &c.TLS)
+		if err != nil {
+			return err
+		}
 		client = httpplugin.NewClient(c.BaseURL)
+		client.HTTPClient = hcPlugin
 		capture = CaptureDefaults(identity.CaptureConfig{
 			ToolNameGlob:   c.Auth.Capture.ToolNameGlob,
 			TokenJSONPaths: c.Auth.Capture.TokenJSONPaths,
@@ -496,7 +506,11 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 		if capture.DefaultScheme == "" {
 			capture.DefaultScheme = UniqueSecurityScheme(routes)
 		}
-		inv = &openapi.Invoker{BaseURL: c.BaseURL, Tools: routes}
+		hcOpenAPI, err := connectortls.HTTPClient(60*time.Second, &c.TLS)
+		if err != nil {
+			return err
+		}
+		inv = &openapi.Invoker{BaseURL: c.BaseURL, Tools: routes, HTTPClient: hcOpenAPI}
 		// Extend with extra rows from the store so the shared invoker can
 		// dispatch extras alongside spec routes (mirrors Apply).
 		for _, et := range st.ListToolsByConnector(c.ID) {

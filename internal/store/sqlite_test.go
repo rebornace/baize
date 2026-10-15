@@ -668,3 +668,35 @@ func TestSQLiteConnectorMCPJSONRoundTrip(t *testing.T) {
 		t.Fatalf("mcp=%+v", got.MCP)
 	}
 }
+
+func TestSQLiteConnectorTLSPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tls.db")
+	s, err := store.OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	want := store.ConnectorTLS{
+		CertFile: "/c/client.crt",
+		KeyFile:  "/c/client.key",
+		CAFile:   "/c/ca.pem",
+	}
+	s.UpsertConnector(store.Connector{
+		ID: "c1", Type: "openapi", Spec: "s.yaml", BaseURL: "https://x", TLS: want,
+	})
+	_ = s.Close()
+
+	s2, err := store.OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s2.Close() })
+	got, err := s2.GetConnector("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TLS != want {
+		t.Fatalf("tls=%+v want %+v", got.TLS, want)
+	}
+}

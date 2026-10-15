@@ -326,6 +326,7 @@ func migrateConnectorsColumns(db *sql.DB) error {
 		`ALTER TABLE connectors ADD COLUMN execution_callback_url TEXT`,
 		`ALTER TABLE connectors ADD COLUMN import_format TEXT`,
 		`ALTER TABLE connectors ADD COLUMN catalog_revision INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE connectors ADD COLUMN tls_json TEXT`,
 		`CREATE TABLE IF NOT EXISTS connector_catalog_revisions (
   connector_id TEXT NOT NULL,
   revision INTEGER NOT NULL,

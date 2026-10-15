@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/rebornace/baize/internal/inbox"
+	"github.com/rebornace/baize/internal/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -74,6 +75,7 @@ type Config struct {
 				DefaultScheme  string   `yaml:"default_scheme"` // 空则注册时若仅一个 security scheme 则填入
 			} `yaml:"capture"`
 		} `yaml:"auth"`
+		TLS store.ConnectorTLS `yaml:"tls"`
 	} `yaml:"connector"`
 	Run struct {
 		MaxSteps int `yaml:"max_steps"`

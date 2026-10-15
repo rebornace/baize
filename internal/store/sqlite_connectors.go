@@ -11,15 +11,15 @@ import (
 // into the in-memory maps so reads can stay lock-free and consistent with the
 // existing runs/events pattern.
 func (s *SQLStore) loadConnectorsAndTools() error {
-	rows, err := s.query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format, catalog_revision FROM connectors`)
+	rows, err := s.query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format, catalog_revision, tls_json FROM connectors`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var c Connector
-		var requireApproval, requireLogin, auth, mcp, execCallback, importFormat sql.NullString
+		var requireApproval, requireLogin, auth, mcp, execCallback, importFormat, tlsJSON sql.NullString
 		var catalogRev sql.NullInt64
-		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback, &importFormat, &catalogRev); err != nil {
+		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback, &importFormat, &catalogRev, &tlsJSON); err != nil {
 			rows.Close()
 			return err
 		}
@@ -55,6 +55,12 @@ func (s *SQLStore) loadConnectorsAndTools() error {
 		}
 		if importFormat.Valid {
 			c.ImportFormat = importFormat.String
+		}
+		if tlsJSON.Valid && tlsJSON.String != "" && tlsJSON.String != "null" {
+			if err := json.Unmarshal([]byte(tlsJSON.String), &c.TLS); err != nil {
+				rows.Close()
+				return fmt.Errorf("parse tls_json: %w", err)
+			}
 		}
 		s.connectors[c.ID] = c
 	}
@@ -106,7 +112,7 @@ func (s *SQLStore) UpsertConnector(c Connector) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.connectors[c.ID] = c
-	var requireApproval, requireLogin, auth, mcp sql.NullString
+	var requireApproval, requireLogin, auth, mcp, tlsJSON sql.NullString
 	if len(c.RequireApproval) > 0 {
 		if b, err := json.Marshal(c.RequireApproval); err == nil {
 			requireApproval = sql.NullString{String: string(b), Valid: true}
@@ -127,9 +133,14 @@ func (s *SQLStore) UpsertConnector(c Connector) {
 			mcp = sql.NullString{String: string(b), Valid: true}
 		}
 	}
+	if connectorTLSConfigured(c.TLS) {
+		if b, err := json.Marshal(c.TLS); err == nil {
+			tlsJSON = sql.NullString{String: string(b), Valid: true}
+		}
+	}
 	_, _ = s.exec(
-		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format, catalog_revision)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format, catalog_revision, tls_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET type=excluded.type, spec=excluded.spec, base_url=excluded.base_url,
 		   require_approval_json=excluded.require_approval_json,
 		   require_login_json=excluded.require_login_json,
@@ -137,8 +148,9 @@ func (s *SQLStore) UpsertConnector(c Connector) {
 		   mcp_json=excluded.mcp_json,
 		   execution_callback_url=excluded.execution_callback_url,
 		   import_format=excluded.import_format,
-		   catalog_revision=excluded.catalog_revision`,
-		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL, c.ImportFormat, c.CatalogRevision,
+		   catalog_revision=excluded.catalog_revision,
+		   tls_json=excluded.tls_json`,
+		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL, c.ImportFormat, c.CatalogRevision, tlsJSON,
 	)
 }
 

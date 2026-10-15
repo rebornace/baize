@@ -60,6 +60,16 @@ Startup default model (may seed a model profile in the store on first run; after
 
 Sample default connector: `id`, `type` (default `openapi`), `spec`, `base_url`, `execution_callback_url`, `require_approval` / `require_approval_mutating`, `require_login`, plus `auth` (`mode`, `static` / `passthrough` / `vault_ref` / `capture`).
 
+Optional **`tls`** (outbound mTLS, local file paths):
+
+| Field | Meaning |
+|-------|---------|
+| `cert_file` | Client certificate PEM path |
+| `key_file` | Client private key PEM path |
+| `ca_file` | Optional CA PEM path appended to the system RootCAs |
+
+`cert_file` and `key_file` must be a **pair** (only one set → Apply / PUT error). `ca_file` alone is valid (custom trust anchors only). All empty means no TLS config. Store keeps **path strings only** — never PEM bodies. Applies to **OpenAPI** and **HTTP plugin** tool invoke; orthogonal to `auth.mode`. **MCP** outbound mTLS is not implemented.
+
 ### `run`
 
 | Field | Default |
@@ -109,7 +119,7 @@ Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbo
 | Run trace events | Chat Run lifecycle (existing) |
 | `catalog.diff` | After connector `PUT` / Apply **persists successfully** and `catalog_diff` is **non-empty** |
 
-`catalog.diff` JSON includes `type`, `at` (RFC3339 UTC), `connector_id`, `catalog_revision`, and `diff` (added / removed / changed); **never** tokens, passwords, or full schema bodies. Empty URL → skip silently; enqueue or POST failure → **fail-open** (Apply/PUT still succeeds). A separate `catalog_diff_webhook_url`, Inbox/email alerting, and connector outbound **mTLS** are **out of scope** for this version (mTLS remains follow-up).
+`catalog.diff` JSON includes `type`, `at` (RFC3339 UTC), `connector_id`, `catalog_revision`, and `diff` (added / removed / changed); **never** tokens, passwords, or full schema bodies. Empty URL → skip silently; enqueue or POST failure → **fail-open** (Apply/PUT still succeeds). A separate `catalog_diff_webhook_url` and Inbox/email alerting are **out of scope** for this version. Connector outbound mTLS is under `connector.tls` above.
 
 ### `runtime`
 
@@ -125,7 +135,7 @@ Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbo
 | Mechanism | Meaning | Not |
 |-----------|---------|-----|
 | `auth.mode: passthrough` | That Chat Run forwards whitelisted request headers (often `Authorization`) to downstream HTTP | End-user IdP on-behalf-of / token exchange |
-| Export identity / `identity_slots` | Downstream **business account** credentials bound to an MCP export Key (Headers); permission boundary = what that account can do | Full OIDC OBO, mTLS, or replaying the end-user IdP token |
+| Export identity / `identity_slots` | Downstream **business account** credentials bound to an MCP export Key (Headers); permission boundary = what that account can do | Full OIDC OBO, replaying the end-user IdP token, or server-enforced peer mTLS (connector outbound client certs: see `connector.tls`) |
 | Settings → Accounts (workspace) | Captured Chat logins, isolated per product workspace | The MCP export identity pool |
 
 Per-tenant cgroup / egress sandboxing is **out of scope** for this version (sandboxing belongs to the orchestrator).

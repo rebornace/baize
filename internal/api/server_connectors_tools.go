@@ -18,6 +18,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/connector/specimport"
 	"github.com/rebornace/baize/internal/connector/specstore"
+	"github.com/rebornace/baize/internal/connectortls"
 	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -29,17 +30,18 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type                 string          `json:"type"`
-		Spec                 string          `json:"spec"`
-		SpecContent          string          `json:"spec_content"`
-		SpecURL              string          `json:"spec_url"`
-		ImportFormat         string          `json:"import_format"`
-		BaseURL              string          `json:"base_url"`
-		ExecutionCallbackURL *string         `json:"execution_callback_url"`
-		RequireApproval      *[]string       `json:"require_approval"`
-		RequireLogin         *[]string       `json:"require_login"`
-		Auth                 authBody        `json:"auth"`
-		MCP                  store.MCPConfig `json:"mcp"`
+		Type                 string              `json:"type"`
+		Spec                 string              `json:"spec"`
+		SpecContent          string              `json:"spec_content"`
+		SpecURL              string              `json:"spec_url"`
+		ImportFormat         string              `json:"import_format"`
+		BaseURL              string              `json:"base_url"`
+		ExecutionCallbackURL *string             `json:"execution_callback_url"`
+		RequireApproval      *[]string           `json:"require_approval"`
+		RequireLogin         *[]string           `json:"require_login"`
+		Auth                 authBody            `json:"auth"`
+		TLS                  *store.ConnectorTLS `json:"tls"`
+		MCP                  store.MCPConfig     `json:"mcp"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
@@ -178,6 +180,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	var existingConn store.Connector
 	var hasExisting bool
 	needExisting := body.ExecutionCallbackURL == nil ||
+		body.TLS == nil ||
 		(body.Type != "mcp" && body.Auth.Capture == nil) ||
 		(body.Type != "mcp" && body.Auth.HostedLogin == nil) ||
 		(body.Type == "mcp" && body.MCP.OAuth != nil)
@@ -239,6 +242,13 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		mergeMCPOAuthPreserveSecrets(&body.MCP, existingConn, hasExisting)
 	}
 
+	connectorTLS := store.ConnectorTLS{}
+	if body.TLS != nil {
+		connectorTLS = *body.TLS
+	} else if hasExisting {
+		connectorTLS = existingConn.TLS
+	}
+
 	c, infos, catalogDiff, err := connector.Apply(connector.ApplyInput{
 		Store:                s.Store,
 		Registry:             s.Registry,
@@ -253,6 +263,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		RequireApproval:      body.RequireApproval,
 		RequireLogin:         body.RequireLogin,
 		Auth:                 connectorAuth,
+		TLS:                  connectorTLS,
 		MCP:                  body.MCP,
 		CallbackSigner:       s.CallbackSigner,
 		CallbackSecret:       s.CallbackSecret,
@@ -308,6 +319,9 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = redactMCPForAPI(c.MCP)
+	}
+	if !connectortls.Empty(&c.TLS) {
+		resp["tls"] = c.TLS
 	}
 	s.syncLoginManagedSkill(id)
 	if s.Webhook != nil && !catalogDiff.Empty() {
@@ -410,6 +424,9 @@ func (s *Server) connectorResponse(c store.Connector) map[string]any {
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = redactMCPForAPI(c.MCP)
+	}
+	if !connectortls.Empty(&c.TLS) {
+		resp["tls"] = c.TLS
 	}
 	return resp
 }

@@ -209,6 +209,25 @@ func TestConnectorStoresAuthConfig(t *testing.T) {
 	}
 }
 
+func TestConnectorStoresTLSConfig(t *testing.T) {
+	s := store.NewMemory()
+	s.UpsertConnector(store.Connector{
+		ID: "c", Type: "openapi", Spec: "x.yaml", BaseURL: "https://x",
+		TLS: store.ConnectorTLS{
+			CertFile: "/etc/client.crt",
+			KeyFile:  "/etc/client.key",
+			CAFile:   "/etc/ca.pem",
+		},
+	})
+	c, err := s.GetConnector("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TLS.CertFile != "/etc/client.crt" || c.TLS.KeyFile != "/etc/client.key" || c.TLS.CAFile != "/etc/ca.pem" {
+		t.Fatalf("%+v", c.TLS)
+	}
+}
+
 func TestDeleteConnectorCascadesTools(t *testing.T) {
 	testDeleteConnectorCascadesTools(t, store.NewMemory())
 }

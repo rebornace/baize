@@ -45,6 +45,17 @@ func cloneAgent(a Agent) Agent {
 	return a
 }
 
+// ConnectorTLS holds filesystem paths for outbound mTLS (client cert + optional CA).
+type ConnectorTLS struct {
+	CertFile string `json:"cert_file,omitempty"`
+	KeyFile  string `json:"key_file,omitempty"`
+	CAFile   string `json:"ca_file,omitempty"`
+}
+
+func connectorTLSConfigured(t ConnectorTLS) bool {
+	return t.CertFile != "" || t.KeyFile != "" || t.CAFile != ""
+}
+
 type Connector struct {
 	ID                   string        `json:"id"`
 	Type                 string        `json:"type"` // openapi, http, mcp
@@ -56,6 +67,7 @@ type Connector struct {
 	RequireLogin         []string      `json:"require_login,omitempty"`
 	Auth                 ConnectorAuth `json:"auth,omitempty"`
 	MCP                  MCPConfig     `json:"mcp,omitempty"`
+	TLS                  ConnectorTLS  `json:"tls,omitempty"`
 	// CatalogRevision increments when a connector Apply produces a non-empty
 	// CatalogDiff (tool add/remove/change). Zero means never revised.
 	CatalogRevision int64 `json:"catalog_revision,omitempty"`

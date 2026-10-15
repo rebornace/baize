@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS connectors (
   mcp_json TEXT,
   execution_callback_url TEXT,
   import_format TEXT,
-  catalog_revision BIGINT NOT NULL DEFAULT 0
+  catalog_revision BIGINT NOT NULL DEFAULT 0,
+  tls_json TEXT
 );
 CREATE TABLE IF NOT EXISTS connector_catalog_revisions (
   connector_id TEXT NOT NULL,
@@ -300,6 +301,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE connectors ADD COLUMN IF NOT EXISTS catalog_revision BIGINT NOT NULL DEFAULT 0`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate connectors catalog_revision: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE connectors ADD COLUMN IF NOT EXISTS tls_json TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate connectors tls_json: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,

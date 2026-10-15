@@ -60,6 +60,16 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 
 样板默认连接器：`id`、`type`（默认 `openapi`）、`spec`、`base_url`、`execution_callback_url`、`require_approval` / `require_approval_mutating`、`require_login`，以及 `auth`（`mode`、`static` / `passthrough` / `vault_ref` / `capture`）。
 
+可选 **`tls`**（出站 mTLS，本机文件路径）：
+
+| 字段 | 含义 |
+|------|------|
+| `cert_file` | 客户端证书 PEM 路径 |
+| `key_file` | 客户端私钥 PEM 路径 |
+| `ca_file` | 可选；追加到系统 RootCAs 的 CA PEM 路径 |
+
+`cert_file` 与 `key_file` **必须成对**（仅一侧非空 → Apply / PUT 错误）。仅 `ca_file` 合法（只定制信任锚）。三者皆空等同未配置。Store **只存路径字符串**，不读入/不持久化 PEM 正文。覆盖 **OpenAPI** 与 **HTTP 插件** 工具 invoke；与 `auth.mode` **正交**。**MCP** 出站 mTLS 未做。
+
 ### `run`
 
 | 字段 | 默认 |
@@ -109,7 +119,7 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 | Run 轨迹事件 | Chat Run 生命周期（既有行为） |
 | `catalog.diff` | 连接器 `PUT` / Apply **成功持久化后**，且 `catalog_diff` **非空** |
 
-`catalog.diff` JSON 含 `type`、`at`（RFC3339 UTC）、`connector_id`、`catalog_revision` 与 `diff`（added / removed / changed）；**不含** token、密码或完整 schema 正文。URL 为空 → 静默跳过；入队或 POST 失败 → **fail-open**（Apply/PUT 仍成功）。独立 `catalog_diff_webhook_url`、Inbox/邮件告警 **不在**本版本范围；连接器出站 **mTLS** 仍后续。
+`catalog.diff` JSON 含 `type`、`at`（RFC3339 UTC）、`connector_id`、`catalog_revision` 与 `diff`（added / removed / changed）；**不含** token、密码或完整 schema 正文。URL 为空 → 静默跳过；入队或 POST 失败 → **fail-open**（Apply/PUT 仍成功）。独立 `catalog_diff_webhook_url`、Inbox/邮件告警 **不在**本版本范围。连接器出站 mTLS 见上方 `connector.tls`。
 
 ### `runtime`
 
@@ -125,7 +135,7 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 | 机制 | 含义 | 不是 |
 |------|------|------|
 | `auth.mode: passthrough` | 该次 Chat Run 把白名单请求头（常为 `Authorization`）带给下游 HTTP | 终端用户 IdP 的 on-behalf-of / 委托令牌交换 |
-| 导出身份 / `identity_slots` | MCP 导出 Key 绑定的**下游业务账号**凭证（Headers）；权限边界=该业务账号能做什么 | 完整 OIDC OBO、mTLS、按终端用户重放 IdP token |
+| 导出身份 / `identity_slots` | MCP 导出 Key 绑定的**下游业务账号**凭证（Headers）；权限边界=该业务账号能做什么 | 完整 OIDC OBO、按终端用户重放 IdP token、服务端强制对方 mTLS（连接器出站客户端证书见 `connector.tls`） |
 | 设置 → 账号（工作区） | Chat 捕获的业务登录，按产品工作区隔离 | MCP 导出身份池 |
 
 Per-tenant cgroup / egress 沙箱 **不在**本版本范围（沙箱交给编排）。

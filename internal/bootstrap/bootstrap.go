@@ -1232,6 +1232,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 				DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
 			},
 		},
+		TLS:                cfg.Connector.TLS,
 		CallbackSigner:     cb.Signer,
 		CallbackSecret:     cb.Secret,
 		CallbackPublicBase: cb.PublicBase,
@@ -1262,6 +1263,7 @@ func loadStoredConnectors(st store.Store, reg *tool.Registry, cfg config.Config,
 			BaseURL:              c.BaseURL,
 			ExecutionCallbackURL: c.ExecutionCallbackURL,
 			Auth:                 c.Auth,
+			TLS:                  c.TLS,
 			MCP:                  c.MCP,
 			// 重放已持久化连接器时传 nil：保留 catalog 行上的 per-tool 审批位，
 			// 不把 connector 行上聚合的名单当成"整表重写"（merged 行的审批位
