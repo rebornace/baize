@@ -8,7 +8,7 @@ import (
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/store"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 // Controller holds the active Exporter behind a replaceable pointer so Hub
@@ -75,7 +75,7 @@ func (c *Controller) Apply(ctx context.Context, cfg Config) error {
 	old := c.exp.Swap(next)
 	if next == nil {
 		// Clear global provider so spans after disable are no-ops.
-		otel.SetTracerProvider(trace.NewNoopTracerProvider())
+		otel.SetTracerProvider(noop.NewTracerProvider())
 	}
 	c.mu.Unlock()
 	if old != nil {
