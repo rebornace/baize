@@ -95,10 +95,10 @@ type Observability struct {
 
 // Snapshot is an immutable view of all hot-reloadable settings.
 type Snapshot struct {
-	Knobs          Knobs
-	Creds          Credentials
-	PublicBaseURL  string // advertised Runtime root (OAuth / plugin callbacks)
-	Observability  Observability
+	Knobs         Knobs
+	Creds         Credentials
+	PublicBaseURL string // advertised Runtime root (OAuth / plugin callbacks)
+	Observability Observability
 }
 
 // operatorEntry is a runtime-added named operator (id + plaintext token).

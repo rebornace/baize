@@ -94,14 +94,14 @@ func (s *Server) runtimeObservabilityJSON() map[string]any {
 		logOver, epOver, svcOver = s.Settings.ObservabilityOverridden()
 	}
 	return map[string]any{
-		"log_format":                   o.LogFormat,
-		"otel_otlp_endpoint":           o.OtelOTLPEndpoint,
-		"otel_service_name":            o.OtelServiceName,
-		"otel_enabled":                 o.OtelOTLPEndpoint != "",
-		"log_format_overridden":        logOver,
+		"log_format":                    o.LogFormat,
+		"otel_otlp_endpoint":            o.OtelOTLPEndpoint,
+		"otel_service_name":             o.OtelServiceName,
+		"otel_enabled":                  o.OtelOTLPEndpoint != "",
+		"log_format_overridden":         logOver,
 		"otel_otlp_endpoint_overridden": epOver,
-		"otel_service_name_overridden": svcOver,
-		"config_restart_hint":          false,
+		"otel_service_name_overridden":  svcOver,
+		"config_restart_hint":           false,
 	}
 }
 
