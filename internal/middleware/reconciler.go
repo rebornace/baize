@@ -2,10 +2,11 @@ package middleware
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/rebornace/baize/internal/applog"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -26,7 +27,9 @@ const reconcileBatchLimit = 100
 func (mw *Middleware) Reconcile(ctx context.Context, rs ReconcileStore) {
 	runs, err := rs.ListRunsForReconcile(reconcileBatchLimit)
 	if err != nil {
-		log.Printf("middleware: reconcile list: %v", err)
+		applog.L().Error("reconcile list failed",
+			slog.String("component", "middleware"),
+			slog.Any("err", err))
 		return
 	}
 	for _, r := range runs {
@@ -39,7 +42,10 @@ func (mw *Middleware) Reconcile(ctx context.Context, rs ReconcileStore) {
 		}
 		// 用调和循环自己的 ctx：关停时不再入队，避免向已关闭/关停中的队列投递。
 		if err := mw.Queue.Enqueue(ctx, job); err != nil {
-			log.Printf("middleware: reconcile enqueue %s: %v", r.ID, err)
+			applog.L().Error("reconcile enqueue failed",
+				slog.String("component", "middleware"),
+				slog.String("run_id", r.ID),
+				slog.Any("err", err))
 		}
 	}
 }

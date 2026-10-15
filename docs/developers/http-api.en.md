@@ -2,7 +2,7 @@
 
 # Control-plane HTTP overview
 
-Baize Runtime exposes a REST-style control plane under **`/v0`** (plus `GET /healthz` and optional static `/ui/`).
+Baize Runtime exposes a REST-style control plane under **`/v0`** (plus `GET /healthz`, **`GET /metrics`** (Prometheus text; Admin Bearer required), and optional static `/ui/`).
 
 The **authoritative route table** is the `HandleFunc` / `Handle` registration in `internal/api/server.go`; channel inbound routes are registered dynamically by bootstrap / channel. There is **no** standalone OpenAPI file for the whole control plane.
 
@@ -39,6 +39,7 @@ This is not downstream business IAM or multi-tenant SSO.
 | MCP export | `HANDLE /v0/mcp/export` (and trailing slash) | MCP server exporting a read-only tool-catalog subset to Agent clients such as Cursor |
 | Hosted auth (public) | `GET/POST /v0/auth/hosted/{id}`, `POST .../method`, `GET .../oauth/callback` | Hosted login page / submit / switch method / OAuth callback (no `/ui` dependency) |
 | Meta | `GET /v0/me`, `GET /v0/ui-config` | Current identity and UI config |
+| Observability | `GET /metrics` | Prometheus text; Admin Bearer required; always on |
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 

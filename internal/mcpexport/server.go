@@ -34,6 +34,8 @@ type ServerDeps struct {
 	Enabled        bool
 	// TraceToolCall optionally records export tool completions (no secrets).
 	TraceToolCall func(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool)
+	// MetricsToolCall optionally records export invocations (connector_id + result).
+	MetricsToolCall func(connectorID string, isError bool)
 }
 
 // NewHTTPHandler returns a Streamable HTTP MCP handler with Bearer key auth.
@@ -259,6 +261,9 @@ func auditExportTool(deps ServerDeps, exportKeyID, identityID string, toolRow st
 	}
 	if deps.TraceToolCall != nil {
 		deps.TraceToolCall(toolRow.Name, exportKeyID, identityID, hash, rev, isError)
+	}
+	if deps.MetricsToolCall != nil {
+		deps.MetricsToolCall(toolRow.ConnectorID, isError)
 	}
 }
 

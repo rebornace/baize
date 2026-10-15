@@ -110,6 +110,8 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 - `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名。
 - `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；失败 fail-open。
 - `otel_service_name`：OTel `service.name`，默认 `baize`（仅在 endpoint 非空时生效）。
+- `log_format`：`text`（默认）或 `json`；也可用环境变量 **`BAIZE_LOG_FORMAT`**（非法值回退 `text`）。启动时初始化 `slog` 输出到 stderr。
+- **Prometheus 刮取**：根路径 **`GET /metrics`** 默认挂载（无关闭开关）；需 **Admin Bearer**（`Authorization: Bearer <admin_token>`）。Operator 口令返回 `403`。
 
 ### 身份模型（透传 / 导出身份 ≠ IdP OBO）
 
@@ -119,7 +121,7 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 | 导出身份 / `identity_slots` | MCP 导出 Key 绑定的**下游业务账号**凭证（Headers）；权限边界=该业务账号能做什么 | 完整 OIDC OBO、mTLS、按终端用户重放 IdP token |
 | 设置 → 账号（工作区） | Chat 捕获的业务登录，按产品工作区隔离 | MCP 导出身份池 |
 
-Per-tenant cgroup / egress 沙箱与 Prometheus `/metrics` **不在**本版本范围（沙箱交给编排；指标留给后续）。
+Per-tenant cgroup / egress 沙箱 **不在**本版本范围（沙箱交给编排）。
 
 ### `inbox`
 

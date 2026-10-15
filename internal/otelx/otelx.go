@@ -4,10 +4,11 @@ package otelx
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 
+	"github.com/rebornace/baize/internal/applog"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/store"
 	"go.opentelemetry.io/otel"
@@ -219,6 +220,6 @@ func (e *Exporter) RecordExportCall(toolName, exportKeyID, identityID, contractH
 // MustAttach is like AttachHub but logs Start failures from the caller.
 func LogStartError(err error) {
 	if err != nil {
-		log.Printf("otelx: disable export: %v", err)
+		applog.L().Warn("disable export", slog.String("component", "otelx"), slog.Any("err", err))
 	}
 }

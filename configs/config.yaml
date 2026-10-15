@@ -8,6 +8,7 @@ listen: ":8080"
 #   callback_token_ttl_sec: 3600
 #   otel_otlp_endpoint: ""                         # 空=关闭；例 http://localhost:4318（OTLP HTTP traces）
 #   otel_service_name: "baize"                     # endpoint 非空时的服务名，默认 baize
+#   log_format: text  # text|json；也可用环境变量 BAIZE_LOG_FORMAT
 store:
   driver: sqlite
   sqlite_path: ./data/baize.db

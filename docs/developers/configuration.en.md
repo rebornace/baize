@@ -110,6 +110,8 @@ Outbound Run events: `url`, `headers`.
 - `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing.
 - `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; export failures are fail-open.
 - `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
+- `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup.
+- **Prometheus scrape**: root **`GET /metrics`** is always mounted (no off switch); requires **Admin Bearer** (`Authorization: Bearer <admin_token>`). Operator tokens get `403`.
 
 ### Identity model (passthrough / export identity ≠ IdP OBO)
 
@@ -119,7 +121,7 @@ Outbound Run events: `url`, `headers`.
 | Export identity / `identity_slots` | Downstream **business account** credentials bound to an MCP export Key (Headers); permission boundary = what that account can do | Full OIDC OBO, mTLS, or replaying the end-user IdP token |
 | Settings → Accounts (workspace) | Captured Chat logins, isolated per product workspace | The MCP export identity pool |
 
-Per-tenant cgroup / egress sandboxing and Prometheus `/metrics` are **out of scope** for this version (sandboxing belongs to the orchestrator; metrics later).
+Per-tenant cgroup / egress sandboxing is **out of scope** for this version (sandboxing belongs to the orchestrator).
 
 ### `inbox`
 

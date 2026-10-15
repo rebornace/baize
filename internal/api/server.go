@@ -154,6 +154,8 @@ type Server struct {
 	// MCPExportTrace optionally records MCP export tool completions for OTel
 	// (never secrets).
 	MCPExportTrace func(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool)
+	// MCPExportMetrics optionally records MCP export invocations for Prometheus.
+	MCPExportMetrics func(connectorID string, isError bool)
 	DataDir        string // parent dir for sqlite / legacy paths; not used for connector specs
 	Blobs          blob.Store
 	ConfigPath     string
@@ -198,6 +200,9 @@ type Server struct {
 	// SystemOneEnable optionally manages one-click Ollama tev1 / API enablement
 	// for the System One decision backend. nil = status reports off only.
 	SystemOneEnable *systemoneenable.Manager
+
+	// MetricsHandler serves GET /metrics (Prometheus). nil = route not registered.
+	MetricsHandler http.Handler
 
 	// OAuthSessions holds in-flight MCP OAuth PKCE state (single-process).
 	OAuthSessions *mcpoauth.SessionStore
@@ -467,6 +472,7 @@ func (s *Server) identityStoreKey(convID string) string {
 func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("GET /v0/auth/hosted/{id}", s.handleHostedLoginGet)
 	s.mux.HandleFunc("POST /v0/auth/hosted/{id}", s.handleHostedLoginPost)
 	s.mux.HandleFunc("POST /v0/auth/hosted/{id}/method", s.handleHostedLoginMethodPost)
@@ -624,6 +630,14 @@ func nonNilStrings(in []string) []string {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if s.MetricsHandler == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.MetricsHandler.ServeHTTP(w, r)
 }
 
 type uiConfig struct {

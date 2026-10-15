@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/analysis"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/applog"
 	"github.com/rebornace/baize/internal/artifact"
 	"github.com/rebornace/baize/internal/authcred"
 	"github.com/rebornace/baize/internal/blob"
@@ -45,6 +47,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/mcpexport"
 	"github.com/rebornace/baize/internal/memory"
+	"github.com/rebornace/baize/internal/metricsx"
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/otelx"
 	// 内置默认 middleware 驱动（memory）随 bootstrap 一起注册：它是零配置
@@ -79,7 +82,7 @@ func Serve(cfg config.Config, configPath string) error {
 	runtimeBase := localHTTPBase(listen)
 	printCurlHints(runtimeBase, cfg.Agent.ID)
 	logUIHint(cfg, runtimeBase)
-	log.Printf("baize runtime listening on %s", listen)
+	applog.L().Info("listening", slog.String("component", "bootstrap"), slog.String("addr", listen))
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
 	srv.Shutdown = httpSrv.Shutdown
 	srv.RestartProcess = Reexec
@@ -443,6 +446,15 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.Config = &cfgCopy
 	srv.ConfigPath = configPath
 	srv.Hub = hub
+	logFmt := cfg.Runtime.LogFormat
+	if v := strings.TrimSpace(os.Getenv("BAIZE_LOG_FORMAT")); v != "" {
+		logFmt = v
+	}
+	applog.Init(logFmt)
+	mx := metricsx.New()
+	mx.AttachHub(hub)
+	srv.MetricsHandler = mx.Handler()
+	srv.MCPExportMetrics = mx.RecordExportCall
 	srv.Webhook = dispatcher
 	srv.Inbox = inboxReg
 	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)

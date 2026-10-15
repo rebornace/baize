@@ -7,6 +7,7 @@ func TestMinRoleTable(t *testing.T) {
 		method, path string
 		want         Role
 	}{
+		{"GET", "/metrics", RoleAdmin},
 		{"GET", "/v0/ui-config", RoleNone},
 		{"GET", "/v0/me", RoleOperator},
 		{"POST", "/v0/runs", RoleOperator},

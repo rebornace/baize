@@ -119,6 +119,10 @@ func MinRole(method, path string) Role {
 	if strings.HasPrefix(path, "/v0/auth/hosted/") {
 		return RoleNone
 	}
+	// Prometheus scrape endpoint (non-/v0 root path); documented explicitly.
+	if method == "GET" && path == "/metrics" {
+		return RoleAdmin
+	}
 	if !strings.HasPrefix(path, "/v0") {
 		return RoleAdmin
 	}

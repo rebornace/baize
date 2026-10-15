@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.9.0 — 2026-10-15
+
+baumgaerben observability：标准 Prometheus 刮取面 + 结构化 slog。向后兼容；选 **minor**（v0.9.0）。
+
+### 新功能
+
+- **`GET /metrics`**：Prometheus 文本格式，进程默认开启；**Admin Bearer** 鉴权（无 Bearer `401`，Operator `403`）。
+- **metricsx**：低基数 Run / 工具 / MCP 导出指标；`connector_id` 空时为 `unknown`；**无** tool 名标签；指标更新 fail-open，不阻断 Run。
+- **applog**：`runtime.log_format` 与 **`BAIZE_LOG_FORMAT`**（`text` | `json`）；bootstrap 与 reconcile 等热路径结构化日志。
+
+### 文档
+
+- architecture / configuration / http-api 公开 observability、刮取鉴权与非目标（pin / 沙箱 / OBO / 告警 / mTLS）；backlog 注记 metrics+slog 已落地。
+
 ## 0.8.0 — 2026-10-15
 
 执行期依赖闭包（R1 reconstructability）：Run 可追溯当时绑定，工具契约可按指纹对比。向后兼容；选 **minor**（v0.8.0）。

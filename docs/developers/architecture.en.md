@@ -7,7 +7,7 @@ Baize is a standalone **Agent Runtime** (sidecar / gateway): it turns LLM, tools
 | Does | Does not |
 |------|----------|
 | OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows | Desktop app, official TS/Python SDK, heavy canvas / branching workflows, lock-in to one cloud or agent framework |
-| SQLite by default; optional Postgres / Redis / S3; connector re-import **CatalogDiff**; **run.binding** execution-time dependency closure; optional OTLP (off by default) | Require OTel/APM; per-tenant cgroup/egress sandbox; full IdP OBO / mTLS; Prometheus `/metrics` (later); client-side tool schema version pin; bit-identical reproducibility |
+| SQLite by default; optional Postgres / Redis / S3; connector re-import **CatalogDiff**; **run.binding** execution-time dependency closure; optional OTLP (off by default); **Admin-authenticated** Prometheus **`GET /metrics`** (on by default); structured slog (`log_format` / `BAIZE_LOG_FORMAT`) | Require OTel/APM; per-tenant cgroup/egress sandbox; full IdP OBO / mTLS; client-side tool schema version pin; bit-identical reproducibility |
 
 **Five abstractions:** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
 Skill / Memory / Channel / linear workflow are configuration or plugin shapes — not a sixth abstraction.

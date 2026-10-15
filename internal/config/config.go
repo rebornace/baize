@@ -189,6 +189,7 @@ type RuntimeConfig struct {
 	OtelOTLPEndpoint string `yaml:"otel_otlp_endpoint"`
 	// OtelServiceName defaults to "baize" when endpoint is set and this is empty.
 	OtelServiceName string `yaml:"otel_service_name"`
+	LogFormat       string `yaml:"log_format"`
 }
 
 // DefaultCallbackTokenTTLSec is the default callback token lifetime (1 hour),

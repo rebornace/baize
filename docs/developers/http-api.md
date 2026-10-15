@@ -2,7 +2,7 @@
 
 # 控制面 HTTP 鸟瞰
 
-Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET /healthz`、可选静态 `/ui/`）。
+Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET /healthz`、**`GET /metrics`**（Prometheus 文本；需 Admin Bearer）、可选静态 `/ui/`）。
 
 **权威路由表**以 `internal/api/server.go` 中的 `HandleFunc` / `Handle` 注册为准；渠道入站等由 bootstrap / channel 动态 `RegisterRoute`。仓库**没有**独立的 OpenAPI 规范文件描述整份控制面。
 
@@ -39,6 +39,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | Hosted auth（公网） | `GET/POST /v0/auth/hosted/{id}`、`POST .../method`、`GET .../oauth/callback` | 托管登录页 / 提交 / 切换登录方式 / OAuth 回调（不经 `/ui`） |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
+| 观测 | `GET /metrics` | Prometheus 文本；需 Admin Bearer；默认开启 |
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
 

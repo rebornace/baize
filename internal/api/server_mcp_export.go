@@ -24,7 +24,8 @@ func (s *Server) mcpExportHTTP() http.Handler {
 		HostedWaiter:   s.HostedWaiter,
 		PublicBaseURL:  s.publicBaseURL(),
 		Enabled:        s.MCPExportEnabled,
-		TraceToolCall:  s.MCPExportTrace,
+		TraceToolCall:   s.MCPExportTrace,
+		MetricsToolCall: s.MCPExportMetrics,
 	})
 }
 
