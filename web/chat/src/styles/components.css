@@ -468,6 +468,11 @@
 .connector-card-actions { display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-2); }
 .connector-perm { margin: var(--space-1) 0 0; color: var(--text-muted); font-size: 0.875rem; }
 .connector-form { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.catalog-revisions { margin-top: var(--space-2); font-size: 13px; }
+.catalog-revisions summary { cursor: pointer; color: var(--text-muted); }
+.catalog-revisions-list { margin: 8px 0 0; padding-left: 1.2rem; }
+.catalog-revisions-list li { margin-bottom: 4px; }
 .connector-perms-intro { color: var(--text-muted); font-size: 0.875rem; margin: 0 0 var(--space-3); }
 .connector-perms-search { margin: 0 0 var(--space-3); }
 .connector-perm-row {

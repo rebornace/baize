@@ -33,7 +33,7 @@ type ServerDeps struct {
 	PublicBaseURL  string
 	Enabled        bool
 	// TraceToolCall optionally records export tool completions (no secrets).
-	TraceToolCall func(toolName, exportKeyID, identityID string, isError bool)
+	TraceToolCall func(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool)
 }
 
 // NewHTTPHandler returns a Streamable HTTP MCP handler with Bearer key auth.
@@ -211,12 +211,13 @@ func invokeExportTool(
 	if err != nil {
 		return nil, err
 	}
+	hash, rev := exportContractMeta(deps, toolRow)
 	content, isError, err := deps.Registry.Invoke(invokeCtx, name, args)
 	if err != nil {
 		if IsAuthFailure(nil, false, err) {
 			return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
 		}
-		traceExportTool(deps, name, key.ID, exportID.ID, true)
+		auditExportTool(deps, key.ID, exportID.ID, toolRow, hash, rev, true)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 			IsError: true,
@@ -225,7 +226,7 @@ func invokeExportTool(
 	if isError && IsAuthFailure(content, isError, err) {
 		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
 	}
-	traceExportTool(deps, name, key.ID, exportID.ID, isError)
+	auditExportTool(deps, key.ID, exportID.ID, toolRow, hash, rev, isError)
 	text, _ := json.Marshal(content)
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
@@ -234,11 +235,31 @@ func invokeExportTool(
 	}, nil
 }
 
-func traceExportTool(deps ServerDeps, toolName, exportKeyID, identityID string, isError bool) {
-	if deps.TraceToolCall == nil {
-		return
+func exportContractMeta(deps ServerDeps, toolRow store.Tool) (hash string, rev int64) {
+	hash = store.ContractHash(toolRow)
+	if toolRow.ConnectorID != "" && deps.Store != nil {
+		if c, err := deps.Store.GetConnector(toolRow.ConnectorID); err == nil {
+			rev = c.CatalogRevision
+		}
 	}
-	deps.TraceToolCall(toolName, exportKeyID, identityID, isError)
+	return hash, rev
+}
+
+func auditExportTool(deps ServerDeps, exportKeyID, identityID string, toolRow store.Tool, hash string, rev int64, isError bool) {
+	if deps.Store != nil {
+		_ = deps.Store.PutMCPExportInvocation(store.MCPExportInvocation{
+			KeyID:           exportKeyID,
+			IdentityID:      identityID,
+			ToolName:        toolRow.Name,
+			ConnectorID:     toolRow.ConnectorID,
+			ContractHash:    hash,
+			CatalogRevision: rev,
+			IsError:         isError,
+		})
+	}
+	if deps.TraceToolCall != nil {
+		deps.TraceToolCall(toolRow.Name, exportKeyID, identityID, hash, rev, isError)
+	}
 }
 
 func exportListFilterMiddleware(deps ServerDeps, auth exportAuth) mcp.Middleware {

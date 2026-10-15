@@ -152,8 +152,8 @@ type Server struct {
 	// MCPExportEnabled gates /v0/mcp/export (default true when set by bootstrap).
 	MCPExportEnabled bool
 	// MCPExportTrace optionally records MCP export tool completions for OTel
-	// (tool name, export key id, identity id, error flag — never secrets).
-	MCPExportTrace func(toolName, exportKeyID, identityID string, isError bool)
+	// (never secrets).
+	MCPExportTrace func(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool)
 	DataDir        string // parent dir for sqlite / legacy paths; not used for connector specs
 	Blobs          blob.Store
 	ConfigPath     string
@@ -478,6 +478,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/connectors/{id}", s.handlePutConnector)
 	s.mux.HandleFunc("GET /v0/connectors", s.handleListConnectors)
 	s.mux.HandleFunc("GET /v0/connectors/{id}", s.handleGetConnector)
+	s.mux.HandleFunc("GET /v0/connectors/{id}/catalog-revisions", s.handleListCatalogRevisions)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/hosted-login/draft", s.handlePostConnectorHostedLoginDraft)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/hosted-login/candidates", s.handlePostConnectorHostedLoginCandidates)
 	s.mux.HandleFunc("POST /v0/connectors/{id}/hosted-login/suggest", s.handlePostConnectorHostedLoginSuggest)
@@ -503,6 +504,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
+	s.mux.HandleFunc("GET /v0/runs/{id}/binding", s.handleGetRunBinding)
 	s.mux.HandleFunc("GET /v0/artifacts/{id}", s.handleGetArtifact)
 	s.mux.HandleFunc("GET /v0/channels/media/{conv}/{object}", s.handleChannelMedia)
 	s.mux.HandleFunc("GET /v0/workspaces", s.handleListWorkspaces)
@@ -579,6 +581,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/mcp-export/keys", s.handlePostMCPExportKey)
 	s.mux.HandleFunc("PATCH /v0/settings/mcp-export/keys/{id}", s.handlePatchMCPExportKey)
 	s.mux.HandleFunc("DELETE /v0/settings/mcp-export/keys/{id}", s.handleDeleteMCPExportKey)
+	s.mux.HandleFunc("GET /v0/settings/mcp-export/invocations", s.handleListMCPExportInvocations)
 	s.mux.HandleFunc("GET /v0/settings/models", s.handleListModelProfiles)
 	s.mux.HandleFunc("POST /v0/settings/models", s.handlePostModelProfile)
 	s.mux.HandleFunc("POST /v0/settings/models/discover", s.handleDiscoverModels)

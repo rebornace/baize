@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -55,6 +56,31 @@ type Connector struct {
 	RequireLogin         []string      `json:"require_login,omitempty"`
 	Auth                 ConnectorAuth `json:"auth,omitempty"`
 	MCP                  MCPConfig     `json:"mcp,omitempty"`
+	// CatalogRevision increments when a connector Apply produces a non-empty
+	// CatalogDiff (tool add/remove/change). Zero means never revised.
+	CatalogRevision int64 `json:"catalog_revision,omitempty"`
+}
+
+// ConnectorCatalogRevision is an append-only record of a catalog change.
+type ConnectorCatalogRevision struct {
+	ConnectorID string            `json:"connector_id"`
+	Revision    int64             `json:"revision"`
+	At          time.Time         `json:"at"`
+	DiffJSON    json.RawMessage   `json:"diff"` // CatalogDiff JSON
+	ToolHashes  map[string]string `json:"tool_hashes,omitempty"`
+}
+
+// MCPExportInvocation audits one MCP export tools/call (no Chat Run).
+type MCPExportInvocation struct {
+	ID              string    `json:"id"`
+	At              time.Time `json:"at"`
+	KeyID           string    `json:"key_id"`
+	IdentityID      string    `json:"identity_id"`
+	ToolName        string    `json:"tool_name"`
+	ConnectorID     string    `json:"connector_id,omitempty"`
+	ContractHash    string    `json:"contract_hash,omitempty"`
+	CatalogRevision int64     `json:"catalog_revision,omitempty"`
+	IsError         bool      `json:"is_error"`
 }
 
 type MCPConfig struct {
@@ -565,4 +591,10 @@ type Store interface {
 	GetModelProfile(id string) (ModelProfile, error)
 	ListModelProfiles() ([]ModelProfile, error)
 	DeleteModelProfile(id string) error
+
+	PutCatalogRevision(r ConnectorCatalogRevision) error
+	ListCatalogRevisions(connectorID string, limit int) ([]ConnectorCatalogRevision, error)
+
+	PutMCPExportInvocation(inv MCPExportInvocation) error
+	ListMCPExportInvocations(limit int) ([]MCPExportInvocation, error)
 }

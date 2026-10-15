@@ -589,6 +589,12 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		if e.effectiveDecideTool() && len(specs) > e.effectiveDecideToolThreshold() {
 			specs = e.narrowTools(ctx, runID, turn, specs, messages)
 		}
+		// R1: freeze the first main-model dependency closure before Chat.
+		if turn == 0 {
+			if err := e.persistRunBinding(runID, turn, specs, messages); err != nil {
+				return err
+			}
+		}
 		chatCtx := ctx
 		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
 			if rec.ModelProfileID != "" {

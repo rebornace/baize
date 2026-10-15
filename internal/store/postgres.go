@@ -29,8 +29,29 @@ CREATE TABLE IF NOT EXISTS connectors (
   auth_json TEXT,
   mcp_json TEXT,
   execution_callback_url TEXT,
-  import_format TEXT
+  import_format TEXT,
+  catalog_revision BIGINT NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS connector_catalog_revisions (
+  connector_id TEXT NOT NULL,
+  revision BIGINT NOT NULL,
+  at TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  tool_hashes_json TEXT,
+  PRIMARY KEY (connector_id, revision)
+);
+CREATE TABLE IF NOT EXISTS mcp_export_invocations (
+  id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  connector_id TEXT,
+  contract_hash TEXT,
+  catalog_revision BIGINT NOT NULL DEFAULT 0,
+  is_error INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_invocations_at ON mcp_export_invocations(at);
 CREATE TABLE IF NOT EXISTS tools (
   name TEXT PRIMARY KEY,
   connector_id TEXT,
@@ -275,6 +296,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if err := migrateMCPExportIdentitySlotsColumn(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate mcp export identity slots: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE connectors ADD COLUMN IF NOT EXISTS catalog_revision BIGINT NOT NULL DEFAULT 0`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate connectors catalog_revision: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,

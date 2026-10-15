@@ -11,16 +11,20 @@ import (
 // into the in-memory maps so reads can stay lock-free and consistent with the
 // existing runs/events pattern.
 func (s *SQLStore) loadConnectorsAndTools() error {
-	rows, err := s.query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format FROM connectors`)
+	rows, err := s.query(`SELECT id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format, catalog_revision FROM connectors`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var c Connector
 		var requireApproval, requireLogin, auth, mcp, execCallback, importFormat sql.NullString
-		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback, &importFormat); err != nil {
+		var catalogRev sql.NullInt64
+		if err := rows.Scan(&c.ID, &c.Type, &c.Spec, &c.BaseURL, &requireApproval, &requireLogin, &auth, &mcp, &execCallback, &importFormat, &catalogRev); err != nil {
 			rows.Close()
 			return err
+		}
+		if catalogRev.Valid {
+			c.CatalogRevision = catalogRev.Int64
 		}
 		if requireApproval.Valid && requireApproval.String != "" && requireApproval.String != "null" {
 			if err := json.Unmarshal([]byte(requireApproval.String), &c.RequireApproval); err != nil {
@@ -124,16 +128,17 @@ func (s *SQLStore) UpsertConnector(c Connector) {
 		}
 	}
 	_, _ = s.exec(
-		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO connectors (id, type, spec, base_url, require_approval_json, require_login_json, auth_json, mcp_json, execution_callback_url, import_format, catalog_revision)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET type=excluded.type, spec=excluded.spec, base_url=excluded.base_url,
 		   require_approval_json=excluded.require_approval_json,
 		   require_login_json=excluded.require_login_json,
 		   auth_json=excluded.auth_json,
 		   mcp_json=excluded.mcp_json,
 		   execution_callback_url=excluded.execution_callback_url,
-		   import_format=excluded.import_format`,
-		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL, c.ImportFormat,
+		   import_format=excluded.import_format,
+		   catalog_revision=excluded.catalog_revision`,
+		c.ID, c.Type, c.Spec, c.BaseURL, requireApproval, requireLogin, auth, mcp, c.ExecutionCallbackURL, c.ImportFormat, c.CatalogRevision,
 	)
 }
 

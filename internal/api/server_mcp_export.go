@@ -358,3 +358,22 @@ func (s *Server) handleDeleteMCPExportKey(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+func (s *Server) handleListMCPExportInvocations(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			limit = n
+			if limit > 200 {
+				limit = 200
+			}
+		}
+	}
+	list, err := s.Store.ListMCPExportInvocations(limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"invocations": list})
+}

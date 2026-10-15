@@ -45,6 +45,7 @@ func TestWorkflowPipelineEventsE2E(t *testing.T) {
 	wantPrefix := []string{
 		"model.routed",
 		"run.started",
+		"run.binding",
 		"tool.result",
 		"workflow.started",
 		"workflow.step_started",

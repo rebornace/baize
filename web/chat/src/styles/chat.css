@@ -1125,6 +1125,13 @@
   color: var(--text-faint);
 }
 
+.tool-card-contract {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-faint);
+}
+
 .tool-card-detailbtn {
   border: 0;
   background: none;

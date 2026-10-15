@@ -55,7 +55,17 @@ func (e *Engine) persistToolResult(runID, callID, name string, content map[strin
 		"content":      identity.RedactSensitive(cleaned),
 		"is_error":     isError,
 	}
-	if cid := e.connectorIDForTool(name); cid != "" {
+	if hash, rev, cid := e.toolContractFields(name); hash != "" || cid != "" {
+		if hash != "" {
+			data["contract_hash"] = hash
+		}
+		if rev > 0 {
+			data["catalog_revision"] = rev
+		}
+		if cid != "" {
+			data["connector_id"] = cid
+		}
+	} else if cid := e.connectorIDForTool(name); cid != "" {
 		data["connector_id"] = cid
 	}
 	if len(results) > 0 {
@@ -210,6 +220,17 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 		callData := map[string]any{"id": callID, "name": resolved, "arguments": redactToolArgs(args)}
 		if resolvedFrom != "" {
 			callData["resolved_from"] = resolvedFrom
+		}
+		if hash, rev, cid := e.toolContractFields(resolved); hash != "" || cid != "" {
+			if hash != "" {
+				callData["contract_hash"] = hash
+			}
+			if rev > 0 {
+				callData["catalog_revision"] = rev
+			}
+			if cid != "" {
+				callData["connector_id"] = cid
+			}
 		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMToolCall,

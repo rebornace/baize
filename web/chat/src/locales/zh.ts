@@ -742,6 +742,9 @@ export const zhPack = {
   deleted: '已删除',
   catalogDiffLine: (added: number, removed: number, changed: number) =>
     `工具目录：新增 ${added} · 删除 ${removed} · 变更 ${changed}`,
+  catalogRevisionsTitle: '目录修订历史',
+  catalogRevisionsLoading: '加载修订记录…',
+  catalogRevisionsEmpty: '尚无修订记录（保存并产生工具目录变更后会出现）。',
   toolsLink: '查看工具',
   toolCount: (n: number) => `${n} 个工具`,
   stepInfo: '连接信息',

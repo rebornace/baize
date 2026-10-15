@@ -11,42 +11,45 @@ import (
 
 // Memory is an in-memory Store implementation.
 type Memory struct {
-	mu              sync.RWMutex
-	agents          map[string]Agent
-	connectors      map[string]Connector
-	tools           map[string]Tool
-	runs            map[string]*Run
-	leaseUntil      map[string]time.Time
-	events          map[string][]Event
-	hitl            map[string]*HITLPayload
-	settings        map[string][]byte
-	inboxDeliveries map[string]map[string]InboxDelivery
-	inboxThreads    map[string]map[string]string
-	webhookOutbox   map[string]WebhookOutboxEntry
-	channelOutbox   map[string]ChannelOutboxEntry
-	mcpExportIDs    map[string]MCPExportIdentity
-	mcpExportKeys   map[string]MCPExportKey
-	modelProfiles   map[string]ModelProfile
+	mu                   sync.RWMutex
+	agents               map[string]Agent
+	connectors           map[string]Connector
+	tools                map[string]Tool
+	runs                 map[string]*Run
+	leaseUntil           map[string]time.Time
+	events               map[string][]Event
+	hitl                 map[string]*HITLPayload
+	settings             map[string][]byte
+	inboxDeliveries      map[string]map[string]InboxDelivery
+	inboxThreads         map[string]map[string]string
+	webhookOutbox        map[string]WebhookOutboxEntry
+	channelOutbox        map[string]ChannelOutboxEntry
+	mcpExportIDs         map[string]MCPExportIdentity
+	mcpExportKeys        map[string]MCPExportKey
+	modelProfiles        map[string]ModelProfile
+	catalogRevisions     map[string][]ConnectorCatalogRevision
+	mcpExportInvocations []MCPExportInvocation
 }
 
 // NewMemory creates an empty in-memory Store.
 func NewMemory() *Memory {
 	return &Memory{
-		agents:          map[string]Agent{},
-		connectors:      map[string]Connector{},
-		tools:           map[string]Tool{},
-		runs:            map[string]*Run{},
-		leaseUntil:      map[string]time.Time{},
-		events:          map[string][]Event{},
-		hitl:            map[string]*HITLPayload{},
-		settings:        map[string][]byte{},
-		inboxDeliveries: map[string]map[string]InboxDelivery{},
-		inboxThreads:    map[string]map[string]string{},
-		webhookOutbox:   map[string]WebhookOutboxEntry{},
-		channelOutbox:   map[string]ChannelOutboxEntry{},
-		mcpExportIDs:    map[string]MCPExportIdentity{},
-		mcpExportKeys:   map[string]MCPExportKey{},
-		modelProfiles:   map[string]ModelProfile{},
+		agents:           map[string]Agent{},
+		connectors:       map[string]Connector{},
+		tools:            map[string]Tool{},
+		runs:             map[string]*Run{},
+		leaseUntil:       map[string]time.Time{},
+		events:           map[string][]Event{},
+		hitl:             map[string]*HITLPayload{},
+		settings:         map[string][]byte{},
+		inboxDeliveries:  map[string]map[string]InboxDelivery{},
+		inboxThreads:     map[string]map[string]string{},
+		webhookOutbox:    map[string]WebhookOutboxEntry{},
+		channelOutbox:    map[string]ChannelOutboxEntry{},
+		mcpExportIDs:     map[string]MCPExportIdentity{},
+		mcpExportKeys:    map[string]MCPExportKey{},
+		modelProfiles:    map[string]ModelProfile{},
+		catalogRevisions: map[string][]ConnectorCatalogRevision{},
 	}
 }
 

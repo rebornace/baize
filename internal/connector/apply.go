@@ -331,7 +331,17 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 	if typ == "mcp" {
 		c.MCP = in.MCP
 	}
+	if prev, err := in.Store.GetConnector(in.ID); err == nil {
+		c.CatalogRevision = prev.CatalogRevision
+	}
+	diff := DiffCatalog(existing, merged)
+	if !diff.Empty() {
+		c.CatalogRevision++
+	}
 	in.Store.UpsertConnector(c)
+	if !diff.Empty() {
+		recordCatalogRevision(in.Store, c.ID, c.CatalogRevision, diff, merged)
+	}
 
 	// Phase 5: register enabled rows. Unregister the connector's stale tools
 	// first, then register only enabled merged rows through the shared
@@ -392,7 +402,6 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		registerOne(rctx, t)
 	}
 
-	diff := DiffCatalog(existing, merged)
 	return c, filterInfosByConnector(in.Registry, in.ID), diff, nil
 }
 

@@ -157,6 +157,13 @@ export function ToolCard({
       {expanded && (
         <div className="tool-card-body">
           <p className="tool-card-techname">{CHAT.toolPrefix}{block.name}</p>
+          {(block.contractHash || block.catalogRevision) && (
+            <p className="tool-card-contract" data-testid="tool-contract">
+              {block.contractHash ? `hash ${block.contractHash}` : ''}
+              {block.contractHash && block.catalogRevision ? ' · ' : ''}
+              {block.catalogRevision ? `rev ${block.catalogRevision}` : ''}
+            </p>
+          )}
           {block.arguments !== undefined && (
             <pre className="tool-card-json">{formatJSON(block.arguments)}</pre>
           )}

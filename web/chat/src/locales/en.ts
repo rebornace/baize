@@ -750,6 +750,9 @@ export const enPack = {
     deleted: 'Deleted',
     catalogDiffLine: (added: number, removed: number, changed: number) =>
       `Catalog: +${added} added · ${removed} removed · ${changed} changed`,
+    catalogRevisionsTitle: 'Catalog revision history',
+    catalogRevisionsLoading: 'Loading revisions…',
+    catalogRevisionsEmpty: 'No revisions yet (they appear after a save that changes the tool catalog).',
     toolsLink: 'View tools',
     toolCount: (n: number) => `${n} tools`,
     stepInfo: 'Connector info',

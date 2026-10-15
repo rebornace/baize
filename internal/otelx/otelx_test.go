@@ -21,7 +21,7 @@ func TestStartEmptyEndpointNoOp(t *testing.T) {
 	}
 	var nilExp *otelx.Exporter
 	nilExp.AttachHub(eventbus.NewHub())
-	nilExp.RecordExportCall("t", "k", "i", false)
+	nilExp.RecordExportCall("t", "k", "i", "", 0, false)
 	if err := nilExp.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestRecordExportCall(t *testing.T) {
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 
 	exp := otelx.StartWithProvider(tp)
-	exp.RecordExportCall("list_orders", "key_1", "mei_1", true)
+	exp.RecordExportCall("list_orders", "key_1", "mei_1", "abcd1234efgh5678", 3, true)
 
 	spans := sr.Ended()
 	if len(spans) != 1 {

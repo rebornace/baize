@@ -154,6 +154,7 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		"retrieval_widen":  widened,
 		"tool_choice":      e.effectiveDecideToolChoice(),
 		"sent_count":       sentCount,
+		"sent":             e.sentToolAudit(sent),
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventDecideToolNarrow,

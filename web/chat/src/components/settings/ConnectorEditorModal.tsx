@@ -23,6 +23,7 @@ import type {
   FieldErrors,
   SavedConnection,
 } from '../../pages/connectorForms/types'
+import { CatalogRevisions } from '../../pages/connectorForms/CatalogRevisions'
 
 export interface ConnectorEditorInitial {
   id: string
@@ -389,6 +390,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
             </section>
           </details>
         )}
+        {editing && id.trim() ? <CatalogRevisions connectorId={id.trim()} /> : null}
       </div>
     </Modal>
   )

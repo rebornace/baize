@@ -29,6 +29,8 @@ export type ChatBlock =
       result?: unknown
       isError?: boolean
       runId: string
+      contractHash?: string
+      catalogRevision?: number
     }
   | {
       kind: 'workflow'
@@ -223,6 +225,8 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
           status: 'running',
           arguments: data?.arguments,
           runId,
+          contractHash: typeof data?.contract_hash === 'string' ? data.contract_hash : undefined,
+          catalogRevision: typeof data?.catalog_revision === 'number' ? data.catalog_revision : undefined,
         })
         break
       }
@@ -230,10 +234,14 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         const name = String(data?.name ?? 'tool')
         const card = findTopUnfinished(blocks, name)
         const isError = Boolean(data?.is_error)
+        const hash = typeof data?.contract_hash === 'string' ? data.contract_hash : undefined
+        const rev = typeof data?.catalog_revision === 'number' ? data.catalog_revision : undefined
         if (card) {
           card.status = isError ? 'failed' : 'succeeded'
           card.result = data?.content
           card.isError = isError
+          if (hash) card.contractHash = hash
+          if (rev !== undefined) card.catalogRevision = rev
         } else {
           blocks.push({
             kind: 'tool',
@@ -242,6 +250,8 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
             result: data?.content,
             isError,
             runId,
+            contractHash: hash,
+            catalogRevision: rev,
           })
         }
         break

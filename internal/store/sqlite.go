@@ -44,8 +44,29 @@ CREATE TABLE IF NOT EXISTS connectors (
   require_login_json TEXT,
   auth_json TEXT,
   mcp_json TEXT,
-  execution_callback_url TEXT
+  execution_callback_url TEXT,
+  catalog_revision INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS connector_catalog_revisions (
+  connector_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  tool_hashes_json TEXT,
+  PRIMARY KEY (connector_id, revision)
+);
+CREATE TABLE IF NOT EXISTS mcp_export_invocations (
+  id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  connector_id TEXT,
+  contract_hash TEXT,
+  catalog_revision INTEGER NOT NULL DEFAULT 0,
+  is_error INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_invocations_at ON mcp_export_invocations(at);
 CREATE TABLE IF NOT EXISTS tools (
   name TEXT PRIMARY KEY,
   connector_id TEXT,
@@ -304,6 +325,27 @@ func migrateConnectorsColumns(db *sql.DB) error {
 		`ALTER TABLE connectors ADD COLUMN mcp_json TEXT`,
 		`ALTER TABLE connectors ADD COLUMN execution_callback_url TEXT`,
 		`ALTER TABLE connectors ADD COLUMN import_format TEXT`,
+		`ALTER TABLE connectors ADD COLUMN catalog_revision INTEGER NOT NULL DEFAULT 0`,
+		`CREATE TABLE IF NOT EXISTS connector_catalog_revisions (
+  connector_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  tool_hashes_json TEXT,
+  PRIMARY KEY (connector_id, revision)
+)`,
+		`CREATE TABLE IF NOT EXISTS mcp_export_invocations (
+  id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  connector_id TEXT,
+  contract_hash TEXT,
+  catalog_revision INTEGER NOT NULL DEFAULT 0,
+  is_error INTEGER NOT NULL DEFAULT 0
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_mcp_export_invocations_at ON mcp_export_invocations(at)`,
 	} {
 		_, err := db.Exec(q)
 		if err == nil || isDuplicateColumnErr(err) {

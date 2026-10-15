@@ -104,6 +104,7 @@ func TestExecuteWorkflowPipelineRunsToCompletion(t *testing.T) {
 	evs, _ := st.ListEvents(r.ID)
 	wantSeq := []string{
 		EventRunStarted,
+		EventRunBinding, // R1 turn-0 dependency closure
 		EventToolResult, // activate_skill result (activate skips llm.tool_call)
 		"workflow.started",
 		"workflow.step_started", EventLLMToolCall, EventToolResult, "workflow.step_completed",
@@ -129,7 +130,7 @@ func TestExecuteWorkflowPipelineRunsToCompletion(t *testing.T) {
 		t.Fatalf("terminal event=%+v", last)
 	}
 	// activate_skill's tool.result must report the activation success.
-	actRes := evs[2]
+	actRes := evs[3]
 	if isErr, _ := actRes.Data["is_error"].(bool); isErr {
 		t.Fatalf("activate_skill result must not be error: %+v", actRes.Data)
 	}

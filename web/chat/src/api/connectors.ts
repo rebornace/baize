@@ -179,6 +179,15 @@ export interface ConnectorInfo {
   require_login?: string[]
   tools?: ToolInfo[]
   catalog_diff?: CatalogDiff
+  catalog_revision?: number
+}
+
+export interface CatalogRevisionRow {
+  connector_id: string
+  revision: number
+  at: string
+  diff: CatalogDiff | unknown
+  tool_hashes?: Record<string, string>
 }
 
 export interface PutConnectorBody {
@@ -221,6 +230,18 @@ export async function listConnectors(type?: string): Promise<ConnectorInfo[]> {
 export async function getConnector(id: string): Promise<ConnectorInfo> {
   const res = await fetch(`/v0/connectors/${encodeURIComponent(id)}`, { headers: authInit() })
   return parseConnectorJSON<ConnectorInfo>(res)
+}
+
+export async function listCatalogRevisions(
+  id: string,
+  limit = 20,
+): Promise<CatalogRevisionRow[]> {
+  const res = await fetch(
+    `/v0/connectors/${encodeURIComponent(id)}/catalog-revisions?limit=${limit}`,
+    { headers: authInit() },
+  )
+  const body = await parseConnectorJSON<{ revisions: CatalogRevisionRow[] }>(res)
+  return body.revisions ?? []
 }
 
 export async function putConnector(id: string, body: PutConnectorBody): Promise<ConnectorInfo> {

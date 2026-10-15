@@ -188,7 +188,7 @@ func (e *Exporter) spanToolResult(runID string, data map[string]any) {
 
 // RecordExportCall emits a standalone span for MCP export tool invocations
 // (no Chat run). Safe when e is nil.
-func (e *Exporter) RecordExportCall(toolName, exportKeyID, identityID string, isError bool) {
+func (e *Exporter) RecordExportCall(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool) {
 	if e == nil {
 		return
 	}
@@ -201,6 +201,12 @@ func (e *Exporter) RecordExportCall(toolName, exportKeyID, identityID string, is
 	}
 	if identityID != "" {
 		attrs = append(attrs, attribute.String("baize.identity_id", identityID))
+	}
+	if contractHash != "" {
+		attrs = append(attrs, attribute.String("baize.contract_hash", contractHash))
+	}
+	if catalogRevision > 0 {
+		attrs = append(attrs, attribute.Int64("baize.catalog_revision", catalogRevision))
 	}
 	_, sp := e.tracer.Start(context.Background(), "baize.mcp_export "+toolName,
 		trace.WithAttributes(attrs...))

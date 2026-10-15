@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.8.0 — 2026-10-15
+
+执行期依赖闭包（R1 reconstructability）：Run 可追溯当时绑定，工具契约可按指纹对比。向后兼容；选 **minor**（v0.8.0）。
+
+### 新功能
+
+- **`run.binding`**：首次主模型调用前固化模型/knobs/记忆注入/收窄后工具契约指纹；写入失败阻断 Run。
+- **调用级契约指纹**：`llm.tool_call` / `tool.result` 带 `contract_hash` 与 `catalog_revision`；Chat 工具卡可展示。
+- **连接器修订历史**：实质重导时 `catalog_revision++`，`GET /v0/connectors/{id}/catalog-revisions`；设置页编辑器可查看。
+- **MCP 导出审计**：`GET /v0/settings/mcp-export/invocations` 记录导出调用的契约指纹。
+- **`GET /v0/runs/{id}/binding`**：读取闭包。
+
+### 文档
+
+- architecture / http-api / baize-help 说明 reconstructability；backlog R1 标为已落地。
+
 ## 0.7.0 — 2026-10-14
 
 连接器重导可见性、可选 OTel、身份边界文档。向后兼容；选 **minor**（v0.7.0）。

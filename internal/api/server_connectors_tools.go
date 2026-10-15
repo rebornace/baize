@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rebornace/baize/internal/authcred"
@@ -303,6 +304,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		"auth":                   c.Auth,
 		"tools":                  infos,
 		"catalog_diff":           catalogDiff,
+		"catalog_revision":       c.CatalogRevision,
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = redactMCPForAPI(c.MCP)
@@ -401,11 +403,35 @@ func (s *Server) connectorResponse(c store.Connector) map[string]any {
 		"require_login":          nonNilStrings(c.RequireLogin),
 		"auth":                   c.Auth,
 		"tools":                  tools,
+		"catalog_revision":       c.CatalogRevision,
 	}
 	if c.Type == "mcp" {
 		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
 	return resp
+}
+
+func (s *Server) handleListCatalogRevisions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.Store.GetConnector(id); err != nil {
+		writeError(w, http.StatusNotFound, "connector_not_found", "connector not found")
+		return
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+			if limit > 200 {
+				limit = 200
+			}
+		}
+	}
+	list, err := s.Store.ListCatalogRevisions(id, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"revisions": list})
 }
 
 func (s *Server) handleGetTools(w http.ResponseWriter, r *http.Request) {

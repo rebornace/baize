@@ -22,20 +22,20 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | 组 | 代表路径 | 说明 |
 |----|----------|------|
 | Agents | `PUT/GET /v0/agents/{id}` | Agent 定义 |
-| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 成功响应可含 `catalog_diff`（新增/删除/变更摘要） |
+| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors`、`GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 可含 `catalog_diff` / `catalog_revision`；修订历史可查 |
 | Connector tools | `POST /v0/connectors/{id}/tools`、`DELETE .../tools/{name}` | 手加 / 删 `extra` REST 工具 |
 | Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`、`.../suggest`、`.../draft`、`.../test-session` | 规则候选 / AI 建议 / 草稿 / 测试托管 session（admin；对应设置「对外登录」） |
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |
 | Tools | `GET /v0/tools`、`PATCH /v0/tools/{name}` | 工具目录（含停用行） |
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
-| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../plugin-callbacks` | 执行与轨迹 |
+| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为 R1 依赖闭包 |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
 | Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval… |
-| MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys` | 导出开关、导出身份（Headers）与 Key；Key 可带 `identity_slots` |
+| MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys`、`.../invocations` | 导出开关、身份、Key、调用审计（契约指纹） |
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | Hosted auth（公网） | `GET/POST /v0/auth/hosted/{id}`、`POST .../method`、`GET .../oauth/callback` | 托管登录页 / 提交 / 切换登录方式 / OAuth 回调（不经 `/ui`） |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
