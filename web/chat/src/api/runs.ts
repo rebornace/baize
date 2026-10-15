@@ -67,6 +67,19 @@ export async function getRun(runId: string): Promise<Run> {
   return parseJSON<Run>(res)
 }
 
+export interface RunBindingResponse {
+  run_id: string
+  timestamp?: string
+  binding: Record<string, unknown>
+}
+
+export async function getRunBinding(runId: string): Promise<RunBindingResponse> {
+  const res = await fetch(`/v0/runs/${encodeURIComponent(runId)}/binding`, {
+    headers: authInit(),
+  })
+  return parseJSON<RunBindingResponse>(res)
+}
+
 export async function listEvents(runId: string): Promise<Event[]> {
   const res = await fetch(`/v0/runs/${encodeURIComponent(runId)}/events`, {
     headers: authInit(),

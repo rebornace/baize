@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Button, Field, Input, Modal, Select, Textarea } from '../ui'
 import { CONNECTORS, TOOLS } from '../../strings'
 import { FilePickerButton } from './FilePickerButton'
-import { type ConnectorAuth, type ImportFormat, type MCPConfig } from '../../api'
+import { type ConnectorAuth, type ConnectorTLS, type ImportFormat, type MCPConfig } from '../../api'
 import { CaptureSettingsFields } from '../../pages/CaptureSettingsFields'
 import {
   captureToDraft,
@@ -24,6 +24,7 @@ import type {
   SavedConnection,
 } from '../../pages/connectorForms/types'
 import { CatalogRevisions } from '../../pages/connectorForms/CatalogRevisions'
+import { tlsEmpty, tlsFromConnector, tlsPayloadForSave, validateTls } from '../../pages/connectorForms/tls'
 
 export interface ConnectorEditorInitial {
   id: string
@@ -35,6 +36,7 @@ export interface ConnectorEditorInitial {
   executionCallbackUrl?: string
   /** 用于回显 capture */
   auth?: ConnectorAuth
+  tls?: ConnectorTLS
 }
 
 const EMPTY_MCP_FORM: McpFormValues = {
@@ -84,8 +86,12 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [mcpErrors, setMcpErrors] = useState<McpFieldErrors>({})
   const [executionCallbackUrl, setExecutionCallbackUrl] = useState('')
   const [captureDraft, setCaptureDraft] = useState<CaptureDraft>(() => captureToDraft(undefined))
+  const [tlsDraft, setTlsDraft] = useState<ConnectorTLS>(() => tlsFromConnector(undefined))
+  const [tlsCleared, setTlsCleared] = useState(false)
+  const [tlsError, setTlsError] = useState<string | null>(null)
   const isMcp = kind === 'mcp'
   const isOpenapi = kind === 'openapi'
+  const showTls = !isMcp || mcpForm.transport === 'http'
 
   useEffect(() => {
     if (!open) return
@@ -105,6 +111,9 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setMcpErrors({})
     setExecutionCallbackUrl(init.executionCallbackUrl ?? '')
     setCaptureDraft(captureToDraft(init.auth?.capture))
+    setTlsDraft(tlsFromConnector(init.tls))
+    setTlsCleared(false)
+    setTlsError(null)
   }, [open])
 
   if (!open) return null
@@ -131,6 +140,16 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
 
   const saveInfo = async () => {
     let conn: SavedConnection | null = null
+    let tlsPayload: ConnectorTLS | undefined
+    if (showTls) {
+      const tlsErr = validateTls(tlsDraft, CONNECTORS.errTlsPair)
+      if (tlsErr?.pair) {
+        setTlsError(tlsErr.pair)
+        return
+      }
+      setTlsError(null)
+      tlsPayload = tlsPayloadForSave(tlsDraft, tlsCleared)
+    }
     if (isMcp) {
       // MCP 复用顶部共享「连接编号」输入（id state），传输字段在 mcpForm。
       const result = validateMcp({ ...mcpForm, id })
@@ -146,7 +165,12 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       }
       setFieldErrors({})
       setMcpErrors({})
-      conn = { kind: 'mcp', id: result.id, mcp: result.mcp }
+      conn = {
+        kind: 'mcp',
+        id: result.id,
+        mcp: result.mcp,
+        ...(tlsPayload !== undefined ? { tls: tlsPayload } : {}),
+      }
     } else {
       const hasSpec = specContent != null || specUrl.trim() !== ''
       const result = validateConnection({ kind, id, baseUrl, hasSpec, editing })
@@ -165,6 +189,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
           importFormat,
           executionCallbackUrl: callbackUrl,
           auth: advancedAuth,
+          ...(tlsPayload !== undefined ? { tls: tlsPayload } : {}),
           spec: hasSpec
             ? { content: specContent ?? undefined, url: specContent == null ? specUrl.trim() : undefined }
             : undefined,
@@ -176,6 +201,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
           baseUrl: result.baseUrl,
           executionCallbackUrl: callbackUrl,
           auth: advancedAuth,
+          ...(tlsPayload !== undefined ? { tls: tlsPayload } : {}),
         }
       }
     }
@@ -387,6 +413,131 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
               ) : (
                 <p className="settings-muted">{CONNECTORS.hostedLoginConfigureSaveFirst}</p>
               )}
+            </section>
+            <section className="settings-advanced-block" data-testid="connector-tls-section">
+              <h4 className="settings-advanced-title">{CONNECTORS.tlsSection}</h4>
+              <p className="settings-meta">{CONNECTORS.tlsHint}</p>
+              {tlsError ? <p className="ui-inline-error" role="alert">{tlsError}</p> : null}
+              <Field label={CONNECTORS.tlsCertFile}>
+                <Input
+                  value={tlsDraft.cert_file ?? ''}
+                  disabled={saving}
+                  placeholder={CONNECTORS.phTlsCert}
+                  data-testid="connector-tls-cert"
+                  onChange={(e) => {
+                    setTlsDraft((t) => ({ ...t, cert_file: e.target.value }))
+                    setTlsCleared(false)
+                    setTlsError(null)
+                  }}
+                />
+              </Field>
+              <Field label={CONNECTORS.tlsKeyFile}>
+                <Input
+                  value={tlsDraft.key_file ?? ''}
+                  disabled={saving}
+                  placeholder={CONNECTORS.phTlsKey}
+                  data-testid="connector-tls-key"
+                  onChange={(e) => {
+                    setTlsDraft((t) => ({ ...t, key_file: e.target.value }))
+                    setTlsCleared(false)
+                    setTlsError(null)
+                  }}
+                />
+              </Field>
+              <Field label={CONNECTORS.tlsCaFile}>
+                <Input
+                  value={tlsDraft.ca_file ?? ''}
+                  disabled={saving}
+                  placeholder={CONNECTORS.phTlsCa}
+                  data-testid="connector-tls-ca"
+                  onChange={(e) => {
+                    setTlsDraft((t) => ({ ...t, ca_file: e.target.value }))
+                    setTlsCleared(false)
+                    setTlsError(null)
+                  }}
+                />
+              </Field>
+              {!tlsEmpty(tlsDraft) || tlsCleared ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={saving || tlsCleared}
+                  data-testid="connector-tls-clear"
+                  onClick={() => {
+                    setTlsDraft(tlsFromConnector(undefined))
+                    setTlsCleared(true)
+                    setTlsError(null)
+                  }}
+                >
+                  {CONNECTORS.tlsClear}
+                </Button>
+              ) : null}
+            </section>
+          </details>
+        )}
+        {isMcp && showTls && (
+          <details className="settings-advanced">
+            <summary>{CONNECTORS.advanced}</summary>
+            <section className="settings-advanced-block" data-testid="connector-tls-section">
+              <h4 className="settings-advanced-title">{CONNECTORS.tlsSection}</h4>
+              <p className="settings-meta">{CONNECTORS.tlsHint}</p>
+              {tlsError ? <p className="ui-inline-error" role="alert">{tlsError}</p> : null}
+              <Field label={CONNECTORS.tlsCertFile}>
+                <Input
+                  value={tlsDraft.cert_file ?? ''}
+                  disabled={saving}
+                  placeholder={CONNECTORS.phTlsCert}
+                  data-testid="connector-tls-cert"
+                  onChange={(e) => {
+                    setTlsDraft((t) => ({ ...t, cert_file: e.target.value }))
+                    setTlsCleared(false)
+                    setTlsError(null)
+                  }}
+                />
+              </Field>
+              <Field label={CONNECTORS.tlsKeyFile}>
+                <Input
+                  value={tlsDraft.key_file ?? ''}
+                  disabled={saving}
+                  placeholder={CONNECTORS.phTlsKey}
+                  data-testid="connector-tls-key"
+                  onChange={(e) => {
+                    setTlsDraft((t) => ({ ...t, key_file: e.target.value }))
+                    setTlsCleared(false)
+                    setTlsError(null)
+                  }}
+                />
+              </Field>
+              <Field label={CONNECTORS.tlsCaFile}>
+                <Input
+                  value={tlsDraft.ca_file ?? ''}
+                  disabled={saving}
+                  placeholder={CONNECTORS.phTlsCa}
+                  data-testid="connector-tls-ca"
+                  onChange={(e) => {
+                    setTlsDraft((t) => ({ ...t, ca_file: e.target.value }))
+                    setTlsCleared(false)
+                    setTlsError(null)
+                  }}
+                />
+              </Field>
+              {!tlsEmpty(tlsDraft) || tlsCleared ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={saving || tlsCleared}
+                  data-testid="connector-tls-clear"
+                  onClick={() => {
+                    setTlsDraft(tlsFromConnector(undefined))
+                    setTlsCleared(true)
+                    setTlsError(null)
+                  }}
+                >
+                  {CONNECTORS.tlsClear}
+                </Button>
+              ) : null}
             </section>
           </details>
         )}

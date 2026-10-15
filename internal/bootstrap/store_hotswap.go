@@ -340,6 +340,11 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 			Operators:     operators,
 		},
 		PublicBaseURL: strings.TrimSpace(cfg.Runtime.PublicBaseURL),
+		Observability: runtimecfg.Observability{
+			LogFormat:        strings.TrimSpace(cfg.Runtime.LogFormat),
+			OtelOTLPEndpoint: strings.TrimSpace(cfg.Runtime.OtelOTLPEndpoint),
+			OtelServiceName:  strings.TrimSpace(cfg.Runtime.OtelServiceName),
+		},
 	}
 
 	rt.mu.Lock()

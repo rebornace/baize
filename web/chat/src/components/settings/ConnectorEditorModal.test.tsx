@@ -493,8 +493,9 @@ describe('ConnectorEditorModal advanced', () => {
     expect(host.textContent).toContain(TOOLS.captureToolGlob)
     expect(host.textContent).toContain(TOOLS.captureIntro)
     expect(host.textContent).toContain(TOOLS.captureToolGlobHint)
-    // callback + capture + hosted login jump link
-    expect(host.querySelectorAll('.settings-advanced-block').length).toBe(3)
+    // callback + capture + hosted login jump link + outbound TLS
+    expect(host.querySelectorAll('.settings-advanced-block').length).toBe(4)
+    expect(host.querySelector('[data-testid="connector-tls-section"]')).not.toBeNull()
     expect(host.textContent).toContain(CONNECTORS.hostedLoginSection)
     expect(host.textContent).toContain(CONNECTORS.hostedLoginConfigureHint)
     expect(host.textContent).not.toContain(CONNECTORS.hostedLoginEnabled)

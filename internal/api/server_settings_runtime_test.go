@@ -11,6 +11,7 @@ import (
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/controlplane"
+	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -68,6 +69,58 @@ func TestGetRuntimeSettings(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `"context_projection_enabled":false`) {
 		t.Fatalf("expected context_projection_enabled default false, body=%s", rr.Body.String())
+	}
+	// Defaults when Observability unset on holder: text log, otel off, no restart hint.
+	if !strings.Contains(rr.Body.String(), `"log_format":"text"`) ||
+		!strings.Contains(rr.Body.String(), `"otel_enabled":false`) ||
+		!strings.Contains(rr.Body.String(), `"config_restart_hint":false`) {
+		t.Fatalf("expected observability defaults, body=%s", rr.Body.String())
+	}
+}
+
+func TestGetRuntimeSettingsObservabilityFromHolder(t *testing.T) {
+	srv, _ := runtimeSettingsServer(t)
+	jsonFmt := "json"
+	ep := "http://localhost:4318"
+	svc := "baize-test"
+	if err := srv.Settings.ApplyKnobs(context.Background(), nil, runtimecfg.KnobsPatch{
+		LogFormat: &jsonFmt, OtelOTLPEndpoint: &ep, OtelServiceName: &svc,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rr := doJSON(t, srv, http.MethodGet, "/v0/settings/runtime", "op", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		`"log_format":"json"`,
+		`"otel_otlp_endpoint":"http://localhost:4318"`,
+		`"otel_service_name":"baize-test"`,
+		`"otel_enabled":true`,
+		`"log_format_overridden":true`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %s in body=%s", want, body)
+		}
+	}
+}
+
+func TestPatchRuntimeObservabilityHot(t *testing.T) {
+	srv, _ := runtimeSettingsServer(t)
+	srv.Otel = otelx.NewController()
+	jsonFmt := "json"
+	rr := doJSON(t, srv, http.MethodPatch, "/v0/settings/runtime", "adm",
+		map[string]any{"log_format": jsonFmt, "otel_otlp_endpoint": "", "otel_service_name": "hot"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	o := srv.Settings.Observability()
+	if o.LogFormat != "json" || o.OtelOTLPEndpoint != "" || o.OtelServiceName != "hot" {
+		t.Fatalf("obs=%+v", o)
+	}
+	if !strings.Contains(rr.Body.String(), `"log_format":"json"`) {
+		t.Fatalf("body=%s", rr.Body.String())
 	}
 }
 

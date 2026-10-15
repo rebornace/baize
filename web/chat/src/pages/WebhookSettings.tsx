@@ -183,6 +183,9 @@ export function WebhookSettings() {
     <div className="settings-panel settings-webhook">
       <PageHeader title={WEBHOOKS.title} description={WEBHOOKS.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
+      <p className="settings-muted" data-testid="webhook-catalog-diff-note">
+        {WEBHOOKS.catalogDiffNote}
+      </p>
 
       {loading && <p className="settings-muted">加载中…</p>}
       {!loading && (

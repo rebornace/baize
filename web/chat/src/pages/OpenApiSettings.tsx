@@ -81,6 +81,7 @@ export function OpenApiSettings() {
       loginNames: c.require_login ?? [], approvalNames: c.require_approval ?? [],
       executionCallbackUrl: c.execution_callback_url ?? '',
       auth: c.auth,
+      tls: c.tls,
     }
     setEditor({ open: true, editing: true, initial })
   }
@@ -102,6 +103,7 @@ export function OpenApiSettings() {
       spec_url: conn.spec?.url,
       execution_callback_url: conn.executionCallbackUrl,
       auth: conn.auth,
+      ...(conn.tls !== undefined ? { tls: conn.tls } : {}),
     })
     pendingDiffRef.current = catalogDiffToastLine(c.catalog_diff)
     return toPermissionTools(c.tools)

@@ -134,3 +134,23 @@ export async function revokeMCPExportKey(id: string): Promise<void> {
   })
   await parseJSON<{ status: string }>(res)
 }
+
+export interface MCPExportInvocation {
+  id: string
+  at: string
+  key_id: string
+  identity_id: string
+  tool_name: string
+  connector_id?: string
+  contract_hash?: string
+  catalog_revision?: number
+  is_error: boolean
+}
+
+export async function listMCPExportInvocations(limit = 50): Promise<MCPExportInvocation[]> {
+  const res = await fetch(`/v0/settings/mcp-export/invocations?limit=${limit}`, {
+    headers: authInit(),
+  })
+  const body = await parseJSON<{ invocations: MCPExportInvocation[] }>(res)
+  return body.invocations ?? []
+}

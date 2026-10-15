@@ -91,7 +91,7 @@ func TestMergeSnapshotOverlaysOnlyProvided(t *testing.T) {
 	off := false
 	snap := mergeSnapshot(base,
 		knobsOverride{MaxSteps: &steps, CompactionEnabled: &off},
-		credsOverride{AdminToken: "new-adm"}, nil)
+		credsOverride{AdminToken: "new-adm"}, nil, obsOverride{})
 	if snap.Knobs.MaxSteps != 24 {
 		t.Fatalf("maxsteps override: %d", snap.Knobs.MaxSteps)
 	}
@@ -117,7 +117,7 @@ func TestMergeAppendsRuntimeOperators(t *testing.T) {
 	base := baseSnapshot()
 	snap := mergeSnapshot(base, knobsOverride{}, credsOverride{
 		Operators: []operatorEntry{{ID: "bob", Token: "tb"}},
-	}, nil)
+	}, nil, obsOverride{})
 	if len(snap.Creds.Operators) != 2 {
 		t.Fatalf("want base+runtime = 2 operators, got %+v", snap.Creds.Operators)
 	}
@@ -620,6 +620,88 @@ func TestPublicBaseURLPersists(t *testing.T) {
 	}
 	if h2.PublicBaseURL() != "https://runtime.example" || !h2.PublicBaseURLOverridden() {
 		t.Fatalf("reload: url=%q overridden=%v", h2.PublicBaseURL(), h2.PublicBaseURLOverridden())
+	}
+}
+
+func TestObservabilityOverrideAndForceOff(t *testing.T) {
+	h := New(Snapshot{Observability: Observability{
+		LogFormat: "text", OtelOTLPEndpoint: "http://yaml:4318", OtelServiceName: "from-yaml",
+	}})
+	o := h.Observability()
+	if o.LogFormat != "text" || o.OtelOTLPEndpoint != "http://yaml:4318" || o.OtelServiceName != "from-yaml" {
+		t.Fatalf("baseline: %+v", o)
+	}
+	lf, ep, svc := h.ObservabilityOverridden()
+	if lf || ep || svc {
+		t.Fatal("baseline must not be overridden")
+	}
+
+	jsonFmt := "json"
+	off := ""
+	svcName := "hot"
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{
+		LogFormat: &jsonFmt, OtelOTLPEndpoint: &off, OtelServiceName: &svcName,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	o = h.Observability()
+	if o.LogFormat != "json" || o.OtelOTLPEndpoint != "" || o.OtelServiceName != "hot" {
+		t.Fatalf("override: %+v", o)
+	}
+	lf, ep, svc = h.ObservabilityOverridden()
+	if !lf || !ep || !svc {
+		t.Fatalf("expected all overridden: %v %v %v", lf, ep, svc)
+	}
+
+	if err := h.ApplyKnobs(context.Background(), nil, KnobsPatch{ObservabilityReset: true}); err != nil {
+		t.Fatal(err)
+	}
+	o = h.Observability()
+	if o.LogFormat != "text" || o.OtelOTLPEndpoint != "http://yaml:4318" || o.OtelServiceName != "from-yaml" {
+		t.Fatalf("reset must restore YAML: %+v", o)
+	}
+	lf, ep, svc = h.ObservabilityOverridden()
+	if lf || ep || svc {
+		t.Fatal("reset must clear override flags")
+	}
+}
+
+func TestObservabilityValidate(t *testing.T) {
+	h := New(Snapshot{})
+	badFmt := "xml"
+	if err := h.ValidateKnobs(KnobsPatch{LogFormat: &badFmt}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("bad log_format: %v", err)
+	}
+	badEP := "ftp://x"
+	if err := h.ValidateKnobs(KnobsPatch{OtelOTLPEndpoint: &badEP}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("bad endpoint: %v", err)
+	}
+	fmtOK := "json"
+	if err := h.ValidateKnobs(KnobsPatch{ObservabilityReset: true, LogFormat: &fmtOK}); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("reset+fields: %v", err)
+	}
+}
+
+func TestObservabilityPersists(t *testing.T) {
+	setTestSettingsKey(t)
+	st := store.NewMemory()
+	h := New(Snapshot{Observability: Observability{LogFormat: "text", OtelServiceName: "baize"}})
+	jsonFmt := "JSON"
+	ep := "http://127.0.0.1:4318"
+	if err := h.ApplyKnobs(context.Background(), st, KnobsPatch{LogFormat: &jsonFmt, OtelOTLPEndpoint: &ep}); err != nil {
+		t.Fatal(err)
+	}
+	h2 := New(Snapshot{Observability: Observability{LogFormat: "text", OtelServiceName: "baize"}})
+	if err := h2.Load(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	o := h2.Observability()
+	if o.LogFormat != "json" || o.OtelOTLPEndpoint != "http://127.0.0.1:4318" {
+		t.Fatalf("reload: %+v", o)
+	}
+	lf, epFlag, _ := h2.ObservabilityOverridden()
+	if !lf || !epFlag {
+		t.Fatal("override flags must survive reload")
 	}
 }
 

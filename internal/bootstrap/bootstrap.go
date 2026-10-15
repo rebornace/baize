@@ -465,19 +465,13 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
 	srv.ToolRetrieval = toolRet
-	otelExp, otelErr := otelx.Start(context.Background(), otelx.Config{
-		Endpoint:    cfg.Runtime.OtelOTLPEndpoint,
-		ServiceName: cfg.Runtime.OtelServiceName,
+	otelCtl := otelx.NewController()
+	otelCtl.AttachHub(hub)
+	srv.Otel = otelCtl
+	srv.MCPExportTrace = otelCtl.RecordExportCall
+	closer.stops = append(closer.stops, func() {
+		_ = otelCtl.Shutdown(context.Background())
 	})
-	if otelErr != nil {
-		otelx.LogStartError(otelErr)
-	} else if otelExp != nil {
-		otelExp.AttachHub(hub)
-		srv.MCPExportTrace = otelExp.RecordExportCall
-		closer.stops = append(closer.stops, func() {
-			_ = otelExp.Shutdown(context.Background())
-		})
-	}
 	sysOneRet := systemoneenable.NewManager(st, func(c systemoneenable.Config) {
 		if decideSettingsHolder == nil {
 			return
@@ -576,6 +570,14 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.TierAdvisor = &routeTierAdvisor{settings: runtimeHolder, decider: decider}
 	// Prefer effective (YAML + KV) over the YAML-only value captured earlier.
 	srv.CallbackPublicBase = runtimeHolder.PublicBaseURL()
+	obs := runtimeHolder.Observability()
+	applog.Init(obs.LogFormat)
+	if err := otelCtl.Apply(context.Background(), otelx.Config{
+		Endpoint:    obs.OtelOTLPEndpoint,
+		ServiceName: obs.OtelServiceName,
+	}); err != nil {
+		otelx.LogStartError(err)
+	}
 	if compactor != nil {
 		compactor.Settings = runtimeHolder
 	}

@@ -1,4 +1,4 @@
-import type { ConnectorAuth, ImportFormat, MCPConfig } from '../../api'
+import type { ConnectorAuth, ConnectorTLS, ImportFormat, MCPConfig } from '../../api'
 
 export type ConnectorKind = 'openapi' | 'plugin' | 'mcp'
 
@@ -25,6 +25,8 @@ export type SavedConnection =
       importFormat: ImportFormat
       executionCallbackUrl: string
       auth?: ConnectorAuth
+      /** Set when editor shows TLS; empty object clears. Omit to leave server TLS unchanged. */
+      tls?: ConnectorTLS
     }
   | {
       kind: 'plugin'
@@ -32,8 +34,9 @@ export type SavedConnection =
       baseUrl: string
       executionCallbackUrl: string
       auth?: ConnectorAuth
+      tls?: ConnectorTLS
     }
-  | { kind: 'mcp'; id: string; mcp: MCPConfig }
+  | { kind: 'mcp'; id: string; mcp: MCPConfig; tls?: ConnectorTLS }
 
 export type PermissionFlag = 'login' | 'approval'
 

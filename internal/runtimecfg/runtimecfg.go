@@ -7,6 +7,7 @@
 package runtimecfg
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,11 +86,19 @@ type Credentials struct {
 	Operators     []controlplane.Operator
 }
 
+// Observability is the effective log / OTel snapshot (hot-reloadable).
+type Observability struct {
+	LogFormat        string // text | json
+	OtelOTLPEndpoint string // empty = OTel off
+	OtelServiceName  string // default baize when empty after merge
+}
+
 // Snapshot is an immutable view of all hot-reloadable settings.
 type Snapshot struct {
-	Knobs         Knobs
-	Creds         Credentials
-	PublicBaseURL string // advertised Runtime root (OAuth / plugin callbacks)
+	Knobs          Knobs
+	Creds          Credentials
+	PublicBaseURL  string // advertised Runtime root (OAuth / plugin callbacks)
+	Observability  Observability
 }
 
 // operatorEntry is a runtime-added named operator (id + plaintext token).
@@ -142,9 +151,18 @@ type credsOverride struct {
 	Operators     []operatorEntry `json:"operators,omitempty"`
 }
 
+// obsOverride holds the persisted KV delta for observability. Pointer fields
+// are nil when "not overridden". A non-nil OtelOTLPEndpoint (including "") is
+// an explicit override ("" = force OTel off even if YAML has an endpoint).
+type obsOverride struct {
+	LogFormat        *string `json:"log_format,omitempty"`
+	OtelOTLPEndpoint *string `json:"otel_otlp_endpoint,omitempty"`
+	OtelServiceName  *string `json:"otel_service_name,omitempty"`
+}
+
 // Holder stores the config baseline plus the current atomic Snapshot. The
-// baseline is never mutated at runtime; KV overrides (ko/co/po) are layered on
-// top to produce the effective snapshot.
+// baseline is never mutated at runtime; KV overrides (ko/co/po/oo) are layered
+// on top to produce the effective snapshot.
 type Holder struct {
 	base Snapshot
 
@@ -156,14 +174,33 @@ type Holder struct {
 	// po is nil when PublicBaseURL is not overridden (use YAML baseline).
 	// Non-nil (including pointer to "") means an explicit runtime override.
 	po *string
+	oo obsOverride
 }
 
 // New builds a Holder seeded from the config baseline.
 func New(base Snapshot) *Holder {
-	h := &Holder{base: base}
-	snap := mergeSnapshot(base, knobsOverride{}, credsOverride{}, nil)
+	h := &Holder{base: normalizeObsBaseline(base)}
+	snap := mergeSnapshot(h.base, knobsOverride{}, credsOverride{}, nil, obsOverride{})
 	h.cur.Store(&snap)
 	return h
+}
+
+// normalizeObsBaseline fills observability defaults on the YAML baseline.
+func normalizeObsBaseline(base Snapshot) Snapshot {
+	o := base.Observability
+	f := strings.ToLower(strings.TrimSpace(o.LogFormat))
+	if f != "json" {
+		f = "text"
+	}
+	o.LogFormat = f
+	o.OtelOTLPEndpoint = strings.TrimSpace(o.OtelOTLPEndpoint)
+	if n := strings.TrimSpace(o.OtelServiceName); n != "" {
+		o.OtelServiceName = n
+	} else {
+		o.OtelServiceName = "baize"
+	}
+	base.Observability = o
+	return base
 }
 
 // ReplaceBaseline swaps the YAML/config baseline and re-merges the current KV
@@ -208,11 +245,25 @@ func (h *Holder) PublicBaseURLOverridden() bool {
 	return h.po != nil
 }
 
+// Observability returns the effective log / OTel settings.
+func (h *Holder) Observability() Observability { return h.Snapshot().Observability }
+
+// ObservabilityOverridden reports which observability fields come from KV.
+func (h *Holder) ObservabilityOverridden() (logFormat, otelEndpoint, otelService bool) {
+	if h == nil {
+		return false, false, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.oo.LogFormat != nil, h.oo.OtelOTLPEndpoint != nil, h.oo.OtelServiceName != nil
+}
+
 // mergeSnapshot layers override pointers/values on top of the config baseline.
 // Numeric knob overrides that are nil keep the baseline; credential token
 // overrides that are empty keep the baseline; runtime operators are appended
 // to the baseline operators. A non-nil po overrides PublicBaseURL (even to "").
-func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string) Snapshot {
+// A non-nil oo field overrides the corresponding Observability value.
+func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string, oo obsOverride) Snapshot {
 	s := base
 	k := s.Knobs
 	if ko.MaxMessages != nil {
@@ -322,6 +373,22 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if po != nil {
 		s.PublicBaseURL = *po
 	}
+
+	o := s.Observability
+	if oo.LogFormat != nil {
+		o.LogFormat = *oo.LogFormat
+	}
+	if oo.OtelOTLPEndpoint != nil {
+		o.OtelOTLPEndpoint = *oo.OtelOTLPEndpoint
+	}
+	if oo.OtelServiceName != nil {
+		n := strings.TrimSpace(*oo.OtelServiceName)
+		if n == "" {
+			n = "baize"
+		}
+		o.OtelServiceName = n
+	}
+	s.Observability = o
 	return s
 }
 

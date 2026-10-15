@@ -56,6 +56,10 @@ async function renderRuntime() {
     overridden,
     public_base_url: '',
     public_base_url_overridden: false,
+    log_format: 'text',
+    otel_otlp_endpoint: '',
+    otel_service_name: 'baize',
+    otel_enabled: false,
   })
   vi.spyOn(api, 'getCredentials').mockResolvedValue({
     source: 'override',
@@ -86,7 +90,10 @@ async function renderRuntime() {
   return { host, root }
 }
 
-async function selectTab(host: HTMLElement, id: 'basics' | 'speed' | 'memory' | 'security') {
+async function selectTab(
+  host: HTMLElement,
+  id: 'basics' | 'speed' | 'memory' | 'security' | 'observability',
+) {
   const btn = host.querySelector(`[data-testid="runtime-tab-${id}"]`) as HTMLButtonElement | null
   expect(btn).toBeTruthy()
   await act(async () => {
@@ -200,6 +207,53 @@ describe('RuntimeSettings humanize shell', () => {
     })
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
     expect(document.documentElement.lang).toBe('en')
+    root.unmount()
+    host.remove()
+  })
+
+  it('observability tab saves log_format and otel fields via PATCH', async () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
+    const patch = vi.spyOn(api, 'patchRuntimeSettings').mockResolvedValue({
+      effective: baseKnobs,
+      overridden,
+      public_base_url: '',
+      public_base_url_overridden: false,
+      log_format: 'json',
+      otel_otlp_endpoint: 'http://127.0.0.1:4318',
+      otel_service_name: 'baize-hot',
+      otel_enabled: true,
+      log_format_overridden: true,
+      otel_otlp_endpoint_overridden: true,
+      otel_service_name_overridden: true,
+    })
+    const { host, root } = await renderRuntime()
+    await selectTab(host, 'observability')
+    expect(host.textContent).toContain(RUNTIME.sectionObservability)
+    expect(host.textContent).toContain(RUNTIME.obsHotNote)
+    const fmt = host.querySelector('[data-testid="runtime-obs-log-format"]') as HTMLSelectElement
+    const ep = host.querySelector('[data-testid="runtime-obs-otel-endpoint"]') as HTMLInputElement
+    const svc = host.querySelector('[data-testid="runtime-obs-otel-service"]') as HTMLInputElement
+    const setSelect = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+    const setInput = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      setSelect.call(fmt, 'json')
+      fmt.dispatchEvent(new Event('change', { bubbles: true }))
+      setInput.call(ep, 'http://127.0.0.1:4318')
+      ep.dispatchEvent(new Event('input', { bubbles: true }))
+      setInput.call(svc, 'baize-hot')
+      svc.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      ;(host.querySelector('[data-testid="runtime-obs-save"]') as HTMLButtonElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(patch).toHaveBeenCalledWith({
+      log_format: 'json',
+      otel_otlp_endpoint: 'http://127.0.0.1:4318',
+      otel_service_name: 'baize-hot',
+    })
+    expect(host.textContent).toContain(RUNTIME.obsToastSaved)
     root.unmount()
     host.remove()
   })

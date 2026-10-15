@@ -166,6 +166,13 @@ export interface CatalogDiff {
   changed?: CatalogChange[]
 }
 
+/** Outbound mTLS paths on the Runtime host (not browser uploads). */
+export interface ConnectorTLS {
+  cert_file?: string
+  key_file?: string
+  ca_file?: string
+}
+
 export interface ConnectorInfo {
   id: string
   type: string
@@ -175,6 +182,7 @@ export interface ConnectorInfo {
   import_format_detected?: string
   auth?: ConnectorAuth
   mcp?: MCPConfig
+  tls?: ConnectorTLS
   require_approval?: string[]
   require_login?: string[]
   tools?: ToolInfo[]
@@ -200,6 +208,8 @@ export interface PutConnectorBody {
   execution_callback_url?: string
   auth?: ConnectorAuth
   mcp?: MCPConfig
+  /** Omit to keep existing; send `{}` or empty paths to clear. */
+  tls?: ConnectorTLS
   require_approval?: string[]
   require_login?: string[]
 }

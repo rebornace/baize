@@ -5,6 +5,7 @@ import {
   isLoginRequiredContent,
   loginSkillID,
   normalizeConnectorID,
+  resolveChatLoginBanner,
   resolveConnectorId,
 } from './loginEntry'
 
@@ -83,6 +84,17 @@ describe('isLoginRequiredContent', () => {
         ],
       ),
     ).toEqual({ active: false })
+  })
+
+  it('resolveChatLoginBanner stays off when there is no live run (history login_required)', () => {
+    const catalog = [{ name: 'get_pets', connector_id: 'mall' }]
+    const blocks = [{ kind: 'tool', name: 'get_pets', result: { code: 'login_required' } }]
+    expect(resolveChatLoginBanner(null, blocks, catalog)).toEqual({ active: false })
+    expect(resolveChatLoginBanner('', blocks, catalog)).toEqual({ active: false })
+    expect(resolveChatLoginBanner('run_1', blocks, catalog)).toEqual({
+      active: true,
+      connectorId: 'mall',
+    })
   })
 })
 

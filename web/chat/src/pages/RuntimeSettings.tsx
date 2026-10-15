@@ -37,7 +37,7 @@ import {
   type KnobsForm,
 } from './runtimeSettingsHelpers'
 
-type RuntimeTab = 'basics' | 'speed' | 'memory' | 'security'
+type RuntimeTab = 'basics' | 'speed' | 'memory' | 'security' | 'observability'
 
 function CredentialsSection({ push }: { push: ToastApi['push'] }) {
   const { role } = useGate()
@@ -293,6 +293,9 @@ export function RuntimeSettings() {
   const [form, setForm] = useState<KnobsForm | null>(null)
   const [profiles, setProfiles] = useState<ModelProfile[]>([])
   const [publicBase, setPublicBase] = useState('')
+  const [logFormat, setLogFormat] = useState<'text' | 'json'>('text')
+  const [otelEndpoint, setOtelEndpoint] = useState('')
+  const [otelService, setOtelService] = useState('baize')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const L = strings.LOCALE
@@ -318,6 +321,9 @@ export function RuntimeSettings() {
       setKnobView(v)
       setForm(knobsToForm(v.effective))
       setPublicBase(v.public_base_url ?? '')
+      setLogFormat(v.log_format === 'json' ? 'json' : 'text')
+      setOtelEndpoint(v.otel_otlp_endpoint ?? '')
+      setOtelService(v.otel_service_name || 'baize')
     } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: RUNTIME.loadFailed, detail: f.detail ?? f.title })
@@ -332,6 +338,60 @@ export function RuntimeSettings() {
 
   const setField = (key: keyof KnobsForm, value: string | boolean) => {
     setForm((f) => (f ? { ...f, [key]: value } : f))
+  }
+
+  const onSubmitObservability = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!knobView) return
+    const ep = otelEndpoint.trim()
+    if (ep && !/^https?:\/\//i.test(ep)) {
+      push({ tone: 'error', title: RUNTIME.obsErrEndpoint })
+      return
+    }
+    const svc = otelService.trim() || 'baize'
+    if (
+      logFormat === (knobView.log_format === 'json' ? 'json' : 'text') &&
+      ep === (knobView.otel_otlp_endpoint ?? '') &&
+      svc === (knobView.otel_service_name || 'baize')
+    ) {
+      push({ tone: 'info', title: RUNTIME.toastNoChange })
+      return
+    }
+    setBusy(true)
+    try {
+      const v = await patchRuntimeSettings({
+        log_format: logFormat,
+        otel_otlp_endpoint: ep,
+        otel_service_name: svc,
+      })
+      setKnobView(v)
+      setLogFormat(v.log_format === 'json' ? 'json' : 'text')
+      setOtelEndpoint(v.otel_otlp_endpoint ?? '')
+      setOtelService(v.otel_service_name || 'baize')
+      push({ tone: 'success', title: RUNTIME.obsToastSaved })
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onResetObservability = async () => {
+    setBusy(true)
+    try {
+      const v = await patchRuntimeSettings({ observability_reset: true })
+      setKnobView(v)
+      setLogFormat(v.log_format === 'json' ? 'json' : 'text')
+      setOtelEndpoint(v.otel_otlp_endpoint ?? '')
+      setOtelService(v.otel_service_name || 'baize')
+      push({ tone: 'success', title: RUNTIME.obsToastReset })
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
   }
 
   const onSubmitPublicBase = async (e: FormEvent) => {
@@ -395,6 +455,7 @@ export function RuntimeSettings() {
     { id: 'speed', label: RUNTIME.tabSpeed },
     { id: 'memory', label: RUNTIME.tabMemory },
     { id: 'security', label: RUNTIME.tabSecurity },
+    { id: 'observability', label: RUNTIME.tabObservability },
   ]
 
   return (
@@ -818,6 +879,78 @@ export function RuntimeSettings() {
           <h2 className="settings-subheading">{RUNTIME.sectionCreds}</h2>
           <CredentialsSection push={push} />
         </section>
+      )}
+
+      {tab === 'observability' && (
+        <form
+          className="settings-form"
+          data-testid="runtime-observability"
+          onSubmit={(e) => void onSubmitObservability(e)}
+        >
+          <h2 className="settings-subheading">{RUNTIME.sectionObservability}</h2>
+          <p className="settings-muted">{RUNTIME.obsHint}</p>
+          {!loading && knobView && (
+            <>
+              <Field label={knobFieldLabel(RUNTIME.obsLogFormat, Boolean(knobView.log_format_overridden))}>
+                <Select
+                  value={logFormat}
+                  disabled={readOnly || busy}
+                  data-testid="runtime-obs-log-format"
+                  onChange={(e) => setLogFormat(e.target.value === 'json' ? 'json' : 'text')}
+                >
+                  <option value="text">{RUNTIME.obsLogFormatText}</option>
+                  <option value="json">{RUNTIME.obsLogFormatJson}</option>
+                </Select>
+              </Field>
+              <Field
+                label={knobFieldLabel(RUNTIME.obsOtelEndpoint, Boolean(knobView.otel_otlp_endpoint_overridden))}
+                hint={RUNTIME.obsOtelEndpointHint}
+              >
+                <Input
+                  value={otelEndpoint}
+                  disabled={readOnly || busy}
+                  placeholder="http://127.0.0.1:4318"
+                  data-testid="runtime-obs-otel-endpoint"
+                  onChange={(e) => setOtelEndpoint(e.target.value)}
+                />
+              </Field>
+              <Field label={knobFieldLabel(RUNTIME.obsOtelService, Boolean(knobView.otel_service_name_overridden))}>
+                <Input
+                  value={otelService}
+                  disabled={readOnly || busy}
+                  data-testid="runtime-obs-otel-service"
+                  onChange={(e) => setOtelService(e.target.value)}
+                />
+              </Field>
+              <p className="settings-muted">
+                {RUNTIME.obsOtelEnabled}:{' '}
+                {otelEndpoint.trim() ? RUNTIME.obsOtelOn : RUNTIME.obsOtelOff}
+              </p>
+              <p className="settings-muted">{RUNTIME.obsHotNote}</p>
+              {!readOnly && (
+                <div className="settings-actions">
+                  <Button type="submit" variant="primary" disabled={busy} data-testid="runtime-obs-save">
+                    {busy ? RUNTIME.saving : RUNTIME.obsSave}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    data-testid="runtime-obs-reset"
+                    onClick={() => void onResetObservability()}
+                  >
+                    {RUNTIME.obsReset}
+                  </Button>
+                </div>
+              )}
+              <p>
+                <Link to="/settings/metrics" className="btn secondary sm" data-testid="runtime-link-metrics">
+                  {RUNTIME.obsLinkMetrics}
+                </Link>
+              </p>
+            </>
+          )}
+        </form>
       )}
     </div>
   )

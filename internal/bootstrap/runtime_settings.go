@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -22,6 +23,10 @@ const runtimeRefreshInterval = 20 * time.Second
 // applies any persisted KV overrides. Corrupt/unreadable KV is logged and
 // ignored (falls back to YAML); it never blocks startup.
 func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminToken string, operators []controlplane.Operator) *runtimecfg.Holder {
+	logFmt := strings.TrimSpace(cfg.Runtime.LogFormat)
+	if v := strings.TrimSpace(os.Getenv("BAIZE_LOG_FORMAT")); v != "" {
+		logFmt = v
+	}
 	base := runtimecfg.Snapshot{
 		Knobs: runtimecfg.Knobs{
 			MaxMessages:          cfg.Conversation.MaxMessages,
@@ -60,6 +65,11 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			Operators:     operators,
 		},
 		PublicBaseURL: strings.TrimSpace(cfg.Runtime.PublicBaseURL),
+		Observability: runtimecfg.Observability{
+			LogFormat:        logFmt,
+			OtelOTLPEndpoint: strings.TrimSpace(cfg.Runtime.OtelOTLPEndpoint),
+			OtelServiceName:  strings.TrimSpace(cfg.Runtime.OtelServiceName),
+		},
 	}
 	h := runtimecfg.New(base)
 	if err := h.Load(context.Background(), st); err != nil {

@@ -9,6 +9,7 @@ import {
 } from '../components/ui'
 import { MCP_EXPORTS } from '../strings'
 import { McpExportIdentitiesSection } from './mcp-export/McpExportIdentitiesSection'
+import { McpExportInvocationsSection } from './mcp-export/McpExportInvocationsSection'
 import { McpExportKeysSection } from './mcp-export/McpExportKeysSection'
 import { McpExportToolsSection } from './mcp-export/McpExportToolsSection'
 import {
@@ -131,6 +132,7 @@ export function McpExportSettings() {
             exportBusy={s.exportBusy}
             onExportChange={s.onExportChange}
           />
+          <McpExportInvocationsSection />
         </>
       )}
 

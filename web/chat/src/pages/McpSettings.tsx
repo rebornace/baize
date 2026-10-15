@@ -105,6 +105,7 @@ export function McpSettings() {
         id: c.id, baseUrl: '',
         tools: toPermissionTools(c.tools),
         loginNames: [], approvalNames: c.require_approval ?? [], mcp: c.mcp,
+        tls: c.tls,
       },
     })
   }
@@ -174,7 +175,11 @@ export function McpSettings() {
   const handleSaveInfo = async (conn: SavedConnection) => {
     // 判别收窄：本页 kind 恒为 mcp，非 mcp 正常不可达。
     if (conn.kind !== 'mcp') return []
-    const c = await putConnector(conn.id, { type: 'mcp', mcp: conn.mcp })
+    const c = await putConnector(conn.id, {
+      type: 'mcp',
+      mcp: conn.mcp,
+      ...(conn.tls !== undefined ? { tls: conn.tls } : {}),
+    })
     pendingDiffRef.current = catalogDiffToastLine(c.catalog_diff)
     return toPermissionTools(c.tools)
   }

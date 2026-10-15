@@ -22,24 +22,24 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | 组 | 代表路径 | 说明 |
 |----|----------|------|
 | Agents | `PUT/GET /v0/agents/{id}` | Agent 定义 |
-| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors`、`GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 可含 `catalog_diff` / `catalog_revision`；非空 Diff 且配置了 `events.webhook` 时另异步 POST `type=catalog.diff`；修订历史可查。可选 body `tls`：`{cert_file,key_file,ca_file}`（本机路径；`cert_file`/`key_file` 成对，否则 `400`）；省略 `tls` 保留原配置；`GET`/`LIST` 回显已存路径，**永不**返回 PEM 正文。出站 mTLS：OpenAPI / HTTP 插件 / MCP HTTP（stdio 不适用） |
+| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`、`GET /v0/connectors`、`GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP 插件 / MCP 等；`PUT` 可含 `catalog_diff` / `catalog_revision`；非空 Diff 且配置了 `events.webhook` 时另异步 POST `type=catalog.diff`；修订历史可查。可选 body `tls`：`{cert_file,key_file,ca_file}`（本机路径；`cert_file`/`key_file` 成对，否则 `400`）；省略 `tls` 保留原配置；`GET`/`LIST` 回显已存路径，**永不**返回 PEM 正文。出站 mTLS：OpenAPI / HTTP 插件 / MCP HTTP（stdio 不适用）。**设置页可配**：连接器编辑器「出站 TLS / mTLS」 |
 | Connector tools | `POST /v0/connectors/{id}/tools`、`DELETE .../tools/{name}` | 手加 / 删 `extra` REST 工具 |
 | Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`、`.../suggest`、`.../draft`、`.../test-session` | 规则候选 / AI 建议 / 草稿 / 测试托管 session（admin；对应设置「对外登录」） |
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |
 | Tools | `GET /v0/tools`、`PATCH /v0/tools/{name}` | 工具目录（含停用行） |
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
-| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为 R1 依赖闭包 |
+| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为 R1 依赖闭包（Chat 助手消息旁「查看运行绑定」只读 Modal） |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
 | Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval… |
-| MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys`、`.../invocations` | 导出开关、身份、Key、调用审计（契约指纹） |
+| MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys`、`.../invocations` | 导出开关、身份、Key、调用审计（契约指纹）；设置 → 对外提供能力「调用审计」列表 |
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | Hosted auth（公网） | `GET/POST /v0/auth/hosted/{id}`、`POST .../method`、`GET .../oauth/callback` | 托管登录页 / 提交 / 切换登录方式 / OAuth 回调（不经 `/ui`） |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
-| 观测 | `GET /metrics`、`GET /v0/settings/logs` | Prometheus 文本（Admin）；近期进程日志环形缓冲（Admin；`?limit=` 默认 200、上限 1000）。设置 → **运行指标** 可直接查看；均不落盘，重启丢失 |
+| 观测 | `GET /metrics`、`GET /v0/settings/logs`；`GET/PATCH /v0/settings/runtime` 的 `log_format` / `otel_*` | Prometheus 文本（Admin）；近期进程日志环形缓冲（Admin；`?limit=` 默认 200、上限 1000）。设置 → **运行指标** 可直接查看；OTel / `log_format` 可在运行参数 → 观测热更新（KV 覆盖，不写 YAML）；指标/日志环不落盘，重启丢失 |
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
 

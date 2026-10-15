@@ -25,6 +25,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/middleware"
+	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
@@ -140,6 +141,8 @@ type Server struct {
 	// credentials. nil = use the static OperatorToken/AdminToken/Operators
 	// fields above (legacy behavior; existing tests leave it nil).
 	Settings *runtimecfg.Holder
+	// Otel is the hot-swappable OTLP traces controller (nil = no export wiring).
+	Otel *otelx.Controller
 	// TierAdvisor optionally arbitrates light/power (DP-4) when Auto routing
 	// lands on the standard tier. nil = pure heuristic routing (existing tests).
 	TierAdvisor      llm.TierAdvisor

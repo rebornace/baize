@@ -17,6 +17,9 @@ import (
 // KnobsPatch is a partial engine-knob update (nil fields = leave unchanged).
 // PublicBaseURL: nil = leave unchanged; pointer to "" = clear override (YAML
 // baseline); pointer to a non-empty URL = set override.
+// Observability: LogFormat / OtelOTLPEndpoint / OtelServiceName are nil = leave
+// unchanged. OtelOTLPEndpoint pointer to "" = force OTel off. ObservabilityReset
+// clears all three observability overrides (cannot combine with those fields).
 type KnobsPatch struct {
 	MaxMessages                  *int     `json:"max_messages,omitempty"`
 	MaxSteps                     *int     `json:"max_steps,omitempty"`
@@ -48,6 +51,10 @@ type KnobsPatch struct {
 	ActiveGoalMaxDepth           *int     `json:"active_goal_max_depth,omitempty"`
 	ActiveGoalMaxTextRunes       *int     `json:"active_goal_max_text_runes,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
+	LogFormat                    *string  `json:"log_format,omitempty"`
+	OtelOTLPEndpoint             *string  `json:"otel_otlp_endpoint,omitempty"`
+	OtelServiceName              *string  `json:"otel_service_name,omitempty"`
+	ObservabilityReset           bool     `json:"observability_reset,omitempty"`
 }
 
 // OperatorInput is one add_operator entry {id, token}.
@@ -70,6 +77,7 @@ type persisted struct {
 	Knobs         knobsOverride `json:"knobs,omitempty"`
 	Creds         credsOverride `json:"creds,omitempty"`
 	PublicBaseURL *string       `json:"public_base_url,omitempty"`
+	Observability obsOverride   `json:"observability,omitempty"`
 }
 
 // Exported error sentinels so the API layer can map them to HTTP status codes
@@ -90,6 +98,41 @@ func HTTPStatus(err error) int {
 	default:
 		return 500
 	}
+}
+
+// NormalizeLogFormat returns "text" or "json"; invalid input errors.
+func NormalizeLogFormat(raw string) (string, error) {
+	f := strings.ToLower(strings.TrimSpace(raw))
+	switch f {
+	case "text", "json":
+		return f, nil
+	case "":
+		return "", fmt.Errorf("%w: log_format required", ErrBadRequest)
+	default:
+		return "", fmt.Errorf("%w: log_format must be text or json", ErrBadRequest)
+	}
+}
+
+// NormalizeOtelEndpoint trims space. Empty stays empty (OTel off).
+func NormalizeOtelEndpoint(raw string) string {
+	return strings.TrimSpace(raw)
+}
+
+// ValidateOtelEndpoint accepts empty (force off) or an absolute http/https URL.
+func ValidateOtelEndpoint(raw string) (string, error) {
+	n := NormalizeOtelEndpoint(raw)
+	if n == "" {
+		return "", nil
+	}
+	u, err := url.Parse(n)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("%w: otel_otlp_endpoint must be absolute http(s) URL", ErrBadRequest)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("%w: otel_otlp_endpoint must be http or https", ErrBadRequest)
+	}
+	return n, nil
 }
 
 // NormalizePublicBaseURL trims space and trailing slashes. Empty input stays empty.
@@ -146,6 +189,20 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 	}
 	if p.PublicBaseURL != nil {
 		if _, err := ValidatePublicBaseURL(*p.PublicBaseURL); err != nil {
+			return err
+		}
+	}
+	if p.ObservabilityReset &&
+		(p.LogFormat != nil || p.OtelOTLPEndpoint != nil || p.OtelServiceName != nil) {
+		return fmt.Errorf("%w: observability_reset cannot combine with observability fields", ErrBadRequest)
+	}
+	if p.LogFormat != nil {
+		if _, err := NormalizeLogFormat(*p.LogFormat); err != nil {
+			return err
+		}
+	}
+	if p.OtelOTLPEndpoint != nil {
+		if _, err := ValidateOtelEndpoint(*p.OtelOTLPEndpoint); err != nil {
 			return err
 		}
 	}
@@ -296,11 +353,35 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 			nextPO = &n
 		}
 	}
-	if err := h.persistLocked(ctx, st, next, h.co, nextPO); err != nil {
+	nextOO := h.oo
+	if p.ObservabilityReset {
+		nextOO = obsOverride{}
+	} else {
+		if p.LogFormat != nil {
+			n, err := NormalizeLogFormat(*p.LogFormat)
+			if err != nil {
+				return err
+			}
+			nextOO.LogFormat = &n
+		}
+		if p.OtelOTLPEndpoint != nil {
+			n, err := ValidateOtelEndpoint(*p.OtelOTLPEndpoint)
+			if err != nil {
+				return err
+			}
+			nextOO.OtelOTLPEndpoint = &n
+		}
+		if p.OtelServiceName != nil {
+			n := strings.TrimSpace(*p.OtelServiceName)
+			nextOO.OtelServiceName = &n
+		}
+	}
+	if err := h.persistLocked(ctx, st, next, h.co, nextPO, nextOO); err != nil {
 		return err
 	}
 	h.ko = next
 	h.po = nextPO
+	h.oo = nextOO
 	h.swapLocked()
 	return nil
 }
@@ -363,12 +444,12 @@ func (h *Holder) ApplyCreds(ctx context.Context, st store.Store, p CredsPatch) e
 
 	// Lockout guard: if baseline configured a gate, the result must still have
 	// at least one valid credential slot.
-	effective := mergeSnapshot(h.base, h.ko, next, h.po).Creds
+	effective := mergeSnapshot(h.base, h.ko, next, h.po, h.oo).Creds
 	if credentialsConfigured(h.base.Creds) && !credentialsConfigured(effective) {
 		return fmt.Errorf("%w: refusing to clear all credentials (would lock out the gate)", ErrBadRequest)
 	}
 
-	if err := h.persistLocked(ctx, st, h.ko, next, h.po); err != nil {
+	if err := h.persistLocked(ctx, st, h.ko, next, h.po, h.oo); err != nil {
 		return err
 	}
 	h.co = next
@@ -398,7 +479,7 @@ func (h *Holder) effectiveHasOperator(next credsOverride, id string) bool {
 }
 
 func (h *Holder) swapLocked() {
-	snap := mergeSnapshot(h.base, h.ko, h.co, h.po)
+	snap := mergeSnapshot(h.base, h.ko, h.co, h.po, h.oo)
 	h.cur.Store(&snap)
 }
 
@@ -473,7 +554,7 @@ func openCreds(key settingscrypto.Key, c *credsOverride) error {
 }
 
 // persistLocked writes the merged delta to the KV. Caller holds h.mu.
-func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOverride, co credsOverride, po *string) error {
+func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOverride, co credsOverride, po *string, oo obsOverride) error {
 	if st == nil {
 		return nil // tests / no-store: swap in-memory only
 	}
@@ -482,7 +563,7 @@ func (h *Holder) persistLocked(ctx context.Context, st store.Store, ko knobsOver
 	if err := sealCreds(key, &coPersist); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(persisted{Knobs: ko, Creds: coPersist, PublicBaseURL: po})
+	raw, err := json.Marshal(persisted{Knobs: ko, Creds: coPersist, PublicBaseURL: po, Observability: oo})
 	if err != nil {
 		return err
 	}
@@ -512,6 +593,7 @@ func (h *Holder) Load(ctx context.Context, st store.Store) error {
 	h.ko = p.Knobs
 	h.co = p.Creds
 	h.po = p.PublicBaseURL
+	h.oo = p.Observability
 	h.swapLocked()
 	h.mu.Unlock()
 	return nil

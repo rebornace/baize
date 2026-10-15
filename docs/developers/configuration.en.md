@@ -70,6 +70,8 @@ Optional **`tls`** (outbound mTLS, local file paths):
 
 `cert_file` and `key_file` must be a **pair** (only one set → Apply / PUT error). `ca_file` alone is valid (custom trust anchors only). All empty means no TLS config. Store keeps **path strings only** — never PEM bodies. Applies to **OpenAPI**, **HTTP plugin**, and **MCP HTTP** (discover + `tools/call`); orthogonal to `auth.mode`. **stdio** MCP does not use TLS.
 
+**Configurable in Settings**: connector editor (Business systems / External tools / Plugins) advanced section “Outbound TLS / mTLS” — enter **Runtime host paths** (not browser-uploaded PEMs). Omitting the `tls` field keeps the server value; clearing all three and saving clears the config.
+
 ### `run`
 
 | Field | Default |
@@ -121,6 +123,8 @@ Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbo
 
 `catalog.diff` JSON includes `type`, `at` (RFC3339 UTC), `connector_id`, `catalog_revision`, and `diff` (added / removed / changed); **never** tokens, passwords, or full schema bodies. Empty URL → skip silently; enqueue or POST failure → **fail-open** (Apply/PUT still succeeds). A separate `catalog_diff_webhook_url` and Inbox/email alerting are **out of scope** for this version. Connector outbound mTLS is under `connector.tls` above.
 
+**Settings copy**: Settings → Webhook notes that the same `events.webhook` also receives `type=catalog.diff`; delivery model unchanged.
+
 ### `runtime`
 
 - `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls` and to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`). Empty → no callback injection and no externally clickable hosted-login URL. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
@@ -128,8 +132,9 @@ Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbo
 - `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; Chat `tool.result` spans add `baize.contract_hash` and `baize.catalog_revision` when present on event Data; export failures are fail-open.
 - `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
 - `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup and tees into an in-process ring (~last 500 lines) for Settings and `GET /v0/settings/logs`. **No log database**; cleared on restart. Durable capture depends on how you redirect process stderr (systemd / Docker / etc.).
+- **Hot-reload**: `GET/PATCH /v0/settings/runtime` reads/writes effective `log_format` / `otel_otlp_endpoint` / `otel_service_name` (Settings → Runtime → **Observability**). PATCH stores a runtime KV override and applies immediately (swap slog Handler / hot-swap OTLP exporter); **does not rewrite YAML**. Empty endpoint forces OTel off. `observability_reset: true` clears overrides and restores YAML (plus the startup baseline seeded by `BAIZE_LOG_FORMAT`). `BAIZE_LOG_FORMAT` only affects the startup baseline; it is not itself hot-edited.
 - **Prometheus scrape**: root **`GET /metrics`** is always mounted (no off switch); requires **Admin Bearer** (`Authorization: Bearer <admin_token>`). Operator tokens get `403`. Counters are in-process and reset on restart; scrape with an external Prometheus for long-term retention.
-- **Admin UI**: Settings → **Runtime metrics** (admin only) shows metrics text and recent logs same-origin—no separate terminal required.
+- **Admin UI**: Settings → **Runtime metrics** (admin only) shows metrics text and recent logs same-origin—no separate terminal required; page header links to Runtime observability notes.
 
 ### Identity model (passthrough / export identity ≠ IdP OBO)
 
@@ -147,7 +152,7 @@ Per-tenant cgroup / egress sandboxing is **out of scope** for this version (sand
 
 ### `mcp_export`
 
-`enabled`: `*bool`; omitted defaults to enabling Streamable HTTP MCP export. Export Keys, export identities (Headers), and per-connector **`identity_slots`** are managed under Settings → Expose capabilities (HTTP: `/v0/settings/mcp-export*`), not in this YAML section.
+`enabled`: `*bool`; omitted defaults to enabling Streamable HTTP MCP export. Export Keys, export identities (Headers), and per-connector **`identity_slots`** are managed under Settings → Expose capabilities (HTTP: `/v0/settings/mcp-export*`), not in this YAML section. Recent invocation audit: `GET /v0/settings/mcp-export/invocations` (Settings “Invocation audit” list; admin only).
 
 ### `channels`
 

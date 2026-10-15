@@ -6,6 +6,7 @@ import { MarkdownText } from '../../components/MarkdownText'
 import { ThinkingBlock, MessageThinkingFallback } from '../../components/ThinkingBlock'
 import { ToolCard } from '../../components/ToolCard'
 import { TypewriterText } from '../../components/TypewriterText'
+import { RunBindingButton } from '../../components/RunBindingButton'
 import { UsageMetaLine } from '../../components/UsageMetaLine'
 import { UserBubble } from '../../components/UserBubble'
 import { WorkflowCard } from '../../components/WorkflowCard'
@@ -264,6 +265,9 @@ export function ChatMessageList({
                       <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
                         {ACTIONS.copy}
                       </button>
+                      {m.run_id && isFirstAssistantMessageOfRun(msgIndex, messages) ? (
+                        <RunBindingButton runId={m.run_id} />
+                      ) : null}
                     </>
                   )}
                   <DropdownMenu
@@ -287,6 +291,7 @@ export function ChatMessageList({
                     <TypewriterText text={block.text} active />
                   </div>
                   {block.usage && <UsageMetaLine usage={block.usage} />}
+                  {block.usage && liveRunId ? <RunBindingButton runId={liveRunId} /> : null}
                 </div>
               )
             case 'thinking':

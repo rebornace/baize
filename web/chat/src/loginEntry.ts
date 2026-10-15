@@ -111,3 +111,19 @@ export function findPendingLoginWait(
   }
   return { active: false }
 }
+
+/**
+ * Chat footer login banner: only while a live run is attached.
+ * Scanning finished history would re-show the banner after the run ends,
+ * because folded tool.result still says login_required and history has no
+ * hitl.resumed events. Waiting runs are restored via liveRunId.
+ */
+export function resolveChatLoginBanner(
+  liveRunId: string | null | undefined,
+  liveBlocks: ReadonlyArray<{ kind: string; name?: string; result?: unknown }>,
+  catalog: ToolCatalog,
+  liveEvents?: ReadonlyArray<{ type: string; data?: Record<string, unknown> }>,
+): PendingLoginWait {
+  if (!liveRunId) return { active: false }
+  return findPendingLoginWait(liveBlocks, catalog, liveEvents)
+}

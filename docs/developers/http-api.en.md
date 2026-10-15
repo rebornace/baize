@@ -22,24 +22,24 @@ This is not downstream business IAM or multi-tenant SSO.
 | Group | Example paths | Notes |
 |-------|---------------|--------|
 | Agents | `PUT/GET /v0/agents/{id}` | Agent definitions |
-| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`, `GET /v0/connectors`, `GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP plugins / MCP, etc.; `PUT` may include `catalog_diff` / `catalog_revision`; non-empty diff with `events.webhook` also triggers async `type=catalog.diff`; revision history available. Optional body `tls`: `{cert_file,key_file,ca_file}` (local paths; `cert_file`/`key_file` must be a pair or `400`); omit `tls` to keep existing; `GET`/`LIST` echo stored paths and **never** return PEM bodies. Outbound mTLS: OpenAPI / HTTP plugins / MCP HTTP (stdio N/A) |
+| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`, `GET /v0/connectors`, `GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP plugins / MCP, etc.; `PUT` may include `catalog_diff` / `catalog_revision`; non-empty diff with `events.webhook` also triggers async `type=catalog.diff`; revision history available. Optional body `tls`: `{cert_file,key_file,ca_file}` (local paths; `cert_file`/`key_file` must be a pair or `400`); omit `tls` to keep existing; `GET`/`LIST` echo stored paths and **never** return PEM bodies. Outbound mTLS: OpenAPI / HTTP plugins / MCP HTTP (stdio N/A). **Settings UI**: connector editor “Outbound TLS / mTLS” |
 | Connector tools | `POST /v0/connectors/{id}/tools`, `DELETE .../tools/{name}` | Add / remove `extra` REST tools |
 | Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`, `.../suggest`, `.../draft`, `.../test-session` | Rule candidates / AI hints / draft / test hosted session (admin; Settings → External login) |
 | MCP OAuth | `POST .../mcp/oauth/start`, etc. | MCP connector OAuth |
 | Tools | `GET /v0/tools`, `PATCH /v0/tools/{name}` | Tool catalog (incl. disabled rows) |
 | Skills | `GET/POST /v0/skills`, `GET/DELETE /v0/skills/{id}` | Skill packs |
-| Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `GET .../binding` is the R1 dependency closure |
+| Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `GET .../binding` is the R1 dependency closure (Chat “View run binding” read-only modal) |
 | Inbox | `POST /v0/inbox/{channel_id}` | Signed webhook inbox ingress |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
 | Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |
 | Workspaces | `GET/POST /v0/workspaces` | Web workspaces; logins shared within a workspace (Settings → Accounts) |
 | Artifacts / media | `GET /v0/artifacts/{id}`, `GET /v0/channels/media/...` | Artifacts and channel media |
 | Settings | `/v0/settings/*` | webhook, inbox, store, channels, runtime, credentials, models, memory, **mcp-export** (Expose capabilities), tool-retrieval… |
-| MCP export admin | `/v0/settings/mcp-export`, `.../identities`, `.../keys`, `.../invocations` | Export toggle, identities, Keys, invocation audit (contract fingerprints) |
+| MCP export admin | `/v0/settings/mcp-export`, `.../identities`, `.../keys`, `.../invocations` | Export toggle, identities, Keys, invocation audit (contract fingerprints); Settings → Expose capabilities “Invocation audit” list |
 | MCP export | `HANDLE /v0/mcp/export` (and trailing slash) | MCP server exporting a read-only tool-catalog subset to Agent clients such as Cursor |
 | Hosted auth (public) | `GET/POST /v0/auth/hosted/{id}`, `POST .../method`, `GET .../oauth/callback` | Hosted login page / submit / switch method / OAuth callback (no `/ui` dependency) |
 | Meta | `GET /v0/me`, `GET /v0/ui-config` | Current identity and UI config |
-| Observability | `GET /metrics`, `GET /v0/settings/logs` | Prometheus text (Admin); recent process log ring buffer (Admin; `?limit=` default 200, max 1000). Settings → **Runtime metrics** shows both; neither is persisted across restarts |
+| Observability | `GET /metrics`, `GET /v0/settings/logs`; `GET/PATCH /v0/settings/runtime` `log_format` / `otel_*` | Prometheus text (Admin); recent process log ring buffer (Admin; `?limit=` default 200, max 1000). Settings → **Runtime metrics** shows both; OTel / `log_format` are hot-reloadable under Runtime → Observability (KV override, no YAML rewrite); metrics/log ring are not durable across restarts |
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getMetricsText, getRecentLogs } from '../api/metrics'
 import { Button, PageHeader, ToastRegion, useToast } from '../components/ui'
 import { METRICS, friendlyError } from '../strings'
@@ -119,6 +120,10 @@ export function MetricsSettings() {
           </>
         )}
         {loadedAt ? ` · ${METRICS.loadedAt(loadedAt)}` : null}
+        {' · '}
+        <Link to="/settings/runtime" data-testid="metrics-link-runtime-obs">
+          {METRICS.linkRuntimeObs}
+        </Link>
       </p>
       <pre
         className="settings-code-sample"

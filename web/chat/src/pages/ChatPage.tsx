@@ -34,7 +34,7 @@ import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelCh
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
 import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
-import { findPendingLoginWait, type PendingLoginWait } from '../loginEntry'
+import { resolveChatLoginBanner } from '../loginEntry'
 import { CHAT, friendlyError, GOAL, LOGIN_AT } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
@@ -362,20 +362,10 @@ export function ChatPage() {
   const composerDisabled = run.busy || session.historyMutating
   const showStop = Boolean(run.liveRunId && run.busy)
 
-  const pendingLogin = useMemo((): PendingLoginWait => {
-    if (run.liveRunId) {
-      return findPendingLoginWait(liveBlocks, toolCatalog, run.liveEvents)
-    }
-    for (let i = session.messages.length - 1; i >= 0; i--) {
-      const m = session.messages[i]
-      if (m.role !== 'assistant' || !m.run_id) continue
-      const blocks = session.historyBlocks[m.run_id]
-      if (!blocks?.length) continue
-      const wait = findPendingLoginWait(blocks, toolCatalog)
-      if (wait.active) return wait
-    }
-    return { active: false }
-  }, [run.liveRunId, liveBlocks, run.liveEvents, session.messages, session.historyBlocks, toolCatalog])
+  const pendingLogin = useMemo(
+    () => resolveChatLoginBanner(run.liveRunId, liveBlocks, toolCatalog, run.liveEvents),
+    [run.liveRunId, liveBlocks, run.liveEvents, toolCatalog],
+  )
   const pendingLoginConnector = pendingLogin.connectorId
   const showLoginBanner = pendingLogin.active
 

@@ -42,6 +42,15 @@ export interface RuntimeKnobsView {
   overridden: RuntimeKnobsOverrides
   public_base_url: string
   public_base_url_overridden: boolean
+  /** Effective log / OTel (YAML baseline + KV overrides; hot-reloadable). */
+  log_format?: string
+  otel_otlp_endpoint?: string
+  otel_service_name?: string
+  otel_enabled?: boolean
+  log_format_overridden?: boolean
+  otel_otlp_endpoint_overridden?: boolean
+  otel_service_name_overridden?: boolean
+  config_restart_hint?: boolean
 }
 
 /** Partial engine-knob update; omitted fields are left unchanged.
@@ -77,6 +86,10 @@ export type RuntimeKnobsPatch = Partial<{
   decide_route_enabled: boolean
   decide_route_min_runes: number
   public_base_url: string
+  log_format: string
+  otel_otlp_endpoint: string
+  otel_service_name: string
+  observability_reset: boolean
 }>
 
 export async function getRuntimeSettings(): Promise<RuntimeKnobsView> {

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rebornace/baize/internal/applog"
+	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/runtimecfg"
 )
 
@@ -81,12 +83,39 @@ func (s *Server) handleGetRuntimeSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	view := s.Settings.KnobsView()
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, s.runtimeSettingsResponse(view))
+}
+
+func (s *Server) runtimeObservabilityJSON() map[string]any {
+	o := runtimecfg.Observability{LogFormat: "text", OtelServiceName: "baize"}
+	var logOver, epOver, svcOver bool
+	if s.Settings != nil {
+		o = s.Settings.Observability()
+		logOver, epOver, svcOver = s.Settings.ObservabilityOverridden()
+	}
+	return map[string]any{
+		"log_format":                   o.LogFormat,
+		"otel_otlp_endpoint":           o.OtelOTLPEndpoint,
+		"otel_service_name":            o.OtelServiceName,
+		"otel_enabled":                 o.OtelOTLPEndpoint != "",
+		"log_format_overridden":        logOver,
+		"otel_otlp_endpoint_overridden": epOver,
+		"otel_service_name_overridden": svcOver,
+		"config_restart_hint":          false,
+	}
+}
+
+func (s *Server) runtimeSettingsResponse(view runtimecfg.KnobsView) map[string]any {
+	out := map[string]any{
 		"effective":                  knobsToJSON(view.Effective),
 		"overridden":                 view.Overridden,
 		"public_base_url":            s.Settings.PublicBaseURL(),
 		"public_base_url_overridden": s.Settings.PublicBaseURLOverridden(),
-	})
+	}
+	for k, v := range s.runtimeObservabilityJSON() {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Server) handlePatchRuntimeSettings(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +128,18 @@ func (s *Server) handlePatchRuntimeSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
+	if err := s.Settings.ValidateKnobs(patch); err != nil {
+		writeError(w, runtimecfg.HTTPStatus(err), "invalid_settings", err.Error())
+		return
+	}
+	touchOtel := patch.ObservabilityReset || patch.OtelOTLPEndpoint != nil || patch.OtelServiceName != nil
+	touchLog := patch.LogFormat != nil || patch.ObservabilityReset
+	if cfg, ok := s.otelProbeConfig(patch); ok {
+		if err := otelx.Probe(r.Context(), cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "otel_unavailable", err.Error())
+			return
+		}
+	}
 	if err := s.Settings.ApplyKnobs(r.Context(), s.Store, patch); err != nil {
 		if writeIfSettingsKeyRequired(w, err) {
 			return
@@ -108,13 +149,48 @@ func (s *Server) handlePatchRuntimeSettings(w http.ResponseWriter, r *http.Reque
 	}
 	// Keep the OAuth / Apply path field in sync without restart.
 	s.CallbackPublicBase = s.Settings.PublicBaseURL()
+	obs := s.Settings.Observability()
+	if touchLog {
+		applog.Init(obs.LogFormat)
+	}
+	if touchOtel && s.Otel != nil {
+		if err := s.Otel.Apply(r.Context(), otelx.Config{
+			Endpoint:    obs.OtelOTLPEndpoint,
+			ServiceName: obs.OtelServiceName,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "otel_apply_failed", err.Error())
+			return
+		}
+	}
 	view := s.Settings.KnobsView()
-	writeJSON(w, http.StatusOK, map[string]any{
-		"effective":                  knobsToJSON(view.Effective),
-		"overridden":                 view.Overridden,
-		"public_base_url":            s.Settings.PublicBaseURL(),
-		"public_base_url_overridden": s.Settings.PublicBaseURLOverridden(),
-	})
+	writeJSON(w, http.StatusOK, s.runtimeSettingsResponse(view))
+}
+
+// otelProbeConfig returns the OTel config that would apply after patch, and
+// whether a Probe is needed (false when patch does not change OTel).
+func (s *Server) otelProbeConfig(patch runtimecfg.KnobsPatch) (otelx.Config, bool) {
+	cur := s.Settings.Observability()
+	cfg := otelx.Config{Endpoint: cur.OtelOTLPEndpoint, ServiceName: cur.OtelServiceName}
+	if patch.ObservabilityReset {
+		// Best-effort: Probe with empty endpoint always succeeds; real Apply after
+		// persist uses baseline. Skip Probe on reset (Apply may still fail → 500).
+		return cfg, false
+	}
+	changed := false
+	if patch.OtelOTLPEndpoint != nil {
+		n, _ := runtimecfg.ValidateOtelEndpoint(*patch.OtelOTLPEndpoint)
+		cfg.Endpoint = n
+		changed = true
+	}
+	if patch.OtelServiceName != nil {
+		n := strings.TrimSpace(*patch.OtelServiceName)
+		if n == "" {
+			n = "baize"
+		}
+		cfg.ServiceName = n
+		changed = true
+	}
+	return cfg, changed
 }
 
 func (s *Server) handleGetCredentials(w http.ResponseWriter, r *http.Request) {

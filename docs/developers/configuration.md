@@ -70,6 +70,8 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 
 `cert_file` 与 `key_file` **必须成对**（仅一侧非空 → Apply / PUT 错误）。仅 `ca_file` 合法（只定制信任锚）。三者皆空等同未配置。Store **只存路径字符串**，不读入/不持久化 PEM 正文。覆盖 **OpenAPI**、**HTTP 插件** 与 **MCP HTTP**（discover + `tools/call`）；与 `auth.mode` **正交**。**stdio** MCP 不适用。
 
+**设置页可配**：连接器编辑器（业务系统 / 外部工具服务 / 插件）高级区「出站 TLS / mTLS」——填写 **Runtime 本机路径**（不是浏览器上传 PEM）。省略 `tls` 字段保留服务端原值；三者清空并保存可清除配置。
+
 ### `run`
 
 | 字段 | 默认 |
@@ -121,6 +123,8 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 
 `catalog.diff` JSON 含 `type`、`at`（RFC3339 UTC）、`connector_id`、`catalog_revision` 与 `diff`（added / removed / changed）；**不含** token、密码或完整 schema 正文。URL 为空 → 静默跳过；入队或 POST 失败 → **fail-open**（Apply/PUT 仍成功）。独立 `catalog_diff_webhook_url`、Inbox/邮件告警 **不在**本版本范围。连接器出站 mTLS 见上方 `connector.tls`。
 
+**设置页说明**：设置 → Webhook 会提示同一 `events.webhook` 也会接收 `type=catalog.diff`；不改投递模型。
+
 ### `runtime`
 
 - `public_base_url`：公网可达的 Runtime 基址（无尾斜杠）。用于向侧车注入 `callback_urls`，以及签发**托管登录页** / MCP 重登链接（`/v0/auth/hosted/...`）。空则不注入 callback，也无法生成外网可点的托管登录 URL。云端 Agent / 浏览器须能打开该地址（勿对公网场景使用仅本机可达的 `127.0.0.1`）。也可在设置「运行参数」或「对外登录」向导中填写。
@@ -128,8 +132,9 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 - `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；Chat `tool.result` span 在事件 Data 有时写入 `baize.contract_hash`、`baize.catalog_revision`；失败 fail-open。
 - `otel_service_name`：OTel `service.name`，默认 `baize`（仅在 endpoint 非空时生效）。
 - `log_format`：`text`（默认）或 `json`；也可用环境变量 **`BAIZE_LOG_FORMAT`**（非法值回退 `text`）。启动时初始化 `slog` 输出到 stderr，并 tee 到进程内环形缓冲（约最近 500 行），供管理后台与 `GET /v0/settings/logs` 查看；**不写日志库**，重启清空。完整落盘取决于进程 stderr 的重定向（systemd / Docker 等）。
+- **热更新**：`GET/PATCH /v0/settings/runtime` 可读写有效 `log_format` / `otel_otlp_endpoint` / `otel_service_name`（设置 → 运行参数 → **观测**）。PATCH 写入运行时 KV 覆盖并立即生效（换 slog Handler / 热换 OTLP exporter）；**不写回 YAML**。空 endpoint = 强制关闭 OTel。`observability_reset: true` 清除覆盖并恢复 YAML（及启动时 `BAIZE_LOG_FORMAT` 写入的基线）。`BAIZE_LOG_FORMAT` 仅影响启动基线，不热改环境变量本身。
 - **Prometheus 刮取**：根路径 **`GET /metrics`** 默认挂载（无关闭开关）；需 **Admin Bearer**（`Authorization: Bearer <admin_token>`）。Operator 口令返回 `403`。计数器在进程内，重启清零；长期留存请外部 Prometheus 等定期 scrape。
-- **管理后台**：设置 → **运行指标**（仅管理员）可同源查看指标文本与近期日志，无需另开终端。
+- **管理后台**：设置 → **运行指标**（仅管理员）可同源查看指标文本与近期日志，无需另开终端；页头链到运行参数观测说明。
 
 ### 身份模型（透传 / 导出身份 ≠ IdP OBO）
 
@@ -147,7 +152,7 @@ Per-tenant cgroup / egress 沙箱 **不在**本版本范围（沙箱交给编排
 
 ### `mcp_export`
 
-`enabled`：`*bool`；省略默认开启 Streamable HTTP MCP 导出。导出 Key、导出身份（Headers）与按连接器的 **`identity_slots`** 在设置「对外提供能力」中管理（HTTP：`/v0/settings/mcp-export*`），不写在本 YAML 段。
+`enabled`：`*bool`；省略默认开启 Streamable HTTP MCP 导出。导出 Key、导出身份（Headers）与按连接器的 **`identity_slots`** 在设置「对外提供能力」中管理（HTTP：`/v0/settings/mcp-export*`），不写在本 YAML 段。近期调用审计：`GET /v0/settings/mcp-export/invocations`（设置页「调用审计」列表；仅管理员）。
 
 ### `channels`
 
