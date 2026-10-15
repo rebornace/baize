@@ -22,7 +22,7 @@ This is not downstream business IAM or multi-tenant SSO.
 | Group | Example paths | Notes |
 |-------|---------------|--------|
 | Agents | `PUT/GET /v0/agents/{id}` | Agent definitions |
-| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`, `GET /v0/connectors`, `GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP plugins / MCP, etc.; `PUT` may include `catalog_diff` / `catalog_revision`; revision history available |
+| Connectors | `PUT/GET/DELETE /v0/connectors/{id}`, `GET /v0/connectors`, `GET /v0/connectors/{id}/catalog-revisions` | OpenAPI / HTTP plugins / MCP, etc.; `PUT` may include `catalog_diff` / `catalog_revision`; non-empty diff with `events.webhook` also triggers async `type=catalog.diff`; revision history available |
 | Connector tools | `POST /v0/connectors/{id}/tools`, `DELETE .../tools/{name}` | Add / remove `extra` REST tools |
 | Hosted login (connector) | `POST /v0/connectors/{id}/hosted-login/candidates`, `.../suggest`, `.../draft`, `.../test-session` | Rule candidates / AI hints / draft / test hosted session (admin; Settings → External login) |
 | MCP OAuth | `POST .../mcp/oauth/start`, etc. | MCP connector OAuth |

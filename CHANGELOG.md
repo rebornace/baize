@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.10.0 — 2026-10-15
+
+CatalogDiff 出站告警 + OTel 契约属性。向后兼容；选 **minor**（v0.10.0）。
+
+### 新功能
+
+- **CatalogDiff → `events.webhook`**：连接器 `PUT` 成功且 `catalog_diff` 非空时，向全局 `events.webhook` 异步 POST `type=catalog.diff`（含 `connector_id`、`catalog_revision`、`diff`）；空 Diff 或未配置 URL 则跳过；入队/投递失败 **fail-open**，不改 PUT 成功语义。Outbox kind `catalog_diff`，作用域键 `connector:<id>`，按 revision 去重。
+- **OTel Chat 契约属性**：`runtime.otel_otlp_endpoint` 开启时，Chat 路径 `tool.result` span 写入 `baize.contract_hash`、`baize.catalog_revision`（事件 Data 有时；MCP 导出路径此前已具备）。
+
+### 文档
+
+- architecture / configuration / http-api 说明 `catalog.diff` 出站与 OTel 属性；backlog 注记 CatalogDiff 告警已落地；configuration / architecture 声明独立 webhook URL 与连接器 mTLS 仍后续。
+
 ## 0.9.0 — 2026-10-15
 
 baumgaerben observability：标准 Prometheus 刮取面 + 结构化 slog。向后兼容；选 **minor**（v0.9.0）。

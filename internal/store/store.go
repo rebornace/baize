@@ -216,8 +216,9 @@ const (
 type WebhookOutboxKind string
 
 const (
-	WebhookOutboxKindEvent WebhookOutboxKind = "event"
-	WebhookOutboxKindEnded WebhookOutboxKind = "ended"
+	WebhookOutboxKindEvent       WebhookOutboxKind = "event"
+	WebhookOutboxKindEnded       WebhookOutboxKind = "ended"
+	WebhookOutboxKindCatalogDiff WebhookOutboxKind = "catalog_diff"
 )
 
 // WebhookOutboxEntry is a durable outbound webhook delivery attempt.

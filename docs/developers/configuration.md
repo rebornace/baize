@@ -102,13 +102,20 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 
 ### `events.webhook`
 
-出站 Run 事件：`url`、`headers`。
+出站事件：`url`、`headers`（与 Run 事件共用同一全局 URL、重试与死信 outbox）。
+
+| 载荷 `type` | 何时投递 |
+|-------------|----------|
+| Run 轨迹事件 | Chat Run 生命周期（既有行为） |
+| `catalog.diff` | 连接器 `PUT` / Apply **成功持久化后**，且 `catalog_diff` **非空** |
+
+`catalog.diff` JSON 含 `type`、`at`（RFC3339 UTC）、`connector_id`、`catalog_revision` 与 `diff`（added / removed / changed）；**不含** token、密码或完整 schema 正文。URL 为空 → 静默跳过；入队或 POST 失败 → **fail-open**（Apply/PUT 仍成功）。独立 `catalog_diff_webhook_url`、Inbox/邮件告警 **不在**本版本范围；连接器出站 **mTLS** 仍后续。
 
 ### `runtime`
 
 - `public_base_url`：公网可达的 Runtime 基址（无尾斜杠）。用于向侧车注入 `callback_urls`，以及签发**托管登录页** / MCP 重登链接（`/v0/auth/hosted/...`）。空则不注入 callback，也无法生成外网可点的托管登录 URL。云端 Agent / 浏览器须能打开该地址（勿对公网场景使用仅本机可达的 `127.0.0.1`）。也可在设置「运行参数」或「对外登录」向导中填写。
 - `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名。
-- `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；失败 fail-open。
+- `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；Chat `tool.result` span 在事件 Data 有时写入 `baize.contract_hash`、`baize.catalog_revision`；失败 fail-open。
 - `otel_service_name`：OTel `service.name`，默认 `baize`（仅在 endpoint 非空时生效）。
 - `log_format`：`text`（默认）或 `json`；也可用环境变量 **`BAIZE_LOG_FORMAT`**（非法值回退 `text`）。启动时初始化 `slog` 输出到 stderr。
 - **Prometheus 刮取**：根路径 **`GET /metrics`** 默认挂载（无关闭开关）；需 **Admin Bearer**（`Authorization: Bearer <admin_token>`）。Operator 口令返回 `403`。

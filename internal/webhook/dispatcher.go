@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -180,6 +181,31 @@ func (d *Dispatcher) dispatchEnd(runID string, status store.Status) {
 		"status": string(status),
 	}
 	_, _, _ = d.enqueue(context.Background(), runID, store.WebhookOutboxKindEnded, -1, url, headers, payload, true)
+}
+
+// NotifyCatalogDiff enqueues a catalog.diff delivery on the global events.webhook.
+// Empty diff or empty URL is a no-op. Failures are ignored (fail-open).
+func (d *Dispatcher) NotifyCatalogDiff(connectorID string, revision int64, diff connector.CatalogDiff) {
+	if d == nil || diff.Empty() {
+		return
+	}
+	url, headers, err := d.resolveTarget("", nil)
+	if err != nil || strings.TrimSpace(url) == "" {
+		return
+	}
+	scope := "connector:" + strings.TrimSpace(connectorID)
+	idx := int(revision)
+	if revision > int64(^uint(0)>>1) {
+		idx = int(^uint(0) >> 1)
+	}
+	payload := map[string]any{
+		"type":             "catalog.diff",
+		"at":               time.Now().UTC().Format(time.RFC3339Nano),
+		"connector_id":     connectorID,
+		"catalog_revision": revision,
+		"diff":             diff,
+	}
+	_, _, _ = d.enqueue(context.Background(), scope, store.WebhookOutboxKindCatalogDiff, idx, url, headers, payload, true)
 }
 
 func (d *Dispatcher) enqueue(ctx context.Context, runID string, kind store.WebhookOutboxKind, eventIndex int, url string, headers map[string]string, payload any, notifyWorker bool) (string, bool, error) {

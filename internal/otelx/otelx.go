@@ -180,6 +180,23 @@ func (e *Exporter) spanToolResult(runID string, data map[string]any) {
 	if iid, ok := data["identity_id"].(string); ok && iid != "" {
 		attrs = append(attrs, attribute.String("baize.identity_id", iid))
 	}
+	if h, ok := data["contract_hash"].(string); ok && h != "" {
+		attrs = append(attrs, attribute.String("baize.contract_hash", h))
+	}
+	switch v := data["catalog_revision"].(type) {
+	case int64:
+		if v > 0 {
+			attrs = append(attrs, attribute.Int64("baize.catalog_revision", v))
+		}
+	case float64:
+		if v > 0 {
+			attrs = append(attrs, attribute.Int64("baize.catalog_revision", int64(v)))
+		}
+	case int:
+		if v > 0 {
+			attrs = append(attrs, attribute.Int64("baize.catalog_revision", int64(v)))
+		}
+	}
 	_, sp := e.tracer.Start(ctx, "baize.tool "+name, trace.WithAttributes(attrs...))
 	if isErr, _ := data["is_error"].(bool); isErr {
 		sp.SetStatus(codes.Error, "tool error")

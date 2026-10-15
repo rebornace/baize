@@ -310,6 +310,9 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 		resp["mcp"] = redactMCPForAPI(c.MCP)
 	}
 	s.syncLoginManagedSkill(id)
+	if s.Webhook != nil && !catalogDiff.Empty() {
+		s.Webhook.NotifyCatalogDiff(c.ID, c.CatalogRevision, catalogDiff)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

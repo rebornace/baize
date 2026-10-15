@@ -102,13 +102,20 @@ All gates empty means development mode (no multi-operator isolation). This is no
 
 ### `events.webhook`
 
-Outbound Run events: `url`, `headers`.
+Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbox as Run events).
+
+| Payload `type` | When |
+|----------------|------|
+| Run trace events | Chat Run lifecycle (existing) |
+| `catalog.diff` | After connector `PUT` / Apply **persists successfully** and `catalog_diff` is **non-empty** |
+
+`catalog.diff` JSON includes `type`, `at` (RFC3339 UTC), `connector_id`, `catalog_revision`, and `diff` (added / removed / changed); **never** tokens, passwords, or full schema bodies. Empty URL → skip silently; enqueue or POST failure → **fail-open** (Apply/PUT still succeeds). A separate `catalog_diff_webhook_url`, Inbox/email alerting, and connector outbound **mTLS** are **out of scope** for this version (mTLS remains follow-up).
 
 ### `runtime`
 
 - `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls` and to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`). Empty → no callback injection and no externally clickable hosted-login URL. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
 - `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing.
-- `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; export failures are fail-open.
+- `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; Chat `tool.result` spans add `baize.contract_hash` and `baize.catalog_revision` when present on event Data; export failures are fail-open.
 - `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
 - `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup.
 - **Prometheus scrape**: root **`GET /metrics`** is always mounted (no off switch); requires **Admin Bearer** (`Authorization: Bearer <admin_token>`). Operator tokens get `403`.
