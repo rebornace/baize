@@ -37,6 +37,22 @@ function setSelectValue(el: HTMLSelectElement, value: string) {
   el.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function wallClockInTimeZone(iso: string, timeZone: string): string {
+  const d = new Date(iso)
+  const dtf = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = dtf.formatToParts(d)
+  const pick = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
+  return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}`
+}
+
 describe('ScheduleSettings', () => {
   beforeEach(() => {
     localStorage.setItem(CONV_KEY, 'conv_1')
@@ -111,6 +127,64 @@ describe('ScheduleSettings', () => {
         instruction: '喝水',
       }),
     )
+
+    root.unmount()
+    host.remove()
+  })
+
+  it('POSTs RFC3339 fire_at for once schedules in the selected IANA timezone', async () => {
+    let postedBody = ''
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.includes('/v0/settings/schedules') && init?.method === 'GET') {
+        return new Response(JSON.stringify({ items: [] }), { status: 200 })
+      }
+      if (url.includes('/v0/settings/schedules') && init?.method === 'POST') {
+        postedBody = String(init.body ?? '')
+        return new Response(
+          JSON.stringify({
+            id: 'sch_once',
+            conversation_id: 'conv_1',
+            kind: 'once',
+            instruction: '提醒',
+            timezone: 'Asia/Shanghai',
+            fire_at: JSON.parse(postedBody).fire_at,
+            status: 'active',
+            next_run_at: JSON.parse(postedBody).fire_at,
+            revision: 1,
+          }),
+          { status: 201 },
+        )
+      }
+      return new Response('{}', { status: 404 })
+    })
+
+    const { host, root } = await renderSchedule()
+
+    await act(async () => {
+      setSelectValue(host.querySelector('select[name="kind"]') as HTMLSelectElement, 'once')
+    })
+
+    await act(async () => {
+      setInputValue(host.querySelector('textarea[name="instruction"]') as HTMLTextAreaElement, '提醒')
+      setInputValue(host.querySelector('input[name="timezone"]') as HTMLInputElement, 'Asia/Shanghai')
+      setInputValue(host.querySelector('input[name="fire_at"]') as HTMLInputElement, '2026-10-17T09:00')
+    })
+
+    const saveBtn = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(SCHEDULE.save),
+    )
+    await act(async () => {
+      saveBtn!.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    const parsed = JSON.parse(postedBody) as { fire_at: string; kind: string }
+    expect(parsed.kind).toBe('once')
+    expect(parsed.fire_at).not.toBe('2026-10-17T09:00')
+    expect(Date.parse(parsed.fire_at)).not.toBeNaN()
+    expect(wallClockInTimeZone(parsed.fire_at, 'Asia/Shanghai')).toBe('2026-10-17T09:00')
 
     root.unmount()
     host.remove()

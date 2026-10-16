@@ -105,6 +105,7 @@ export function ScheduleSettings() {
       }
       if (kind === 'once') {
         body.fire_at = fireAt.trim()
+        body.timezone = timezone.trim() || 'UTC'
       }
       if (kind === 'daily' || kind === 'weekly') {
         body.time_of_day = timeOfDay.trim()
