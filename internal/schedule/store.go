@@ -52,13 +52,27 @@ type Store interface {
 	Pause(ownerID, id string) error
 	Resume(ownerID, id string, next time.Time) error
 	Delete(ownerID, id string) error
+	ClearStalePending() error
+	ListWithRunningRun() ([]Item, error)
+	ReleaseRunningRun(id string) error
+	FailOpen(id, lastError string) error
+	CompleteOpen(id, runID, status string, nextRunAt time.Time) error
+	AdvanceNextRunAt(id string, next time.Time) error
+	SetRunningRunID(id, runID string) error
 }
+
+// scanBlockRunID blocks re-claim of a failed row until the current Scan pass finishes.
+const scanBlockRunID = "scan_block"
 
 // MemoryStore is an in-process Store for tests.
 type MemoryStore struct {
-	mu  sync.Mutex
-	byID map[string]Item
+	mu         sync.Mutex
+	scanSerial sync.Mutex
+	byID       map[string]Item
 }
+
+func (s *MemoryStore) scanLock()   { s.scanSerial.Lock() }
+func (s *MemoryStore) scanUnlock() { s.scanSerial.Unlock() }
 
 // NewMemoryStore creates an empty in-memory Store.
 func NewMemoryStore() *MemoryStore {
@@ -171,6 +185,101 @@ func (s *MemoryStore) Resume(ownerID, id string, next time.Time) error {
 		return ErrActiveCap
 	}
 	it.Status = StatusActive
+	it.NextRunAt = next.UTC()
+	it.Revision++
+	s.byID[id] = it
+	return nil
+}
+
+func (s *MemoryStore) ClearStalePending() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, it := range s.byID {
+		if it.RunningRunID == ClaimPending {
+			it.RunningRunID = ""
+			it.Revision++
+			s.byID[id] = it
+		}
+	}
+	return nil
+}
+
+func (s *MemoryStore) ListWithRunningRun() ([]Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Item
+	for _, it := range s.byID {
+		if it.Status == StatusActive && it.RunningRunID != "" {
+			out = append(out, it)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+func (s *MemoryStore) ReleaseRunningRun(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.byID[id]
+	if !ok {
+		return fmt.Errorf("schedule: not found")
+	}
+	it.RunningRunID = ""
+	it.Revision++
+	s.byID[id] = it
+	return nil
+}
+
+func (s *MemoryStore) FailOpen(id, lastError string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.byID[id]
+	if !ok {
+		return fmt.Errorf("schedule: not found")
+	}
+	it.RunningRunID = ""
+	it.LastError = lastError
+	it.Revision++
+	s.byID[id] = it
+	return nil
+}
+
+func (s *MemoryStore) CompleteOpen(id, runID, status string, nextRunAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.byID[id]
+	if !ok {
+		return fmt.Errorf("schedule: not found")
+	}
+	it.RunningRunID = runID
+	it.Status = status
+	it.NextRunAt = nextRunAt.UTC()
+	it.LastError = ""
+	it.Revision++
+	s.byID[id] = it
+	return nil
+}
+
+func (s *MemoryStore) SetRunningRunID(id, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.byID[id]
+	if !ok {
+		return fmt.Errorf("schedule: not found")
+	}
+	it.RunningRunID = runID
+	it.Revision++
+	s.byID[id] = it
+	return nil
+}
+
+func (s *MemoryStore) AdvanceNextRunAt(id string, next time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.byID[id]
+	if !ok {
+		return fmt.Errorf("schedule: not found")
+	}
 	it.NextRunAt = next.UTC()
 	it.Revision++
 	s.byID[id] = it

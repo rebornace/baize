@@ -3,6 +3,7 @@ package schedule
 import (
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,9 +41,13 @@ func MigrateConversationSchedules(db *sql.DB) error {
 
 // SQLStore persists schedules in SQLite or Postgres via placeholder rebinding.
 type SQLStore struct {
-	db     *sql.DB
-	rebind func(string) string
+	db         *sql.DB
+	rebind     func(string) string
+	scanSerial sync.Mutex
 }
+
+func (s *SQLStore) scanLock()   { s.scanSerial.Lock() }
+func (s *SQLStore) scanUnlock() { s.scanSerial.Unlock() }
 
 var _ Store = (*SQLStore)(nil)
 
@@ -208,6 +213,106 @@ SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?`),
 	}
 	if n >= MaxActivePerOwner {
 		return ErrActiveCap
+	}
+	return nil
+}
+
+func (s *SQLStore) ClearStalePending() error {
+	_, err := s.db.Exec(s.q(`
+UPDATE conversation_schedules SET running_run_id = '', revision = revision + 1
+WHERE running_run_id = ?`), ClaimPending)
+	return err
+}
+
+func (s *SQLStore) ListWithRunningRun() ([]Item, error) {
+	rows, err := s.db.Query(s.q(`
+SELECT id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
+  status, next_run_at, running_run_id, last_error, revision
+FROM conversation_schedules
+WHERE status = ? AND running_run_id <> ''
+ORDER BY id`), StatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Item
+	for rows.Next() {
+		it, err := scanScheduleRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) ReleaseRunningRun(id string) error {
+	res, err := s.db.Exec(s.q(`
+UPDATE conversation_schedules SET running_run_id = '', revision = revision + 1 WHERE id = ?`), id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("schedule: not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) FailOpen(id, lastError string) error {
+	res, err := s.db.Exec(s.q(`
+UPDATE conversation_schedules SET running_run_id = '', last_error = ?, revision = revision + 1 WHERE id = ?`),
+		lastError, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("schedule: not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) CompleteOpen(id, runID, status string, nextRunAt time.Time) error {
+	res, err := s.db.Exec(s.q(`
+UPDATE conversation_schedules
+SET running_run_id = ?, status = ?, next_run_at = ?, last_error = '', revision = revision + 1
+WHERE id = ?`),
+		runID, status, formatScheduleTime(nextRunAt.UTC()), id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("schedule: not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) SetRunningRunID(id, runID string) error {
+	res, err := s.db.Exec(s.q(`
+UPDATE conversation_schedules SET running_run_id = ?, revision = revision + 1 WHERE id = ?`),
+		runID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("schedule: not found")
+	}
+	return nil
+}
+
+func (s *SQLStore) AdvanceNextRunAt(id string, next time.Time) error {
+	res, err := s.db.Exec(s.q(`
+UPDATE conversation_schedules SET next_run_at = ?, revision = revision + 1 WHERE id = ?`),
+		formatScheduleTime(next.UTC()), id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("schedule: not found")
 	}
 	return nil
 }
