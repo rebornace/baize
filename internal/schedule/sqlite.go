@@ -229,8 +229,8 @@ func (s *SQLStore) ListWithRunningRun() ([]Item, error) {
 SELECT id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
   status, next_run_at, running_run_id, last_error, revision
 FROM conversation_schedules
-WHERE status = ? AND running_run_id <> ''
-ORDER BY id`), StatusActive)
+WHERE running_run_id <> '' AND running_run_id <> ?
+ORDER BY id`), ClaimPending)
 	if err != nil {
 		return nil, err
 	}

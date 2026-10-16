@@ -275,6 +275,80 @@ func TestScanClearsTerminalRunningRun(t *testing.T) {
 	}
 }
 
+func TestScanClearsTerminalRunOnCompletedOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	fire := now.Add(-time.Hour)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "once terminal",
+		Kind: "once", Timezone: "UTC", FireAt: fire, NextRunAt: fire,
+		Status: schedule.StatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID != "run_1" {
+		t.Fatalf("after first scan: %+v", got)
+	}
+	terminal := func(runID string) (bool, error) {
+		return runID == "run_1", nil
+	}
+	if err := schedule.Scan(s, meta, opener, terminal, now); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID != "" {
+		t.Fatalf("after terminal scan: %+v", got)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d want 1", opener.callCount())
+	}
+}
+
+type failCompleteOnceStore struct {
+	schedule.Store
+	failFirst bool
+}
+
+func (f *failCompleteOnceStore) CompleteOpen(id, runID, status string, nextRunAt time.Time) error {
+	if f.failFirst {
+		f.failFirst = false
+		return errors.New("persist failed")
+	}
+	return f.Store.CompleteOpen(id, runID, status, nextRunAt)
+}
+
+func TestScanOpenSuccessCompleteOpenFailureDoesNotReopen(t *testing.T) {
+	base := schedule.NewMemoryStore()
+	s := &failCompleteOnceStore{Store: base, failFirst: true}
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, base, "alice", "c1", "persist", now.Add(-time.Minute))
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err == nil {
+		t.Fatal("expected CompleteOpen error")
+	}
+	got := rowByID(t, base, "alice", it.ID)
+	if got.RunningRunID != "run_1" {
+		t.Fatalf("running_run_id=%q want run_1 after failed persist", got.RunningRunID)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d after first scan", opener.callCount())
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d want still 1", opener.callCount())
+	}
+}
+
 func TestScanConcurrentClaimOpenOnce(t *testing.T) {
 	s := schedule.NewMemoryStore()
 	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}

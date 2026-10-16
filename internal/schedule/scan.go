@@ -42,10 +42,10 @@ func Scan(store Store, meta MetaReader, opener RunOpener, runStatus RunStatus, n
 	if err := advanceInFlightDue(store, now); err != nil {
 		return err
 	}
-	blocked := []string{}
+	pendingFail := map[string]string{}
 	defer func() {
-		for _, id := range blocked {
-			_ = store.ReleaseRunningRun(id)
+		for id, msg := range pendingFail {
+			_ = store.FailOpen(id, msg)
 		}
 	}()
 	for {
@@ -56,9 +56,12 @@ func Scan(store Store, meta MetaReader, opener RunOpener, runStatus RunStatus, n
 		if !ok {
 			break
 		}
-		if failed := processClaimed(store, meta, opener, now, it); failed {
-			blocked = append(blocked, it.ID)
-			_ = store.SetRunningRunID(it.ID, scanBlockRunID)
+		softMsg, err := processClaimed(store, meta, opener, now, it)
+		if err != nil {
+			return err
+		}
+		if softMsg != "" {
+			pendingFail[it.ID] = softMsg
 		}
 	}
 	return nil
@@ -73,7 +76,7 @@ func reconcileRunningRuns(store Store, runStatus RunStatus) error {
 		return err
 	}
 	for _, it := range rows {
-		if it.RunningRunID == "" || it.RunningRunID == ClaimPending || it.RunningRunID == scanBlockRunID {
+		if it.RunningRunID == "" || it.RunningRunID == ClaimPending {
 			continue
 		}
 		terminal, err := runStatus(it.RunningRunID)
@@ -93,7 +96,10 @@ func advanceInFlightDue(store Store, now time.Time) error {
 		return err
 	}
 	for _, it := range rows {
-		if it.RunningRunID == "" || it.RunningRunID == ClaimPending || it.RunningRunID == scanBlockRunID {
+		if it.RunningRunID == "" || it.RunningRunID == ClaimPending {
+			continue
+		}
+		if it.Status != StatusActive {
 			continue
 		}
 		if it.Kind != "daily" && it.Kind != "weekly" {
@@ -113,32 +119,38 @@ func advanceInFlightDue(store Store, now time.Time) error {
 	return nil
 }
 
-func processClaimed(store Store, meta MetaReader, opener RunOpener, now time.Time, it Item) (failed bool) {
+func processClaimed(store Store, meta MetaReader, opener RunOpener, now time.Time, it Item) (softFailMsg string, err error) {
 	owner, err := conversationOwner(meta, it)
 	if err != nil {
-		_ = store.FailOpen(it.ID, err.Error())
-		return true
+		return err.Error(), nil
 	}
 	runID, err := opener.Open(it.ConversationID, it.Instruction, owner)
 	if err != nil {
-		_ = store.FailOpen(it.ID, errOpenRunFailed)
-		return true
+		return errOpenRunFailed, nil
 	}
 	switch it.Kind {
 	case "once":
-		_ = store.CompleteOpen(it.ID, runID, StatusCompleted, it.NextRunAt)
+		if err := store.CompleteOpen(it.ID, runID, StatusCompleted, it.NextRunAt); err != nil {
+			if setErr := store.SetRunningRunID(it.ID, runID); setErr != nil {
+				return "", setErr
+			}
+			return "", err
+		}
 	case "daily", "weekly":
 		next, nerr := Next(itemDraft(it), now)
 		if nerr != nil {
-			_ = store.FailOpen(it.ID, errOpenRunFailed)
-			return true
+			return errOpenRunFailed, nil
 		}
-		_ = store.CompleteOpen(it.ID, runID, StatusActive, next)
+		if err := store.CompleteOpen(it.ID, runID, StatusActive, next); err != nil {
+			if setErr := store.SetRunningRunID(it.ID, runID); setErr != nil {
+				return "", setErr
+			}
+			return "", err
+		}
 	default:
-		_ = store.FailOpen(it.ID, errOpenRunFailed)
-		return true
+		return errOpenRunFailed, nil
 	}
-	return false
+	return "", nil
 }
 
 func conversationOwner(meta MetaReader, it Item) (string, error) {

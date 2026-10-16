@@ -61,9 +61,6 @@ type Store interface {
 	SetRunningRunID(id, runID string) error
 }
 
-// scanBlockRunID blocks re-claim of a failed row until the current Scan pass finishes.
-const scanBlockRunID = "scan_block"
-
 // MemoryStore is an in-process Store for tests.
 type MemoryStore struct {
 	mu         sync.Mutex
@@ -209,7 +206,7 @@ func (s *MemoryStore) ListWithRunningRun() ([]Item, error) {
 	defer s.mu.Unlock()
 	var out []Item
 	for _, it := range s.byID {
-		if it.Status == StatusActive && it.RunningRunID != "" {
+		if it.RunningRunID != "" && it.RunningRunID != ClaimPending {
 			out = append(out, it)
 		}
 	}
