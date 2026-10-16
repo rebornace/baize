@@ -26,8 +26,10 @@ type memoryExtractItem struct {
 }
 
 // maybeExtractMemory runs a short follow-up Chat after a succeeded run and
-// upserts SourceAuto entries. Failures emit memory.extract_skipped and never
-// change the run status. Info logs must not include full memory text.
+// upserts SourceAuto entries; non-empty keys that already exist are skipped
+// with memory.extract_skipped and Upsert is not called. Failures emit
+// memory.extract_skipped and never change the run status. Info logs must not
+// include full memory text.
 func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, output string) {
 	if !e.effectiveMemoryAutoExtract() || e.Memory == nil || e.LLM == nil {
 		return
@@ -99,9 +101,27 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 		if text == "" {
 			continue
 		}
+		key := strings.TrimSpace(it.Key)
+		if key != "" {
+			_, exists, lerr := e.Memory.GetByOwnerKey(owner, key)
+			if lerr != nil {
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventMemoryExtractSkipped,
+					Data: map[string]any{"reason": "lookup_error", "key": key},
+				})
+				continue
+			}
+			if exists {
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventMemoryExtractSkipped,
+					Data: map[string]any{"reason": "key_exists", "key": key},
+				})
+				continue
+			}
+		}
 		_, _ = e.Memory.Upsert(memory.Entry{
 			OwnerID: owner,
-			Key:     strings.TrimSpace(it.Key),
+			Key:     key,
 			Text:    text,
 			Source:  memory.SourceAuto,
 		})

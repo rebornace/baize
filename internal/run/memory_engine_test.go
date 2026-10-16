@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -213,5 +214,134 @@ func TestMemoryDisabledSkipsInjectAndExtract(t *testing.T) {
 		if e.Source == memory.SourceAuto {
 			t.Fatalf("MemoryEnabled=false must not auto-extract; list=%+v", list)
 		}
+	}
+}
+
+func TestAutoExtractSkipsExistingKey(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	first, err := mem.Upsert(memory.Entry{OwnerID: "alice", Key: "tea", Text: "喜欢绿茶", Source: memory.SourceExplicit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		calls++
+		if calls == 1 {
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}
+		return llm.Message{Role: llm.RoleAssistant, Content: `[{"key":"tea","text":"改喝红茶"},{"key":"cup","text":"常用马克杯"},{"key":"","text":"周一例会"}]`}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: true}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "更新习惯", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "更新习惯"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := mem.GetByOwnerKey("alice", "tea")
+	if err != nil || !ok || got.Text != "喜欢绿茶" || !got.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Fatalf("existing key changed: %+v ok=%v err=%v", got, ok, err)
+	}
+	cup, ok, err := mem.GetByOwnerKey("alice", "cup")
+	if err != nil || !ok || cup.Text != "常用马克杯" || cup.Source != memory.SourceAuto {
+		t.Fatalf("new key missing: %+v ok=%v err=%v", cup, ok, err)
+	}
+	list, _ := mem.List("alice", 20, 0)
+	blank := 0
+	for _, e := range list {
+		if e.Key == "" && e.Text == "周一例会" && e.Source == memory.SourceAuto {
+			blank++
+		}
+	}
+	if blank != 1 {
+		t.Fatalf("empty key insert count=%d list=%+v", blank, list)
+	}
+	evs, err := st.ListEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, ev := range evs {
+		if ev.Type != EventMemoryExtractSkipped {
+			continue
+		}
+		if ev.Data["reason"] == "key_exists" && ev.Data["key"] == "tea" {
+			if _, hasText := ev.Data["text"]; hasText {
+				t.Fatalf("event leaked text: %+v", ev.Data)
+			}
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("missing key_exists event: %+v", evs)
+	}
+}
+
+type lookupFailMemory struct {
+	*memory.MemoryStore
+	failKey string
+}
+
+func (m lookupFailMemory) GetByOwnerKey(ownerID, key string) (memory.Entry, bool, error) {
+	if strings.TrimSpace(key) == m.failKey {
+		return memory.Entry{}, false, errors.New("disk down")
+	}
+	return m.MemoryStore.GetByOwnerKey(ownerID, key)
+}
+
+func TestAutoExtractLookupErrorSkipsItem(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	base := memory.NewMemoryStore()
+	mem := lookupFailMemory{MemoryStore: base, failKey: "tea"}
+	calls := 0
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		calls++
+		if calls == 1 {
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}
+		return llm.Message{Role: llm.RoleAssistant, Content: `[{"key":"tea","text":"喜欢绿茶"},{"key":"cup","text":"常用马克杯"}]`}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: true}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "习惯", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "习惯"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := base.GetByOwnerKey("alice", "tea"); ok {
+		t.Fatal("lookup error must not insert tea")
+	}
+	if _, ok, err := base.GetByOwnerKey("alice", "cup"); err != nil || !ok {
+		t.Fatalf("cup should insert: ok=%v err=%v", ok, err)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	seen := false
+	for _, ev := range evs {
+		if ev.Type == EventMemoryExtractSkipped && ev.Data["reason"] == "lookup_error" && ev.Data["key"] == "tea" {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("missing lookup_error: %+v", evs)
+	}
+	if rec, err := st.GetRun(r.ID); err != nil || rec.Status == store.StatusFailed {
+		t.Fatalf("run status changed: %+v err=%v", rec, err)
 	}
 }
