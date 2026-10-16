@@ -67,6 +67,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 ### Memory, materials, long sessions
 
 - **Memory**: store account-level facts the assistant can retrieve across chats.
+- **Schedules**: after a person approves, save a one-shot, daily, or weekly instruction on the current conversation. At that time Baize starts a new run there, using the saved instruction as the user input. Write tools still wait for approval. Create, pause, resume, and delete schedules in Settings; each account only sees its own.
 - **Attachments and object storage**: keep materials locally or in object storage.
 - **Context compaction**: long threads get rolling structured checkpoints (goal / progress / decisions / facts to keep) so space goes to what still matters.
 - **Keep important facts in long chats** (optional Runtime knob, default off): when a thread gets long, the assistant may keep a model-facing projection of facts it still needs; on failure it falls back to compaction. This does not promise lower cloud API token use.
