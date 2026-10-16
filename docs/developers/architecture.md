@@ -4,6 +4,8 @@
 
 Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把 LLM、Tool、遗留 HTTP API 与人机卡点收成可审计的 `Run`。平台用 REST / HTTP 集成；不提供官方语言 SDK（集成方直接调控制面 HTTP）。
 
+**产品叙事（为何值得旁挂）** 见根目录 [README 产品优势](../../README.zh-CN.md#产品优势) 与官网「多次升级后」一节；本页只写边界与实现落点。能力索引：[开发者文档入口](./README.md)。
+
 | 做 | 不做 |
 |----|------|
 | OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow | 桌面 App、官方 TS/Python SDK、重画布 / 分支工作流、绑死单一云或 Agent 框架 |

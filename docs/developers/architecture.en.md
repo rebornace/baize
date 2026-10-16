@@ -4,6 +4,8 @@
 
 Baize is a standalone **Agent Runtime** (sidecar / gateway): it turns LLM, tools, legacy HTTP APIs, and human checkpoints into auditable `Run`s. Integrate over REST / HTTP; there is no official language SDK (call the control-plane HTTP directly).
 
+**Product narrative (why sidecar)** lives in the root [README product advantages](../../README.md#product-advantages) and the site “What major upgrades added” section; this page covers boundaries and implementation hooks. Capability index: [Developer docs home](./README.en.md).
+
 | Does | Does not |
 |------|----------|
 | OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows | Desktop app, official TS/Python SDK, heavy canvas / branching workflows, lock-in to one cloud or agent framework |

@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baize — team AI assistant runtime</title>
-  <meta name="description" content="Baize is a team AI assistant runtime: talk, call your systems, and require human approval for sensitive writes.">
+  <meta name="description" content="Baize is a team AI assistant runtime: API docs as tools, human approval, MCP export, decision-layer narrowing, reconstructable runs, and ops observability.">
   <meta property="og:title" content="Baize">
-  <meta property="og:description" content="A team AI assistant runtime that sits beside your services—tools from API docs, human approval when it matters.">
+  <meta property="og:description" content="Sidecar AI assistant runtime: docs→tools, HITL, hosted login + MCP export, decision layer, CatalogDiff + run.binding, metrics and mTLS.">
   <meta property="og:image" content="../assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -71,12 +71,35 @@
       </ul>
     </section>
 
+    <section class="section wrap" id="upgrades">
+      <h2>What major upgrades added</h2>
+      <p class="support">Beyond the Changelog: scale with many tools, see catalog drift, reconstruct what a run bound, and operate from the console.</p>
+      <ul class="feature-list">
+        <li>
+          <h3>Stay usable with many tools</h3>
+          <p>Matching &amp; decisions one-click enables enhanced matching and the System One decision model. With Smart speed-up on, the main model sees a narrowed schema set; failures fail open.</p>
+        </li>
+        <li>
+          <h3>Catalog changes are visible</h3>
+          <p>Connector re-import returns a CatalogDiff; optionally POST catalog.diff to events.webhook so API drift is alertable—no manual doc diffing.</p>
+        </li>
+        <li>
+          <h3>Runs are reconstructable</h3>
+          <p>Each Chat run writes run.binding (model, knobs, tool-contract fingerprints). Open “View run binding” beside the assistant message.</p>
+        </li>
+        <li>
+          <h3>Ops and compliance in the console</h3>
+          <p>Runtime metrics and recent logs in Settings; Prometheus /metrics and optional OTel; connector outbound mTLS via local cert paths; observability knobs hot-reload.</p>
+        </li>
+      </ul>
+    </section>
+
     <section class="start wrap" id="start">
       <h2>Get started</h2>
       <p class="support">No Go toolchain required: download a release archive for your platform, set secrets, and start.</p>
       <pre><code>cp .env.example .env
 # set BAIZE_API_KEY and BAIZE_SETTINGS_KEY
-./baize start
+./baize serve
 # open http://127.0.0.1:8080/ui</code></pre>
       <div class="cta">
         <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.md">README</a>

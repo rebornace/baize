@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>白泽 Baize — 团队 AI 助手运行时</title>
-  <meta name="description" content="白泽：面向团队的 AI 助手运行时。接口文档变工具，重要操作可先审批，旁挂现有业务即可使用。">
+  <meta name="description" content="白泽：面向团队的 AI 助手运行时。接口文档变工具、人审写操作、MCP 导出、决策层收窄工具、运行可追溯与运维可观测。">
   <meta property="og:title" content="白泽 Baize">
-  <meta property="og:description" content="面向团队的 AI 助手运行时：能对话、会调用业务系统、重要操作可先让人确认。">
+  <meta property="og:description" content="旁挂现有业务的 AI 助手运行时：文档变工具、人审、托管登录与 MCP 导出、决策层、CatalogDiff 与 run.binding、指标与 mTLS。">
   <meta property="og:image" content="assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -71,12 +71,35 @@
       </ul>
     </section>
 
+    <section class="section wrap" id="upgrades">
+      <h2>多次升级后，多出来的核心能力</h2>
+      <p class="support">Changelog 之外，这些能力已经写进产品面：工具多时能收窄、接口变了看得见、跑过的轮次可复盘、运维进操作台。</p>
+      <ul class="feature-list">
+        <li>
+          <h3>工具多也能收得住</h3>
+          <p>「匹配与决策」一键启用增强匹配与 System One 决策模型；智能提速打开后，主模型只看收窄后的工具 schema，失败自动回退。</p>
+        </li>
+        <li>
+          <h3>接口变了看得见</h3>
+          <p>连接器重导返回 CatalogDiff；可选推送到 events.webhook，接口漂移可告警，不必靠人肉对比文档。</p>
+        </li>
+        <li>
+          <h3>每次运行可追溯</h3>
+          <p>Chat 写入 run.binding（模型、策略与工具契约指纹）；聊天旁可查看运行绑定，便于对照「当时绑了什么」。</p>
+        </li>
+        <li>
+          <h3>运维与合规进操作台</h3>
+          <p>设置页看运行指标与近期日志；Prometheus /metrics、可选 OTel；连接器出站 mTLS（本机证书路径）；观测项可热更新。</p>
+        </li>
+      </ul>
+    </section>
+
     <section class="start wrap" id="start">
       <h2>开始使用</h2>
       <p class="support">无需安装 Go：从 Releases 下载对应平台压缩包，配置密钥后即可启动。</p>
       <pre><code>cp .env.example .env
 # 填写 BAIZE_API_KEY 与 BAIZE_SETTINGS_KEY
-./baize start
+./baize serve
 # 打开 http://127.0.0.1:8080/ui</code></pre>
       <div class="cta">
         <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.zh-CN.md">中文 README</a>

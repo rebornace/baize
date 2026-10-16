@@ -28,10 +28,13 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Sidecar on, clean off**: one process, config outside the app; stop it and leave almost nothing behind.
 - **One assistant, many entry points**: console, signed alert/ticket ingress, and IM channels share approvals, memory, and outbound delivery.
 - **Downstream login supported**: use a login skill or “browser login” in chat, or configure a hosted login page under Settings → External login (multiple methods). Credentials never go through the LLM; the assistant then calls systems with session credentials.
+- **Export wired tools to everyday Agent clients**: Baize can act as an MCP server and expose a **read-only** slice of your catalog to Cursor, Claude Desktop, Doubao, and similar clients — without running through Baize’s own chat model. On auth failure, clients get a public hosted login URL (open in a browser; never paste passwords into the agent chat).
+- **Stays usable with many tools**: when backends pile up, open Settings → Matching & decisions — one-click local Ollama for the matching model and the decision model (`tev1`), or a cloud / self-hosted API. Standard matching needs no extras. With Smart speed-up on, high-frequency routing judgments move to the decision layer so the main model sees a narrowed tool schema set (see benchmark below).
+- **Catalog changes are visible; runs are reconstructable**: connector re-import returns a CatalogDiff (adds / removes / contract changes) and can POST `catalog.diff` to `events.webhook`; each Chat run writes `run.binding` (model, knobs, tool-contract fingerprints) — open “View run binding” beside the assistant message.
+- **Ops in the console; observability hot-reloads**: Settings → Runtime metrics shows Prometheus text and recent process logs; optional OTel OTLP; log format / OTel endpoint hot-reload under Runtime → Observability (KV override, no YAML rewrite). Connector outbound mTLS via local file paths (OpenAPI / HTTP plugins / MCP HTTP).
 - **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); multiple model setups and thinking options; account-level memory, attachments, and workspace files.
 - **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace (Settings → Accounts) and isolated across workspaces. MCP export uses separate export identities — do not mix them with chat Accounts.
 - **Can explain Baize itself**: the built-in `baize-help` skill answers (in English or Chinese) how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
-- **Stays usable with many tools**: when backends pile up, open Settings → Matching & decisions — one-click local Ollama for the matching model and the decision model (`tev1`), or point either at a cloud / self-hosted API. Standard matching needs no extras and remains the fail-open default.
 
 ---
 
@@ -80,9 +83,10 @@ Channels are a **general, extensible** capability: alerts, tickets, and instant 
 
 ### For product, ops, and integrators
 
-- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security); Matching & decisions is its own page; External login and Expose capabilities cover hosted login and MCP export.
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security / Observability); Matching & decisions is its own page; External login and Expose capabilities cover hosted login and MCP export; Runtime metrics shows process metrics and recent logs.
+- Connector saves surface CatalogDiff; chat messages offer “View run binding”; MCP export has invocation audit; the connector editor can set outbound mTLS paths.
 - Full HTTP management surface for scripts and platforms — no mandatory language SDK.
-- Some runtime knobs hot-reload; a local database is enough to start, with larger databases when you need them.
+- Some runtime knobs and observability settings hot-reload; a local database is enough to start, with larger databases when you need them.
 
 ---
 
@@ -99,6 +103,9 @@ External tools, first-party plugins, inbox ingress, and IM — one approval and 
 
 **Reuse wired tools inside everyday Agent clients**  
 Wire APIs and plugins in Baize, configure hosted login and export identity slots under External login, then export over MCP to Cursor and similar clients. When auth expires, open the returned login link — never paste passwords into the agent chat. Ensure `public_base_url` is reachable from the client’s browser (do not use loopback-only `127.0.0.1` for cloud agents).
+
+**APIs drift, runs need audit, networks need mTLS**  
+Compare CatalogDiff after connector re-import (optional webhook alert); reconstruct “what was bound” with `run.binding` and contract fingerprints; outbound mTLS plus Prometheus / optional OTel cover ops and compliance without bolting on another agent framework.
 
 ---
 
