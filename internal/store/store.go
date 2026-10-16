@@ -319,6 +319,9 @@ const InboxDeliveryTTL = 24 * time.Hour
 // already occupies the (channel_id, idempotency_key) slot.
 var ErrInboxDeliveryExists = errors.New("inbox delivery already exists")
 
+// ErrNoPriorConversationRun is returned when a conversation has no persisted runs.
+var ErrNoPriorConversationRun = errors.New("no prior run for conversation")
+
 // ErrMCPExportIdentityNotFound is returned when an MCP export identity row is missing.
 var ErrMCPExportIdentityNotFound = errors.New("mcp export identity not found")
 
@@ -554,6 +557,8 @@ type Store interface {
 	SetPassthroughHeaders(runID string, headers map[string]string) error
 
 	HasActiveRun(conversationID string) (bool, error)
+	// LatestConversationRun returns the newest run for the conversation by created_at.
+	LatestConversationRun(conversationID string) (*Run, error)
 	// WaitingHumanRun returns the newest waiting_human run for the conversation,
 	// or (nil, nil) when none.
 	WaitingHumanRun(conversationID string) (*Run, error)

@@ -4,6 +4,24 @@ import (
 	"database/sql"
 )
 
+func (s *SQLStore) LatestConversationRun(conversationID string) (*Run, error) {
+	if conversationID == "" {
+		return nil, ErrNoPriorConversationRun
+	}
+	var id string
+	err := s.queryRow(
+		`SELECT id FROM runs WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1`,
+		conversationID,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return nil, ErrNoPriorConversationRun
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetRun(id)
+}
+
 func (s *SQLStore) HasActiveRun(conversationID string) (bool, error) {
 	if conversationID == "" {
 		return false, nil
