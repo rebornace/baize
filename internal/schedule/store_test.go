@@ -175,6 +175,49 @@ func TestMemoryConcurrentClaimOneRow(t *testing.T) {
 	}
 }
 
+func TestResumeFailsAtActiveCap(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	next := now.Add(time.Hour)
+	for i := 0; i < 20; i++ {
+		if _, err := s.Insert(schedule.Item{
+			OwnerID: "alice", ConversationID: "c1", Instruction: "active",
+			Kind: "daily", Status: schedule.StatusActive, NextRunAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paused, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "paused extra",
+		Kind: "daily", Status: schedule.StatusPaused, NextRunAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Resume("alice", paused.ID, next); !errors.Is(err, schedule.ErrActiveCap) {
+		t.Fatalf("resume at cap: %v", err)
+	}
+	pausedID := paused.ID
+	list, err := s.List("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range list {
+		if row.ID == pausedID && row.Status != schedule.StatusPaused {
+			t.Fatalf("paused row changed: %+v", row)
+		}
+	}
+	active := 0
+	for _, row := range list {
+		if row.Status == schedule.StatusActive {
+			active++
+		}
+	}
+	if active != 20 {
+		t.Fatalf("active count=%d", active)
+	}
+}
+
 func TestRevisionIncrementsOnUpdate(t *testing.T) {
 	s := schedule.NewMemoryStore()
 	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)

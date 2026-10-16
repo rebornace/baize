@@ -17,7 +17,7 @@ const (
 	MaxActivePerOwner = 20
 )
 
-// ErrActiveCap is returned when Insert would exceed MaxActivePerOwner active rows.
+// ErrActiveCap is returned when Insert or Resume would exceed MaxActivePerOwner active rows.
 var ErrActiveCap = errors.New("schedule: active schedule cap reached")
 
 const (
@@ -166,6 +166,9 @@ func (s *MemoryStore) Resume(ownerID, id string, next time.Time) error {
 	}
 	if it.Status != StatusPaused {
 		return fmt.Errorf("schedule: not paused")
+	}
+	if countActiveLocked(s.byID, ownerID) >= MaxActivePerOwner {
+		return ErrActiveCap
 	}
 	it.Status = StatusActive
 	it.NextRunAt = next.UTC()

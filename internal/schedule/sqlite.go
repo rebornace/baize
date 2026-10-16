@@ -69,33 +69,33 @@ func (s *SQLStore) Insert(it Item) (Item, error) {
 	if status == "" {
 		status = StatusActive
 	}
-	if status == StatusActive {
-		var n int
-		err := s.db.QueryRow(s.q(
-			`SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?`,
-		), it.OwnerID, StatusActive).Scan(&n)
-		if err != nil {
-			return Item{}, err
-		}
-		if n >= MaxActivePerOwner {
-			return Item{}, ErrActiveCap
-		}
-	}
 	out := it
 	out.ID = "sched_" + uuid.NewString()
 	out.Status = status
 	out.Revision = 0
-	_, err := s.db.Exec(s.q(`
+	res, err := s.db.Exec(s.q(`
 INSERT INTO conversation_schedules (
   id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
   status, next_run_at, running_run_id, last_error, revision
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+)
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+WHERE ? <> ? OR (
+  SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?
+) < ?`),
 		out.ID, out.OwnerID, out.ConversationID, out.Instruction, out.Kind, out.Timezone,
 		formatScheduleTime(out.FireAt), out.TimeOfDay, out.Weekday,
 		out.Status, formatScheduleTime(out.NextRunAt), out.RunningRunID, out.LastError, out.Revision,
+		status, StatusActive, out.OwnerID, StatusActive, MaxActivePerOwner,
 	)
 	if err != nil {
 		return Item{}, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		if status == StatusActive {
+			return Item{}, ErrActiveCap
+		}
+		return Item{}, fmt.Errorf("schedule: insert failed")
 	}
 	return out, nil
 }
@@ -166,15 +166,48 @@ WHERE id = ? AND owner_id = ? AND status = ?`),
 func (s *SQLStore) Resume(ownerID, id string, next time.Time) error {
 	res, err := s.db.Exec(s.q(`
 UPDATE conversation_schedules SET status = ?, next_run_at = ?, revision = revision + 1
-WHERE id = ? AND owner_id = ? AND status = ?`),
+WHERE id = ? AND owner_id = ? AND status = ?
+AND (SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?) < ?`),
 		StatusActive, formatScheduleTime(next.UTC()), id, ownerID, StatusPaused,
+		ownerID, StatusActive, MaxActivePerOwner,
 	)
 	if err != nil {
 		return err
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
+		if err := s.resumeFailureReason(ownerID, id); err != nil {
+			return err
+		}
 		return fmt.Errorf("schedule: resume failed")
+	}
+	return nil
+}
+
+func (s *SQLStore) resumeFailureReason(ownerID, id string) error {
+	var status string
+	err := s.db.QueryRow(s.q(`
+SELECT status FROM conversation_schedules WHERE id = ? AND owner_id = ?`),
+		id, ownerID,
+	).Scan(&status)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("schedule: not found")
+	}
+	if err != nil {
+		return err
+	}
+	if status != StatusPaused {
+		return fmt.Errorf("schedule: not paused")
+	}
+	var n int
+	if err := s.db.QueryRow(s.q(`
+SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?`),
+		ownerID, StatusActive,
+	).Scan(&n); err != nil {
+		return err
+	}
+	if n >= MaxActivePerOwner {
+		return ErrActiveCap
 	}
 	return nil
 }
