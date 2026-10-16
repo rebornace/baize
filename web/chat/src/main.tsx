@@ -15,6 +15,7 @@ import { WebhookSettings } from './pages/WebhookSettings'
 import { GateRoot } from './pages/GateRoot'
 import { IdentitiesSettings } from './pages/IdentitiesSettings'
 import { MemorySettings } from './pages/MemorySettings'
+import { ScheduleSettings } from './pages/ScheduleSettings'
 import { SettingsHome } from './pages/SettingsHome'
 import { SettingsLayout } from './pages/SettingsLayout'
 import { SkillsSettings } from './pages/SkillsSettings'
@@ -60,6 +61,7 @@ createRoot(document.getElementById('app')!).render(
             />
             <Route path="skills" element={<SkillsSettings />} />
             <Route path="memory" element={<MemorySettings />} />
+            <Route path="schedules" element={<ScheduleSettings />} />
             <Route path="identities" element={<IdentitiesSettings />} />
             <Route
               path="mcp"

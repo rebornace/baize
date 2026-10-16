@@ -212,6 +212,7 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	stm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
 	rt.reg.RegisterSpecApproved(stm.Spec, stm.Invoker, true)
 	_ = rt.reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
+	rt.srv.Schedules = schedStore
 
 	if rt.compactor != nil {
 		rt.compactor.Messages = messages

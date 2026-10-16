@@ -1,6 +1,7 @@
 export * from './weixin'
 export * from './runtime'
 export * from './memory'
+export * from './schedules'
 export * from './credentials'
 export * from './store'
 export * from './webhook'

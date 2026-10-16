@@ -471,6 +471,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.Identities = identities
 	srv.Messages = messages
 	srv.Memory = mem
+	srv.Schedules = schedStore
 	srv.DefaultAgentID = cfg.Agent.ID
 	srv.LLM = provider
 	srv.ToolRetrieval = toolRet
@@ -728,7 +729,59 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		stopReconciler()
 		_ = mw.Close()
 	})
+
+	scanCtx, scanCancel := context.WithCancel(context.Background())
+	closer.stops = append(closer.stops, scanCancel)
+	go runScheduleScanner(scanCtx, rt, srv)
+
 	return srv, closer, nil
+}
+
+const scheduleScanInterval = 15 * time.Second
+
+func runScheduleScanner(ctx context.Context, rt *storeRuntime, srv *api.Server) {
+	ticker := time.NewTicker(scheduleScanInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			tickScheduleScan(rt, srv, now)
+		}
+	}
+}
+
+func tickScheduleScan(rt *storeRuntime, srv *api.Server, now time.Time) {
+	if srv == nil || srv.Schedules == nil {
+		return
+	}
+	var meta schedule.MetaReader
+	if srv.Messages != nil {
+		if m, ok := srv.Messages.(conversation.MetaStore); ok {
+			meta = scheduleMetaReader(m)
+		}
+	}
+	opener := api.NewScheduleRunOpener(srv)
+	runStatus := func(runID string) (bool, error) {
+		st := rt.current()
+		if st == nil {
+			return false, nil
+		}
+		runRec, err := st.GetRun(runID)
+		if err != nil {
+			return false, err
+		}
+		switch runRec.Status {
+		case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
+	if err := schedule.Scan(srv.Schedules, meta, opener, runStatus, now); err != nil {
+		log.Printf("schedule scan: %v", err)
+	}
 }
 
 // redisPasswordFromEnv resolves the redis password from the named environment

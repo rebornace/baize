@@ -2,6 +2,7 @@ import {
   Activity,
   Boxes,
   Brain,
+  CalendarClock,
   Cpu,
   Database,
   Inbox,
@@ -71,6 +72,10 @@ const ITEM_META: NavMeta[] = [
   {
     to: '/settings/memory', group: 'assistant', icon: Brain, operator: 'full',
     labelKey: 'memory', descKey: 'memoryDesc',
+  },
+  {
+    to: '/settings/schedules', group: 'assistant', icon: CalendarClock, operator: 'full',
+    labelKey: 'schedules', descKey: 'schedulesDesc',
   },
   {
     to: '/settings/tool-matching', group: 'assistant', icon: Target, operator: 'read',
