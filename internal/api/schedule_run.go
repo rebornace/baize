@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -19,7 +20,6 @@ func NewScheduleRunOpener(s *Server) schedule.RunOpener {
 
 // Open copies agent, identity, and model fields from the conversation's latest run.
 func (o ScheduleRunOpener) Open(conversationID, instruction, ownerID string) (string, error) {
-	_ = ownerID
 	if o.Server == nil || o.Server.Store == nil {
 		return "", store.ErrNoPriorConversationRun
 	}
@@ -27,7 +27,9 @@ func (o ScheduleRunOpener) Open(conversationID, instruction, ownerID string) (st
 	if err != nil {
 		return "", err
 	}
-	runRec, err := o.Server.startRun(context.Background(), startRunInput{
+	ctx := controlplane.WithRole(context.Background(), controlplane.RoleOperator)
+	ctx = controlplane.WithOperatorID(ctx, ownerID)
+	runRec, err := o.Server.startRun(ctx, startRunInput{
 		AgentID:        prev.AgentID,
 		Input:          instruction,
 		ConversationID: conversationID,

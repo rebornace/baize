@@ -234,6 +234,9 @@ func (s *MemoryStore) FailOpen(id, lastError string) error {
 	if !ok {
 		return fmt.Errorf("schedule: not found")
 	}
+	if it.RunningRunID != ClaimPending {
+		return nil
+	}
 	it.RunningRunID = ""
 	it.LastError = lastError
 	it.Revision++
@@ -247,6 +250,9 @@ func (s *MemoryStore) CompleteOpen(id, runID, status string, nextRunAt time.Time
 	it, ok := s.byID[id]
 	if !ok {
 		return fmt.Errorf("schedule: not found")
+	}
+	if it.RunningRunID != ClaimPending {
+		return fmt.Errorf("schedule: complete open conflict")
 	}
 	it.RunningRunID = runID
 	it.Status = status

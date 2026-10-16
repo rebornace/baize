@@ -8,6 +8,8 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/api"
+	"github.com/rebornace/baize/internal/controlplane"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/store"
@@ -85,6 +87,51 @@ func TestScheduleRunOpenNoPriorRun(t *testing.T) {
 	}
 	if _, err := st.LatestConversationRun("conv_empty"); !errors.Is(err, store.ErrNoPriorConversationRun) {
 		t.Fatalf("must not create run: %v", err)
+	}
+}
+
+func TestScheduleRunOpenGateExistingMetaAsOwner(t *testing.T) {
+	st := store.NewMemory()
+	msgs := conversation.NewMemoryStore()
+	st.UpsertAgent(store.Agent{ID: "agent-a", System: "sys"})
+	if _, err := st.CreateRun(store.CreateRunInput{
+		AgentID:        "agent-a",
+		Input:          "seed",
+		ConversationID: "conv1",
+		IdentityID:     "id-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := msgs.EnsureMeta(conversation.Meta{
+		ID: "conv1", OwnerID: "alice", Source: "ui", UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := api.NewServer(st, tool.NewRegistry(), scheduleNoopRunner{})
+	srv.Queue = scheduleNoopJobQueue{}
+	srv.Messages = msgs
+	srv.AdminToken = "adm"
+	srv.Operators = []controlplane.Operator{{ID: "alice", Token: "ta"}}
+	if !srv.GateTokensForTest().Enabled() {
+		t.Fatal("gate must be enabled for this test")
+	}
+
+	opener := api.NewScheduleRunOpener(srv)
+	runID, err := opener.Open("conv1", "定时", "alice")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	got, err := st.GetRun(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Input != "定时" || got.ConversationID != "conv1" {
+		t.Fatalf("run=%+v", got)
+	}
+	meta, err := msgs.GetMeta("conv1")
+	if err != nil || meta.OwnerID != "alice" {
+		t.Fatalf("meta owner: err=%v %+v", err, meta)
 	}
 }
 

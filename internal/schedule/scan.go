@@ -33,9 +33,6 @@ func Scan(store Store, meta MetaReader, opener RunOpener, runStatus RunStatus, n
 		sl.scanLock()
 		defer sl.scanUnlock()
 	}
-	if err := store.ClearStalePending(); err != nil {
-		return err
-	}
 	if err := reconcileRunningRuns(store, runStatus); err != nil {
 		return err
 	}

@@ -740,6 +740,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 const scheduleScanInterval = 15 * time.Second
 
 func runScheduleScanner(ctx context.Context, rt *storeRuntime, srv *api.Server) {
+	if srv != nil && srv.Schedules != nil {
+		if err := srv.Schedules.ClearStalePending(); err != nil {
+			log.Printf("schedule scan: clear stale pending: %v", err)
+		}
+	}
 	ticker := time.NewTicker(scheduleScanInterval)
 	defer ticker.Stop()
 	for {

@@ -149,7 +149,7 @@ func TestScanSkipsInFlight(t *testing.T) {
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	due := now.Add(-time.Hour)
 	it := insertDaily(t, s, "alice", "c1", "in flight", due)
-	if err := s.CompleteOpen(it.ID, "run_in_flight", schedule.StatusActive, due); err != nil {
+	if err := s.SetRunningRunID(it.ID, "run_in_flight"); err != nil {
 		t.Fatal(err)
 	}
 	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
@@ -233,12 +233,12 @@ func TestScanOpenFailureKeepsDue(t *testing.T) {
 	}
 }
 
-func TestScanClearsStalePending(t *testing.T) {
+func TestScanLeavesForeignPendingAlone(t *testing.T) {
 	s := schedule.NewMemoryStore()
 	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
 	opener := &fakeOpener{}
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
-	it := insertDaily(t, s, "alice", "c1", "stale pending", now.Add(-time.Hour))
+	it := insertDaily(t, s, "alice", "c1", "held pending", now.Add(-time.Hour))
 	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
@@ -249,8 +249,51 @@ func TestScanClearsStalePending(t *testing.T) {
 	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
 		t.Fatal(err)
 	}
+	if opener.callCount() != 0 {
+		t.Fatalf("Open calls=%d want 0 while pending held", opener.callCount())
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("running_run_id=%q want pending", got.RunningRunID)
+	}
+}
+
+func TestClearStalePendingThenScanOpens(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	insertDaily(t, s, "alice", "c1", "stale pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := s.ClearStalePending(); err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
 	if opener.callCount() != 1 {
 		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+}
+
+func TestFailOpenDoesNotClearNonPendingRunID(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "in flight", now.Add(-time.Hour))
+	if err := s.SetRunningRunID(it.ID, "run_in_flight"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FailOpen(it.ID, "should not apply"); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != "run_in_flight" {
+		t.Fatalf("running_run_id=%q want run_in_flight", got.RunningRunID)
+	}
+	if got.LastError != "" {
+		t.Fatalf("last_error=%q want empty", got.LastError)
 	}
 }
 
@@ -260,7 +303,7 @@ func TestScanClearsTerminalRunningRun(t *testing.T) {
 	opener := &fakeOpener{}
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	it := insertDaily(t, s, "alice", "c1", "done run", now.Add(24*time.Hour))
-	if err := s.CompleteOpen(it.ID, "run_old", schedule.StatusActive, it.NextRunAt); err != nil {
+	if err := s.SetRunningRunID(it.ID, "run_old"); err != nil {
 		t.Fatal(err)
 	}
 	terminal := func(runID string) (bool, error) {
@@ -360,10 +403,6 @@ func TestScanConcurrentClaimOpenOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, ok, err := s.ClaimDue(now)
-			if err != nil || !ok {
-				return
-			}
 			_ = schedule.Scan(s, meta, opener, nonTerminalRunStatus, now)
 		}()
 	}

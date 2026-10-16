@@ -261,8 +261,9 @@ UPDATE conversation_schedules SET running_run_id = '', revision = revision + 1 W
 
 func (s *SQLStore) FailOpen(id, lastError string) error {
 	res, err := s.db.Exec(s.q(`
-UPDATE conversation_schedules SET running_run_id = '', last_error = ?, revision = revision + 1 WHERE id = ?`),
-		lastError, id)
+UPDATE conversation_schedules SET running_run_id = '', last_error = ?, revision = revision + 1
+WHERE id = ? AND running_run_id = ?`),
+		lastError, id, ClaimPending)
 	if err != nil {
 		return err
 	}
@@ -277,8 +278,8 @@ func (s *SQLStore) CompleteOpen(id, runID, status string, nextRunAt time.Time) e
 	res, err := s.db.Exec(s.q(`
 UPDATE conversation_schedules
 SET running_run_id = ?, status = ?, next_run_at = ?, last_error = '', revision = revision + 1
-WHERE id = ?`),
-		runID, status, formatScheduleTime(nextRunAt.UTC()), id)
+WHERE id = ? AND running_run_id = ?`),
+		runID, status, formatScheduleTime(nextRunAt.UTC()), id, ClaimPending)
 	if err != nil {
 		return err
 	}
