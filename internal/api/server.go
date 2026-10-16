@@ -24,6 +24,7 @@ import (
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
+	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/plugincallback"
@@ -117,7 +118,9 @@ type Server struct {
 	skillsConvGen   map[string]uint64
 	skillsConvGenMu sync.Mutex
 	// Memory is the account-scoped fact store (P6 settings CRUD). nil = routes unavailable.
-	Memory         memory.Store
+	Memory memory.Store
+	// Schedules is the account-scoped conversation schedule store. nil = routes unavailable.
+	Schedules schedule.Store
 	Hub            *eventbus.Hub // optional; nil = SSE replay only (no live fan-out)
 	DefaultAgentID string
 	// Queue optionally dispatches runs to competing workers. nil = in-process
@@ -602,6 +605,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/memory", s.handlePostMemory)
 	s.mux.HandleFunc("PATCH /v0/settings/memory/{id}", s.handlePatchMemory)
 	s.mux.HandleFunc("DELETE /v0/settings/memory/{id}", s.handleDeleteMemory)
+	s.mux.HandleFunc("GET /v0/settings/schedules", s.handleListSchedules)
+	s.mux.HandleFunc("POST /v0/settings/schedules", s.handlePostSchedule)
+	s.mux.HandleFunc("POST /v0/settings/schedules/{id}/pause", s.handlePauseSchedule)
+	s.mux.HandleFunc("POST /v0/settings/schedules/{id}/resume", s.handleResumeSchedule)
+	s.mux.HandleFunc("DELETE /v0/settings/schedules/{id}", s.handleDeleteSchedule)
 }
 
 type apiError struct {
