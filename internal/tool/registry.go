@@ -74,18 +74,32 @@ func (r *Registry) RegisterSpec(spec llm.ToolSpec, inv Invoker) {
 func (r *Registry) RegisterSpecApproved(spec llm.ToolSpec, inv Invoker, requireApproval bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tools[spec.Name] = entry{spec: spec, invoker: inv, requireApproval: requireApproval}
+	var precheck ArgsPrecheck
+	if prev, ok := r.tools[spec.Name]; ok {
+		precheck = prev.argsPrecheck
+	}
+	r.tools[spec.Name] = entry{
+		spec:            spec,
+		invoker:         inv,
+		requireApproval: requireApproval,
+		argsPrecheck:    precheck,
+	}
 }
 
 // RegisterMeta registers a tool with connector metadata.
 func (r *Registry) RegisterMeta(meta Meta, inv Invoker, requireApproval bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	var precheck ArgsPrecheck
+	if prev, ok := r.tools[meta.Spec.Name]; ok {
+		precheck = prev.argsPrecheck
+	}
 	r.tools[meta.Spec.Name] = entry{
 		spec:            meta.Spec,
 		invoker:         inv,
 		requireApproval: requireApproval,
 		requireLogin:    meta.RequireLogin,
+		argsPrecheck:    precheck,
 		securitySchemes: meta.SecuritySchemes,
 		connectorID:     meta.ConnectorID,
 		operationID:     meta.OperationID,

@@ -194,22 +194,24 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	rt.engine.Messages = messages
 	rt.engine.Identities = identities
 	rt.engine.Memory = mem
+	var metaStore conversation.MetaStore
 	if meta, ok := messages.(conversation.MetaStore); ok {
 		rt.engine.Meta = meta
+		metaStore = meta
 		for _, tm := range memory.Tools(mem, meta) {
 			rt.reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 		}
-		schedStore, err := openSchedule(newRaw, cfgSnap)
-		if err != nil {
-			rt.mu.Unlock()
-			return fmt.Errorf("open schedule store: %w", err)
-		}
-		stm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(meta), nil)
-		rt.reg.RegisterSpecApproved(stm.Spec, stm.Invoker, true)
-		_ = rt.reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
 	} else {
 		rt.engine.Meta = nil
 	}
+	schedStore, err := openSchedule(newRaw, cfgSnap)
+	if err != nil {
+		rt.mu.Unlock()
+		return fmt.Errorf("open schedule store: %w", err)
+	}
+	stm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
+	rt.reg.RegisterSpecApproved(stm.Spec, stm.Invoker, true)
+	_ = rt.reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
 
 	if rt.compactor != nil {
 		rt.compactor.Messages = messages

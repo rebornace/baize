@@ -312,11 +312,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("open schedule store: %w", err)
 	}
-	if metaStore != nil {
-		tm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
-		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
-		_ = reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
-	}
+	tm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
+	reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
+	_ = reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
 
 	if err := registerConnector(st, reg, cfg, identities, blobStore, callbackCfg); err != nil {
 		_ = closer.Close()

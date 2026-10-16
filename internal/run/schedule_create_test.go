@@ -150,6 +150,65 @@ func TestScheduleCreateApprovedInsertsInstruction(t *testing.T) {
 	}
 }
 
+func TestScheduleCreateActiveCapAfterApprove(t *testing.T) {
+	st, sched, _, reg := setupScheduleRun(t)
+	now := scheduleTestNow()
+	for i := 0; i < schedule.MaxActivePerOwner; i++ {
+		if _, err := sched.Insert(schedule.Item{
+			OwnerID: "alice", ConversationID: "conv1", Instruction: "existing",
+			Kind: "daily", TimeOfDay: "09:00", Timezone: "UTC",
+			Status: schedule.StatusActive, NextRunAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ag := agent.Def{ID: "a", System: "sys"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "定时", ConversationID: "conv1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := NewGate()
+	eng := &Engine{
+		Store: st, LLM: &scheduleScriptLLM{}, Tools: reg, Gate: gate,
+		Now: func() time.Time { return now },
+	}
+	ctx := identity.WithConversationID(context.Background(), "conv1")
+	errCh := make(chan error, 1)
+	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
+
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout")
+	}
+	items, _ := sched.List("alice")
+	if len(items) != schedule.MaxActivePerOwner {
+		t.Fatalf("count=%d want %d", len(items), schedule.MaxActivePerOwner)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	var sawCapErr bool
+	for _, ev := range evs {
+		if ev.Type != EventToolResult || ev.Data["is_error"] != true {
+			continue
+		}
+		content, _ := ev.Data["content"].(map[string]any)
+		errStr, _ := content["error"].(string)
+		if errStr != "" && errStr == schedule.ErrActiveCap.Error() {
+			sawCapErr = true
+		}
+	}
+	if !sawCapErr {
+		t.Fatalf("expected active cap tool error in events")
+	}
+}
+
 func TestScheduleCreatePastFireAtNoHITL(t *testing.T) {
 	st, sched, _, reg := setupScheduleRun(t)
 	now := scheduleTestNow()

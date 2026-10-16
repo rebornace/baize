@@ -2,7 +2,9 @@ package tool_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/tool"
@@ -99,6 +101,23 @@ func TestRequireApprovalRoundTrip(t *testing.T) {
 	}
 	if err := reg.SetRequireApproval("missing", true); err == nil {
 		t.Fatal("expected unknown tool error")
+	}
+}
+
+func TestRegisterSpecApprovedPreservesArgsPrecheck(t *testing.T) {
+	reg := tool.NewRegistry()
+	nop := func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	}
+	spec := llm.ToolSpec{Name: "schedule_create"}
+	reg.RegisterSpecApproved(spec, nop, true)
+	errPrecheck := errors.New("precheck failed")
+	_ = reg.RegisterArgsPrecheck("schedule_create", func(map[string]any, time.Time) error {
+		return errPrecheck
+	})
+	reg.RegisterSpecApproved(spec, nop, true)
+	if err, ok := reg.PrecheckArgs("schedule_create", map[string]any{}, time.Now()); !ok || !errors.Is(err, errPrecheck) {
+		t.Fatalf("precheck lost after re-register: ok=%v err=%v", ok, err)
 	}
 }
 
