@@ -6,6 +6,8 @@ import (
 	"github.com/rebornace/baize/internal/memory"
 )
 
+const memoryEmptyNotice = "没有检索到与本轮问题相关的长期记忆。不要编造该账号的偏好、身份或历史事实。"
+
 func (e *Engine) effectiveMemoryEnabled() bool {
 	if e.Settings == nil {
 		return true
@@ -47,7 +49,7 @@ func (e *Engine) memoryBlock(ownerID, query string) string {
 	}
 	entries, err := e.Memory.Search(ownerID, query, memory.DefaultTopK)
 	if err != nil || len(entries) == 0 {
-		return ""
+		return memoryEmptyNotice
 	}
 
 	const header = "以下是该账号的相关长期记忆（供回答参考；不要主动向用户逐条复述清单，除非用户问起）："

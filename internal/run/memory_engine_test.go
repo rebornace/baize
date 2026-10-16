@@ -120,9 +120,12 @@ func TestMemoryInjectSkipsDifferentOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, m := range sawBob {
-		if strings.Contains(m.Content, "喜欢绿茶") || strings.Contains(m.Content, "长期记忆") {
+		if strings.Contains(m.Content, "喜欢绿茶") {
 			t.Fatalf("bob Run must not inject alice memory (query %q would Rank-hit); saw=%+v", input, sawBob)
 		}
+	}
+	if !messagesContainExact(sawBob, memoryEmptyNotice) {
+		t.Fatalf("bob Run must inject empty notice; saw=%+v", sawBob)
 	}
 }
 
@@ -207,6 +210,9 @@ func TestMemoryDisabledSkipsInjectAndExtract(t *testing.T) {
 	for _, m := range saw {
 		if strings.Contains(m.Content, "长期记忆") || strings.Contains(m.Content, "喜欢绿茶") {
 			t.Fatalf("MemoryEnabled=false must not inject; saw=%+v", saw)
+		}
+		if m.Content == memoryEmptyNotice {
+			t.Fatalf("MemoryEnabled=false must not inject empty notice; saw=%+v", saw)
 		}
 	}
 	list, _ := mem.List("alice", 20, 0)
@@ -344,4 +350,143 @@ func TestAutoExtractLookupErrorSkipsItem(t *testing.T) {
 	if rec, err := st.GetRun(r.ID); err != nil || rec.Status == store.StatusFailed {
 		t.Fatalf("run status changed: %+v err=%v", rec, err)
 	}
+}
+
+func TestMemoryEmptySearchInjectsNotice(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	var saw []llm.Message
+	eng := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			saw = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: memory.NewMemoryStore(),
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "红茶", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "红茶"); err != nil {
+		t.Fatal(err)
+	}
+	if !messagesContainExact(saw, memoryEmptyNotice) {
+		t.Fatalf("missing empty notice: %+v", saw)
+	}
+}
+
+type searchFailMemory struct{ *memory.MemoryStore }
+
+func (m searchFailMemory) Search(string, string, int) ([]memory.Entry, error) {
+	return nil, errors.New("index unavailable")
+}
+
+func TestMemorySearchErrorInjectsNoticeWithoutErrorText(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	var saw []llm.Message
+	eng := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			saw = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: searchFailMemory{MemoryStore: memory.NewMemoryStore()},
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "红茶", ConversationID: "conv-a"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "红茶"); err != nil {
+		t.Fatal(err)
+	}
+	if !messagesContainExact(saw, memoryEmptyNotice) {
+		t.Fatalf("missing notice: %+v", saw)
+	}
+	for _, m := range saw {
+		if strings.Contains(m.Content, "index unavailable") {
+			t.Fatalf("error leaked into prompt: %+v", saw)
+		}
+	}
+}
+
+type blankHitMemory struct{ *memory.MemoryStore }
+
+func (m blankHitMemory) Search(string, string, int) ([]memory.Entry, error) {
+	return []memory.Entry{{OwnerID: "alice", Text: "   "}}, nil
+}
+
+func TestMemoryUnusableHitsDoNotUseEmptyNotice(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	var saw []llm.Message
+	eng := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			saw = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: blankHitMemory{MemoryStore: memory.NewMemoryStore()},
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "红茶", ConversationID: "conv-a"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "红茶"); err != nil {
+		t.Fatal(err)
+	}
+	if messagesContainExact(saw, memoryEmptyNotice) {
+		t.Fatalf("blank hits must not become the empty notice: %+v", saw)
+	}
+}
+
+func TestMemoryInjectSurvivesProfileChange(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{OwnerID: "alice", Text: "喜欢绿茶", Source: memory.SourceExplicit}); err != nil {
+		t.Fatal(err)
+	}
+	settings := fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}}
+	var first, second string
+	runOnce := func(profile string, dest *string) {
+		t.Helper()
+		eng := &Engine{
+			Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+				for _, m := range msgs {
+					if strings.Contains(m.Content, "喜欢绿茶") {
+						*dest = m.Content
+					}
+				}
+				return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+			}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+			Messages: msgStore, Meta: msgStore, Memory: mem, Settings: settings,
+		}
+		r, err := st.CreateRun(store.CreateRunInput{
+			AgentID: "a", Input: "绿茶", ConversationID: "conv-a", ModelProfileID: profile,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "绿茶"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runOnce("profile-fast", &first)
+	runOnce("profile-strong", &second)
+	if first == "" || first != second || !strings.Contains(first, "喜欢绿茶") {
+		t.Fatalf("profile swap changed memory block:\n%q\n%q", first, second)
+	}
+}
+
+func messagesContainExact(msgs []llm.Message, want string) bool {
+	for _, m := range msgs {
+		if m.Content == want {
+			return true
+		}
+	}
+	return false
 }
