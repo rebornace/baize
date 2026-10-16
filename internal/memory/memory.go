@@ -3,6 +3,7 @@ package memory
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,6 +102,28 @@ func (s *MemoryStore) Get(id string) (Entry, error) {
 		return Entry{}, fmt.Errorf("memory entry not found")
 	}
 	return e, nil
+}
+
+func (s *MemoryStore) GetByOwnerKey(ownerID, key string) (Entry, bool, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	key = strings.TrimSpace(key)
+	if ownerID == "" {
+		return Entry{}, false, fmt.Errorf("owner_id required")
+	}
+	if key == "" {
+		return Entry{}, false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.ownerKeyID[ownerKey(ownerID, key)]
+	if !ok {
+		return Entry{}, false, nil
+	}
+	e, ok := s.byID[id]
+	if !ok {
+		return Entry{}, false, nil
+	}
+	return e, true, nil
 }
 
 func (s *MemoryStore) Delete(ownerID, id string) error {

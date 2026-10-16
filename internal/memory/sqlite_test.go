@@ -75,3 +75,24 @@ func TestSQLiteUpsertSameOwnerKeyOverwrites(t *testing.T) {
 		t.Fatalf("len=%d", len(list))
 	}
 }
+
+func TestSQLiteGetByOwnerKey(t *testing.T) {
+	s := openSQLiteMemory(t)
+	if _, ok, err := s.GetByOwnerKey("alice", "pref"); err != nil || ok {
+		t.Fatalf("missing key: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := s.GetByOwnerKey("alice", "  "); err != nil || ok {
+		t.Fatalf("blank key: ok=%v err=%v", ok, err)
+	}
+	first, err := s.Upsert(memory.Entry{OwnerID: "alice", Key: "pref", Text: "绿茶", Source: memory.SourceExplicit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.GetByOwnerKey("alice", " pref ")
+	if err != nil || !ok || got.ID != first.ID || got.Text != "绿茶" {
+		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
+	}
+	if _, ok, err := s.GetByOwnerKey("bob", "pref"); err != nil || ok {
+		t.Fatalf("other owner: ok=%v err=%v", ok, err)
+	}
+}

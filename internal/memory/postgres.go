@@ -165,6 +165,30 @@ func (s *PostgresStore) Get(id string) (Entry, error) {
 	return e, err
 }
 
+func (s *PostgresStore) GetByOwnerKey(ownerID, key string) (Entry, bool, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	key = strings.TrimSpace(key)
+	if ownerID == "" {
+		return Entry{}, false, fmt.Errorf("owner_id required")
+	}
+	if key == "" {
+		return Entry{}, false, nil
+	}
+	row := s.db.QueryRow(
+		`SELECT id, owner_id, key, text, source, created_at, updated_at
+		 FROM account_memory WHERE owner_id = $1 AND key = $2`,
+		ownerID, key,
+	)
+	e, err := scanEntry(row)
+	if err == sql.ErrNoRows {
+		return Entry{}, false, nil
+	}
+	if err != nil {
+		return Entry{}, false, err
+	}
+	return e, true, nil
+}
+
 func (s *PostgresStore) Delete(ownerID, id string) error {
 	e, err := s.Get(id)
 	if err != nil {
