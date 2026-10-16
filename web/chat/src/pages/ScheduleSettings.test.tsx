@@ -53,6 +53,12 @@ function wallClockInTimeZone(iso: string, timeZone: string): string {
   return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}`
 }
 
+function requestURL(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}
+
 describe('ScheduleSettings', () => {
   beforeEach(() => {
     localStorage.setItem(CONV_KEY, 'conv_1')
@@ -66,7 +72,7 @@ describe('ScheduleSettings', () => {
   it('POSTs exact body when saving a daily schedule at 09:00 Asia/Shanghai', async () => {
     let postedBody = ''
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestURL(input)
       if (url.includes('/v0/settings/schedules') && init?.method === 'GET') {
         return new Response(JSON.stringify({ items: [] }), { status: 200 })
       }
@@ -135,7 +141,7 @@ describe('ScheduleSettings', () => {
   it('POSTs RFC3339 fire_at for once schedules in the selected IANA timezone', async () => {
     let postedBody = ''
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestURL(input)
       if (url.includes('/v0/settings/schedules') && init?.method === 'GET') {
         return new Response(JSON.stringify({ items: [] }), { status: 200 })
       }
