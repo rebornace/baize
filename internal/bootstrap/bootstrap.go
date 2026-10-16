@@ -57,6 +57,7 @@ import (
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
+	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/settingscrypto"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/skill/loginmanage"
@@ -305,6 +306,16 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 	for _, tm := range memory.Tools(mem, metaStore) {
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+	}
+	schedStore, err := openSchedule(st, cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open schedule store: %w", err)
+	}
+	if metaStore != nil {
+		tm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
+		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
+		_ = reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
 	}
 
 	if err := registerConnector(st, reg, cfg, identities, blobStore, callbackCfg); err != nil {
@@ -1157,6 +1168,21 @@ func openMemory(st store.Store, cfg config.Config) (memory.Store, error) {
 		return memory.NewMemoryStore(), nil
 	}
 	return memory.Open(driver, sqlBackend.DB())
+}
+
+func openSchedule(st store.Store, cfg config.Config) (schedule.Store, error) {
+	driver := strings.ToLower(cfg.Store.Driver)
+	if driver == "" {
+		driver = "memory"
+	}
+	if driver == "memory" {
+		return schedule.NewMemoryStore(), nil
+	}
+	sqlBackend, ok := st.(store.SQLBackend)
+	if !ok {
+		return schedule.NewMemoryStore(), nil
+	}
+	return schedule.Open(driver, sqlBackend.DB())
 }
 
 type nopCloser struct{}

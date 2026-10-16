@@ -243,6 +243,14 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 			return false, nil
 		}
 
+		if e.Tools != nil {
+			if err, ok := e.Tools.PrecheckArgs(resolved, args, e.now()); ok && err != nil {
+				content = map[string]any{"error": err.Error()}
+				isError = true
+				return false, nil
+			}
+		}
+
 		if !skipApproval && e.Tools.RequiresApproval(resolved) {
 			if err := e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: resolved, Arguments: args}); err != nil {
 				if !errors.Is(err, ErrHITLRejected) {

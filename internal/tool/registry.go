@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/rebornace/baize/internal/llm"
 )
+
+// ArgsPrecheck validates tool arguments before HITL approval. Only tools that
+// register a precheck are affected; others behave as before.
+type ArgsPrecheck func(args map[string]any, now time.Time) error
 
 type Invoker func(ctx context.Context, args map[string]any) (content map[string]any, isError bool, err error)
 
@@ -38,6 +43,7 @@ type entry struct {
 	invoker         Invoker
 	requireApproval bool
 	requireLogin    bool
+	argsPrecheck    ArgsPrecheck
 	securitySchemes []string
 	connectorID     string
 	operationID     string
@@ -192,6 +198,32 @@ func (r *Registry) Specs() []llm.ToolSpec {
 		out[i] = s
 	}
 	return out
+}
+
+// RegisterArgsPrecheck attaches optional argument validation before HITL.
+func (r *Registry) RegisterArgsPrecheck(name string, fn ArgsPrecheck) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.tools[name]
+	if !ok {
+		return fmt.Errorf("unknown tool: %s", name)
+	}
+	e.argsPrecheck = fn
+	r.tools[name] = e
+	return nil
+}
+
+// PrecheckArgs runs a registered precheck when present. The second return is
+// false when the tool has no precheck.
+func (r *Registry) PrecheckArgs(name string, args map[string]any, now time.Time) (error, bool) {
+	r.mu.RLock()
+	e, ok := r.tools[name]
+	fn := e.argsPrecheck
+	r.mu.RUnlock()
+	if !ok || fn == nil {
+		return nil, false
+	}
+	return fn(args, now), true
 }
 
 // RequiresApproval reports whether the named tool must be approved before Invoke.

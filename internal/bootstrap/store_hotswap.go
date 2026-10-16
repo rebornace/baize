@@ -20,6 +20,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -198,6 +199,14 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 		for _, tm := range memory.Tools(mem, meta) {
 			rt.reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 		}
+		schedStore, err := openSchedule(newRaw, cfgSnap)
+		if err != nil {
+			rt.mu.Unlock()
+			return fmt.Errorf("open schedule store: %w", err)
+		}
+		stm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(meta), nil)
+		rt.reg.RegisterSpecApproved(stm.Spec, stm.Invoker, true)
+		_ = rt.reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
 	} else {
 		rt.engine.Meta = nil
 	}

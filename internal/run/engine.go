@@ -126,6 +126,8 @@ type Engine struct {
 	// Tool-RAG (ToolBench-style). nil ⇒ lexical BM25/sparse fallback only.
 	// Mutate only via SetToolEmbedder so the catalog cache is invalidated.
 	ToolEmbedder toolindex.Embedder
+	// Now overrides the clock for tool argument prechecks (tests). nil uses time.Now.
+	Now func() time.Time
 
 	toolIdxCache toolIndexCache
 	embedMu      sync.Mutex
@@ -251,6 +253,13 @@ func (e *Engine) Cancel(runID string) error {
 	// worker is blocked outside a cancellable call.
 	e.markCancelled(runID)
 	return nil
+}
+
+func (e *Engine) now() time.Time {
+	if e.Now != nil {
+		return e.Now()
+	}
+	return time.Now()
 }
 
 func (e *Engine) registerCancel(runID string, cancel context.CancelFunc) {
