@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/dbutil"
+	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -29,6 +30,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 			return nil, err
 		}
 		if err := migrateConversationGoals(db); err != nil {
+			return nil, err
+		}
+		if err := schedule.MigrateConversationSchedules(db); err != nil {
 			return nil, err
 		}
 		if err := migrateChatWorkspaces(db, store.DialectSQLite); err != nil {
@@ -69,6 +73,9 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 			return nil, err
 		}
 		if err := migrateConversationGoals(db); err != nil {
+			return nil, err
+		}
+		if err := schedule.MigrateConversationSchedules(db); err != nil {
 			return nil, err
 		}
 		if err := migrateChatWorkspaces(db, store.DialectPostgres); err != nil {
