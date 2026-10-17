@@ -315,6 +315,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	tm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
 	reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
 	_ = reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
+	if skillCat != nil {
+		ptm := skill.ProposeToolMeta(skillCat)
+		reg.RegisterSpecApproved(ptm.Spec, ptm.Invoker, true)
+		_ = reg.RegisterArgsPrecheck(skill.ProposeName, skill.ValidateProposeArgs)
+	}
 
 	if err := registerConnector(st, reg, cfg, identities, blobStore, callbackCfg); err != nil {
 		_ = closer.Close()

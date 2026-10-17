@@ -21,6 +21,7 @@ import (
 	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/schedule"
+	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
@@ -212,6 +213,11 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 	stm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
 	rt.reg.RegisterSpecApproved(stm.Spec, stm.Invoker, true)
 	_ = rt.reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
+	if skillCat := rt.srv.SkillCatalog; skillCat != nil {
+		ptm := skill.ProposeToolMeta(skillCat)
+		rt.reg.RegisterSpecApproved(ptm.Spec, ptm.Invoker, true)
+		_ = rt.reg.RegisterArgsPrecheck(skill.ProposeName, skill.ValidateProposeArgs)
+	}
 	rt.srv.Schedules = schedStore
 
 	if rt.compactor != nil {

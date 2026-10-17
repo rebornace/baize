@@ -148,6 +148,9 @@ func TestProposeSkillApprovedInstalls(t *testing.T) {
 	if pkg.Body != "Do the thing" {
 		t.Fatalf("body=%q", pkg.Body)
 	}
+	if pkg.Source != skill.SourceUser {
+		t.Fatalf("source=%q want %q", pkg.Source, skill.SourceUser)
+	}
 	if len(pkg.Tools) != 2 || pkg.Tools[0] != "read_file" || pkg.Tools[1] != "write_file" {
 		t.Fatalf("tools=%v", pkg.Tools)
 	}
