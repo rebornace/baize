@@ -85,6 +85,21 @@ func ProposePluginToolMeta(st store.Store) ToolMeta {
 	}
 }
 
+// ProposePluginArgsPrecheck validates args and store conflicts before HITL so
+// invalid drafts and id collisions never enter waiting_human.
+func ProposePluginArgsPrecheck(st store.Store) tool.ArgsPrecheck {
+	return func(args map[string]any, now time.Time) error {
+		if err := ValidateProposePluginArgs(args, now); err != nil {
+			return err
+		}
+		d, err := DraftFromProposePluginArgs(args)
+		if err != nil {
+			return err
+		}
+		return CheckPlaceholderConflicts(st, d)
+	}
+}
+
 // ProposePluginInvoker writes disabled connector/tool placeholders after HITL approval.
 func ProposePluginInvoker(st store.Store) tool.Invoker {
 	return func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {

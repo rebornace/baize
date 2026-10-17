@@ -11,6 +11,7 @@ import (
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/blob"
+	"github.com/rebornace/baize/internal/capfill"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/connector"
 	"github.com/rebornace/baize/internal/controlplane"
@@ -20,9 +21,9 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/skill"
-	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/webhook"
@@ -218,6 +219,9 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 		rt.reg.RegisterSpecApproved(ptm.Spec, ptm.Invoker, true)
 		_ = rt.reg.RegisterArgsPrecheck(skill.ProposeName, skill.ValidateProposeArgs)
 	}
+	pptm := capfill.ProposePluginToolMeta(wrapped)
+	rt.reg.RegisterSpecApproved(pptm.Spec, pptm.Invoker, true)
+	_ = rt.reg.RegisterArgsPrecheck(capfill.ProposeName, capfill.ProposePluginArgsPrecheck(wrapped))
 	rt.srv.Schedules = schedStore
 
 	if rt.compactor != nil {

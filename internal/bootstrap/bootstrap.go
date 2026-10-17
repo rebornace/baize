@@ -28,6 +28,7 @@ import (
 	"github.com/rebornace/baize/internal/blob"
 	_ "github.com/rebornace/baize/internal/blob/file"
 	_ "github.com/rebornace/baize/internal/blob/memory"
+	"github.com/rebornace/baize/internal/capfill"
 	"github.com/rebornace/baize/internal/channel"
 	"github.com/rebornace/baize/internal/channelmedia"
 	// Built-in channel: the generic out-of-process webhook channel registers
@@ -320,6 +321,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		reg.RegisterSpecApproved(ptm.Spec, ptm.Invoker, true)
 		_ = reg.RegisterArgsPrecheck(skill.ProposeName, skill.ValidateProposeArgs)
 	}
+	pptm := capfill.ProposePluginToolMeta(st)
+	reg.RegisterSpecApproved(pptm.Spec, pptm.Invoker, true)
+	_ = reg.RegisterArgsPrecheck(capfill.ProposeName, capfill.ProposePluginArgsPrecheck(st))
 
 	if err := registerConnector(st, reg, cfg, identities, blobStore, callbackCfg); err != nil {
 		_ = closer.Close()
