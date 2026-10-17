@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	ProposeName           = "propose_skill"
-	MaxProposeBodyRunes   = 20000
+	ProposeName         = "propose_skill"
+	MaxProposeBodyRunes = 20000
 )
 
 type ProposeDraft struct {

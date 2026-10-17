@@ -186,9 +186,13 @@ func (e *Engine) blockedByLogin(ctx context.Context, name string) bool {
 
 // awaitHITL is the ReAct-path wrapper: shapes the payload from the LLM tool
 // call and delegates to the payload-level kernel.
-func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) error {
-	return e.awaitHITLPayload(ctx, runID,
-		fmt.Sprintf("Approve tool %s?", tc.Name), tc.Name, tc.Arguments)
+func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) (Decision, error) {
+	return e.awaitHITLDecision(ctx, runID, &store.HITLPayload{
+		Prompt:    fmt.Sprintf("Approve tool %s?", tc.Name),
+		ToolName:  tc.Name,
+		Arguments: tc.Arguments,
+		Kind:      store.HITLKindApproval,
+	})
 }
 
 // invokeTool performs one full tool interaction for a run: pre-call gate
@@ -251,8 +255,11 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 			}
 		}
 
+		var hitl Decision
 		if !skipApproval && e.Tools.RequiresApproval(resolved) {
-			if err := e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: resolved, Arguments: args}); err != nil {
+			var err error
+			hitl, err = e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: resolved, Arguments: args})
+			if err != nil {
 				if !errors.Is(err, ErrHITLRejected) {
 					if ctx.Err() != nil || e.isCancelled(runID) {
 						return false, context.Canceled
@@ -266,7 +273,7 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 			}
 		}
 
-		invokeCtx := identity.WithToolCallID(ctx, callID)
+		invokeCtx := identity.WithToolCallID(applyDecisionPrincipal(ctx, hitl), callID)
 		toolCtx, cancel := context.WithTimeout(invokeCtx, e.toolTimeout())
 		c, toolIsErr, ierr := e.Tools.Invoke(toolCtx, resolved, args)
 		cancel()

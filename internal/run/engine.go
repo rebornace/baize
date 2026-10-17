@@ -403,7 +403,7 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 // Same-process: prefers Gate.Resume so a blocked Execute continues.
 // After restart (no waiter): reads HITLPayload, applies approve/reject, and continues ReAct.
 func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision) error {
-	ctx = e.injectAuthCtx(ctx, runID)
+	ctx = applyDecisionPrincipal(e.injectAuthCtx(ctx, runID), d)
 	if e.Gate != nil {
 		if err := e.Gate.Resume(runID, d); err == nil {
 			return nil

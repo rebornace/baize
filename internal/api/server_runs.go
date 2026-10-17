@@ -570,9 +570,12 @@ func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	p := s.principalFrom(r.Context())
 	_ = s.Runner.ContinueFromHITL(r.Context(), id, run.Decision{
-		Approve: approve,
-		Comment: body.Comment,
+		Approve:    approve,
+		Comment:    body.Comment,
+		Role:       p.Role,
+		OperatorID: p.OperatorID,
 	})
 
 	updated, err := s.Store.GetRun(id)
