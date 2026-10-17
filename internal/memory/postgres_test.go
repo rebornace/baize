@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/rebornace/baize/internal/memory"
 )
@@ -31,29 +32,51 @@ func openPostgresMemory(t *testing.T) memory.Store {
 	return s
 }
 
+func uniqueOwner(prefix string) string {
+	return prefix + "-" + uuid.NewString()
+}
+
+func cleanupOwner(t *testing.T, s memory.Store, ownerID string) {
+	t.Helper()
+	t.Cleanup(func() {
+		list, err := s.List(ownerID, 0, 0)
+		if err != nil {
+			return
+		}
+		for _, e := range list {
+			_ = s.Delete(ownerID, e.ID)
+		}
+	})
+}
+
 func TestPostgresUpsertSearchIsolationDelete(t *testing.T) {
 	s := openPostgresMemory(t)
-	e, err := s.Upsert(memory.Entry{OwnerID: "alice", Text: "喜欢绿茶", Source: memory.SourceExplicit})
+	alice := uniqueOwner("alice")
+	bob := uniqueOwner("bob")
+	cleanupOwner(t, s, alice)
+	cleanupOwner(t, s, bob)
+
+	e, err := s.Upsert(memory.Entry{OwnerID: alice, Text: "喜欢绿茶", Source: memory.SourceExplicit})
 	if err != nil || e.ID == "" {
 		t.Fatal(err, e)
 	}
-	_, _ = s.Upsert(memory.Entry{OwnerID: "bob", Text: "喜欢绿茶", Source: memory.SourceExplicit})
+	_, _ = s.Upsert(memory.Entry{OwnerID: bob, Text: "喜欢绿茶", Source: memory.SourceExplicit})
 
-	got, err := s.Search("alice", "绿茶", 8)
+	got, err := s.Search(alice, "绿茶", 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].OwnerID != "alice" {
+	if len(got) != 1 || got[0].OwnerID != alice {
 		t.Fatalf("search: %+v", got)
 	}
 
-	if err := s.Delete("bob", e.ID); err == nil {
+	if err := s.Delete(bob, e.ID); err == nil {
 		t.Fatal("bob should not delete alice entry")
 	}
-	if err := s.Delete("alice", e.ID); err != nil {
+	if err := s.Delete(alice, e.ID); err != nil {
 		t.Fatal(err)
 	}
-	got2, _ := s.Search("alice", "绿茶", 8)
+	got2, _ := s.Search(alice, "绿茶", 8)
 	if len(got2) != 0 {
 		t.Fatalf("after delete: %+v", got2)
 	}
@@ -61,11 +84,14 @@ func TestPostgresUpsertSearchIsolationDelete(t *testing.T) {
 
 func TestPostgresUpsertSameOwnerKeyOverwrites(t *testing.T) {
 	s := openPostgresMemory(t)
-	first, err := s.Upsert(memory.Entry{OwnerID: "alice", Key: "pref", Text: "绿茶", Source: memory.SourceExplicit})
+	alice := uniqueOwner("alice")
+	cleanupOwner(t, s, alice)
+
+	first, err := s.Upsert(memory.Entry{OwnerID: alice, Key: "pref", Text: "绿茶", Source: memory.SourceExplicit})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.Upsert(memory.Entry{OwnerID: "alice", Key: "pref", Text: "红茶", Source: memory.SourceExplicit})
+	second, err := s.Upsert(memory.Entry{OwnerID: alice, Key: "pref", Text: "红茶", Source: memory.SourceExplicit})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +101,7 @@ func TestPostgresUpsertSameOwnerKeyOverwrites(t *testing.T) {
 	if second.Text != "红茶" {
 		t.Fatalf("text=%q", second.Text)
 	}
-	list, _ := s.List("alice", 0, 0)
+	list, _ := s.List(alice, 0, 0)
 	if len(list) != 1 {
 		t.Fatalf("len=%d", len(list))
 	}
@@ -83,21 +109,26 @@ func TestPostgresUpsertSameOwnerKeyOverwrites(t *testing.T) {
 
 func TestPostgresGetByOwnerKey(t *testing.T) {
 	s := openPostgresMemory(t)
-	if _, ok, err := s.GetByOwnerKey("alice", "pref"); err != nil || ok {
+	alice := uniqueOwner("alice")
+	bob := uniqueOwner("bob")
+	cleanupOwner(t, s, alice)
+	cleanupOwner(t, s, bob)
+
+	if _, ok, err := s.GetByOwnerKey(alice, "pref"); err != nil || ok {
 		t.Fatalf("missing key: ok=%v err=%v", ok, err)
 	}
-	if _, ok, err := s.GetByOwnerKey("alice", "  "); err != nil || ok {
+	if _, ok, err := s.GetByOwnerKey(alice, "  "); err != nil || ok {
 		t.Fatalf("blank key: ok=%v err=%v", ok, err)
 	}
-	first, err := s.Upsert(memory.Entry{OwnerID: "alice", Key: "pref", Text: "绿茶", Source: memory.SourceExplicit})
+	first, err := s.Upsert(memory.Entry{OwnerID: alice, Key: "pref", Text: "绿茶", Source: memory.SourceExplicit})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.GetByOwnerKey("alice", " pref ")
+	got, ok, err := s.GetByOwnerKey(alice, " pref ")
 	if err != nil || !ok || got.ID != first.ID || got.Text != "绿茶" {
 		t.Fatalf("got=%+v ok=%v err=%v", got, ok, err)
 	}
-	if _, ok, err := s.GetByOwnerKey("bob", "pref"); err != nil || ok {
+	if _, ok, err := s.GetByOwnerKey(bob, "pref"); err != nil || ok {
 		t.Fatalf("other owner: ok=%v err=%v", ok, err)
 	}
 }
