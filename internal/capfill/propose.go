@@ -71,6 +71,9 @@ func ValidateProposePluginArgs(args map[string]any, _ time.Time) error {
 	if len(tools) == 0 {
 		return fmt.Errorf("tools required")
 	}
+	if err := checkDuplicateToolNames(tools); err != nil {
+		return err
+	}
 	for _, t := range tools {
 		if err := validatePluginID(t.Name); err != nil {
 			return fmt.Errorf("tool name: %w", err)
@@ -141,6 +144,9 @@ func CheckPlaceholderConflicts(st store.Store, d PluginDraft) error {
 	if st == nil {
 		return fmt.Errorf("store unavailable")
 	}
+	if err := checkDuplicateToolNames(d.Tools); err != nil {
+		return err
+	}
 	if _, err := st.GetConnector(d.ConnectorID); err == nil {
 		return fmt.Errorf("connector %q already exists", d.ConnectorID)
 	}
@@ -182,6 +188,17 @@ func InstallPluginPlaceholder(st store.Store, d PluginDraft) error {
 func validatePluginID(id string) error {
 	if !pluginIDPattern.MatchString(id) {
 		return fmt.Errorf("invalid id %q", id)
+	}
+	return nil
+}
+
+func checkDuplicateToolNames(tools []PluginToolDraft) error {
+	seen := make(map[string]struct{}, len(tools))
+	for _, t := range tools {
+		if _, dup := seen[t.Name]; dup {
+			return fmt.Errorf("duplicate tool name %q", t.Name)
+		}
+		seen[t.Name] = struct{}{}
 	}
 	return nil
 }
