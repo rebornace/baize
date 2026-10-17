@@ -2,6 +2,7 @@ package skill_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,26 @@ import (
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/tool"
 )
+
+type stubMDInstaller struct {
+	installErr error
+	byID       map[string]skill.Package
+}
+
+func (s *stubMDInstaller) InstallMD(string, []byte) (skill.Package, error) {
+	if s.installErr != nil {
+		return skill.Package{}, s.installErr
+	}
+	return skill.Package{}, errors.New("stub: unexpected success")
+}
+
+func (s *stubMDInstaller) Get(id string) (skill.Package, bool) {
+	if s.byID == nil {
+		return skill.Package{}, false
+	}
+	p, ok := s.byID[id]
+	return p, ok
+}
 
 func proposeTestCatalog(t *testing.T) *skill.Catalog {
 	t.Helper()
@@ -73,6 +94,41 @@ func TestProposeInvokerOverwritesUserSkill(t *testing.T) {
 	pkg, ok := cat.Get("demo")
 	if !ok || pkg.Description != "Demo skill" {
 		t.Fatalf("pkg=%+v ok=%v", pkg, ok)
+	}
+}
+
+func TestProposeInvokerInstallMDError(t *testing.T) {
+	inst := &stubMDInstaller{
+		installErr: errors.New("blob write failed"),
+		byID: map[string]skill.Package{
+			"existing": {ID: "existing", Description: "unchanged"},
+		},
+	}
+	tm := skill.ProposeToolMeta(inst)
+	_, isErr, err := tm.Invoker(context.Background(), proposeDemoArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isErr {
+		t.Fatal("want tool error when InstallMD fails")
+	}
+	if _, ok := inst.Get("demo"); ok {
+		t.Fatal("demo must not appear after failed install")
+	}
+	p, ok := inst.Get("existing")
+	if !ok || p.Description != "unchanged" {
+		t.Fatalf("existing pkg changed: %+v ok=%v", p, ok)
+	}
+}
+
+func TestProposeInvokerNilInstaller(t *testing.T) {
+	tm := skill.ProposeToolMeta(nil)
+	_, isErr, err := tm.Invoker(context.Background(), proposeDemoArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isErr {
+		t.Fatal("want tool error when installer is nil")
 	}
 }
 

@@ -23,6 +23,7 @@ func proposeSkillArgs() map[string]any {
 		"name":        "demo",
 		"description": "Demo skill",
 		"body":        "Do the thing",
+		"tools":       []any{"read_file", "write_file"},
 	}
 }
 
@@ -143,6 +144,12 @@ func TestProposeSkillApprovedInstalls(t *testing.T) {
 	}
 	if pkg.Description != "Demo skill" || pkg.ID != "demo" {
 		t.Fatalf("pkg=%+v", pkg)
+	}
+	if pkg.Body != "Do the thing" {
+		t.Fatalf("body=%q", pkg.Body)
+	}
+	if len(pkg.Tools) != 2 || pkg.Tools[0] != "read_file" || pkg.Tools[1] != "write_file" {
+		t.Fatalf("tools=%v", pkg.Tools)
 	}
 }
 
