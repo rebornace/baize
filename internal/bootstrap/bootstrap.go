@@ -941,7 +941,12 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 			return nil
 		},
 		ResumeHITL: func(ctx context.Context, runID string, approve bool, comment string) error {
-			return d.engine.ContinueFromHITL(ctx, runID, run.Decision{Approve: approve, Comment: comment})
+			return d.engine.ContinueFromHITL(ctx, runID, run.Decision{
+				Approve:    approve,
+				Comment:    comment,
+				Role:       controlplane.RoleFrom(ctx),
+				OperatorID: controlplane.OperatorIDFrom(ctx),
+			})
 		},
 		// api.Server implements channel.RouteRegistrar: channels such as the
 		// webhook channel mount their own inbound HTTP routes during Bootstrap.

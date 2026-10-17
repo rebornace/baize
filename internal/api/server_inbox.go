@@ -349,9 +349,12 @@ func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, chann
 
 	decision := strings.TrimSpace(payload.Decision)
 	approve := decision == "approve"
+	p := s.principalFrom(r.Context())
 	_ = s.Runner.ContinueFromHITL(r.Context(), runID, run.Decision{
-		Approve: approve,
-		Comment: payload.Comment,
+		Approve:    approve,
+		Comment:    payload.Comment,
+		Role:       p.Role,
+		OperatorID: p.OperatorID,
 	})
 
 	eventData := map[string]any{
