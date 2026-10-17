@@ -180,6 +180,26 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   created_at TEXT,
   updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS eval_cases (
+  id TEXT PRIMARY KEY,
+  source_run_id TEXT,
+  status TEXT NOT NULL,
+  protocol TEXT,
+  input TEXT,
+  required_reads_json TEXT,
+  consequential_json TEXT,
+  expect_conseq_any_json TEXT,
+  chain_json TEXT,
+  events_json TEXT NOT NULL,
+  run_status_at_ingest TEXT,
+  last_score_pass INTEGER,
+  last_score_codes_json TEXT,
+  last_score_notes TEXT,
+  last_scored_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_eval_cases_source ON eval_cases(source_run_id);
 `
 
 // SQLStore is a SQL-backed Store shared by sqlite and postgres drivers.
@@ -290,6 +310,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles columns: %w", err)
 	}
+	if err := migrateEvalCasesTable(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate eval_cases: %w", err)
+	}
 	s := &SQLStore{
 		db:         db,
 		dialect:    DialectSQLite,
@@ -372,6 +396,33 @@ func migrateToolsColumns(db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func migrateEvalCasesTable(db *sql.DB) error {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS eval_cases (
+  id TEXT PRIMARY KEY,
+  source_run_id TEXT,
+  status TEXT NOT NULL,
+  protocol TEXT,
+  input TEXT,
+  required_reads_json TEXT,
+  consequential_json TEXT,
+  expect_conseq_any_json TEXT,
+  chain_json TEXT,
+  events_json TEXT NOT NULL,
+  run_status_at_ingest TEXT,
+  last_score_pass INTEGER,
+  last_score_codes_json TEXT,
+  last_score_notes TEXT,
+  last_scored_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_eval_cases_source ON eval_cases(source_run_id)`)
+	return err
 }
 
 func migrateModelProfilesColumns(db *sql.DB) error {

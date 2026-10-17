@@ -84,7 +84,7 @@ Channels are a **general, extensible** capability: alerts, tickets, and instant 
 
 ### For product, ops, and integrators
 
-- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security / Observability); Matching & decisions is its own page; External login and Expose capabilities cover hosted login and MCP export; Runtime metrics shows process metrics and recent logs.
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security / Observability); Matching & decisions is its own page; External login and Expose capabilities cover hosted login and MCP export; Runtime metrics shows process metrics and recent logs; Admin **Eval corpus** (Settings → Eval corpus) ingests failed/slow runs for deterministic evidence re-scoring and JSON export (no model calls; batch replay still uses `scripts/evidence-eval`).
 - Connector saves surface CatalogDiff; chat messages offer “View run binding”; MCP export has invocation audit; the connector editor can set outbound mTLS paths.
 - Full HTTP management surface for scripts and platforms — no mandatory language SDK.
 - Some runtime knobs and observability settings hot-reload; a local database is enough to start, with larger databases when you need them.

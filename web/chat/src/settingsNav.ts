@@ -5,6 +5,7 @@ import {
   CalendarClock,
   Cpu,
   Database,
+  FlaskConical,
   Inbox,
   LayoutGrid,
   MessageCircle,
@@ -126,6 +127,10 @@ const ITEM_META: NavMeta[] = [
   {
     to: '/settings/metrics', group: 'system', icon: Activity, operator: 'locked',
     labelKey: 'metrics', descKey: 'metricsDesc',
+  },
+  {
+    to: '/settings/eval', group: 'system', icon: FlaskConical, operator: 'locked',
+    labelKey: 'eval', descKey: 'evalDesc',
   },
   {
     to: '/settings/runtime', group: 'system', icon: SlidersHorizontal,

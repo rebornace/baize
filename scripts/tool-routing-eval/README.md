@@ -118,6 +118,27 @@ routing; a request passes if the run succeeds and at least one expected
 tool is called. Add cases to widen coverage and keep `expect_any` focused
 on a tool that proves the right system/action was reached.
 
+## Failure → corpus → re-run
+
+When a request **FAIL**s (run did not succeed) or routing regresses, treat it
+like evidence-eval’s offline corpus loop:
+
+1. **Capture** — add or extend an entry in `requests.json` (stable `id`,
+   realistic `input`, `expect_any` that proves the right tool was reached).
+2. **Re-run** — `.\run_batch.ps1` (or `sweep.ps1` / `stability.ps1` at your
+   fixed TopK) until the case passes again or you accept a documented alt.
+3. **Track** — keep harness artifacts under `out/` for before/after comparison.
+
+**Write-before-evidence** failures are **not** stored in this harness. Use Admin
+**Settings → Eval** (EvalCase in the baize store): filter failed/slow runs
+(EV1a), ingest event snapshots (EV1), deterministic re-score without model
+tokens, export JSON for `scripts/evidence-eval`. Spec:
+[`docs/superpowers/specs/2026-10-17-eval-failure-loop-design.md`](../../docs/superpowers/specs/2026-10-17-eval-failure-loop-design.md).
+
+Re-invoking the model after a fix still uses `run_batch.ps1` here or
+`scripts/evidence-eval/run_batch.ps1` from exported cases — not the settings
+page.
+
 ## Metrics
 
 For each request the harness records:

@@ -615,4 +615,64 @@ type Store interface {
 
 	PutMCPExportInvocation(inv MCPExportInvocation) error
 	ListMCPExportInvocations(limit int) ([]MCPExportInvocation, error)
+
+	// ListRunsCreatedBetween returns runs with created_at in [from, to], optionally
+	// filtered by status (empty status = no filter), newest first. limit≤0 → 100; cap 500.
+	ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error)
+	UpsertEvalCase(c EvalCase) error
+	GetEvalCase(id string) (EvalCase, error)
+	ListEvalCases(limit int) ([]EvalCase, error)
+	DeleteEvalCase(id string) error
+	FindEvalCaseBySourceRun(runID string) (EvalCase, bool, error)
+}
+
+// EvalCaseStatus is draft (incomplete expectations) or confirmed (ready to score).
+type EvalCaseStatus string
+
+const (
+	EvalCaseDraft     EvalCaseStatus = "draft"
+	EvalCaseConfirmed EvalCaseStatus = "confirmed"
+)
+
+// EvalCase is a persisted evidence-eval corpus row with a frozen events snapshot.
+type EvalCase struct {
+	ID                string
+	SourceRunID       string
+	Status            EvalCaseStatus
+	Protocol          string
+	Input             string
+	RequiredReads     []string
+	Consequential     []string
+	ExpectConseqAny   []string
+	Chain             []EvalChainLink
+	EventsJSON        []byte
+	RunStatusAtIngest string
+	LastScorePass     *bool
+	LastScoreCodes    []string
+	LastScoreNotes    string
+	LastScoredAt      *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// EvalChainLink is an ordered tool constraint for evidence scoring.
+type EvalChainLink struct {
+	After  string `json:"after"`
+	Before string `json:"before"`
+}
+
+// ErrEvalCaseNotFound is returned when an eval case row is missing.
+var ErrEvalCaseNotFound = errors.New("eval case not found")
+
+const evalListDefaultLimit = 100
+const evalListMaxLimit = 500
+
+func normalizeEvalListLimit(limit int) int {
+	if limit <= 0 {
+		return evalListDefaultLimit
+	}
+	if limit > evalListMaxLimit {
+		return evalListMaxLimit
+	}
+	return limit
 }

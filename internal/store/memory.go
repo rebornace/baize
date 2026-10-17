@@ -29,6 +29,7 @@ type Memory struct {
 	modelProfiles        map[string]ModelProfile
 	catalogRevisions     map[string][]ConnectorCatalogRevision
 	mcpExportInvocations []MCPExportInvocation
+	evalCases             map[string]EvalCase
 }
 
 // NewMemory creates an empty in-memory Store.
@@ -50,6 +51,7 @@ func NewMemory() *Memory {
 		mcpExportKeys:    map[string]MCPExportKey{},
 		modelProfiles:    map[string]ModelProfile{},
 		catalogRevisions: map[string][]ConnectorCatalogRevision{},
+		evalCases:        map[string]EvalCase{},
 	}
 }
 

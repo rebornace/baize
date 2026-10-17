@@ -166,6 +166,26 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   created_at TEXT,
   updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS eval_cases (
+  id TEXT PRIMARY KEY,
+  source_run_id TEXT,
+  status TEXT NOT NULL,
+  protocol TEXT,
+  input TEXT,
+  required_reads_json TEXT,
+  consequential_json TEXT,
+  expect_conseq_any_json TEXT,
+  chain_json TEXT,
+  events_json TEXT NOT NULL,
+  run_status_at_ingest TEXT,
+  last_score_pass INTEGER,
+  last_score_codes_json TEXT,
+  last_score_notes TEXT,
+  last_scored_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_eval_cases_source ON eval_cases(source_run_id);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
@@ -305,6 +325,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE connectors ADD COLUMN IF NOT EXISTS tls_json TEXT`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate connectors tls_json: %w", err)
+	}
+	if err := migrateEvalCasesTable(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate eval_cases: %w", err)
 	}
 	s := &SQLStore{
 		db:         db,

@@ -32,11 +32,11 @@ describe('SETTINGS_GROUPS', () => {
 })
 
 describe('settingsNavItems(admin)', () => {
-  it('returns 17 items with unique routes and complete metadata', () => {
+  it('returns 19 items with unique routes and complete metadata', () => {
     const adminItems = settingsNavItems('admin')
-    expect(adminItems).toHaveLength(17)
+    expect(adminItems).toHaveLength(19)
     const tos = adminItems.map((i) => i.to)
-    expect(new Set(tos).size).toBe(17)
+    expect(new Set(tos).size).toBe(19)
     for (const item of adminItems) {
       expect(item.label).toBeTruthy()
       expect(item.desc).toBeTruthy()
@@ -64,6 +64,8 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/channels/weixin']).toBe('微信')
     expect(byTo['/settings/runtime']).toBe('运行参数')
     expect(byTo['/settings/metrics']).toBe('运行指标')
+    expect(byTo['/settings/eval']).toBe('评测语料')
+    expect(byTo['/settings/schedules']).toBe('对话日程')
   })
 
   it('uses English labels when en pack is active', () => {
@@ -74,6 +76,7 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/tool-matching']).toBe('Matching & decisions')
     expect(byTo['/settings/runtime']).toBe('Runtime settings')
     expect(byTo['/settings/metrics']).toBe('Runtime metrics')
+    expect(byTo['/settings/eval']).toBe('Eval corpus')
   })
 
   it('groups items correctly', () => {
@@ -84,6 +87,7 @@ describe('settingsNavItems(admin)', () => {
       '/settings/tools',
       '/settings/skills',
       '/settings/memory',
+      '/settings/schedules',
       '/settings/tool-matching',
     ])
     expect(inGroup('connect')).toEqual([
@@ -102,6 +106,7 @@ describe('settingsNavItems(admin)', () => {
       '/settings/identities',
       '/settings/storage',
       '/settings/metrics',
+      '/settings/eval',
       '/settings/runtime',
     ])
   })
@@ -124,6 +129,7 @@ describe('settingsNavItems(operator) access levels', () => {
     expect(access('/settings/tools')).toBe('read')
     expect(access('/settings/skills')).toBe('read')
     expect(access('/settings/memory')).toBe('full')
+    expect(access('/settings/schedules')).toBe('full')
     expect(access('/settings/tool-matching')).toBe('read')
     expect(access('/settings/runtime')).toBe('read')
     expect(access('/settings/channels/weixin')).toBe('login')
@@ -131,21 +137,23 @@ describe('settingsNavItems(operator) access levels', () => {
     expect(access('/settings/openapi')).toBe('locked')
     expect(access('/settings/storage')).toBe('locked')
     expect(access('/settings/metrics')).toBe('locked')
+    expect(access('/settings/eval')).toBe('locked')
   })
 })
 
 describe('visibleNavItems', () => {
   it('admin sees every item', () => {
-    expect(visibleNavItems('admin')).toHaveLength(17)
+    expect(visibleNavItems('admin')).toHaveLength(19)
   })
 
-  it('operator sidebar hides locked items (no connect group), keeps 8', () => {
+  it('operator sidebar hides locked items (no connect group), keeps 9', () => {
     const visible = visibleNavItems('operator')
     expect(visible.map((i) => i.to)).toEqual([
       '/settings/models',
       '/settings/tools',
       '/settings/skills',
       '/settings/memory',
+      '/settings/schedules',
       '/settings/tool-matching',
       '/settings/channels/weixin',
       '/settings/identities',

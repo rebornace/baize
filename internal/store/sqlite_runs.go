@@ -219,6 +219,25 @@ func (s *SQLStore) ClearRunLease(id string) error {
 	return err
 }
 
+func (s *SQLStore) ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error) {
+	limit = normalizeEvalListLimit(limit)
+	from = from.UTC()
+	to = to.UTC()
+	q := `SELECT ` + runSelectColumns + ` FROM runs WHERE created_at >= ? AND created_at <= ?`
+	args := []any{s.timeArg(from), s.timeArg(to)}
+	if status != "" {
+		q += ` AND status = ?`
+		args = append(args, string(status))
+	}
+	q += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanRuns(rows)
+}
+
 func (s *SQLStore) ListRunsForReconcile(limit int) ([]*Run, error) {
 	if limit <= 0 {
 		limit = 100
