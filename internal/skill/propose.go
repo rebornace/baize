@@ -3,6 +3,7 @@ package skill
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
@@ -50,7 +51,7 @@ func BuildSKILLMD(d ProposeDraft) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
-func ValidateProposeArgs(args map[string]any) error {
+func ValidateProposeArgs(args map[string]any, _ time.Time) error {
 	name, err := requiredStringArg(args, "name")
 	if err != nil {
 		return err

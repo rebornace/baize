@@ -3,9 +3,12 @@ package skill_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/skill"
 )
+
+var proposeTestNow = time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
 
 func TestBuildSKILLMDRoundTrip(t *testing.T) {
 	raw, err := skill.BuildSKILLMD(skill.ProposeDraft{
@@ -34,18 +37,18 @@ func TestBuildSKILLMDRoundTrip(t *testing.T) {
 func TestValidateProposeArgsRejects(t *testing.T) {
 	if err := skill.ValidateProposeArgs(map[string]any{
 		"name": "x", "description": "d", "body": "",
-	}); err == nil {
+	}, proposeTestNow); err == nil {
 		t.Fatal("empty body")
 	}
 	if err := skill.ValidateProposeArgs(map[string]any{
 		"name": "", "description": "d", "body": "步骤",
-	}); err == nil {
+	}, proposeTestNow); err == nil {
 		t.Fatal("empty name")
 	}
 	long := strings.Repeat("字", 20001)
 	if err := skill.ValidateProposeArgs(map[string]any{
 		"name": "x", "description": "d", "body": long,
-	}); err == nil {
+	}, proposeTestNow); err == nil {
 		t.Fatal("overlong body")
 	}
 }
