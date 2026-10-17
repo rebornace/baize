@@ -164,6 +164,124 @@ func TestIngestReplaceKeepsID(t *testing.T) {
 	}
 }
 
+func TestScoreCasePreservesCalibration(t *testing.T) {
+	st := store.NewMemory()
+	c := confirmedListOnlyCaseForScore(t, st)
+	if _, err := eval.ScoreCase(st, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	agree := false
+	c, err := eval.SetCalibration(st, c.ID, &agree, "disagree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eval.ScoreCase(st, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetEvalCase(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HumanAgree == nil || *got.HumanAgree != false || got.HumanNote != "disagree" || got.CalibratedAt == nil {
+		t.Fatalf("calibration lost: %+v", got)
+	}
+}
+
+func confirmedListOnlyCaseForScore(t *testing.T, st store.Store) store.EvalCase {
+	t.Helper()
+	r, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a",
+		Input:   "只查询工单列表，了解当前有哪些工单。不要新建工单，也不要改任何工单状态。",
+	})
+	for _, ev := range loadFixtureEvents(t, "EV-V0-list-only.pass.events.json") {
+		_ = st.AppendEvent(r.ID, ev)
+	}
+	c, err := eval.IngestFromRun(st, eval.IngestInput{
+		RunID:         r.ID,
+		Protocol:      "V0",
+		RequiredReads: []string{"list_tickets"},
+		Consequential: []string{"create_ticket", "update_ticket_status"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestPatchTrajectoryExpectations(t *testing.T) {
+	st := store.NewMemory()
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "hi"})
+	c, _ := eval.IngestFromRun(st, eval.IngestInput{RunID: r.ID, Protocol: "V0"})
+	c, err := eval.PatchCase(st, c.ID, eval.PatchInput{
+		SetForbidTools: true,
+		ForbidTools:    []string{"create_ticket"},
+		SetArgContains: true,
+		ArgContains:    []store.EvalArgContains{{Tool: "list_tickets", Substr: "open"}},
+		SetExpectState: true,
+		ExpectState:    []store.EvalExpectState{{ID: "t1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.ForbidTools) != 1 || len(c.ArgContains) != 1 || len(c.ExpectState) != 1 {
+		t.Fatalf("patch fields: %+v", c)
+	}
+	c, err = eval.PatchCase(st, c.ID, eval.PatchInput{
+		SetForbidTools: true,
+		ForbidTools:    []string{},
+	})
+	if err != nil || len(c.ForbidTools) != 0 {
+		t.Fatalf("clear forbid: %+v err=%v", c.ForbidTools, err)
+	}
+}
+
+func TestExportIncludesTrajectoryFields(t *testing.T) {
+	st := store.NewMemory()
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "hello"})
+	_ = st.AppendEvent(r.ID, store.Event{Type: "run.started", Timestamp: time.Now().UTC()})
+	c, err := eval.IngestFromRun(st, eval.IngestInput{
+		RunID:         r.ID,
+		Protocol:      "V0",
+		RequiredReads: []string{"list_tickets"},
+		Consequential: []string{"create_ticket"},
+		ForbidTools:   []string{"delete_ticket"},
+		ExpectState:   []store.EvalExpectState{{ID: "t1", Status: "open"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := []byte(`{"tickets":[{"id":"t1","title":"x","status":"open"}]}`)
+	c.StateSnapshotJSON = snap
+	c.UpdatedAt = time.Now().UTC()
+	if err := st.UpsertEvalCase(c); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := eval.Export(st, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Case struct {
+			ForbidTools   []string                `json:"forbid_tools"`
+			ExpectState   []store.EvalExpectState `json:"expect_state"`
+			StateSnapshot *struct {
+				Tickets []struct {
+					ID string `json:"id"`
+				} `json:"tickets"`
+			} `json:"state_snapshot"`
+		} `json:"case"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Case.ForbidTools) != 1 || len(doc.Case.ExpectState) != 1 {
+		t.Fatalf("export case: %+v", doc.Case)
+	}
+	if doc.Case.StateSnapshot == nil || len(doc.Case.StateSnapshot.Tickets) != 1 {
+		t.Fatalf("export snapshot: %+v", doc.Case.StateSnapshot)
+	}
+}
+
 func TestConfirmAndScore(t *testing.T) {
 	st := store.NewMemory()
 	r, _ := st.CreateRun(store.CreateRunInput{

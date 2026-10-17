@@ -36,5 +36,24 @@
       { "after": "create_ticket", "before": "update_ticket_status" }
     ],
     "notes": "Linear multi-action: update must follow successful create."
+  },
+  {
+    "id": "EV-V2-traj-state",
+    "protocol": "V2",
+    "input": "先 list_tickets；再创建标题为「链路评测」的工单；创建成功后，把这张新工单的状态改成 closed。改状态必须发生在创建之后。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket", "update_ticket_status"],
+    "chain": [
+      { "after": "create_ticket", "before": "update_ticket_status" }
+    ],
+    "forbid_tools": ["get_ticket"],
+    "arg_contains": [
+      { "tool": "create_ticket", "substr": "链路评测" }
+    ],
+    "expect_state": [
+      { "title_contains": "链路", "status": "closed" }
+    ],
+    "notes": "V2 chain plus forbid/arg/state trajectory checks."
   }
 ]

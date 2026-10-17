@@ -106,6 +106,107 @@ func TestListRunsCreatedBetweenStatusFilter(t *testing.T) {
 	}
 }
 
+func TestEvalCaseCalibrationPersists(t *testing.T) {
+	runCase := func(t *testing.T, st Store) {
+		t.Helper()
+		now := time.Now().UTC()
+		pass := true
+		agree := false
+		c := EvalCase{
+			ID: "ec1", Status: EvalCaseConfirmed, Protocol: "V0",
+			Input: "x", EventsJSON: []byte("[]"),
+			RequiredReads: []string{}, Consequential: []string{},
+			LastScorePass: &pass, LastScoredAt: &now,
+			HumanAgree: &agree, HumanNote: "nope", CalibratedAt: &now,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		if err := st.UpsertEvalCase(c); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.GetEvalCase("ec1")
+		if err != nil || got.HumanAgree == nil || *got.HumanAgree || got.HumanNote != "nope" {
+			t.Fatalf("%+v %v", got, err)
+		}
+	}
+
+	t.Run("memory", func(t *testing.T) {
+		runCase(t, NewMemory())
+	})
+	t.Run("sqlite", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "eval_cal.db")
+		st, err := OpenSQLite(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		runCase(t, st)
+	})
+}
+
+func TestEvalCaseTrajectoryFieldsRoundTrip(t *testing.T) {
+	runCase := func(t *testing.T, st Store) {
+		t.Helper()
+		now := time.Now().UTC()
+		snap := []byte(`{"tickets":[{"id":"t1","title":"Fix bug","status":"open"}]}`)
+		c := EvalCase{
+			ID: "ec-traj", Status: EvalCaseConfirmed, Protocol: "V0",
+			Input: "x", EventsJSON: []byte("[]"),
+			ForbidTools:       []string{"delete_all"},
+			ArgContains:       []EvalArgContains{{Tool: "grep", Substr: "pattern"}},
+			ExpectState:       []EvalExpectState{{ID: "t1", TitleContains: "bug", Status: "open"}},
+			StateSnapshotJSON: snap,
+			CreatedAt:         now, UpdatedAt: now,
+		}
+		if err := st.UpsertEvalCase(c); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.GetEvalCase("ec-traj")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.ForbidTools) != 1 || got.ForbidTools[0] != "delete_all" {
+			t.Fatalf("forbid_tools: %+v", got.ForbidTools)
+		}
+		if len(got.ArgContains) != 1 || got.ArgContains[0].Tool != "grep" || got.ArgContains[0].Substr != "pattern" {
+			t.Fatalf("arg_contains: %+v", got.ArgContains)
+		}
+		if len(got.ExpectState) != 1 || got.ExpectState[0].ID != "t1" || got.ExpectState[0].Status != "open" {
+			t.Fatalf("expect_state: %+v", got.ExpectState)
+		}
+		if string(got.StateSnapshotJSON) != string(snap) {
+			t.Fatalf("state_snapshot: %q", got.StateSnapshotJSON)
+		}
+
+		empty := EvalCase{
+			ID: "ec-empty", Status: EvalCaseDraft, Input: "y", EventsJSON: []byte("[]"),
+			CreatedAt: now, UpdatedAt: now,
+		}
+		if err := st.UpsertEvalCase(empty); err != nil {
+			t.Fatal(err)
+		}
+		gotEmpty, err := st.GetEvalCase("ec-empty")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotEmpty.StateSnapshotJSON != nil && len(gotEmpty.StateSnapshotJSON) > 0 {
+			t.Fatalf("expected empty snapshot, got %q", gotEmpty.StateSnapshotJSON)
+		}
+	}
+
+	t.Run("memory", func(t *testing.T) {
+		runCase(t, NewMemory())
+	})
+	t.Run("sqlite", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "eval_traj.db")
+		st, err := OpenSQLite(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		runCase(t, st)
+	})
+}
+
 func TestEvalCaseCRUDMemory(t *testing.T) {
 	st := NewMemory()
 	c := EvalCase{

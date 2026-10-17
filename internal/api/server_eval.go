@@ -37,9 +37,26 @@ type evalCaseJSON struct {
 	LastScoreCodes    []string             `json:"last_score_codes,omitempty"`
 	LastScoreNotes    string               `json:"last_score_notes,omitempty"`
 	LastScoredAt      *string              `json:"last_scored_at,omitempty"`
+	HumanAgree        *bool                `json:"human_agree,omitempty"`
+	HumanNote         string               `json:"human_note,omitempty"`
+	CalibratedAt      string               `json:"calibrated_at,omitempty"`
+	ForbidTools       []string             `json:"forbid_tools,omitempty"`
+	ArgContains       []store.EvalArgContains `json:"arg_contains,omitempty"`
+	ExpectState       []store.EvalExpectState `json:"expect_state,omitempty"`
+	HasStateSnapshot  bool                 `json:"has_state_snapshot"`
+	StateSnapshot     json.RawMessage      `json:"state_snapshot,omitempty"`
 	CreatedAt         string               `json:"created_at"`
 	UpdatedAt         string               `json:"updated_at"`
 	Events            []store.Event        `json:"events,omitempty"`
+}
+
+type evalCalibrationSummaryJSON struct {
+	ScoredCount             int      `json:"scored_count"`
+	CalibratedCount         int      `json:"calibrated_count"`
+	AgreeCount              int      `json:"agree_count"`
+	DisagreeCount           int      `json:"disagree_count"`
+	AgreementRate           *float64 `json:"agreement_rate"`
+	UncalibratedScoredCount int      `json:"uncalibrated_scored_count"`
 }
 
 type evalScoreJSON struct {
@@ -60,7 +77,7 @@ func formatTimePtrUTC(t *time.Time) *string {
 	return &s
 }
 
-func evalCaseToJSON(c store.EvalCase, includeEvents bool) (evalCaseJSON, error) {
+func evalCaseToJSON(c store.EvalCase, includeEvents, includeSnapshot bool) (evalCaseJSON, error) {
 	out := evalCaseJSON{
 		ID:                c.ID,
 		SourceRunID:       c.SourceRunID,
@@ -76,8 +93,20 @@ func evalCaseToJSON(c store.EvalCase, includeEvents bool) (evalCaseJSON, error) 
 		LastScoreCodes:    c.LastScoreCodes,
 		LastScoreNotes:    c.LastScoreNotes,
 		LastScoredAt:      formatTimePtrUTC(c.LastScoredAt),
+		HumanAgree:        c.HumanAgree,
+		HumanNote:         c.HumanNote,
+		ForbidTools:       nonNilStrings(c.ForbidTools),
+		ArgContains:       c.ArgContains,
+		ExpectState:       c.ExpectState,
+		HasStateSnapshot:  len(c.StateSnapshotJSON) > 0,
 		CreatedAt:         formatTimeUTC(c.CreatedAt),
 		UpdatedAt:         formatTimeUTC(c.UpdatedAt),
+	}
+	if c.CalibratedAt != nil {
+		out.CalibratedAt = formatTimeUTC(*c.CalibratedAt)
+	}
+	if includeSnapshot && len(c.StateSnapshotJSON) > 0 {
+		out.StateSnapshot = json.RawMessage(c.StateSnapshotJSON)
 	}
 	if includeEvents && len(c.EventsJSON) > 0 {
 		var evs []store.Event
@@ -131,6 +160,12 @@ func writeEvalErr(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, eval.ErrNotScorable):
 		writeError(w, http.StatusBadRequest, "not_scorable", err.Error())
+	case errors.Is(err, eval.ErrNotCalibratable):
+		writeError(w, http.StatusBadRequest, "not_calibratable", err.Error())
+	case errors.Is(err, eval.ErrNoteTooLong):
+		writeError(w, http.StatusBadRequest, "note_too_long", err.Error())
+	case errors.Is(err, eval.ErrMockBaseRequired):
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 	}
@@ -182,13 +217,16 @@ func (s *Server) handleGetEvalRuns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePostEvalCase(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		RunID           string                `json:"run_id"`
-		Replace         bool                  `json:"replace"`
-		Protocol        string                `json:"protocol"`
-		RequiredReads   []string              `json:"required_reads"`
-		Consequential   []string              `json:"consequential"`
-		ExpectConseqAny []string              `json:"expect_consequential_any"`
-		Chain           []store.EvalChainLink `json:"chain"`
+		RunID           string                  `json:"run_id"`
+		Replace         bool                    `json:"replace"`
+		Protocol        string                  `json:"protocol"`
+		RequiredReads   []string                `json:"required_reads"`
+		Consequential   []string                `json:"consequential"`
+		ExpectConseqAny []string                `json:"expect_consequential_any"`
+		Chain           []store.EvalChainLink   `json:"chain"`
+		ForbidTools     []string                `json:"forbid_tools"`
+		ArgContains     []store.EvalArgContains `json:"arg_contains"`
+		ExpectState     []store.EvalExpectState `json:"expect_state"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
@@ -207,13 +245,16 @@ func (s *Server) handlePostEvalCase(w http.ResponseWriter, r *http.Request) {
 		Consequential:   body.Consequential,
 		ExpectConseqAny: body.ExpectConseqAny,
 		Chain:           body.Chain,
+		ForbidTools:     body.ForbidTools,
+		ArgContains:     body.ArgContains,
+		ExpectState:     body.ExpectState,
 	}
 	c, err := eval.IngestFromRun(s.Store, in)
 	if err != nil {
 		writeEvalErr(w, err)
 		return
 	}
-	out, err := evalCaseToJSON(c, false)
+	out, err := evalCaseToJSON(c, false, false)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -238,7 +279,7 @@ func (s *Server) handleListEvalCases(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]evalCaseJSON, 0, len(list))
 	for _, c := range list {
-		out, err := evalCaseToJSON(c, false)
+		out, err := evalCaseToJSON(c, false, false)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -259,7 +300,7 @@ func (s *Server) handleGetEvalCase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	out, err := evalCaseToJSON(c, true)
+	out, err := evalCaseToJSON(c, true, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -280,6 +321,12 @@ func (s *Server) handlePatchEvalCase(w http.ResponseWriter, r *http.Request) {
 		SetConsequential   bool                  `json:"-"`
 		SetExpectConseqAny bool                  `json:"-"`
 		SetChain           bool                  `json:"-"`
+		ForbidTools        []string              `json:"forbid_tools"`
+		SetForbidTools     bool                  `json:"-"`
+		ArgContains        []store.EvalArgContains `json:"arg_contains"`
+		SetArgContains     bool                  `json:"-"`
+		ExpectState        []store.EvalExpectState `json:"expect_state"`
+		SetExpectState     bool                  `json:"-"`
 	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -328,6 +375,27 @@ func (s *Server) handlePatchEvalCase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if v, ok := raw["forbid_tools"]; ok {
+		body.SetForbidTools = true
+		if err := json.Unmarshal(v, &body.ForbidTools); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
+	if v, ok := raw["arg_contains"]; ok {
+		body.SetArgContains = true
+		if err := json.Unmarshal(v, &body.ArgContains); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
+	if v, ok := raw["expect_state"]; ok {
+		body.SetExpectState = true
+		if err := json.Unmarshal(v, &body.ExpectState); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
 	patch := eval.PatchInput{
 		SetRequiredReads:   body.SetRequiredReads,
 		RequiredReads:      body.RequiredReads,
@@ -337,6 +405,12 @@ func (s *Server) handlePatchEvalCase(w http.ResponseWriter, r *http.Request) {
 		ExpectConseqAny:    body.ExpectConseqAny,
 		SetChain:           body.SetChain,
 		Chain:              body.Chain,
+		SetForbidTools:     body.SetForbidTools,
+		ForbidTools:        body.ForbidTools,
+		SetArgContains:     body.SetArgContains,
+		ArgContains:        body.ArgContains,
+		SetExpectState:     body.SetExpectState,
+		ExpectState:        body.ExpectState,
 	}
 	if body.Protocol != nil {
 		patch.SetProtocol = true
@@ -351,7 +425,7 @@ func (s *Server) handlePatchEvalCase(w http.ResponseWriter, r *http.Request) {
 		writeEvalErr(w, err)
 		return
 	}
-	out, err := evalCaseToJSON(c, false)
+	out, err := evalCaseToJSON(c, false, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -373,6 +447,28 @@ func (s *Server) handlePostEvalCaseScore(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+func (s *Server) handlePostEvalCaseCheckState(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	var body struct {
+		MockBaseURL string `json:"mock_base_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	c, _, err := eval.CheckState(s.Store, id, body.MockBaseURL, nil)
+	if err != nil {
+		writeEvalErr(w, err)
+		return
+	}
+	out, err := evalCaseToJSON(c, false, true)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleGetEvalCaseExport(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	raw, err := eval.Export(s.Store, id)
@@ -383,6 +479,67 @@ func (s *Server) handleGetEvalCaseExport(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(raw)
+}
+
+func (s *Server) handlePatchEvalCaseCalibration(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	raw := map[string]json.RawMessage{}
+	if err := dec.Decode(&raw); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	agreeRaw, ok := raw["agree"]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid_request", "agree is required")
+		return
+	}
+	var agree *bool
+	if string(agreeRaw) == "null" {
+		agree = nil
+	} else {
+		var b bool
+		if err := json.Unmarshal(agreeRaw, &b); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		agree = &b
+	}
+	note := ""
+	if v, ok := raw["note"]; ok {
+		if err := json.Unmarshal(v, &note); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
+	c, err := eval.SetCalibration(s.Store, id, agree, note)
+	if err != nil {
+		writeEvalErr(w, err)
+		return
+	}
+	out, err := evalCaseToJSON(c, false, true)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleGetEvalCalibrationSummary(w http.ResponseWriter, r *http.Request) {
+	sum, err := eval.CalibrationSummary(s.Store)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, evalCalibrationSummaryJSON{
+		ScoredCount:             sum.ScoredCount,
+		CalibratedCount:         sum.CalibratedCount,
+		AgreeCount:              sum.AgreeCount,
+		DisagreeCount:           sum.DisagreeCount,
+		AgreementRate:           sum.AgreementRate,
+		UncalibratedScoredCount: sum.UncalibratedScoredCount,
+	})
 }
 
 func (s *Server) handleDeleteEvalCase(w http.ResponseWriter, r *http.Request) {

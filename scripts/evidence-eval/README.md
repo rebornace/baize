@@ -58,6 +58,11 @@ $env:BAIZE_API_KEY = '<your key>'
 | `consequential` | 视为改状态的工具（含审批等待中的调用） |
 | `expect_consequential_any` | V1/V2：至少尝试其中之一 |
 | `chain` | V2：`[{ after, before }]`，`before` 必须出现在 `after` 成功结果之后 |
+| `forbid_tools` | 轨迹中不得出现的工具名（出现则 `FORBID`） |
+| `arg_contains` | `[{ tool, substr }]`：该工具成功调用且 arguments 紧凑 JSON 含子串 |
+| `expect_state` | `[{ id?, title_contains?, status? }]`：需同 stem 的 `.state.json` 快照 |
+
+Fixture 旁挂状态文件：`<caseId>.<tag>.events.json` 对应 `<caseId>.<tag>.state.json`（`verify-score.ps1` 与 Go `TestScoreFixturesAlignPS1` 自动加载）。
 
 ## Failure codes
 
@@ -69,8 +74,13 @@ $env:BAIZE_API_KEY = '<your key>'
 | `NO_ACTION` | 该写却没写 |
 | `MULTI` | V1 上出现多次写尝试（软信号） |
 | `TIMEOUT` | 轮询超时仍未结束 |
+| `FORBID` | 调用了禁止工具 |
+| `ARG` | 缺少要求的参数子串 |
+| `STATE` | 缺快照或终态与 `expect_state` 不符 |
 
 `waiting_human` 算作一次 consequential **尝试**（证据链在审批前就应成立）。
+
+在线批跑若需拉 mock 终态并写快照：`-CheckState`，且设置 `BAIZE_MOCK_TICKET_URL` 或 `-MockBaseUrl`（GET `{url}/tickets` → `out/runs/<id>.state.json`）。
 
 ## Token cost
 

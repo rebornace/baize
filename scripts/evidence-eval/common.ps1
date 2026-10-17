@@ -69,11 +69,34 @@ function Test-NameInSet {
 #   consequential: string[]           — state-changing tools
 #   expect_consequential_any: string[] — V1/V2: at least one of these attempted
 #   chain: optional [{ after, before }] — V2: before must appear after after's successful result
+function Test-StateTicketMatches {
+  param($Expect, $Ticket)
+  if ($Expect.id -and [string]$Expect.id -ne [string]$Ticket.id) { return $false }
+  if ($Expect.status -and [string]$Expect.status -ne [string]$Ticket.status) { return $false }
+  if ($Expect.title_contains) {
+    if (-not ([string]$Ticket.title).Contains([string]$Expect.title_contains)) { return $false }
+  }
+  return $true
+}
+
+function Test-StateSnapshotMatches {
+  param($ExpectList, $Snapshot)
+  foreach ($exp in @($ExpectList)) {
+    $found = $false
+    foreach ($t in @($Snapshot.tickets)) {
+      if (Test-StateTicketMatches -Expect $exp -Ticket $t) { $found = $true; break }
+    }
+    if (-not $found) { return $false }
+  }
+  return $true
+}
+
 function Score-EvidenceCase {
   param(
     $Case,
     $Timeline,
-    [string]$RunStatus = ''
+    [string]$RunStatus = '',
+    $StateSnapshot = $null
   )
   # Timeline is a flat object[]; force array without nesting a single child array.
   if ($null -eq $Timeline) { $tl = @() }
@@ -189,6 +212,40 @@ function Score-EvidenceCase {
 
   if ($RunStatus -eq 'timeout') {
     $codes += 'TIMEOUT'
+  }
+
+  foreach ($name in @($Case.forbid_tools | Where-Object { $_ })) {
+    if (@($tl | Where-Object { $_.name -eq [string]$name }).Count -gt 0) {
+      $codes += 'FORBID'
+      $notes += ('forbid:' + [string]$name)
+    }
+  }
+  foreach ($ac in @($Case.arg_contains | Where-Object { $_ })) {
+    $ok = $false
+    foreach ($t in $tl) {
+      $argStr = ''
+      if ($null -ne $t.arguments) {
+        $argStr = ($t.arguments | ConvertTo-Json -Compress -Depth 20)
+      }
+      if ($t.name -eq [string]$ac.tool -and $t.has_result -and -not $t.is_error -and $argStr.Contains([string]$ac.substr)) {
+        $ok = $true
+        break
+      }
+    }
+    if (-not $ok) {
+      $codes += 'ARG'
+      $notes += ('arg_contains:' + [string]$ac.tool + ':' + [string]$ac.substr)
+    }
+  }
+  $expect = @($Case.expect_state | Where-Object { $_ })
+  if ($expect.Count -gt 0) {
+    if ($null -eq $StateSnapshot) {
+      $codes += 'STATE'
+      $notes += 'missing_state_snapshot'
+    } elseif (-not (Test-StateSnapshotMatches -ExpectList $expect -Snapshot $StateSnapshot)) {
+      $codes += 'STATE'
+      $notes += 'state_mismatch'
+    }
   }
 
   $pass = ($codes.Count -eq 0)

@@ -11,4 +11,10 @@ var (
 	ErrCaseNotFound = errors.New("eval case not found")
 	// ErrNotScorable is returned when scoring a draft or incomplete case.
 	ErrNotScorable = errors.New("eval case not ready to score")
+	// ErrNotCalibratable is returned when a case lacks a confirmed score snapshot.
+	ErrNotCalibratable = errors.New("eval case not calibratable")
+	// ErrNoteTooLong is returned when human_note exceeds the rune limit after trim.
+	ErrNoteTooLong = errors.New("human note too long")
+	// ErrMockBaseRequired is returned when check-state is called without a mock base URL.
+	ErrMockBaseRequired = errors.New("mock base url required")
 )

@@ -22,6 +22,18 @@ func cloneEvalCase(c EvalCase) EvalCase {
 	if c.Chain != nil {
 		out.Chain = append([]EvalChainLink(nil), c.Chain...)
 	}
+	if c.ForbidTools != nil {
+		out.ForbidTools = append([]string(nil), c.ForbidTools...)
+	}
+	if c.ArgContains != nil {
+		out.ArgContains = append([]EvalArgContains(nil), c.ArgContains...)
+	}
+	if c.ExpectState != nil {
+		out.ExpectState = append([]EvalExpectState(nil), c.ExpectState...)
+	}
+	if c.StateSnapshotJSON != nil {
+		out.StateSnapshotJSON = append([]byte(nil), c.StateSnapshotJSON...)
+	}
 	if c.LastScoreCodes != nil {
 		out.LastScoreCodes = append([]string(nil), c.LastScoreCodes...)
 	}
@@ -32,6 +44,14 @@ func cloneEvalCase(c EvalCase) EvalCase {
 	if c.LastScoredAt != nil {
 		t := *c.LastScoredAt
 		out.LastScoredAt = &t
+	}
+	if c.HumanAgree != nil {
+		v := *c.HumanAgree
+		out.HumanAgree = &v
+	}
+	if c.CalibratedAt != nil {
+		t := *c.CalibratedAt
+		out.CalibratedAt = &t
 	}
 	return out
 }

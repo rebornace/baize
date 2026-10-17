@@ -176,12 +176,19 @@ CREATE TABLE IF NOT EXISTS eval_cases (
   consequential_json TEXT,
   expect_conseq_any_json TEXT,
   chain_json TEXT,
+  forbid_tools_json TEXT,
+  arg_contains_json TEXT,
+  expect_state_json TEXT,
+  state_snapshot_json TEXT,
   events_json TEXT NOT NULL,
   run_status_at_ingest TEXT,
   last_score_pass INTEGER,
   last_score_codes_json TEXT,
   last_score_notes TEXT,
   last_scored_at TEXT,
+  human_agree INTEGER,
+  human_note TEXT,
+  calibrated_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -329,6 +336,20 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if err := migrateEvalCasesTable(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate eval_cases: %w", err)
+	}
+	for _, q := range []string{
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS human_agree INTEGER`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS human_note TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS calibrated_at TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS forbid_tools_json TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS arg_contains_json TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS expect_state_json TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS state_snapshot_json TEXT`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate eval_cases calibration columns: %w", err)
+		}
 	}
 	s := &SQLStore{
 		db:         db,

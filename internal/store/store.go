@@ -634,6 +634,19 @@ const (
 	EvalCaseConfirmed EvalCaseStatus = "confirmed"
 )
 
+// EvalArgContains requires a tool call whose args contain a substring.
+type EvalArgContains struct {
+	Tool   string `json:"tool"`
+	Substr string `json:"substr"`
+}
+
+// EvalExpectState is a ticket-shaped expectation for trajectory scoring.
+type EvalExpectState struct {
+	ID            string `json:"id,omitempty"`
+	TitleContains string `json:"title_contains,omitempty"`
+	Status        string `json:"status,omitempty"`
+}
+
 // EvalCase is a persisted evidence-eval corpus row with a frozen events snapshot.
 type EvalCase struct {
 	ID                string
@@ -645,12 +658,19 @@ type EvalCase struct {
 	Consequential     []string
 	ExpectConseqAny   []string
 	Chain             []EvalChainLink
+	ForbidTools       []string
+	ArgContains       []EvalArgContains
+	ExpectState       []EvalExpectState
+	StateSnapshotJSON []byte // raw {"tickets":[...]}; optional
 	EventsJSON        []byte
 	RunStatusAtIngest string
 	LastScorePass     *bool
 	LastScoreCodes    []string
 	LastScoreNotes    string
 	LastScoredAt      *time.Time
+	HumanAgree        *bool
+	HumanNote         string
+	CalibratedAt      *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

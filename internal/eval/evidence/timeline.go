@@ -1,6 +1,9 @@
 package evidence
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // Event is one run event from an evidence-eval fixture or snapshot.
 type Event struct {
@@ -13,6 +16,7 @@ type ToolCall struct {
 	Order       int
 	CallID      string
 	Name        string
+	ArgsText    string
 	HasResult   bool
 	IsError     bool
 	HITLWaiting bool
@@ -26,16 +30,27 @@ func ToolTimeline(events []Event) []ToolCall {
 		switch ev.Type {
 		case "llm.tool_call":
 			var data struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
+				ID        string          `json:"id"`
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
 			}
 			if json.Unmarshal(ev.Data, &data) != nil {
 				continue
 			}
+			argsText := ""
+			if len(data.Arguments) > 0 {
+				var buf bytes.Buffer
+				if err := json.Compact(&buf, data.Arguments); err == nil {
+					argsText = buf.String()
+				} else {
+					argsText = string(data.Arguments)
+				}
+			}
 			item := ToolCall{
-				Order:  len(timeline),
-				CallID: data.ID,
-				Name:   data.Name,
+				Order:    len(timeline),
+				CallID:   data.ID,
+				Name:     data.Name,
+				ArgsText: argsText,
 			}
 			timeline = append(timeline, item)
 			byID[data.ID] = len(timeline) - 1

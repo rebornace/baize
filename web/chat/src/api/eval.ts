@@ -15,6 +15,21 @@ export interface EvalChainLink {
   before: string
 }
 
+export interface EvalArgContains {
+  tool: string
+  substr: string
+}
+
+export interface EvalExpectState {
+  id?: string
+  title_contains?: string
+  status?: string
+}
+
+export interface EvalStateSnapshot {
+  tickets?: { id?: string; title?: string; status?: string }[]
+}
+
 export interface EvalCase {
   id: string
   source_run_id: string
@@ -30,8 +45,30 @@ export interface EvalCase {
   last_score_codes?: string[]
   last_score_notes?: string
   last_scored_at?: string
+  human_agree?: boolean | null
+  human_note?: string
+  calibrated_at?: string
+  forbid_tools?: string[]
+  arg_contains?: EvalArgContains[]
+  expect_state?: EvalExpectState[]
+  has_state_snapshot?: boolean
+  state_snapshot?: EvalStateSnapshot
   created_at: string
   updated_at: string
+}
+
+export interface EvalCalibrationSummary {
+  scored_count: number
+  calibrated_count: number
+  agree_count: number
+  disagree_count: number
+  agreement_rate: number | null
+  uncalibrated_scored_count: number
+}
+
+export interface PutCalibrationBody {
+  agree: boolean | null
+  note?: string
 }
 
 export interface EvalScoreResult {
@@ -127,6 +164,18 @@ export async function scoreEvalCase(id: string): Promise<EvalScoreResult> {
   return parseJSON(res)
 }
 
+export async function checkEvalCaseState(id: string, mockBaseUrl: string): Promise<EvalCase> {
+  const res = await fetch(
+    `/v0/settings/eval/cases/${encodeURIComponent(id)}/check-state`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ mock_base_url: mockBaseUrl }),
+    },
+  )
+  return parseJSON(res)
+}
+
 export async function exportEvalCase(id: string): Promise<string> {
   const res = await fetch(`/v0/settings/eval/cases/${encodeURIComponent(id)}/export`, {
     headers: authInit(),
@@ -145,4 +194,21 @@ export async function deleteEvalCase(id: string): Promise<void> {
   if (!res.ok) {
     await parseJSON(res)
   }
+}
+
+export async function getCalibrationSummary(): Promise<EvalCalibrationSummary> {
+  const res = await fetch('/v0/settings/eval/calibration-summary', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function putCalibration(id: string, body: PutCalibrationBody): Promise<EvalCase> {
+  const res = await fetch(
+    `/v0/settings/eval/cases/${encodeURIComponent(id)}/calibration`,
+    {
+      method: 'PATCH',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    },
+  )
+  return parseJSON(res)
 }

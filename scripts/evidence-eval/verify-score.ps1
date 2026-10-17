@@ -33,7 +33,13 @@ Get-ChildItem -Path $FixturesDir -Filter '*.events.json' | Sort-Object Name | Fo
   $parsedEvs = Get-Content $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
   $evs = @($parsedEvs)
   $tl = Get-ToolTimeline -Events $evs
-  $result = Score-EvidenceCase -Case $byId[$id] -Timeline $tl
+  $stateSnap = $null
+  $stem = ($fname -replace '\.events\.json$','')
+  $statePath = Join-Path $FixturesDir ($stem + '.state.json')
+  if (Test-Path -LiteralPath $statePath) {
+    $stateSnap = Get-Content $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  }
+  $result = Score-EvidenceCase -Case $byId[$id] -Timeline $tl -StateSnapshot $stateSnap
   $ran++
   $expectPass = ($tag -eq 'pass')
   if ($expectPass -ne [bool]$result.pass) {

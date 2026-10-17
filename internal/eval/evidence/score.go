@@ -5,14 +5,43 @@ import (
 	"strings"
 )
 
+// ArgContains requires a successful tool call whose args contain a substring.
+type ArgContains struct {
+	Tool   string `json:"tool"`
+	Substr string `json:"substr"`
+}
+
+// ExpectTicket is one expected ticket field match in state scoring.
+type ExpectTicket struct {
+	ID            string `json:"id,omitempty"`
+	TitleContains string `json:"title_contains,omitempty"`
+	Status        string `json:"status,omitempty"`
+}
+
+// StateTicket is one ticket in an injected state snapshot.
+type StateTicket struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
+// StateSnapshot is the ticket state at scoring time (injected, not from cases.json).
+type StateSnapshot struct {
+	Tickets []StateTicket `json:"tickets"`
+}
+
 // Case holds expected evidence-eval scoring inputs (cases.json shape).
 type Case struct {
-	ID                     string      `json:"id"`
-	Protocol               string      `json:"protocol"`
-	RequiredReads          []string    `json:"required_reads"`
-	Consequential          []string    `json:"consequential"`
-	ExpectConsequentialAny   []string    `json:"expect_consequential_any,omitempty"`
-	Chain                  []ChainLink `json:"chain,omitempty"`
+	ID                     string         `json:"id"`
+	Protocol               string         `json:"protocol"`
+	RequiredReads          []string       `json:"required_reads"`
+	Consequential          []string       `json:"consequential"`
+	ExpectConsequentialAny []string       `json:"expect_consequential_any,omitempty"`
+	Chain                  []ChainLink    `json:"chain,omitempty"`
+	ForbidTools            []string       `json:"forbid_tools,omitempty"`
+	ArgContains            []ArgContains  `json:"arg_contains,omitempty"`
+	ExpectState            []ExpectTicket `json:"expect_state,omitempty"`
+	StateSnapshot          *StateSnapshot `json:"-"`
 }
 
 // ChainLink is a V2 ordering constraint: before must follow a successful after.
@@ -26,6 +55,35 @@ type Result struct {
 	Pass   bool
 	Codes  []string
 	Notes  string
+}
+
+func ticketMatches(exp ExpectTicket, t StateTicket) bool {
+	if exp.ID != "" && t.ID != exp.ID {
+		return false
+	}
+	if exp.Status != "" && t.Status != exp.Status {
+		return false
+	}
+	if exp.TitleContains != "" && !strings.Contains(t.Title, exp.TitleContains) {
+		return false
+	}
+	return true
+}
+
+func stateMatches(expect []ExpectTicket, snap StateSnapshot) bool {
+	for _, exp := range expect {
+		found := false
+		for _, t := range snap.Tickets {
+			if ticketMatches(exp, t) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func nameInSet(name string, set []string) bool {
@@ -175,6 +233,38 @@ func Score(c Case, timeline []ToolCall, runStatus string) Result {
 
 	if runStatus == "timeout" {
 		codes = append(codes, "TIMEOUT")
+	}
+
+	for _, name := range c.ForbidTools {
+		for _, t := range timeline {
+			if t.Name == name {
+				codes = append(codes, "FORBID")
+				notes = append(notes, "forbid:"+name)
+				break
+			}
+		}
+	}
+	for _, ac := range c.ArgContains {
+		ok := false
+		for _, t := range timeline {
+			if t.Name == ac.Tool && t.HasResult && !t.IsError && strings.Contains(t.ArgsText, ac.Substr) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			codes = append(codes, "ARG")
+			notes = append(notes, "arg_contains:"+ac.Tool+":"+ac.Substr)
+		}
+	}
+	if len(c.ExpectState) > 0 {
+		if c.StateSnapshot == nil {
+			codes = append(codes, "STATE")
+			notes = append(notes, "missing_state_snapshot")
+		} else if !stateMatches(c.ExpectState, *c.StateSnapshot) {
+			codes = append(codes, "STATE")
+			notes = append(notes, "state_mismatch")
+		}
 	}
 
 	return Result{

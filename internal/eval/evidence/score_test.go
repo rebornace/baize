@@ -71,11 +71,25 @@ func TestScoreFixturesAlignPS1(t *testing.T) {
 	}
 	for _, path := range fixtures {
 		base := filepath.Base(path)
-		parts := strings.Split(strings.TrimSuffix(base, ".events.json"), ".")
-		id, tag := parts[0], parts[len(parts)-1]
+		stem := strings.TrimSuffix(base, ".events.json")
+		dot := strings.LastIndex(stem, ".")
+		if dot < 0 {
+			t.Fatalf("%s: expected <caseId>.<tag>.events.json", base)
+		}
+		id, tag := stem[:dot], stem[dot+1:]
 		c, ok := cases[id]
 		if !ok {
 			t.Fatalf("%s: unknown case id %s", base, id)
+		}
+		statePath := strings.TrimSuffix(path, ".events.json") + ".state.json"
+		if raw, err := os.ReadFile(statePath); err == nil {
+			var snap evidence.StateSnapshot
+			if err := json.Unmarshal(raw, &snap); err != nil {
+				t.Fatalf("%s: state json: %v", base, err)
+			}
+			c.StateSnapshot = &snap
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
 		}
 		evs := loadEvents(t, path)
 		tl := evidence.ToolTimeline(evs)
@@ -90,6 +104,42 @@ func TestScoreFixturesAlignPS1(t *testing.T) {
 				t.Fatalf("%s: want code %s in %v", base, want, res.Codes)
 			}
 		}
+	}
+}
+
+func TestScoreForbid(t *testing.T) {
+	c := evidence.Case{Protocol: "V0", RequiredReads: []string{"list_tickets"}, Consequential: []string{"create_ticket"}, ForbidTools: []string{"create_ticket"}}
+	tl := []evidence.ToolCall{{Name: "list_tickets", HasResult: true}, {Name: "create_ticket", HasResult: true}}
+	res := evidence.Score(c, tl, "")
+	if res.Pass || !contains(res.Codes, "FORBID") {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestScoreArgContains(t *testing.T) {
+	c := evidence.Case{Protocol: "V0", RequiredReads: []string{"get_ticket"}, Consequential: []string{"create_ticket"},
+		ArgContains: []evidence.ArgContains{{Tool: "get_ticket", Substr: "demo-1"}}}
+	tl := []evidence.ToolCall{{Name: "get_ticket", HasResult: true, ArgsText: `{"id":"demo-1"}`}}
+	if !evidence.Score(c, tl, "").Pass {
+		t.Fatal("want pass")
+	}
+	tl[0].ArgsText = `{"id":"other"}`
+	res := evidence.Score(c, tl, "")
+	if res.Pass || !contains(res.Codes, "ARG") {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestScoreExpectState(t *testing.T) {
+	c := evidence.Case{Protocol: "V0", RequiredReads: []string{"list_tickets"}, Consequential: []string{"create_ticket"},
+		ExpectState: []evidence.ExpectTicket{{TitleContains: "链路", Status: "closed"}}}
+	res := evidence.Score(c, nil, "")
+	if !contains(res.Codes, "STATE") {
+		t.Fatalf("%+v", res)
+	}
+	c.StateSnapshot = &evidence.StateSnapshot{Tickets: []evidence.StateTicket{{ID: "t1", Title: "链路评测", Status: "closed"}}}
+	if !evidence.Score(c, []evidence.ToolCall{{Name: "list_tickets", HasResult: true}}, "").Pass {
+		t.Fatal()
 	}
 }
 

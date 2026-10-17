@@ -20,6 +20,9 @@ type IngestInput struct {
 	Consequential   []string
 	ExpectConseqAny []string
 	Chain           []store.EvalChainLink
+	ForbidTools     []string
+	ArgContains     []store.EvalArgContains
+	ExpectState     []store.EvalExpectState
 }
 
 // PatchInput updates expectations and optionally promotes draft to confirmed.
@@ -34,6 +37,12 @@ type PatchInput struct {
 	SetExpectConseqAny bool
 	Chain           []store.EvalChainLink
 	SetChain        bool
+	ForbidTools     []string
+	SetForbidTools  bool
+	ArgContains     []store.EvalArgContains
+	SetArgContains  bool
+	ExpectState     []store.EvalExpectState
+	SetExpectState  bool
 	Status          store.EvalCaseStatus
 	SetStatus       bool
 }
@@ -50,6 +59,20 @@ func cloneChain(in []store.EvalChainLink) []store.EvalChainLink {
 		return nil
 	}
 	return append([]store.EvalChainLink(nil), in...)
+}
+
+func cloneArgContains(in []store.EvalArgContains) []store.EvalArgContains {
+	if in == nil {
+		return nil
+	}
+	return append([]store.EvalArgContains(nil), in...)
+}
+
+func cloneExpectState(in []store.EvalExpectState) []store.EvalExpectState {
+	if in == nil {
+		return nil
+	}
+	return append([]store.EvalExpectState(nil), in...)
 }
 
 func validProtocol(p string) bool {
@@ -121,6 +144,9 @@ func IngestFromRun(st store.Store, in IngestInput) (store.EvalCase, error) {
 		Consequential:     cloneStringSlice(in.Consequential),
 		ExpectConseqAny:   cloneStringSlice(in.ExpectConseqAny),
 		Chain:             cloneChain(in.Chain),
+		ForbidTools:       cloneStringSlice(in.ForbidTools),
+		ArgContains:       cloneArgContains(in.ArgContains),
+		ExpectState:       cloneExpectState(in.ExpectState),
 		EventsJSON:        raw,
 		RunStatusAtIngest: string(run.Status),
 		UpdatedAt:         now,
@@ -161,6 +187,15 @@ func PatchCase(st store.Store, id string, patch PatchInput) (store.EvalCase, err
 	}
 	if patch.SetChain {
 		c.Chain = cloneChain(patch.Chain)
+	}
+	if patch.SetForbidTools {
+		c.ForbidTools = cloneStringSlice(patch.ForbidTools)
+	}
+	if patch.SetArgContains {
+		c.ArgContains = cloneArgContains(patch.ArgContains)
+	}
+	if patch.SetExpectState {
+		c.ExpectState = cloneExpectState(patch.ExpectState)
 	}
 	if patch.SetStatus {
 		if patch.Status == store.EvalCaseConfirmed && !expectationsComplete(c) {
@@ -222,14 +257,61 @@ func evidenceCaseFromStore(c store.EvalCase) evidence.Case {
 	for _, link := range c.Chain {
 		chain = append(chain, evidence.ChainLink{After: link.After, Before: link.Before})
 	}
-	return evidence.Case{
-		ID:                   c.ID,
-		Protocol:             c.Protocol,
-		RequiredReads:        c.RequiredReads,
-		Consequential:        c.Consequential,
-		ExpectConsequentialAny: c.ExpectConseqAny,
-		Chain:                chain,
+	argContains := make([]evidence.ArgContains, 0, len(c.ArgContains))
+	for _, ac := range c.ArgContains {
+		argContains = append(argContains, evidence.ArgContains{Tool: ac.Tool, Substr: ac.Substr})
 	}
+	expectState := make([]evidence.ExpectTicket, 0, len(c.ExpectState))
+	for _, es := range c.ExpectState {
+		expectState = append(expectState, evidence.ExpectTicket{
+			ID:            es.ID,
+			TitleContains: es.TitleContains,
+			Status:        es.Status,
+		})
+	}
+	out := evidence.Case{
+		ID:                     c.ID,
+		Protocol:               c.Protocol,
+		RequiredReads:          c.RequiredReads,
+		Consequential:          c.Consequential,
+		ExpectConsequentialAny: c.ExpectConseqAny,
+		Chain:                  chain,
+		ForbidTools:            cloneStringSlice(c.ForbidTools),
+		ArgContains:            argContains,
+		ExpectState:            expectState,
+	}
+	if len(c.StateSnapshotJSON) > 0 {
+		var snap evidence.StateSnapshot
+		if err := json.Unmarshal(c.StateSnapshotJSON, &snap); err == nil {
+			out.StateSnapshot = &snap
+		}
+	}
+	return out
+}
+
+func scoreEvalCase(c store.EvalCase) (evidence.Result, error) {
+	if c.Status != store.EvalCaseConfirmed || !expectationsComplete(c) {
+		return evidence.Result{}, ErrNotScorable
+	}
+	var evs []store.Event
+	if err := json.Unmarshal(c.EventsJSON, &evs); err != nil {
+		return evidence.Result{}, err
+	}
+	return evidence.Score(
+		evidenceCaseFromStore(c),
+		evidence.ToolTimeline(storeEventsToEvidence(evs)),
+		c.RunStatusAtIngest,
+	), nil
+}
+
+func applyScoreResult(c store.EvalCase, res evidence.Result, now time.Time) store.EvalCase {
+	pass := res.Pass
+	c.LastScorePass = &pass
+	c.LastScoreCodes = cloneStringSlice(res.Codes)
+	c.LastScoreNotes = res.Notes
+	c.LastScoredAt = &now
+	c.UpdatedAt = now
+	return c
 }
 
 // ScoreCase runs deterministic evidence scoring for a confirmed case.
@@ -241,21 +323,12 @@ func ScoreCase(st store.Store, caseID string) (evidence.Result, error) {
 	if err != nil {
 		return evidence.Result{}, err
 	}
-	if c.Status != store.EvalCaseConfirmed || !expectationsComplete(c) {
-		return evidence.Result{}, ErrNotScorable
-	}
-	var evs []store.Event
-	if err := json.Unmarshal(c.EventsJSON, &evs); err != nil {
+	res, err := scoreEvalCase(c)
+	if err != nil {
 		return evidence.Result{}, err
 	}
-	res := evidence.Score(evidenceCaseFromStore(c), evidence.ToolTimeline(storeEventsToEvidence(evs)), c.RunStatusAtIngest)
 	now := time.Now().UTC()
-	pass := res.Pass
-	c.LastScorePass = &pass
-	c.LastScoreCodes = cloneStringSlice(res.Codes)
-	c.LastScoreNotes = res.Notes
-	c.LastScoredAt = &now
-	c.UpdatedAt = now
+	c = applyScoreResult(c, res, now)
 	if err := st.UpsertEvalCase(c); err != nil {
 		return evidence.Result{}, err
 	}
@@ -263,15 +336,19 @@ func ScoreCase(st store.Store, caseID string) (evidence.Result, error) {
 }
 
 type exportCase struct {
-	ID                 string                `json:"id"`
-	Protocol           string                `json:"protocol"`
-	Input              string                `json:"input"`
-	RequiredReads      []string              `json:"required_reads"`
-	Consequential      []string              `json:"consequential"`
-	ExpectConseqAny    []string              `json:"expect_consequential_any,omitempty"`
-	Chain              []store.EvalChainLink `json:"chain,omitempty"`
-	SourceRunID        string                `json:"source_run_id"`
-	RunStatusAtIngest  string                `json:"run_status_at_ingest"`
+	ID                string                  `json:"id"`
+	Protocol          string                  `json:"protocol"`
+	Input             string                  `json:"input"`
+	RequiredReads     []string                `json:"required_reads"`
+	Consequential     []string                `json:"consequential"`
+	ExpectConseqAny   []string                `json:"expect_consequential_any,omitempty"`
+	Chain             []store.EvalChainLink   `json:"chain,omitempty"`
+	ForbidTools       []string                `json:"forbid_tools,omitempty"`
+	ArgContains       []store.EvalArgContains `json:"arg_contains,omitempty"`
+	ExpectState       []store.EvalExpectState `json:"expect_state,omitempty"`
+	StateSnapshot     *evidence.StateSnapshot `json:"state_snapshot,omitempty"`
+	SourceRunID       string                  `json:"source_run_id"`
+	RunStatusAtIngest string                  `json:"run_status_at_ingest"`
 }
 
 type exportPayload struct {
@@ -292,18 +369,28 @@ func Export(st store.Store, caseID string) ([]byte, error) {
 	if err := json.Unmarshal(c.EventsJSON, &evs); err != nil {
 		return nil, err
 	}
+	exp := exportCase{
+		ID:                c.ID,
+		Protocol:          c.Protocol,
+		Input:             c.Input,
+		RequiredReads:     c.RequiredReads,
+		Consequential:     c.Consequential,
+		ExpectConseqAny:   c.ExpectConseqAny,
+		Chain:             c.Chain,
+		ForbidTools:       c.ForbidTools,
+		ArgContains:       c.ArgContains,
+		ExpectState:       c.ExpectState,
+		SourceRunID:       c.SourceRunID,
+		RunStatusAtIngest: c.RunStatusAtIngest,
+	}
+	if len(c.StateSnapshotJSON) > 0 {
+		var snap evidence.StateSnapshot
+		if err := json.Unmarshal(c.StateSnapshotJSON, &snap); err == nil {
+			exp.StateSnapshot = &snap
+		}
+	}
 	payload := exportPayload{
-		Case: exportCase{
-			ID:                c.ID,
-			Protocol:          c.Protocol,
-			Input:             c.Input,
-			RequiredReads:     c.RequiredReads,
-			Consequential:     c.Consequential,
-			ExpectConseqAny:   c.ExpectConseqAny,
-			Chain:             c.Chain,
-			SourceRunID:       c.SourceRunID,
-			RunStatusAtIngest: c.RunStatusAtIngest,
-		},
+		Case:   exp,
 		Events: normalizeExportEvents(evs),
 	}
 	return json.Marshal(payload)

@@ -7,10 +7,15 @@ param(
   [string]$AgentId   = 'ticket-agent',
   [string]$BaseUrl   = '',
   [string]$ApiKey    = '',
-  [int]$TimeoutSec   = 120
+  [int]$TimeoutSec   = 120,
+  [switch]$CheckState,
+  [string]$MockBaseUrl = $env:BAIZE_MOCK_TICKET_URL
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
+if ($CheckState -and [string]::IsNullOrWhiteSpace($MockBaseUrl)) {
+  throw 'CheckState requires non-empty MockBaseUrl or BAIZE_MOCK_TICKET_URL'
+}
 $cfg = Resolve-BaizeConfig -BaseUrl $BaseUrl -ApiKey $ApiKey
 $base = $cfg.BaseUrl
 $key  = $cfg.ApiKey
@@ -54,7 +59,18 @@ foreach ($case in $cases) {
   $parsedEvs = Get-Content $evFile -Raw -Encoding UTF8 | ConvertFrom-Json
   $evs = @($parsedEvs)
   $tl = Get-ToolTimeline -Events $evs
-  $scored = Score-EvidenceCase -Case $case -Timeline $tl -RunStatus $status
+  $stateSnap = $null
+  if ($CheckState) {
+    $resp = Invoke-RestMethod -Method Get -Uri ($MockBaseUrl.TrimEnd('/') + '/tickets')
+    if ($resp -is [System.Array]) {
+      $stateSnap = [pscustomobject]@{ tickets = $resp }
+    } else {
+      $stateSnap = $resp
+    }
+    $statePath = Join-Path $OutDir ($id + '.state.json')
+    ($stateSnap | ConvertTo-Json -Depth 10) | Out-File $statePath -Encoding utf8
+  }
+  $scored = Score-EvidenceCase -Case $case -Timeline $tl -RunStatus $status -StateSnapshot $stateSnap
   if ($scored.pass) { $passCount++ }
 
   $row = [pscustomobject]@{

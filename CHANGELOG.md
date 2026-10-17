@@ -5,6 +5,8 @@
 ### 新功能
 
 - **Admin 评测语料（设置页）**：按时间窗筛选失败/慢 Run、快照入库 EvalCase、确定性 evidence 重打分与 JSON 导出（不调用模型；批跑仍用 `scripts/evidence-eval`）。
+- **Admin 评测人审标定（EV2）**：对已打分的 EvalCase 标记同意/不同意（可选备注），查看人机一致率摘要；沿用 `last_score_pass`，不引入 LLM judge。
+- **Admin 评测轨迹与终态（EV3）**：EvalCase 支持 `forbid_tools` / `arg_contains` / `expect_state` 与冻结快照；evidence 评分可产出 `FORBID` / `ARG` / `STATE`；设置页展示期望与评分码，并可按 mock 基址只读活查终态（`check-state`）。
 
 - **对话定时任务**：人同意后保存一次性、每天或每周日程；到点在原会话新开一轮，输入为保存的指令。写操作仍走原有审批。设置页可创建、暂停、继续、删除当前账号自己的日程。
 

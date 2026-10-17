@@ -45,16 +45,60 @@ func unmarshalEvalChain(raw string, dst *[]EvalChainLink) error {
 	return json.Unmarshal([]byte(raw), dst)
 }
 
+func marshalEvalArgContains(items []EvalArgContains) (string, error) {
+	if items == nil {
+		return "[]", nil
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func unmarshalEvalArgContains(raw string, dst *[]EvalArgContains) error {
+	if raw == "" || raw == "null" {
+		*dst = nil
+		return nil
+	}
+	return json.Unmarshal([]byte(raw), dst)
+}
+
+func marshalEvalExpectState(items []EvalExpectState) (string, error) {
+	if items == nil {
+		return "[]", nil
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func unmarshalEvalExpectState(raw string, dst *[]EvalExpectState) error {
+	if raw == "" || raw == "null" {
+		*dst = nil
+		return nil
+	}
+	return json.Unmarshal([]byte(raw), dst)
+}
+
 func scanEvalCase(sc interface{ Scan(...any) error }) (EvalCase, error) {
 	var c EvalCase
 	var status, protocol, input, runStatus sql.NullString
-	var requiredReads, consequential, expectAny, chain, eventsJSON, lastCodes, lastNotes sql.NullString
-	var lastPass sql.NullInt64
-	var lastScoredAt, createdAt, updatedAt sql.NullString
+	var requiredReads, consequential, expectAny, chain sql.NullString
+	var forbidTools, argContains, expectState, stateSnapshot sql.NullString
+	var eventsJSON, lastCodes, lastNotes sql.NullString
+	var lastPass, humanAgree sql.NullInt64
+	var lastScoredAt, calibratedAt, createdAt, updatedAt sql.NullString
+	var humanNote sql.NullString
 	if err := sc.Scan(
 		&c.ID, &c.SourceRunID, &status, &protocol, &input,
-		&requiredReads, &consequential, &expectAny, &chain, &eventsJSON, &runStatus,
-		&lastPass, &lastCodes, &lastNotes, &lastScoredAt, &createdAt, &updatedAt,
+		&requiredReads, &consequential, &expectAny, &chain,
+		&forbidTools, &argContains, &expectState, &stateSnapshot,
+		&eventsJSON, &runStatus,
+		&lastPass, &lastCodes, &lastNotes, &lastScoredAt,
+		&humanAgree, &humanNote, &calibratedAt, &createdAt, &updatedAt,
 	); err != nil {
 		return EvalCase{}, err
 	}
@@ -75,6 +119,18 @@ func scanEvalCase(sc interface{ Scan(...any) error }) (EvalCase, error) {
 	if err := unmarshalEvalChain(chain.String, &c.Chain); err != nil {
 		return EvalCase{}, fmt.Errorf("chain: %w", err)
 	}
+	if err := unmarshalJSONStrings(forbidTools.String, &c.ForbidTools); err != nil {
+		return EvalCase{}, fmt.Errorf("forbid_tools: %w", err)
+	}
+	if err := unmarshalEvalArgContains(argContains.String, &c.ArgContains); err != nil {
+		return EvalCase{}, fmt.Errorf("arg_contains: %w", err)
+	}
+	if err := unmarshalEvalExpectState(expectState.String, &c.ExpectState); err != nil {
+		return EvalCase{}, fmt.Errorf("expect_state: %w", err)
+	}
+	if stateSnapshot.Valid && stateSnapshot.String != "" {
+		c.StateSnapshotJSON = append([]byte(nil), stateSnapshot.String...)
+	}
 	if eventsJSON.Valid {
 		c.EventsJSON = append([]byte(nil), eventsJSON.String...)
 	}
@@ -90,6 +146,16 @@ func scanEvalCase(sc interface{ Scan(...any) error }) (EvalCase, error) {
 	if lastScoredAt.Valid && lastScoredAt.String != "" {
 		if t, err := parseStoreTime(lastScoredAt.String); err == nil {
 			c.LastScoredAt = &t
+		}
+	}
+	c.HumanNote = humanNote.String
+	if humanAgree.Valid {
+		v := humanAgree.Int64 != 0
+		c.HumanAgree = &v
+	}
+	if calibratedAt.Valid && calibratedAt.String != "" {
+		if t, err := parseStoreTime(calibratedAt.String); err == nil {
+			c.CalibratedAt = &t
 		}
 	}
 	if createdAt.Valid {
@@ -114,8 +180,11 @@ func parseStoreTime(s string) (time.Time, error) {
 }
 
 const evalCaseSelectColumns = `id, source_run_id, status, protocol, input,
-required_reads_json, consequential_json, expect_conseq_any_json, chain_json, events_json, run_status_at_ingest,
-last_score_pass, last_score_codes_json, last_score_notes, last_scored_at, created_at, updated_at`
+required_reads_json, consequential_json, expect_conseq_any_json, chain_json,
+forbid_tools_json, arg_contains_json, expect_state_json, state_snapshot_json,
+events_json, run_status_at_ingest,
+last_score_pass, last_score_codes_json, last_score_notes, last_scored_at,
+human_agree, human_note, calibrated_at, created_at, updated_at`
 
 func (s *SQLStore) UpsertEvalCase(c EvalCase) error {
 	requiredReads, err := marshalJSONStrings(c.RequiredReads)
@@ -134,6 +203,22 @@ func (s *SQLStore) UpsertEvalCase(c EvalCase) error {
 	if err != nil {
 		return err
 	}
+	forbidTools, err := marshalJSONStrings(c.ForbidTools)
+	if err != nil {
+		return err
+	}
+	argContains, err := marshalEvalArgContains(c.ArgContains)
+	if err != nil {
+		return err
+	}
+	expectState, err := marshalEvalExpectState(c.ExpectState)
+	if err != nil {
+		return err
+	}
+	var stateSnapshot sql.NullString
+	if len(c.StateSnapshotJSON) > 0 {
+		stateSnapshot = sql.NullString{String: string(c.StateSnapshotJSON), Valid: true}
+	}
 	lastCodes, err := marshalJSONStrings(c.LastScoreCodes)
 	if err != nil {
 		return err
@@ -150,20 +235,38 @@ func (s *SQLStore) UpsertEvalCase(c EvalCase) error {
 	if c.LastScoredAt != nil {
 		lastScoredAt = sql.NullString{String: c.LastScoredAt.UTC().Format(time.RFC3339Nano), Valid: true}
 	}
+	var humanAgree sql.NullInt64
+	if c.HumanAgree != nil {
+		if *c.HumanAgree {
+			humanAgree = sql.NullInt64{Int64: 1, Valid: true}
+		} else {
+			humanAgree = sql.NullInt64{Int64: 0, Valid: true}
+		}
+	}
+	var calibratedAt sql.NullString
+	if c.CalibratedAt != nil {
+		calibratedAt = sql.NullString{String: c.CalibratedAt.UTC().Format(time.RFC3339Nano), Valid: true}
+	}
 	eventsCopy := append([]byte(nil), c.EventsJSON...)
 	_, err = s.exec(
-		`INSERT INTO eval_cases (`+evalCaseSelectColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO eval_cases (`+evalCaseSelectColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   source_run_id=excluded.source_run_id, status=excluded.status, protocol=excluded.protocol, input=excluded.input,
 		   required_reads_json=excluded.required_reads_json, consequential_json=excluded.consequential_json,
 		   expect_conseq_any_json=excluded.expect_conseq_any_json, chain_json=excluded.chain_json,
+		   forbid_tools_json=excluded.forbid_tools_json, arg_contains_json=excluded.arg_contains_json,
+		   expect_state_json=excluded.expect_state_json, state_snapshot_json=excluded.state_snapshot_json,
 		   events_json=excluded.events_json, run_status_at_ingest=excluded.run_status_at_ingest,
 		   last_score_pass=excluded.last_score_pass, last_score_codes_json=excluded.last_score_codes_json,
 		   last_score_notes=excluded.last_score_notes, last_scored_at=excluded.last_scored_at,
+		   human_agree=excluded.human_agree, human_note=excluded.human_note, calibrated_at=excluded.calibrated_at,
 		   created_at=excluded.created_at, updated_at=excluded.updated_at`,
 		c.ID, c.SourceRunID, string(c.Status), c.Protocol, c.Input,
-		requiredReads, consequential, expectAny, chain, string(eventsCopy), c.RunStatusAtIngest,
+		requiredReads, consequential, expectAny, chain,
+		forbidTools, argContains, expectState, stateSnapshot,
+		string(eventsCopy), c.RunStatusAtIngest,
 		lastPass, lastCodes, c.LastScoreNotes, lastScoredAt,
+		humanAgree, c.HumanNote, calibratedAt,
 		s.timeArg(c.CreatedAt), s.timeArg(c.UpdatedAt),
 	)
 	return err

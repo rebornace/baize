@@ -1,13 +1,17 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { FlaskConical } from 'lucide-react'
 import {
+  checkEvalCaseState,
   deleteEvalCase,
   exportEvalCase,
+  getCalibrationSummary,
   ingestEvalCase,
   listEvalCases,
   patchEvalCase,
+  putCalibration,
   queryEvalRuns,
   scoreEvalCase,
+  type EvalCalibrationSummary,
   type EvalCandidate,
   type EvalCase,
 } from '../api/eval'
@@ -72,6 +76,57 @@ function scoreSummary(c: EvalCase): string {
   return c.last_score_pass ? EVAL.scorePass(codes) : EVAL.scoreFail(codes)
 }
 
+/** Merge check-state API row; clear stale score codes when omitempty omits them on pass. */
+function mergeCaseAfterCheckState(row: EvalCase, updated: EvalCase): EvalCase {
+  const merged: EvalCase = { ...row, ...updated }
+  if (updated.last_score_codes === undefined) {
+    merged.last_score_codes = []
+  }
+  if (updated.last_score_notes === undefined) {
+    merged.last_score_notes = ''
+  }
+  return merged
+}
+
+function isCalibratable(c: EvalCase): boolean {
+  return (
+    c.status === 'confirmed' &&
+    c.last_scored_at != null &&
+    c.last_scored_at !== '' &&
+    c.last_score_pass != null
+  )
+}
+
+function isCalibrationStale(c: EvalCase): boolean {
+  if (c.human_agree == null || !c.calibrated_at || !c.last_scored_at) return false
+  return Date.parse(c.calibrated_at) < Date.parse(c.last_scored_at)
+}
+
+function formatAgreementRate(rate: number | null): string {
+  if (rate == null) return EVAL.calibrationSummaryRateNone
+  const pct = `${(rate * 100).toFixed(1).replace(/\.0$/, '')}%`
+  return EVAL.calibrationSummaryRate(pct)
+}
+
+function humanCalibrationLabel(c: EvalCase): string | null {
+  if (c.human_agree == null) return null
+  return c.human_agree ? EVAL.calibrationHumanAgree : EVAL.calibrationHumanDisagree
+}
+
+function trajectorySummaryLines(c: EvalCase): string[] {
+  const lines: string[] = []
+  if (c.forbid_tools?.length) {
+    lines.push(`${EVAL.trajectoryForbid}: ${JSON.stringify(c.forbid_tools)}`)
+  }
+  if (c.arg_contains?.length) {
+    lines.push(`${EVAL.trajectoryArg}: ${JSON.stringify(c.arg_contains)}`)
+  }
+  if (c.expect_state?.length) {
+    lines.push(`${EVAL.trajectoryExpect}: ${JSON.stringify(c.expect_state)}`)
+  }
+  return lines
+}
+
 type ExpectationModal =
   | { mode: 'ingest'; runId: string; inputPreview: string }
   | { mode: 'edit'; evalCase: EvalCase }
@@ -94,11 +149,34 @@ export function EvalSettings() {
   const [eventsModal, setEventsModal] = useState<{ runId: string; events: Event[] | null } | null>(
     null,
   )
+  const [calibrationSummary, setCalibrationSummary] = useState<EvalCalibrationSummary | null>(null)
+  const [calibrationNotes, setCalibrationNotes] = useState<Record<string, string>>({})
+  const [mockBaseUrls, setMockBaseUrls] = useState<Record<string, string>>({})
+
+  const refreshSummary = useCallback(async () => {
+    try {
+      const body = await getCalibrationSummary()
+      setCalibrationSummary(body)
+    } catch (e) {
+      setCalibrationSummary(null)
+      const f = friendlyError(e)
+      push({ tone: 'error', title: EVAL.loadCasesFailed, detail: f.detail ?? f.title })
+    }
+  }, [push])
 
   const refreshCases = useCallback(async () => {
     try {
       const body = await listEvalCases()
       setCases(body.items)
+      setCalibrationNotes((prev) => {
+        const next = { ...prev }
+        for (const c of body.items) {
+          if (next[c.id] === undefined) {
+            next[c.id] = c.human_note ?? ''
+          }
+        }
+        return next
+      })
     } catch (e) {
       setCases(null)
       const f = friendlyError(e)
@@ -106,9 +184,31 @@ export function EvalSettings() {
     }
   }, [push])
 
+  const refreshCasesAndSummary = useCallback(async () => {
+    await Promise.all([refreshCases(), refreshSummary()])
+  }, [refreshCases, refreshSummary])
+
   useEffect(() => {
-    void refreshCases()
-  }, [refreshCases])
+    void refreshCasesAndSummary()
+  }, [refreshCasesAndSummary])
+
+  const submitCalibration = async (c: EvalCase, agree: boolean | null) => {
+    setBusy(true)
+    try {
+      const note = calibrationNotes[c.id] ?? ''
+      await putCalibration(c.id, { agree, note: note.trim() || undefined })
+      await refreshCasesAndSummary()
+      push({
+        tone: 'success',
+        title: agree == null ? EVAL.toastCalibrationCleared : EVAL.toastCalibrationSaved,
+      })
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const runQuery = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -192,7 +292,7 @@ export function EvalSettings() {
         push({ tone: 'success', title: EVAL.toastExpectationsSaved })
       }
       setExpectationModal(null)
-      await refreshCases()
+      await refreshCasesAndSummary()
     } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: f.title, detail: f.detail })
@@ -216,11 +316,41 @@ export function EvalSettings() {
     }
   }
 
+  const runCheckState = async (c: EvalCase) => {
+    const mockBaseUrl = (mockBaseUrls[c.id] ?? '').trim()
+    if (!mockBaseUrl) {
+      push({ tone: 'error', title: EVAL.checkStateNeedUrl })
+      return
+    }
+    setBusy(true)
+    try {
+      const updated = await checkEvalCaseState(c.id, mockBaseUrl)
+      setCases(
+        (prev) =>
+          prev?.map((row) =>
+            row.id === updated.id ? mergeCaseAfterCheckState(row, updated) : row,
+          ) ?? null,
+      )
+      await refreshSummary()
+      const codes = updated.last_score_codes?.join(', ')
+      push({
+        tone: updated.last_score_pass ? 'success' : 'error',
+        title: updated.last_score_pass ? EVAL.toastCheckStatePass : EVAL.toastCheckStateFail,
+        detail: codes ?? updated.last_score_notes ?? '',
+      })
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const rescore = async (c: EvalCase) => {
     setBusy(true)
     try {
       const res = await scoreEvalCase(c.id)
-      await refreshCases()
+      await refreshCasesAndSummary()
       push({
         tone: res.pass ? 'success' : 'error',
         title: res.pass ? EVAL.toastScorePass : EVAL.toastScoreFail,
@@ -260,7 +390,7 @@ export function EvalSettings() {
     try {
       await deleteEvalCase(pendingDelete.id)
       setPendingDelete(null)
-      await refreshCases()
+      await refreshCasesAndSummary()
       push({ tone: 'success', title: EVAL.toastDeleted })
     } catch (err) {
       const f = friendlyError(err)
@@ -274,6 +404,21 @@ export function EvalSettings() {
     <div className="settings-panel">
       <PageHeader title={EVAL.title} description={EVAL.description} />
       <p className="settings-muted">{EVAL.harnessHint}</p>
+      <p className="settings-muted">{EVAL.calibrationHint}</p>
+
+      <div className="settings-muted" data-testid="eval-calibration-summary">
+        {calibrationSummary == null ? (
+          <p>{EVAL.casesLoading}</p>
+        ) : (
+          <p>
+            {EVAL.calibrationSummaryScored(calibrationSummary.scored_count)}
+            {' · '}
+            {EVAL.calibrationSummaryCalibrated(calibrationSummary.calibrated_count)}
+            {' · '}
+            {formatAgreementRate(calibrationSummary.agreement_rate)}
+          </p>
+        )}
+      </div>
 
       <h2 className="settings-subheading">{EVAL.candidatesTitle}</h2>
       <form className="settings-form" onSubmit={(e) => void runQuery(e)}>
@@ -383,6 +528,7 @@ export function EvalSettings() {
       </div>
 
       <h2 className="settings-subheading">{EVAL.casesTitle}</h2>
+      <p className="settings-muted">{EVAL.checkStateHint}</p>
       <div data-testid="eval-cases">
         {cases === null ? (
           <p className="settings-muted">{EVAL.casesLoading}</p>
@@ -408,6 +554,101 @@ export function EvalSettings() {
                     {c.last_score_notes ? (
                       <p className="settings-muted">{c.last_score_notes}</p>
                     ) : null}
+                    {trajectorySummaryLines(c).map((line, i) => (
+                      <p key={`${c.id}-tr-${i}`} className="settings-muted settings-code-sample">
+                        {line}
+                      </p>
+                    ))}
+                    {c.has_state_snapshot ? (
+                      <p className="settings-muted">{EVAL.hasStateSnapshot}</p>
+                    ) : null}
+                    {humanCalibrationLabel(c) ? (
+                      <p className="settings-muted">{humanCalibrationLabel(c)}</p>
+                    ) : null}
+                    {isCalibrationStale(c) ? (
+                      <p
+                        className="settings-muted"
+                        data-testid={`eval-calibration-stale-${c.id}`}
+                      >
+                        {EVAL.calibrationStale}
+                      </p>
+                    ) : null}
+                    {isCalibratable(c) ? (
+                      <div className="settings-form" style={{ marginTop: '0.5rem' }}>
+                        <Field label={EVAL.calibrationNoteLabel}>
+                          <Input
+                            value={calibrationNotes[c.id] ?? ''}
+                            onChange={(e) =>
+                              setCalibrationNotes((prev) => ({
+                                ...prev,
+                                [c.id]: e.target.value,
+                              }))
+                            }
+                            disabled={busy}
+                            data-testid={`eval-calibrate-note-${c.id}`}
+                          />
+                        </Field>
+                        <div className="accounts-actions">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={busy}
+                            data-testid={`eval-calibrate-agree-${c.id}`}
+                            onClick={() => void submitCalibration(c, true)}
+                          >
+                            {EVAL.calibrationAgree}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={busy}
+                            data-testid={`eval-calibrate-disagree-${c.id}`}
+                            onClick={() => void submitCalibration(c, false)}
+                          >
+                            {EVAL.calibrationDisagree}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={busy || c.human_agree == null}
+                            data-testid={`eval-calibrate-clear-${c.id}`}
+                            onClick={() => void submitCalibration(c, null)}
+                          >
+                            {EVAL.calibrationClear}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div
+                      className="settings-form"
+                      style={{ marginTop: '0.5rem' }}
+                      data-testid={`eval-check-state-${c.id}`}
+                    >
+                      <Field label={EVAL.checkStateMockLabel}>
+                        <Input
+                          value={mockBaseUrls[c.id] ?? ''}
+                          onChange={(e) =>
+                            setMockBaseUrls((prev) => ({ ...prev, [c.id]: e.target.value }))
+                          }
+                          disabled={busy}
+                          placeholder="http://127.0.0.1:8080"
+                          data-testid={`eval-check-state-url-${c.id}`}
+                        />
+                      </Field>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy || c.status !== 'confirmed'}
+                        data-testid={`eval-check-state-btn-${c.id}`}
+                        onClick={() => void runCheckState(c)}
+                      >
+                        {EVAL.checkStateButton}
+                      </Button>
+                    </div>
                   </div>
                   <div className="accounts-actions">
                     {c.status === 'draft' && (
