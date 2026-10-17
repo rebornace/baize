@@ -24,12 +24,12 @@ import (
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/memory"
-	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/otelx"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
+	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/systemoneenable"
@@ -120,7 +120,7 @@ type Server struct {
 	// Memory is the account-scoped fact store (P6 settings CRUD). nil = routes unavailable.
 	Memory memory.Store
 	// Schedules is the account-scoped conversation schedule store. nil = routes unavailable.
-	Schedules schedule.Store
+	Schedules      schedule.Store
 	Hub            *eventbus.Hub // optional; nil = SSE replay only (no live fan-out)
 	DefaultAgentID string
 	// Queue optionally dispatches runs to competing workers. nil = in-process

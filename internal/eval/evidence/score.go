@@ -52,9 +52,9 @@ type ChainLink struct {
 
 // Result is the deterministic score output (aligned with Score-EvidenceCase).
 type Result struct {
-	Pass   bool
-	Codes  []string
-	Notes  string
+	Pass  bool
+	Codes []string
+	Notes string
 }
 
 func ticketMatches(exp ExpectTicket, t StateTicket) bool {

@@ -23,31 +23,31 @@ type evalCandidateJSON struct {
 }
 
 type evalCaseJSON struct {
-	ID                string               `json:"id"`
-	SourceRunID       string               `json:"source_run_id"`
-	Status            store.EvalCaseStatus `json:"status"`
-	Protocol          string               `json:"protocol,omitempty"`
-	Input             string               `json:"input"`
-	RequiredReads     []string             `json:"required_reads,omitempty"`
-	Consequential     []string             `json:"consequential,omitempty"`
-	ExpectConseqAny   []string             `json:"expect_consequential_any,omitempty"`
-	Chain             []store.EvalChainLink `json:"chain,omitempty"`
-	RunStatusAtIngest string               `json:"run_status_at_ingest,omitempty"`
-	LastScorePass     *bool                `json:"last_score_pass,omitempty"`
-	LastScoreCodes    []string             `json:"last_score_codes,omitempty"`
-	LastScoreNotes    string               `json:"last_score_notes,omitempty"`
-	LastScoredAt      *string              `json:"last_scored_at,omitempty"`
-	HumanAgree        *bool                `json:"human_agree,omitempty"`
-	HumanNote         string               `json:"human_note,omitempty"`
-	CalibratedAt      string               `json:"calibrated_at,omitempty"`
-	ForbidTools       []string             `json:"forbid_tools,omitempty"`
+	ID                string                  `json:"id"`
+	SourceRunID       string                  `json:"source_run_id"`
+	Status            store.EvalCaseStatus    `json:"status"`
+	Protocol          string                  `json:"protocol,omitempty"`
+	Input             string                  `json:"input"`
+	RequiredReads     []string                `json:"required_reads,omitempty"`
+	Consequential     []string                `json:"consequential,omitempty"`
+	ExpectConseqAny   []string                `json:"expect_consequential_any,omitempty"`
+	Chain             []store.EvalChainLink   `json:"chain,omitempty"`
+	RunStatusAtIngest string                  `json:"run_status_at_ingest,omitempty"`
+	LastScorePass     *bool                   `json:"last_score_pass,omitempty"`
+	LastScoreCodes    []string                `json:"last_score_codes,omitempty"`
+	LastScoreNotes    string                  `json:"last_score_notes,omitempty"`
+	LastScoredAt      *string                 `json:"last_scored_at,omitempty"`
+	HumanAgree        *bool                   `json:"human_agree,omitempty"`
+	HumanNote         string                  `json:"human_note,omitempty"`
+	CalibratedAt      string                  `json:"calibrated_at,omitempty"`
+	ForbidTools       []string                `json:"forbid_tools,omitempty"`
 	ArgContains       []store.EvalArgContains `json:"arg_contains,omitempty"`
 	ExpectState       []store.EvalExpectState `json:"expect_state,omitempty"`
-	HasStateSnapshot  bool                 `json:"has_state_snapshot"`
-	StateSnapshot     json.RawMessage      `json:"state_snapshot,omitempty"`
-	CreatedAt         string               `json:"created_at"`
-	UpdatedAt         string               `json:"updated_at"`
-	Events            []store.Event        `json:"events,omitempty"`
+	HasStateSnapshot  bool                    `json:"has_state_snapshot"`
+	StateSnapshot     json.RawMessage         `json:"state_snapshot,omitempty"`
+	CreatedAt         string                  `json:"created_at"`
+	UpdatedAt         string                  `json:"updated_at"`
+	Events            []store.Event           `json:"events,omitempty"`
 }
 
 type evalCalibrationSummaryJSON struct {
@@ -311,22 +311,22 @@ func (s *Server) handleGetEvalCase(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePatchEvalCase(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	var body struct {
-		Protocol           *string               `json:"protocol"`
-		RequiredReads      []string              `json:"required_reads"`
-		Consequential      []string              `json:"consequential"`
-		ExpectConseqAny    []string              `json:"expect_consequential_any"`
-		Chain              []store.EvalChainLink `json:"chain"`
-		Status             *store.EvalCaseStatus `json:"status"`
-		SetRequiredReads   bool                  `json:"-"`
-		SetConsequential   bool                  `json:"-"`
-		SetExpectConseqAny bool                  `json:"-"`
-		SetChain           bool                  `json:"-"`
-		ForbidTools        []string              `json:"forbid_tools"`
-		SetForbidTools     bool                  `json:"-"`
+		Protocol           *string                 `json:"protocol"`
+		RequiredReads      []string                `json:"required_reads"`
+		Consequential      []string                `json:"consequential"`
+		ExpectConseqAny    []string                `json:"expect_consequential_any"`
+		Chain              []store.EvalChainLink   `json:"chain"`
+		Status             *store.EvalCaseStatus   `json:"status"`
+		SetRequiredReads   bool                    `json:"-"`
+		SetConsequential   bool                    `json:"-"`
+		SetExpectConseqAny bool                    `json:"-"`
+		SetChain           bool                    `json:"-"`
+		ForbidTools        []string                `json:"forbid_tools"`
+		SetForbidTools     bool                    `json:"-"`
 		ArgContains        []store.EvalArgContains `json:"arg_contains"`
-		SetArgContains     bool                  `json:"-"`
+		SetArgContains     bool                    `json:"-"`
 		ExpectState        []store.EvalExpectState `json:"expect_state"`
-		SetExpectState     bool                  `json:"-"`
+		SetExpectState     bool                    `json:"-"`
 	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()

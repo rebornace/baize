@@ -162,10 +162,10 @@ func TestEvalIngestTrajectoryFields(t *testing.T) {
 		t.Fatalf("ingest: code=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var created struct {
-		ID          string                    `json:"id"`
-		ForbidTools []string                  `json:"forbid_tools"`
-		ArgContains []store.EvalArgContains   `json:"arg_contains"`
-		ExpectState []store.EvalExpectState   `json:"expect_state"`
+		ID          string                  `json:"id"`
+		ForbidTools []string                `json:"forbid_tools"`
+		ArgContains []store.EvalArgContains `json:"arg_contains"`
+		ExpectState []store.EvalExpectState `json:"expect_state"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
@@ -188,9 +188,9 @@ func TestEvalIngestTrajectoryFields(t *testing.T) {
 		t.Fatalf("get: code=%d body=%s", getRR.Code, getRR.Body.String())
 	}
 	var fetched struct {
-		ForbidTools []string                  `json:"forbid_tools"`
-		ArgContains []store.EvalArgContains   `json:"arg_contains"`
-		ExpectState []store.EvalExpectState   `json:"expect_state"`
+		ForbidTools []string                `json:"forbid_tools"`
+		ArgContains []store.EvalArgContains `json:"arg_contains"`
+		ExpectState []store.EvalExpectState `json:"expect_state"`
 	}
 	if err := json.Unmarshal(getRR.Body.Bytes(), &fetched); err != nil {
 		t.Fatal(err)
@@ -481,9 +481,9 @@ func TestEvalPatchTrajectoryFieldsHTTP(t *testing.T) {
 		t.Fatalf("patch: code=%d body=%s", patchRR.Code, patchRR.Body.String())
 	}
 	var out struct {
-		ForbidTools []string                  `json:"forbid_tools"`
-		ArgContains []store.EvalArgContains   `json:"arg_contains"`
-		ExpectState []store.EvalExpectState   `json:"expect_state"`
+		ForbidTools []string                `json:"forbid_tools"`
+		ArgContains []store.EvalArgContains `json:"arg_contains"`
+		ExpectState []store.EvalExpectState `json:"expect_state"`
 	}
 	if err := json.Unmarshal(patchRR.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)

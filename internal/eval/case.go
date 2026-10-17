@@ -27,24 +27,24 @@ type IngestInput struct {
 
 // PatchInput updates expectations and optionally promotes draft to confirmed.
 type PatchInput struct {
-	Protocol        string
-	SetProtocol     bool
-	RequiredReads   []string
-	SetRequiredReads bool
-	Consequential   []string
-	SetConsequential bool
-	ExpectConseqAny []string
+	Protocol           string
+	SetProtocol        bool
+	RequiredReads      []string
+	SetRequiredReads   bool
+	Consequential      []string
+	SetConsequential   bool
+	ExpectConseqAny    []string
 	SetExpectConseqAny bool
-	Chain           []store.EvalChainLink
-	SetChain        bool
-	ForbidTools     []string
-	SetForbidTools  bool
-	ArgContains     []store.EvalArgContains
-	SetArgContains  bool
-	ExpectState     []store.EvalExpectState
-	SetExpectState  bool
-	Status          store.EvalCaseStatus
-	SetStatus       bool
+	Chain              []store.EvalChainLink
+	SetChain           bool
+	ForbidTools        []string
+	SetForbidTools     bool
+	ArgContains        []store.EvalArgContains
+	SetArgContains     bool
+	ExpectState        []store.EvalExpectState
+	SetExpectState     bool
+	Status             store.EvalCaseStatus
+	SetStatus          bool
 }
 
 func cloneStringSlice(in []string) []string {

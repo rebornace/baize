@@ -29,7 +29,7 @@ type Memory struct {
 	modelProfiles        map[string]ModelProfile
 	catalogRevisions     map[string][]ConnectorCatalogRevision
 	mcpExportInvocations []MCPExportInvocation
-	evalCases             map[string]EvalCase
+	evalCases            map[string]EvalCase
 }
 
 // NewMemory creates an empty in-memory Store.

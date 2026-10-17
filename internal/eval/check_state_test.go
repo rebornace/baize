@@ -13,9 +13,9 @@ import (
 
 type upsertTrackingStore struct {
 	store.Store
-	upsertCalls      int
-	failNextUpsert   bool
-	nextUpsertErr    error
+	upsertCalls    int
+	failNextUpsert bool
+	nextUpsertErr  error
 }
 
 func (s *upsertTrackingStore) UpsertEvalCase(c store.EvalCase) error {
