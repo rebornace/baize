@@ -188,7 +188,7 @@ func TestEvalCaseTrajectoryFieldsRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if gotEmpty.StateSnapshotJSON != nil && len(gotEmpty.StateSnapshotJSON) > 0 {
+		if len(gotEmpty.StateSnapshotJSON) > 0 {
 			t.Fatalf("expected empty snapshot, got %q", gotEmpty.StateSnapshotJSON)
 		}
 	}
