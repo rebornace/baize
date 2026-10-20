@@ -42,6 +42,9 @@ func TestBuildRuntimeHolderBaselineAndOverride(t *testing.T) {
 	if !h.Knobs().ActiveGoalEnabled || h.Knobs().ActiveGoalMaxDepth != 8 || h.Knobs().ActiveGoalMaxTextRunes != 500 {
 		t.Fatalf("baseline active goal knobs wrong: %+v", h.Knobs())
 	}
+	if !h.Knobs().ContextOffloadEnabled {
+		t.Fatalf("baseline ContextOffloadEnabled must default to true: %+v", h.Knobs())
+	}
 
 	// persist an override, then rebuild (simulates restart) -> override loaded
 	steps := 33
@@ -65,5 +68,20 @@ func TestBuildRuntimeHolderBaselineAndOverride(t *testing.T) {
 	}
 	if !h3.Knobs().MemoryAutoExtract {
 		t.Fatalf("unset MemoryAutoExtract must keep baseline true: %+v", h3.Knobs())
+	}
+}
+
+// Hot-reload must keep ContextOffloadEnabled on when no KV override is present
+// (same baseline as startup; zero-value false would silently disable offload).
+func TestReloadBaselineKeepsContextOffloadEnabled(t *testing.T) {
+	base := runtimeBaseline(config.Config{}, "op", "adm", nil, "json")
+	if !base.Knobs.ContextOffloadEnabled {
+		t.Fatal("runtimeBaseline must set ContextOffloadEnabled=true")
+	}
+	h := runtimecfg.New(base)
+	// Simulate SIGHUP/reload replacing the YAML baseline with no KV overrides.
+	h.ReplaceBaseline(runtimeBaseline(config.Config{}, "op", "adm", nil, "json"))
+	if !h.Knobs().ContextOffloadEnabled {
+		t.Fatal("after ReplaceBaseline without KV override, ContextOffloadEnabled must stay true")
 	}
 }

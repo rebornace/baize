@@ -4,6 +4,7 @@
 
 ### 新功能
 
+- **上下文卸出（CX1）**：超大体量工具结果与用户粘贴写入会话工作区 `offload/`，模型侧仅预览+路径，可用 `read_file` 分段回读；DP-3 占位收敛为路径引用（落库事件/气泡仍保留全文策略）。
 - **Admin 评测语料（设置页）**：按时间窗筛选失败/慢 Run、快照入库 EvalCase、确定性 evidence 重打分与 JSON 导出（不调用模型；批跑仍用 `scripts/evidence-eval`）。
 - **Admin 评测人审标定（EV2）**：对已打分的 EvalCase 标记同意/不同意（可选备注），查看人机一致率摘要；沿用 `last_score_pass`，不引入 LLM judge。
 - **Admin 评测轨迹与终态（EV3）**：EvalCase 支持 `forbid_tools` / `arg_contains` / `expect_state` 与冻结快照；evidence 评分可产出 `FORBID` / `ARG` / `STATE`；设置页展示期望与评分码，并可按 mock 基址只读活查终态（`check-state`）。

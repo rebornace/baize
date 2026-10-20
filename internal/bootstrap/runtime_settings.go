@@ -18,16 +18,11 @@ import (
 // (no wait); this only covers cross-replica convergence.
 const runtimeRefreshInterval = 20 * time.Second
 
-// buildRuntimeHolder constructs the hot-reload settings holder from the config
-// baseline (knobs from cfg, credentials already resolved by the caller) and
-// applies any persisted KV overrides. Corrupt/unreadable KV is logged and
-// ignored (falls back to YAML); it never blocks startup.
-func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminToken string, operators []controlplane.Operator) *runtimecfg.Holder {
-	logFmt := strings.TrimSpace(cfg.Runtime.LogFormat)
-	if v := strings.TrimSpace(os.Getenv("BAIZE_LOG_FORMAT")); v != "" {
-		logFmt = v
-	}
-	base := runtimecfg.Snapshot{
+// runtimeBaseline builds the YAML/config baseline snapshot shared by startup
+// and SIGHUP/reload so hot-reload cannot drop knobs that have no YAML field
+// (e.g. ContextOffloadEnabled defaults on).
+func runtimeBaseline(cfg config.Config, operatorToken, adminToken string, operators []controlplane.Operator, logFormat string) runtimecfg.Snapshot {
+	return runtimecfg.Snapshot{
 		Knobs: runtimecfg.Knobs{
 			MaxMessages:          cfg.Conversation.MaxMessages,
 			MaxSteps:             cfg.Run.MaxSteps,
@@ -46,6 +41,8 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 			ActiveGoalEnabled:      true,
 			ActiveGoalMaxDepth:     8,
 			ActiveGoalMaxTextRunes: 500,
+			// Context offload: no YAML yet; baseline on (bulky tool/paste → workspace).
+			ContextOffloadEnabled: true,
 			// DP-2a defaults: feature masters default off, but the threshold and
 			// prefilter width are populated so GET reports real effective values
 			// once an operator turns decide + tool routing on.
@@ -66,12 +63,23 @@ func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminT
 		},
 		PublicBaseURL: strings.TrimSpace(cfg.Runtime.PublicBaseURL),
 		Observability: runtimecfg.Observability{
-			LogFormat:        logFmt,
+			LogFormat:        logFormat,
 			OtelOTLPEndpoint: strings.TrimSpace(cfg.Runtime.OtelOTLPEndpoint),
 			OtelServiceName:  strings.TrimSpace(cfg.Runtime.OtelServiceName),
 		},
 	}
-	h := runtimecfg.New(base)
+}
+
+// buildRuntimeHolder constructs the hot-reload settings holder from the config
+// baseline (knobs from cfg, credentials already resolved by the caller) and
+// applies any persisted KV overrides. Corrupt/unreadable KV is logged and
+// ignored (falls back to YAML); it never blocks startup.
+func buildRuntimeHolder(cfg config.Config, st store.Store, operatorToken, adminToken string, operators []controlplane.Operator) *runtimecfg.Holder {
+	logFmt := strings.TrimSpace(cfg.Runtime.LogFormat)
+	if v := strings.TrimSpace(os.Getenv("BAIZE_LOG_FORMAT")); v != "" {
+		logFmt = v
+	}
+	h := runtimecfg.New(runtimeBaseline(cfg, operatorToken, adminToken, operators, logFmt))
 	if err := h.Load(context.Background(), st); err != nil {
 		log.Printf("runtimecfg: load persisted overrides failed (using YAML baseline): %v", err)
 	}

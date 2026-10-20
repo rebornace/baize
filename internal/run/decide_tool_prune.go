@@ -49,10 +49,12 @@ func (e *Engine) effectiveDecidePruneMaxJudged() int {
 
 // pruneToolResults scans the accumulated run messages for bulky tool results
 // and, for the largest up to MaxJudged, asks the decision layer whether each
-// is worth keeping verbatim. A non-degraded No replaces the result with a
-// short placeholder (Role + ToolCallID preserved) and records a
-// decide.tool_pruned event. Everything else fails open: degraded answers, raw
-// errors, Yes verdicts and sub-threshold results are all left untouched.
+// is worth keeping verbatim. A non-degraded No offloads the full text to the
+// workspace and replaces the result with an offload stub (Role + ToolCallID
+// preserved); if offload is unavailable it falls back to prunedToolPlaceholder.
+// Either path records a decide.tool_pruned event (with path when offload
+// succeeds). Everything else fails open: degraded answers, raw errors, Yes
+// verdicts, already-offloaded stubs, and sub-threshold results are left untouched.
 //
 // Mutations land in the caller's backing array via index assignment, so the
 // shortened content is what later turns send.
@@ -78,10 +80,11 @@ func (e *Engine) pruneToolResults(ctx context.Context, runID string, messages []
 			continue
 		}
 		sizeBefore := EstimateMessagesTokens([]llm.Message{m})
+		replacement, offloadPath := e.pruneReplacement(ctx, runID, m)
 		pruned := llm.Message{
 			Role:       llm.RoleTool,
 			ToolCallID: m.ToolCallID,
-			Content:    prunedToolPlaceholder,
+			Content:    replacement,
 		}
 		sizeAfter := EstimateMessagesTokens([]llm.Message{pruned})
 		messages[idx] = pruned
@@ -89,19 +92,56 @@ func (e *Engine) pruneToolResults(ctx context.Context, runID string, messages []
 		if saved < 0 {
 			saved = 0
 		}
+		data := map[string]any{
+			"tool_call_id": m.ToolCallID,
+			"source":       ans.Source,
+			"saved_tokens": saved,
+		}
+		if offloadPath != "" {
+			data["path"] = offloadPath
+		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventDecideToolPruned,
-			Data: map[string]any{
-				"tool_call_id": m.ToolCallID,
-				"source":       ans.Source,
-				"saved_tokens": saved,
-			},
+			Data: data,
 		})
+		if offloadPath != "" {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventContextOffloaded,
+				Data: map[string]any{
+					"source":       "tool_prune",
+					"path":         offloadPath,
+					"tool_call_id": m.ToolCallID,
+					"saved_tokens": saved,
+				},
+			})
+		}
 	}
+}
+
+// pruneReplacement returns the model-facing text for a VerdictNo prune, and
+// the workspace path when offload succeeded. Fail-open: offload disabled,
+// missing workspace, empty conversation, or write error → legacy placeholder
+// and empty path. Bodies are redacted before write (same path as tool offload).
+func (e *Engine) pruneReplacement(ctx context.Context, runID string, m llm.Message) (content, path string) {
+	full := toolMessageText(m)
+	if e.Workspace == nil || e.Store == nil || !e.effectiveContextOffload() {
+		return prunedToolPlaceholder, ""
+	}
+	run, err := e.Store.GetRun(runID)
+	if err != nil || run == nil || strings.TrimSpace(run.ConversationID) == "" {
+		return prunedToolPlaceholder, ""
+	}
+	body := redactOffloadBody(full)
+	path, werr := e.Workspace.WriteOffloadFile(ctx, run.ConversationID, body)
+	if werr != nil {
+		return prunedToolPlaceholder, ""
+	}
+	return FormatOffloadMessage(path, body, false), path
 }
 
 // bulkyToolCandidates returns indexes of RoleTool messages whose estimated
 // size exceeds threshold, ordered largest first and capped at maxJudged.
+// Already-offloaded stubs are excluded so DP-3 never re-asks about them.
 func bulkyToolCandidates(messages []llm.Message, threshold, maxJudged int) []int {
 	type cand struct {
 		idx  int
@@ -110,6 +150,9 @@ func bulkyToolCandidates(messages []llm.Message, threshold, maxJudged int) []int
 	var cands []cand
 	for i, m := range messages {
 		if m.Role != llm.RoleTool {
+			continue
+		}
+		if IsOffloadPreview(toolMessageText(m)) {
 			continue
 		}
 		size := EstimateMessagesTokens([]llm.Message{m})

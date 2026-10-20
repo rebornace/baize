@@ -542,6 +542,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 			reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 		}
 		srv.Workspace = ws
+		engine.Workspace = ws
 		engine.ImagePartResolver = func(convID, wsPath string) (llm.ContentPart, bool) {
 			return ws.ResolveImagePart(context.Background(), convID, wsPath)
 		}

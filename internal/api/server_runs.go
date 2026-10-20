@@ -78,7 +78,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// extract model-bound text/images up-front so size/type/vision failures
 	// reject the request before any run is created. The raw bytes are persisted
 	// for UI preview/download; image bytes never enter SQLite.
+	// MaxTextChars=0 keeps full extracted text; bulky bodies are offloaded to
+	// the workspace below (AC-04) instead of …[truncated].
 	attachOpts := attach.DefaultOptions()
+	attachOpts.MaxTextChars = 0
 	decoded, err := attach.Decode(body.Attachments, attachOpts)
 	if err != nil {
 		s.writeAttachmentError(w, err)
@@ -248,16 +251,21 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// Build the LLM-bound user content (cleaned text + text-attachment blocks)
 	// and the multimodal Parts payload when any attachments are present. The
 	// persisted bubble stores only the visible text + filenames (no base64).
-	llmText := modelInput
+	// Large paste/attachment bodies are offloaded for the model only; UI
+	// displayText / bubble keep the user original (AC-04).
+	offloadEnabled := s.contextOffloadEnabled()
+	offloadWS := s.offloadWriter()
+	modelFacing := run.MaybeOffloadPaste(r.Context(), offloadWS, conv, modelInput, offloadEnabled)
+	llmText := modelFacing
 	var userParts []llm.ContentPart
 	if len(textExts) > 0 || len(imageExts) > 0 {
 		var b strings.Builder
-		b.WriteString(modelInput)
+		b.WriteString(modelFacing)
 		for _, t := range textExts {
 			b.WriteString("\n\n【附件: ")
 			b.WriteString(t.Filename)
 			b.WriteString("】\n")
-			b.WriteString(t.Text)
+			b.WriteString(run.MaybeOffloadPaste(r.Context(), offloadWS, conv, t.Text, offloadEnabled))
 		}
 		llmText = b.String()
 		userParts = append(userParts, llm.ContentPart{Type: "text", Text: llmText})
@@ -268,6 +276,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				ImageBytes: img.ImageBytes,
 			})
 		}
+	} else if modelFacing != modelInput {
+		// Pure paste offload: inject stub via userParts so Input/outbound stay original.
+		userParts = append(userParts, llm.ContentPart{Type: "text", Text: modelFacing})
 	}
 	// When attachments were persisted to the workspace, append the saved file
 	// list to the LLM-bound content only (never to displayText, so the
@@ -439,6 +450,27 @@ func resolvePinnedSkills(ag store.Agent, runSkills []string, override bool, cat 
 		out = append(out, id)
 	}
 	return out
+}
+
+// contextOffloadEnabled mirrors Engine: Settings==nil defaults on.
+func (s *Server) contextOffloadEnabled() bool {
+	if s == nil || s.Settings == nil {
+		return true
+	}
+	return s.Settings.Knobs().ContextOffloadEnabled
+}
+
+// offloadWriter returns Workspace when it implements WriteOffloadFile; else nil
+// (fail-open: paste/attachment text stays inline).
+func (s *Server) offloadWriter() run.OffloadFileWriter {
+	if s == nil || s.Workspace == nil {
+		return nil
+	}
+	w, ok := s.Workspace.(run.OffloadFileWriter)
+	if !ok {
+		return nil
+	}
+	return w
 }
 
 // writeAttachmentError maps an attach.Process error to the spec's API error

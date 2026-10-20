@@ -77,6 +77,9 @@ type Knobs struct {
 	// ActiveGoalMaxDepth caps push depth; ActiveGoalMaxTextRunes caps frame text.
 	ActiveGoalMaxDepth     int
 	ActiveGoalMaxTextRunes int
+	// ContextOffloadEnabled writes bulky tool/paste bodies to workspace offload/
+	// and sends the model a short preview+path stub. Default on; KV can override.
+	ContextOffloadEnabled bool
 }
 
 // Credentials is the effective control-plane credential set.
@@ -140,6 +143,7 @@ type knobsOverride struct {
 	ActiveGoalEnabled        *bool    `json:"active_goal_enabled,omitempty"`
 	ActiveGoalMaxDepth       *int     `json:"active_goal_max_depth,omitempty"`
 	ActiveGoalMaxTextRunes   *int     `json:"active_goal_max_text_runes,omitempty"`
+	ContextOffloadEnabled    *bool    `json:"context_offload_enabled,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -353,6 +357,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.ActiveGoalMaxTextRunes != nil {
 		k.ActiveGoalMaxTextRunes = *ko.ActiveGoalMaxTextRunes
 	}
+	if ko.ContextOffloadEnabled != nil {
+		k.ContextOffloadEnabled = *ko.ContextOffloadEnabled
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -424,6 +431,7 @@ type KnobsFieldFlags struct {
 	ActiveGoalEnabled      bool `json:"active_goal_enabled"`
 	ActiveGoalMaxDepth     bool `json:"active_goal_max_depth"`
 	ActiveGoalMaxTextRunes bool `json:"active_goal_max_text_runes"`
+	ContextOffloadEnabled  bool `json:"context_offload_enabled"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -472,6 +480,7 @@ func (h *Holder) KnobsView() KnobsView {
 			ActiveGoalEnabled:      ko.ActiveGoalEnabled != nil,
 			ActiveGoalMaxDepth:     ko.ActiveGoalMaxDepth != nil,
 			ActiveGoalMaxTextRunes: ko.ActiveGoalMaxTextRunes != nil,
+			ContextOffloadEnabled:  ko.ContextOffloadEnabled != nil,
 		},
 	}
 }

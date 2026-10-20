@@ -145,6 +145,7 @@ func (e *Engine) bindingKnobs() map[string]any {
 		"decide_route_enabled":         k.DecideRouteEnabled,
 		"decide_route_min_runes":       k.DecideRouteMinRunes,
 		"context_projection_enabled":   k.ContextProjectionEnabled,
+		"context_offload_enabled":      k.ContextOffloadEnabled,
 	}
 }
 

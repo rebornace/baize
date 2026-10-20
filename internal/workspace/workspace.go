@@ -2,12 +2,15 @@ package workspace
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"path"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rebornace/baize/internal/blob"
@@ -15,15 +18,34 @@ import (
 )
 
 const (
-	rootPrefix    = "workspaces"
-	uploadsDir    = "uploads"
-	MaxWriteBytes = 256 << 10 // 256 KiB
-	MaxReadBytes  = 64 << 10  // 64 KiB returned to the model
-	MaxImageBytes = 10 << 20  // 10 MiB images
+	rootPrefix      = "workspaces"
+	uploadsDir      = "uploads"
+	offloadDir      = "offload"
+	MaxWriteBytes   = 256 << 10 // 256 KiB
+	MaxReadBytes    = 64 << 10  // 64 KiB returned to the model
+	MaxOffloadBytes = 2 << 20   // 2 MiB
+	MaxImageBytes   = 10 << 20  // 10 MiB images
 )
 
 // TruncatedMarker is appended to read_file content cut at MaxReadBytes.
 const TruncatedMarker = "…[truncated]"
+
+// ReadOpts selects a byte range when reading a workspace text file.
+type ReadOpts struct {
+	Offset int // starting byte offset (adjusted to a UTF-8 rune boundary)
+	Limit  int // max bytes to return; <=0 means MaxReadBytes
+}
+
+// ReadFileResult is the structured outcome of ReadFileOpts.
+type ReadFileResult struct {
+	Content    string
+	Truncated  bool
+	NextOffset int
+}
+
+func truncatedMarker(nextOffset int) string {
+	return fmt.Sprintf("…[truncated; next_offset=%d]", nextOffset)
+}
 
 // ErrNotFound is returned when a workspace file does not exist.
 var ErrNotFound = errors.New("workspace: file not found")
@@ -121,6 +143,26 @@ func (s *Service) SaveUploadBytes(ctx context.Context, convID, filename string, 
 	return logical, nil
 }
 
+// WriteOffloadFile persists large tool output under offload/ (up to MaxOffloadBytes).
+func (s *Service) WriteOffloadFile(ctx context.Context, convID, content string) (string, error) {
+	if err := requireConv(convID); err != nil {
+		return "", err
+	}
+	if len(content) > MaxOffloadBytes {
+		return "", fmt.Errorf("offload too large: %d bytes > %d limit", len(content), MaxOffloadBytes)
+	}
+	var rnd [4]byte
+	if _, err := rand.Read(rnd[:]); err != nil {
+		return "", err
+	}
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	logical := path.Join(offloadDir, fmt.Sprintf("%s-%s.txt", stamp, hex.EncodeToString(rnd[:])))
+	if err := s.blobs.Put(ctx, s.key(convID, logical), []byte(content), "text/plain; charset=utf-8"); err != nil {
+		return "", err
+	}
+	return logical, nil
+}
+
 // WriteFile stores content at a logical path (whole-file overwrite).
 func (s *Service) WriteFile(ctx context.Context, convID, relPath, content string) error {
 	if err := requireConv(convID); err != nil {
@@ -136,35 +178,67 @@ func (s *Service) WriteFile(ctx context.Context, convID, relPath, content string
 	return s.blobs.Put(ctx, s.key(convID, rel), []byte(content), "text/plain; charset=utf-8")
 }
 
-// ReadFile returns UTF-8 text content, truncated at MaxReadBytes.
+// ReadFile returns UTF-8 text content, truncated at MaxReadBytes when the file is larger.
 func (s *Service) ReadFile(ctx context.Context, convID, relPath string) (string, error) {
-	if err := requireConv(convID); err != nil {
+	res, err := s.ReadFileOpts(ctx, convID, relPath, ReadOpts{})
+	if err != nil {
 		return "", err
+	}
+	return res.Content, nil
+}
+
+// ReadFileOpts reads a byte range from a UTF-8 text file in the workspace.
+func (s *Service) ReadFileOpts(ctx context.Context, convID, relPath string, opts ReadOpts) (ReadFileResult, error) {
+	if err := requireConv(convID); err != nil {
+		return ReadFileResult{}, err
 	}
 	rel, err := safeRelPath(relPath)
 	if err != nil {
-		return "", err
+		return ReadFileResult{}, err
 	}
 	b, err := s.blobs.Get(ctx, s.key(convID, rel))
 	if err != nil {
 		if errors.Is(err, blob.ErrNotFound) {
-			return "", fmt.Errorf("%s: %w", rel, ErrNotFound)
+			return ReadFileResult{}, fmt.Errorf("%s: %w", rel, ErrNotFound)
 		}
-		return "", err
+		return ReadFileResult{}, err
 	}
 	if ct := http.DetectContentType(b); strings.HasPrefix(ct, "image/") {
-		return "", fmt.Errorf("%s is a binary image; use read_image to view it", rel)
+		return ReadFileResult{}, fmt.Errorf("%s is a binary image; use read_image to view it", rel)
 	}
-	if len(b) > MaxReadBytes {
-		// Cut on the byte budget, then back up to a valid rune boundary so we
-		// never emit a partial multi-byte tail.
-		cut := MaxReadBytes
-		for cut > 0 && !utf8.RuneStart(b[cut]) {
-			cut--
-		}
-		return string(b[:cut]) + TruncatedMarker, nil
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = MaxReadBytes
 	}
-	return string(b), nil
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(b) {
+		offset = len(b)
+	}
+	for offset < len(b) && !utf8.RuneStart(b[offset]) {
+		offset++
+	}
+	rest := b[offset:]
+	if len(rest) <= limit {
+		return ReadFileResult{Content: string(rest)}, nil
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(rest[cut]) {
+		cut--
+	}
+	next := offset + cut
+	marker := truncatedMarker(next)
+	if opts.Offset == 0 && opts.Limit <= 0 {
+		marker = TruncatedMarker
+	}
+	return ReadFileResult{
+		Content:    string(rest[:cut]) + marker,
+		Truncated:  true,
+		NextOffset: next,
+	}, nil
 }
 
 // DeleteFile removes a file; deleting a missing file is a no-op success.

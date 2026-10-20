@@ -44,8 +44,11 @@ type Decoded struct {
 type Options struct {
 	MaxCount      int // max number of attachments per request
 	MaxTotalBytes int // max sum of decoded content bytes across all attachments
-	MaxTextChars  int // max characters per extracted text
-	MaxImageEdge  int // max long edge (px) for image thumbnails
+	// MaxTextChars is the max characters (runes) per extracted text.
+	// MaxTextChars <= 0 means do not truncate (callers that offload large
+	// bodies to the workspace pass 0 to keep the full text).
+	MaxTextChars int
+	MaxImageEdge int // max long edge (px) for image thumbnails
 }
 
 // DefaultOptions returns the approved spec limits.
@@ -101,9 +104,8 @@ func Decode(atts []AttachmentIn, opts Options) ([]Decoded, error) {
 // Process extracts text and image attachments. It returns the text and image
 // results separately; on error the returned slices are nil.
 //
-// Any zero-valued Options field is replaced with its DefaultOptions value, so
-// a caller may pass a partially populated Options (or the zero value) and get
-// the spec defaults for the fields they left unset.
+// Zero-valued Options fields (except MaxTextChars) are replaced with
+// DefaultOptions values. MaxTextChars <= 0 means no truncation.
 func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Extracted, err error) {
 	opts = opts.withDefaults()
 	decoded, err := Decode(atts, opts)
@@ -178,6 +180,10 @@ func IsImageMIME(m string) bool { return isImageMIME(m) }
 // withDefaults returns a copy of opts where every zero-valued field is
 // replaced by the corresponding DefaultOptions value. This lets callers pass
 // a partially populated Options and still get sane limits for the rest.
+//
+// MaxTextChars is the exception: 0 (and any negative value) means "no
+// truncation" and is left unchanged. Callers that want the spec default must
+// pass DefaultOptions() or set MaxTextChars explicitly to 64<<10.
 func (o Options) withDefaults() Options {
 	d := DefaultOptions()
 	if o.MaxCount == 0 {
@@ -185,9 +191,6 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxTotalBytes == 0 {
 		o.MaxTotalBytes = d.MaxTotalBytes
-	}
-	if o.MaxTextChars == 0 {
-		o.MaxTextChars = d.MaxTextChars
 	}
 	if o.MaxImageEdge == 0 {
 		o.MaxImageEdge = d.MaxImageEdge
@@ -204,7 +207,7 @@ const truncatedMarker = "…[truncated]"
 // appends truncatedMarker. MaxTextChars is defined in characters (runes), so
 // multi-byte text is cut on a rune boundary and never produces a partial-
 // codepoint tail. The marker sits outside the rune budget so the visible
-// content prefix is exactly max runes.
+// content prefix is exactly max runes. max <= 0 disables truncation.
 func truncateText(s string, max int) string {
 	if max <= 0 {
 		return s

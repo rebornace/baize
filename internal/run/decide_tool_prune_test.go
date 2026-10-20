@@ -19,6 +19,7 @@ func pruneKnobs(threshold, maxJudged int) fakeKnobs {
 		DecideToolPruneEnabled:   true,
 		DecideToolPruneThreshold: threshold,
 		DecideToolPruneMaxJudged: maxJudged,
+		ContextOffloadEnabled:    true,
 	}}
 }
 
@@ -227,5 +228,201 @@ func TestBuildPruneProbeCapped(t *testing.T) {
 	body := strings.TrimPrefix(probe, "工具返回内容（判断是否值得在后续上下文中原样保留）：\n")
 	if n := len([]rune(body)); n > decideProbeMaxRunes {
 		t.Fatalf("probe body runes=%d must be <= %d", n, decideProbeMaxRunes)
+	}
+}
+
+// Already-offloaded stubs must not be re-judged (AC-05).
+func TestPruneSkipsAlreadyOffloaded(t *testing.T) {
+	st := store.NewMemory()
+	decider := &countDecider{ans: decide.Answer{Verdict: decide.VerdictNo, Source: decide.SourceRules}}
+	// Low threshold so the stub itself would otherwise be a bulky candidate.
+	eng := &Engine{Store: st, Decider: decider, Settings: pruneKnobs(10, 8)}
+
+	runID := newPruneRun(t, st)
+	stub := FormatOffloadMessage("offload/already.txt", strings.Repeat("y", 800), false)
+	msgs := []llm.Message{
+		{Role: llm.RoleAssistant},
+		{Role: llm.RoleTool, ToolCallID: "c0", Content: stub},
+	}
+	eng.pruneToolResults(context.Background(), runID, msgs)
+
+	if decider.calls != 0 {
+		t.Fatalf("already-offloaded stub must not Ask Decider, calls=%d", decider.calls)
+	}
+	if msgs[1].Content != stub {
+		t.Fatalf("content must be unchanged, got %q", msgs[1].Content)
+	}
+	evs, _ := st.ListEvents(runID)
+	for _, ev := range evs {
+		if ev.Type == EventDecideToolPruned {
+			t.Fatalf("no decide.tool_pruned expected; ev=%+v", ev)
+		}
+	}
+}
+
+// VerdictNo writes full text to the workspace and replaces with an offload stub (AC-06).
+func TestPruneNoOffloadsInsteadOfOldPlaceholder(t *testing.T) {
+	st := store.NewMemory()
+	ws := newMemWorkspace(t)
+	decider := &countDecider{ans: decide.Answer{Verdict: decide.VerdictNo, Source: decide.SourceRules}}
+	eng := &Engine{Store: st, Decider: decider, Settings: pruneKnobs(500, 8), Workspace: ws}
+
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv_prune", Input: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := strings.Repeat("x", 2500)
+	msgs := []llm.Message{
+		{Role: llm.RoleAssistant},
+		{Role: llm.RoleTool, ToolCallID: "c0", Content: full},
+	}
+	eng.pruneToolResults(context.Background(), r.ID, msgs)
+
+	if !IsOffloadPreview(msgs[1].Content) {
+		t.Fatalf("content must be offload preview, got %q", msgs[1].Content)
+	}
+	if msgs[1].Role != llm.RoleTool || msgs[1].ToolCallID != "c0" {
+		t.Fatalf("role/id pairing must be preserved: %+v", msgs[1])
+	}
+
+	evs, _ := st.ListEvents(r.ID)
+	var pruned *store.Event
+	for i := range evs {
+		if evs[i].Type == EventDecideToolPruned {
+			pruned = &evs[i]
+		}
+	}
+	if pruned == nil {
+		t.Fatal("missing decide.tool_pruned event")
+	}
+	path, _ := pruned.Data["path"].(string)
+	if path == "" || !strings.HasPrefix(path, "offload/") {
+		t.Fatalf("path=%q want offload/…", path)
+	}
+	got, rerr := ws.ReadFile(context.Background(), "conv_prune", path)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if got != full {
+		t.Fatalf("workspace body len=%d want %d", len(got), len(full))
+	}
+}
+
+// ContextOffloadEnabled=false must not write offload files on VerdictNo.
+func TestPruneNoRespectsContextOffloadDisabled(t *testing.T) {
+	st := store.NewMemory()
+	ws := newMemWorkspace(t)
+	decider := &countDecider{ans: decide.Answer{Verdict: decide.VerdictNo, Source: decide.SourceRules}}
+	eng := &Engine{
+		Store: st, Decider: decider, Workspace: ws,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{
+			DecideEnabled:            true,
+			DecideToolPruneEnabled:   true,
+			DecideToolPruneThreshold: 500,
+			DecideToolPruneMaxJudged: 8,
+			ContextOffloadEnabled:    false,
+		}},
+	}
+
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv_off", Input: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := bulkyToolMessages(1, 2500)
+	eng.pruneToolResults(context.Background(), r.ID, msgs)
+
+	if msgs[1].Content != prunedToolPlaceholder {
+		t.Fatalf("content=%q want placeholder when offload disabled", msgs[1].Content)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	for _, ev := range evs {
+		if ev.Type == EventContextOffloaded {
+			t.Fatalf("no context.offloaded expected when offload disabled; ev=%+v", ev)
+		}
+		if ev.Type == EventDecideToolPruned {
+			if _, ok := ev.Data["path"]; ok {
+				t.Fatalf("path must be absent when offload disabled; data=%+v", ev.Data)
+			}
+		}
+	}
+}
+
+// VerdictNo offload must redact secrets in both file body and preview.
+func TestPruneNoOffloadRedactsFileAndPreview(t *testing.T) {
+	st := store.NewMemory()
+	ws := newMemWorkspace(t)
+	decider := &countDecider{ans: decide.Answer{Verdict: decide.VerdictNo, Source: decide.SourceRules}}
+	eng := &Engine{Store: st, Decider: decider, Settings: pruneKnobs(500, 8), Workspace: ws}
+
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv_redact", Input: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := `{"accessToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.sig","data":"` +
+		strings.Repeat("x", 2500) + `"}`
+	msgs := []llm.Message{
+		{Role: llm.RoleAssistant},
+		{Role: llm.RoleTool, ToolCallID: "c0", Content: full},
+	}
+	eng.pruneToolResults(context.Background(), r.ID, msgs)
+
+	if !IsOffloadPreview(msgs[1].Content) {
+		t.Fatalf("content must be offload preview, got %q", msgs[1].Content)
+	}
+	if strings.Contains(msgs[1].Content, "eyJ") {
+		t.Fatal("jwt leaked into prune offload preview")
+	}
+	evs, _ := st.ListEvents(r.ID)
+	var path string
+	for i := range evs {
+		if evs[i].Type == EventDecideToolPruned {
+			path, _ = evs[i].Data["path"].(string)
+		}
+	}
+	if path == "" {
+		t.Fatal("missing offload path")
+	}
+	got, rerr := ws.ReadFile(context.Background(), "conv_redact", path)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if strings.Contains(got, "eyJ") {
+		snip := got
+		if len(snip) > 120 {
+			snip = snip[:120]
+		}
+		t.Fatalf("jwt leaked into prune offload file: %s", snip)
+	}
+}
+
+// Offload failure keeps the legacy prune placeholder (AC-06 fail-open).
+func TestPruneNoFailOpenOldPlaceholder(t *testing.T) {
+	st := store.NewMemory()
+	decider := &countDecider{ans: decide.Answer{Verdict: decide.VerdictNo, Source: decide.SourceRules}}
+	// Workspace nil → cannot offload.
+	eng := &Engine{Store: st, Decider: decider, Settings: pruneKnobs(500, 8)}
+
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv_fail", Input: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := bulkyToolMessages(1, 2500)
+	eng.pruneToolResults(context.Background(), r.ID, msgs)
+
+	if msgs[1].Content != prunedToolPlaceholder {
+		t.Fatalf("content=%q want old placeholder", msgs[1].Content)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	var pruned *store.Event
+	for i := range evs {
+		if evs[i].Type == EventDecideToolPruned {
+			pruned = &evs[i]
+		}
+	}
+	if pruned == nil {
+		t.Fatal("missing decide.tool_pruned event")
+	}
+	if _, ok := pruned.Data["path"]; ok {
+		t.Fatalf("fail-open must not set path; data=%+v", pruned.Data)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/rebornace/baize/internal/api"
 	"github.com/rebornace/baize/internal/blob"
@@ -343,31 +342,7 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 		operators = append(operators, controlplane.Operator{ID: entry.ID, Token: token})
 	}
 
-	base := runtimecfg.Snapshot{
-		Knobs: runtimecfg.Knobs{
-			MaxMessages:           cfg.Conversation.MaxMessages,
-			MaxSteps:              cfg.Run.MaxSteps,
-			ToolTimeout:           time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
-			CompactionEnabled:     cfg.CompactEnabled(),
-			CompactThreshold:      cfg.Conversation.CompactThreshold,
-			CompactReserveTokens:  cfg.Conversation.CompactReserveOutput,
-			CompactKeepRecent:     cfg.Conversation.CompactRecentMessages,
-			CompactSummaryTimeout: 60 * time.Second,
-			MemoryEnabled:         true,
-			MemoryAutoExtract:     true,
-		},
-		Creds: runtimecfg.Credentials{
-			OperatorToken: op,
-			AdminToken:    adm,
-			Operators:     operators,
-		},
-		PublicBaseURL: strings.TrimSpace(cfg.Runtime.PublicBaseURL),
-		Observability: runtimecfg.Observability{
-			LogFormat:        strings.TrimSpace(cfg.Runtime.LogFormat),
-			OtelOTLPEndpoint: strings.TrimSpace(cfg.Runtime.OtelOTLPEndpoint),
-			OtelServiceName:  strings.TrimSpace(cfg.Runtime.OtelServiceName),
-		},
-	}
+	base := runtimeBaseline(cfg, op, adm, operators, strings.TrimSpace(cfg.Runtime.LogFormat))
 
 	rt.mu.Lock()
 	*rt.cfg = cfg

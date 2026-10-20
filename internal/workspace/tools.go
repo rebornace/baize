@@ -29,6 +29,23 @@ func strArg(args map[string]any, key string) (string, bool) {
 	return s, ok && s != ""
 }
 
+func intArg(args map[string]any, key string) (int, bool) {
+	v, ok := args[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
 func fail(format string, a ...any) (map[string]any, bool, error) {
 	return map[string]any{"error": fmt.Sprintf(format, a...)}, true, nil
 }
@@ -51,7 +68,9 @@ func Tools(svc *Service) []ToolMeta {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path": map[string]any{"type": "string", "description": "File path relative to workspace root"},
+				"path":   map[string]any{"type": "string", "description": "File path relative to workspace root"},
+				"offset": map[string]any{"type": "number", "description": "Optional byte offset to start reading from"},
+				"limit":  map[string]any{"type": "number", "description": "Optional max bytes to return (default read cap)"},
 			},
 			"required": []string{"path"},
 		},
@@ -134,11 +153,23 @@ func readInvoker(svc *Service) tool.Invoker {
 		if !ok {
 			return fail("path is required")
 		}
-		content, err := svc.ReadFile(ctx, conv, p)
+		opts := ReadOpts{}
+		if off, ok := intArg(args, "offset"); ok {
+			opts.Offset = off
+		}
+		if lim, ok := intArg(args, "limit"); ok {
+			opts.Limit = lim
+		}
+		res, err := svc.ReadFileOpts(ctx, conv, p, opts)
 		if err != nil {
 			return fail("%v", err)
 		}
-		return map[string]any{"path": p, "content": content}, false, nil
+		out := map[string]any{"path": p, "content": res.Content}
+		if res.Truncated {
+			out["truncated"] = true
+			out["next_offset"] = res.NextOffset
+		}
+		return out, false, nil
 	}
 }
 

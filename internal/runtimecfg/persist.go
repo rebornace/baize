@@ -50,6 +50,7 @@ type KnobsPatch struct {
 	ActiveGoalEnabled            *bool    `json:"active_goal_enabled,omitempty"`
 	ActiveGoalMaxDepth           *int     `json:"active_goal_max_depth,omitempty"`
 	ActiveGoalMaxTextRunes       *int     `json:"active_goal_max_text_runes,omitempty"`
+	ContextOffloadEnabled        *bool    `json:"context_offload_enabled,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 	LogFormat                    *string  `json:"log_format,omitempty"`
 	OtelOTLPEndpoint             *string  `json:"otel_otlp_endpoint,omitempty"`
@@ -340,6 +341,9 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.ActiveGoalMaxTextRunes != nil {
 		next.ActiveGoalMaxTextRunes = p.ActiveGoalMaxTextRunes
+	}
+	if p.ContextOffloadEnabled != nil {
+		next.ContextOffloadEnabled = p.ContextOffloadEnabled
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/toolindex"
+	"github.com/rebornace/baize/internal/workspace"
 )
 
 const (
@@ -119,6 +120,9 @@ type Engine struct {
 	// ImagePartResolver rebuilds image parts for persisted image_refs on cold
 	// resume. nil (or ok=false) degrades that tool result to a text note.
 	ImagePartResolver func(conversationID, workspacePath string) (llm.ContentPart, bool)
+	// Workspace optionally persists bulky tool/paste bodies under offload/.
+	// nil disables offload writes (fail-open: model keeps the full result).
+	Workspace *workspace.Service
 	// Settings optionally supplies hot-reloadable engine knobs. nil = use the
 	// struct fields above (YAML defaults); non-nil overrides per-field.
 	Settings KnobReader
@@ -715,12 +719,16 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					return context.Canceled
 				}
 
+				convID := identity.ConversationIDFrom(ctx)
+
 				if loginPaused {
 					// Same-turn remaining calls: do not invoke; keep provider
 					// tool_call_id pairing without burning more backend tokens.
 					stub := tool.LoginRequiredContentMsg("已暂停：请先完成浏览器登录后再继续")
 					e.persistToolResult(runID, tc.ID, tc.Name, stub, true)
-					messages = append(messages, e.toolResultMessage(tc.ID, stub))
+					msg := e.toolResultMessage(tc.ID, stub)
+					msg = e.applyToolOffload(ctx, runID, convID, msg, stub, true)
+					messages = append(messages, msg)
 					continue
 				}
 
@@ -739,11 +747,13 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 						},
 					})
 					raw, _ := json.Marshal(content)
-					messages = append(messages, llm.Message{
+					msg := llm.Message{
 						Role:       llm.RoleTool,
 						ToolCallID: tc.ID,
 						Content:    string(raw),
-					})
+					}
+					msg = e.applyToolOffload(ctx, runID, convID, msg, content, isError)
+					messages = append(messages, msg)
 					if !isError {
 						if werr := e.maybeRunWorkflow(ctx, runID); werr != errNoWorkflow {
 							return werr
@@ -752,11 +762,13 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 					continue
 				}
 
-				content, _, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments, false)
+				content, isError, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments, false)
 				if tcErr != nil && errors.Is(tcErr, ErrHITLRejected) {
 					return tcErr
 				}
-				messages = append(messages, e.toolResultMessage(tc.ID, content))
+				msg := e.toolResultMessage(tc.ID, content)
+				msg = e.applyToolOffload(ctx, runID, convID, msg, content, isError)
+				messages = append(messages, msg)
 				if tool.NeedsLoginPause(content) {
 					loginPaused = true
 					pauseTool = tc.Name

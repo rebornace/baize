@@ -351,6 +351,31 @@ func TestProcessTextTruncation(t *testing.T) {
 	}
 }
 
+// TestAttachMaxTextCharsZeroNoTruncate proves MaxTextChars <= 0 disables
+// truncation so callers can keep the full attachment body for workspace
+// offload (AC-04).
+func TestAttachMaxTextCharsZeroNoTruncate(t *testing.T) {
+	big := bytes.Repeat([]byte("C"), 100<<10)
+	texts, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename:   "full.txt",
+		MediaType:  mimeTxt,
+		ContentB64: b64(big),
+	}}, attach.Options{MaxTextChars: 0})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(texts) != 1 {
+		t.Fatalf("got %d texts, want 1", len(texts))
+	}
+	got := texts[0].Text
+	if len(got) != len(big) {
+		t.Fatalf("Extracted.Text len=%d, want full %d", len(got), len(big))
+	}
+	if strings.Contains(got, "…[truncated]") {
+		t.Fatalf("MaxTextChars=0 must not append truncation marker")
+	}
+}
+
 // TestProcessTextTruncationRuneCount verifies MaxTextChars is interpreted as a
 // rune (character) count, not a byte count, so multi-byte text is cut on a
 // code-point boundary and never overruns the limit. The truncation marker is
