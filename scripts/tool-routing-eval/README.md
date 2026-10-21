@@ -45,6 +45,22 @@ Artifacts: `out/layerB_systemone/`, `out/layerB_chat/`, `out/layerB_compare.json
   (`pets-admin` / `mall` / `notion`).
 - An API key for that server.
 
+## SSR1 tool-pick soft-gate (archived — feature vetoed 2026-10-21)
+
+`KindToolPick` / `decide_tool_pick_mode` **product code was discarded** after
+soft-gate FAIL. Keep `compare_tool_pick.ps1` +
+`docs/superpowers/notes/eval-artifacts/ssr1-tool-pick/` as the veto record
+(same pattern as TD discovery). Do not expect the runtime knob to exist.
+
+Historical driver (for replaying old notes only):
+
+```powershell
+.\compare_tool_pick.ps1 -AgentId default-agent
+```
+
+- Arm A: `decide_tool_pick_mode=off` / Arm B: `live`
+- Soft gate was: PASS Δ≥1; TIE Δ=0 → retest (MaxTies 5); FAIL → human discard
+
 ## Configuration
 
 All scripts accept `-BaseUrl` and `-ApiKey`, or read them from the

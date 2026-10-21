@@ -48,6 +48,20 @@ func IsOffloadPreview(text string) bool {
 		strings.Contains(text, "\npath: offload/")
 }
 
+// OffloadPreviewPath extracts the workspace-relative path line from an offload
+// stub produced by FormatOffloadMessage. Empty when not a stub / missing path.
+func OffloadPreviewPath(text string) string {
+	if !IsOffloadPreview(text) {
+		return ""
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "path: ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "path: "))
+		}
+	}
+	return ""
+}
+
 // MaybeOffloadPaste writes text to the conversation workspace when it reaches
 // PasteOffloadThreshold runes and returns the model-facing stub. Fail-open:
 // disabled / missing writer or conv / already a stub / write error → original.

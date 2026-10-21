@@ -1,0 +1,12 @@
+# Copy into configs or merge under connector: / connectors:
+# Replace base_url and auth for a real Busabase deploy.
+connector:
+  id: busabase-readonly
+  type: openapi
+  spec: examples/ext-sor-busabase/openapi.readonly.example.yaml
+  base_url: https://YOUR-BUSABASE-HOST
+  auth:
+    mode: static
+    static:
+      headers:
+        Authorization: "Bearer ${BUSABASE_TOKEN}"

@@ -1,0 +1,48 @@
+openapi: 3.0.3
+info:
+  title: Busabase-compatible readonly example (PLACEHOLDER)
+  version: 0.0.0
+  description: >
+    Shape-only template for EXT-SoR v0. Replace with a real Busabase-exported
+    OpenAPI when available. Read-only operations only.
+paths:
+  /tables:
+    get:
+      operationId: list_tables
+      summary: List tables / collections
+      responses:
+        "200":
+          description: ok
+  /tables/{table}/records:
+    get:
+      operationId: list_records
+      summary: List or search records in a table
+      parameters:
+        - name: table
+          in: path
+          required: true
+          schema: { type: string }
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+  /tables/{table}/records/{id}:
+    get:
+      operationId: get_record
+      parameters:
+        - name: table
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+        "404":
+          description: not found

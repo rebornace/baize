@@ -35,7 +35,13 @@ foreach ($r in $reqs) {
     Start-Sleep -Milliseconds 1500
     $g = Invoke-RestMethod -Uri "$base/v0/runs/$rid" -Headers $h -TimeoutSec 10
     $status = $g.status
-    if ($status -in @('succeeded', 'failed', 'cancelled')) { break }
+    # waiting_human / rejected are terminal for this harness (HITL not answered).
+    if ($status -in @('succeeded', 'failed', 'cancelled', 'waiting_human', 'rejected')) { break }
+  }
+  # Cancel HITL / timed-out runs so workers do not zombie (SSR1 / TD harness note).
+  if ($status -in @('waiting_human', 'rejected', 'running')) {
+    curl.exe -s -X POST "$base/v0/runs/$rid/cancel" -H "Authorization: Bearer $key" | Out-Null
+    if ($status -eq 'running') { $status = 'timeout' }
   }
 
   $evFile = Join-Path $OutDir ($r.id + '.events.json')

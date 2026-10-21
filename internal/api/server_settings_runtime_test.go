@@ -78,6 +78,22 @@ func TestGetRuntimeSettings(t *testing.T) {
 	}
 }
 
+func TestGetRuntimeSettingsIncludesContextOffloadEnabled(t *testing.T) {
+	srv, _ := runtimeSettingsServer(t)
+	rr := doJSON(t, srv, http.MethodGet, "/v0/settings/runtime", "op", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	eff, _ := body["effective"].(map[string]any)
+	if _, ok := eff["context_offload_enabled"]; !ok {
+		t.Fatal("effective.context_offload_enabled missing")
+	}
+}
+
 func TestGetRuntimeSettingsObservabilityFromHolder(t *testing.T) {
 	srv, _ := runtimeSettingsServer(t)
 	jsonFmt := "json"

@@ -54,6 +54,16 @@ func TestIsOffloadPreviewRejectsOldPrunePlaceholder(t *testing.T) {
 	}
 }
 
+func TestOffloadPreviewPath(t *testing.T) {
+	msg := FormatOffloadMessage("offload/paste-1.txt", "body", false)
+	if got := OffloadPreviewPath(msg); got != "offload/paste-1.txt" {
+		t.Fatalf("path=%q", got)
+	}
+	if OffloadPreviewPath("plain") != "" {
+		t.Fatal("plain text must yield empty path")
+	}
+}
+
 func TestMaybeOffloadPasteReplacesLargeText(t *testing.T) {
 	ws := newMemWorkspace(t)
 	ctx := context.Background()

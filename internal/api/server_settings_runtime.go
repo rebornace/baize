@@ -38,6 +38,7 @@ type runtimeKnobsJSON struct {
 	DecideRouteEnabled           bool    `json:"decide_route_enabled"`
 	DecideRouteMinRunes          int     `json:"decide_route_min_runes"`
 	ContextProjectionEnabled     bool    `json:"context_projection_enabled"`
+	ContextOffloadEnabled        bool    `json:"context_offload_enabled"`
 	ActiveGoalEnabled            bool    `json:"active_goal_enabled"`
 	ActiveGoalMaxDepth           int     `json:"active_goal_max_depth"`
 	ActiveGoalMaxTextRunes       int     `json:"active_goal_max_text_runes"`
@@ -71,6 +72,7 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		DecideRouteEnabled:           k.DecideRouteEnabled,
 		DecideRouteMinRunes:          k.DecideRouteMinRunes,
 		ContextProjectionEnabled:     k.ContextProjectionEnabled,
+		ContextOffloadEnabled:        k.ContextOffloadEnabled,
 		ActiveGoalEnabled:            k.ActiveGoalEnabled,
 		ActiveGoalMaxDepth:           k.ActiveGoalMaxDepth,
 		ActiveGoalMaxTextRunes:       k.ActiveGoalMaxTextRunes,

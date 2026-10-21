@@ -330,6 +330,19 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 			Data: map[string]any{"kind": decide.KindRouteTier},
 		})
 	}
+	// Paste offload succeeds before the run exists; emit context.offloaded as a
+	// pre-event so eval harnesses (CX2) can observe source=paste (tool path
+	// already AppendEvent's from the engine).
+	if run.IsOffloadPreview(modelFacing) && modelFacing != modelInput {
+		data := map[string]any{"source": "paste"}
+		if path := run.OffloadPreviewPath(modelFacing); path != "" {
+			data["path"] = path
+		}
+		preEvents = append(preEvents, store.Event{
+			Type: run.EventContextOffloaded,
+			Data: data,
+		})
+	}
 
 	updated, err := s.startRun(r.Context(), startRunInput{
 		AgentID:        body.AgentID,
