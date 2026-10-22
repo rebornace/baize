@@ -2071,6 +2071,215 @@
   max-width: 44rem;
 }
 
+/* 运行状态：概览为主，原始指标收进开发者区 */
+.settings-panel.settings-metrics {
+  max-width: min(100%, 40rem);
+}
+
+.settings-metrics-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  margin: 0 0 var(--space-3);
+}
+
+.settings-metrics-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.settings-metrics-section .settings-subheading {
+  margin-bottom: var(--space-2);
+}
+
+.settings-metrics-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.settings-metrics-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-body-size);
+  color: var(--text);
+}
+
+.settings-metrics-row:last-child {
+  border-bottom: none;
+}
+
+.settings-metrics-row strong {
+  font-weight: var(--text-title-weight);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-metrics-raw {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.settings-metrics-raw > summary {
+  cursor: pointer;
+  font-size: var(--text-body-size);
+  font-weight: var(--text-title-weight);
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.settings-metrics-raw > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-metrics-raw[open] > summary {
+  color: var(--text);
+  margin-bottom: var(--space-2);
+}
+
+.settings-metrics-raw-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-metrics-raw .settings-form-actions {
+  margin: 0;
+}
+
+.settings-metrics-raw .settings-log-viewer {
+  max-height: min(40vh, 24rem);
+}
+
+.settings-code-inline {
+  display: inline;
+  padding: 0.1rem 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  background: var(--code-bg);
+  border-radius: 4px;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.settings-metrics-meta .settings-code-inline {
+  display: inline;
+  padding: 0.1rem 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.settings-log-viewer {
+  display: block;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  max-height: min(70vh, 42rem);
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  white-space: pre;
+  color: var(--text);
+}
+
+.settings-log-viewer--modal {
+  max-height: 24rem;
+}
+
+/* 质量检查：筛选网格 + 语料卡防撑破 */
+.settings-panel.settings-eval {
+  max-width: min(100%, 52rem);
+}
+
+.settings-eval .settings-eval-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: var(--space-3);
+}
+
+.settings-eval .settings-eval-summary {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.settings-eval .settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .settings-eval .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-eval .settings-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.settings-eval .settings-list-item {
+  display: block;
+  align-items: stretch;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.settings-eval .settings-list-item .settings-tool-row {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-eval .settings-tool-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.settings-eval .settings-eval-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2) 0 0;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.settings-eval .settings-eval-check .ui-field {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+}
+
 .settings-panel.settings-weixin {
   max-width: 40rem;
 }

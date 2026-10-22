@@ -119,6 +119,25 @@ function humanCalibrationLabel(c: EvalCase): string | null {
   return c.human_agree ? EVAL.calibrationHumanAgree : EVAL.calibrationHumanDisagree
 }
 
+function compactDisplayText(raw: string, max = 160): string {
+  const cleaned = raw.replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= max) return cleaned
+  return `${cleaned.slice(0, Math.max(0, max - 1))}…`
+}
+
+function caseDisplayTitle(c: EvalCase): string {
+  return compactDisplayText(c.input || c.source_run_id || '')
+}
+
+function candidateDisplayTitle(c: EvalCandidate): string {
+  return compactDisplayText(c.input_preview || c.id)
+}
+
+function shortId(id: string): string {
+  if (id.length <= 16) return id
+  return `${id.slice(0, 8)}…${id.slice(-4)}`
+}
+
 function trajectorySummaryLines(c: EvalCase): string[] {
   const lines: string[] = []
   if (c.forbid_tools?.length) {
@@ -546,69 +565,73 @@ export function EvalSettings() {
   }
 
   return (
-    <div className="settings-panel">
+    <div className="settings-panel settings-eval">
       <PageHeader title={EVAL.title} description={EVAL.description} />
-      <p className="settings-muted">{EVAL.harnessHint}</p>
-      <p className="settings-muted">{EVAL.calibrationHint}</p>
+      <div className="settings-eval-hints">
+        <p className="settings-muted">{EVAL.calibrationHint}</p>
+        <p className="settings-muted">{EVAL.harnessHint}</p>
+      </div>
 
-      <div className="settings-muted" data-testid="eval-calibration-summary">
+      <div className="settings-eval-summary" data-testid="eval-calibration-summary">
         {calibrationSummary == null ? (
-          <p>{EVAL.casesLoading}</p>
+          <span>{EVAL.casesLoading}</span>
         ) : (
-          <p>
+          <span>
             {EVAL.calibrationSummaryScored(calibrationSummary.scored_count)}
             {' · '}
             {EVAL.calibrationSummaryCalibrated(calibrationSummary.calibrated_count)}
             {' · '}
             {formatAgreementRate(calibrationSummary.agreement_rate)}
-          </p>
+          </span>
         )}
       </div>
 
       <h2 className="settings-subheading">{EVAL.candidatesTitle}</h2>
       <form className="settings-form" onSubmit={(e) => void runQuery(e)}>
-        <Field label={EVAL.fromLabel}>
-          <Input
-            type="datetime-local"
-            value={fromLocal}
-            onChange={(e) => setFromLocal(e.target.value)}
-            disabled={busy}
-            data-testid="eval-from"
-          />
-        </Field>
-        <Field label={EVAL.toLabel}>
-          <Input
-            type="datetime-local"
-            value={toLocal}
-            onChange={(e) => setToLocal(e.target.value)}
-            disabled={busy}
-            data-testid="eval-to"
-          />
-        </Field>
-        <Field label={EVAL.statusLabel} hint={EVAL.statusHint}>
-          <Input
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            disabled={busy}
-            placeholder="failed"
-          />
-        </Field>
-        <Field label={EVAL.minDurationLabel}>
-          <Input
-            value={minDurationMs}
-            onChange={(e) => setMinDurationMs(e.target.value)}
-            disabled={busy}
-            inputMode="numeric"
-            placeholder="60000"
-          />
-        </Field>
-        <Field label={EVAL.eventTypeLabel}>
-          <Input
-            value={eventType}
-            onChange={(e) => setEventType(e.target.value)}
-            disabled={busy}
-          />
-        </Field>
+        <div className="settings-form-grid">
+          <Field label={EVAL.fromLabel}>
+            <Input
+              type="datetime-local"
+              value={fromLocal}
+              onChange={(e) => setFromLocal(e.target.value)}
+              disabled={busy}
+              data-testid="eval-from"
+            />
+          </Field>
+          <Field label={EVAL.toLabel}>
+            <Input
+              type="datetime-local"
+              value={toLocal}
+              onChange={(e) => setToLocal(e.target.value)}
+              disabled={busy}
+              data-testid="eval-to"
+            />
+          </Field>
+          <Field label={EVAL.statusLabel} hint={EVAL.statusHint}>
+            <Input
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              disabled={busy}
+              placeholder="failed"
+            />
+          </Field>
+          <Field label={EVAL.minDurationLabel}>
+            <Input
+              value={minDurationMs}
+              onChange={(e) => setMinDurationMs(e.target.value)}
+              disabled={busy}
+              inputMode="numeric"
+              placeholder="60000"
+            />
+          </Field>
+          <Field label={EVAL.eventTypeLabel}>
+            <Input
+              value={eventType}
+              onChange={(e) => setEventType(e.target.value)}
+              disabled={busy}
+            />
+          </Field>
+        </div>
         <label className="settings-check">
           <input
             type="checkbox"
@@ -619,21 +642,23 @@ export function EvalSettings() {
           />{' '}
           {EVAL.sampleWithScore}
         </label>
-        <Button type="submit" disabled={busy} data-testid="eval-query">
-          {busy ? EVAL.querying : EVAL.query}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={busy}
-          data-testid="eval-sample"
-          onClick={() => void runSample()}
-        >
-          {busy ? EVAL.sampling : EVAL.sample}
-        </Button>
+        <div className="settings-form-actions">
+          <Button type="submit" disabled={busy} data-testid="eval-query">
+            {busy ? EVAL.querying : EVAL.query}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            data-testid="eval-sample"
+            onClick={() => void runSample()}
+          >
+            {busy ? EVAL.sampling : EVAL.sample}
+          </Button>
+        </div>
       </form>
 
-      <div className="settings-table-wrap" data-testid="eval-candidates">
+      <div data-testid="eval-candidates">
         {candidates === null ? (
           <p className="settings-muted">{EVAL.candidatesIdle}</p>
         ) : candidates.length === 0 ? (
@@ -642,62 +667,59 @@ export function EvalSettings() {
             title={EVAL.candidatesEmpty}
           />
         ) : (
-          <table className="settings-table">
-            <thead>
-              <tr>
-                <th>{EVAL.colRunId}</th>
-                <th>{EVAL.colStatus}</th>
-                <th>{EVAL.colDuration}</th>
-                <th>{EVAL.colInput}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <code className="settings-code-sample">{c.id}</code>
-                  </td>
-                  <td>{c.status}</td>
-                  <td>{formatDuration(c.duration_ms)}</td>
-                  <td className="settings-truncate">{c.input_preview}</td>
-                  <td>
-                    <div className="accounts-actions">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        data-testid={`eval-view-events-${c.id}`}
-                        onClick={() => void viewRunEvents(c.id)}
-                      >
-                        {EVAL.viewEvents}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={digSkillVariant(c)}
-                        disabled={busy}
-                        data-testid={`eval-dig-skill-${c.id}`}
-                        onClick={() => void openSkillDraft(c.id)}
-                      >
-                        {EVAL.digSkill}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => openIngest(c)}
-                      >
-                        {EVAL.addCorpus}
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="settings-list">
+            {candidates.map((c) => (
+              <li key={c.id} className="settings-list-item">
+                <div className="settings-tool-row">
+                  <div className="settings-tool-line">
+                    <p className="settings-tool-name" title={c.input_preview || c.id}>
+                      {candidateDisplayTitle(c)}
+                    </p>
+                    <p className="settings-tool-sub">
+                      {c.status}
+                      {' · '}
+                      {formatDuration(c.duration_ms)}
+                      {' · '}
+                      <code className="settings-code-inline" title={c.id}>
+                        {shortId(c.id)}
+                      </code>
+                    </p>
+                  </div>
+                  <div className="accounts-actions">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      data-testid={`eval-view-events-${c.id}`}
+                      onClick={() => void viewRunEvents(c.id)}
+                    >
+                      {EVAL.viewEvents}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={digSkillVariant(c)}
+                      disabled={busy}
+                      data-testid={`eval-dig-skill-${c.id}`}
+                      onClick={() => void openSkillDraft(c.id)}
+                    >
+                      {EVAL.digSkill}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => openIngest(c)}
+                    >
+                      {EVAL.addCorpus}
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
@@ -717,16 +739,20 @@ export function EvalSettings() {
             {cases.map((c) => (
               <li key={c.id} className="settings-list-item">
                 <div className="settings-tool-row">
-                  <div>
-                    <p className="settings-tool-name">{c.input || c.source_run_id}</p>
-                    <p className="settings-muted">
+                  <div className="settings-tool-line">
+                    <p className="settings-tool-name" title={c.input || c.source_run_id}>
+                      {caseDisplayTitle(c)}
+                    </p>
+                    <p className="settings-tool-sub">
                       {EVAL.caseStatus(c.status)}
                       {c.protocol ? ` · ${c.protocol}` : ''}
                       {' · '}
                       {scoreSummary(c)}
                     </p>
                     {c.last_score_notes ? (
-                      <p className="settings-muted">{c.last_score_notes}</p>
+                      <p className="settings-tool-desc" title={c.last_score_notes}>
+                        {c.last_score_notes}
+                      </p>
                     ) : null}
                     {trajectorySummaryLines(c).map((line, i) => (
                       <p key={`${c.id}-tr-${i}`} className="settings-muted settings-code-sample">
@@ -734,21 +760,21 @@ export function EvalSettings() {
                       </p>
                     ))}
                     {c.has_state_snapshot ? (
-                      <p className="settings-muted">{EVAL.hasStateSnapshot}</p>
+                      <p className="settings-tool-sub">{EVAL.hasStateSnapshot}</p>
                     ) : null}
                     {humanCalibrationLabel(c) ? (
-                      <p className="settings-muted">{humanCalibrationLabel(c)}</p>
+                      <p className="settings-tool-sub">{humanCalibrationLabel(c)}</p>
                     ) : null}
                     {isCalibrationStale(c) ? (
                       <p
-                        className="settings-muted"
+                        className="settings-tool-sub"
                         data-testid={`eval-calibration-stale-${c.id}`}
                       >
                         {EVAL.calibrationStale}
                       </p>
                     ) : null}
                     {isCalibratable(c) ? (
-                      <div className="settings-form" style={{ marginTop: '0.5rem' }}>
+                      <div className="settings-eval-check">
                         <Field label={EVAL.calibrationNoteLabel}>
                           <Input
                             value={calibrationNotes[c.id] ?? ''}
@@ -796,33 +822,31 @@ export function EvalSettings() {
                         </div>
                       </div>
                     ) : null}
-                    <div
-                      className="settings-form"
-                      style={{ marginTop: '0.5rem' }}
-                      data-testid={`eval-check-state-${c.id}`}
-                    >
-                      <Field label={EVAL.checkStateMockLabel}>
-                        <Input
-                          value={mockBaseUrls[c.id] ?? ''}
-                          onChange={(e) =>
-                            setMockBaseUrls((prev) => ({ ...prev, [c.id]: e.target.value }))
-                          }
+                    {c.status === 'confirmed' ? (
+                      <div className="settings-eval-check" data-testid={`eval-check-state-${c.id}`}>
+                        <Field label={EVAL.checkStateMockLabel}>
+                          <Input
+                            value={mockBaseUrls[c.id] ?? ''}
+                            onChange={(e) =>
+                              setMockBaseUrls((prev) => ({ ...prev, [c.id]: e.target.value }))
+                            }
+                            disabled={busy}
+                            placeholder="http://127.0.0.1:8080"
+                            data-testid={`eval-check-state-url-${c.id}`}
+                          />
+                        </Field>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
                           disabled={busy}
-                          placeholder="http://127.0.0.1:8080"
-                          data-testid={`eval-check-state-url-${c.id}`}
-                        />
-                      </Field>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy || c.status !== 'confirmed'}
-                        data-testid={`eval-check-state-btn-${c.id}`}
-                        onClick={() => void runCheckState(c)}
-                      >
-                        {EVAL.checkStateButton}
-                      </Button>
-                    </div>
+                          data-testid={`eval-check-state-btn-${c.id}`}
+                          onClick={() => void runCheckState(c)}
+                        >
+                          {EVAL.checkStateButton}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="accounts-actions">
                     {c.status === 'draft' && (
@@ -946,7 +970,7 @@ export function EvalSettings() {
         ) : eventsModal.events.length === 0 ? (
           <p className="settings-muted">{EVAL.eventsEmpty}</p>
         ) : (
-          <pre className="settings-code-sample" style={{ maxHeight: '24rem', overflow: 'auto' }}>
+          <pre className="settings-log-viewer settings-log-viewer--modal">
             {JSON.stringify(eventsModal.events, null, 2)}
           </pre>
         )}

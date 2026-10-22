@@ -39,14 +39,26 @@ async function renderPage() {
 }
 
 describe('MetricsSettings', () => {
-  it('loads and shows Prometheus text', async () => {
+  it('loads and shows human overview instead of raw dump', async () => {
     vi.spyOn(metricsApi, 'getMetricsText').mockResolvedValue(
-      '# HELP baize_runs_total\nbaize_runs_total{status="ok"} 1\n',
+      [
+        'baize_runs_total{status="succeeded"} 3',
+        'baize_runs_total{status="failed"} 1',
+        'baize_run_duration_seconds_sum 8',
+        'baize_run_duration_seconds_count 4',
+        'baize_tool_invocations_total{connector_id="x",result="ok"} 5',
+        'baize_tool_invocations_total{connector_id="x",result="error"} 1',
+      ].join('\n'),
     )
     vi.spyOn(metricsApi, 'getRecentLogs').mockResolvedValue({ lines: [], limit: 200 })
     await renderPage()
     const body = host.querySelector('[data-testid="metrics-body"]')
-    expect(body?.textContent).toContain('baize_runs_total')
+    expect(body?.textContent).toContain('成功')
+    expect(body?.textContent).toContain('3')
+    expect(body?.textContent).toContain('失败')
+    expect(host.querySelector('[data-testid="metrics-raw-body"]')?.textContent).toContain(
+      'baize_runs_total',
+    )
   })
 
   it('surfaces load errors', async () => {
@@ -59,7 +71,7 @@ describe('MetricsSettings', () => {
   })
 
   it('switches to logs tab and loads recent lines', async () => {
-    vi.spyOn(metricsApi, 'getMetricsText').mockResolvedValue('m=1\n')
+    vi.spyOn(metricsApi, 'getMetricsText').mockResolvedValue('baize_runs_total{status="ok"} 1\n')
     const logsSpy = vi.spyOn(metricsApi, 'getRecentLogs').mockResolvedValue({
       lines: ['time=1 msg=hello', 'time=2 msg=world'],
       limit: 200,
