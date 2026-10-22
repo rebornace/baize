@@ -8,7 +8,7 @@ Baize is a standalone **Agent Runtime** (sidecar / gateway): it turns LLM, tools
 
 | Does | Does not |
 |------|----------|
-| OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows | Desktop app, official TS/Python SDK, heavy canvas / branching workflows, lock-in to one cloud or agent framework |
+| OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows; optional Capacitor **console shell** (phone talks to a remote Runtime — see [Mobile](./mobile.en.md)) | Shipping the Runtime inside a phone via gomobile / on-device packaging; official desktop app; official TS/Python SDK; heavy canvas / branching workflows; lock-in to one cloud or agent framework |
 | SQLite by default; optional Postgres / Redis / S3; connector re-import **CatalogDiff**; **run.binding** execution-time dependency closure; optional OTLP (off by default; Settings hot-reload); **Admin-authenticated** Prometheus **`GET /metrics`** (on by default) plus Settings → Runtime metrics / **`GET /v0/settings/logs`** (in-memory recent logs); structured slog (`log_format` / `BAIZE_LOG_FORMAT`, hot-reloadable); connector outbound mTLS (file paths: OpenAPI / HTTP plugins / MCP HTTP; Settings-editable) | Require OTel/APM; durable in-process metrics/log DB; per-tenant cgroup/egress sandbox; full IdP OBO; server-enforced peer mTLS; client-side tool schema version pin; bit-identical reproducibility |
 
 **Five abstractions:** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  

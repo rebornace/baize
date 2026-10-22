@@ -22,5 +22,6 @@ Version detail lives in [CHANGELOG](../../CHANGELOG.md). These capabilities are 
 | [HTTP API](./http-api.en.md) · [中文](./http-api.md) | Control-plane HTTP overview |
 | [Architecture](./architecture.en.md) · [中文](./architecture.md) | Runtime boundaries, plugins, core abstractions |
 | [Deployment](./deployment.en.md) · [中文](./deployment.md) | Single-host and channel adapter deploy |
+| [Mobile](./mobile.en.md) · [中文](./mobile.md) | Capacitor console shell; phone is a client, Runtime stays on the server (not gomobile) |
 | [Website (GitHub Pages)](../../site/README.md) | Static site source and enable notes |
 | [Performance probes](./performance.en.md) · [中文](./performance.md) | Local hot-path reproduction |

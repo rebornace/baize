@@ -48,3 +48,7 @@ baize-stdout.log
 baize-stderr.log
 
 .walkthrough/
+
+# npm (root or any nested accidental install)
+node_modules/
+

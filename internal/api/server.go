@@ -201,6 +201,8 @@ type Server struct {
 	// after PATCH /v0/settings/runtime (see publicBaseURL).
 	CallbackSigner     httpplugin.CallbackSigner
 	CallbackPublicBase string
+	// CORSAllowOrigins: see writeCORS / corsAllows. Empty = CORS off.
+	CORSAllowOrigins []string
 	CallbackTTL        time.Duration
 
 	// ToolRetrieval optionally manages one-click Ollama + embedding enablement
@@ -293,12 +295,53 @@ func (s *Server) publicBaseURL() string {
 
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.writeCORS(w, r) {
+			return // preflight handled
+		}
 		r2, ok := s.authorize(w, r)
 		if !ok {
 			return
 		}
 		s.mux.ServeHTTP(w, r2)
 	})
+}
+
+// CORSAllowOrigins lists browser/Capacitor Origins allowed to call the API
+// cross-origin (bundled mobile www). Empty disables CORS. Use "*" to reflect
+// any Origin (development only). Set via BAIZE_CORS_ORIGINS (comma-separated).
+// Prefer loading remote /ui same-origin when possible so SSE needs no CORS.
+func (s *Server) corsAllows(origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" || len(s.CORSAllowOrigins) == 0 {
+		return false
+	}
+	for _, allowed := range s.CORSAllowOrigins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "*" || allowed == origin {
+			return true
+		}
+	}
+	return false
+}
+
+// writeCORS sets ACAO headers when Origin is allowed. Returns true if the
+// request was an OPTIONS preflight that is fully handled.
+func (s *Server) writeCORS(w http.ResponseWriter, r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if !s.corsAllows(origin) {
+		return false
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Vary", "Origin")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	return false
 }
 
 // authorize enforces the control-plane gate. It returns the (possibly

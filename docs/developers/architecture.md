@@ -8,7 +8,7 @@ Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把
 
 | 做 | 不做 |
 |----|------|
-| OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow | 桌面 App、官方 TS/Python SDK、重画布 / 分支工作流、绑死单一云或 Agent 框架 |
+| OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow；可选 Capacitor **控制台壳**（手机连远端 Runtime，见 [移动端](./mobile.md)） | 用 gomobile / 整机打包把 Runtime 塞进手机；官方桌面 App；官方 TS/Python SDK；重画布 / 分支工作流；绑死单一云或 Agent 框架 |
 | SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导 **CatalogDiff**；**run.binding** 执行期依赖闭包；可选 OTLP（默认关，设置页可热更新）；**Admin 鉴权的** Prometheus **`GET /metrics`**（默认开）与设置页「运行指标」/ **`GET /v0/settings/logs`**（内存近期日志）；结构化 slog（`log_format` / `BAIZE_LOG_FORMAT`，可热更新）；连接器出站 mTLS（文件路径：OpenAPI / HTTP 插件 / MCP HTTP；设置页可配） | 把 OTel/APM 当作必选；进程内指标/日志库持久化；per-tenant cgroup/egress 沙箱；完整 IdP OBO；服务端强制对方 mTLS；Agent 侧 tool schema version pin；保证重跑结果一致 |
 
 **五抽象：** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  

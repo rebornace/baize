@@ -35,6 +35,7 @@ import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
 import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
 import { resolveChatLoginBanner } from '../loginEntry'
+import { openExternal } from '../openExternal'
 import { CHAT, friendlyError, GOAL, LOGIN_AT, loginBrowserError } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
@@ -333,7 +334,7 @@ export function ChatPage() {
       // Re-fetch catalog so connector_id stays current after late hosted-login setup.
       refreshToolCatalog()
       const { url } = await createConversationHostedLogin(session.conversationId, connectorId)
-      window.open(url, '_blank', 'noopener,noreferrer')
+      await openExternal(url)
       toast.push({ tone: 'success', title: LOGIN_AT.browserOpened })
     } catch (err) {
       const f = loginBrowserError(err)

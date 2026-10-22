@@ -244,6 +244,7 @@ For systemd and standalone Weixin adapter setup, see [deployment](docs/developer
 Build, test, configuration, deployment, and HTTP surface (**Chinese and English**):
 
 - [Developer docs (English)](docs/developers/README.en.md) · [中文](docs/developers/README.md)
+- Cross-platform phone shell (Capacitor client; Runtime stays on the server): [Mobile](docs/developers/mobile.en.md) · [中文](docs/developers/mobile.md)
 
 ---
 

@@ -175,6 +175,7 @@ channels:
 |------|------|
 | `BAIZE_LISTEN` | 非空时覆盖 YAML `listen` |
 | `BAIZE_API_KEY` | 默认 LLM Key（可由 `llm.api_key_env` 改名） |
+| `BAIZE_CORS_ORIGINS` | 逗号分隔的浏览器 Origin；非空时为控制面 API 开 CORS（Capacitor 捆绑 www 跨域调用）。手机壳优先用同源 `/ui`，见 [移动端](./mobile.md) |
 | `BAIZE_SETTINGS_KEY` | 设置 / 收件箱 / MCP OAuth 等密封；未设置时无法密封或打开密钥（相关写接口返回 400），生产必须配置 |
 | `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN` 等 | 经 YAML `env:…` 引用，非硬编码名 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `storage.s3` 默认凭证 env |

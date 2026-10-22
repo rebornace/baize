@@ -508,6 +508,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.CallbackSigner = callbackSigner
 	srv.CallbackPublicBase = callbackPublicBase
 	srv.CallbackTTL = callbackTTL
+	srv.CORSAllowOrigins = parseCORSOrigins(os.Getenv("BAIZE_CORS_ORIGINS"))
 
 	// Artifact, workspace, and channel-media still require SQL metadata and
 	// stay behind sqlBackend; they reuse the blobStore opened above.
@@ -806,6 +807,22 @@ func redisPasswordFromEnv(env string) string {
 		return ""
 	}
 	return os.Getenv(env)
+}
+
+// parseCORSOrigins splits BAIZE_CORS_ORIGINS (comma-separated). Empty input → nil.
+func parseCORSOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ensureBlobStore always opens a blob.Store. When storage.driver is unset,

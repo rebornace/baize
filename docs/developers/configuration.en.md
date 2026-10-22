@@ -175,6 +175,7 @@ channels:
 |------|------|
 | `BAIZE_LISTEN` | When non-empty, overrides YAML `listen` |
 | `BAIZE_API_KEY` | Default LLM key (rename via `llm.api_key_env`) |
+| `BAIZE_CORS_ORIGINS` | Comma-separated browser Origins; when set, enables CORS on the control-plane API (Capacitor bundled www). Prefer same-origin `/ui` for the phone shell — see [Mobile](./mobile.en.md) |
 | `BAIZE_SETTINGS_KEY` | Sealing for settings / inbox / MCP OAuth, etc.; when unset, secrets cannot be sealed or opened (the related write endpoints return 400) — required in production |
 | `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN`, etc. | Referenced via YAML `env:…`, not hard-coded names |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Default credential env names for `storage.s3` |

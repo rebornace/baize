@@ -33,7 +33,10 @@ import './styles/settings.css'
 import './styles/chat.css'
 import { LocaleProvider } from './locale/LocaleContext'
 import { initSidebarWidth } from './sidebarResize'
+import { installApiOrigin } from './api/origin'
+import { routerBasename } from './routerBasename'
 
+installApiOrigin()
 initSidebarWidth()
 
 function AdminOnly({ children }: { children: ReactNode }) {
@@ -44,7 +47,7 @@ function AdminOnly({ children }: { children: ReactNode }) {
 
 createRoot(document.getElementById('app')!).render(
   <StrictMode>
-    <BrowserRouter basename="/ui">
+    <BrowserRouter basename={routerBasename() || undefined}>
       <LocaleProvider>
       <GateRoot>
         <Routes>

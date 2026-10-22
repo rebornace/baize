@@ -25,6 +25,8 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
     "lucide-react": "^1.43.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",

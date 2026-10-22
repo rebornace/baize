@@ -243,6 +243,7 @@ Linux 用 systemd 托管、微信适配器独立部署等，见 [部署说明](d
 构建、测试、配置、部署与接口说明（**中英双语**）：
 
 - [开发者文档入口（中文）](docs/developers/README.md) · [English](docs/developers/README.en.md)
+- 跨平台手机壳（Capacitor 客户端，Runtime 仍在服务端）：[移动端](docs/developers/mobile.md) · [EN](docs/developers/mobile.en.md)
 
 ---
 
