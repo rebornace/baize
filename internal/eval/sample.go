@@ -142,11 +142,9 @@ func SampleBatch(st store.Store, in SampleInput) (SampleResult, error) {
 			continue
 		}
 
+		// Draft mode keeps ingestTemplate expectations (may stay draft if incomplete).
 		ing := ingestTemplate
 		ing.RunID = runID
-		if mode == SampleModeDraft {
-			// Leave expectations as provided; may stay draft if incomplete.
-		}
 		c, err := IngestFromRun(st, ing)
 		if err != nil {
 			if errors.Is(err, ErrConflict) {

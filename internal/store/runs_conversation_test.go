@@ -51,7 +51,7 @@ func TestListRunsByConversationSinceEmptyConversationID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != nil && len(got) != 0 {
+	if len(got) != 0 {
 		t.Fatalf("want empty slice, got %+v", got)
 	}
 }
