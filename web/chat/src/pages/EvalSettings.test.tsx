@@ -664,4 +664,74 @@ describe('EvalSettings', () => {
     expect(toast).toBeTruthy()
     expect(toast?.textContent).toMatch(/已安装|Skill/)
   })
+
+  it('keeps markdown when polish fails', async () => {
+    vi.spyOn(evalApi, 'fetchSkillDraft').mockResolvedValue({
+      source_run_id: 'run_skill',
+      suggested_id: 'from-run-run_skill',
+      markdown: '---\nname: from-run-run_skill\ndescription: test\n---\n\nORIGINAL',
+      timeline: [],
+    })
+    vi.spyOn(evalApi, 'polishSkillDraft').mockRejectedValue(new Error('llm down'))
+    await renderWithCandidateRun()
+    const digBtn = host.querySelector(
+      '[data-testid="eval-dig-skill-run_skill"]',
+    ) as HTMLButtonElement
+    await act(async () => {
+      digBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const ta = host.querySelector('[data-testid="eval-skill-draft-markdown"]') as HTMLTextAreaElement
+    expect(ta.value).toContain('ORIGINAL')
+    const polishBtn = host.querySelector('[data-testid="skill-draft-polish"]') as HTMLButtonElement
+    await act(async () => {
+      polishBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(ta.value).toContain('ORIGINAL')
+    expect(host.textContent).toMatch(/润色失败|Polish failed/)
+  })
+
+  it('passes create_eval_stub when checkbox checked', async () => {
+    vi.spyOn(evalApi, 'fetchSkillDraft').mockResolvedValue({
+      source_run_id: 'run_skill',
+      suggested_id: 'from-run-run_skill',
+      markdown: '---\nname: from-run-run_skill\ndescription: test\n---\n\nbody',
+      timeline: [],
+    })
+    const installSpy = vi.spyOn(evalApi, 'installSkillDraft').mockResolvedValue({
+      id: 'from-run-run_skill',
+      eval_stub: 'created',
+    })
+    await renderWithCandidateRun()
+    const digBtn = host.querySelector(
+      '[data-testid="eval-dig-skill-run_skill"]',
+    ) as HTMLButtonElement
+    await act(async () => {
+      digBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const stub = host.querySelector('[data-testid="skill-draft-eval-stub"]') as HTMLInputElement
+    await act(async () => {
+      stub.click()
+      await Promise.resolve()
+    })
+    const installBtn = host.querySelector('[data-testid="skill-draft-install"]') as HTMLButtonElement
+    await act(async () => {
+      installBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(installSpy).toHaveBeenCalledWith('run_skill', {
+      markdown: expect.stringContaining('---'),
+      create_eval_stub: true,
+    })
+  })
 })

@@ -236,10 +236,35 @@ export async function fetchSkillDraft(runId: string): Promise<SkillDraftResponse
   return parseJSON(res)
 }
 
+export async function fetchConversationSkillDraft(
+  conversationId: string,
+): Promise<SkillDraftResponse> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/skill-draft`,
+    { headers: authInit() },
+  )
+  return parseJSON(res)
+}
+
+export async function polishSkillDraft(
+  runId: string,
+  body?: { markdown?: string },
+): Promise<{ markdown: string }> {
+  const res = await fetch(
+    `/v0/settings/eval/runs/${encodeURIComponent(runId)}/skill-draft/polish`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body ?? {}),
+    },
+  )
+  return parseJSON(res)
+}
+
 export async function installSkillDraft(
   runId: string,
-  body: { markdown: string; id?: string },
-): Promise<{ id: string }> {
+  body: { markdown: string; id?: string; create_eval_stub?: boolean },
+): Promise<{ id: string; eval_stub?: string }> {
   const res = await fetch(
     `/v0/settings/eval/runs/${encodeURIComponent(runId)}/skill-draft/install`,
     {

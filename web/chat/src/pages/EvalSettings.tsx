@@ -13,11 +13,13 @@ import {
   scoreEvalCase,
   fetchSkillDraft,
   installSkillDraft,
+  polishSkillDraft,
   type EvalCalibrationSummary,
   type EvalCandidate,
   type EvalCase,
   type SkillDraftResponse,
 } from '../api/eval'
+import { SkillDraftModal } from '../components/SkillDraftModal'
 import { listEvents } from '../api/runs'
 import type { Event } from '../api/types'
 import {
@@ -160,6 +162,7 @@ export function EvalSettings() {
     draft: SkillDraftResponse | null
   } | null>(null)
   const [skillDraftMarkdown, setSkillDraftMarkdown] = useState('')
+  const [skillDraftEvalStub, setSkillDraftEvalStub] = useState(false)
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -319,6 +322,7 @@ export function EvalSettings() {
   const openSkillDraft = async (runId: string) => {
     setSkillDraftModal({ runId, draft: null })
     setSkillDraftMarkdown('')
+    setSkillDraftEvalStub(false)
     setBusy(true)
     try {
       const draft = await fetchSkillDraft(runId)
@@ -338,6 +342,28 @@ export function EvalSettings() {
     }
   }
 
+  const polishSkillDraftMarkdown = async () => {
+    if (!skillDraftModal?.draft) return
+    const before = skillDraftMarkdown
+    setBusy(true)
+    try {
+      const res = await polishSkillDraft(skillDraftModal.runId, {
+        markdown: skillDraftMarkdown,
+      })
+      setSkillDraftMarkdown(res.markdown)
+    } catch (err) {
+      setSkillDraftMarkdown(before)
+      const f = friendlyError(err)
+      push({
+        tone: 'error',
+        title: EVAL.digSkillPolishFailed,
+        detail: f.detail ?? f.title,
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const confirmInstallSkillDraft = async () => {
     if (!skillDraftModal?.draft) return
     const markdown = skillDraftMarkdown.trim()
@@ -347,9 +373,21 @@ export function EvalSettings() {
     }
     setBusy(true)
     try {
-      const res = await installSkillDraft(skillDraftModal.runId, { markdown })
+      const res = await installSkillDraft(skillDraftModal.runId, {
+        markdown,
+        create_eval_stub: skillDraftEvalStub || undefined,
+      })
       setSkillDraftModal(null)
       push({ tone: 'success', title: EVAL.toastSkillInstalled(res.id) })
+      if (skillDraftEvalStub) {
+        if (res.eval_stub === 'created') {
+          push({ tone: 'success', title: EVAL.digSkillEvalStubCreated })
+        } else if (res.eval_stub === 'skipped_exists') {
+          push({ tone: 'info', title: EVAL.digSkillEvalStubSkipped })
+        } else if (res.eval_stub === 'error') {
+          push({ tone: 'error', title: EVAL.digSkillEvalStubError })
+        }
+      }
     } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: f.title, detail: f.detail })
@@ -845,74 +883,19 @@ export function EvalSettings() {
         )}
       </Modal>
 
-      <Modal
+      <SkillDraftModal
         open={skillDraftModal != null}
-        title={
-          skillDraftModal
-            ? EVAL.digSkillTitle(skillDraftModal.draft?.source_run_id ?? skillDraftModal.runId)
-            : EVAL.digSkill
-        }
+        runId={skillDraftModal?.runId ?? null}
+        draft={skillDraftModal?.draft ?? null}
+        markdown={skillDraftMarkdown}
+        onMarkdownChange={setSkillDraftMarkdown}
+        createEvalStub={skillDraftEvalStub}
+        onCreateEvalStubChange={setSkillDraftEvalStub}
+        busy={busy}
         onClose={() => setSkillDraftModal(null)}
-        footer={
-          skillDraftModal?.draft ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setSkillDraftModal(null)}
-                disabled={busy}
-              >
-                {EVAL.cancel}
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void confirmInstallSkillDraft()}
-                disabled={busy}
-              >
-                {EVAL.digSkillInstall}
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setSkillDraftModal(null)}
-              disabled={busy}
-            >
-              {EVAL.cancel}
-            </Button>
-          )
-        }
-      >
-        {skillDraftModal?.draft == null ? (
-          <p className="settings-muted">{EVAL.digSkillLoading}</p>
-        ) : (
-          <>
-            {skillDraftModal.draft.timeline.length > 0 ? (
-              <Field label={EVAL.digSkillTimeline}>
-                <ul className="settings-list" data-testid="eval-skill-draft-timeline">
-                  {skillDraftModal.draft.timeline.map((e, i) => (
-                    <li key={`${e.run_id}-${e.timestamp}-${i}`} className="settings-muted">
-                      <code className="settings-code-sample">{e.type}</code>
-                      {' · '}
-                      {e.summary}
-                    </li>
-                  ))}
-                </ul>
-              </Field>
-            ) : null}
-            <Field label={EVAL.digSkillMarkdown}>
-              <Textarea
-                value={skillDraftMarkdown}
-                onChange={(e) => setSkillDraftMarkdown(e.target.value)}
-                disabled={busy}
-                rows={14}
-                data-testid="eval-skill-draft-markdown"
-              />
-            </Field>
-          </>
-        )}
-      </Modal>
+        onPolish={() => void polishSkillDraftMarkdown()}
+        onInstall={() => void confirmInstallSkillDraft()}
+      />
 
       <ConfirmDialog
         open={pendingDelete != null}

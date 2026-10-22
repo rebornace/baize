@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { ConversationScope, ConversationSummary, Workspace } from '../../api'
+import { LanguageChip } from '../../components/LanguageChip'
 import { SidebarResizer } from '../../components/SidebarResizer'
 import { ThemeToggle } from '../../components/ui'
 import { conversationListLabel } from '../../conversationLabel'
@@ -145,7 +146,10 @@ export function ChatSidebar({
         </ul>
       </div>
       <div className="chat-sidebar-bottom">
-        <ThemeToggle />
+        <div className="sidebar-chrome-row">
+          <ThemeToggle />
+          <LanguageChip />
+        </div>
         <Link
           to={role === 'admin' ? '/settings' : '/settings/identities'}
           className="settings-link"

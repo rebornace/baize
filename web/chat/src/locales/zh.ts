@@ -56,11 +56,16 @@ export const zhPack = {
   // 空模型态
   addModel: '添加模型',
   noModelConfigured: '暂未配置模型',
+  digSkill: '挖 Skill',
+  digSkillHint: '从本会话最近一次运行合成 Skill 草稿（低频）',
+  composerPlusAria: '添加',
   // SSE 降级轮询提示
   reconnecting: '正在重新连接…',
   // 本会话思考级别覆盖
     thinkingChip: '思考级别',
     thinkingDefault: '默认',
+    thinkingDefaultWith: (level: string) => `默认 · ${level}`,
+    modelThinkingPairAria: '模型与思考深度',
     selectModel: '选择模型',
     // 输入框：短 placeholder（芯片占宽后不宜长句换行）；完整快捷键放 title
   composerPlaceholder: '输入消息…',
@@ -384,6 +389,12 @@ export const zhPack = {
     digSkillLoading: '合成草稿中…',
     digSkillEmpty: '无事件可合成 Skill 草稿',
     digSkillInstall: '安装为用户 Skill',
+    digSkillPolish: '用模型润色',
+    digSkillPolishFailed: '润色失败，已保留原草稿',
+    digSkillEvalStub: '同时生成评测占位（EVAL.yaml，空 cases）',
+    digSkillEvalStubCreated: '已创建评测占位，可在设置 → 技能中补测例',
+    digSkillEvalStubSkipped: '已有评测文件，未覆盖',
+    digSkillEvalStubError: 'Skill 已安装，但评测占位写入失败',
     toastSkillInstalled: (id: string) => `已安装用户 Skill：${id}`,
   },
   WEBHOOKS: {

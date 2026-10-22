@@ -1,9 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import type { ModelProfile } from '../../api'
-import { LanguageChip } from '../../components/LanguageChip'
-import { ModelChip } from '../../components/ModelChip'
-import { ThinkingChip } from '../../components/ThinkingChip'
+import { ModelThinkingDualMenu } from '../../components/ModelThinkingDualMenu'
 import { CHAT } from '../../strings'
 
 export type ChatTopBarProps = {
@@ -26,7 +24,7 @@ export function ChatTopBar({ onOpenDrawer }: ChatTopBarProps) {
   )
 }
 
-export type ChatComposerToolbarProps = {
+export type ChatComposerTrailingProps = {
   role: string
   modelProfiles: ModelProfile[]
   selectedModelId: string
@@ -36,8 +34,8 @@ export type ChatComposerToolbarProps = {
   onChooseThinking: (level: string) => void
 }
 
-/** Model / thinking / language chips passed into Composer toolbar. */
-export function ChatComposerToolbar({
+/** Model + thinking dual menu for the composer trailing slot. */
+export function ChatComposerTrailing({
   role,
   modelProfiles,
   selectedModelId,
@@ -45,33 +43,32 @@ export function ChatComposerToolbar({
   disabled,
   onChooseModel,
   onChooseThinking,
-}: ChatComposerToolbarProps) {
+}: ChatComposerTrailingProps) {
+  if (modelProfiles.length > 0) {
+    return (
+      <ModelThinkingDualMenu
+        profiles={modelProfiles}
+        modelId={selectedModelId}
+        thinkingLevel={thinkingLevel}
+        onChooseModel={onChooseModel}
+        onChooseThinking={onChooseThinking}
+        disabled={disabled}
+      />
+    )
+  }
+  if (role === 'admin') {
+    return (
+      <Link to="/settings/models" className="model-chip model-chip-empty">
+        {CHAT.addModel}
+      </Link>
+    )
+  }
   return (
-    <>
-      {modelProfiles.length > 0 ? (
-        <>
-          <ModelChip
-            profiles={modelProfiles}
-            value={selectedModelId}
-            onChange={onChooseModel}
-            disabled={disabled}
-          />
-          <ThinkingChip
-            value={thinkingLevel}
-            onChange={onChooseThinking}
-            disabled={disabled}
-          />
-        </>
-      ) : role === 'admin' ? (
-        <Link to="/settings/models" className="model-chip model-chip-empty">
-          {CHAT.addModel}
-        </Link>
-      ) : (
-        <span className="model-chip model-chip-empty" aria-disabled="true">
-          {CHAT.noModelConfigured}
-        </span>
-      )}
-      <LanguageChip />
-    </>
+    <span className="model-chip model-chip-empty" aria-disabled="true">
+      {CHAT.noModelConfigured}
+    </span>
   )
 }
+
+/** @deprecated Use ChatComposerTrailing */
+export const ChatComposerToolbar = ChatComposerTrailing

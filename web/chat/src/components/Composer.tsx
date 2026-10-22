@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Plus } from 'lucide-react'
 import type { SkillSummary } from '../api'
 import type { Locale } from '../locale/types'
 import { skillDisplayName, skillLocalizedDescription } from '../pages/skills/skillDisplay'
@@ -9,6 +10,7 @@ import {
   replaceMention,
 } from '../skillMention'
 import { CHAT } from '../strings'
+import { DropdownMenu, type MenuItem } from './ui'
 
 function composerLocale(): Locale {
   if (typeof document !== 'undefined' && document.documentElement.lang === 'en') {
@@ -33,8 +35,13 @@ export interface ComposerProps {
    * Pass [] to still surface the reserved `/reload` command.
    */
   skills?: SkillSummary[]
-  /** Optional leading slot inside composer-box (before the attach button). */
-  toolbar?: ReactNode
+  /**
+   * Extra entries in the leading “+” menu (after upload). Used for infrequent
+   * Admin actions such as dig-skill.
+   */
+  plusMenuExtra?: MenuItem[]
+  /** Right of the textarea (model / thinking), left of send — Cursor-style. */
+  trailing?: ReactNode
 }
 
 type CompleteItem =
@@ -55,7 +62,8 @@ export function Composer({
   onSend,
   draft,
   skills,
-  toolbar,
+  plusMenuExtra,
+  trailing,
 }: ComposerProps) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -221,6 +229,20 @@ export function Composer({
     fileInputRef.current?.click()
   }
 
+  const plusItems: MenuItem[] = useMemo(() => {
+    const base: MenuItem[] = [
+      {
+        id: 'attach',
+        label: CHAT.addAttachment,
+        onSelect: openFilePicker,
+      },
+    ]
+    if (plusMenuExtra && plusMenuExtra.length > 0) {
+      return [...base, ...plusMenuExtra]
+    }
+    return base
+  }, [plusMenuExtra, locale])
+
   const showPopup = completion != null && completion.items.length > 0
   const showHint = skills !== undefined
 
@@ -256,29 +278,16 @@ export function Composer({
           onChange={(e) => addFiles(e.target.files)}
           disabled={disabled}
         />
-        {toolbar != null && <span className="composer-toolbar">{toolbar}</span>}
-        <button
-          type="button"
-          className="composer-attach"
-          aria-label={CHAT.addAttachment}
-          title={CHAT.addAttachment}
-          onClick={openFilePicker}
-          disabled={disabled}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <span className="composer-plus">
+          <DropdownMenu
+            triggerLabel={CHAT.composerPlusAria}
+            triggerClassName="composer-attach"
+            items={plusItems}
+            disabled={disabled}
           >
-            <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-          </svg>
-        </button>
+            <Plus size={18} aria-hidden />
+          </DropdownMenu>
+        </span>
         <textarea
           ref={taRef}
           value={text}
@@ -305,6 +314,9 @@ export function Composer({
           disabled={disabled}
           aria-label={CHAT.messageInputAria}
         />
+        {trailing != null ? (
+          <span className="composer-trailing">{trailing}</span>
+        ) : null}
         <button
           type="button"
           className="btn primary composer-send"

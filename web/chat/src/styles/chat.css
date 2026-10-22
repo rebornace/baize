@@ -127,6 +127,21 @@
   gap: var(--space-2);
 }
 
+.sidebar-chrome-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sidebar-chrome-row .language-chip {
+  border: none;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+  max-width: none;
+}
+
 .settings-link {
   color: var(--text-muted);
   text-decoration: none;
@@ -2247,6 +2262,16 @@
   position: absolute;
 }
 
+.composer-plus {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.composer-plus .dropdown-menu {
+  left: 0;
+  right: auto;
+}
+
 .composer-attach {
   flex-shrink: 0;
   display: inline-flex;
@@ -2254,12 +2279,16 @@
   justify-content: center;
   width: 2rem;
   height: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--system-bubble);
   color: var(--text-muted);
   cursor: pointer;
+  font-size: inherit;
+  line-height: 1;
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -2277,6 +2306,162 @@
 .composer-attach:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.composer-trailing {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+  flex: 0 1 auto;
+  max-width: min(48%, 14rem);
+  min-width: 0;
+  align-self: flex-end;
+  margin-bottom: 0.1rem;
+}
+
+/* Cursor-like: ghost trigger in the input; one panel with model + thinking. */
+.model-picker {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.model-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.model-picker-trigger:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.model-picker-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-picker-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker-caret {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.model-picker-menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 14rem;
+  max-width: min(20rem, 70vw);
+  max-height: 18rem;
+  overflow: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+}
+
+.model-picker-section-label {
+  padding: 6px 10px 4px;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.model-picker-divider {
+  height: 1px;
+  margin: var(--space-1) 6px;
+  background: var(--border);
+}
+
+.model-picker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-picker-item:hover,
+.model-picker-item.active {
+  background: var(--surface-2);
+}
+
+.model-picker-check {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 1.15em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.model-picker-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model-picker-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker-item-hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-trailing .model-chip {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  min-height: 28px;
+  max-width: 100%;
+}
+
+.composer-trailing .model-chip-inner {
+  font-size: 0.75rem;
 }
 
 .composer-box {
@@ -2545,14 +2730,9 @@
   font-size: 0.75rem;
 }
 
-/* 模型/思考芯片单独占满一行，避免挤窄 textarea 导致 placeholder 换行难看。 */
+/* Legacy full-row toolbar (unused); trailing slot sits beside send instead. */
 .composer-toolbar {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  flex: 1 1 100%;
-  margin: 0;
+  display: none;
 }
 .model-chip, .model-chip-inner { display: inline-flex; align-items: center; gap: 4px; }
 .model-chip-inner {

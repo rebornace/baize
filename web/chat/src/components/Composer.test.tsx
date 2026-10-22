@@ -10,13 +10,11 @@ const skills: SkillSummary[] = [
 ]
 
 describe('Composer', () => {
-  it('renders textarea, a visible attachment button and a disabled send button when empty', () => {
+  it('renders textarea, a plus menu trigger and a disabled send button when empty', () => {
     const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
     expect(html).toContain('aria-label="消息输入"')
-    // The visible attachment button must carry the accessible label and the
-    // composer-attach class (the hidden file input is aria-hidden / tabIndex=-1).
     expect(html).toContain('composer-attach')
-    expect(html).toContain('aria-label="添加附件"')
+    expect(html).toContain('aria-label="添加"')
     expect(html).toContain('disabled=""')
     expect(html).toContain('发送')
   })
@@ -25,10 +23,9 @@ describe('Composer', () => {
     const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
     expect(html).toContain('aria-hidden="true"')
     expect(html).toContain('tabindex="-1"')
-    // The hidden input must not carry the visible label (button owns it).
     const inputMatch = html.match(/<input[^>]*composer-file-input[^>]*>/)
     expect(inputMatch).toBeTruthy()
-    expect(inputMatch![0]).not.toContain('aria-label="添加附件"')
+    expect(inputMatch![0]).not.toContain('aria-label="添加"')
   })
 
   it('lists available skill ids and reload hint when skills are provided', () => {
@@ -54,34 +51,32 @@ describe('Composer', () => {
     expect(html).not.toContain('composer-hint')
   })
 
-  it('disables the attachment button and inputs when disabled prop is set', () => {
+  it('disables the plus trigger and inputs when disabled prop is set', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, disabled: true }),
     )
-    // attachment button, file input, textarea and send button all carry disabled
     const disabledCount = html.match(/disabled=""/g)?.length ?? 0
     expect(disabledCount).toBeGreaterThanOrEqual(3)
-    // The attachment button specifically must be disabled.
     const attachBtn = html.match(/<button[^>]*composer-attach[^>]*>/)
     expect(attachBtn).toBeTruthy()
     expect(attachBtn![0]).toContain('disabled=""')
   })
 
-  it('renders the toolbar slot inside composer-box when provided', () => {
+  it('renders the trailing slot inside composer-box when provided', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, {
         onSend: () => {},
-        toolbar: createElement('span', { 'data-testid': 'tb' }, '芯片'),
+        trailing: createElement('span', { 'data-testid': 'tr' }, '模型'),
       }),
     )
-    expect(html).toContain('composer-toolbar')
-    expect(html).toContain('芯片')
-    // The toolbar must precede the attachment button inside composer-box.
-    expect(html.indexOf('composer-toolbar')).toBeLessThan(html.indexOf('composer-attach'))
+    expect(html).toContain('composer-trailing')
+    expect(html).toContain('模型')
+    expect(html.indexOf('composer-trailing')).toBeGreaterThan(html.indexOf('composer-attach'))
+    expect(html.indexOf('composer-trailing')).toBeLessThan(html.indexOf('composer-send'))
   })
 
-  it('omits the toolbar slot when not provided', () => {
+  it('omits the trailing slot when not provided', () => {
     const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
-    expect(html).not.toContain('composer-toolbar')
+    expect(html).not.toContain('composer-trailing')
   })
 })

@@ -18,7 +18,14 @@ import {
   type SkillSummary,
   type ToolInfo,
 } from '../api'
+import {
+  fetchConversationSkillDraft,
+  installSkillDraft,
+  polishSkillDraft,
+  type SkillDraftResponse,
+} from '../api/eval'
 import { Composer } from '../components/Composer'
+import { SkillDraftModal } from '../components/SkillDraftModal'
 import {
   Button,
   ConfirmDialog,
@@ -36,14 +43,14 @@ import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
 import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
 import { resolveChatLoginBanner } from '../loginEntry'
 import { openExternal } from '../openExternal'
-import { CHAT, friendlyError, GOAL, LOGIN_AT, loginBrowserError } from '../strings'
+import { CHAT, EVAL, friendlyError, GOAL, LOGIN_AT, loginBrowserError } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { GoalBar } from './chat/GoalBar'
 import { goalCandidatesFromMessages } from './chat/goalCandidates'
 import { ChatMessageList, copyText } from './chat/ChatMessageList'
 import { ChatSidebar } from './chat/ChatSidebar'
-import { ChatComposerToolbar, ChatTopBar } from './chat/ChatTopBar'
+import { ChatComposerTrailing, ChatTopBar } from './chat/ChatTopBar'
 import { useChatRun } from './chat/useChatRun'
 import { useChatSession, type ChatLiveControls } from './chat/useChatSession'
 
@@ -69,6 +76,13 @@ export function ChatPage() {
   const [goalView, setGoalView] = useState<GoalStackView | null>(null)
   const [goalLoadError, setGoalLoadError] = useState(false)
   const runWasBusyRef = useRef(false)
+  const [skillDraftModal, setSkillDraftModal] = useState<{
+    runId: string
+    draft: SkillDraftResponse | null
+  } | null>(null)
+  const [skillDraftMarkdown, setSkillDraftMarkdown] = useState('')
+  const [skillDraftEvalStub, setSkillDraftEvalStub] = useState(false)
+  const [skillDraftBusy, setSkillDraftBusy] = useState(false)
 
   const liveRef = useRef<ChatLiveControls>({
     busy: false,
@@ -399,6 +413,84 @@ export function ChatPage() {
     if (showLoginBanner) refreshToolCatalog()
   }, [showLoginBanner, refreshToolCatalog])
 
+  const openDigSkill = useCallback(async () => {
+    const convId = session.conversationId
+    if (!convId) return
+    setSkillDraftModal({ runId: '', draft: null })
+    setSkillDraftMarkdown('')
+    setSkillDraftEvalStub(false)
+    setSkillDraftBusy(true)
+    try {
+      const draft = await fetchConversationSkillDraft(convId)
+      setSkillDraftModal({ runId: draft.source_run_id, draft })
+      setSkillDraftMarkdown(draft.markdown)
+    } catch (err) {
+      setSkillDraftModal(null)
+      const f = friendlyError(err)
+      pushToast({
+        tone: 'error',
+        title: EVAL.digSkillEmpty,
+        detail: f.detail ?? f.title,
+      })
+    } finally {
+      setSkillDraftBusy(false)
+    }
+  }, [session.conversationId, pushToast])
+
+  const polishSkillDraftMarkdown = useCallback(async () => {
+    if (!skillDraftModal?.draft || !skillDraftModal.runId) return
+    const before = skillDraftMarkdown
+    setSkillDraftBusy(true)
+    try {
+      const res = await polishSkillDraft(skillDraftModal.runId, {
+        markdown: skillDraftMarkdown,
+      })
+      setSkillDraftMarkdown(res.markdown)
+    } catch (err) {
+      setSkillDraftMarkdown(before)
+      const f = friendlyError(err)
+      pushToast({
+        tone: 'error',
+        title: EVAL.digSkillPolishFailed,
+        detail: f.detail ?? f.title,
+      })
+    } finally {
+      setSkillDraftBusy(false)
+    }
+  }, [skillDraftModal, skillDraftMarkdown, pushToast])
+
+  const confirmInstallSkillDraft = useCallback(async () => {
+    if (!skillDraftModal?.draft || !skillDraftModal.runId) return
+    const markdown = skillDraftMarkdown.trim()
+    if (!markdown) {
+      pushToast({ tone: 'error', title: EVAL.digSkillEmpty })
+      return
+    }
+    setSkillDraftBusy(true)
+    try {
+      const res = await installSkillDraft(skillDraftModal.runId, {
+        markdown,
+        create_eval_stub: skillDraftEvalStub || undefined,
+      })
+      setSkillDraftModal(null)
+      pushToast({ tone: 'success', title: EVAL.toastSkillInstalled(res.id) })
+      if (skillDraftEvalStub) {
+        if (res.eval_stub === 'created') {
+          pushToast({ tone: 'success', title: EVAL.digSkillEvalStubCreated })
+        } else if (res.eval_stub === 'skipped_exists') {
+          pushToast({ tone: 'info', title: EVAL.digSkillEvalStubSkipped })
+        } else if (res.eval_stub === 'error') {
+          pushToast({ tone: 'error', title: EVAL.digSkillEvalStubError })
+        }
+      }
+    } catch (err) {
+      const f = friendlyError(err)
+      pushToast({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setSkillDraftBusy(false)
+    }
+  }, [skillDraftModal, skillDraftMarkdown, skillDraftEvalStub, pushToast])
+
   return (
     <div className={`chat-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
       <button
@@ -538,8 +630,19 @@ export function ChatPage() {
             draft={session.composerDraft}
             skills={skills}
             onSend={run.onSend}
-            toolbar={
-              <ChatComposerToolbar
+            plusMenuExtra={
+              role === 'admin'
+                ? [
+                    {
+                      id: 'dig-skill',
+                      label: CHAT.digSkill,
+                      onSelect: () => void openDigSkill(),
+                    },
+                  ]
+                : undefined
+            }
+            trailing={
+              <ChatComposerTrailing
                 role={role}
                 modelProfiles={modelProfiles}
                 selectedModelId={selectedModelId}
@@ -552,6 +655,20 @@ export function ChatPage() {
           />
         </div>
       </main>
+
+      <SkillDraftModal
+        open={skillDraftModal != null}
+        runId={skillDraftModal?.runId || null}
+        draft={skillDraftModal?.draft ?? null}
+        markdown={skillDraftMarkdown}
+        onMarkdownChange={setSkillDraftMarkdown}
+        createEvalStub={skillDraftEvalStub}
+        onCreateEvalStubChange={setSkillDraftEvalStub}
+        busy={skillDraftBusy}
+        onClose={() => setSkillDraftModal(null)}
+        onPolish={() => void polishSkillDraftMarkdown()}
+        onInstall={() => void confirmInstallSkillDraft()}
+      />
 
       <ConfirmDialog
         open={session.confirmDelete !== null}
