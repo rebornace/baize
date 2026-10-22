@@ -62,8 +62,8 @@ func SelectSampleIDs(ids []string, maxN int, seed string) []string {
 		return nil
 	}
 	type ranked struct {
-		id   string
-		key  string
+		id  string
+		key string
 	}
 	items := make([]ranked, 0, len(ids))
 	for _, id := range ids {

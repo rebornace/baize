@@ -169,8 +169,8 @@ func TestSampleBatchDraftSkipAndScore(t *testing.T) {
 	}
 
 	_, err = eval.SampleBatch(st3, eval.SampleInput{
-		Query: eval.Query{From: from, To: to},
-		Mode:  eval.SampleModeScore,
+		Query:  eval.Query{From: from, To: to},
+		Mode:   eval.SampleModeScore,
 		Ingest: eval.IngestInput{Protocol: "V0"}, // incomplete
 	})
 	if !errors.Is(err, eval.ErrInvalidSample) {

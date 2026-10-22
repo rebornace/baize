@@ -203,7 +203,7 @@ type Server struct {
 	CallbackPublicBase string
 	// CORSAllowOrigins: see writeCORS / corsAllows. Empty = CORS off.
 	CORSAllowOrigins []string
-	CallbackTTL        time.Duration
+	CallbackTTL      time.Duration
 
 	// ToolRetrieval optionally manages one-click Ollama + embedding enablement
 	// for DP-2a dense Tool-RAG. nil = status reports standard mode only.

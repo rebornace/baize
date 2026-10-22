@@ -64,14 +64,14 @@ func TestEvalSampleRequiresAdminAndDraft(t *testing.T) {
 	}
 
 	scoreBody, _ := json.Marshal(map[string]any{
-		"from":            "2020-01-01T00:00:00Z",
-		"to":              "2030-01-01T00:00:00Z",
-		"mode":            "score",
-		"protocol":        "V0",
-		"required_reads":  []string{"list_tickets"},
-		"consequential":   []string{"create_ticket"},
-		"max_n":           5,
-		"seed":            "score-seed",
+		"from":           "2020-01-01T00:00:00Z",
+		"to":             "2030-01-01T00:00:00Z",
+		"mode":           "score",
+		"protocol":       "V0",
+		"required_reads": []string{"list_tickets"},
+		"consequential":  []string{"create_ticket"},
+		"max_n":          5,
+		"seed":           "score-seed",
 	})
 	// new run for score
 	r2, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "score sample"})
