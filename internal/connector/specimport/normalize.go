@@ -110,14 +110,6 @@ func specBytesAsJSON(content []byte) ([]byte, error) {
 	return json.Marshal(node)
 }
 
-func unmarshalSpec(content []byte, dst any) error {
-	jsonBytes, err := specBytesAsJSON(content)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(jsonBytes, dst)
-}
-
 func patchServers(doc *openapi3.T, baseURL string) {
 	doc.Servers = openapi3.Servers{
 		{URL: baseURL},
