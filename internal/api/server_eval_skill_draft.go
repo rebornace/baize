@@ -37,6 +37,9 @@ func (s *Server) handleGetEvalRunSkillDraft(w http.ResponseWriter, r *http.Reque
 		writeSkillDraftErr(w, err)
 		return
 	}
+	s.appendHumanSkillDraft(out.SourceRunID, procfs.EventHumanSkillDraftOpened, map[string]any{
+		"source": "eval",
+	})
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -78,6 +81,9 @@ func (s *Server) handlePostEvalRunSkillDraftPolish(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadGateway, "polish_failed", err.Error())
 		return
 	}
+	s.appendHumanSkillDraft(tl.SourceRunID, procfs.EventHumanSkillDraftPolished, map[string]any{
+		"had_body": strings.TrimSpace(body.Markdown) != "",
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"markdown": polished})
 }
 
@@ -120,16 +126,32 @@ func (s *Server) handlePostEvalRunSkillDraftInstall(w http.ResponseWriter, r *ht
 			return
 		}
 	}
+	edited := false
+	if rule, err := s.buildSkillDraft(runID); err == nil {
+		edited = strings.TrimSpace(rule.Markdown) != strings.TrimSpace(string(raw))
+	}
 	pkg, err := s.SkillCatalog.InstallMD("SKILL.md", raw)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	s.appendHumanSkillDraft(runID, procfs.EventHumanSkillDraftInstalled, map[string]any{
+		"skill_id":         pkg.ID,
+		"create_eval_stub": body.CreateEvalStub,
+		"edited":           edited,
+	})
 	resp := map[string]string{"id": pkg.ID}
 	if body.CreateEvalStub {
 		resp["eval_stub"] = s.applyEvalStub(pkg.ID)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) appendHumanSkillDraft(runID, typ string, data map[string]any) {
+	if s.Store == nil || runID == "" || typ == "" {
+		return
+	}
+	_ = s.Store.AppendEvent(runID, store.Event{Type: typ, Data: data})
 }
 
 // applyEvalStub writes an empty evidence-eval EVAL when none exists.

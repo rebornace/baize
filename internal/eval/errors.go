@@ -17,4 +17,6 @@ var (
 	ErrNoteTooLong = errors.New("human note too long")
 	// ErrMockBaseRequired is returned when check-state is called without a mock base URL.
 	ErrMockBaseRequired = errors.New("mock base url required")
+	// ErrInvalidSample is returned when sample mode/template is invalid.
+	ErrInvalidSample = errors.New("invalid sample request")
 )

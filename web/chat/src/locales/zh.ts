@@ -306,6 +306,11 @@ export const zhPack = {
     eventTypeLabel: '事件类型',
     query: '查询',
     querying: '查询中…',
+    sample: '按过滤抽样入库',
+    sampling: '抽样中…',
+    sampleWithScore: '带空期望模板并立刻打分',
+    toastSampled: (created: number, skipped: number, scored: number) =>
+      `抽样完成：新建 ${created}，跳过 ${skipped}，打分 ${scored}`,
     needTimeWindow: '请填写有效的时间窗',
     badMinDuration: '最小时长必须是非负数字',
     candidatesIdle: '设置时间窗与过滤条件后点击「查询」。',

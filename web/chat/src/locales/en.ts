@@ -298,6 +298,11 @@ export const enPack = {
     eventTypeLabel: 'Event type',
     query: 'Query',
     querying: 'Querying…',
+    sample: 'Sample into corpus',
+    sampling: 'Sampling…',
+    sampleWithScore: 'Use empty expectation template and score',
+    toastSampled: (created: number, skipped: number, scored: number) =>
+      `Sampled: created ${created}, skipped ${skipped}, scored ${scored}`,
     needTimeWindow: 'Enter a valid time window',
     badMinDuration: 'Min duration must be a non-negative number',
     candidatesIdle: 'Set the window and filters, then click Query.',

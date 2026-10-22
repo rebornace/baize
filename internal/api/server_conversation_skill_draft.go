@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rebornace/baize/internal/procfs"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -27,5 +28,9 @@ func (s *Server) handleGetConversationSkillDraft(w http.ResponseWriter, r *http.
 		writeSkillDraftErr(w, err)
 		return
 	}
+	s.appendHumanSkillDraft(out.SourceRunID, procfs.EventHumanSkillDraftOpened, map[string]any{
+		"source":          "chat",
+		"conversation_id": convID,
+	})
 	writeJSON(w, http.StatusOK, out)
 }

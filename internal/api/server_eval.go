@@ -164,11 +164,84 @@ func writeEvalErr(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "not_calibratable", err.Error())
 	case errors.Is(err, eval.ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, "note_too_long", err.Error())
-	case errors.Is(err, eval.ErrMockBaseRequired):
+	case errors.Is(err, eval.ErrMockBaseRequired), errors.Is(err, eval.ErrInvalidSample):
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 	}
+}
+
+func (s *Server) handlePostEvalSample(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		From            string                  `json:"from"`
+		To              string                  `json:"to"`
+		Status          string                  `json:"status"`
+		EventType       string                  `json:"event_type"`
+		MinDurationMs   *int64                  `json:"min_duration_ms"`
+		MaxN            int                     `json:"max_n"`
+		Seed            string                  `json:"seed"`
+		Mode            string                  `json:"mode"`
+		Protocol        string                  `json:"protocol"`
+		RequiredReads   []string                `json:"required_reads"`
+		Consequential   []string                `json:"consequential"`
+		ExpectConseqAny []string                `json:"expect_consequential_any"`
+		Chain           []store.EvalChainLink   `json:"chain"`
+		ForbidTools     []string                `json:"forbid_tools"`
+		ArgContains     []store.EvalArgContains `json:"arg_contains"`
+		ExpectState     []store.EvalExpectState `json:"expect_state"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	from, err := parseEvalRFC3339("from", body.From)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	to, err := parseEvalRFC3339("to", body.To)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	q := eval.Query{From: from, To: to, Limit: 100}
+	if raw := strings.TrimSpace(body.Status); raw != "" {
+		q.Status = store.Status(raw)
+	}
+	q.EventType = strings.TrimSpace(body.EventType)
+	if body.MinDurationMs != nil {
+		if *body.MinDurationMs < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "min_duration_ms must be a non-negative integer")
+			return
+		}
+		q.MinDurationMs = *body.MinDurationMs
+	}
+	seed := strings.TrimSpace(body.Seed)
+	if seed == "" {
+		seed = body.From + "|" + body.To + "|" + body.Status + "|" + body.EventType
+	}
+	in := eval.SampleInput{
+		Query: q,
+		MaxN:  body.MaxN,
+		Seed:  seed,
+		Mode:  body.Mode,
+		Ingest: eval.IngestInput{
+			Protocol:        body.Protocol,
+			RequiredReads:   body.RequiredReads,
+			Consequential:   body.Consequential,
+			ExpectConseqAny: body.ExpectConseqAny,
+			Chain:           body.Chain,
+			ForbidTools:     body.ForbidTools,
+			ArgContains:     body.ArgContains,
+			ExpectState:     body.ExpectState,
+		},
+	}
+	res, err := eval.SampleBatch(s.Store, in)
+	if err != nil {
+		writeEvalErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleGetEvalRuns(w http.ResponseWriter, r *http.Request) {

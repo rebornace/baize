@@ -121,6 +121,32 @@ func TestSuggestedSkillIDValid(t *testing.T) {
 	}
 }
 
+func TestEntryFromEventHITLIncludesDecision(t *testing.T) {
+	e := procfs.EntryFromEventForTest("run_x", store.Event{
+		Type: "hitl.resumed",
+		Data: map[string]any{"decision": "approve", "comment": "ok go"},
+	})
+	if !strings.Contains(e.Summary, "approve") {
+		t.Fatalf("summary=%q", e.Summary)
+	}
+	if !strings.Contains(e.Summary, "ok go") {
+		t.Fatalf("want comment in summary=%q", e.Summary)
+	}
+}
+
+func TestEntryFromEventHumanOpened(t *testing.T) {
+	e := procfs.EntryFromEventForTest("run_x", store.Event{
+		Type: procfs.EventHumanSkillDraftOpened,
+		Data: map[string]any{"source": "eval"},
+	})
+	if e.Type != procfs.EventHumanSkillDraftOpened {
+		t.Fatalf("type=%q", e.Type)
+	}
+	if !strings.Contains(e.Summary, "eval") {
+		t.Fatalf("summary=%q", e.Summary)
+	}
+}
+
 func mustAppend(t *testing.T, st store.Store, runID string, typ string, data map[string]any) {
 	t.Helper()
 	if err := st.AppendEvent(runID, store.Event{

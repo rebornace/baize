@@ -138,6 +138,40 @@ export async function ingestEvalCase(body: IngestEvalCaseBody): Promise<EvalCase
   return parseJSON(res)
 }
 
+export interface SampleEvalBody {
+  from: string
+  to: string
+  status?: string
+  min_duration_ms?: number
+  event_type?: string
+  max_n?: number
+  seed?: string
+  mode?: 'draft' | 'score'
+  protocol?: string
+  required_reads?: string[]
+  consequential?: string[]
+}
+
+export interface SampleEvalResult {
+  mode: string
+  candidates: number
+  sampled: number
+  created: number
+  skipped: number
+  scored: number
+  errors: { run_id: string; reason: string }[]
+  case_ids: string[]
+}
+
+export async function sampleEvalRuns(body: SampleEvalBody): Promise<SampleEvalResult> {
+  const res = await fetch('/v0/settings/eval/sample', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON(res)
+}
+
 export interface PatchEvalCaseBody {
   protocol?: string
   required_reads?: string[]

@@ -59,8 +59,43 @@ describe('EvalSettings', () => {
   it('renders filter query and candidates container', async () => {
     await renderPage()
     expect(host.querySelector('[data-testid="eval-query"]')).toBeTruthy()
+    expect(host.querySelector('[data-testid="eval-sample"]')).toBeTruthy()
     expect(host.querySelector('[data-testid="eval-candidates"]')).toBeTruthy()
     expect(host.textContent).toMatch(/evidence-eval/)
+  })
+
+  it('samples into corpus from filter', async () => {
+    vi.spyOn(evalApi, 'listEvalCases').mockResolvedValue({ items: [] })
+    mockSummary()
+    const sampleSpy = vi.spyOn(evalApi, 'sampleEvalRuns').mockResolvedValue({
+      mode: 'draft',
+      candidates: 2,
+      sampled: 2,
+      created: 1,
+      skipped: 1,
+      scored: 0,
+      errors: [],
+      case_ids: ['ec_1'],
+    })
+    vi.spyOn(evalApi, 'queryEvalRuns').mockResolvedValue({ items: [] })
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <EvalSettings />
+        </MemoryRouter>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const btn = host.querySelector('[data-testid="eval-sample"]') as HTMLButtonElement
+    await act(async () => {
+      btn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(sampleSpy).toHaveBeenCalled()
+    const arg = sampleSpy.mock.calls[0]?.[0] as { mode?: string }
+    expect(arg.mode).toBe('draft')
   })
 
   it('loads cases list container', async () => {

@@ -10,6 +10,7 @@ import {
   patchEvalCase,
   putCalibration,
   queryEvalRuns,
+  sampleEvalRuns,
   scoreEvalCase,
   fetchSkillDraft,
   installSkillDraft,
@@ -140,6 +141,7 @@ export function EvalSettings() {
   const { toasts, push, dismiss } = useToast()
   const [fromLocal, setFromLocal] = useState(() => defaultTimeWindow().from)
   const [toLocal, setToLocal] = useState(() => defaultTimeWindow().to)
+  const [sampleWithScore, setSampleWithScore] = useState(false)
   const [status, setStatus] = useState('')
   const [minDurationMs, setMinDurationMs] = useState('')
   const [eventType, setEventType] = useState('')
@@ -221,36 +223,84 @@ export function EvalSettings() {
     }
   }
 
-  const runQuery = async (e?: FormEvent) => {
-    e?.preventDefault()
+  const parseWindowFilters = (): {
+    from: string
+    to: string
+    minMs?: number
+  } | null => {
     const from = localDatetimeToRFC3339(fromLocal)
     const to = localDatetimeToRFC3339(toLocal)
     if (!from || !to) {
       push({ tone: 'error', title: EVAL.needTimeWindow })
-      return
+      return null
     }
+    const minRaw = minDurationMs.trim()
+    let minMs: number | undefined
+    if (minRaw) {
+      const n = Number(minRaw)
+      if (!Number.isFinite(n) || n < 0) {
+        push({ tone: 'error', title: EVAL.badMinDuration })
+        return null
+      }
+      minMs = n
+    }
+    return { from, to, minMs }
+  }
+
+  const runQuery = async (e?: FormEvent) => {
+    e?.preventDefault()
+    const win = parseWindowFilters()
+    if (!win) return
     setBusy(true)
     try {
-      const minRaw = minDurationMs.trim()
-      let minMs: number | undefined
-      if (minRaw) {
-        const n = Number(minRaw)
-        if (!Number.isFinite(n) || n < 0) {
-          push({ tone: 'error', title: EVAL.badMinDuration })
-          return
-        }
-        minMs = n
-      }
       const body = await queryEvalRuns({
-        from,
-        to,
+        from: win.from,
+        to: win.to,
         status: status.trim() || undefined,
-        min_duration_ms: minMs,
+        min_duration_ms: win.minMs,
         event_type: eventType.trim() || undefined,
       })
       setCandidates(body.items)
     } catch (err) {
       setCandidates(null)
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const runSample = async () => {
+    const win = parseWindowFilters()
+    if (!win) return
+    setBusy(true)
+    try {
+      const res = await sampleEvalRuns({
+        from: win.from,
+        to: win.to,
+        status: status.trim() || undefined,
+        min_duration_ms: win.minMs,
+        event_type: eventType.trim() || undefined,
+        max_n: 10,
+        mode: sampleWithScore ? 'score' : 'draft',
+        ...(sampleWithScore
+          ? { protocol: 'V0', required_reads: [] as string[], consequential: [] as string[] }
+          : {}),
+      })
+      push({
+        tone: 'success',
+        title: EVAL.toastSampled(res.created, res.skipped, res.scored),
+      })
+      await refreshCasesAndSummary()
+      const listed = await queryEvalRuns({
+        from: win.from,
+        to: win.to,
+        status: status.trim() || undefined,
+        min_duration_ms: win.minMs,
+        event_type: eventType.trim() || undefined,
+      })
+      setCandidates(listed.items)
+    } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
@@ -559,8 +609,27 @@ export function EvalSettings() {
             disabled={busy}
           />
         </Field>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={sampleWithScore}
+            onChange={(e) => setSampleWithScore(e.target.checked)}
+            disabled={busy}
+            data-testid="eval-sample-score"
+          />{' '}
+          {EVAL.sampleWithScore}
+        </label>
         <Button type="submit" disabled={busy} data-testid="eval-query">
           {busy ? EVAL.querying : EVAL.query}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy}
+          data-testid="eval-sample"
+          onClick={() => void runSample()}
+        >
+          {busy ? EVAL.sampling : EVAL.sample}
         </Button>
       </form>
 

@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rebornace/baize/internal/store"
 )
@@ -89,15 +91,70 @@ func entryFromEvent(runID string, ev store.Event) TimelineEntry {
 			e.Summary = fmt.Sprintf("HITL waiting: %s", e.ToolName)
 		}
 	case "hitl.resumed":
-		e.Summary = "HITL resumed (approved)"
+		e.Summary = hitlSummary("HITL resumed", ev.Data)
 	case "hitl.rejected":
-		e.Summary = "hitl rejected"
+		e.Summary = hitlSummary("HITL rejected", ev.Data)
+	case EventHumanSkillDraftOpened:
+		src := dataString(ev.Data, "source")
+		if src == "" {
+			e.Summary = "opened skill draft"
+		} else {
+			e.Summary = fmt.Sprintf("opened skill draft (%s)", src)
+		}
+	case EventHumanSkillDraftPolished:
+		e.Summary = "polished skill draft"
+	case EventHumanSkillDraftInstalled:
+		id := dataString(ev.Data, "skill_id")
+		if id == "" {
+			e.Summary = "installed skill draft"
+		} else {
+			e.Summary = fmt.Sprintf("installed skill %s", id)
+		}
 	default:
 		if e.Summary == "" {
 			e.Summary = ev.Type
 		}
 	}
 	return e
+}
+
+func hitlSummary(prefix string, data map[string]any) string {
+	dec := dataString(data, "decision")
+	comment := truncateRunes(dataString(data, "comment"), maxHITLCommentRunes)
+	parts := []string{prefix}
+	if dec != "" {
+		parts = append(parts, dec)
+	}
+	if comment != "" {
+		parts = append(parts, comment)
+	}
+	return strings.Join(parts, ": ")
+}
+
+func dataString(data map[string]any, key string) string {
+	if data == nil {
+		return ""
+	}
+	v, ok := data[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 || s == "" {
+		return s
+	}
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:max]) + "…"
 }
 
 func toolNameFromData(data map[string]any) string {
