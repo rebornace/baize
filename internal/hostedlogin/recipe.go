@@ -19,7 +19,59 @@ const (
 	draftMethodID = "draft"
 )
 
-var passwordArgRE = regexp.MustCompile(`(?i)pass|secret`)
+var passwordArgRE = regexp.MustCompile(`(?i)pass|pwd|secret|credential|passwd|口令|密码`)
+
+// EnsurePasswordFormFields makes password_form recipes usable when the login
+// tool schema omitted a password-like argument (common with incomplete OpenAPI
+// or wizard drafts that only kept username). Returns m unchanged for other modes.
+func EnsurePasswordFormFields(m store.HostedLoginMethod) store.HostedLoginMethod {
+	mode := strings.TrimSpace(m.Mode)
+	if mode != "" && mode != ModePasswordForm {
+		return m
+	}
+	out := m
+	if mode == "" {
+		out.Mode = ModePasswordForm
+	}
+	fields := append([]store.HostedLoginField(nil), out.Fields...)
+	for i := range fields {
+		if passwordArgRE.MatchString(fields[i].Arg) || passwordArgRE.MatchString(fields[i].Name) {
+			fields[i].Input = "password"
+		}
+	}
+	if hasPasswordField(fields) {
+		out.Fields = fields
+		return out
+	}
+	if len(fields) == 0 {
+		// Prefer phone+password: common for mobile / Chinese admin login forms
+		// (e.g. DRF anxuadmin) when OpenAPI omits request body parameters.
+		out.Fields = []store.HostedLoginField{
+			{Name: "phone", Label: "账号/手机号", Arg: "phone", Input: "text"},
+			{Name: "password", Label: "密码", Arg: "password", Input: "password"},
+		}
+		return out
+	}
+	fields = append(fields, store.HostedLoginField{
+		Name: "password", Label: "Password", Arg: "password", Input: "password",
+	})
+	out.Fields = fields
+	return out
+}
+
+// NormalizeConfig fills per-mode defaults (e.g. password_form fields) before validate/save.
+func NormalizeConfig(c store.HostedLoginConfig) store.HostedLoginConfig {
+	if len(c.Methods) == 0 {
+		return c
+	}
+	out := c
+	methods := make([]store.HostedLoginMethod, len(c.Methods))
+	for i, m := range c.Methods {
+		methods[i] = EnsurePasswordFormFields(m)
+	}
+	out.Methods = methods
+	return out
+}
 
 // ValidateMethod checks one hosted-login method (per-mode completeness rules).
 func ValidateMethod(m store.HostedLoginMethod) error {
@@ -115,7 +167,7 @@ func hasPasswordField(fields []store.HostedLoginField) bool {
 		if strings.EqualFold(strings.TrimSpace(f.Input), "password") {
 			return true
 		}
-		if passwordArgRE.MatchString(f.Arg) {
+		if passwordArgRE.MatchString(f.Arg) || passwordArgRE.MatchString(f.Name) {
 			return true
 		}
 	}
@@ -193,6 +245,7 @@ func DraftRecipe(loginTool string, inputSchema map[string]any) store.HostedLogin
 	default:
 		method.Mode = ModePasswordForm
 	}
+	method = EnsurePasswordFormFields(method)
 	return store.HostedLoginConfig{
 		Enabled:         false,
 		DefaultMethodID: draftMethodID,

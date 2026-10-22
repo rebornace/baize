@@ -22,7 +22,7 @@ func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *htt
 	}
 	origin := strings.TrimRight(strings.TrimSpace(s.publicBaseURL()), "/")
 	if origin == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "public_base_url is required")
+		writeError(w, http.StatusBadRequest, "public_base_required", "set public_base_url in Settings → Runtime (or External login wizard)")
 		return
 	}
 	var body struct {
@@ -44,12 +44,12 @@ func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *htt
 	}
 	cfg := conn.Auth.HostedLogin
 	if !cfg.Enabled {
-		writeError(w, http.StatusBadRequest, "invalid_request", "hosted login is not enabled for this connector")
+		writeError(w, http.StatusBadRequest, "hosted_login_disabled", "enable hosted login for this connector (Settings → External login)")
 		return
 	}
 	methodID := strings.TrimSpace(cfg.DefaultMethodID)
 	if methodID == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "hosted login has no default method configured")
+		writeError(w, http.StatusBadRequest, "hosted_login_incomplete", "hosted login has no default method configured")
 		return
 	}
 	seed, err := hostedlogin.MaterializeSession(cfg, methodID, hostedlogin.Session{

@@ -59,11 +59,12 @@ export function Modal({ open, title, onClose, children, footer }: ModalProps) {
 
   if (!open) return null
 
+  // Overlay click must not dismiss: accidental background clicks were closing
+  // forms mid-edit. Close via footer actions or Escape only.
   return (
     <div
       className="modal-overlay"
       data-testid="modal-overlay"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}
     >
       <div
         ref={panelRef}

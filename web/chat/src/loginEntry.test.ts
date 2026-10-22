@@ -72,6 +72,21 @@ describe('isLoginRequiredContent', () => {
     ).toEqual({ active: true })
   })
 
+  it('findLoginRequiredConnector prefers connector_id on the tool result', () => {
+    expect(
+      findLoginRequiredConnector(
+        [
+          {
+            kind: 'tool',
+            name: 'unknown_tool',
+            result: { code: 'login_required', connector_id: 'mall' },
+          },
+        ],
+        [],
+      ),
+    ).toBe('mall')
+  })
+
   it('findPendingLoginWait clears after login hitl.resumed even if tool still login_required', () => {
     const catalog = [{ name: 'get_pets', connector_id: 'mall' }]
     expect(
@@ -81,6 +96,20 @@ describe('isLoginRequiredContent', () => {
         [
           { type: 'hitl.waiting', data: { kind: 'login', connector_id: 'mall' } },
           { type: 'hitl.resumed', data: { decision: 'skip_login', kind: 'login' } },
+        ],
+      ),
+    ).toEqual({ active: false })
+  })
+
+  it('findPendingLoginWait clears after skip_step', () => {
+    const catalog = [{ name: 'get_pets', connector_id: 'mall' }]
+    expect(
+      findPendingLoginWait(
+        [{ kind: 'tool', name: 'get_pets', result: { code: 'login_required' } }],
+        catalog,
+        [
+          { type: 'hitl.waiting', data: { kind: 'login', connector_id: 'mall' } },
+          { type: 'hitl.resumed', data: { decision: 'skip_step', kind: 'login', tool_name: 'get_pets' } },
         ],
       ),
     ).toEqual({ active: false })

@@ -117,6 +117,10 @@ type Server struct {
 	// missing keys are treated as 0 so the first run realigns.
 	skillsConvGen   map[string]uint64
 	skillsConvGenMu sync.Mutex
+	// skillEvalRunBusy guards POST /v0/skills/{id}/eval/run (one run per skill).
+	skillEvalRunBusy sync.Map
+	// skillEvalRunPollTimeout overrides skillEvalRunPollTimeout when > 0 (tests).
+	skillEvalRunPollTimeout time.Duration
 	// Memory is the account-scoped fact store (P6 settings CRUD). nil = routes unavailable.
 	Memory memory.Store
 	// Schedules is the account-scoped conversation schedule store. nil = routes unavailable.
@@ -275,11 +279,14 @@ func (s *Server) hostedAudit() hostedlogin.Auditor {
 }
 
 // publicBaseURL returns the advertised Runtime root for OAuth redirects and
-// plugin callback_urls. Prefer the hot-reloadable Settings holder when wired
-// (tests that only set CallbackPublicBase still work).
+// plugin callback_urls. Prefer the hot-reloadable Settings holder when wired;
+// fall back to CallbackPublicBase when the holder has no effective URL yet
+// (tests, or mid-config before the first runtime patch lands).
 func (s *Server) publicBaseURL() string {
 	if s.Settings != nil {
-		return strings.TrimSpace(s.Settings.PublicBaseURL())
+		if u := strings.TrimSpace(s.Settings.PublicBaseURL()); u != "" {
+			return u
+		}
 	}
 	return strings.TrimSpace(s.CallbackPublicBase)
 }
@@ -520,6 +527,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/skills/{id}", s.handleGetSkill)
 	s.mux.HandleFunc("POST /v0/skills", s.handlePostSkill)
 	s.mux.HandleFunc("DELETE /v0/skills/{id}", s.handleDeleteSkill)
+	s.mux.HandleFunc("GET /v0/skills/{id}/eval", s.handleGetSkillEval)
+	s.mux.HandleFunc("PUT /v0/skills/{id}/eval", s.handlePutSkillEval)
+	s.mux.HandleFunc("DELETE /v0/skills/{id}/eval", s.handleDeleteSkillEval)
+	s.mux.HandleFunc("POST /v0/skills/{id}/eval/run", s.handlePostSkillEvalRun)
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/inbox/{channel_id}", s.handlePostInbox)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)

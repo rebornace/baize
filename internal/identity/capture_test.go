@@ -2,6 +2,7 @@ package identity_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/rebornace/baize/internal/identity"
@@ -53,6 +54,29 @@ func TestCaptureNestedTokenPath(t *testing.T) {
 	})
 	if !ok || headers["Authorization"] != "Bearer "+testJWT || label != "nested@x.com" {
 		t.Fatalf("nested extract: headers=%+v label=%q ok=%v", headers, label, ok)
+	}
+}
+
+func TestCaptureSessionCookies(t *testing.T) {
+	cfg := identity.CaptureConfig{HeaderTemplate: "Bearer {{token}}"}
+	headers, label, _, _, ok := identity.ExtractCredential(cfg, map[string]any{
+		"_set_cookie": []string{
+			"sessionid=abc123xyz; Path=/; HttpOnly",
+			"csrftoken=tok456789; Path=/",
+		},
+	})
+	if !ok || headers["Cookie"] == "" {
+		t.Fatalf("cookie extract: %+v ok=%v", headers, ok)
+	}
+	if !strings.Contains(headers["Cookie"], "sessionid=abc123xyz") ||
+		!strings.Contains(headers["Cookie"], "csrftoken=tok456789") {
+		t.Fatalf("Cookie=%q", headers["Cookie"])
+	}
+	if headers["Authorization"] != "" {
+		t.Fatalf("should not set Authorization when using cookies: %+v", headers)
+	}
+	if label != "session" {
+		t.Fatalf("label=%q", label)
 	}
 }
 

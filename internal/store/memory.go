@@ -402,6 +402,24 @@ func (s *Memory) AppendEvent(runID string, ev Event) error {
 	return nil
 }
 
+func (s *Memory) UpsertStreamingDelta(runID string, ev Event) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.runs[runID]; !ok {
+		return -1, fmt.Errorf("run not found")
+	}
+	ev.Timestamp = time.Now().UTC()
+	evs := s.events[runID]
+	idx := FindStreamingDeltaIndex(evs, ev.Type, EventTurn(ev.Data))
+	if idx >= 0 {
+		evs[idx] = ev
+		s.events[runID] = evs
+		return idx, nil
+	}
+	s.events[runID] = append(evs, ev)
+	return len(s.events[runID]) - 1, nil
+}
+
 func (s *Memory) ListEvents(runID string) ([]Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

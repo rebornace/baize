@@ -35,9 +35,9 @@ describe('ConfirmDialog', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('does not call onCancel via overlay click while busy', () => {
+  it('does not call onCancel via overlay click (even when not busy)', () => {
     const onCancel = vi.fn()
-    render(<ConfirmDialog open busy title="x" body="y" onConfirm={() => {}} onCancel={onCancel} />)
+    render(<ConfirmDialog open title="x" body="y" onConfirm={() => {}} onCancel={onCancel} />)
     act(() => {
       ;(host.querySelector('.modal-overlay') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

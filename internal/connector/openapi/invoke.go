@@ -102,6 +102,12 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 	}
 
 	content := decodeBody(raw)
+	if cookies := resp.Header.Values("Set-Cookie"); len(cookies) > 0 {
+		if content == nil {
+			content = map[string]any{}
+		}
+		content["_set_cookie"] = append([]string(nil), cookies...)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if content == nil {
 			content = map[string]any{}

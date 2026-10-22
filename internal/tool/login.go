@@ -93,11 +93,18 @@ func NormalizeLoginRequired(content map[string]any) map[string]any {
 	if !LooksLikeAuthFailure(content) {
 		return content
 	}
-	msg := "登录已失效或未登录，请点击「浏览器登录」或「忽略此系统」"
+	msg := "登录已失效或未登录，请点击「浏览器登录」、「忽略当前步骤」或「忽略此系统」"
 	if m, ok := content["message"].(string); ok {
 		if t := strings.TrimSpace(m); t != "" {
-			msg = t + " — 请点击「浏览器登录」或「忽略此系统」"
+			msg = t + " — 请点击「浏览器登录」、「忽略当前步骤」或「忽略此系统」"
 		}
 	}
-	return LoginRequiredContentMsg(msg)
+	out := LoginRequiredContentMsg(msg)
+	// Preserve connector_id so Chat can open hosted login without a fresh catalog.
+	if cid, ok := content["connector_id"].(string); ok {
+		if t := strings.TrimSpace(cid); t != "" {
+			out["connector_id"] = t
+		}
+	}
+	return out
 }

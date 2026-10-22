@@ -276,6 +276,95 @@ func (s *SQLStore) AppendEvent(runID string, ev Event) error {
 	return err
 }
 
+func (s *SQLStore) UpsertStreamingDelta(runID string, ev Event) (int, error) {
+	if _, err := s.GetRun(runID); err != nil {
+		return -1, err
+	}
+	ev.Timestamp = time.Now().UTC()
+	dataJSON, err := json.Marshal(ev.Data)
+	if err != nil {
+		return -1, err
+	}
+	turn := EventTurn(ev.Data)
+
+	rows, err := s.query(
+		`SELECT id, data_json FROM events WHERE run_id = ? AND type = ? ORDER BY id ASC`,
+		runID, ev.Type,
+	)
+	if err != nil {
+		return -1, err
+	}
+	defer rows.Close()
+
+	var matchID int64
+	found := false
+	for rows.Next() {
+		var id int64
+		var raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return -1, err
+		}
+		var data map[string]any
+		if raw != "" && raw != "null" {
+			if err := json.Unmarshal([]byte(raw), &data); err != nil {
+				return -1, err
+			}
+		}
+		if EventTurn(data) == turn {
+			matchID = id
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return -1, err
+	}
+
+	if found {
+		if _, err := s.exec(
+			`UPDATE events SET timestamp = ?, data_json = ? WHERE id = ?`,
+			ev.Timestamp.Format(time.RFC3339Nano), string(dataJSON), matchID,
+		); err != nil {
+			return -1, err
+		}
+		return s.eventIndexByID(runID, matchID)
+	}
+
+	if _, err := s.exec(
+		`INSERT INTO events (run_id, type, timestamp, data_json) VALUES (?, ?, ?, ?)`,
+		runID, ev.Type, ev.Timestamp.Format(time.RFC3339Nano), string(dataJSON),
+	); err != nil {
+		return -1, err
+	}
+	evs, err := s.ListEvents(runID)
+	if err != nil {
+		return -1, err
+	}
+	return len(evs) - 1, nil
+}
+
+func (s *SQLStore) eventIndexByID(runID string, id int64) (int, error) {
+	rows, err := s.query(`SELECT id FROM events WHERE run_id = ? ORDER BY id ASC`, runID)
+	if err != nil {
+		return -1, err
+	}
+	defer rows.Close()
+	idx := 0
+	for rows.Next() {
+		var rowID int64
+		if err := rows.Scan(&rowID); err != nil {
+			return -1, err
+		}
+		if rowID == id {
+			return idx, nil
+		}
+		idx++
+	}
+	if err := rows.Err(); err != nil {
+		return -1, err
+	}
+	return -1, fmt.Errorf("event id %d not found for run %s", id, runID)
+}
+
 func (s *SQLStore) ListEvents(runID string) ([]Event, error) {
 	if _, err := s.GetRun(runID); err != nil {
 		return nil, err

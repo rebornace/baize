@@ -12,7 +12,13 @@ export type UsageMeta = {
 
 export type ChatBlock =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string; usage?: UsageMeta }
+  | {
+      kind: 'assistant'
+      text: string
+      usage?: UsageMeta
+      /** True while llm.content.delta is still arriving; typewriter only in this window. */
+      streaming?: boolean
+    }
   | { kind: 'system'; text: string }
   | {
       kind: 'thinking'
@@ -90,7 +96,7 @@ function lastToolOrWorkflowIndex(blocks: ChatBlock[]): number {
   return -1
 }
 
-function upsertAssistant(blocks: ChatBlock[], text: string): void {
+function upsertAssistant(blocks: ChatBlock[], text: string, streaming?: boolean): void {
   // After tools, a later LLM turn must become a new bubble. Overwriting the
   // last assistant (often sitting *above* the tool cards) makes live order
   // look reversed until history re-anchors tools above persisted text.
@@ -99,10 +105,13 @@ function upsertAssistant(blocks: ChatBlock[], text: string): void {
     const b = blocks[i]
     if (b.kind === 'assistant') {
       b.text = text
+      if (streaming !== undefined) b.streaming = streaming
       return
     }
   }
-  blocks.push({ kind: 'assistant', text })
+  const next: AssistantBlock = { kind: 'assistant', text }
+  if (streaming !== undefined) next.streaming = streaming
+  blocks.push(next)
 }
 
 // applyUsageMeta writes the run-level usage summary onto the terminal
@@ -218,6 +227,10 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         break
       }
       case 'llm.tool_call': {
+        // Model left generation for tools — snap any in-flight typewriter.
+        for (const b of blocks) {
+          if (b.kind === 'assistant' && b.streaming) b.streaming = false
+        }
         const name = String(data?.name ?? 'tool')
         blocks.push({
           kind: 'tool',
@@ -324,12 +337,14 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
           thinking.status = thinking.status === 'redacted' ? 'redacted' : 'done'
           thinking.collapsed = true
         }
-        upsertAssistant(blocks, String(data?.text ?? ''))
+        upsertAssistant(blocks, String(data?.text ?? ''), true)
         break
       }
       case 'llm.message': {
         const content = String(data?.content ?? '')
-        if (content) upsertAssistant(blocks, content)
+        // Final message: mark streaming done so the UI snaps (no fake typewriter
+        // over tool results / already-complete text).
+        if (content) upsertAssistant(blocks, content, false)
         meta.promptTokens += numField(data, 'prompt_tokens')
         meta.completionTokens += numField(data, 'completion_tokens')
         meta.totalTokens += numField(data, 'total_tokens')

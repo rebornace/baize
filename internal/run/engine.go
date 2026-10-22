@@ -450,17 +450,34 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	isLoginWait := payload.Kind == store.HITLKindLogin
 
 	if !d.Approve {
-		if isLoginWait && strings.TrimSpace(d.Comment) == store.HITLCommentSkipLogin {
-			e.skipConnectorForRun(runID, payload.ConnectorID)
-			_ = e.Store.AppendEvent(runID, store.Event{
-				Type: EventHITLResumed,
-				Data: map[string]any{
-					"decision": "skip_login", "connector_id": payload.ConnectorID, "kind": store.HITLKindLogin,
-				},
-			})
-			_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
-			_ = e.Store.SetHITL(runID, nil)
-			return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, true)
+		if isLoginWait {
+			comment := strings.TrimSpace(d.Comment)
+			if comment == store.HITLCommentSkipStep {
+				e.skipToolForRun(runID, payload.ToolName)
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventHITLResumed,
+					Data: map[string]any{
+						"decision": "skip_step", "connector_id": payload.ConnectorID,
+						"tool_name": payload.ToolName, "kind": store.HITLKindLogin,
+					},
+				})
+				_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+				_ = e.Store.SetHITL(runID, nil)
+				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipStep)
+			}
+			if comment == store.HITLCommentSkipLogin {
+				e.skipConnectorForRun(runID, payload.ConnectorID)
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventHITLResumed,
+					Data: map[string]any{
+						"decision": "skip_login", "connector_id": payload.ConnectorID,
+						"tool_name": payload.ToolName, "kind": store.HITLKindLogin,
+					},
+				})
+				_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+				_ = e.Store.SetHITL(runID, nil)
+				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipSystem)
+			}
 		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventHITLRejected,
@@ -478,7 +495,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	_ = e.Store.SetHITL(runID, nil)
 
 	if isLoginWait {
-		return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, false)
+		return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitResumed)
 	}
 
 	toolCallID := lastToolCallID(e.Store, runID)
@@ -515,7 +532,15 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	return e.runLoop(ctx, runID, messages)
 }
 
-func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, runID, connectorID string, skipped bool) error {
+type loginWaitContinueKind int
+
+const (
+	loginWaitResumed loginWaitContinueKind = iota
+	loginWaitSkipStep
+	loginWaitSkipSystem
+)
+
+func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, runID, connectorID, toolName string, kind loginWaitContinueKind) error {
 	ag, err := e.Store.GetAgent(run.AgentID)
 	if err != nil {
 		return err
@@ -531,21 +556,33 @@ func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, 
 	sys = e.appendSessionAuthHint(sys, run.ConversationID)
 	sys = e.appendActiveGoalHint(sys)
 	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
-	if skipped && strings.TrimSpace(connectorID) != "" {
-		messages = append(messages, llm.Message{
-			Role: llm.RoleUser,
-			Content: fmt.Sprintf(
-				"[系统] 用户选择忽略业务系统 %q 的登录。请不要再调用该系统的工具；改用其它已登录系统或向用户说明无法完成依赖该系统的部分。",
-				connectorID,
-			),
-		})
-	} else {
-		messages = append(messages, llm.Message{
-			Role:    llm.RoleUser,
-			Content: "[系统] 用户已完成浏览器登录。请继续完成原任务，优先重试刚才因登录失败的工具。",
-		})
-	}
+	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: loginWaitContinueHint(kind, connectorID, toolName)})
 	return e.runLoop(ctx, runID, messages)
+}
+
+func loginWaitContinueHint(kind loginWaitContinueKind, connectorID, toolName string) string {
+	switch kind {
+	case loginWaitSkipStep:
+		tool := strings.TrimSpace(toolName)
+		if tool == "" {
+			tool = "刚才失败的工具"
+		}
+		return fmt.Sprintf(
+			"[系统] 用户选择忽略当前这一步（工具 %q）的登录要求。请不要再调用该工具；可改用同一业务系统的其它接口、其它已登录系统，或换一种方式继续获取所需数据。",
+			tool,
+		)
+	case loginWaitSkipSystem:
+		cid := strings.TrimSpace(connectorID)
+		if cid == "" {
+			cid = "该业务系统"
+		}
+		return fmt.Sprintf(
+			"[系统] 用户选择忽略业务系统 %q 的登录。请不要再调用该系统的工具；改用其它已登录系统或向用户说明无法完成依赖该系统的部分。",
+			cid,
+		)
+	default:
+		return "[系统] 用户已完成浏览器登录。请继续完成原任务，优先重试刚才因登录失败的工具。"
+	}
 }
 
 func (e *Engine) isCancelled(runID string) bool {
@@ -555,7 +592,7 @@ func (e *Engine) isCancelled(runID string) bool {
 
 // finalizeLoginPaused ends the run when there is no HITL gate to wait on.
 func (e *Engine) finalizeLoginPaused(runID string) error {
-	msg := "需要先登录才能继续。请点击「浏览器登录」，或「忽略此系统」跳过该业务系统后继续。"
+	msg := "需要先登录才能继续。请点击「浏览器登录」，或「忽略当前步骤」改用其它方式，或「忽略此系统」跳过该业务系统后继续。"
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventLLMMessage,
 		Data: map[string]any{"content": msg},
@@ -617,13 +654,15 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 				chatCtx = llm.WithThinkingLevel(chatCtx, rec.ThinkingLevel)
 			}
 		}
+		// Upsert (not append): one thinking/content delta per turn keeps the live
+		// typewriter without stacking a full cumulative snapshot every coalesce tick.
 		co := llm.NewCoalescer(100*time.Millisecond, func(s string) {
-			_ = e.Store.AppendEvent(runID, store.Event{
+			_, _ = e.Store.UpsertStreamingDelta(runID, store.Event{
 				Type: EventLLMThinkingDelta,
 				Data: map[string]any{"turn": turn, "text": s},
 			})
 		}, func(s string) {
-			_ = e.Store.AppendEvent(runID, store.Event{
+			_, _ = e.Store.UpsertStreamingDelta(runID, store.Event{
 				Type: EventLLMContentDelta,
 				Data: map[string]any{"turn": turn, "text": s},
 			})
@@ -778,20 +817,25 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 				connID := e.connectorIDForTool(pauseTool)
 				waitErr := e.awaitLoginDecision(ctx, runID, pauseTool, connID)
 				switch {
-				case waitErr == nil, errors.Is(waitErr, ErrLoginResumedContinue), errors.Is(waitErr, ErrLoginSkippedContinue):
-					if errors.Is(waitErr, ErrLoginSkippedContinue) && connID != "" {
-						messages = append(messages, llm.Message{
-							Role: llm.RoleUser,
-							Content: fmt.Sprintf(
-								"[系统] 用户选择忽略业务系统 %q 的登录。请不要再调用该系统的工具；改用其它已登录系统或向用户说明无法完成依赖该系统的部分。",
-								connID,
-							),
-						})
-					}
-					if errors.Is(waitErr, ErrLoginResumedContinue) {
+				case waitErr == nil,
+					errors.Is(waitErr, ErrLoginResumedContinue),
+					errors.Is(waitErr, ErrLoginSkippedContinue),
+					errors.Is(waitErr, ErrLoginStepSkippedContinue):
+					switch {
+					case errors.Is(waitErr, ErrLoginStepSkippedContinue):
 						messages = append(messages, llm.Message{
 							Role:    llm.RoleUser,
-							Content: "[系统] 用户已完成浏览器登录。请继续完成原任务，优先重试刚才因登录失败的工具。",
+							Content: loginWaitContinueHint(loginWaitSkipStep, connID, pauseTool),
+						})
+					case errors.Is(waitErr, ErrLoginSkippedContinue):
+						messages = append(messages, llm.Message{
+							Role:    llm.RoleUser,
+							Content: loginWaitContinueHint(loginWaitSkipSystem, connID, pauseTool),
+						})
+					case errors.Is(waitErr, ErrLoginResumedContinue):
+						messages = append(messages, llm.Message{
+							Role:    llm.RoleUser,
+							Content: loginWaitContinueHint(loginWaitResumed, connID, pauseTool),
 						})
 					}
 					continue // next ReAct turn

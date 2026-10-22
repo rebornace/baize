@@ -35,7 +35,7 @@ import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
 import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
 import { resolveChatLoginBanner } from '../loginEntry'
-import { CHAT, friendlyError, GOAL, LOGIN_AT } from '../strings'
+import { CHAT, friendlyError, GOAL, LOGIN_AT, loginBrowserError } from '../strings'
 import { useStickToBottom } from '../useStickToBottom'
 import { useDrawer } from '../useDrawer'
 import { GoalBar } from './chat/GoalBar'
@@ -311,13 +311,33 @@ export function ChatPage() {
     return isLikelyCloudModelBaseURL(profile?.base_url)
   }, [modelProfiles, selectedModelId])
 
+  const refreshToolCatalog = useCallback(() => {
+    void listTools()
+      .then((tools: ToolInfo[]) => {
+        setToolCatalog(
+          tools.map((t) => ({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            connector_id: t.connector_id,
+          })),
+        )
+      })
+      .catch(() => {
+        /* catalog refresh is best-effort */
+      })
+  }, [])
+
   const onBrowserLogin = async (connectorId: string) => {
     try {
+      // Re-fetch catalog so connector_id stays current after late hosted-login setup.
+      refreshToolCatalog()
       const { url } = await createConversationHostedLogin(session.conversationId, connectorId)
       window.open(url, '_blank', 'noopener,noreferrer')
       toast.push({ tone: 'success', title: LOGIN_AT.browserOpened })
-    } catch {
-      toast.push({ tone: 'error', title: LOGIN_AT.browserLoginFailed })
+    } catch (err) {
+      const f = loginBrowserError(err)
+      toast.push({ tone: 'error', title: f.title, detail: f.detail })
     }
   }
 
@@ -357,7 +377,10 @@ export function ChatPage() {
     })
   }
 
-  const liveBlocks = run.liveRunId ? foldEvents(run.liveRunId, run.liveEvents) : []
+  const liveBlocks = useMemo(
+    () => (run.liveRunId ? foldEvents(run.liveRunId, run.liveEvents) : []),
+    [run.liveRunId, run.liveEvents],
+  )
   const showWelcome = session.messages.length === 0 && liveBlocks.length === 0
   const composerDisabled = run.busy || session.historyMutating
   const showStop = Boolean(run.liveRunId && run.busy)
@@ -368,6 +391,12 @@ export function ChatPage() {
   )
   const pendingLoginConnector = pendingLogin.connectorId
   const showLoginBanner = pendingLogin.active
+
+  // When a login wait appears, refresh the tool catalog so connector_id resolves
+  // after the operator configures hosted login mid-conversation.
+  useEffect(() => {
+    if (showLoginBanner) refreshToolCatalog()
+  }, [showLoginBanner, refreshToolCatalog])
 
   return (
     <div className={`chat-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
@@ -447,6 +476,14 @@ export function ChatPage() {
                       onClick={() => void onLoginResume('approve')}
                     >
                       {LOGIN_AT.pendingContinue}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid="chat-login-banner-skip-step"
+                      onClick={() => void onLoginResume('reject', 'skip_step')}
+                    >
+                      {LOGIN_AT.pendingSkipStep}
                     </Button>
                     <Button
                       size="sm"

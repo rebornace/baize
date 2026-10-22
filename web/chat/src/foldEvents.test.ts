@@ -61,7 +61,7 @@ describe('foldEvents', () => {
       status: 'succeeded',
       result: { id: '9' },
     })
-    expect(blocks[1]).toEqual({ kind: 'assistant', text: '已创建工单' })
+    expect(blocks[1]).toEqual({ kind: 'assistant', text: '已创建工单', streaming: false })
     expect(blocks[2]).toEqual({ kind: 'system', text: 'boom' })
   })
 
@@ -229,7 +229,7 @@ describe('foldEvents', () => {
         status: 'done',
         collapsed: true,
       },
-      { kind: 'assistant', text: '你好，世界' },
+      { kind: 'assistant', text: '你好，世界', streaming: true },
     ])
   })
 
@@ -246,7 +246,7 @@ describe('foldEvents', () => {
         status: 'redacted',
         collapsed: true,
       },
-      { kind: 'assistant', text: '最终回答' },
+      { kind: 'assistant', text: '最终回答', streaming: false },
     ])
   })
 
@@ -257,7 +257,7 @@ describe('foldEvents', () => {
       ev('llm.message', { content: '对外回答', thinking: '内部思考' }),
     ])
     expect(blocks.filter((b) => b.kind === 'assistant')).toEqual([
-      { kind: 'assistant', text: '对外回答' },
+      { kind: 'assistant', text: '对外回答', streaming: false },
     ])
     expect(blocks.filter((b) => b.kind === 'thinking')).toHaveLength(1)
   })
@@ -285,7 +285,7 @@ describe('foldEvents', () => {
       status: 'done',
       collapsed: true,
     })
-    expect(blocks[3]).toEqual({ kind: 'assistant', text: '结论' })
+    expect(blocks[3]).toEqual({ kind: 'assistant', text: '结论', streaming: true })
   })
 
   it('keeps first-turn assistant text above tools and streams later text after them', () => {
@@ -296,8 +296,8 @@ describe('foldEvents', () => {
       ev('llm.content.delta', { turn: 1, text: '找到了' }),
     ])
     expect(blocks.map((b) => b.kind)).toEqual(['assistant', 'tool', 'assistant'])
-    expect(blocks[0]).toEqual({ kind: 'assistant', text: '我先查一下' })
-    expect(blocks[2]).toEqual({ kind: 'assistant', text: '找到了' })
+    expect(blocks[0]).toEqual({ kind: 'assistant', text: '我先查一下', streaming: false })
+    expect(blocks[2]).toEqual({ kind: 'assistant', text: '找到了', streaming: true })
   })
 
   it('aggregates run usage onto the terminal assistant block', () => {
@@ -356,6 +356,6 @@ describe('foldEvents', () => {
     const blocks = foldEvents('run_plain', [
       ev('llm.message', { content: '无用量' }),
     ])
-    expect(blocks).toEqual([{ kind: 'assistant', text: '无用量' }])
+    expect(blocks).toEqual([{ kind: 'assistant', text: '无用量', streaming: false }])
   })
 })

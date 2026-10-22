@@ -243,7 +243,7 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('cannot be closed via overlay click or Escape while saving', async () => {
+  it('cannot be closed via Escape while saving; overlay never dismisses', async () => {
     let release: () => void = () => {}
     const pending = new Promise<void>((resolve) => { release = resolve })
     const onSaveInfo = vi.fn(() => pending.then(() => [{ name: 'ping' }]))
@@ -263,6 +263,12 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     await act(async () => { release(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onClose).toHaveBeenCalledTimes(1)
+    onClose.mockClear()
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('openapi URL-only save sends spec.url without content', async () => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 
 function inlineMarkdown(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
@@ -116,7 +116,13 @@ function renderBlock(block: string, key: number): ReactNode {
   )
 }
 
-export function MarkdownText({ text, plain }: { text: string; plain?: boolean }) {
+export const MarkdownText = memo(function MarkdownText({
+  text,
+  plain,
+}: {
+  text: string
+  plain?: boolean
+}) {
   if (plain) {
     return <div className="md-body md-plain">{text}</div>
   }
@@ -136,4 +142,4 @@ export function MarkdownText({ text, plain }: { text: string; plain?: boolean })
     }
   }
   return <div className="md-body">{blocks}</div>
-}
+})

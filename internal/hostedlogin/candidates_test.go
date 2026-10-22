@@ -44,3 +44,26 @@ func TestBuildCandidatesFromLoginToolAndSecurity(t *testing.T) {
 		t.Fatalf("ids missing: %+v", cands)
 	}
 }
+
+func TestBuildCandidatesSkipsLoginListGET(t *testing.T) {
+	tools := []store.Tool{
+		{Name: "anxuadmin_login_list", Method: "GET", Path: "/anxuadmin/login", ConnectorID: "anxu"},
+		{
+			Name: "anxuadmin_login_create", Method: "POST", Path: "/anxuadmin/login", ConnectorID: "anxu",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"phone":    map[string]any{"type": "string"},
+					"password": map[string]any{"type": "string"},
+				},
+			},
+		},
+	}
+	cands := hostedlogin.BuildCandidates(tools, "*login*", nil)
+	if len(cands) != 1 {
+		t.Fatalf("want only create candidate, got %+v", cands)
+	}
+	if cands[0].LoginTool != "anxuadmin_login_create" {
+		t.Fatalf("got %+v", cands[0])
+	}
+}

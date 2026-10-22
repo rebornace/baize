@@ -101,6 +101,36 @@ export function friendlyError(e: unknown): FriendlyError {
   return { title: p.ERRORS.unknown, detail: detail || undefined }
 }
 
+/** Chat「浏览器登录」失败：优先映射托管登录相关错误码。 */
+export function loginBrowserError(e: unknown): FriendlyError {
+  const L = getPack().LOGIN_AT
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case 'public_base_required':
+        return { title: L.browserLoginNeedPublicBase }
+      case 'hosted_login_disabled':
+        return { title: L.browserLoginNeedHosted }
+      case 'hosted_login_incomplete':
+        return { title: L.browserLoginIncomplete }
+      case 'invalid_hosted_login':
+        if (/password field/i.test(e.message)) {
+          return { title: L.browserLoginNeedPasswordField }
+        }
+        return { title: L.browserLoginFailed, detail: e.message }
+      default:
+        break
+    }
+    if (/password_form needs a password field/i.test(e.message)) {
+      return { title: L.browserLoginNeedPasswordField }
+    }
+  }
+  const f = friendlyError(e)
+  if (f.title === getPack().ERRORS.generic || f.title === getPack().ERRORS.unknown) {
+    return { title: L.browserLoginFailed, detail: f.detail }
+  }
+  return f
+}
+
 /** 身份来源 -> 界面文案；未知来源显示原值，不吞信息。 */
 export function identitySourceLabel(source: string): string {
   const map = getPack().IDENTITY_SOURCES as Record<string, string>

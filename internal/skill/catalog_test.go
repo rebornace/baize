@@ -539,6 +539,196 @@ func mustWriteSkill(t *testing.T, dir, name, desc string, tools []string) {
 	}
 }
 
+const sampleEvalYAML = `harness: evidence-eval
+cases:
+  - id: c1
+    protocol: V0
+    input: "只列表"
+    required_reads: ["list_tickets"]
+`
+
+func TestCatalogLoadBuiltinEval(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	dir := filepath.Join(builtin, "with-eval")
+	mustWriteSkill(t, dir, "with-eval", "has eval", []string{"a"})
+	if err := os.WriteFile(filepath.Join(dir, "EVAL.yaml"), []byte(sampleEvalYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("with-eval")
+	if !ok {
+		t.Fatal("skill missing")
+	}
+	if p.Eval == nil || len(p.Eval.Cases) != 1 || p.Eval.Cases[0].ID != "c1" {
+		t.Fatalf("Eval=%+v", p.Eval)
+	}
+	doc, ok := cat.GetEval("with-eval")
+	if !ok || len(doc.Cases) != 1 {
+		t.Fatalf("GetEval=%+v ok=%v", doc, ok)
+	}
+}
+
+func TestPutGetDeleteUserEval(t *testing.T) {
+	root := t.TempDir()
+	blobs := testMemoryBlobs(t)
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("---\nname: eval-user\ndescription: x\ntools: []\n---\n\nbody\n")
+	if _, err := cat.InstallMD("eval-user.md", raw); err != nil {
+		t.Fatal(err)
+	}
+	doc := skill.EvalDoc{
+		Harness: "evidence-eval",
+		Cases: []skill.EvalCase{
+			{ID: "c1", Protocol: "V0", Input: "hi"},
+		},
+	}
+	if err := cat.PutEval("eval-user", doc); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cat.GetEval("eval-user")
+	if !ok || len(got.Cases) != 1 || got.Cases[0].Input != "hi" {
+		t.Fatalf("GetEval=%+v ok=%v", got, ok)
+	}
+	p, _ := cat.Get("eval-user")
+	if p.Eval == nil || len(p.Eval.Cases) != 1 {
+		t.Fatalf("package Eval=%+v", p.Eval)
+	}
+	if err := cat.DeleteEval("eval-user"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.GetEval("eval-user"); ok {
+		t.Fatal("expected no eval after delete")
+	}
+	p, _ = cat.Get("eval-user")
+	if p.Eval != nil {
+		t.Fatalf("package Eval should be nil, got %+v", p.Eval)
+	}
+}
+
+func TestInstallMDPreservesEval(t *testing.T) {
+	root := t.TempDir()
+	blobs := testMemoryBlobs(t)
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1 := []byte("---\nname: keep-eval\ndescription: v1\ntools: []\n---\n\nbody v1\n")
+	if _, err := cat.InstallMD("keep-eval.md", v1); err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.PutEval("keep-eval", skill.EvalDoc{
+		Harness: "evidence-eval",
+		Cases:   []skill.EvalCase{{ID: "c1", Protocol: "V0", Input: "prompt"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	v2 := []byte("---\nname: keep-eval\ndescription: v2\ntools: []\n---\n\nbody v2\n")
+	pkg, err := cat.InstallMD("keep-eval.md", v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Description != "v2" {
+		t.Fatalf("description=%q", pkg.Description)
+	}
+	got, ok := cat.GetEval("keep-eval")
+	if !ok || len(got.Cases) != 1 || got.Cases[0].Input != "prompt" {
+		t.Fatalf("eval lost after reinstall: %+v ok=%v", got, ok)
+	}
+}
+
+func TestCatalogBadEvalStillListsSkill(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	dir := filepath.Join(builtin, "bad-eval")
+	mustWriteSkill(t, dir, "bad-eval", "bad eval file", nil)
+	if err := os.WriteFile(filepath.Join(dir, "EVAL.yaml"), []byte("harness: not-valid\ncases: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSkillListedEvalNil(t, cat, "bad-eval")
+}
+
+func TestCatalogUserBlobBadEvalStillListsSkill(t *testing.T) {
+	root := t.TempDir()
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
+	id := "user-bad-eval"
+	skillRaw := []byte("---\nname: " + id + "\ndescription: user bad eval\ntools: []\n---\n\nbody\n")
+	if err := blobs.Put(ctx, blob.SkillObjectKey("user", id, "SKILL.md"), skillRaw, "text/markdown"); err != nil {
+		t.Fatal(err)
+	}
+	if err := blobs.Put(ctx, blob.SkillObjectKey("user", id, "EVAL.yaml"), []byte("harness: not-valid\ncases: []\n"), "application/x-yaml"); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSkillListedEvalNil(t, cat, id)
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	assertSkillListedEvalNil(t, cat, id)
+}
+
+func TestPutDeleteEvalRejectsBuiltinAndManaged(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "x", []string{"a"})
+	blobs := testMemoryBlobs(t)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := skill.EvalDoc{
+		Harness: "evidence-eval",
+		Cases:   []skill.EvalCase{{ID: "c1", Protocol: "V0", Input: "hi"}},
+	}
+	if err := cat.PutEval("builtin-only", doc); !errors.Is(err, skill.ErrBuiltin) {
+		t.Fatalf("PutEval builtin: want ErrBuiltin, got %v", err)
+	}
+	if err := cat.DeleteEval("builtin-only"); !errors.Is(err, skill.ErrBuiltin) {
+		t.Fatalf("DeleteEval builtin: want ErrBuiltin, got %v", err)
+	}
+	if err := cat.PutEval("login-auth", doc); !errors.Is(err, skill.ErrManaged) {
+		t.Fatalf("PutEval managed: want ErrManaged, got %v", err)
+	}
+	if err := cat.DeleteEval("login-auth"); !errors.Is(err, skill.ErrManaged) {
+		t.Fatalf("DeleteEval managed: want ErrManaged, got %v", err)
+	}
+}
+
+func assertSkillListedEvalNil(t *testing.T, cat *skill.Catalog, id string) {
+	t.Helper()
+	p, ok := cat.Get(id)
+	if !ok {
+		t.Fatal("skill should still load")
+	}
+	if p.Eval != nil {
+		t.Fatalf("want nil Eval on bad yaml, got %+v", p.Eval)
+	}
+	list := cat.List()
+	for _, x := range list {
+		if x.ID == id {
+			return
+		}
+	}
+	t.Fatalf("%q should appear in List", id)
+}
+
 func mustPutManagedSkill(t *testing.T, blobs blob.Store, name, connectorID string, tools []string) {
 	t.Helper()
 	var b strings.Builder

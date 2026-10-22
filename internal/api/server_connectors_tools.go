@@ -19,6 +19,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/specimport"
 	"github.com/rebornace/baize/internal/connector/specstore"
 	"github.com/rebornace/baize/internal/connectortls"
+	"github.com/rebornace/baize/internal/hostedlogin"
 	"github.com/rebornace/baize/internal/skill/loginmanage"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -214,6 +215,11 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			// Same preserve-on-omit policy as capture: connector save must not
 			// wipe a recipe configured via API / advanced settings.
 			hosted = existingConn.Auth.HostedLogin
+		}
+		hosted = hostedlogin.NormalizeConfig(hosted)
+		if err := hostedlogin.ValidateConfig(hosted); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_hosted_login", err.Error())
+			return
 		}
 		connectorAuth = store.ConnectorAuth{
 			Mode: body.Auth.Mode,

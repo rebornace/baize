@@ -25,16 +25,16 @@ describe('Modal', () => {
     expect(host.textContent).toContain('T')
     expect(host.textContent).toContain('body')
   })
-  it('closes on Escape and overlay click, not on dialog content click', () => {
+  it('closes on Escape only; overlay and panel clicks do not dismiss', () => {
     const onClose = vi.fn()
     render(<Modal open title="T" onClose={onClose}><span data-testid="in">x</span></Modal>)
     act(() => {
-      host.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(onClose).toHaveBeenCalledOnce()
-    act(() => { (host.querySelector('[data-testid="modal-overlay"]') as HTMLElement).click() })
-    expect(onClose).toHaveBeenCalledTimes(2)
     onClose.mockClear()
+    act(() => { (host.querySelector('[data-testid="modal-overlay"]') as HTMLElement).click() })
+    expect(onClose).not.toHaveBeenCalled()
     act(() => { (host.querySelector('[data-testid="modal-panel"]') as HTMLElement).click() })
     expect(onClose).not.toHaveBeenCalled()
   })

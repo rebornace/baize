@@ -174,6 +174,9 @@ func (c *Catalog) loadSkillsFromBlobs(prefix, source string, byID map[string]Pac
 		} else if !errors.Is(wfErr, blob.ErrNotFound) {
 			return fmt.Errorf("%s: %w", wfKey, wfErr)
 		}
+		if err := loadEvalBlob(ctx, c.Blobs, source, id, &pkg); err != nil {
+			return err
+		}
 		byID[id] = pkg
 	}
 	return nil
@@ -240,9 +243,132 @@ func scanDir(dir, source string, byID map[string]Package) error {
 		} else if !os.IsNotExist(wfErr) {
 			return fmt.Errorf("%s: %w", wfPath, wfErr)
 		}
+		if err := loadEvalFile(&pkg, filepath.Join(pkg.Dir, "EVAL.yaml")); err != nil {
+			return err
+		}
 		byID[id] = pkg
 	}
 	return nil
+}
+
+func loadEvalFile(pkg *Package, path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	attachEvalYAML(pkg, path, raw)
+	return nil
+}
+
+func loadEvalBlob(ctx context.Context, store blob.Store, source, id string, pkg *Package) error {
+	key := blob.SkillObjectKey(source, id, "EVAL.yaml")
+	raw, err := store.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, blob.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	attachEvalYAML(pkg, key, raw)
+	return nil
+}
+
+func attachEvalYAML(pkg *Package, loc string, raw []byte) {
+	doc, err := ParseEvalYAML(raw)
+	if err != nil {
+		log.Printf("skill: warning: %s: invalid EVAL.yaml: %v", loc, err)
+		return
+	}
+	pkg.Eval = &doc
+}
+
+func (c *Catalog) GetEval(id string) (EvalDoc, bool) {
+	p, ok := c.Get(id)
+	if !ok || p.Eval == nil {
+		return EvalDoc{}, false
+	}
+	return *p.Eval, true
+}
+
+func (c *Catalog) PutEval(id string, doc EvalDoc) error {
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	switch p.Source {
+	case SourceManaged:
+		return fmt.Errorf("%w: %q", ErrManaged, id)
+	case SourceUser:
+	default:
+		return fmt.Errorf("%w: %q", ErrBuiltin, id)
+	}
+	if err := ValidateEvalDoc(&doc); err != nil {
+		return err
+	}
+	raw, err := MarshalEvalYAML(doc)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	if err := c.Blobs.Put(ctx, key, raw, "application/x-yaml"); err != nil {
+		return err
+	}
+	return c.Reload()
+}
+
+func (c *Catalog) DeleteEval(id string) error {
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	switch p.Source {
+	case SourceManaged:
+		return fmt.Errorf("%w: %q", ErrManaged, id)
+	case SourceUser:
+	default:
+		return fmt.Errorf("%w: %q", ErrBuiltin, id)
+	}
+	ctx := context.Background()
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	if err := c.Blobs.Delete(ctx, key); err != nil {
+		return err
+	}
+	return c.Reload()
+}
+
+func (c *Catalog) readUserEvalBytes(ctx context.Context, id string) ([]byte, error) {
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	raw, err := c.Blobs.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, blob.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Catalog) restoreUserEvalIfMissing(ctx context.Context, id string, saved []byte) error {
+	if len(saved) == 0 {
+		return nil
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	if _, err := c.Blobs.Get(ctx, key); err == nil {
+		return nil
+	} else if !errors.Is(err, blob.ErrNotFound) {
+		return err
+	}
+	return c.Blobs.Put(ctx, key, saved, "application/x-yaml")
 }
 
 func loadEnglishOverlayFile(pkg *Package, path string) error {
@@ -275,12 +401,19 @@ func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
 		return Package{}, err
 	}
 	ctx := context.Background()
+	savedEval, err := c.readUserEvalBytes(ctx, id)
+	if err != nil {
+		return Package{}, err
+	}
 	prefix := blob.PrefixSkillsUser + id + "/"
 	if err := blob.DeletePrefix(ctx, c.Blobs, prefix); err != nil {
 		return Package{}, err
 	}
 	key := blob.SkillObjectKey(SourceUser, id, "SKILL.md")
 	if err := c.Blobs.Put(ctx, key, raw, "text/markdown"); err != nil {
+		return Package{}, err
+	}
+	if err := c.restoreUserEvalIfMissing(ctx, id, savedEval); err != nil {
 		return Package{}, err
 	}
 	if err := c.Reload(); err != nil {
@@ -363,6 +496,10 @@ func (c *Catalog) InstallZip(raw []byte) (Package, error) {
 
 	pkgRoot := filepath.Dir(skillPath)
 	ctx := context.Background()
+	savedEval, err := c.readUserEvalBytes(ctx, id)
+	if err != nil {
+		return Package{}, err
+	}
 	prefix := blob.PrefixSkillsUser + id + "/"
 	if err := blob.DeletePrefix(ctx, c.Blobs, prefix); err != nil {
 		return Package{}, err
@@ -390,6 +527,9 @@ func (c *Catalog) InstallZip(raw []byte) (Package, error) {
 		return c.Blobs.Put(ctx, key, data, ct)
 	})
 	if err != nil {
+		return Package{}, err
+	}
+	if err := c.restoreUserEvalIfMissing(ctx, id, savedEval); err != nil {
 		return Package{}, err
 	}
 	if err := c.Reload(); err != nil {

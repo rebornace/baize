@@ -30,6 +30,58 @@ func TestValidateRecipePasswordForm(t *testing.T) {
 	}
 }
 
+func TestEnsurePasswordFormFieldsAppendsPassword(t *testing.T) {
+	m := hostedlogin.EnsurePasswordFormFields(store.HostedLoginMethod{
+		Mode: "password_form", LoginTool: "mall.login",
+		Fields: []store.HostedLoginField{{Name: "user", Arg: "username", Input: "text"}},
+	})
+	if err := hostedlogin.ValidateMethod(m); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range m.Fields {
+		if f.Input == "password" || f.Arg == "password" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected password field, got %+v", m.Fields)
+	}
+}
+
+func TestEnsurePasswordFormFieldsPromotesPwdArg(t *testing.T) {
+	m := hostedlogin.EnsurePasswordFormFields(store.HostedLoginMethod{
+		Mode: "password_form", LoginTool: "login",
+		Fields: []store.HostedLoginField{
+			{Name: "user", Arg: "username", Input: "text"},
+			{Name: "pwd", Arg: "pwd", Input: "text"},
+		},
+	})
+	if err := hostedlogin.ValidateMethod(m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Fields[1].Input != "password" {
+		t.Fatalf("pwd arg should become password input: %+v", m.Fields[1])
+	}
+}
+
+func TestMaterializeSessionEnsuresPasswordField(t *testing.T) {
+	cfg := store.HostedLoginConfig{
+		Enabled: true, DefaultMethodID: "pwd",
+		Methods: []store.HostedLoginMethod{{
+			ID: "pwd", Mode: hostedlogin.ModePasswordForm, LoginTool: "mall.login",
+			Fields: []store.HostedLoginField{{Name: "user", Arg: "username", Input: "text"}},
+		}},
+	}
+	seed, err := hostedlogin.MaterializeSession(cfg, "pwd", hostedlogin.Session{ConnectorID: "mall"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seed.Fields) < 2 {
+		t.Fatalf("fields=%+v", seed.Fields)
+	}
+}
+
 func TestDraftFromCaptureTool(t *testing.T) {
 	draft := hostedlogin.DraftRecipe("mall.login", map[string]any{
 		"type": "object",

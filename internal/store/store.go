@@ -405,6 +405,10 @@ type HITLPayload struct {
 // HITLCommentSkipLogin is sent with reject to skip login for the connector and continue.
 const HITLCommentSkipLogin = "skip_login"
 
+// HITLCommentSkipStep skips only the current login pause (and that tool for this run),
+// keeping other tools on the same connector available.
+const HITLCommentSkipStep = "skip_step"
+
 // HITLCommentAbortLogin ends the run without continuing ReAct.
 const HITLCommentAbortLogin = "abort_login"
 
@@ -551,6 +555,10 @@ type Store interface {
 	// whose lease was never set past the startup grace window (oldest first).
 	ListRunsForReconcile(limit int) ([]*Run, error)
 	AppendEvent(runID string, ev Event) error
+	// UpsertStreamingDelta replaces the latest llm.content.delta / llm.thinking.delta
+	// for the same turn, or appends when none exists. Returns the 0-based event index
+	// (for SSE). Keeps streaming UX without stacking one cumulative snapshot per tick.
+	UpsertStreamingDelta(runID string, ev Event) (index int, err error)
 	ListEvents(runID string) ([]Event, error)
 	SetHITL(runID string, payload *HITLPayload) error
 	GetHITL(runID string) (*HITLPayload, error)

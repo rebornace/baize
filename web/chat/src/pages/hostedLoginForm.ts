@@ -121,13 +121,50 @@ function buildOAuthFromMethodDraft(draft: HostedLoginMethodDraft): HostedLoginOA
   return undefined
 }
 
+const passwordArgRE = /pass|pwd|secret|credential|passwd|口令|密码/i
+
+function fieldsHavePassword(fields: HostedLoginField[]): boolean {
+  return fields.some(
+    (f) =>
+      String(f.input || '').toLowerCase() === 'password' ||
+      passwordArgRE.test(f.arg || '') ||
+      passwordArgRE.test(f.name || ''),
+  )
+}
+
+/** Ensure password_form drafts include a password field (matches server EnsurePasswordFormFields). */
+function ensurePasswordFormFields(
+  mode: string,
+  fields: HostedLoginField[],
+): HostedLoginField[] {
+  const m = mode.trim() || 'password_form'
+  if (m !== 'password_form') return fields
+  if (fieldsHavePassword(fields)) {
+    return fields.map((f) =>
+      passwordArgRE.test(f.arg || '') || passwordArgRE.test(f.name || '')
+        ? { ...f, input: 'password' }
+        : f,
+    )
+  }
+  if (fields.length === 0) {
+    return [
+      { name: 'phone', arg: 'phone', input: 'text', label: '账号/手机号' },
+      { name: 'password', arg: 'password', input: 'password', label: '密码' },
+    ]
+  }
+  return [
+    ...fields,
+    { name: 'password', arg: 'password', input: 'password', label: 'Password' },
+  ]
+}
+
 function buildMethodFromDraft(draft: HostedLoginMethodDraft): HostedLoginMethod | undefined {
   const id = draft.id.trim()
   if (!id) return undefined
-  const fields = parseHostedLoginFields(draft.fieldsText)
+  const mode = draft.mode.trim()
+  const fields = ensurePasswordFormFields(mode, parseHostedLoginFields(draft.fieldsText))
   const out: HostedLoginMethod = { id }
   const label = draft.label.trim()
-  const mode = draft.mode.trim()
   const role = draft.role.trim()
   const loginTool = draft.loginTool.trim()
   const identityIds = [...new Set(draft.identityIds.map((s) => s.trim()).filter(Boolean))]

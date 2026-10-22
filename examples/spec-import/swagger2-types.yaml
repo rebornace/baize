@@ -1,0 +1,28 @@
+swagger: '2.0'
+info:
+  title: Typed Swagger 2
+  version: '1.0.0'
+host: api.example.com
+basePath: /v1
+paths:
+  /items:
+    get:
+      operationId: list_items
+      parameters:
+        - name: limit
+          in: query
+          type: integer
+          required: false
+        - name: q
+          in: query
+          type: string
+      responses:
+        '200':
+          description: ok
+          schema:
+            type: object
+            properties:
+              count:
+                type: integer
+              name:
+                type: string

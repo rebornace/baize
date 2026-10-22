@@ -61,13 +61,64 @@ SwaggerUIBundle({ url: "` + specSrv.URL + "/v1/openapi.json" + `" });
 	}
 }
 
-func TestFetchSpecFromURLBlocksPrivateHost(t *testing.T) {
-	_, err := specimport.FetchSpecFromURL("http://127.0.0.1/swagger.json")
+func TestFetchSpecFromURLAllowsLoopbackHost(t *testing.T) {
+	// validateHTTPURL must accept localhost / loopback before the HTTP round-trip.
+	// Dial may fail; we only assert the SSRF guard does not return ErrFetchBlocked.
+	_, err := specimport.FetchSpecFromURL("http://127.0.0.1:9/swagger.json")
+	if errors.Is(err, specimport.ErrFetchBlocked) {
+		t.Fatalf("loopback must be allowed for intranet specs, got %v", err)
+	}
+	_, err = specimport.FetchSpecFromURL("http://localhost:9/swagger.json")
+	if errors.Is(err, specimport.ErrFetchBlocked) {
+		t.Fatalf("localhost must be allowed for intranet specs, got %v", err)
+	}
+}
+
+func TestFetchSpecFromURLBlocksLinkLocalIP(t *testing.T) {
+	_, err := specimport.FetchSpecFromURL("http://169.254.169.254/latest/meta-data/")
 	if err == nil {
-		t.Fatal("expected error for loopback")
+		t.Fatal("expected error for link-local metadata address")
 	}
 	if !errors.Is(err, specimport.ErrFetchBlocked) {
 		t.Fatalf("err=%v want ErrFetchBlocked", err)
+	}
+}
+
+func TestFetchSpecFromURLDrfYasgFormatOpenAPI(t *testing.T) {
+	spec := readFixture(t, "swagger2-min.json")
+	initJS := `"use strict";
+var currentPath = window.location.protocol + "//" + window.location.host + window.location.pathname;
+var defaultSpecUrl = currentPath + '?format=openapi';
+var swaggerUiConfig = { url: defaultSpecUrl, dom_id: '#swagger-ui' };
+`
+	html := `<!DOCTYPE html><html><body>
+<div id="swagger-ui"></div>
+<script src="/static/drf-yasg/swagger-ui-init.js"></script>
+</body></html>`
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/static/drf-yasg/swagger-ui-init.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		_, _ = w.Write([]byte(initJS))
+	})
+	mux.HandleFunc("/swagger/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("format") == "openapi" {
+			w.Header().Set("Content-Type", "application/openapi+json")
+			_, _ = w.Write([]byte(spec))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	body, err := specimport.FetchSpecFromURL(srv.URL + "/swagger/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specimport.DetectFormat(body) != specimport.FormatSwagger2 {
+		t.Fatalf("detect=%q want swagger2", specimport.DetectFormat(body))
 	}
 }
 

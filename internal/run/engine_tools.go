@@ -243,6 +243,9 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 
 		if e.blockedByLogin(ctx, resolved) {
 			content = tool.LoginRequiredContent()
+			if _, _, cid := e.toolContractFields(resolved); cid != "" {
+				content["connector_id"] = cid
+			}
 			isError = true
 			return false, nil
 		}
@@ -309,6 +312,13 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 
 	if isError {
 		content = tool.NormalizeLoginRequired(content)
+		if tool.IsLoginRequired(content) {
+			if _, has := content["connector_id"]; !has {
+				if _, _, cid := e.toolContractFields(resolved); cid != "" {
+					content["connector_id"] = cid
+				}
+			}
+		}
 	}
 	e.persistToolResult(runID, callID, resolved, content, isError)
 	return content, isError, nil
@@ -327,6 +337,10 @@ func (e *Engine) awaitHITLPayload(ctx context.Context, runID, prompt, toolName s
 // ErrLoginSkippedContinue means the user skipped login for a connector; ReAct should continue.
 var ErrLoginSkippedContinue = errors.New("login skipped; continue")
 
+// ErrLoginStepSkippedContinue means the user ignored only this login step; ReAct should continue
+// without hiding the whole connector (sibling tools remain available).
+var ErrLoginStepSkippedContinue = errors.New("login step skipped; continue")
+
 // ErrLoginResumedContinue means the user finished browser login; ReAct should continue.
 var ErrLoginResumedContinue = errors.New("login resumed; continue")
 
@@ -341,14 +355,14 @@ func (e *Engine) connectorIDForTool(name string) string {
 	return strings.TrimSpace(info.ConnectorID)
 }
 
-// awaitLoginDecision pauses the run until the user signs in, skips this system, or aborts.
+// awaitLoginDecision pauses the run until the user signs in, skips step/system, or aborts.
 func (e *Engine) awaitLoginDecision(ctx context.Context, runID, toolName, connectorID string) error {
 	if e.Gate == nil {
 		// No gate (rare): end the run with a login hint instead of hanging.
 		return e.finalizeLoginPaused(runID)
 	}
 	d, err := e.awaitHITLDecision(ctx, runID, &store.HITLPayload{
-		Prompt:      "需要登录后才能继续。请点击「浏览器登录」，或「忽略此系统」跳过该业务系统。",
+		Prompt:      "需要登录后才能继续。请点击「浏览器登录」，或「忽略当前步骤」改用其它方式，或「忽略此系统」跳过该业务系统。",
 		ToolName:    toolName,
 		Kind:        store.HITLKindLogin,
 		ConnectorID: connectorID,
@@ -360,6 +374,21 @@ func (e *Engine) awaitLoginDecision(ctx context.Context, runID, toolName, connec
 		return ErrLoginResumedContinue
 	}
 	comment := strings.TrimSpace(d.Comment)
+	if comment == store.HITLCommentSkipStep {
+		e.skipToolForRun(runID, toolName)
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventHITLResumed,
+			Data: map[string]any{
+				"decision":     "skip_step",
+				"connector_id": connectorID,
+				"tool_name":    toolName,
+				"kind":         store.HITLKindLogin,
+			},
+		})
+		_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+		_ = e.Store.SetHITL(runID, nil)
+		return ErrLoginStepSkippedContinue
+	}
 	if comment == store.HITLCommentSkipLogin {
 		e.skipConnectorForRun(runID, connectorID)
 		_ = e.Store.AppendEvent(runID, store.Event{

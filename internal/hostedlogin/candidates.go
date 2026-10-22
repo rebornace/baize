@@ -21,10 +21,17 @@ func BuildCandidates(tools []store.Tool, glob string, schemes map[string]any) []
 		if !MatchToolGlob(glob, tl.Name) {
 			continue
 		}
+		// Skip GET …_list "login page" tools (common in DRF); they return HTML, not credentials.
+		if isLoginPageListTool(tl) {
+			continue
+		}
 		if m, ok := candidateFromLoginTool(tl.Name, tl.InputSchema); ok {
 			out = append(out, m)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return loginCandidateRank(out[i]) < loginCandidateRank(out[j])
+	})
 	if len(schemes) > 0 {
 		names := make([]string, 0, len(schemes))
 		for name := range schemes {
@@ -68,6 +75,36 @@ func candidateFromSecurityScheme(name string, raw map[string]any) (store.HostedL
 		m.Label = name
 	}
 	return m, true
+}
+
+// isLoginPageListTool reports tools that typically fetch an HTML login form
+// (DRF: GET /…/login → *_login_list) rather than performing authentication.
+func isLoginPageListTool(tl store.Tool) bool {
+	name := strings.ToLower(strings.TrimSpace(tl.Name))
+	method := strings.ToUpper(strings.TrimSpace(tl.Method))
+	path := strings.ToLower(strings.TrimSpace(tl.Path))
+	if strings.HasSuffix(name, "_list") || strings.HasSuffix(name, "_retrieve") || strings.HasSuffix(name, "_read") {
+		if strings.Contains(name, "login") || strings.Contains(path, "login") {
+			return true
+		}
+	}
+	if method == "GET" || method == "HEAD" {
+		if strings.Contains(name, "login") || strings.Contains(path, "login") {
+			return true
+		}
+	}
+	return false
+}
+
+func loginCandidateRank(m store.HostedLoginMethod) int {
+	id := strings.ToLower(m.ID + " " + m.LoginTool)
+	if strings.Contains(id, "_create") || strings.HasSuffix(id, "create") {
+		return 0
+	}
+	if strings.HasPrefix(m.ID, "tool-") {
+		return 1
+	}
+	return 2
 }
 
 // MatchToolGlob reports whether toolName matches glob (same rules as connector draft).

@@ -112,13 +112,11 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 				}
 				continue
 			}
-			if ev.Index <= lastSent {
-				continue
-			}
-			if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+			var err error
+			lastSent, err = writeLiveSSEEvent(w, rc, ev, lastSent)
+			if err != nil {
 				return
 			}
-			lastSent = ev.Index
 		case stt, ok := <-sub.Ended:
 			if !ok {
 				return
@@ -140,7 +138,30 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// drainSubEvents non-blocking writes any buffered subscription events with index > lastSent.
+// writeLiveSSEEvent writes a hub event to the SSE client.
+// Streaming deltas are upserted in the store at a stable index; they must still
+// be pushed on every update (same id), otherwise the UI only sees the first
+// snapshot and then jumps to the final llm.message.
+func writeLiveSSEEvent(w http.ResponseWriter, rc *http.ResponseController, ev eventbus.IndexedEvent, lastSent int) (int, error) {
+	if store.IsStreamingDelta(ev.Event) {
+		if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+			return lastSent, err
+		}
+		if ev.Index > lastSent {
+			return ev.Index, nil
+		}
+		return lastSent, nil
+	}
+	if ev.Index <= lastSent {
+		return lastSent, nil
+	}
+	if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+		return lastSent, err
+	}
+	return ev.Index, nil
+}
+
+// drainSubEvents non-blocking writes any buffered subscription events.
 // external.nudge placeholders are skipped (no write / no lastSent advance); callers
 // catch up from the store via catchUpRunStream.
 func drainSubEvents(w http.ResponseWriter, rc *http.ResponseController, sub *eventbus.Subscription, lastSent int) (int, error) {
@@ -153,13 +174,11 @@ func drainSubEvents(w http.ResponseWriter, rc *http.ResponseController, sub *eve
 			if ev.Event.Type == "external.nudge" {
 				continue
 			}
-			if ev.Index <= lastSent {
-				continue
-			}
-			if err := writeSSEEvent(w, rc, ev.Index, ev.Event); err != nil {
+			next, err := writeLiveSSEEvent(w, rc, ev, lastSent)
+			if err != nil {
 				return lastSent, err
 			}
-			lastSent = ev.Index
+			lastSent = next
 		default:
 			return lastSent, nil
 		}
@@ -178,7 +197,16 @@ func catchUpRunStream(w http.ResponseWriter, rc *http.ResponseController, st sto
 		return false, "", err
 	}
 	for i, ev := range evs {
-		if i <= *lastSent {
+		if i < *lastSent {
+			continue
+		}
+		if i == *lastSent {
+			// Refresh in-place streaming snapshots the client already has by id.
+			if store.IsStreamingDelta(ev) {
+				if err := writeSSEEvent(w, rc, i, ev); err != nil {
+					return false, "", err
+				}
+			}
 			continue
 		}
 		if err := writeSSEEvent(w, rc, i, ev); err != nil {

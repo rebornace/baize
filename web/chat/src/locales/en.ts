@@ -127,6 +127,10 @@ export const enPack = {
     toolFailed: (l: string) => `Failed: ${l}`,
     toolApproved: (l: string) => `Approved: ${l}`,
     toolRejected: (l: string) => `Rejected: ${l}`,
+    activityProgress: (current: number, total: number) => `Step ${current} / ${total}`,
+    activityExpand: 'Show steps',
+    activityCollapse: 'Collapse',
+    activityNeedsAttention: 'Needs your confirmation — expand to continue',
     analysisPreviewTitle: 'Analysis page preview',
     analysisPreviewLoading: 'Loading analysis page…',
     analysisPreviewFailed: (err: string) => `Preview failed to load: ${err}`,
@@ -813,6 +817,35 @@ export const enPack = {
     errGeneric: 'Could not complete the action; please try again later.',
     errNotFound: 'Skill not found; it may have been deleted.',
     errInvalidRequest: 'Invalid upload or format; please check and retry.',
+    evalNone: 'No eval',
+    evalCount: (n: number) => `Eval: ${n} case${n === 1 ? '' : 's'}`,
+    evalOpen: 'Eval',
+    evalClose: 'Collapse',
+    evalLoading: 'Loading eval…',
+    evalEmpty: 'No cases yet; add below and save.',
+    evalCaseId: 'Case ID',
+    evalProtocol: 'Protocol',
+    evalInput: 'Input (sent to the agent when running)',
+    evalAddCase: 'Add case',
+    evalRemoveCase: 'Remove',
+    evalSave: 'Save eval',
+    evalSaving: 'Saving…',
+    evalValidationBeforeSave: 'Each case needs an ID and input before saving.',
+    evalClear: 'Clear eval',
+    evalClearConfirmTitle: 'Clear all eval cases?',
+    evalClearConfirmBody: 'Removes this skill’s EVAL config; cannot be undone.',
+    evalRunAll: 'Run all',
+    evalRunOne: 'Run this case',
+    evalRunBusy: 'Running…',
+    evalConfirmRunTitle: 'Run skill eval?',
+    evalConfirmRunBody:
+      'This calls the model and consumes tokens; tools may have side effects (use a mock-ticket test environment when possible). Continue?',
+    evalConfirmRunOk: 'Run',
+    evalReadonlyBuiltin:
+      'Built-in or managed eval is read-only here; you can run checks but cannot edit.',
+    evalResultPass: (codes: string) => `Pass (${codes})`,
+    evalResultFail: (codes: string, notes: string) =>
+      notes ? `Fail (${codes}): ${notes}` : `Fail (${codes})`,
     errInternal: 'Service issue; please try again later.',
   },
   LOGIN_AT: {
@@ -827,14 +860,23 @@ export const enPack = {
       'Using a local or self-hosted endpoint; still avoid leaving passwords in long-lived chat logs.',
     browserLoginFailed:
       'Could not open the hosted login page (enable hosted login on the connector and set public_base_url)',
+    browserLoginNeedPublicBase:
+      'Set the public base URL first (Settings → Runtime, or the External login wizard)',
+    browserLoginNeedHosted:
+      'Hosted login is not enabled for this connector — finish Settings → External login and save',
+    browserLoginIncomplete:
+      'Hosted login has no default method — complete the External login wizard and save',
+    browserLoginNeedPasswordField:
+      'Password login is missing a password field — re-save in External login (or add the field)',
     browserOpened: 'Opened the browser sign-in page. Finish login there, then return to the chat.',
     pendingBanner:
-      'The assistant paused: this business system needs sign-in. Sign in in the browser then Continue, or Skip this system so it tries another, or End this turn.',
+      'The assistant paused: this step needs sign-in. Sign in then Continue; Skip this step only skips this call and tries another approach; Skip this system hides the whole connector; or End this turn.',
     pendingBannerAction: 'Browser sign-in',
     pendingContinue: 'Signed in — continue',
+    pendingSkipStep: 'Skip this step',
     pendingSkip: 'Skip this system',
     pendingAbort: 'End this turn',
-    useBanner: 'Use the actions below to sign in in the browser, skip this system, or end this turn.',
+    useBanner: 'Use the actions below to sign in, skip this step, skip this system, or end this turn.',
   },
   TOOLS: {
     title: 'Assistant capabilities',
@@ -1023,7 +1065,7 @@ export const enPack = {
     phId: 'ticket-api',
     phBaseUrlOpenapi: 'https://api.example.com',
     phBaseUrlPlugin: 'http://127.0.0.1:19090',
-    phSpecUrl: 'https://api.example.com/openapi.json',
+    phSpecUrl: 'http://localhost:8000/openapi.json',
     phCallbackUrl: 'https://enterprise.example/baize/execute',
     phCommand: 'npx',
     phArgs: '@bytebase/dbhub',
@@ -1339,6 +1381,12 @@ export const enPack = {
     invalid_signature: 'Connection check failed; refresh the page and try again.',
     not_found: 'Content not found or already deleted.',
     internal_error: 'Temporary service issue; please try again later.',
+    public_base_required:
+      'Set the public base URL first (Settings → Runtime, or the External login wizard)',
+    hosted_login_disabled:
+      'Hosted login is not enabled for this connector — finish Settings → External login and save',
+    hosted_login_incomplete:
+      'Hosted login has no default method — complete the External login wizard and save',
   },
   IDENTITY_SOURCES: {
     login_capture: 'Signed in from chat',
@@ -1383,6 +1431,8 @@ export const enPack = {
   WORKFLOW: {
     progress: (current: number, total: number) => `Step ${current} / ${total}`,
     step: (n: number) => `Step ${n}`,
+    expand: 'Show steps',
+    collapse: 'Collapse',
   },
   LOCALE: {
     sectionTitle: 'Interface language',

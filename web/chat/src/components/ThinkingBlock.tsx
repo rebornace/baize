@@ -48,7 +48,10 @@ export function ThinkingBlock({ block, readOnly = false }: ThinkingBlockProps) {
       </button>
       {open && (
         <div className="thinking-block-body">
-          <TypewriterText text={block.text} active={false} />
+          <TypewriterText
+            text={block.text}
+            active={!readOnly && block.status === 'streaming'}
+          />
         </div>
       )}
     </div>

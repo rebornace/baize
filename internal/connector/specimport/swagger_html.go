@@ -15,27 +15,53 @@ var (
 
 func resolveHTMLSwaggerPage(html string, pageURL *url.URL) ([]byte, error) {
 	for _, scriptURL := range collectSwaggerInitScriptURLs(html, pageURL) {
-		doc, err := fetchSpecFromInitScript(scriptURL)
+		doc, err := fetchSpecFromInitScript(scriptURL, pageURL)
 		if err == nil {
 			return doc, nil
 		}
 	}
 	specURL, inlineErr := extractSwaggerUISpecURL(html, pageURL)
 	if inlineErr == nil {
-		u2, err := validatePublicHTTPURL(specURL)
+		body, err := fetchResolvedSpec(specURL)
 		if err != nil {
 			return nil, err
-		}
-		body, err := fetchURL(u2)
-		if err != nil {
-			return nil, err
-		}
-		if looksLikeHTML(body) {
-			return nil, fmt.Errorf("%w: resolved spec URL still returns HTML", ErrInvalidSpec)
 		}
 		return body, nil
 	}
+	// drf-yasg / similar: UI page serves OpenAPI at the same path with ?format=openapi
+	if body, err := fetchResolvedSpec(pageURLWithFormatOpenAPI(pageURL)); err == nil {
+		return body, nil
+	}
 	return nil, fmt.Errorf("%w: %v", ErrInvalidSpec, inlineErr)
+}
+
+func fetchResolvedSpec(rawURL string) ([]byte, error) {
+	u2, err := validateHTTPURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	body, err := fetchURL(u2)
+	if err != nil {
+		return nil, err
+	}
+	if looksLikeHTML(body) {
+		return nil, fmt.Errorf("%w: resolved spec URL still returns HTML", ErrInvalidSpec)
+	}
+	if DetectFormat(body) == "" {
+		return nil, fmt.Errorf("%w: resolved URL is not OpenAPI/Swagger/Postman", ErrInvalidSpec)
+	}
+	return body, nil
+}
+
+func pageURLWithFormatOpenAPI(pageURL *url.URL) string {
+	if pageURL == nil {
+		return ""
+	}
+	u := *pageURL
+	q := u.Query()
+	q.Set("format", "openapi")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func collectSwaggerInitScriptURLs(html string, pageURL *url.URL) []string {
@@ -84,8 +110,8 @@ func mustParseRef(ref string) *url.URL {
 	return u
 }
 
-func fetchSpecFromInitScript(scriptURL string) ([]byte, error) {
-	u, err := validatePublicHTTPURL(scriptURL)
+func fetchSpecFromInitScript(scriptURL string, pageURL *url.URL) ([]byte, error) {
+	u, err := validateHTTPURL(scriptURL)
 	if err != nil {
 		return nil, err
 	}
@@ -97,11 +123,11 @@ func fetchSpecFromInitScript(scriptURL string) ([]byte, error) {
 		return doc, nil
 	}
 	if swaggerURL, err := extractSwaggerURLFromInitJS(string(body)); err == nil {
-		u2, err := validatePublicHTTPURL(swaggerURL)
-		if err != nil {
-			return nil, err
-		}
-		return fetchURL(u2)
+		return fetchResolvedSpec(swaggerURL)
+	}
+	// drf-yasg: var defaultSpecUrl = currentPath + '?format=openapi'
+	if swaggerURL, err := extractDrfYasgSpecURL(string(body), pageURL); err == nil {
+		return fetchResolvedSpec(swaggerURL)
 	}
 	return nil, fmt.Errorf("init script does not contain swaggerDoc or swaggerUrl")
 }
@@ -114,6 +140,16 @@ func extractSwaggerURLFromInitJS(js string) (string, error) {
 		return m[1], nil
 	}
 	return "", fmt.Errorf("swaggerUrl not found")
+}
+
+// extractDrfYasgSpecURL resolves drf-yasg's currentPath + '?format=openapi' pattern.
+var reDrfYasgFormatOpenAPI = regexp.MustCompile(`currentPath\s*\+\s*['"]\?format=openapi['"]`)
+
+func extractDrfYasgSpecURL(js string, pageURL *url.URL) (string, error) {
+	if pageURL == nil || !reDrfYasgFormatOpenAPI.MatchString(js) {
+		return "", fmt.Errorf("drf-yasg format=openapi pattern not found")
+	}
+	return pageURLWithFormatOpenAPI(pageURL), nil
 }
 
 func unescapeJSString(s string) string {

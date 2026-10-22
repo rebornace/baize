@@ -429,6 +429,86 @@ func TestLoginRequiredPausesBeforeMoreTools(t *testing.T) {
 	}
 }
 
+// skipStepLoginLLM records tool names offered after the login wait.
+type skipStepLoginLLM struct {
+	calls      int
+	secondTools []string
+}
+
+func (s *skipStepLoginLLM) Chat(_ context.Context, _ []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	s.calls++
+	if s.calls == 1 {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "front_list", Arguments: map[string]any{}},
+		}}, nil
+	}
+	s.secondTools = nil
+	for _, t := range tools {
+		s.secondTools = append(s.secondTools, t.Name)
+	}
+	return llm.Message{Role: llm.RoleAssistant, Content: "ok via backend"}, nil
+}
+
+func (s *skipStepLoginLLM) SupportsVision() bool { return false }
+
+func TestLoginSkipStepHidesOnlyFailedTool(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	reg.RegisterMeta(tool.Meta{
+		Spec: llm.ToolSpec{Name: "front_list", Description: "front"}, ConnectorID: "anxu",
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return tool.LoginRequiredContent(), true, nil
+	}, false)
+	reg.RegisterMeta(tool.Meta{
+		Spec: llm.ToolSpec{Name: "back_query", Description: "back"}, ConnectorID: "anxu",
+	}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	}, false)
+	ag := agent.Def{ID: "ticket-agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{
+		AgentID: ag.ID, Input: "查数据", ConversationID: "conv_skip_step",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	llmStub := &skipStepLoginLLM{}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(),
+		Identities: identity.NewMemoryStore(),
+	}
+	done := make(chan error, 1)
+	go func() { done <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
+	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: store.HITLCommentSkipStep}); err != nil {
+		t.Fatalf("skip_step: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if llmStub.calls < 2 {
+		t.Fatalf("after skip_step, llm should continue, calls=%d", llmStub.calls)
+	}
+	have := map[string]bool{}
+	for _, n := range llmStub.secondTools {
+		have[n] = true
+	}
+	if have["front_list"] {
+		t.Fatalf("front_list should be hidden after skip_step, tools=%v", llmStub.secondTools)
+	}
+	if !have["back_query"] {
+		t.Fatalf("back_query (same connector) must remain available, tools=%v", llmStub.secondTools)
+	}
+}
+
+func TestLoginWaitContinueHint(t *testing.T) {
+	if !strings.Contains(loginWaitContinueHint(loginWaitSkipStep, "anxu", "front_list"), "front_list") {
+		t.Fatal("skip_step hint should name the tool")
+	}
+	if !strings.Contains(loginWaitContinueHint(loginWaitSkipSystem, "anxu", "front_list"), "anxu") {
+		t.Fatal("skip_system hint should name the connector")
+	}
+}
+
 func TestExecuteInjectsConversationID(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()

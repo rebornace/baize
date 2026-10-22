@@ -23,6 +23,7 @@ type Package struct {
 	Managed            bool
 	ManagedKind        string
 	ManagedConnectorID string
+	Eval               *EvalDoc // optional evidence-eval cases from EVAL.yaml
 }
 
 // NormalizeLocale maps UI/API locale tags to the skill locale keys we support.

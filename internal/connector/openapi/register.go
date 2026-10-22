@@ -159,10 +159,10 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			// Expired / rejected credentials often surface as raw 401; remap so Chat
 			// ToolCard shows「浏览器登录」instead of only a dead error payload.
 			if conv != "" && out.IsError && LooksLikeAuthFailure(out.Content) {
-				msg := "登录已失效或未登录，请点击「浏览器登录」或「忽略此系统」"
+				msg := "登录已失效或未登录，请点击「浏览器登录」、「忽略当前步骤」或「忽略此系统」"
 				if m, ok := out.Content["message"].(string); ok {
 					if t := strings.TrimSpace(m); t != "" {
-						msg = t + " — 请点击「浏览器登录」或「忽略此系统」"
+						msg = t + " — 请点击「浏览器登录」、「忽略当前步骤」或「忽略此系统」"
 					}
 				}
 				return tool.LoginRequiredContentMsg(msg), true, nil

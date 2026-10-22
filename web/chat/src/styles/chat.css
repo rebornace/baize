@@ -768,7 +768,38 @@
 }
 
 .workflow-card-header {
-  cursor: default;
+  cursor: pointer;
+}
+
+.workflow-card.is-collapsed .workflow-card-header {
+  cursor: pointer;
+}
+
+.workflow-header-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.workflow-focus-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  animation: activity-step-in 0.28s ease;
+}
+
+.workflow-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 .workflow-steps {
@@ -778,6 +809,108 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* Collapsed multi-tool/workflow strip: one bar that tracks the active step. */
+.activity-steps {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.activity-steps.needs-attention {
+  border-color: var(--hitl-border, var(--border-strong));
+}
+
+.activity-steps-attention {
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+.activity-steps-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.activity-steps-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.activity-steps-progress {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.activity-steps-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  animation: activity-step-in 0.28s ease;
+}
+
+.activity-steps-focus-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-steps-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.activity-steps-chevron {
+  transition: transform 0.15s ease;
+}
+
+.activity-steps-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.activity-steps-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 0.55rem 0.55rem;
+}
+
+.activity-steps-body .tool-card,
+.activity-steps-body .workflow-card {
+  border-radius: 10px;
+}
+
+@keyframes activity-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .workflow-step {
@@ -1249,15 +1382,23 @@
   position: relative;
 }
 
+/* Keep streaming layout stable: plain text + caret in the same inline flow. */
+.typewriter-plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .typewriter-caret {
   display: inline-block;
-  width: 0.45em;
+  width: 0.4ch;
   height: 1em;
-  margin-left: 0.1em;
-  vertical-align: -0.1em;
+  margin-left: 0.05em;
+  vertical-align: text-bottom;
   background: var(--text);
   animation: typewriter-blink 1s steps(1) infinite;
   opacity: 0.55;
+  /* Avoid the caret alone forcing an extra line box jump. */
+  flex-shrink: 0;
 }
 
 @keyframes typewriter-blink {
@@ -1751,6 +1892,54 @@
   text-align: right;
   font-size: 0.8rem;
   line-height: 1.35;
+}
+
+.settings-skill-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.settings-skill-eval {
+  margin-left: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.25));
+  border-radius: 0.5rem;
+  background: var(--surface-elevated, rgba(0, 0, 0, 0.03));
+}
+
+.settings-skill-eval-cases {
+  margin: 0.35rem 0 0.5rem;
+}
+
+.settings-skill-eval-case {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.settings-skill-eval-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.settings-skill-eval-readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.settings-skill-eval-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.settings-skill-eval-result {
+  margin: 0;
+  font-size: 0.85rem;
 }
 
 .settings-toolbar {

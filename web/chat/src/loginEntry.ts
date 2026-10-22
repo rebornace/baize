@@ -48,6 +48,24 @@ export function loginSkillID(connectorId: string): string | undefined {
   return `login-${n}`
 }
 
+/** Prefer connector_id stamped on the tool result; else catalog lookup. */
+export function connectorIdFromLoginResult(
+  result: unknown,
+  toolName: string | undefined,
+  catalog: ToolCatalog,
+): string | undefined {
+  if (result != null && typeof result === 'object') {
+    const fromResult = resolveConnectorId(
+      typeof (result as { connector_id?: unknown }).connector_id === 'string'
+        ? (result as { connector_id: string }).connector_id
+        : undefined,
+    )
+    if (fromResult) return fromResult
+  }
+  if (!toolName) return undefined
+  return resolveConnectorId(catalog.find((t) => t.name === toolName)?.connector_id)
+}
+
 /** First connector id that needs browser/chat login among tool-like blocks. */
 export function findLoginRequiredConnector(
   blocks: ReadonlyArray<{ kind: string; name?: string; result?: unknown }>,
@@ -56,7 +74,7 @@ export function findLoginRequiredConnector(
   for (const b of blocks) {
     if (b.kind !== 'tool' || !b.name) continue
     if (!isLoginRequiredContent(b.result)) continue
-    const id = resolveConnectorId(catalog.find((t) => t.name === b.name)?.connector_id)
+    const id = connectorIdFromLoginResult(b.result, b.name, catalog)
     if (id) return id
   }
   return undefined
@@ -71,7 +89,7 @@ export type PendingLoginWait = {
 function isLoginHitlResumed(data: Record<string, unknown> | undefined): boolean {
   if (!data) return false
   if (data.kind === 'login') return true
-  return data.decision === 'skip_login'
+  return data.decision === 'skip_login' || data.decision === 'skip_step'
 }
 
 /**

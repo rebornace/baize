@@ -163,6 +163,7 @@ func MaterializeSession(cfg store.HostedLoginConfig, methodID string, seed Sessi
 	if err != nil {
 		return Session{}, err
 	}
+	method = EnsurePasswordFormFields(method)
 	if err := ValidateMethod(method); err != nil {
 		return Session{}, err
 	}

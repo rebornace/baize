@@ -33,6 +33,9 @@ type runSkillState struct {
 	// skippedConnectors are systems the user chose to ignore for this run
 	// after a login_required pause (multi-connector routing).
 	skippedConnectors map[string]struct{}
+	// skippedTools are individual tools skipped via "ignore this step" so the
+	// same failing call is not retried, while sibling tools on the connector remain.
+	skippedTools map[string]struct{}
 }
 
 func (e *Engine) ensureRuns() {
@@ -159,12 +162,12 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 		return nil
 	}
 	all := e.Tools.Specs()
+	st := e.getRunSkillState(runID)
 	if e.Skills == nil || len(e.Skills.List()) == 0 {
-		return e.withContextTools(all, all, runID)
+		return e.withContextTools(e.filterSkippedTools(all, st), all, runID)
 	}
 
 	enabled := e.enabledToolMap()
-	st := e.getRunSkillState(runID)
 	exclusive := st != nil && st.exclusive
 
 	var visibleNames []string
@@ -192,27 +195,39 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 	for _, spec := range all {
 		byName[spec.Name] = spec
 	}
-	skipped := map[string]struct{}{}
-	if st != nil && len(st.skippedConnectors) > 0 {
-		skipped = st.skippedConnectors
-	}
 	out := make([]llm.ToolSpec, 0, len(visibleNames)+1)
 	for _, name := range visibleNames {
-		if len(skipped) > 0 && e.Tools != nil {
-			if info, ok := e.Tools.Get(name); ok {
+		if spec, ok := byName[name]; ok {
+			out = append(out, spec)
+		}
+	}
+	out = e.filterSkippedTools(out, st)
+	out = append(out, skill.ActivateToolSpec())
+	return e.withContextTools(out, all, runID)
+}
+
+// filterSkippedTools drops tools the user ignored for this run (single tool or whole connector).
+func (e *Engine) filterSkippedTools(specs []llm.ToolSpec, st *runSkillState) []llm.ToolSpec {
+	if st == nil || (len(st.skippedConnectors) == 0 && len(st.skippedTools) == 0) {
+		return specs
+	}
+	out := make([]llm.ToolSpec, 0, len(specs))
+	for _, spec := range specs {
+		if _, skip := st.skippedTools[spec.Name]; skip {
+			continue
+		}
+		if len(st.skippedConnectors) > 0 && e.Tools != nil {
+			if info, ok := e.Tools.Get(spec.Name); ok {
 				if cid := strings.TrimSpace(info.ConnectorID); cid != "" {
-					if _, skip := skipped[cid]; skip {
+					if _, skip := st.skippedConnectors[cid]; skip {
 						continue
 					}
 				}
 			}
 		}
-		if spec, ok := byName[name]; ok {
-			out = append(out, spec)
-		}
+		out = append(out, spec)
 	}
-	out = append(out, skill.ActivateToolSpec())
-	return e.withContextTools(out, all, runID)
+	return out
 }
 
 func (e *Engine) skipConnectorForRun(runID, connectorID string) {
@@ -232,6 +247,25 @@ func (e *Engine) skipConnectorForRun(runID, connectorID string) {
 		st.skippedConnectors = make(map[string]struct{})
 	}
 	st.skippedConnectors[connectorID] = struct{}{}
+}
+
+func (e *Engine) skipToolForRun(runID, toolName string) {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return
+	}
+	e.runMu.Lock()
+	defer e.runMu.Unlock()
+	e.ensureRuns()
+	st := e.runs[runID]
+	if st == nil {
+		st = &runSkillState{workflowResults: map[string]any{"input": map[string]any{}}}
+		e.runs[runID] = st
+	}
+	if st.skippedTools == nil {
+		st.skippedTools = make(map[string]struct{})
+	}
+	st.skippedTools[toolName] = struct{}{}
 }
 
 func (e *Engine) withContextTools(specs, all []llm.ToolSpec, runID string) []llm.ToolSpec {

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Check, ChevronDown, Loader2, X } from 'lucide-react'
 import { parseAnalysisPageResult } from '../analysisPage'
 import { resumeRun } from '../api'
 import { friendlyToolName, toolPhrase, type ToolCatalog } from '../friendlyTool'
 import type { ChatBlock } from '../foldEvents'
-import { isLoginRequiredContent, resolveConnectorId } from '../loginEntry'
+import { connectorIdFromLoginResult, isLoginRequiredContent } from '../loginEntry'
 import type { PriorEvidenceItem } from '../priorEvidence'
 import { CHAT, HITL, LOGIN_AT } from '../strings'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
@@ -32,7 +32,28 @@ export interface ToolCardProps {
   priorEvidence?: PriorEvidenceItem[]
 }
 
-export function ToolCard({
+function toolCardPropsEqual(prev: ToolCardProps, next: ToolCardProps): boolean {
+  const a = prev.block
+  const b = next.block
+  return (
+    a.name === b.name &&
+    a.status === b.status &&
+    a.result === b.result &&
+    a.arguments === b.arguments &&
+    a.isError === b.isError &&
+    a.contractHash === b.contractHash &&
+    a.catalogRevision === b.catalogRevision &&
+    prev.catalog === next.catalog &&
+    prev.readOnly === next.readOnly &&
+    prev.onError === next.onError &&
+    prev.onBrowserLogin === next.onBrowserLogin &&
+    prev.suppressLoginActions === next.suppressLoginActions &&
+    prev.cloudModelRisk === next.cloudModelRisk &&
+    prev.priorEvidence === next.priorEvidence
+  )
+}
+
+function ToolCardImpl({
   block,
   catalog = [],
   readOnly = false,
@@ -231,8 +252,10 @@ export function ToolCard({
                   variant="primary"
                   data-testid="tool-card-browser-login"
                   onClick={() => {
-                    const connectorId = resolveConnectorId(
-                      catalog.find((t) => t.name === block.name)?.connector_id,
+                    const connectorId = connectorIdFromLoginResult(
+                      block.result,
+                      block.name,
+                      catalog,
                     )
                     if (connectorId) {
                       onBrowserLogin(connectorId)
@@ -253,6 +276,8 @@ export function ToolCard({
     </div>
   )
 }
+
+export const ToolCard = memo(ToolCardImpl, toolCardPropsEqual)
 
 function formatJSON(value: unknown): string {
   try {

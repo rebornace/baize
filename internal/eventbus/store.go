@@ -26,6 +26,20 @@ func (n *notifyingStore) AppendEvent(runID string, ev store.Event) error {
 	return nil
 }
 
+func (n *notifyingStore) UpsertStreamingDelta(runID string, ev store.Event) (int, error) {
+	inner := n.Store
+	idx, err := inner.UpsertStreamingDelta(runID, ev)
+	if err != nil {
+		return -1, err
+	}
+	evs, listErr := inner.ListEvents(runID)
+	if listErr != nil || idx < 0 || idx >= len(evs) {
+		return idx, nil
+	}
+	n.hub.Publish(runID, IndexedEvent{Index: idx, Event: evs[idx]})
+	return idx, nil
+}
+
 func (n *notifyingStore) UpdateRun(id string, status store.Status, output, errMsg string) error {
 	inner := n.Store
 	if err := inner.UpdateRun(id, status, output, errMsg); err != nil {

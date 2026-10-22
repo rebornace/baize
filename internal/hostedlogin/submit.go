@@ -133,16 +133,59 @@ func collectCredential(ctx context.Context, deps SubmitDeps, sess Session, form 
 	if err != nil {
 		return nil, "", "", fmt.Errorf("hostedlogin: connector: %w", err)
 	}
+	if looksLikeHTMLLoginPage(content) {
+		toolHint := strings.TrimSpace(sess.LoginTool)
+		return nil, "", "", fmt.Errorf(
+			"hostedlogin: login tool returned an HTML page (often GET …_list). Use the POST login tool instead (e.g. %s)",
+			suggestCreateLoginTool(toolHint),
+		)
+	}
 	captureCfg := captureDefaults(captureAuthToConfig(conn.Auth.Capture))
 	h, lab, _, _, ok := identity.ExtractCredential(captureCfg, content)
 	if !ok || len(h) == 0 {
-		return nil, "", "", fmt.Errorf("hostedlogin: login succeeded but no credential could be parsed")
+		return nil, "", "", fmt.Errorf(
+			"hostedlogin: login succeeded but no credential could be parsed (need JSON token fields or Set-Cookie; check capture token_json_paths or use a token-returning login API)",
+		)
 	}
 	sch := strings.TrimSpace(captureCfg.DefaultScheme)
 	if sch == "" {
-		sch = "bearer"
+		if _, hasCookie := h["Cookie"]; hasCookie {
+			sch = "cookie"
+		} else {
+			sch = "bearer"
+		}
 	}
 	return h, lab, sch, nil
+}
+
+func looksLikeHTMLLoginPage(content map[string]any) bool {
+	if content == nil {
+		return false
+	}
+	raw, _ := content["raw"].(string)
+	if raw == "" {
+		return false
+	}
+	trim := strings.TrimSpace(raw)
+	lower := strings.ToLower(trim)
+	return strings.HasPrefix(lower, "<!doctype html") ||
+		strings.HasPrefix(lower, "<html") ||
+		(strings.Contains(lower, "<html") && strings.Contains(lower, "</html>"))
+}
+
+func suggestCreateLoginTool(name string) string {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return "…_create / POST …/login"
+	}
+	lower := strings.ToLower(n)
+	if strings.HasSuffix(lower, "_list") {
+		return strings.TrimSuffix(n, "_list") + "_create"
+	}
+	if strings.HasSuffix(lower, "list") {
+		return strings.TrimSuffix(n, "list") + "create"
+	}
+	return n + " (POST create), not " + n
 }
 
 func persistCredential(

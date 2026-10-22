@@ -28,6 +28,7 @@ import {
   skillSourceLabel,
   skillToolsCountLabel,
 } from './skills/skillDisplay'
+import { SkillEvalPanel, skillEvalCountLabel } from './skills/SkillEvalPanel'
 
 export function toggleSkillSelection(prev: Set<string>, id: string, checked: boolean): Set<string> {
   const next = new Set(prev)
@@ -73,6 +74,7 @@ export function SkillsSettings() {
   const [pendingDelete, setPendingDelete] = useState<SkillSummary | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [expandedEvalSkillId, setExpandedEvalSkillId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -313,36 +315,59 @@ export function SkillsSettings() {
                 {toolsLine ? <span className="settings-muted">{toolsLine}</span> : null}
               </span>
             )
+            const evalExpanded = expandedEvalSkillId === s.id
             return (
-              <li key={s.id} className="settings-list-item settings-skill-row">
-                {readOnly ? (
-                  meta
-                ) : (
-                  <label className="settings-login-toggle settings-skill-check">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(s.id)}
-                      disabled={busy}
-                      onChange={(e) => {
-                        setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
-                      }}
-                    />
-                    {meta}
-                  </label>
-                )}
-                <span className="settings-tool-actions">
-                  {sourceBadge}
-                  {s.source === 'user' && !readOnly && (
+              <li key={s.id} className="settings-list-item settings-skill-block">
+                <div className="settings-skill-row">
+                  {readOnly ? (
+                    meta
+                  ) : (
+                    <label className="settings-login-toggle settings-skill-check">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(s.id)}
+                        disabled={busy}
+                        onChange={(e) => {
+                          setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
+                        }}
+                      />
+                      {meta}
+                    </label>
+                  )}
+                  <span className="settings-tool-actions settings-skills-actions">
+                    <span className="settings-muted">{skillEvalCountLabel(s.eval_case_count)}</span>
                     <Button
                       size="sm"
-                      variant="danger"
+                      variant="secondary"
                       disabled={busy}
-                      onClick={() => beginDelete(s)}
+                      aria-expanded={evalExpanded}
+                      onClick={() =>
+                        setExpandedEvalSkillId((prev) => (prev === s.id ? null : s.id))
+                      }
                     >
-                      {SKILLS.confirmDeleteOk}
+                      {evalExpanded ? SKILLS.evalClose : SKILLS.evalOpen}
                     </Button>
-                  )}
-                </span>
+                    {sourceBadge}
+                    {s.source === 'user' && !readOnly && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        disabled={busy}
+                        onClick={() => beginDelete(s)}
+                      >
+                        {SKILLS.confirmDeleteOk}
+                      </Button>
+                    )}
+                  </span>
+                </div>
+                {evalExpanded && (
+                  <SkillEvalPanel
+                    skill={s}
+                    agentId={agentId}
+                    role={readOnly ? 'operator' : 'admin'}
+                    onEvalMutated={() => void refreshList()}
+                  />
+                )}
               </li>
             )
           })}

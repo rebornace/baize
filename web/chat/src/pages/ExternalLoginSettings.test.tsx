@@ -260,6 +260,12 @@ describe('ExternalLoginSettings', () => {
       type: 'openapi',
       auth: { hosted_login: saved },
     })
+    vi.spyOn(api, 'patchRuntimeSettings').mockResolvedValue({
+      effective: {} as api.RuntimeKnobs,
+      overridden: {} as api.RuntimeKnobsOverrides,
+      public_base_url: 'http://127.0.0.1:8080',
+      public_base_url_overridden: true,
+    })
     const putConnector = vi.spyOn(api, 'putConnector').mockResolvedValue({ id: 'mall', type: 'openapi' })
     const patchTool = vi.spyOn(api, 'patchTool').mockResolvedValue({
       name: 'mall.login',

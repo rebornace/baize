@@ -1,6 +1,12 @@
 import { CornerUpLeft, GitBranch } from 'lucide-react'
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type { ChatMessage } from '../../api'
+import {
+  partitionHistoryActivity,
+  partitionLiveActivity,
+  type ActivityStepBlock,
+} from '../../activitySteps'
+import { ActivitySteps } from '../../components/ActivitySteps'
 import { AnalysisPagePreview } from '../../components/AnalysisPagePreview'
 import { MarkdownText } from '../../components/MarkdownText'
 import { ThinkingBlock, MessageThinkingFallback } from '../../components/ThinkingBlock'
@@ -17,6 +23,37 @@ import { isFirstAssistantMessageOfRun, type ToolOrWorkflowBlock } from '../../hi
 import { liveAssistantKey, messageRowKey } from '../../liveCommit'
 import { collectPriorEvidence } from '../../priorEvidence'
 import { ACTIONS, WELCOME } from '../../strings'
+
+function renderActivityStepBlock(
+  b: ActivityStepBlock,
+  key: string,
+  opts: {
+    catalog: ToolCatalog
+    reportError: (e: unknown) => void
+    onBrowserLogin?: (connectorId: string) => void
+    suppressLoginActions: boolean
+    cloudModelRisk: boolean
+    readOnly?: boolean
+    priorEvidence?: ReturnType<typeof collectPriorEvidence>
+  },
+): ReactNode {
+  if (b.kind === 'workflow') {
+    return <WorkflowCard key={key} block={b} />
+  }
+  return (
+    <ToolCard
+      key={key}
+      block={b}
+      catalog={opts.catalog}
+      readOnly={opts.readOnly}
+      onError={opts.reportError}
+      onBrowserLogin={opts.onBrowserLogin}
+      suppressLoginActions={opts.suppressLoginActions}
+      cloudModelRisk={opts.cloudModelRisk}
+      priorEvidence={opts.priorEvidence}
+    />
+  )
+}
 
 export type ChatMessageListProps = {
   messages: ChatMessage[]
@@ -179,32 +216,44 @@ export function ChatMessageList({
             >
               {runHistoryBlocks && (
                 <div className="msg-history-blocks" data-testid="history-blocks">
-                  {runHistoryBlocks.map((b, i) => {
-                    switch (b.kind) {
-                      case 'tool':
+                  {partitionHistoryActivity(runHistoryBlocks).map((seg, segIdx) => {
+                    if (seg.type === 'thinking') {
+                      return (
+                        <ThinkingBlock
+                          key={`h-th-${seg.block.turn}`}
+                          block={seg.block}
+                          readOnly
+                        />
+                      )
+                    }
+                    const cards = seg.items.map((it, i) => {
+                      if (it.kind === 'thinking') {
                         return (
-                          <ToolCard
-                            key={`h-${i}`}
-                            block={b}
-                            catalog={toolCatalog}
+                          <ThinkingBlock
+                            key={`h-${segIdx}-th-${it.block.turn}`}
+                            block={it.block}
                             readOnly
-                            onError={reportError}
-                            onBrowserLogin={onBrowserLogin}
-                            suppressLoginActions={suppressLoginActions}
-                            cloudModelRisk={cloudModelRisk}
                           />
                         )
-                      case 'workflow':
-                        return <WorkflowCard key={`h-${i}`} block={b} />
-                      case 'thinking':
-                        return (
-                          <ThinkingBlock key={`h-th-${b.turn}`} block={b} readOnly />
-                        )
-                      default: {
-                        const _exhaustive: never = b
-                        return _exhaustive
                       }
-                    }
+                      return renderActivityStepBlock(it.block, `h-${segIdx}-${i}`, {
+                        catalog: toolCatalog,
+                        reportError,
+                        onBrowserLogin,
+                        suppressLoginActions,
+                        cloudModelRisk,
+                        readOnly: true,
+                      })
+                    })
+                    return (
+                      <ActivitySteps
+                        key={`h-steps-${segIdx}`}
+                        blocks={seg.stepBlocks}
+                        catalog={toolCatalog}
+                      >
+                        {cards}
+                      </ActivitySteps>
+                    )
                   })}
                 </div>
               )}
@@ -279,7 +328,46 @@ export function ChatMessageList({
             </div>
           )
         })}
-        {liveBlocks.map((block, i) => {
+        {partitionLiveActivity(liveBlocks).map((seg) => {
+          if (seg.type === 'steps') {
+            const cards = seg.items.map((it) => {
+              if (it.kind === 'thinking') {
+                return (
+                  <ThinkingBlock key={`live-th-${it.block.turn}`} block={it.block} />
+                )
+              }
+              const block = it.block
+              const i = it.index
+              return renderActivityStepBlock(block, `live-step-${i}`, {
+                catalog: toolCatalog,
+                reportError,
+                onBrowserLogin,
+                suppressLoginActions,
+                cloudModelRisk,
+                priorEvidence:
+                  block.kind === 'tool' && block.status === 'waiting_human'
+                    ? collectPriorEvidence(liveBlocks, i)
+                    : undefined,
+              })
+            })
+            const firstIdx = seg.items[0]?.index ?? 0
+            return (
+              <div key={`live-steps-${firstIdx}`} className="msg-row tool">
+                <ActivitySteps blocks={seg.stepBlocks} catalog={toolCatalog}>
+                  {cards}
+                </ActivitySteps>
+              </div>
+            )
+          }
+          if (seg.type === 'thinking') {
+            return (
+              <div key={`live-th-${seg.block.turn}`} className="msg-row tool">
+                <ThinkingBlock block={seg.block} />
+              </div>
+            )
+          }
+          const block = seg.block
+          const i = seg.index
           switch (block.kind) {
             case 'assistant':
               return (
@@ -288,16 +376,10 @@ export function ChatMessageList({
                   className="msg-row assistant"
                 >
                   <div className="msg assistant">
-                    <TypewriterText text={block.text} active />
+                    <TypewriterText text={block.text} active={Boolean(block.streaming)} />
                   </div>
                   {block.usage && <UsageMetaLine usage={block.usage} />}
                   {block.usage && liveRunId ? <RunBindingButton runId={liveRunId} /> : null}
-                </div>
-              )
-            case 'thinking':
-              return (
-                <div key={`live-th-${block.turn}`} className="msg-row tool">
-                  <ThinkingBlock block={block} />
                 </div>
               )
             case 'system':
@@ -306,30 +388,6 @@ export function ChatMessageList({
                   <div className="msg system">
                     <MarkdownText text={block.text} plain />
                   </div>
-                </div>
-              )
-            case 'tool':
-              return (
-                <div key={`live-t-${i}`} className="msg-row tool">
-                  <ToolCard
-                    block={block}
-                    catalog={toolCatalog}
-                    onError={reportError}
-                    onBrowserLogin={onBrowserLogin}
-                    suppressLoginActions={suppressLoginActions}
-                    cloudModelRisk={cloudModelRisk}
-                    priorEvidence={
-                      block.status === 'waiting_human'
-                        ? collectPriorEvidence(liveBlocks, i)
-                        : undefined
-                    }
-                  />
-                </div>
-              )
-            case 'workflow':
-              return (
-                <div key={`live-w-${i}`} className="msg-row tool">
-                  <WorkflowCard block={block} />
                 </div>
               )
             case 'user':

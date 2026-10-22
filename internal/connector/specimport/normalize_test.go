@@ -68,6 +68,63 @@ func TestNormalizeSwagger2Fixture(t *testing.T) {
 	assertServersURL(t, out, "https://api.example.com")
 }
 
+func TestNormalizeSwagger2NestedPropertySchema(t *testing.T) {
+	// drf-yasg sometimes nests property shape under "schema", which becomes
+	// Schema.Extensions["schema"] and fails Validate with extra sibling fields.
+	content := []byte(`{
+  "swagger": "2.0",
+  "info": {"title": "t", "version": "1"},
+  "paths": {
+    "/q/": {
+      "get": {
+        "operationId": "list_q",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "stat_display": {
+                  "description": "cfg",
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "chart_style": {"type": "integer"}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`)
+	out, detected, err := specimport.Normalize(content, specimport.FormatAuto, "https://api.example.com")
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if detected != specimport.FormatSwagger2 {
+		t.Fatalf("detected = %q, want swagger2", detected)
+	}
+	assertNormalizedHasPath(t, out, "/q/")
+}
+
+func TestNormalizeSwagger2YAMLWithScalarTypes(t *testing.T) {
+	// drf-yasg often serves Swagger 2 as YAML with `type: integer` scalars;
+	// direct yaml→openapi2.T fails on kin-openapi Types.
+	content := readFixture(t, "swagger2-types.yaml")
+	out, detected, err := specimport.Normalize(content, specimport.FormatAuto, "https://api.example.com")
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if detected != specimport.FormatSwagger2 {
+		t.Fatalf("detected = %q, want swagger2", detected)
+	}
+	assertNormalizedHasPath(t, out, "/items")
+}
+
 func TestNormalizePostmanFixture(t *testing.T) {
 	content := readFixture(t, "postman-min.json")
 	out, detected, err := specimport.Normalize(content, specimport.FormatAuto, "https://api.example.com")

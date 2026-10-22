@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type Dispatch,
@@ -24,6 +25,7 @@ import {
   runUsageFromEvents,
   type ToolOrWorkflowBlock,
 } from '../../historyBlocks'
+import { appendLiveEvent, coalesceLiveEvents } from '../../liveEventAppend'
 import { commitLiveAssistant, handoffTranscript } from '../../liveCommit'
 import { CHAT } from '../../strings'
 
@@ -78,11 +80,32 @@ export function useChatRunStream({
   const liveRunIdRef = useRef(liveRunId)
   liveRunIdRef.current = liveRunId
   const liveEventsRef = useRef<Event[]>([])
+  const flushRafRef = useRef<number | null>(null)
+
+  const cancelScheduledFlush = useCallback(() => {
+    if (flushRafRef.current !== null) {
+      window.cancelAnimationFrame(flushRafRef.current)
+      flushRafRef.current = null
+    }
+  }, [])
 
   const writeLiveEvents = useCallback((next: Event[]) => {
+    cancelScheduledFlush()
     liveEventsRef.current = next
     setLiveEvents(next)
+  }, [cancelScheduledFlush])
+
+  /** Coalesce token deltas and paint at most once per animation frame. */
+  const enqueueLiveEvent = useCallback((ev: Event) => {
+    liveEventsRef.current = appendLiveEvent(liveEventsRef.current, ev)
+    if (flushRafRef.current !== null) return
+    flushRafRef.current = window.requestAnimationFrame(() => {
+      flushRafRef.current = null
+      setLiveEvents(liveEventsRef.current)
+    })
   }, [])
+
+  useEffect(() => () => cancelScheduledFlush(), [cancelScheduledFlush])
 
   const stopPoll = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -97,13 +120,14 @@ export function useChatRunStream({
   }, [])
 
   const resetLive = useCallback(() => {
+    cancelScheduledFlush()
     liveEventsRef.current = []
     setLiveRunId(null)
     setLiveEvents([])
     lastEventIndexRef.current = -1
     setBusy(false)
     setStatus('')
-  }, [])
+  }, [cancelScheduledFlush])
 
   const finishLiveRun = useCallback(
     async (id: string) => {
@@ -131,6 +155,7 @@ export function useChatRunStream({
         // token usage that arrives after the last SSE snapshot is not skipped.
       }
       const dropLiveFold = () => {
+        cancelScheduledFlush()
         liveEventsRef.current = []
         setLiveRunId(null)
         setLiveEvents([])
@@ -156,6 +181,7 @@ export function useChatRunStream({
       await refreshConversations()
     },
     [
+      cancelScheduledFlush,
       conversationIdRef,
       mergeHistoryPages,
       refreshConversations,
@@ -168,7 +194,7 @@ export function useChatRunStream({
   )
 
   const applyEvents = useCallback((events: Event[]) => {
-    writeLiveEvents(events)
+    writeLiveEvents(coalesceLiveEvents(events))
   }, [writeLiveEvents])
 
   const startPoll = useCallback(
@@ -212,8 +238,7 @@ export function useChatRunStream({
         after,
         (ev, index) => {
           if (conversationIdRef.current !== forConversationId) return
-          liveEventsRef.current = [...liveEventsRef.current, ev]
-          setLiveEvents(liveEventsRef.current)
+          enqueueLiveEvent(ev)
           if (index >= 0) lastEventIndexRef.current = index
         },
         (endedStatus) => {
@@ -228,7 +253,7 @@ export function useChatRunStream({
         },
       )
     },
-    [conversationIdRef, finishLiveRun, startPoll, stopPoll, stopStream],
+    [conversationIdRef, enqueueLiveEvent, finishLiveRun, startPoll, stopPoll, stopStream],
   )
 
   /** Subscribe to a run via the same SSE → poll fallback path as createRun. */

@@ -143,7 +143,11 @@ export function ExternalLoginSettings() {
       ])
       const merged = [...openapi, ...http].filter(connectorEligible)
       setConnectors(merged)
-      setPublicBaseUrl(runtime.public_base_url ?? '')
+      const fromRuntime = (runtime.public_base_url ?? '').trim()
+      setPublicBaseUrl(
+        fromRuntime ||
+          (typeof window !== 'undefined' ? window.location.origin : ''),
+      )
       setIdentities(ids)
       setKeys(keyList.filter((k) => !k.revoked_at))
     } catch (err) {
@@ -447,11 +451,10 @@ export function ExternalLoginSettings() {
         setBusy(false)
         return
       }
-      const runtime = await getRuntimeSettings()
-      if (trimmedBase !== (runtime.public_base_url ?? '')) {
-        const v = await patchRuntimeSettings({ public_base_url: trimmedBase })
-        setPublicBaseUrl(v.public_base_url ?? trimmedBase)
-      }
+      // Always PATCH so Runtime hot-reloads even if the operator re-saves the
+      // same URL after configuring hosted login mid-session.
+      const v = await patchRuntimeSettings({ public_base_url: trimmedBase })
+      setPublicBaseUrl(v.public_base_url ?? trimmedBase)
       if (!(await saveConnectorConfig())) {
         setBusy(false)
         return

@@ -15,21 +15,17 @@ import (
 const maxFetchSize = 4 << 20
 
 var (
-	// ErrInvalidSpecURL is returned when spec_url is not a valid public http(s) URL.
+	// ErrInvalidSpecURL is returned when spec_url is not a valid http(s) URL.
 	ErrInvalidSpecURL = errors.New("invalid_spec_url")
-	// ErrFetchBlocked is returned when fetching private or loopback targets is blocked.
+	// ErrFetchBlocked is returned when fetching link-local / unspecified targets is blocked.
 	ErrFetchBlocked = errors.New("spec_fetch_blocked")
 	// ErrFetchFailed is returned when HTTP fetch fails.
 	ErrFetchFailed = errors.New("spec_fetch_failed")
 )
 
-// allowPrivateFetchHosts permits loopback/private targets (tests only).
-var allowPrivateFetchHosts bool
-
-// SetAllowPrivateFetchHosts toggles SSRF guard bypass for httptest servers.
-func SetAllowPrivateFetchHosts(allow bool) {
-	allowPrivateFetchHosts = allow
-}
+// SetAllowPrivateFetchHosts is retained for older tests; loopback and private
+// hosts are always allowed so intranet OpenAPI sources (e.g. localhost) work.
+func SetAllowPrivateFetchHosts(_ bool) {}
 
 var (
 	reSwaggerConfigURL = regexp.MustCompile(`configUrl\s*:\s*["']([^"']+)["']`)
@@ -43,17 +39,18 @@ var defaultFetchClient = &http.Client{
 		if len(via) >= 5 {
 			return errors.New("too many redirects")
 		}
-		if _, err := validatePublicHTTPURL(req.URL.String()); err != nil {
+		if _, err := validateHTTPURL(req.URL.String()); err != nil {
 			return err
 		}
 		return nil
 	},
 }
 
-// FetchSpecFromURL downloads an OpenAPI/Swagger/Postman document from a public http(s) URL.
+// FetchSpecFromURL downloads an OpenAPI/Swagger/Postman document from an http(s) URL.
+// Loopback and private (intranet) hosts are allowed; link-local / unspecified IPs are not.
 // HTML Swagger UI pages are resolved to their embedded spec URL when possible.
 func FetchSpecFromURL(rawURL string) ([]byte, error) {
-	u, err := validatePublicHTTPURL(strings.TrimSpace(rawURL))
+	u, err := validateHTTPURL(strings.TrimSpace(rawURL))
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +78,9 @@ func fetchURL(u *url.URL) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrFetchFailed, err)
 	}
-	req.Header.Set("Accept", "application/json, application/yaml, text/yaml, */*")
+	// Prefer JSON only: drf-yasg content-negotiates YAML when application/yaml is
+	// accepted, and YAML→openapi2 decode is fragile even after JSON re-encode.
+	req.Header.Set("Accept", "application/openapi+json, application/json;q=0.9, */*;q=0.1")
 	req.Header.Set("User-Agent", "baize-spec-fetch/1.0")
 
 	res, err := defaultFetchClient.Do(req)
@@ -105,7 +104,7 @@ func fetchURL(u *url.URL) ([]byte, error) {
 	return body, nil
 }
 
-func validatePublicHTTPURL(raw string) (*url.URL, error) {
+func validateHTTPURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, fmt.Errorf("%w: empty url", ErrInvalidSpecURL)
@@ -124,31 +123,22 @@ func validatePublicHTTPURL(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("%w: userinfo in url is not allowed", ErrInvalidSpecURL)
 	}
 	host := strings.ToLower(u.Hostname())
-	if host == "localhost" || host == "localhost.localdomain" {
-		if !allowPrivateFetchHosts {
-			return nil, fmt.Errorf("%w: localhost is not allowed", ErrFetchBlocked)
-		}
-	}
 	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedIP(ip) && !allowPrivateFetchHosts {
-			return nil, fmt.Errorf("%w: private or loopback address is not allowed", ErrFetchBlocked)
+		if isDangerousFetchIP(ip) {
+			return nil, fmt.Errorf("%w: link-local or unspecified address is not allowed", ErrFetchBlocked)
 		}
 	}
 	return u, nil
 }
 
-func isBlockedIP(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+// isDangerousFetchIP blocks cloud-metadata-style literals while allowing
+// loopback and RFC1918 private addresses used by intranet APIs.
+func isDangerousFetchIP(ip net.IP) bool {
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 		return true
 	}
-	if ip.IsUnspecified() {
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 0 {
 		return true
-	}
-	// CGNAT / metadata-style ranges
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 0 {
-			return true
-		}
 	}
 	return false
 }

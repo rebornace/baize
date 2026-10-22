@@ -64,12 +64,13 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 type skillSummary struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	DescriptionEN string   `json:"description_en,omitempty"`
-	Tools         []string `json:"tools"`
-	Source        string   `json:"source"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	DescriptionEN  string   `json:"description_en,omitempty"`
+	Tools          []string `json:"tools"`
+	Source         string   `json:"source"`
+	EvalCaseCount  int      `json:"eval_case_count"`
 }
 
 func skillSummaryFrom(p skill.Package) skillSummary {
@@ -84,6 +85,7 @@ func skillSummaryFrom(p skill.Package) skillSummary {
 		DescriptionEN: p.DescriptionEN,
 		Tools:         tools,
 		Source:        p.Source,
+		EvalCaseCount: evalCaseCount(p),
 	}
 }
 
@@ -128,13 +130,14 @@ func (s *Server) handleGetSkill(w http.ResponseWriter, r *http.Request) {
 	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
 	sum := skillSummaryForLocale(p, locale)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":             sum.ID,
-		"name":           sum.Name,
-		"description":    sum.Description,
-		"description_en": sum.DescriptionEN,
-		"tools":          sum.Tools,
-		"source":         sum.Source,
-		"body":           p.LocalizedBody(locale),
+		"id":               sum.ID,
+		"name":             sum.Name,
+		"description":      sum.Description,
+		"description_en":   sum.DescriptionEN,
+		"tools":            sum.Tools,
+		"source":           sum.Source,
+		"eval_case_count":  sum.EvalCaseCount,
+		"body":             p.LocalizedBody(locale),
 	})
 }
 
