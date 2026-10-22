@@ -3,7 +3,7 @@
 connector:
   id: busabase-readonly
   type: openapi
-  spec: examples/ext-sor-busabase/openapi.readonly.example.yaml
+  spec: examples/ext-sor-busabase/openapi.readonly.json
   base_url: https://YOUR-BUSABASE-HOST
   auth:
     mode: static

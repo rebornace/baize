@@ -37,6 +37,8 @@ export interface ConnectorEditorInitial {
   /** 用于回显 capture */
   auth?: ConnectorAuth
   tls?: ConnectorTLS
+  specContent?: string
+  specFileName?: string
 }
 
 const EMPTY_MCP_FORM: McpFormValues = {
@@ -61,6 +63,8 @@ export interface ConnectorEditorModalProps {
   onSaveInfo: (conn: SavedConnection) => Promise<PermissionTool[]>
   // 连接信息真正保存成功时回调一次（失败不回调）；页面据此提示并刷新列表。
   onSavedInfo?: (conn: SavedConnection) => void
+  /** 弹窗顶部提示条（可选） */
+  statusBanner?: string
 }
 
 const EMPTY_INITIAL: ConnectorEditorInitial = {
@@ -99,8 +103,8 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setId(init.id)
     setBaseUrl(init.baseUrl)
     setImportFormat('auto')
-    setSpecContent(null)
-    setSpecFileName(null)
+    setSpecContent(init.specContent ?? null)
+    setSpecFileName(init.specFileName ?? null)
     setSpecUrl('')
     setFieldErrors({})
     setFormError(null)
@@ -240,6 +244,9 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
       }
     >
       {formError && <p className="ui-inline-error" role="alert">{formError}</p>}
+      {props.statusBanner && (
+        <p className="ui-inline-error" role="status" data-testid="connector-status-banner">{props.statusBanner}</p>
+      )}
       <div className="connector-form">
         <Field label={CONNECTORS.fieldId} hint={CONNECTORS.fieldIdHint} required error={fieldErrors.id}>
           <Input value={id} disabled={editing || saving} placeholder={CONNECTORS.phId}

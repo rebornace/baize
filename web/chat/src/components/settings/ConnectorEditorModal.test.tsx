@@ -284,6 +284,36 @@ describe('ConnectorEditorModal I-4 error/save-lock/payload paths', () => {
     }))
   })
 
+  it('prefills spec from initial.specContent on open and saves content', async () => {
+    const specJson = '{"openapi":"3.0.0","paths":{}}'
+    const onSaveInfo = vi.fn(async (_input: SaveInfoInput) => [{ name: 'ping' }])
+    await render({
+      onSaveInfo,
+      initial: {
+        id: 'sample-openapi',
+        baseUrl: 'https://api.example.com',
+        tools: [],
+        loginNames: [],
+        approvalNames: [],
+        specContent: specJson,
+        specFileName: 'sample.openapi.json',
+      },
+    })
+    expect(host.textContent).toContain('sample.openapi.json')
+    await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
+    await flush()
+    expect(onSaveInfo).toHaveBeenCalledTimes(1)
+    const saved = onSaveInfo.mock.calls[0][0] as SaveInfoInput
+    expect(saved).toEqual(expect.objectContaining({
+      kind: 'openapi',
+      spec: { content: specJson, url: undefined },
+    }))
+    expect(saved.kind).toBe('openapi')
+    if (saved.kind === 'openapi') {
+      expect(saved.spec?.content).toContain('openapi')
+    }
+  })
+
   it('openapi file save sends spec.content even if URL field shows a value placeholder flow', async () => {
     const onSaveInfo = vi.fn(async (_input: SaveInfoInput) => [{ name: 'ping' }])
     await render({ onSaveInfo })

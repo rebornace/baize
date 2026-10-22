@@ -1,48 +1,8 @@
-openapi: 3.0.3
-info:
-  title: Busabase-compatible readonly example (PLACEHOLDER)
-  version: 0.0.0
-  description: >
-    Shape-only template for EXT-SoR v0. Replace with a real Busabase-exported
-    OpenAPI when available. Read-only operations only.
-paths:
-  /tables:
-    get:
-      operationId: list_tables
-      summary: List tables / collections
-      responses:
-        "200":
-          description: ok
-  /tables/{table}/records:
-    get:
-      operationId: list_records
-      summary: List or search records in a table
-      parameters:
-        - name: table
-          in: path
-          required: true
-          schema: { type: string }
-        - name: q
-          in: query
-          required: false
-          schema: { type: string }
-      responses:
-        "200":
-          description: ok
-  /tables/{table}/records/{id}:
-    get:
-      operationId: get_record
-      parameters:
-        - name: table
-          in: path
-          required: true
-          schema: { type: string }
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: ok
-        "404":
-          description: not found
+# DEPRECATED — 占位已弃用
+#
+# 真相源为同目录下的 openapi.readonly.json（由 scripts/ext-sor-busabase/
+# filter_readonly_openapi.mjs 从 Busabase 公开 OpenAPI 裁剪为仅 GET）。
+#
+# 连接器与 Skill 请指向 openapi.readonly.json；勿再使用本文件中的 /tables 占位路径。
+#
+# 再生成步骤见 scripts/ext-sor-busabase/README.md

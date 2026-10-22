@@ -26,8 +26,8 @@ const conn = {
   tools: [{ name: 'me' }, { name: 'create_ticket' }],
 }
 
-async function renderOpenApi() {
-  fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+async function renderOpenApi(opts?: { retainFetchMock?: boolean }) {
+  if (!opts?.retainFetchMock) fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
     const u = String(url)
     if (!init?.method && u.endsWith('/v0/tools'))
       return json({ tools: [{ name: 'me', connector_id: 'ticket-api', source: 'spec' }] })
@@ -35,7 +35,10 @@ async function renderOpenApi() {
     if (init?.method === 'PUT') return json({ ...conn, require_login: [], require_approval: [] })
     return json({})
   })
-  await act(async () => { createRoot(host).render(<MemoryRouter><OpenApiSettings /></MemoryRouter>); await new Promise((r) => setTimeout(r, 0)) })
+  await act(async () => {
+    createRoot(host).render(<MemoryRouter><OpenApiSettings /></MemoryRouter>)
+    await new Promise((r) => setTimeout(r, 0))
+  })
   await flush()
 }
 
@@ -143,7 +146,7 @@ describe('OpenApiSettings page', () => {
       }
       return json({})
     })
-    await act(async () => { createRoot(host).render(<MemoryRouter><OpenApiSettings /></MemoryRouter>); await new Promise((r) => setTimeout(r, 0)) })
+    await renderOpenApi({ retainFetchMock: true })
     await flush()
     const toolsGets = () => fetchMock.mock.calls.filter(
       ([u, i]) => !(i as RequestInit | undefined)?.method && String(u).endsWith('/v0/tools'),
@@ -180,11 +183,7 @@ describe('OpenApiSettings page', () => {
       if (init?.method === 'PUT') return json(connWithCapture)
       return json({})
     })
-    await act(async () => {
-      createRoot(host).render(<MemoryRouter><OpenApiSettings /></MemoryRouter>)
-      await new Promise((r) => setTimeout(r, 0))
-    })
-    await flush()
+    await renderOpenApi({ retainFetchMock: true })
 
     await act(async () => {
       ;(host.querySelector('[data-testid="dropdown-trigger"]') as HTMLElement).click()
