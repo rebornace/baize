@@ -49,7 +49,7 @@ describe('McpSettings page', () => {
     })
     await act(async () => { createRoot(host).render(<MemoryRouter><McpSettings /></MemoryRouter>); await Promise.resolve() })
     await flush()
-    expect(host.textContent).toContain('外部工具服务')
+    expect(host.textContent).toContain('扩展工具')
     expect(host.textContent).toContain('本地程序 · npx')
     expect(host.textContent).toContain('1 个需审批')
   })

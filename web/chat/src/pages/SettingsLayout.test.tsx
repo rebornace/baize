@@ -68,16 +68,16 @@ function render(_ui?: ReactNode) {
 describe('SettingsLayout locale', () => {
   it('updates sidebar labels immediately when locale changes', () => {
     render()
-    expect(host.textContent).toContain('运行参数')
+    expect(host.textContent).toContain('高级参数')
     expect(host.textContent).toContain('返回对话')
-    expect(host.textContent).not.toContain('Runtime settings')
+    expect(host.textContent).not.toContain('Advanced')
 
     act(() => {
       ;(host.querySelector('[data-testid="switch-en"]') as HTMLButtonElement).click()
     })
 
-    expect(host.textContent).toContain('Runtime settings')
+    expect(host.textContent).toContain('Advanced')
     expect(host.textContent).toContain('Back to conversation')
-    expect(host.textContent).not.toContain('运行参数')
+    expect(host.textContent).not.toContain('高级参数')
   })
 })

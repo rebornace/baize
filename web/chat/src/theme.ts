@@ -18,10 +18,16 @@ export function systemTheme(prefersDark: boolean): ThemeMode {
   return prefersDark ? 'dark' : 'light'
 }
 
-/** 存储值合法直接采用；否则（空/未知）回退到系统偏好（由调用方惰性提供）。 */
+/**
+ * 解析最终明暗。
+ * - light/dark：按存储
+ * - system：跟随 system()
+ * - 空/未知：默认 light（宣传版首屏；用户仍可选 system）
+ */
 export function resolveTheme(stored: string, system: () => ThemeMode): ThemeMode {
   if (stored === 'light' || stored === 'dark') return stored
-  return system()
+  if (stored === 'system') return system()
+  return 'light'
 }
 
 /** 把最终明暗写到 <html data-theme>。抽出 root 参数便于在 node 环境测试。 */

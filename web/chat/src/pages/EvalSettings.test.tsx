@@ -683,7 +683,7 @@ describe('EvalSettings', () => {
       await Promise.resolve()
     })
     const installBtn = Array.from(host.querySelectorAll('button')).find(
-      (b) => b.textContent === '安装为用户 Skill',
+      (b) => b.textContent === '安装为技能',
     ) as HTMLButtonElement
     expect(installBtn).toBeTruthy()
     await act(async () => {

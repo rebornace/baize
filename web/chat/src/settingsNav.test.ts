@@ -12,20 +12,25 @@ describe('SETTINGS_GROUPS', () => {
   it('declares the four groups in display order', () => {
     setPack(zhPack)
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual([
-      'assistant',
+      'conversation',
       'connect',
-      'messaging',
+      'quality',
       'system',
     ])
-    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(['助手', '连接', '消息', '系统'])
+    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual([
+      '对话相关',
+      '连接与工具',
+      '质量与评测',
+      '系统',
+    ])
   })
 
   it('switches group labels to English', () => {
     setPack(enPack)
     expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual([
-      'Assistant',
-      'Connect',
-      'Messaging',
+      'Chat',
+      'Connections',
+      'Quality',
       'System',
     ])
   })
@@ -55,16 +60,16 @@ describe('settingsNavItems(admin)', () => {
     expect(byTo['/settings/models']).toBe('模型')
     expect(byTo['/settings/tools']).toBe('助手功能')
     expect(byTo['/settings/memory']).toBe('账号记忆')
-    expect(byTo['/settings/tool-matching']).toBe('匹配与决策')
+    expect(byTo['/settings/tool-matching']).toBe('智能匹配')
     expect(byTo['/settings/openapi']).toBe('业务系统')
     expect(byTo['/settings/plugins']).toBe('插件服务')
-    expect(byTo['/settings/mcp']).toBe('外部工具服务')
+    expect(byTo['/settings/mcp']).toBe('扩展工具')
     expect(byTo['/settings/external-login']).toBe('对外登录')
     expect(byTo['/settings/mcp-export']).toBe('对外提供能力')
     expect(byTo['/settings/channels/weixin']).toBe('微信')
-    expect(byTo['/settings/runtime']).toBe('运行参数')
-    expect(byTo['/settings/metrics']).toBe('运行指标')
-    expect(byTo['/settings/eval']).toBe('评测语料')
+    expect(byTo['/settings/runtime']).toBe('高级参数')
+    expect(byTo['/settings/metrics']).toBe('运行状态')
+    expect(byTo['/settings/eval']).toBe('质量检查')
     expect(byTo['/settings/schedules']).toBe('对话日程')
   })
 
@@ -73,16 +78,17 @@ describe('settingsNavItems(admin)', () => {
     const byTo = Object.fromEntries(settingsNavItems('admin').map((i) => [i.to, i.label]))
     expect(byTo['/settings/models']).toBe('Models')
     expect(byTo['/settings/tools']).toBe('Assistant capabilities')
-    expect(byTo['/settings/tool-matching']).toBe('Matching & decisions')
-    expect(byTo['/settings/runtime']).toBe('Runtime settings')
-    expect(byTo['/settings/metrics']).toBe('Runtime metrics')
-    expect(byTo['/settings/eval']).toBe('Eval corpus')
+    expect(byTo['/settings/tool-matching']).toBe('Smart matching')
+    expect(byTo['/settings/mcp']).toBe('Extensions')
+    expect(byTo['/settings/runtime']).toBe('Advanced')
+    expect(byTo['/settings/metrics']).toBe('Run status')
+    expect(byTo['/settings/eval']).toBe('Quality checks')
   })
 
   it('groups items correctly', () => {
     const adminItems = settingsNavItems('admin')
     const inGroup = (g: string) => adminItems.filter((i) => i.group === g).map((i) => i.to)
-    expect(inGroup('assistant')).toEqual([
+    expect(inGroup('conversation')).toEqual([
       '/settings/models',
       '/settings/tools',
       '/settings/skills',
@@ -96,17 +102,14 @@ describe('settingsNavItems(admin)', () => {
       '/settings/plugins',
       '/settings/external-login',
       '/settings/mcp-export',
-    ])
-    expect(inGroup('messaging')).toEqual([
       '/settings/channels/weixin',
       '/settings/webhooks',
       '/settings/inbox',
     ])
+    expect(inGroup('quality')).toEqual(['/settings/metrics', '/settings/eval'])
     expect(inGroup('system')).toEqual([
       '/settings/identities',
       '/settings/storage',
-      '/settings/metrics',
-      '/settings/eval',
       '/settings/runtime',
     ])
   })
@@ -146,7 +149,7 @@ describe('visibleNavItems', () => {
     expect(visibleNavItems('admin')).toHaveLength(19)
   })
 
-  it('operator sidebar hides locked items (no connect group), keeps 9', () => {
+  it('operator sidebar hides locked items, keeps 9 reachable routes', () => {
     const visible = visibleNavItems('operator')
     expect(visible.map((i) => i.to)).toEqual([
       '/settings/models',
@@ -159,6 +162,8 @@ describe('visibleNavItems', () => {
       '/settings/identities',
       '/settings/runtime',
     ])
-    expect(visible.some((i) => i.group === 'connect')).toBe(false)
+    expect(visible.filter((i) => i.group === 'connect').map((i) => i.to)).toEqual([
+      '/settings/channels/weixin',
+    ])
   })
 })

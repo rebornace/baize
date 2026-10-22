@@ -111,7 +111,7 @@ describe('ToolCard HITL 两段式拒绝链路', () => {
     expect(spy).toHaveBeenCalledWith('r1', 'reject', '')
   })
 
-  it('waiting_human 展示本轮已查依据', () => {
+  it('waiting_human 展示动手前依据区块', () => {
     const html = renderToStaticMarkup(
       <ToolCard
         block={block}

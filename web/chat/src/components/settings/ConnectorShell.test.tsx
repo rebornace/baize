@@ -161,7 +161,7 @@ describe('ConnectorShell', () => {
       { id: 'a1', summary: '本地程序 · npx', toolCount: 2, loginNames: [], approvalNames: ['t'] },
     ]
     await render({ kind: 'mcp', rows: mcpRows, loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
-    expect(host.textContent).toContain('外部工具服务')
+    expect(host.textContent).toContain('扩展工具')
     expect(host.textContent).toContain('本地程序 · npx')
     expect(host.textContent).toContain('1 个需审批')
     expect(host.textContent).not.toContain('需本人登录')
@@ -169,7 +169,7 @@ describe('ConnectorShell', () => {
 
   it('empty mcp list shows the mcp empty state with a single add CTA', async () => {
     await render({ kind: 'mcp', rows: [], loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
-    expect(host.textContent).toContain('还没有接入外部工具服务')
+    expect(host.textContent).toContain('还没有接入扩展工具')
     const addButtons = [...host.querySelectorAll('button')].filter((b) => b.textContent!.includes('接入外部工具'))
     expect(addButtons).toHaveLength(1)
   })

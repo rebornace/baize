@@ -7,10 +7,13 @@
       (function () {
         try {
           var stored = (localStorage.getItem('baize.theme') || '').trim();
-          var dark =
-            stored === 'dark' ||
-            (stored !== 'light' &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var dark = false;
+          if (stored === 'dark') {
+            dark = true;
+          } else if (stored === 'system') {
+            dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          }
+          // empty / light / unknown → light (promo default)
           document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'light');

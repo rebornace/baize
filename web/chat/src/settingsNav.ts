@@ -27,7 +27,7 @@ import { zhPack } from './locales/zh'
 if (!hasPack()) setPack(zhPack)
 
 export type SettingsRole = 'operator' | 'admin'
-export type SettingsGroup = 'assistant' | 'connect' | 'messaging' | 'system'
+export type SettingsGroup = 'conversation' | 'connect' | 'quality' | 'system'
 export type SettingsAccess = 'full' | 'read' | 'login' | 'locked'
 export type BadgeKind =
   | 'models' | 'tools' | 'skills' | 'openapi' | 'mcp' | 'plugins'
@@ -59,27 +59,27 @@ type NavMeta = {
 
 const ITEM_META: NavMeta[] = [
   {
-    to: '/settings/models', group: 'assistant', icon: Cpu, operator: 'read', badge: 'models',
+    to: '/settings/models', group: 'conversation', icon: Cpu, operator: 'read', badge: 'models',
     labelKey: 'models', descKey: 'modelsDesc',
   },
   {
-    to: '/settings/tools', group: 'assistant', icon: Wrench, operator: 'read', badge: 'tools',
+    to: '/settings/tools', group: 'conversation', icon: Wrench, operator: 'read', badge: 'tools',
     labelKey: 'tools', descKey: 'toolsDesc',
   },
   {
-    to: '/settings/skills', group: 'assistant', icon: Sparkles, operator: 'read', badge: 'skills',
+    to: '/settings/skills', group: 'conversation', icon: Sparkles, operator: 'read', badge: 'skills',
     labelKey: 'skills', descKey: 'skillsDesc',
   },
   {
-    to: '/settings/memory', group: 'assistant', icon: Brain, operator: 'full',
+    to: '/settings/memory', group: 'conversation', icon: Brain, operator: 'full',
     labelKey: 'memory', descKey: 'memoryDesc',
   },
   {
-    to: '/settings/schedules', group: 'assistant', icon: CalendarClock, operator: 'full',
+    to: '/settings/schedules', group: 'conversation', icon: CalendarClock, operator: 'full',
     labelKey: 'schedules', descKey: 'schedulesDesc',
   },
   {
-    to: '/settings/tool-matching', group: 'assistant', icon: Target, operator: 'read',
+    to: '/settings/tool-matching', group: 'conversation', icon: Target, operator: 'read',
     badge: 'toolMatching',
     labelKey: 'toolMatching', descKey: 'toolMatchingDesc',
   },
@@ -104,16 +104,16 @@ const ITEM_META: NavMeta[] = [
     labelKey: 'mcpExport', descKey: 'mcpExportDesc',
   },
   {
-    to: '/settings/channels/weixin', group: 'messaging', icon: MessageCircle,
+    to: '/settings/channels/weixin', group: 'connect', icon: MessageCircle,
     operator: 'login', badge: 'weixin',
     labelKey: 'weixin', descKey: 'weixinDesc',
   },
   {
-    to: '/settings/webhooks', group: 'messaging', icon: Webhook, operator: 'locked', badge: 'webhook',
+    to: '/settings/webhooks', group: 'connect', icon: Webhook, operator: 'locked', badge: 'webhook',
     labelKey: 'webhooks', descKey: 'webhooksDesc',
   },
   {
-    to: '/settings/inbox', group: 'messaging', icon: Inbox, operator: 'locked', badge: 'inbox',
+    to: '/settings/inbox', group: 'connect', icon: Inbox, operator: 'locked', badge: 'inbox',
     labelKey: 'inbox', descKey: 'inboxDesc',
   },
   {
@@ -125,11 +125,11 @@ const ITEM_META: NavMeta[] = [
     labelKey: 'storage', descKey: 'storageDesc',
   },
   {
-    to: '/settings/metrics', group: 'system', icon: Activity, operator: 'locked',
+    to: '/settings/metrics', group: 'quality', icon: Activity, operator: 'locked',
     labelKey: 'metrics', descKey: 'metricsDesc',
   },
   {
-    to: '/settings/eval', group: 'system', icon: FlaskConical, operator: 'locked',
+    to: '/settings/eval', group: 'quality', icon: FlaskConical, operator: 'locked',
     labelKey: 'eval', descKey: 'evalDesc',
   },
   {
@@ -148,9 +148,9 @@ export const OVERVIEW_ITEM = {
 }
 
 export const SETTINGS_GROUPS: { id: SettingsGroup; get label(): string }[] = [
-  { id: 'assistant', get label() { return getPack().SETTINGS_NAV.groupAssistant } },
+  { id: 'conversation', get label() { return getPack().SETTINGS_NAV.groupConversation } },
   { id: 'connect', get label() { return getPack().SETTINGS_NAV.groupConnect } },
-  { id: 'messaging', get label() { return getPack().SETTINGS_NAV.groupMessaging } },
+  { id: 'quality', get label() { return getPack().SETTINGS_NAV.groupQuality } },
   { id: 'system', get label() { return getPack().SETTINGS_NAV.groupSystem } },
 ]
 

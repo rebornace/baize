@@ -24,7 +24,7 @@ export function useTheme() {
     const raw = readStoredTheme(
       typeof localStorage === 'undefined' ? undefined : localStorage,
     )
-    return isChoice(raw) ? raw : 'system'
+    return isChoice(raw) ? raw : 'light'
   })
 
   useEffect(() => {

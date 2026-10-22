@@ -13,9 +13,14 @@ describe('resolveTheme', () => {
     expect(resolveTheme('dark', () => 'light')).toBe('dark')
   })
 
-  it('falls back to the OS preference for empty/unknown stored values', () => {
-    expect(resolveTheme('', () => 'dark')).toBe('dark')
-    expect(resolveTheme('garbage', () => 'light')).toBe('light')
+  it('uses system preference only when stored is system', () => {
+    expect(resolveTheme('system', () => 'dark')).toBe('dark')
+    expect(resolveTheme('system', () => 'light')).toBe('light')
+  })
+
+  it('defaults empty/unknown stored values to light', () => {
+    expect(resolveTheme('', () => 'dark')).toBe('light')
+    expect(resolveTheme('garbage', () => 'dark')).toBe('light')
   })
 })
 
