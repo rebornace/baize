@@ -459,7 +459,7 @@ export function RuntimeSettings() {
   ]
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel settings-runtime">
       <PageHeader
         title={RUNTIME.title}
         description={readOnly ? RUNTIME.descriptionOperator : RUNTIME.descriptionAdmin}

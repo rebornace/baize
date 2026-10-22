@@ -201,7 +201,7 @@ function ToolCardImpl({
       )}
 
       {waiting && (
-        <div className="tool-card-actions">
+        <div className="tool-card-actions hitl-actions">
           {showComment && (
             <input
               className="hitl-comment"
@@ -216,7 +216,7 @@ function ToolCardImpl({
             {HITL.approve}
           </Button>
           {!showComment ? (
-            <Button size="sm" variant="danger" disabled={busy} onClick={() => setShowComment(true)}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setShowComment(true)}>
               {HITL.reject}
             </Button>
           ) : (

@@ -81,12 +81,9 @@ export function AnalysisPagePreview({ artifactUrl }: AnalysisPagePreviewProps) {
   return (
     <div className="analysis-page-preview">
       {src ? (
-        <iframe
-          sandbox="allow-scripts"
-          src={src}
-          height={480}
-          title={CHAT.analysisPreviewTitle}
-        />
+        <div className="analysis-page-preview-frame">
+          <iframe sandbox="allow-scripts" src={src} title={CHAT.analysisPreviewTitle} />
+        </div>
       ) : (
         <div className="analysis-page-preview-loading">
           {error ? CHAT.analysisPreviewFailed(error) : CHAT.analysisPreviewLoading}

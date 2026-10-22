@@ -40,7 +40,7 @@ export function ToolsSettings() {
     )
 
   return (
-    <div className="settings-section settings-tools">
+    <div className="settings-panel settings-tools">
       <PageHeader title={TOOLS.title} description={TOOLS.description} actions={headerActions} />
       <ToastRegion toasts={s.toasts} onDismiss={s.dismiss} />
       {s.loadFailed && <p className="settings-error">{s.loadError}</p>}

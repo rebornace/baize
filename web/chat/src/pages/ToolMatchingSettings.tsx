@@ -452,7 +452,7 @@ export function ToolMatchingSettings() {
   }
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel settings-tool-matching">
       <PageHeader title={RUNTIME.sectionToolMatch} description={RUNTIME.toolMatchHint} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 

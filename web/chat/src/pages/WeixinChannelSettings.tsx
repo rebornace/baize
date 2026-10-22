@@ -328,7 +328,7 @@ export function WeixinChannelSettings() {
   }
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel settings-weixin">
       <PageHeader title={WEIXIN.title} description={WEIXIN.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 

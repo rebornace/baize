@@ -59,8 +59,10 @@ export function SettingsLayout() {
           })}
         </nav>
         <div className="settings-nav-bottom">
-          <ThemeToggle />
-          <Link to="/" className="settings-back">
+          <div className="sidebar-chrome-row">
+            <ThemeToggle />
+          </div>
+          <Link to="/" className="settings-link">
             {navCopy.backToChat}
           </Link>
         </div>
