@@ -136,7 +136,7 @@ export function ConnectorShell({
                   </>
                 }>
                 {summary && <p className="connector-perm">{summary}</p>}
-                <div className="connector-card-actions">
+                <div className="connector-card-actions model-profile-actions">
                   <Link to="/settings/tools" className="btn ghost sm">{CONNECTORS.toolsLink}</Link>
                   <DropdownMenu
                     triggerLabel={`${row.id} 操作`}

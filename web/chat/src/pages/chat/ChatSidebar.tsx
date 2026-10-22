@@ -4,6 +4,8 @@ import { LanguageChip } from '../../components/LanguageChip'
 import { SidebarResizer } from '../../components/SidebarResizer'
 import { ThemeToggle } from '../../components/ui'
 import { conversationListLabel } from '../../conversationLabel'
+import { conversationUpdatedLabel } from '../../conversationUpdatedLabel'
+import { useLocale } from '../../locale/LocaleContext'
 import { clearControlToken } from '../../controlAuth'
 import { CHAT } from '../../strings'
 
@@ -40,9 +42,21 @@ export function ChatSidebar({
   onSwitchWorkspace,
   onCreateWorkspace,
 }: ChatSidebarProps) {
+  const { locale } = useLocale()
+
   return (
     <aside className="chat-sidebar" aria-label={CHAT.conversationListAria}>
       <div className="chat-sidebar-top">
+        <button
+          type="button"
+          className="btn primary sidebar-new"
+          onClick={() => {
+            onNewChat()
+            onCloseDrawer()
+          }}
+        >
+          {CHAT.newChat}
+        </button>
         <div className="workspace-picker">
           <label className="workspace-picker-label" htmlFor="workspace-select">
             {CHAT.workspaceLabel}
@@ -66,7 +80,7 @@ export function ChatSidebar({
           </select>
           <button
             type="button"
-            className="btn ghost workspace-new"
+            className="btn ghost sm workspace-new"
             onClick={() => {
               const name = window.prompt(CHAT.newWorkspacePrompt)?.trim()
               if (!name) return
@@ -76,16 +90,6 @@ export function ChatSidebar({
             {CHAT.newWorkspace}
           </button>
         </div>
-        <button
-          type="button"
-          className="btn ghost sidebar-new"
-          onClick={() => {
-            onNewChat()
-            onCloseDrawer()
-          }}
-        >
-          {CHAT.newChat}
-        </button>
         {role === 'admin' && (
           <div className="conversation-scope" role="group" aria-label={CHAT.scopeAria}>
             <button
@@ -127,7 +131,12 @@ export function ChatSidebar({
                   onCloseDrawer()
                 }}
               >
-                {conversationListLabel(c.id, c.title)}
+                <span className="conversation-item-title">
+                  {conversationListLabel(c.id, c.title)}
+                </span>
+                <span className="conversation-item-meta">
+                  {conversationUpdatedLabel(c.updated_at, locale)}
+                </span>
               </button>
               <button
                 type="button"
@@ -150,24 +159,26 @@ export function ChatSidebar({
           <ThemeToggle />
           <LanguageChip />
         </div>
-        <Link
-          to={role === 'admin' ? '/settings' : '/settings/identities'}
-          className="settings-link"
-        >
-          {role === 'admin' ? CHAT.linkSettings : CHAT.linkAccounts}
-        </Link>
-        {gateEnabled && (
-          <button
-            type="button"
-            className="settings-logout"
-            onClick={() => {
-              clearControlToken()
-              window.location.assign('/ui/')
-            }}
+        <div className="sidebar-footer-links">
+          <Link
+            to={role === 'admin' ? '/settings' : '/settings/identities'}
+            className="settings-link"
           >
-            {CHAT.logout}
-          </button>
-        )}
+            {role === 'admin' ? CHAT.linkSettings : CHAT.linkAccounts}
+          </Link>
+          {gateEnabled && (
+            <button
+              type="button"
+              className="settings-logout"
+              onClick={() => {
+                clearControlToken()
+                window.location.assign('/ui/')
+              }}
+            >
+              {CHAT.logout}
+            </button>
+          )}
+        </div>
       </div>
       <SidebarResizer />
     </aside>

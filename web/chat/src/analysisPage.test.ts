@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { extractAnalysisPagesFromEvents, parseAnalysisPageResult } from './analysisPage'
+import {
+  extractAnalysisPagesFromEvents,
+  isArtifactUrl,
+  parseAnalysisPageResult,
+} from './analysisPage'
+
+describe('isArtifactUrl', () => {
+  it('matches control-plane artifact paths', () => {
+    expect(isArtifactUrl('/v0/artifacts/art_1')).toBe(true)
+    expect(isArtifactUrl('https://example.com/v0/artifacts/x')).toBe(false)
+    expect(isArtifactUrl('/other/path')).toBe(false)
+  })
+})
 
 describe('parseAnalysisPageResult', () => {
   it('parses artifact_url', () => {

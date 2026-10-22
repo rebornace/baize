@@ -21,27 +21,11 @@ export {
 export function ToolsSettings() {
   const s = useToolsSettings()
 
-  const headerActions =
-    s.tools === null ? undefined : (
-      <div className="settings-toolbar">
-        <input
-          className="settings-input"
-          value={s.query}
-          onChange={(e) => s.setQuery(e.target.value)}
-          placeholder={TOOLS.searchPlaceholder}
-          aria-label={TOOLS.searchAria}
-        />
-        {s.showAdd && !s.readOnly && (
-          <Button type="button" variant="secondary" size="sm" onClick={s.openAddModal}>
-            {TOOLS.addTool}
-          </Button>
-        )}
-      </div>
-    )
+  const showListChrome = s.tools !== null && s.tools.length > 0
 
   return (
     <div className="settings-panel settings-tools">
-      <PageHeader title={TOOLS.title} description={TOOLS.description} actions={headerActions} />
+      <PageHeader title={TOOLS.title} description={TOOLS.description} />
       <ToastRegion toasts={s.toasts} onDismiss={s.dismiss} />
       {s.loadFailed && <p className="settings-error">{s.loadError}</p>}
       {s.tools === null && !s.loadFailed && <p className="settings-muted">{TOOLS.loading}</p>}
@@ -57,35 +41,53 @@ export function ToolsSettings() {
               )}
             </p>
           )}
-          {s.tools.length > 0 && s.visible.length === 0 && <p className="settings-empty">无匹配</p>}
-          {s.visible.length > 0 && (
-            <ToolsTree
-              tree={s.tree}
-              readOnly={s.readOnly}
-              rowBusy={s.rowBusy}
-              groupBusy={s.groupBusy}
-              toggling={s.toggling}
-              savingCopy={s.savingCopy}
-              editingKey={s.editingKey}
-              setEditingKey={s.setEditingKey}
-              draftTitle={s.draftTitle}
-              setDraftTitle={s.setDraftTitle}
-              draftDescription={s.draftDescription}
-              setDraftDescription={s.setDraftDescription}
-              deleting={s.deleting}
-              pendingDelete={s.pendingDelete}
-              isConnectorOpen={s.isConnectorOpen}
-              isPrefixOpen={s.isPrefixOpen}
-              setExpandedConnectors={s.setExpandedConnectors}
-              setExpandedPrefixes={s.setExpandedPrefixes}
-              onEnabledChange={s.onEnabledChange}
-              onRequireLoginChange={s.onRequireLoginChange}
-              onRequireApprovalChange={s.onRequireApprovalChange}
-              beginDelete={s.beginDelete}
-              onGroupEnabled={s.onGroupEnabled}
-              startEdit={s.startEdit}
-              onSaveCopy={s.onSaveCopy}
-            />
+          {showListChrome && (
+            <div className="settings-tools-list-shell">
+              <div className="settings-toolbar settings-tools-toolbar">
+                <input
+                  className="settings-input"
+                  value={s.query}
+                  onChange={(e) => s.setQuery(e.target.value)}
+                  placeholder={TOOLS.searchPlaceholder}
+                  aria-label={TOOLS.searchAria}
+                />
+                {s.showAdd && !s.readOnly && (
+                  <Button type="button" variant="secondary" size="sm" onClick={s.openAddModal}>
+                    {TOOLS.addTool}
+                  </Button>
+                )}
+              </div>
+              {s.visible.length === 0 && <p className="settings-empty settings-tools-empty">无匹配</p>}
+              {s.visible.length > 0 && (
+                <ToolsTree
+                  tree={s.tree}
+                  readOnly={s.readOnly}
+                  rowBusy={s.rowBusy}
+                  groupBusy={s.groupBusy}
+                  toggling={s.toggling}
+                  savingCopy={s.savingCopy}
+                  editingKey={s.editingKey}
+                  setEditingKey={s.setEditingKey}
+                  draftTitle={s.draftTitle}
+                  setDraftTitle={s.setDraftTitle}
+                  draftDescription={s.draftDescription}
+                  setDraftDescription={s.setDraftDescription}
+                  deleting={s.deleting}
+                  pendingDelete={s.pendingDelete}
+                  isConnectorOpen={s.isConnectorOpen}
+                  isPrefixOpen={s.isPrefixOpen}
+                  setExpandedConnectors={s.setExpandedConnectors}
+                  setExpandedPrefixes={s.setExpandedPrefixes}
+                  onEnabledChange={s.onEnabledChange}
+                  onRequireLoginChange={s.onRequireLoginChange}
+                  onRequireApprovalChange={s.onRequireApprovalChange}
+                  beginDelete={s.beginDelete}
+                  onGroupEnabled={s.onGroupEnabled}
+                  startEdit={s.startEdit}
+                  onSaveCopy={s.onSaveCopy}
+                />
+              )}
+            </div>
           )}
         </>
       )}

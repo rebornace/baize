@@ -47,6 +47,9 @@ export function SettingsHome() {
               : null)
         : null
     const Icon = item.icon
+    const trailing = badge
+      ? <span className="settings-card-trailing">{badge}</span>
+      : undefined
     return (
       <Card
         key={item.to}
@@ -54,7 +57,7 @@ export function SettingsHome() {
         icon={<Icon size={20} aria-hidden="true" />}
         title={item.label}
         description={item.desc}
-        trailing={<span className="settings-card-trailing">{badge}</span>}
+        trailing={trailing}
         onClick={isLocked ? undefined : () => navigate(item.to)}
       />
     )

@@ -1,4 +1,13 @@
 import { memo, type ReactNode } from 'react'
+import { isArtifactUrl } from '../analysisPage'
+import { CHAT } from '../strings'
+
+function linkLabel(text: string, href: string): string {
+  if (isArtifactUrl(href) && (text === href || text.includes('/artifacts/'))) {
+    return CHAT.analysisOpenLink
+  }
+  return text
+}
 
 function inlineMarkdown(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
@@ -24,13 +33,14 @@ function inlineMarkdown(text: string): ReactNode[] {
     } else if (m[2] && m[3]) {
       const href = m[3]
       const safe = href.startsWith('http://') || href.startsWith('https://') || href.startsWith('/')
+      const label = linkLabel(m[2], href)
       nodes.push(
         safe ? (
           <a key={key++} href={href} target="_blank" rel="noreferrer" className="md-link">
-            {m[2]}
+            {label}
           </a>
         ) : (
-          m[2]
+          label
         ),
       )
     }

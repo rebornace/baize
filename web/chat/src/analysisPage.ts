@@ -4,6 +4,13 @@ export interface AnalysisPageParsed {
   artifactUrl: string
 }
 
+const ARTIFACT_PATH_RE = /^\/v0\/artifacts\//
+
+/** Control-plane artifact URLs shown in chat (not arbitrary paths). */
+export function isArtifactUrl(href: string): boolean {
+  return ARTIFACT_PATH_RE.test(href)
+}
+
 export function parseAnalysisPageResult(content: unknown): AnalysisPageParsed | null {
   if (content == null) return null
   let obj: Record<string, unknown>

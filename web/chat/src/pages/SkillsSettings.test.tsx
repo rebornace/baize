@@ -132,7 +132,7 @@ describe('SkillsSettings humanized shell', () => {
     expect(host.querySelector('input[type="file"]')).toBeNull()
     expect(host.textContent).not.toContain(SKILLS.saveDefaults)
     expect(host.textContent).not.toContain(SKILLS.confirmDeleteOk)
-    const badges = [...host.querySelectorAll('.ui-badge, [class*="Badge"], .settings-tool-actions *')]
+    const badges = [...host.querySelectorAll('.ui-badge, [class*="Badge"]')]
     expect(badges.some((el) => el.textContent === SKILLS.defaultBadge)).toBe(false)
     expect(getAgentSpy).not.toHaveBeenCalled()
     expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(0)

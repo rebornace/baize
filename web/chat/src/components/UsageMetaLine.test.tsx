@@ -17,7 +17,9 @@ describe('UsageMetaLine', () => {
       savedTokens: 0,
       cachedTokens: 0,
     })
+    expect(html).toContain('msg-usage-details')
     expect(html).toContain('msg-usage')
+    expect(html).toContain('用量 · 40')
     expect(html).toContain('输入 30')
     expect(html).toContain('输出 10')
     expect(html).toContain('共 40 tokens')
@@ -43,8 +45,8 @@ describe('UsageMetaLine', () => {
       savedTokens: 53,
       cachedTokens: 0,
     })
+    expect(html).toContain('智能提速 · 约省 53')
     expect(html).toContain('约节省 53 tokens')
-    expect(html).toContain('智能提速约节省')
   })
 
   it('renders combined usage and savings', () => {
@@ -55,6 +57,7 @@ describe('UsageMetaLine', () => {
       savedTokens: 53,
       cachedTokens: 0,
     })
+    expect(html).toContain('用量 · 40 · 约省 53')
     expect(html).toContain('共 40 tokens')
     expect(html).toContain('智能提速约节省 53 tokens')
   })

@@ -14,10 +14,13 @@ export interface AnalysisPagePreviewProps {
  */
 export function AnalysisPagePreview({ artifactUrl }: AnalysisPagePreviewProps) {
   const { gateEnabled } = useGate()
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [src, setSrc] = useState<string | null>(gateEnabled ? null : artifactUrl)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!previewOpen) return
+
     let revoked: string | null = null
     let cancelled = false
 
@@ -55,7 +58,7 @@ export function AnalysisPagePreview({ artifactUrl }: AnalysisPagePreviewProps) {
       cancelled = true
       if (revoked) URL.revokeObjectURL(revoked)
     }
-  }, [artifactUrl, gateEnabled])
+  }, [artifactUrl, gateEnabled, previewOpen])
 
   const openInNewTab = async () => {
     if (!gateEnabled) {
@@ -79,19 +82,38 @@ export function AnalysisPagePreview({ artifactUrl }: AnalysisPagePreviewProps) {
   }
 
   return (
-    <div className="analysis-page-preview">
-      {src ? (
-        <div className="analysis-page-preview-frame">
-          <iframe sandbox="allow-scripts" src={src} title={CHAT.analysisPreviewTitle} />
+    <div className="analysis-page-preview" data-testid="analysis-page-preview">
+      <div className="analysis-page-preview-bar">
+        <span className="analysis-page-preview-label">{CHAT.analysisPreviewTitle}</span>
+        <div className="analysis-page-preview-actions">
+          <button
+            type="button"
+            className="analysis-page-preview-toggle"
+            aria-expanded={previewOpen}
+            onClick={() => setPreviewOpen((v) => !v)}
+          >
+            {previewOpen ? CHAT.analysisCollapsePreview : CHAT.analysisExpandPreview}
+          </button>
+          <button
+            type="button"
+            className="analysis-page-preview-link"
+            onClick={() => void openInNewTab()}
+          >
+            {CHAT.analysisOpenLink}
+          </button>
         </div>
-      ) : (
-        <div className="analysis-page-preview-loading">
-          {error ? CHAT.analysisPreviewFailed(error) : CHAT.analysisPreviewLoading}
-        </div>
-      )}
-      <button type="button" className="analysis-page-preview-link" onClick={() => void openInNewTab()}>
-        {CHAT.analysisOpenTab}
-      </button>
+      </div>
+      {previewOpen ? (
+        src ? (
+          <div className="analysis-page-preview-frame">
+            <iframe sandbox="allow-scripts" src={src} title={CHAT.analysisPreviewTitle} />
+          </div>
+        ) : (
+          <div className="analysis-page-preview-loading">
+            {error ? CHAT.analysisPreviewFailed(error) : CHAT.analysisPreviewLoading}
+          </div>
+        )
+      ) : null}
     </div>
   )
 }

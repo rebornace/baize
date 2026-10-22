@@ -1,5 +1,6 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { Menu } from 'lucide-react'
+import { LanguageChip } from '../components/LanguageChip'
 import { ThemeToggle } from '../components/ui'
 import { SidebarResizer } from '../components/SidebarResizer'
 import { useGate } from '../gateContext'
@@ -61,6 +62,7 @@ export function SettingsLayout() {
         <div className="settings-nav-bottom">
           <div className="sidebar-chrome-row">
             <ThemeToggle />
+            <LanguageChip />
           </div>
           <Link to="/" className="settings-link">
             {navCopy.backToChat}

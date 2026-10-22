@@ -94,23 +94,31 @@
   --font-sans: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", sans-serif;
   --chat-max: 52rem;
+  /* 设置主栏阅读宽度（总览网格上限；子页 panel 可更窄） */
+  --settings-content-max: 68rem;
+  --settings-panel-max: 48rem;
   --t-fast: 120ms ease;
   --t: 180ms ease;
   --z-drawer: 1000;
   --z-dropdown: 1050;
   --z-modal: 1100;
   --z-toast: 1200;
+
+  /* 滚动条（P4-12：细轨，引用 token 勿写死色） */
+  --scrollbar-size: 6px;
+  --scrollbar-thumb: var(--border-strong);
+  --scrollbar-track: transparent;
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
 
   --bg: #0b0d12;
-  --surface: #151922;
-  --surface-2: #1c212c;
-  --sidebar: #12161e;
-  --border: #2a3344;
-  --border-strong: #3d4a5f;
+  --surface: #171c27;
+  --surface-2: #1f2633;
+  --sidebar: #131820;
+  --border: #2f3a4d;
+  --border-strong: #445268;
 
   --text: #e8ecf4;
   --text-muted: #94a3b8;
@@ -138,14 +146,14 @@ html[data-theme="dark"] {
   --on-danger: #ffffff;
   --danger-soft: rgba(248, 113, 113, 0.16);
   --info: #60a5fa;
-  --info-soft: rgba(96, 165, 250, 0.16);
+  --info-soft: rgba(96, 165, 250, 0.2);
 
   --user-bubble: #2a3140;
   --assistant-bubble: transparent;
   --system-bubble: #1a1e26;
 
-  --hitl-border: color-mix(in srgb, var(--info) 38%, var(--border-strong));
-  --hitl-bg: color-mix(in srgb, var(--info-soft) 55%, var(--surface-2));
+  --hitl-border: color-mix(in srgb, var(--info) 44%, var(--border-strong));
+  --hitl-bg: color-mix(in srgb, var(--info-soft) 72%, var(--surface-2));
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);

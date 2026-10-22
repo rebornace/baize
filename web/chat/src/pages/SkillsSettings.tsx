@@ -12,6 +12,7 @@ import {
 import {
   Badge,
   Button,
+  Card,
   ConfirmDialog,
   EmptyState,
   PageHeader,
@@ -294,71 +295,69 @@ export function SkillsSettings() {
       )}
 
       {skills !== null && skills.length > 0 && (
-        <ul className="settings-list">
+        <div className="connector-list settings-skills-list">
           {skills.map((s) => {
             const title = skillDisplayName(s, locale)
             const desc = skillLocalizedDescription(s, locale)
-            // Show id when the title is a human blurb (not the bare id).
             const showId = title !== s.id
-            // Never dump raw English tool ids under a localized title — count only.
             const toolsLine = skillToolsCountLabel(s.tools?.length ?? 0)
-            const sourceBadge = (
-              <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>{skillSourceLabel(s.source)}</Badge>
-            )
-            const meta = (
-              <span className="settings-skill-line">
-                <span className="settings-tool-title">{title}</span>
-                {showId ? <span className="settings-tool-sub">{s.id}</span> : null}
-                {skillShowSecondaryDescription(s, locale) ? (
-                  <span className="settings-muted">{desc}</span>
-                ) : null}
-                {toolsLine ? <span className="settings-muted">{toolsLine}</span> : null}
-              </span>
-            )
             const evalExpanded = expandedEvalSkillId === s.id
+            const titleNode = readOnly ? (
+              title
+            ) : (
+              <label className="settings-skill-check-title">
+                <input
+                  type="checkbox"
+                  checked={selected.has(s.id)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
+                  }}
+                />
+                <span>{title}</span>
+              </label>
+            )
             return (
-              <li key={s.id} className="settings-list-item settings-skill-block">
-                <div className="settings-skill-row">
-                  {readOnly ? (
-                    meta
-                  ) : (
-                    <label className="settings-login-toggle settings-skill-check">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(s.id)}
-                        disabled={busy}
-                        onChange={(e) => {
-                          setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
-                        }}
-                      />
-                      {meta}
-                    </label>
-                  )}
-                  <span className="settings-tool-actions settings-skills-actions">
-                    <span className="settings-muted">{skillEvalCountLabel(s.eval_case_count)}</span>
+              <Card
+                key={s.id}
+                className="connector-card skill-profile-card"
+                title={titleNode}
+                trailing={
+                  <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>
+                    {skillSourceLabel(s.source)}
+                  </Badge>
+                }
+              >
+                <div className="skill-profile-meta">
+                  {showId ? <p className="settings-tool-sub">{s.id}</p> : null}
+                  {skillShowSecondaryDescription(s, locale) ? (
+                    <p className="settings-muted">{desc}</p>
+                  ) : null}
+                  {toolsLine ? <p className="settings-muted">{toolsLine}</p> : null}
+                  <p className="settings-muted">{skillEvalCountLabel(s.eval_case_count)}</p>
+                </div>
+                <div className="connector-card-actions model-profile-actions">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    aria-expanded={evalExpanded}
+                    onClick={() =>
+                      setExpandedEvalSkillId((prev) => (prev === s.id ? null : s.id))
+                    }
+                  >
+                    {evalExpanded ? SKILLS.evalClose : SKILLS.evalOpen}
+                  </Button>
+                  {s.source === 'user' && !readOnly && (
                     <Button
                       size="sm"
-                      variant="secondary"
+                      variant="danger"
                       disabled={busy}
-                      aria-expanded={evalExpanded}
-                      onClick={() =>
-                        setExpandedEvalSkillId((prev) => (prev === s.id ? null : s.id))
-                      }
+                      onClick={() => beginDelete(s)}
                     >
-                      {evalExpanded ? SKILLS.evalClose : SKILLS.evalOpen}
+                      {SKILLS.confirmDeleteOk}
                     </Button>
-                    {sourceBadge}
-                    {s.source === 'user' && !readOnly && (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => beginDelete(s)}
-                      >
-                        {SKILLS.confirmDeleteOk}
-                      </Button>
-                    )}
-                  </span>
+                  )}
                 </div>
                 {evalExpanded && (
                   <SkillEvalPanel
@@ -368,10 +367,10 @@ export function SkillsSettings() {
                     onEvalMutated={() => void refreshList()}
                   />
                 )}
-              </li>
+              </Card>
             )
           })}
-        </ul>
+        </div>
       )}
 
       {!readOnly && (

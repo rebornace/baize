@@ -28,13 +28,13 @@ describe('Composer', () => {
     expect(inputMatch![0]).not.toContain('aria-label="添加"')
   })
 
-  it('lists available skill ids and reload hint when skills are provided', () => {
+  it('summarizes skills and shows reload hint when skills are provided', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, skills }),
     )
-    expect(html).toContain('composer-hint')
-    expect(html).toContain('search')
-    expect(html).toContain('sum')
+    expect(html).toContain('composer-meta')
+    expect(html).toContain('2 个技能')
+    expect(html).not.toContain('@search')
     expect(html).toContain('/reload')
   })
 
@@ -42,13 +42,13 @@ describe('Composer', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, skills: [] }),
     )
-    expect(html).toContain('composer-hint')
+    expect(html).toContain('composer-meta')
     expect(html).toContain('/reload')
   })
 
   it('omits the hint when skills prop is omitted', () => {
     const html = renderToStaticMarkup(createElement(Composer, { onSend: () => {} }))
-    expect(html).not.toContain('composer-hint')
+    expect(html).not.toContain('composer-meta')
   })
 
   it('disables the plus trigger and inputs when disabled prop is set', () => {

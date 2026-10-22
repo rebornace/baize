@@ -117,6 +117,18 @@ describe('SettingsHome', () => {
     expect(host.querySelector('a[href="/settings/models"]')).toBeNull()
   })
 
+  it('refresh control uses ghost button styling', async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async () => jsonResponse({ profiles: [{ id: 'm1' }] }))
+    render('admin')
+    await settle()
+    const btn = host.querySelector('button.settings-refresh-btn') as HTMLButtonElement
+    expect(btn).toBeTruthy()
+    expect(btn.className).toContain('btn')
+    expect(btn.className).toContain('ghost')
+    expect(btn.className).toContain('sm')
+    expect(btn.textContent).toContain('刷新状态')
+  })
+
   it('clicking the refresh button re-fetches badge data', async () => {
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockImplementation(async () => jsonResponse({ profiles: [{ id: 'm1' }] }))

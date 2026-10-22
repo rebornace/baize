@@ -1,5 +1,5 @@
 import type { ToolInfo } from '../../api'
-import { Badge, Button } from '../../components/ui'
+import { Badge, Button, DropdownMenu } from '../../components/ui'
 import { canDeleteCatalogTool } from '../../toolCatalog'
 import { TOOLS } from '../../strings'
 import {
@@ -71,33 +71,32 @@ export function ToolsTree(props: TreeProps) {
     onSaveCopy,
   } = props
 
-  const renderGroupButtons = (groupKey: string, rows: ToolInfo[]) => {
+  const renderGroupMenu = (groupKey: string, rows: ToolInfo[]) => {
     if (readOnly) return null
     const lockGroups = groupBusy !== null || toggling !== null || savingCopy
     return (
-      <span className="settings-group-actions" onClick={(e) => e.stopPropagation()}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
+      <span className="settings-group-batch" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu
+          triggerLabel={TOOLS.groupBatchAria}
+          triggerClassName="btn ghost sm"
           disabled={lockGroups}
-          onClick={() => {
-            void onGroupEnabled(groupKey, rows, true)
-          }}
-        >
-          {TOOLS.enableAll}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={lockGroups}
-          onClick={() => {
-            void onGroupEnabled(groupKey, rows, false)
-          }}
-        >
-          {TOOLS.disableAll}
-        </Button>
+          items={[
+            {
+              id: 'enable-all',
+              label: TOOLS.enableAll,
+              onSelect: () => {
+                void onGroupEnabled(groupKey, rows, true)
+              },
+            },
+            {
+              id: 'disable-all',
+              label: TOOLS.disableAll,
+              onSelect: () => {
+                void onGroupEnabled(groupKey, rows, false)
+              },
+            },
+          ]}
+        />
       </span>
     )
   }
@@ -114,7 +113,18 @@ export function ToolsTree(props: TreeProps) {
       <li key={key} className="settings-tool-row">
         <div className="settings-list-item">
           <span className="settings-tool-line">
-            <span className="settings-tool-title">{t.title || t.name}</span>
+            <span className="settings-tool-head">
+              <span
+                className={`settings-status-dot${enabled ? ' on' : ''}`}
+                aria-hidden="true"
+              />
+              <span className="settings-tool-title">{t.title || t.name}</span>
+              {!readOnly && (
+                <Badge tone={enabled ? 'success' : 'neutral'} className="settings-tool-status-badge">
+                  {enabled ? TOOLS.statusEnabled : TOOLS.statusDisabled}
+                </Badge>
+              )}
+            </span>
             {t.description ? <span className="settings-tool-desc">{t.description}</span> : null}
             {(methodPath !== '' || schemaText !== '{}') && (
               <details className="settings-tool-tech">
@@ -259,7 +269,7 @@ export function ToolsTree(props: TreeProps) {
               <span className="settings-group-meta">
                 {TOOLS.groupMeta(groupRows.length, enabledCount(groupRows))}
               </span>
-              {renderGroupButtons(connectorKey, groupRows)}
+              {renderGroupMenu(connectorKey, groupRows)}
             </div>
             {connectorOpen && (
               <div className="settings-group-body">
@@ -280,7 +290,7 @@ export function ToolsTree(props: TreeProps) {
                         <span className="settings-group-meta">
                           {TOOLS.groupMeta(prefixGroup.tools.length, enabledCount(prefixGroup.tools))}
                         </span>
-                        {renderGroupButtons(prefixBusyKey, prefixGroup.tools)}
+                        {renderGroupMenu(prefixBusyKey, prefixGroup.tools)}
                       </div>
                       {prefixOpen && (
                         <ul className="settings-list settings-tree-tools">{prefixGroup.tools.map(renderTool)}</ul>

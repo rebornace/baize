@@ -30,3 +30,34 @@ select,
 textarea {
   font: inherit;
 }
+
+/* P4-12：主滚动区与侧栏细滚动条（WebKit 全局 + Firefox 按容器） */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.chat-sidebar-top,
+.settings-nav-list,
+.messages,
+.settings-main,
+.modal-content,
+.tool-card-body,
+.tool-card-json,
+.hitl-head,
+.hitl-evidence,
+.goal-bar-picker,
+.settings-drawer,
+.activity-steps-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}

@@ -5,6 +5,16 @@ export type UsageMetaLineProps = {
   usage: UsageMeta
 }
 
+function usageSummaryLabel(usage: UsageMeta, hasUsage: boolean, hasSaved: boolean): string {
+  if (hasUsage && hasSaved) {
+    return CHAT.usageSummaryBoth(usage.totalTokens, usage.savedTokens)
+  }
+  if (hasUsage) {
+    return CHAT.usageSummaryShort(usage.totalTokens)
+  }
+  return CHAT.usageSavedSummaryShort(usage.savedTokens)
+}
+
 // UsageMetaLine renders real per-run token usage and/or the estimated tokens
 // saved when the decision layer skipped memory extraction. Nothing renders
 // when there is nothing to report.
@@ -34,8 +44,11 @@ export function UsageMetaLine({ usage }: UsageMetaLineProps) {
   }
 
   return (
-    <p className="msg-usage" data-testid="usage-line">
-      {text}
-    </p>
+    <details className="msg-usage-details">
+      <summary className="msg-usage-summary">{usageSummaryLabel(usage, hasUsage, hasSaved)}</summary>
+      <p className="msg-usage" data-testid="usage-line">
+        {text}
+      </p>
+    </details>
   )
 }

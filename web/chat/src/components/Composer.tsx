@@ -68,6 +68,7 @@ export function Composer({
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [completion, setCompletion] = useState<Completion | null>(null)
+  const [skillsExpanded, setSkillsExpanded] = useState(false)
   const locale = composerLocale()
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -366,17 +367,31 @@ export function Composer({
         )}
       </div>
       {showHint && (
-        <span className="composer-hint" aria-hidden="true">
-          {skillsById.size > 0 && (
-            <>
-              {CHAT.availableSkills}
-              {Array.from(skillsById.keys()).slice(0, 6).join(CHAT.skillListSep)}
-              {skillsById.size > 6 ? '…' : ''}
-              {CHAT.skillListSep}
-            </>
+        <div className="composer-meta">
+          <div className="composer-meta-row">
+            {skillsById.size > 0 ? (
+              <button
+                type="button"
+                className="composer-skills-toggle"
+                aria-expanded={skillsExpanded}
+                aria-label={skillsExpanded ? CHAT.skillsCollapseAria : CHAT.skillsExpandAria}
+                onClick={() => setSkillsExpanded((open) => !open)}
+              >
+                {CHAT.skillsSummary(skillsById.size)}
+              </button>
+            ) : null}
+            <span className="composer-reload-hint">{CHAT.reloadHint}</span>
+          </div>
+          {skillsExpanded && skillsById.size > 0 && (
+            <div className="composer-skills-chips" role="list" aria-label={CHAT.availableSkillsAria}>
+              {Array.from(skillsById.keys()).map((id) => (
+                <span key={id} className="composer-skill-chip" role="listitem">
+                  @{id}
+                </span>
+              ))}
+            </div>
           )}
-          {CHAT.reloadHint}
-        </span>
+        </div>
       )}
     </div>
   )

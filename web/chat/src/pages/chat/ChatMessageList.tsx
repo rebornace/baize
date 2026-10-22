@@ -165,6 +165,7 @@ export function ChatMessageList({
         {showWelcome && (
           <div className="welcome">
             <span className="welcome-mark" aria-hidden="true" />
+            <p className="welcome-brand">{WELCOME.brand}</p>
             <p className="welcome-title">{WELCOME.title}</p>
             <p className="welcome-sub">{WELCOME.subtitle}</p>
           </div>
