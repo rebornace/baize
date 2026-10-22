@@ -2,7 +2,24 @@ package store
 
 import (
 	"database/sql"
+	"time"
 )
+
+func (s *SQLStore) ListRunsByConversationSince(conversationID string, since time.Time, limit int) ([]*Run, error) {
+	if conversationID == "" {
+		return nil, nil
+	}
+	limit = normalizeConversationRunsLimit(limit)
+	since = since.UTC()
+	rows, err := s.query(
+		`SELECT `+runSelectColumns+` FROM runs WHERE conversation_id = ? AND created_at >= ? ORDER BY created_at ASC LIMIT ?`,
+		conversationID, s.timeArg(since), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanRuns(rows)
+}
 
 func (s *SQLStore) LatestConversationRun(conversationID string) (*Run, error) {
 	if conversationID == "" {

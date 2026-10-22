@@ -531,6 +531,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("GET /v0/settings/logs", s.handleGetRecentLogs)
 	s.mux.HandleFunc("GET /v0/settings/eval/runs", s.handleGetEvalRuns)
+	s.mux.HandleFunc("GET /v0/settings/eval/runs/{id}/skill-draft", s.handleGetEvalRunSkillDraft)
+	s.mux.HandleFunc("POST /v0/settings/eval/runs/{id}/skill-draft/install", s.handlePostEvalRunSkillDraftInstall)
 	s.mux.HandleFunc("POST /v0/settings/eval/cases", s.handlePostEvalCase)
 	s.mux.HandleFunc("GET /v0/settings/eval/cases", s.handleListEvalCases)
 	s.mux.HandleFunc("GET /v0/settings/eval/cases/{id}", s.handleGetEvalCase)

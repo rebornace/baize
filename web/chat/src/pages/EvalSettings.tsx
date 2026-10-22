@@ -11,9 +11,12 @@ import {
   putCalibration,
   queryEvalRuns,
   scoreEvalCase,
+  fetchSkillDraft,
+  installSkillDraft,
   type EvalCalibrationSummary,
   type EvalCandidate,
   type EvalCase,
+  type SkillDraftResponse,
 } from '../api/eval'
 import { listEvents } from '../api/runs'
 import type { Event } from '../api/types'
@@ -152,6 +155,11 @@ export function EvalSettings() {
   const [calibrationSummary, setCalibrationSummary] = useState<EvalCalibrationSummary | null>(null)
   const [calibrationNotes, setCalibrationNotes] = useState<Record<string, string>>({})
   const [mockBaseUrls, setMockBaseUrls] = useState<Record<string, string>>({})
+  const [skillDraftModal, setSkillDraftModal] = useState<{
+    runId: string
+    draft: SkillDraftResponse | null
+  } | null>(null)
+  const [skillDraftMarkdown, setSkillDraftMarkdown] = useState('')
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -293,6 +301,55 @@ export function EvalSettings() {
       }
       setExpectationModal(null)
       await refreshCasesAndSummary()
+    } catch (err) {
+      const f = friendlyError(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const digSkillVariant = (c: EvalCandidate): 'primary' | 'secondary' => {
+    if (c.status === 'failed') return 'primary'
+    const hitl = eventType.trim().toLowerCase()
+    if (hitl.includes('hitl')) return 'primary'
+    return 'secondary'
+  }
+
+  const openSkillDraft = async (runId: string) => {
+    setSkillDraftModal({ runId, draft: null })
+    setSkillDraftMarkdown('')
+    setBusy(true)
+    try {
+      const draft = await fetchSkillDraft(runId)
+      setSkillDraftModal({ runId, draft })
+      setSkillDraftMarkdown(draft.markdown)
+    } catch (err) {
+      setSkillDraftModal(null)
+      const f = friendlyError(err)
+      const detail = f.detail ?? f.title
+      push({
+        tone: 'error',
+        title: EVAL.digSkillEmpty,
+        detail: detail === EVAL.digSkillEmpty ? undefined : detail,
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmInstallSkillDraft = async () => {
+    if (!skillDraftModal?.draft) return
+    const markdown = skillDraftMarkdown.trim()
+    if (!markdown) {
+      push({ tone: 'error', title: EVAL.digSkillEmpty })
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await installSkillDraft(skillDraftModal.runId, { markdown })
+      setSkillDraftModal(null)
+      push({ tone: 'success', title: EVAL.toastSkillInstalled(res.id) })
     } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: f.title, detail: f.detail })
@@ -508,6 +565,16 @@ export function EvalSettings() {
                         onClick={() => void viewRunEvents(c.id)}
                       >
                         {EVAL.viewEvents}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={digSkillVariant(c)}
+                        disabled={busy}
+                        data-testid={`eval-dig-skill-${c.id}`}
+                        onClick={() => void openSkillDraft(c.id)}
+                      >
+                        {EVAL.digSkill}
                       </Button>
                       <Button
                         type="button"
@@ -775,6 +842,75 @@ export function EvalSettings() {
           <pre className="settings-code-sample" style={{ maxHeight: '24rem', overflow: 'auto' }}>
             {JSON.stringify(eventsModal.events, null, 2)}
           </pre>
+        )}
+      </Modal>
+
+      <Modal
+        open={skillDraftModal != null}
+        title={
+          skillDraftModal
+            ? EVAL.digSkillTitle(skillDraftModal.draft?.source_run_id ?? skillDraftModal.runId)
+            : EVAL.digSkill
+        }
+        onClose={() => setSkillDraftModal(null)}
+        footer={
+          skillDraftModal?.draft ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSkillDraftModal(null)}
+                disabled={busy}
+              >
+                {EVAL.cancel}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void confirmInstallSkillDraft()}
+                disabled={busy}
+              >
+                {EVAL.digSkillInstall}
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setSkillDraftModal(null)}
+              disabled={busy}
+            >
+              {EVAL.cancel}
+            </Button>
+          )
+        }
+      >
+        {skillDraftModal?.draft == null ? (
+          <p className="settings-muted">{EVAL.digSkillLoading}</p>
+        ) : (
+          <>
+            {skillDraftModal.draft.timeline.length > 0 ? (
+              <Field label={EVAL.digSkillTimeline}>
+                <ul className="settings-list" data-testid="eval-skill-draft-timeline">
+                  {skillDraftModal.draft.timeline.map((e, i) => (
+                    <li key={`${e.run_id}-${e.timestamp}-${i}`} className="settings-muted">
+                      <code className="settings-code-sample">{e.type}</code>
+                      {' · '}
+                      {e.summary}
+                    </li>
+                  ))}
+                </ul>
+              </Field>
+            ) : null}
+            <Field label={EVAL.digSkillMarkdown}>
+              <Textarea
+                value={skillDraftMarkdown}
+                onChange={(e) => setSkillDraftMarkdown(e.target.value)}
+                disabled={busy}
+                rows={14}
+                data-testid="eval-skill-draft-markdown"
+              />
+            </Field>
+          </>
         )}
       </Modal>
 

@@ -10,6 +10,8 @@ func TestMinRoleTable(t *testing.T) {
 		{"GET", "/metrics", RoleAdmin},
 		{"GET", "/v0/settings/logs", RoleAdmin},
 		{"GET", "/v0/settings/eval/runs", RoleAdmin},
+		{"GET", "/v0/settings/eval/runs/run_1/skill-draft", RoleAdmin},
+		{"POST", "/v0/settings/eval/runs/run_1/skill-draft/install", RoleAdmin},
 		{"POST", "/v0/settings/eval/cases", RoleAdmin},
 		{"GET", "/v0/settings/eval/cases", RoleAdmin},
 		{"GET", "/v0/settings/eval/cases/ec_1", RoleAdmin},

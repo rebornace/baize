@@ -565,6 +565,9 @@ type Store interface {
 	SetPassthroughHeaders(runID string, headers map[string]string) error
 
 	HasActiveRun(conversationID string) (bool, error)
+	// ListRunsByConversationSince returns runs with ConversationID == id and
+	// CreatedAt >= since, ascending by CreatedAt, capped by limit (limit<=0 → 50).
+	ListRunsByConversationSince(conversationID string, since time.Time, limit int) ([]*Run, error)
 	// LatestConversationRun returns the newest run for the conversation by created_at.
 	LatestConversationRun(conversationID string) (*Run, error)
 	// WaitingHumanRun returns the newest waiting_human run for the conversation,
@@ -694,6 +697,15 @@ var ErrEvalCaseNotFound = errors.New("eval case not found")
 
 const evalListDefaultLimit = 100
 const evalListMaxLimit = 500
+
+const conversationRunsDefaultLimit = 50
+
+func normalizeConversationRunsLimit(limit int) int {
+	if limit <= 0 {
+		return conversationRunsDefaultLimit
+	}
+	return limit
+}
 
 func normalizeEvalListLimit(limit int) int {
 	if limit <= 0 {

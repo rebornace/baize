@@ -562,4 +562,106 @@ describe('EvalSettings', () => {
     expect(toast).toBeTruthy()
     expect(toast?.textContent).toMatch(/invalid_request|mock base URL required|请求/i)
   })
+
+  async function renderWithCandidateRun(runId = 'run_skill') {
+    vi.spyOn(evalApi, 'listEvalCases').mockResolvedValue({ items: [] })
+    mockSummary()
+    vi.spyOn(evalApi, 'queryEvalRuns').mockResolvedValue({
+      items: [
+        {
+          id: runId,
+          agent_id: 'a',
+          status: 'failed',
+          created_at: '2026-01-01T00:00:00Z',
+          duration_ms: 500,
+          input_preview: 'skill case',
+        },
+      ],
+    })
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <EvalSettings />
+        </MemoryRouter>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const queryBtn = host.querySelector('[data-testid="eval-query"]') as HTMLButtonElement
+    await act(async () => {
+      queryBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+  }
+
+  it('opens skill draft modal from dig-skill button', async () => {
+    const draftSpy = vi.spyOn(evalApi, 'fetchSkillDraft').mockResolvedValue({
+      source_run_id: 'run_skill',
+      suggested_id: 'from-run-run_skill',
+      markdown: '---\nname: from-run-run_skill\ndescription: test\n---\n\n# Steps',
+      timeline: [
+        {
+          run_id: 'run_skill',
+          type: 'tool.result',
+          timestamp: '2026-01-01T00:00:01Z',
+          summary: 'Shell failed',
+        },
+      ],
+    })
+    await renderWithCandidateRun()
+    const digBtn = host.querySelector(
+      '[data-testid="eval-dig-skill-run_skill"]',
+    ) as HTMLButtonElement
+    expect(digBtn).toBeTruthy()
+    await act(async () => {
+      digBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(draftSpy).toHaveBeenCalledWith('run_skill')
+    const ta = host.querySelector('[data-testid="eval-skill-draft-markdown"]') as HTMLTextAreaElement
+    expect(ta).toBeTruthy()
+    expect(ta.value).toContain('---')
+    expect(host.textContent).toContain('tool.result')
+  })
+
+  it('installs skill draft on confirm', async () => {
+    vi.spyOn(evalApi, 'fetchSkillDraft').mockResolvedValue({
+      source_run_id: 'run_skill',
+      suggested_id: 'from-run-run_skill',
+      markdown: '---\nname: from-run-run_skill\ndescription: test\n---\n\nbody',
+      timeline: [],
+    })
+    const installSpy = vi.spyOn(evalApi, 'installSkillDraft').mockResolvedValue({
+      id: 'from-run-run_skill',
+    })
+    await renderWithCandidateRun()
+    const digBtn = host.querySelector(
+      '[data-testid="eval-dig-skill-run_skill"]',
+    ) as HTMLButtonElement
+    await act(async () => {
+      digBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const installBtn = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent === '安装为用户 Skill',
+    ) as HTMLButtonElement
+    expect(installBtn).toBeTruthy()
+    await act(async () => {
+      installBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(installSpy).toHaveBeenCalledWith('run_skill', {
+      markdown: expect.stringContaining('---'),
+    })
+    const toast = host.querySelector('[data-testid="toast"]')
+    expect(toast).toBeTruthy()
+    expect(toast?.textContent).toMatch(/已安装|Skill/)
+  })
 })

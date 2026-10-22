@@ -473,6 +473,41 @@ func (s *Memory) GetHITL(runID string) (*HITLPayload, error) {
 	return &cp, nil
 }
 
+func (s *Memory) ListRunsByConversationSince(conversationID string, since time.Time, limit int) ([]*Run, error) {
+	if conversationID == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	limit = normalizeConversationRunsLimit(limit)
+	since = since.UTC()
+	var out []*Run
+	for _, r := range s.runs {
+		if r.ConversationID != conversationID {
+			continue
+		}
+		created := r.CreatedAt.UTC()
+		if created.Before(since) {
+			continue
+		}
+		cp := *r
+		cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
+		cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+		if until, held := s.leaseUntil[r.ID]; held {
+			lease := until
+			cp.LeaseUntil = &lease
+		}
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (s *Memory) LatestConversationRun(conversationID string) (*Run, error) {
 	if conversationID == "" {
 		return nil, ErrNoPriorConversationRun

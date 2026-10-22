@@ -212,3 +212,41 @@ export async function putCalibration(id: string, body: PutCalibrationBody): Prom
   )
   return parseJSON(res)
 }
+
+export interface SkillDraftTimelineEntry {
+  run_id: string
+  type: string
+  timestamp: string
+  summary: string
+}
+
+export interface SkillDraftResponse {
+  source_run_id: string
+  conversation_id?: string
+  timeline: SkillDraftTimelineEntry[]
+  suggested_id: string
+  markdown: string
+}
+
+export async function fetchSkillDraft(runId: string): Promise<SkillDraftResponse> {
+  const res = await fetch(
+    `/v0/settings/eval/runs/${encodeURIComponent(runId)}/skill-draft`,
+    { headers: authInit() },
+  )
+  return parseJSON(res)
+}
+
+export async function installSkillDraft(
+  runId: string,
+  body: { markdown: string; id?: string },
+): Promise<{ id: string }> {
+  const res = await fetch(
+    `/v0/settings/eval/runs/${encodeURIComponent(runId)}/skill-draft/install`,
+    {
+      method: 'POST',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    },
+  )
+  return parseJSON(res)
+}

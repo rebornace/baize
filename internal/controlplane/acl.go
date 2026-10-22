@@ -92,6 +92,8 @@ var aclRules = []routeRule{
 	{method: "PATCH", segments: []string{"v0", "settings", "runtime"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "settings", "logs"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "settings", "eval", "runs"}, role: RoleAdmin},
+	{method: "GET", segments: []string{"v0", "settings", "eval", "runs", "{id}", "skill-draft"}, role: RoleAdmin},
+	{method: "POST", segments: []string{"v0", "settings", "eval", "runs", "{id}", "skill-draft", "install"}, role: RoleAdmin},
 	{method: "POST", segments: []string{"v0", "settings", "eval", "cases"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "settings", "eval", "cases"}, role: RoleAdmin},
 	{method: "GET", segments: []string{"v0", "settings", "eval", "cases", "{id}"}, role: RoleAdmin},
