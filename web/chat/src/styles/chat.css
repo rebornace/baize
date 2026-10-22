@@ -1903,9 +1903,9 @@
 .settings-skill-eval {
   margin-left: 0.25rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.25));
+  border: 1px solid var(--border);
   border-radius: 0.5rem;
-  background: var(--surface-elevated, rgba(0, 0, 0, 0.03));
+  background: var(--surface-2);
 }
 
 .settings-skill-eval-cases {

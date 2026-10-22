@@ -431,7 +431,7 @@ func TestLoginRequiredPausesBeforeMoreTools(t *testing.T) {
 
 // skipStepLoginLLM records tool names offered after the login wait.
 type skipStepLoginLLM struct {
-	calls      int
+	calls       int
 	secondTools []string
 }
 
