@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baize — team AI assistant runtime</title>
-  <meta name="description" content="Baize is a team AI assistant runtime: API docs as tools, human approval, MCP export, decision-layer narrowing, reconstructable runs, and ops observability.">
+  <meta name="description" content="Baize is a sidecar AI assistant runtime: API docs as tools, human approval, connector groups and scoped sub-runs, MCP export, decision-layer narrowing, schedules, eval corpus, reconstructable runs, and ops observability.">
   <meta property="og:title" content="Baize">
-  <meta property="og:description" content="Sidecar AI assistant runtime: docs→tools, HITL, hosted login + MCP export, decision layer, CatalogDiff + run.binding, metrics and mTLS.">
+  <meta property="og:description" content="Sidecar AI assistant: docs→tools, HITL, connector groups, hosted login + MCP export, decision layer, CatalogDiff + run.binding, metrics and mTLS.">
   <meta property="og:image" content="../assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -54,7 +54,7 @@
       <ul class="feature-list">
         <li>
           <h3>API docs become tools</h3>
-          <p>Import OpenAPI / Swagger and each operation joins the tool catalog; follow calls live in the console.</p>
+          <p>Import OpenAPI / Swagger and each operation joins the catalog; HTTP plugins and MCP work too. Follow calls live in the console.</p>
         </li>
         <li>
           <h3>Approve sensitive writes</h3>
@@ -62,7 +62,7 @@
         </li>
         <li>
           <h3>One assistant, many doors</h3>
-          <p>Web console, inbound alerts, and messaging channels share approval, memory, and outbound delivery.</p>
+          <p>Web console, inbound alerts, and messaging channels share approval, memory, and outbound delivery. Production adapter: personal WeChat; Feishu / DingTalk reference examples included.</p>
         </li>
         <li>
           <h3>Downstream login supported</h3>
@@ -72,24 +72,32 @@
     </section>
 
     <section class="section wrap" id="upgrades">
-      <h2>What major upgrades added</h2>
-      <p class="support">Beyond the Changelog: scale with many tools, see catalog drift, reconstruct what a run bound, and operate from the console.</p>
+      <h2>What the product surface covers today</h2>
+      <p class="support">After multiple upgrades these capabilities are in Settings and Chat—not Changelog-only: scale with many tools, group domains, see catalog drift, reconstruct runs, and operate from the console.</p>
       <ul class="feature-list">
         <li>
           <h3>Stay usable with many tools</h3>
           <p>Matching &amp; decisions one-click enables enhanced matching and the System One decision model. With Smart speed-up on, the main model sees a narrowed schema set; failures fail open.</p>
         </li>
         <li>
-          <h3>Catalog changes are visible</h3>
-          <p>Connector re-import returns a CatalogDiff; optionally POST catalog.diff to events.webhook so API drift is alertable—no manual doc diffing.</p>
+          <h3>Connector groups and scoped sub-runs</h3>
+          <p>Group systems into business domains so siblings stay eligible when narrowing. For strong isolation, enable depth=1 group sub-tasks: child Runs keep their own approvals and binding while the parent waits on a receipt.</p>
         </li>
         <li>
-          <h3>Runs are reconstructable</h3>
-          <p>Each Chat run writes run.binding (model, knobs, tool-contract fingerprints). Open “View run binding” beside the assistant message.</p>
+          <h3>Catalog drift · reconstructable runs</h3>
+          <p>Connector re-import returns a CatalogDiff (optional webhook). Each Chat run writes run.binding—open “View run binding” beside the assistant message.</p>
+        </li>
+        <li>
+          <h3>Long chats, schedules, and eval</h3>
+          <p>Compaction and optional fact projection; oversized results can offload to the workspace; approved one-shot / daily / weekly schedules; Admin eval corpus for deterministic evidence replay.</p>
         </li>
         <li>
           <h3>Ops and compliance in the console</h3>
           <p>Runtime metrics and recent logs in Settings; Prometheus /metrics and optional OTel; connector outbound mTLS via local cert paths; observability knobs hot-reload.</p>
+        </li>
+        <li>
+          <h3>Phones can connect</h3>
+          <p>Capacitor / browser shell remotes a deployed Runtime; a trimmed on-device orchestration path (`mobileagent`) can offload the server—not a full `baize serve` inside the app.</p>
         </li>
       </ul>
     </section>

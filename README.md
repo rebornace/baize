@@ -30,9 +30,10 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Downstream login supported**: use a login skill or “browser login” in chat, or configure a hosted login page under Settings → External login (multiple methods). Credentials never go through the LLM; the assistant then calls systems with session credentials.
 - **Export wired tools to everyday Agent clients**: Baize can act as an MCP server and expose a **read-only** slice of your catalog to Cursor, Claude Desktop, Doubao, and similar clients — without running through Baize’s own chat model. On auth failure, clients get a public hosted login URL (open in a browser; never paste passwords into the agent chat).
 - **Stays usable with many tools**: when backends pile up, open Settings → Matching & decisions — one-click local Ollama for the matching model and the decision model (`tev1`), or a cloud / self-hosted API. Standard matching needs no extras. With Smart speed-up on, high-frequency routing judgments move to the decision layer so the main model sees a narrowed tool schema set (see benchmark below).
+- **Connector groups and scoped sub-runs**: group connectors into domains (e.g. finance / commerce) so siblings stay eligible when narrowing; for strong isolation, enable scoped sub-tasks (depth=1) — the parent waits on a child receipt while the child keeps its own approvals and `run.binding`.
 - **Catalog changes are visible; runs are reconstructable**: connector re-import returns a CatalogDiff (adds / removes / contract changes) and can POST `catalog.diff` to `events.webhook`; each Chat run writes `run.binding` (model, knobs, tool-contract fingerprints) — open “View run binding” beside the assistant message.
 - **Ops in the console; observability hot-reloads**: Settings → Runtime metrics shows Prometheus text and recent process logs; optional OTel OTLP; log format / OTel endpoint hot-reload under Runtime → Observability (KV override, no YAML rewrite). Connector outbound mTLS via local file paths (OpenAPI / HTTP plugins / MCP HTTP).
-- **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); multiple model setups and thinking options; account-level memory, attachments, and workspace files.
+- **Long conversations stay usable**: automatic context compaction; optional “keep important facts in long chats” (a model-facing projection, not a rewrite of saved messages); oversized tool results / pastes can offload to the conversation workspace with a preview + path for the model; multiple model setups and thinking options; account-level memory, attachments, and workspace files.
 - **Workspaces and logins**: switch workspaces in the console; business logins are shared among chats in the same workspace (Settings → Accounts) and isolated across workspaces. MCP export uses separate export identities — do not mix them with chat Accounts.
 - **Can explain Baize itself**: the built-in `baize-help` skill answers (in English or Chinese) how Baize is set up and where to click in the console; it does not edit `config.yaml` or restart the process.
 
@@ -70,6 +71,7 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 - **Schedules**: after a person approves, save a one-shot, daily, or weekly instruction on the current conversation. At that time Baize starts a new run there, using the saved instruction as the user input. Write tools still wait for approval. Create, pause, resume, and delete schedules in Settings; each account only sees its own.
 - **Attachments and object storage**: keep materials locally or in object storage.
 - **Context compaction**: long threads get rolling structured checkpoints (goal / progress / decisions / facts to keep) so space goes to what still matters.
+- **Context offload**: oversized tool results or user pastes can land in the conversation workspace `offload/`; the model sees a preview + path and can `read_file` chunks when needed.
 - **Keep important facts in long chats** (optional Runtime knob, default off): when a thread gets long, the assistant may keep a model-facing projection of facts it still needs; on failure it falls back to compaction. This does not promise lower cloud API token use.
 - Conversation fork / rollback for everyday ops (console and API).
 - Web login identities are shared **per workspace** (Settings → Accounts); channel sessions (e.g. WeChat) and MCP-export identities (Settings → Expose capabilities) stay on their own isolation keys.
@@ -79,13 +81,13 @@ In legend, Baize knows the names of all things; we use that name hoping the assi
 Channels are a **general, extensible** capability: alerts, tickets, and instant messaging can share the same assistant, approvals, and outbound path.
 
 - **Signed inbox**: external systems push alerts/tickets into the same assistant and approval flow.
-- **Instant messaging**: the architecture supports IM via adapters. **The adapter shipped in this repository today is personal WeChat DM** (a small companion process plus an outbound queue with retry in settings). Other IMs can follow the same pattern — Baize is not limited to WeChat.
+- **Instant messaging**: the architecture supports IM via adapters. **The production adapter in this repo is personal WeChat DM** (`weixin-adapter`: companion process + outbound queue with retry in settings). **Reference adapters** for Feishu and DingTalk live under `examples/im-adapter-feishu` and `examples/im-adapter-dingtalk` — same webhook contract for other IMs.
 - Events can also be pushed to your own notification endpoints.
 
 ### For product, ops, and integrators
 
-- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security / Observability); Matching & decisions is its own page; External login and Expose capabilities cover hosted login and MCP export; Runtime metrics shows process metrics and recent logs; Admin **Eval corpus** (Settings → Eval corpus) ingests failed/slow runs for deterministic evidence re-scoring and JSON export (no model calls; batch replay still uses `scripts/evidence-eval`).
-- Connector saves surface CatalogDiff; chat messages offer “View run binding”; MCP export has invocation audit; the connector editor can set outbound mTLS paths.
+- Browser console in **Chinese / English**: conversations, tool cards, settings, and runtime knobs. Runtime settings are tabbed (Basics / Smart speed-up / Memory & compaction / Security / Observability); Matching & decisions is its own page (including connector groups); External login and Expose capabilities cover hosted login and MCP export; Runtime metrics shows process metrics and recent logs; Admin **Eval corpus** (Settings → Eval corpus) ingests failed/slow runs for deterministic evidence re-scoring and JSON export (no model calls; batch replay still uses `scripts/evidence-eval`).
+- Connector saves surface CatalogDiff; chat messages offer “View run binding” (including parent↔child links for scoped sub-tasks); MCP export has invocation audit; the connector editor can set outbound mTLS paths.
 - Full HTTP management surface for scripts and platforms — no mandatory language SDK.
 - Some runtime knobs and observability settings hot-reload; a local database is enough to start, with larger databases when you need them.
 
@@ -101,6 +103,9 @@ The assistant can read, draft, and suggest; status changes and commands wait for
 
 **One assistant for tools and channels**  
 External tools, first-party plugins, inbox ingress, and IM — one approval and memory story.
+
+**Domain isolation without a subagent tree**  
+Connector groups keep same-domain systems eligible together; turn on scoped sub-tasks only when you need real parallel isolation — not a generic leaf/orchestrator tree.
 
 **Reuse wired tools inside everyday Agent clients**  
 Wire APIs and plugins in Baize, configure hosted login and export identity slots under External login, then export over MCP to Cursor and similar clients. When auth expires, open the returned login link — never paste passwords into the agent chat. Ensure `public_base_url` is reachable from the client’s browser (do not use loopback-only `127.0.0.1` for cloud agents).
@@ -244,7 +249,7 @@ For systemd and standalone Weixin adapter setup, see [deployment](docs/developer
 Build, test, configuration, deployment, and HTTP surface (**Chinese and English**):
 
 - [Developer docs (English)](docs/developers/README.en.md) · [中文](docs/developers/README.md)
-- Cross-platform phone shell (Capacitor client; Runtime stays on the server): [Mobile](docs/developers/mobile.en.md) · [中文](docs/developers/mobile.md)
+- Mobile two paths: [Capacitor console shell](docs/developers/mobile.en.md) (remote Runtime) and on-device trimmed orchestration (`mobileagent` / MOBILE-RT, same page); [中文](docs/developers/mobile.md)
 
 ---
 

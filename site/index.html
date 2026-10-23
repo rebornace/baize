@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>白泽 Baize — 团队 AI 助手运行时</title>
-  <meta name="description" content="白泽：面向团队的 AI 助手运行时。接口文档变工具、人审写操作、MCP 导出、决策层收窄工具、运行可追溯与运维可观测。">
+  <meta name="description" content="白泽：旁挂现有业务的 AI 助手运行时。接口变工具、人审写操作、连接器分组与子任务、MCP 导出、决策层收窄、定时任务与评测语料、运行可追溯与运维可观测。">
   <meta property="og:title" content="白泽 Baize">
-  <meta property="og:description" content="旁挂现有业务的 AI 助手运行时：文档变工具、人审、托管登录与 MCP 导出、决策层、CatalogDiff 与 run.binding、指标与 mTLS。">
+  <meta property="og:description" content="旁挂现有业务：文档变工具、人审、连接器分组、托管登录与 MCP 导出、决策层、CatalogDiff 与 run.binding、指标与 mTLS。">
   <meta property="og:image" content="assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -54,7 +54,7 @@
       <ul class="feature-list">
         <li>
           <h3>接口文档变工具</h3>
-          <p>导入 OpenAPI / Swagger 等文档，接口进入工具列表；调用过程可在操作台跟随。</p>
+          <p>导入 OpenAPI / Swagger 等文档，接口进入工具列表；也可接 HTTP 插件与 MCP。调用过程可在操作台跟随。</p>
         </li>
         <li>
           <h3>重要操作可先审批</h3>
@@ -62,7 +62,7 @@
         </li>
         <li>
           <h3>同一套助手，多种入口</h3>
-          <p>网页操作台、告警来信、即时消息渠道共用审批、记忆与出站能力。</p>
+          <p>网页操作台、告警来信、即时消息渠道共用审批、记忆与出站。正式适配器含个人微信；飞书 / 钉钉有参考示例。</p>
         </li>
         <li>
           <h3>需要登录的下游也能接</h3>
@@ -72,24 +72,32 @@
     </section>
 
     <section class="section wrap" id="upgrades">
-      <h2>多次升级后，多出来的核心能力</h2>
-      <p class="support">Changelog 之外，这些能力已经写进产品面：工具多时能收窄、接口变了看得见、跑过的轮次可复盘、运维进操作台。</p>
+      <h2>当前产品面的核心能力</h2>
+      <p class="support">多轮迭代后已写入设置与聊天路径：工具多时能收窄、多域可分组、接口变了看得见、跑过的轮次可复盘、运维进操作台。</p>
       <ul class="feature-list">
         <li>
           <h3>工具多也能收得住</h3>
           <p>「匹配与决策」一键启用增强匹配与 System One 决策模型；智能提速打开后，主模型只看收窄后的工具 schema，失败自动回退。</p>
         </li>
         <li>
-          <h3>接口变了看得见</h3>
-          <p>连接器重导返回 CatalogDiff；可选推送到 events.webhook，接口漂移可告警，不必靠人肉对比文档。</p>
+          <h3>连接器分组与分组子任务</h3>
+          <p>把多个系统收成业务域；收窄时同组仍可进候选。需要强隔离时，可开启 depth=1 分组子任务：子 Run 独立审批与绑定，父 Run 等待回执。</p>
         </li>
         <li>
-          <h3>每次运行可追溯</h3>
-          <p>Chat 写入 run.binding（模型、策略与工具契约指纹）；聊天旁可查看运行绑定，便于对照「当时绑了什么」。</p>
+          <h3>接口变了看得见 · 运行可追溯</h3>
+          <p>连接器重导返回 CatalogDiff（可 webhook 告警）；每轮 Chat 写入 run.binding，聊天旁可查看当时绑了什么。</p>
+        </li>
+        <li>
+          <h3>长对话、定时与评测</h3>
+          <p>上下文压缩与可选重点投影；超大结果可卸到工作区；人同意后可设一次性 / 每天 / 每周日程；Admin 评测语料做确定性 evidence 复盘。</p>
         </li>
         <li>
           <h3>运维与合规进操作台</h3>
-          <p>设置页看运行指标与近期日志；Prometheus /metrics、可选 OTel；连接器出站 mTLS（本机证书路径）；观测项可热更新。</p>
+          <p>设置页看运行指标与近期日志；Prometheus /metrics、可选 OTel；连接器出站 mTLS；观测项可热更新。</p>
+        </li>
+        <li>
+          <h3>手机也能接上</h3>
+          <p>Capacitor / 浏览器壳遥控远端 Runtime；另有裁剪版机上编排（mobileagent）用于分摊服务端压力——不是把完整 baize serve 塞进 App。</p>
         </li>
       </ul>
     </section>

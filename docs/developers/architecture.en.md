@@ -8,7 +8,7 @@ Baize is a standalone **Agent Runtime** (sidecar / gateway): it turns LLM, tools
 
 | Does | Does not |
 |------|----------|
-| OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows; optional Capacitor **console shell** (phone talks to a remote Runtime — see [Mobile](./mobile.en.md)) | Shipping the Runtime inside a phone via gomobile / on-device packaging; official desktop app; official TS/Python SDK; heavy canvas / branching workflows; lock-in to one cloud or agent framework |
+| OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows; connector groups and depth=1 scoped sub-runs; optional Capacitor **console shell** and trimmed on-device orchestration (`mobileagent` — see [Mobile](./mobile.en.md)) | Shipping full `baize serve` (HTTP/SSE/connector farm) inside a phone; official desktop app; official TS/Python SDK; heavy canvas / depth≥2 subagent trees; lock-in to one cloud or agent framework |
 | SQLite by default; optional Postgres / Redis / S3; connector re-import **CatalogDiff**; **run.binding** execution-time dependency closure; optional OTLP (off by default; Settings hot-reload); **Admin-authenticated** Prometheus **`GET /metrics`** (on by default) plus Settings → Runtime metrics / **`GET /v0/settings/logs`** (in-memory recent logs); structured slog (`log_format` / `BAIZE_LOG_FORMAT`, hot-reloadable); connector outbound mTLS (file paths: OpenAPI / HTTP plugins / MCP HTTP; Settings-editable) | Require OTel/APM; durable in-process metrics/log DB; per-tenant cgroup/egress sandbox; full IdP OBO; server-enforced peer mTLS; client-side tool schema version pin; bit-identical reproducibility |
 
 **Five abstractions:** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
@@ -81,8 +81,12 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 - **Tool matching (enhanced):** `internal/toolretrieval` manages one-click local Ollama install / model pull / paths and cleanup, or an OpenAI-compatible embedding API; see [HTTP API](./http-api.en.md) (`/v0/settings/tool-retrieval*`). On CN Windows, the installer prefers [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files) (resolves `OllamaSetup.exe` from the latest stable tag), then ghproxy / official; size-mismatched stale mirrors are skipped. When disabled or probing fails, standard matching remains the fallback path.
 - **Decision service (System One):** `internal/systemoneenable` symmetrically manages local Ollama `tev1` pull (Ollama ≥0.35; shared installer path) or a System One-compatible API; enablement writes `decide_systemone_*` knobs (`/v0/settings/systemone*`). Judgment chain: System One → optional `decide_profile_id` standby model (empty never bills the main model) → Rules.
 - **Workspaces:** Web chats carry `workspace_id` (default `default`). Captured logins are shared inside a workspace (Settings → Accounts); other workspaces, channel sessions (`source:account:peer`), and MCP-export identities (Settings → Expose capabilities) stay isolated. v1 does not move existing chats between workspaces.
+- **Connector groups (L1):** named sets of `connector.id` via YAML or Settings → Matching & decisions → Connector groups. When narrowing, selecting or forcing any member keeps siblings in the group eligible (`groups_expanded` on events). Does **not** spawn child Runs by itself. Sticky narrow clears after a tool-result error so the session does not stick to the wrong system.
+- **Scoped sub-runs (L2, opt-in):** with “allow group sub-tasks” on, the model may `spawn_group_run` (depth=1): child tool surface ⊆ that group’s connectors, own `run.binding` and HITL; parent enters `waiting_child` until a receipt. No depth≥2 / generic leaf trees.
+- **Context offload:** oversized tool results or user pastes can land in conversation workspace `offload/`; the model sees preview + path and may `read_file` chunks. Event/bubble storage may still keep full text per policy.
 - **Model-facing projection** (Runtime “keep important facts in long chats”, default off): edits only the projection fed to the model (pin / summary / drop bulky tool results); it does **not** rewrite `conversation.Messages`. Fail-open to the Compactor. Does not promise lower cloud API tokens.
 - **Rolling summary (Compactor):** when over budget, older turns become a structured checkpoint (goal, progress, decisions, facts to keep). Raw messages stay; the prompt must not encode a global “do this before exploring” policy.
+- **Schedules:** after human approval, save one-shot / daily / weekly instructions; at fire time start a new Run on the same conversation; write tools still HITL. Per-account isolation in Settings → Schedules.
 
 ## Agent run shapes
 
@@ -90,8 +94,9 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 |------|----------|
 | Default | Single-agent ReAct: pick tool → execute → write trail → finish |
 | Optional | Linear `workflow.yaml` inside a Skill (ordered steps + optional approval; no branch / loop) |
+| Optional | Scoped sub-run: `spawn_group_run` → child Run (depth=1) + parent `waiting_child` |
 | Skill | Config shape: `SKILL.md` (optional `SKILL.en.md`) + tools; `agent.skills` pre-activates new chats (sample includes `baize-help`) while unchecked skills stay reachable via `@`/`activate_skill`; `@id`/`/id` pins are stored on the user message as `pinned_skills` (visible in history); Composer completes `/reload`; catalog reload via `skills_reload`/`/reload` or auto dirty; optional `tool_binding: exclusive` |
-| Channel | Signed inbox; IM via out-of-process adapters + declarative `channels` (see [Deployment](./deployment.en.md)). **This repo ships a personal WeChat adapter today**; the channel capability is not limited to WeChat |
+| Channel | Signed inbox; IM via out-of-process adapters + declarative `channels` (see [Deployment](./deployment.en.md)). **Production adapter: personal WeChat**; Feishu / DingTalk reference adapters under `examples/im-adapter-*` |
 
 ## Human approval
 

@@ -72,6 +72,18 @@ Optional **`tls`** (outbound mTLS, local file paths):
 
 **Configurable in Settings**: connector editor (Business systems / External tools / Plugins) advanced section “Outbound TLS / mTLS” — enter **Runtime host paths** (not browser-uploaded PEMs). Omitting the `tls` field keeps the server value; clearing all three and saving clears the config.
 
+### `connector_groups`
+
+Optional. Named connector sets so tool narrowing keeps same-domain siblings eligible (L1). See commented sample in `configs/config.yaml`:
+
+```yaml
+connector_groups:
+  - id: finance
+    connectors: [expense, invoice]
+```
+
+Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings → Matching & decisions → Connector groups (KV) without a YAML restart. “Allow group sub-tasks” is the L2 switch (required before `spawn_group_run`); boundaries in [Architecture](./architecture.en.md).
+
 ### `run`
 
 | Field | Default |

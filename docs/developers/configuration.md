@@ -72,6 +72,18 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 
 **设置页可配**：连接器编辑器（业务系统 / 外部工具服务 / 插件）高级区「出站 TLS / mTLS」——填写 **Runtime 本机路径**（不是浏览器上传 PEM）。省略 `tls` 字段保留服务端原值；三者清空并保存可清除配置。
 
+### `connector_groups`
+
+可选。命名连接器集合，供工具收窄时把同域 sibling 留在 eligibility 内（L1）。示例见样板 `configs/config.yaml` 注释：
+
+```yaml
+connector_groups:
+  - id: finance
+    connectors: [expense, invoice]
+```
+
+省略则行为与未分组时相同。分组草稿也可在设置「匹配与决策 → 连接器分组」热保存（KV），不必改 YAML 重启。「允许分组内子任务」为 L2 开关（启用后才可 `spawn_group_run`）；边界见 [架构](./architecture.md)。
+
 ### `run`
 
 | 字段 | 默认 |

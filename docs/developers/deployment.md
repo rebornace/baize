@@ -2,7 +2,7 @@
 
 # 部署：Runtime 与渠道适配器
 
-Baize 是单个静态 Go 二进制。**消息渠道**通过旁路适配器进程对接；本仓库当前提供的适配器是个人微信（iLink）渠道 **`weixin-adapter`**（`cmd/weixin-adapter`）。白泽与适配器通过 HMAC 签名的 JSON over HTTP 交互：
+Baize 是单个静态 Go 二进制。**消息渠道**通过旁路适配器进程对接；本仓库**正式适配器**是个人微信（iLink）渠道 **`weixin-adapter`**（`cmd/weixin-adapter`）。飞书 / 钉钉可参考 `examples/im-adapter-feishu`、`examples/im-adapter-dingtalk`（同一 webhook inbound/outbound 协议，非生产捆绑进程）。白泽与适配器通过 HMAC 签名的 JSON over HTTP 交互：
 
 | 方向 | 路径 |
 |------|------|

@@ -13,7 +13,7 @@
 
 ### 文档
 
-- README / 官网 / 开发者入口同步已落地能力叙事：MCP 导出、决策层收窄、CatalogDiff、`run.binding`、运维指标与 OTel、出站 mTLS（产品优势与「多次升级后」能力区；非新功能）。
+- README / 官网 / 开发者入口与架构·配置·部署同步当前产品面：连接器分组与分组子任务、上下文卸出、定时任务、评测语料、飞书/钉钉参考适配器、Capacitor 与 MOBILE-RT 双路径；并保留既有 MCP 导出、决策层、CatalogDiff、`run.binding`、观测与 mTLS 叙事。
 
 ## 0.14.0 — 2026-10-15
 

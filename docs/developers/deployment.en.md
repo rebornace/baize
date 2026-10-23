@@ -2,7 +2,7 @@
 
 # Deployment: Runtime and channel adapters
 
-Baize is a single static Go binary. **Message channels** are extensible and connect through sidecar adapter processes; the adapter this repository ships today is the personal WeChat (iLink) channel **`weixin-adapter`** (`cmd/weixin-adapter`). Baize and the adapter exchange HMAC-signed JSON over HTTP:
+Baize is a single static Go binary. **Message channels** are extensible and connect through sidecar adapter processes; the **production adapter** in this repo is the personal WeChat (iLink) channel **`weixin-adapter`** (`cmd/weixin-adapter`). Feishu / DingTalk **reference adapters** live under `examples/im-adapter-feishu` and `examples/im-adapter-dingtalk` (same webhook inbound/outbound contract; not bundled production processes). Baize and the adapter exchange HMAC-signed JSON over HTTP:
 
 | Direction | Path |
 |------|------|

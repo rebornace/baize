@@ -9,9 +9,13 @@ Version detail lives in [CHANGELOG](../../CHANGELOG.md). These capabilities are 
 | Theme | Where users see it | Technical hook |
 |-------|--------------------|----------------|
 | Decision layer / tool narrowing | Settings → Matching & decisions; Runtime → Smart speed-up | System One, `toolindex`, decide knobs |
+| Connector groups / scoped sub-runs | Matching & decisions → Connector groups; Chat group sub-tasks | `connector_groups`, `spawn_group_run`, `waiting_child` |
 | Hosted login & MCP export | External login; Expose capabilities | `/v0/auth/hosted/...`, MCP export, `identity_slots` |
 | CatalogDiff & outbound alert | Connector save toast; `events.webhook` | `catalog_diff`, `type=catalog.diff` |
 | Reconstructable runs | Chat “View run binding” | `run.binding`, `contract_hash` / `catalog_revision` |
+| Schedules | Settings → Schedules | schedule store + timed new Runs |
+| Context offload | Oversized tool results / pastes → workspace paths | conversation `offload/`, `read_file` |
+| Eval corpus | Settings → Eval corpus (Admin) | EvalCase, evidence re-score |
 | Ops observability | Settings → Runtime metrics; Runtime → Observability | `GET /metrics`, OTLP, slog hot-reload |
 | Outbound mTLS | Connector editor → Outbound TLS / mTLS | `tls.cert_file` / `key_file` / `ca_file` |
 
@@ -22,6 +26,6 @@ Version detail lives in [CHANGELOG](../../CHANGELOG.md). These capabilities are 
 | [HTTP API](./http-api.en.md) · [中文](./http-api.md) | Control-plane HTTP overview |
 | [Architecture](./architecture.en.md) · [中文](./architecture.md) | Runtime boundaries, plugins, core abstractions |
 | [Deployment](./deployment.en.md) · [中文](./deployment.md) | Single-host and channel adapter deploy |
-| [Mobile](./mobile.en.md) · [中文](./mobile.md) | Capacitor console shell; phone is a client, Runtime stays on the server (not gomobile) |
+| [Mobile](./mobile.en.md) · [中文](./mobile.md) | Capacitor console shell + on-device trimmed orchestration (`mobileagent`); full `baize serve` stays off-device |
 | [Website (GitHub Pages)](../../site/README.md) | Static site source and enable notes |
 | [Performance probes](./performance.en.md) · [中文](./performance.md) | Local hot-path reproduction |

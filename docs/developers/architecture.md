@@ -8,7 +8,7 @@ Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把
 
 | 做 | 不做 |
 |----|------|
-| OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow；可选 Capacitor **控制台壳**（手机连远端 Runtime，见 [移动端](./mobile.md)） | 用 gomobile / 整机打包把 Runtime 塞进手机；官方桌面 App；官方 TS/Python SDK；重画布 / 分支工作流；绑死单一云或 Agent 框架 |
+| OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow；连接器分组与 depth=1 分组子任务；可选 Capacitor **控制台壳**与裁剪版机上编排（`mobileagent`，见 [移动端](./mobile.md)） | 把完整 `baize serve`（HTTP/SSE/连接器农场）原样塞进手机；官方桌面 App；官方 TS/Python SDK；重画布 / depth≥2 子代理树；绑死单一云或 Agent 框架 |
 | SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导 **CatalogDiff**；**run.binding** 执行期依赖闭包；可选 OTLP（默认关，设置页可热更新）；**Admin 鉴权的** Prometheus **`GET /metrics`**（默认开）与设置页「运行指标」/ **`GET /v0/settings/logs`**（内存近期日志）；结构化 slog（`log_format` / `BAIZE_LOG_FORMAT`，可热更新）；连接器出站 mTLS（文件路径：OpenAPI / HTTP 插件 / MCP HTTP；设置页可配） | 把 OTel/APM 当作必选；进程内指标/日志库持久化；per-tenant cgroup/egress 沙箱；完整 IdP OBO；服务端强制对方 mTLS；Agent 侧 tool schema version pin；保证重跑结果一致 |
 
 **五抽象：** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
@@ -81,8 +81,12 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 - **工具匹配（增强）**：`internal/toolretrieval` 管理本机 Ollama 一键安装 / 模型拉取 / 路径与清理，或 OpenAI 兼容 Embedding API；状态经 `GET/POST…/tool-retrieval*` 见 [HTTP API](./http-api.md)。Windows 国内安装优先 [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files)（按稳定 tag 解析 `OllamaSetup.exe`），再回退 ghproxy / 官网等；体积与官方不符的陈旧镜像会跳过。未启用或探测失败时仍用标准匹配，失败则回退原路径。
 - **决策服务（System One）**：`internal/systemoneenable` 对称管理本机 Ollama 拉取 `tev1`（需 Ollama ≥0.35，复用同一安装链路）或 System One 兼容 API；启用后写入 `decide_systemone_*` knobs；`GET/POST…/systemone*`。判定链路为 System One → `decide_profile_id`（可选备用模型，空则不调用主模型）→ Rules。
 - **工作区**：Web 对话带 `workspace_id`（缺省 `default`）。同一工作区内的捕获登录身份共享（设置 → 账号）；不同工作区、渠道会话（`source:account:peer`）与 MCP 导出身份（设置 → 对外提供能力）隔离。v1 不迁移已有对话到其他工作区。
+- **连接器分组（L1）**：YAML / 设置页「匹配与决策 → 连接器分组」维护命名集合（若干 `connector.id`）。工具收窄时，组内任一成员被选中或强制命中，同组 sibling 仍进 eligibility（事件可带 `groups_expanded`）。**不**自动起子 Run。上一轮工具结果含 error 时清会话 sticky，避免粘在错系统。
+- **分组子任务（L2，opt-in）**：开启「允许分组内子任务」后，模型可 `spawn_group_run`（depth=1）：子 Run 工具面 ⊆ 该组连接器，独立 `run.binding` 与 HITL；父 Run 进入 `waiting_child` 直至子回执。禁止 depth≥2 / 通用 leaf 树。
+- **上下文卸出**：超大体量工具结果或用户粘贴可写入会话工作区 `offload/`；模型侧仅预览 + 路径，可用 `read_file` 分段回读。落库事件 / 气泡仍可保留全文策略。
 - **给模型看的投影**（运行参数「长对话保留重点」，默认关）：只改模型输入侧的投影（钉住 / 摘要 / 丢掉过大工具结果），**不改写** `conversation.Messages`。失败则回退 Compactor。不承诺降低云端 API token。
 - **滚动摘要（Compactor）**：超预算时把较旧轮次压成结构化检查点（目标、进度、决定、必须保留的事实），不删原文、不把「先执行某步再探索」写成全局策略。
+- **定时任务**：人同意后保存一次性 / 每天 / 每周指令；到点在原会话新开 Run，写工具仍走 HITL。账号隔离见设置页日程。
 
 ## Agent 运行形态
 
@@ -90,8 +94,9 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 |------|------|
 | 默认 | 单 Agent ReAct：选 Tool → 执行 → 写轨迹 → 结束 |
 | 可选 | Skill 包内线性 `workflow.yaml`（顺序步骤 + 可选 HITL；无 branch / 循环） |
+| 可选 | 分组子任务：`spawn_group_run` → 子 Run（depth=1）+ 父 `waiting_child` |
 | Skill | 配置形态：`SKILL.md`（可选 `SKILL.en.md`）+ tools；`agent.skills` 为新对话预激活（样板含 `baize-help`），未入默认仍可 `@`/`activate_skill`；`@id`/`/id` pin 写入用户消息 `pinned_skills`（历史可见）；Composer 可补全 `/reload`；`skills_reload`/`/reload` 或会话自动 dirty；可选 `tool_binding: exclusive` |
-| Channel | 带签名的来信入口；即时消息等为进程外适配器 + 声明式 `channels`（见 [部署](./deployment.md)）。**当前仓库已提供个人微信适配器**，渠道能力本身不限于微信 |
+| Channel | 带签名的来信入口；即时消息等为进程外适配器 + 声明式 `channels`（见 [部署](./deployment.md)）。**正式适配器：个人微信**；飞书 / 钉钉见 `examples/im-adapter-*` 参考实现 |
 
 ## HITL
 

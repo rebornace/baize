@@ -9,7 +9,7 @@ Baize has two separate mobile-related paths:
 | **Capacitor / browser shell** (this doc’s focus) | Phone WebView / browser | **Remote control** of a deployed sidecar `baize serve` |
 | **MOBILE-RT** (on-device orchestration) | Trimmed Go agent embedded on the device | **Offload the server**: Run loop on-device; device talks to the LLM API by default |
 
-**MOBILE-RT** design (real repo; not always in the public export): `docs/superpowers/specs/2026-10-23-mobile-rt-design.md`. **M0 done** (thin package + desktop demo)—not shipping full `baize serve` inside an app. Product path: proceed to **store listing** (spec phase M3) after feasibility.
+**MOBILE-RT** (M0–M2 + iOS bind landed): public package `mobileagent/` + shells under `mobile/rt-shell` / `mobile/rt-shell-ios`. Not shipping full `baize serve` inside an app. Store listing is a later milestone — public docs do not promise a ship date.
 
 ## Boundaries
 

@@ -9,7 +9,7 @@
 | **Capacitor / 浏览器壳**（本文主体） | 手机 WebView / 浏览器 | **遥控**已部署的旁挂 `baize serve`（控制台客户端） |
 | **MOBILE-RT**（机上编排） | 用户设备内嵌的裁剪版 Go Agent | **分摊服务端**：Run 循环在设备上跑；默认设备直连 LLM API |
 
-**MOBILE-RT** 规格（real，公开仓不同步）：[`../superpowers/specs/2026-10-23-mobile-rt-design.md`](../superpowers/specs/2026-10-23-mobile-rt-design.md)。**M0 已通**（薄包 + 桌面 demo）；**不是**把完整 `baize serve` 搬进 App。产品路径：可行后推进 **商店上架**（规格 M3）。
+**MOBILE-RT**（M0–M2 + iOS bind 已落地）：公开包 `mobileagent/` 与 `mobile/rt-shell*` 空壳。**不是**把完整 `baize serve` 搬进 App。商店上架为后续里程碑，公开文档不承诺发版日期。
 
 ## 架构边界
 
