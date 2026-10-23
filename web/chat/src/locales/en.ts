@@ -87,6 +87,16 @@ export const enPack = {
     bindingHint:
       'Model, knobs, and tool-contract fingerprints frozen before the first main-model call (run.binding). Read-only — for “what was used then,” not bit-identical replay.',
     bindingClose: 'Close',
+    bindingViewingRun: (shortId: string) => `Viewing: ${shortId}`,
+    bindingOpenParent: 'View parent run binding',
+    bindingChildrenTitle: 'Grouped sub-tasks',
+    bindingChildLink: (groupId: string, status: string) =>
+      groupId ? `“${groupId}” · ${status}` : status,
+    bindingChildOpen: 'View binding',
+    bindingViewing: 'Current',
+    bindingModeReadonly: 'Read-only',
+    bindingModeReadwrite: 'Read/write',
+    bindingNavUnavailable: 'Related runs are temporarily unavailable',
     closeMenu: 'Close menu',
     conversationListAria: 'Conversations',
     newChat: 'New chat',

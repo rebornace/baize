@@ -67,6 +67,14 @@ export async function getRun(runId: string): Promise<Run> {
   return parseJSON<Run>(res)
 }
 
+export async function listRunChildren(runId: string): Promise<Run[]> {
+  const res = await fetch(`/v0/runs/${encodeURIComponent(runId)}/children`, {
+    headers: authInit(),
+  })
+  const body = await parseJSON<{ children: Run[] }>(res)
+  return body.children ?? []
+}
+
 export interface RunBindingResponse {
   run_id: string
   timestamp?: string

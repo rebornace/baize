@@ -94,6 +94,16 @@ export const zhPack = {
   bindingHint:
     '本轮首次主模型调用前固化的模型、策略开关与工具契约指纹（run.binding）。只读；用于排查「当时用了什么」而非重放保证。',
   bindingClose: '关闭',
+  bindingViewingRun: (shortId: string) => `正在查看：${shortId}`,
+  bindingOpenParent: '查看主任务绑定',
+  bindingChildrenTitle: '分组子任务',
+  bindingChildLink: (groupId: string, status: string) =>
+    groupId ? `「${groupId}」· ${status}` : status,
+  bindingChildOpen: '查看绑定',
+  bindingViewing: '当前',
+  bindingModeReadonly: '只读',
+  bindingModeReadwrite: '可写',
+  bindingNavUnavailable: '相关任务信息暂时不可用',
   // 侧栏 / 壳层
   closeMenu: '关闭菜单',
   conversationListAria: '对话列表',

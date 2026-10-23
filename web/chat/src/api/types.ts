@@ -15,6 +15,13 @@ export interface Run {
   output?: string
   error?: string
   created_at: string
+  conversation_id?: string
+  /** Parent run when this is a depth-1 group-scoped child. */
+  parent_run_id?: string
+  /** 0 = normal; 1 = group-scoped child. */
+  depth?: number
+  group_id?: string
+  spawn_mode?: string
 }
 
 export interface Event {
