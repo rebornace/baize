@@ -79,10 +79,10 @@ npm run open:android
 
 ### MOBILE-RT（另路径，摘要）
 
-- **API：** `mobileagent/`（gomobile）+ `internal/mobileagent`（实现）；桌面 `cmd/mobilebind`；mock `cmd/mobilebind/mockllm`。  
-- **M0：** Android AAR + `mobile/rt-shell` 空壳 APK 已构建；不依赖 `baize serve`。重建：`scripts/build-mobileagent-aar.ps1`。  
-- **其后：** M1 工具/HITL；M3 商店上架；公开 README 达标前不写承诺。  
-- **细节：** real 仓 `docs/superpowers/specs/2026-10-23-mobile-rt-design.md`。
+- **API：** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`；实现 `internal/mobileagent`。  
+- **M0：** 一轮无工具对话 + AAR。  
+- **M1：** `get_time` + `http_get`（后者前台 HITL）；空壳 Approve/Deny。重建 AAR：`scripts/build-mobileagent-aar.ps1`。  
+- **其后：** M2 密钥/双端；M3 商店上架；公开 README 达标前不写承诺。
 
 ## 相关文档
 

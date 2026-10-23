@@ -10,11 +10,13 @@
 | sources | `app/libs/mobileagent-sources.jar` |
 | Debug APK | `app/build/outputs/apk/debug/app-debug.apk`（本地构建；gitignore） |
 
-Java API：
+Java API（M1）：
 
 ```kotlin
 mobileagent.Mobileagent.configure(apiBase, apiKey, model)
-val reply = mobileagent.Mobileagent.chatOnce(userText)
+val json = mobileagent.Mobileagent.send(userText)
+// status=done | needs_approval → approve(callId) / deny(callId)
+// chatOnce(userText) 仍可用（无工具快捷路径）
 ```
 
 模拟器访问宿主机 mock：API base 用 `http://10.0.2.2:18080/v1`（先跑 `go run ./cmd/mobilebind/mockllm`）。

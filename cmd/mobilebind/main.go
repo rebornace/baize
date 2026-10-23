@@ -1,4 +1,5 @@
-// Command mobilebind is the MOBILE-RT M0 desktop demo and bind entry documentation.
+// Command mobilebind is the MOBILE-RT desktop ChatOnce demo and bind entry documentation.
+// For tools + HITL use the library APIs Send/Approve/Deny (see mobile/rt-shell).
 //
 // Desktop demo (no Android SDK required):
 //

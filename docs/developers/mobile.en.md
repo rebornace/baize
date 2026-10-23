@@ -60,9 +60,9 @@ Default server embeds are unchanged (`BAIZE_MOBILE` unset → `internal/ui/dist`
 
 ### MOBILE-RT (separate path, summary)
 
-- **API:** `mobileagent/` (gomobile) + `internal/mobileagent`; desktop `cmd/mobilebind`; mock `cmd/mobilebind/mockllm`.  
-- **M0:** Android AAR + `mobile/rt-shell` debug APK built; no `baize serve`. Rebuild: `scripts/build-mobileagent-aar.ps1`.  
-- **Later:** M1 tools/HITL; M3 store listing; no public README promise until ready.  
-- **Details:** real-repo `docs/superpowers/specs/2026-10-23-mobile-rt-design.md`.
+- **API:** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`; impl in `internal/mobileagent`.  
+- **M0:** one no-tools turn + AAR.  
+- **M1:** `get_time` + `http_get` (HITL on the latter); shell Approve/Deny. Rebuild AAR: `scripts/build-mobileagent-aar.ps1`.  
+- **Later:** M2 secrets/dual platform; M3 store listing; no public README promise until ready.
 
 See also: [deployment](./deployment.en.md), [configuration](./configuration.en.md), [architecture](./architecture.en.md).
