@@ -1,18 +1,23 @@
 **中文** | [English](./mobile.en.md)
 
-# 移动端（客户端壳）
+# 移动端
 
-白泽是 **旁挂在服务端的 Agent Runtime**。本文描述的 Capacitor / 浏览器路径是 **控制台客户端**（连已部署实例）。
+白泽有两条互不替代的移动相关路径：
 
-**机上嵌入裁剪版 Go Agent（MOBILE-RT）** 已录入规划、**暂缓开刀**（大工程；仅壳遥控对「手机自带 Agent」意义有限）。需求在 `baize_real`：`docs/superpowers/notes/2026-10-22-mobile-on-device-runtime.md`（公开仓不同步）。
+| 路径 | 跑在哪 | 作用 |
+|------|--------|------|
+| **Capacitor / 浏览器壳**（本文主体） | 手机 WebView / 浏览器 | **遥控**已部署的旁挂 `baize serve`（控制台客户端） |
+| **MOBILE-RT**（机上编排） | 用户设备内嵌的裁剪版 Go Agent | **分摊服务端**：Run 循环在设备上跑；默认设备直连 LLM API |
+
+**MOBILE-RT** 规格（real，公开仓不同步）：[`../superpowers/specs/2026-10-23-mobile-rt-design.md`](../superpowers/specs/2026-10-23-mobile-rt-design.md)。**M0 已通**（薄包 + 桌面 demo）；**不是**把完整 `baize serve` 搬进 App。产品路径：可行后推进 **商店上架**（规格 M3）。
 
 ## 架构边界
 
 | 层级 | 跑在哪 | 说明 |
 |------|--------|------|
-| Runtime（`baize serve`） | Linux / macOS / Windows 服务器或本机 | HTTP API、SSE、连接器、HITL、渠道 |
+| Runtime（`baize serve`） | Linux / macOS / Windows 服务器或本机 | HTTP API、SSE、连接器、HITL、渠道；旁挂主线 |
 | 控制台 UI（`web/chat`） | 浏览器，或 Capacitor WebView | 同源 `/ui` + `/v0`，或壳内配置 `BAIZE_API_ORIGIN` |
-| gomobile | **不采用** | 适合极薄 Go 库绑定；无法替代长驻 Runtime + React 控制台 |
+| gomobile（MOBILE-RT） | 公开包 `mobileagent/` → AAR | `Configure` / `ChatOnce`；AAR 在 `mobile/rt-shell/app/libs/`；**禁止** bind `./cmd/baize` |
 
 ```text
 手机 Capacitor 壳  ──HTTPS──►  远端 baize（public_base_url / 局域网 IP）
@@ -67,11 +72,17 @@ npm run open:android
 - **深链登录 / OAuth**：原生平台走 `@capacitor/browser`
 - **上传**：沿用隐藏 file input；Android/iOS 工程生成后按商店要求补权限说明
 
-### 明确不做（本阶段）
+### 明确不做（Capacitor 壳路径）
 
-- 用 gomobile / `GOOS=android` 编译 `./cmd/baize` 上架
-- App 内嵌完整 Runtime、离线 Agent、推送通知
-- React Native / Flutter 重写控制台
+- 用壳冒充「机上 Agent」（壳不跑本机 Engine；那是 MOBILE-RT）
+- App 内嵌完整 `baize serve`、推送通知、React Native / Flutter 重写控制台
+
+### MOBILE-RT（另路径，摘要）
+
+- **API：** `mobileagent/`（gomobile）+ `internal/mobileagent`（实现）；桌面 `cmd/mobilebind`；mock `cmd/mobilebind/mockllm`。  
+- **M0：** Android AAR + `mobile/rt-shell` 空壳 APK 已构建；不依赖 `baize serve`。重建：`scripts/build-mobileagent-aar.ps1`。  
+- **其后：** M1 工具/HITL；M3 商店上架；公开 README 达标前不写承诺。  
+- **细节：** real 仓 `docs/superpowers/specs/2026-10-23-mobile-rt-design.md`。
 
 ## 相关文档
 

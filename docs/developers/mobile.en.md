@@ -1,18 +1,23 @@
 **English** | [中文](./mobile.md)
 
-# Mobile (client shell)
+# Mobile
 
-Baize is a **sidecar Agent Runtime on a server**. This doc covers the Capacitor / browser path as an **operator console client** (talks to a deployed instance).
+Baize has two separate mobile-related paths:
 
-**On-device trimmed Go Agent (MOBILE-RT)** is captured in planning and **deferred** (large effort; a remote-only shell is weak for “Agent on the phone”). Requirement note lives on `baize_real`: `docs/superpowers/notes/2026-10-22-mobile-on-device-runtime.md` (not exported to the public tree).
+| Path | Where it runs | Role |
+|------|---------------|------|
+| **Capacitor / browser shell** (this doc’s focus) | Phone WebView / browser | **Remote control** of a deployed sidecar `baize serve` |
+| **MOBILE-RT** (on-device orchestration) | Trimmed Go agent embedded on the device | **Offload the server**: Run loop on-device; device talks to the LLM API by default |
+
+**MOBILE-RT** design (real repo; not always in the public export): `docs/superpowers/specs/2026-10-23-mobile-rt-design.md`. **M0 done** (thin package + desktop demo)—not shipping full `baize serve` inside an app. Product path: proceed to **store listing** (spec phase M3) after feasibility.
 
 ## Boundaries
 
 | Layer | Where it runs | Notes |
 |-------|---------------|--------|
-| Runtime (`baize serve`) | Linux / macOS / Windows | HTTP API, SSE, connectors, HITL, channels |
+| Runtime (`baize serve`) | Linux / macOS / Windows | HTTP API, SSE, connectors, HITL, channels; sidecar mainline |
 | Console UI (`web/chat`) | Browser or Capacitor WebView | Same-origin `/ui` + `/v0`, or `BAIZE_API_ORIGIN` in the shell |
-| gomobile | **Not used** | Fine for tiny Go bindings; not a substitute for a long-lived Runtime + React console |
+| gomobile (MOBILE-RT) | Public `mobileagent/` → AAR | `Configure` / `ChatOnce`; AAR at `mobile/rt-shell/app/libs/`; **do not** bind `./cmd/baize` |
 
 ## Phone-browser baseline (before the shell)
 
@@ -48,10 +53,16 @@ npm run open:android
 
 Default server embeds are unchanged (`BAIZE_MOBILE` unset → `internal/ui/dist`, `base=/ui/`).
 
-### Out of scope (this phase)
+### Out of scope (Capacitor shell path)
 
-- Compiling `./cmd/baize` with gomobile for the stores
-- On-device full Runtime, offline agent, push notifications
-- React Native / Flutter rewrite of the console
+- Treating the shell as an on-device Agent (the shell does not run a local Engine; that is MOBILE-RT)
+- Embedding full `baize serve`, push notifications, or a React Native / Flutter console rewrite
+
+### MOBILE-RT (separate path, summary)
+
+- **API:** `mobileagent/` (gomobile) + `internal/mobileagent`; desktop `cmd/mobilebind`; mock `cmd/mobilebind/mockllm`.  
+- **M0:** Android AAR + `mobile/rt-shell` debug APK built; no `baize serve`. Rebuild: `scripts/build-mobileagent-aar.ps1`.  
+- **Later:** M1 tools/HITL; M3 store listing; no public README promise until ready.  
+- **Details:** real-repo `docs/superpowers/specs/2026-10-23-mobile-rt-design.md`.
 
 See also: [deployment](./deployment.en.md), [configuration](./configuration.en.md), [architecture](./architecture.en.md).

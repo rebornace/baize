@@ -612,7 +612,7 @@ export function EvalSettings() {
               value={status}
               onChange={(e) => setStatus(e.target.value)}
               disabled={busy}
-              placeholder="failed"
+              placeholder={EVAL.statusPlaceholder}
             />
           </Field>
           <Field label={EVAL.minDurationLabel}>
@@ -621,7 +621,7 @@ export function EvalSettings() {
               onChange={(e) => setMinDurationMs(e.target.value)}
               disabled={busy}
               inputMode="numeric"
-              placeholder="60000"
+              placeholder={EVAL.minDurationPlaceholder}
             />
           </Field>
           <Field label={EVAL.eventTypeLabel}>

@@ -3,6 +3,8 @@ import { Activity } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getMetricsText, getRecentLogs } from '../api/metrics'
 import { Button, EmptyState, PageHeader, ToastRegion, useToast } from '../components/ui'
+import { dateTimeLocale } from '../conversationUpdatedLabel'
+import { useLocale } from '../locale/LocaleContext'
 import { METRICS, friendlyError } from '../strings'
 import {
   buildMetricsOverview,
@@ -31,6 +33,7 @@ function overviewCopyText(o: MetricsOverview): string {
 }
 
 export function MetricsSettings() {
+  const { locale } = useLocale()
   const [tab, setTab] = useState<Tab>('overview')
   const [metricsText, setMetricsText] = useState('')
   const [logText, setLogText] = useState('')
@@ -43,33 +46,38 @@ export function MetricsSettings() {
     [metricsText],
   )
 
+  const formatLoadedAt = useCallback(
+    () => new Date().toLocaleString(dateTimeLocale(locale)),
+    [locale],
+  )
+
   const loadMetrics = useCallback(async () => {
     setBusy(true)
     try {
       const body = await getMetricsText()
       setMetricsText(body)
-      setLoadedAt(new Date().toLocaleString())
+      setLoadedAt(formatLoadedAt())
     } catch (e) {
       const f = friendlyError(e)
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
-  }, [push])
+  }, [push, formatLoadedAt])
 
   const loadLogs = useCallback(async () => {
     setBusy(true)
     try {
       const body = await getRecentLogs(200)
       setLogText(body.lines.join('\n'))
-      setLoadedAt(new Date().toLocaleString())
+      setLoadedAt(formatLoadedAt())
     } catch (e) {
       const f = friendlyError(e)
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setBusy(false)
     }
-  }, [push])
+  }, [push, formatLoadedAt])
 
   const load = useCallback(async () => {
     if (tab === 'overview') await loadMetrics()

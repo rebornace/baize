@@ -1,7 +1,12 @@
 import type { Locale } from './locale/types'
 
-function localeTag(locale: Locale): string {
+/** BCP 47 tag for `toLocaleString` / `Intl` (zh UI → zh-CN, en UI → en-US). */
+export function dateTimeLocale(locale: Locale): string {
   return locale === 'en' ? 'en-US' : 'zh-CN'
+}
+
+function localeTag(locale: Locale): string {
+  return dateTimeLocale(locale)
 }
 
 /** Sidebar meta line for conversation `updated_at` (locale-aware, compact). */

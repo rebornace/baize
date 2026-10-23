@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { MetricsSettings } from './MetricsSettings'
 import * as metricsApi from '../api/metrics'
+import { LocaleProvider } from '../locale/LocaleContext'
 import { setPack } from '../locale/pack'
 import { zhPack } from '../locales/zh'
 
@@ -12,6 +13,7 @@ let host: HTMLDivElement
 let root: Root
 
 beforeEach(() => {
+  localStorage.setItem('baize.locale', 'zh-CN')
   setPack(zhPack)
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -29,9 +31,11 @@ afterEach(() => {
 async function renderPage() {
   await act(async () => {
     root.render(
-      <MemoryRouter>
-        <MetricsSettings />
-      </MemoryRouter>,
+      <LocaleProvider>
+        <MemoryRouter>
+          <MetricsSettings />
+        </MemoryRouter>
+      </LocaleProvider>,
     )
     await Promise.resolve()
     await Promise.resolve()
@@ -67,7 +71,7 @@ describe('MetricsSettings', () => {
       new ApiError(403, 'forbidden', 'HTTP 403: forbidden'),
     )
     await renderPage()
-    expect(host.textContent).toMatch(/没有访问权限|登录已失效|unauthorized/i)
+    expect(host.textContent).toMatch(/没有访问权限|登录已失效|No access|unauthorized|session expired/i)
   })
 
   it('switches to logs tab and loads recent lines', async () => {

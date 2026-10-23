@@ -457,6 +457,15 @@ export function ToolMatchingSettings() {
       <PageHeader title={RUNTIME.sectionToolMatch} description={RUNTIME.toolMatchHint} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
+      {/* Groups first: demo path must find connector grouping without scrolling past Ollama/API walls. */}
+      <ConnectorGroupsPanel
+        readOnly={readOnly}
+        onToast={(msg, kind) => {
+          if (kind === 'err') push({ tone: 'error', title: msg })
+          else push({ tone: 'success', title: msg })
+        }}
+      />
+
       {/* —— Matching —— */}
       <h2 className="settings-subheading">{RUNTIME.toolMatchSectionEmbed}</h2>
       <p className="settings-muted">{RUNTIME.toolMatchSectionEmbedHint}</p>
@@ -853,14 +862,6 @@ export function ToolMatchingSettings() {
           </section>
         </details>
       ) : null}
-
-      <ConnectorGroupsPanel
-        readOnly={readOnly}
-        onToast={(msg, kind) => {
-          if (kind === 'err') push({ tone: 'error', title: msg })
-          else push({ tone: 'success', title: msg })
-        }}
-      />
 
       <ConfirmDialog
         open={cleanupOpen}

@@ -61,7 +61,7 @@ describe('EvalSettings', () => {
     expect(host.querySelector('[data-testid="eval-query"]')).toBeTruthy()
     expect(host.querySelector('[data-testid="eval-sample"]')).toBeTruthy()
     expect(host.querySelector('[data-testid="eval-candidates"]')).toBeTruthy()
-    expect(host.textContent).toMatch(/evidence-eval/)
+    expect(host.textContent).toMatch(/评测脚本|developers|corpus|语料/)
   })
 
   it('samples into corpus from filter', async () => {

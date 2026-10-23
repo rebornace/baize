@@ -339,13 +339,15 @@ export const enPack = {
     description:
       'Turn failed or slow chats into cases and re-score snapshots here. This page does not call the model.',
     harnessHint:
-      'For batch runs that call the model again, use the repo script evidence-eval; this page only manages corpus and snapshot scores.',
+      'This page only manages corpus and snapshot scores. For batch re-runs that call the model, use the repo eval scripts (developers).',
     candidatesTitle: 'Candidate chats',
     fromLabel: 'From',
     toLabel: 'To',
     statusLabel: 'Status',
     statusHint: 'Optional, e.g. failed or succeeded',
-    minDurationLabel: 'Min duration (ms)',
+    statusPlaceholder: 'failed',
+    minDurationLabel: 'Min duration (milliseconds)',
+    minDurationPlaceholder: '60000',
     eventTypeLabel: 'Event type',
     query: 'Query',
     querying: 'Querying…',
@@ -481,10 +483,10 @@ export const enPack = {
       'Adjust public base URL, conversation length, tool timeouts, and history compaction; changes apply immediately without restart. Control-plane tokens can also be rotated here.',
     descriptionOperator: 'Read-only view of active advanced settings; ask an admin to change them.',
     sectionPublicBase: 'Public base URL',
-    fieldPublicBase: 'Runtime public URL',
+    fieldPublicBase: 'Public service URL',
     hintPublicBase:
-      'Root Runtime URL reachable by admin browsers and OAuth servers (e.g. http://127.0.0.1:8080). MCP OAuth callbacks and sidecar callbacks need this; leave empty and save to fall back to YAML.',
-    publicBaseRequiredHint: 'Required for MCP OAuth',
+      'Root URL others (and hosted login) can open (e.g. http://127.0.0.1:8080). Needed for hosted login and outbound callbacks; leave empty and save to fall back to the config file.',
+    publicBaseRequiredHint: 'Required for hosted-login callbacks',
     savePublicBase: 'Save public base URL',
     toastPublicBaseSaved: 'Public base URL saved; effective immediately',
     errPublicBaseInvalid: 'Enter a full URL starting with http:// or https://',
@@ -593,13 +595,13 @@ export const enPack = {
     connectorGroupsSave: 'Save groups',
     connectorGroupsSaved: 'Groups saved and applied',
     toolMatchHint:
-      'Matching and decision models both support one-click local Ollama, or a cloud / self-hosted API. They can share the same Ollama. The master smart speed-up switch stays under Advanced.',
+      'Start with connector groups if you need them, then pick local or API matching / decision models. Matching and decision can share one Ollama. The master smart speed-up switch stays under Advanced.',
     toolMatchSectionEmbed: 'Tool matching model',
     toolMatchSectionEmbedHint:
       'Enhanced matching uses an embedding model for tool prefilter. One-click local install, or an Embedding API. Failures fall back to standard matching.',
     toolMatchSectionDecide: 'Decision model',
     toolMatchSectionDecideHint:
-      'System One decision model (default tev1). One-click local install, or a compatible API. Still requires the master switch under Advanced → Smart speed-up.',
+      'Decision-layer model (default tev1; technical name System One). One-click local install, or a compatible API. Still requires the master switch under Advanced → Smart speed-up.',
     toolMatchDecideNeedEnable:
       'Still turn on the master switch under Advanced → Smart speed-up for the decision layer to run.',
     toolMatchDecideOpenRuntime: 'Open Advanced',
@@ -618,7 +620,7 @@ export const enPack = {
     toolMatchDecideLocalHint:
       'Shares the same local Ollama as matching: installs if needed, then pulls tev1 and probes. No CLI.',
     toolMatchDecideAPITitle: 'Cloud / self-hosted API',
-    toolMatchDecideAPIHint: 'System One-compatible root URL (do not append /v1/systemone).',
+    toolMatchDecideAPIHint: 'Decision-service compatible root URL (do not append /v1/systemone).',
     toolMatchDecideAPIBaseHint: 'e.g. https://api.example.com or http://127.0.0.1:11434.',
     toolMatchDecideAPIModelHint: 'Default tev1; or tev1:0.8b, nimble, or a cloud model id.',
     toolMatchDecideAPIEnable: 'Test and enable API decision',
@@ -758,7 +760,7 @@ export const enPack = {
     fieldCompactSummaryTimeout: 'Max wait for the summary (seconds)',
     hintCompactSummaryTimeout: 'Enter 1–600; compaction is given up on timeout.',
     advancedSettings: 'Advanced settings',
-    badgeOverridden: 'Overrides baseline',
+    badgeOverridden: 'Customized',
     saveKnobs: 'Save Advanced settings',
     saving: 'Saving…',
     loading: 'Loading…',
