@@ -2,6 +2,7 @@ package run_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -109,8 +110,11 @@ func TestScheduledRunStillWaitsForApproval(t *testing.T) {
 	}
 
 	select {
-	case <-errCh:
-		t.Fatal("Execute must block until approval")
-	default:
+	case err := <-errCh:
+		if err == nil || !errors.Is(err, run.ErrWaitingHuman) {
+			t.Fatalf("Execute should release with ErrWaitingHuman, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Execute did not return after HITL pause")
 	}
 }

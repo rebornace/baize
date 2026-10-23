@@ -332,7 +332,8 @@ func (s *Memory) LeaseRun(id string, ttl time.Duration) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("run not found")
 	}
-	if r.Status != StatusQueued && r.Status != StatusRunning {
+	// waiting_human is leasable so KindHitlResume workers can pick up a paused run.
+	if r.Status != StatusQueued && r.Status != StatusRunning && r.Status != StatusWaitingHuman {
 		return false, nil
 	}
 	now := time.Now().UTC()

@@ -35,6 +35,17 @@ type Config struct {
 		// DP-2a Tool-RAG dense retrieval (same base_url / api key as chat).
 		// Empty ⇒ lexical BM25 fallback only.
 		EmbeddingModel string `yaml:"embedding_model"`
+		// APIMaxRetries is retries after the first LLM HTTP attempt for
+		// network / 429 / 5xx. nil → default 3; explicit 0 disables retries.
+		APIMaxRetries *int `yaml:"api_max_retries"`
+		// ConnectTimeoutSec bounds TCP dial + TLS handshake (default 10).
+		ConnectTimeoutSec *int `yaml:"connect_timeout_sec"`
+		// ResponseHeaderTimeoutSec bounds time to first response header (default 60).
+		ResponseHeaderTimeoutSec *int `yaml:"response_header_timeout_sec"`
+		// StreamIdleTimeoutSec bounds silence between SSE chunks (default 120).
+		StreamIdleTimeoutSec *int `yaml:"stream_idle_timeout_sec"`
+		// MaxRequestTimeoutSec bounds non-stream Chat (default 120).
+		MaxRequestTimeoutSec *int `yaml:"max_request_timeout_sec"`
 	} `yaml:"llm"`
 	Skills struct {
 		BuiltinDir  string   `yaml:"builtin_dir"`
@@ -81,6 +92,8 @@ type Config struct {
 		MaxSteps int `yaml:"max_steps"`
 		// ToolTimeoutSec is per-tool HTTP/invoke deadline (default 60).
 		ToolTimeoutSec int `yaml:"tool_timeout_sec"`
+		// ParallelToolLimit caps concurrent safe tool invokes per turn (default 8).
+		ParallelToolLimit int `yaml:"parallel_tool_limit"`
 	} `yaml:"run"`
 	Conversation struct {
 		MaxMessages       int   `yaml:"max_messages"`
@@ -306,11 +319,34 @@ func applyDefaults(cfg *Config) {
 	if cfg.LLM.APIKeyEnv == "" {
 		cfg.LLM.APIKeyEnv = "BAIZE_API_KEY"
 	}
+	if cfg.LLM.APIMaxRetries == nil {
+		v := 3
+		cfg.LLM.APIMaxRetries = &v
+	}
+	if cfg.LLM.ConnectTimeoutSec == nil {
+		v := 10
+		cfg.LLM.ConnectTimeoutSec = &v
+	}
+	if cfg.LLM.ResponseHeaderTimeoutSec == nil {
+		v := 60
+		cfg.LLM.ResponseHeaderTimeoutSec = &v
+	}
+	if cfg.LLM.StreamIdleTimeoutSec == nil {
+		v := 120
+		cfg.LLM.StreamIdleTimeoutSec = &v
+	}
+	if cfg.LLM.MaxRequestTimeoutSec == nil {
+		v := 120
+		cfg.LLM.MaxRequestTimeoutSec = &v
+	}
 	if cfg.Run.MaxSteps <= 0 {
 		cfg.Run.MaxSteps = 16
 	}
 	if cfg.Run.ToolTimeoutSec <= 0 {
 		cfg.Run.ToolTimeoutSec = 60
+	}
+	if cfg.Run.ParallelToolLimit <= 0 {
+		cfg.Run.ParallelToolLimit = 8
 	}
 	if cfg.Listen == "" {
 		cfg.Listen = ":8080"

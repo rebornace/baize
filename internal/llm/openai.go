@@ -8,9 +8,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
+)
+
+const (
+	defaultConnectTimeout        = 10 * time.Second
+	defaultResponseHeaderTimeout = 60 * time.Second
+	defaultStreamIdleTimeout     = 120 * time.Second
+	defaultMaxRequestTimeout     = 120 * time.Second
 )
 
 // OpenAI is an openai_compatible Provider (chat/completions + tool_calls).
@@ -25,17 +33,62 @@ type OpenAI struct {
 	// When false, callers should fall back to text-only. Defaults to false.
 	// Exposed as SupportsVision() through the Provider interface.
 	VisionSupported bool
-	HTTPClient      *http.Client
+	// MaxRetries is the number of retries after the first attempt for
+	// retryable failures (network / 429 / 5xx). NewOpenAI sets DefaultAPIMaxRetries (3).
+	// Explicit 0 disables retries (pre-P0 behaviour).
+	MaxRetries int
+	// ConnectTimeout bounds TCP dial + TLS handshake (default 10s).
+	ConnectTimeout time.Duration
+	// ResponseHeaderTimeout bounds time to first response header (default 60s).
+	ResponseHeaderTimeout time.Duration
+	// StreamIdleTimeout bounds silence between SSE reads (default 120s).
+	StreamIdleTimeout time.Duration
+	// MaxRequestTimeout bounds non-stream Chat via context (default 120s).
+	// Stream uses StreamIdleTimeout instead; set 0 to disable the Chat bound.
+	MaxRequestTimeout time.Duration
+	HTTPClient        *http.Client
 }
 
 func NewOpenAI(baseURL, apiKey, model string) *OpenAI {
-	return &OpenAI{
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		APIKey:  apiKey,
-		Model:   model,
-		HTTPClient: &http.Client{
-			// Avoid runs stuck in "running" forever when the provider hangs.
-			Timeout: 120 * time.Second,
+	o := &OpenAI{
+		BaseURL:               strings.TrimRight(baseURL, "/"),
+		APIKey:                apiKey,
+		Model:                 model,
+		MaxRetries:            DefaultAPIMaxRetries,
+		ConnectTimeout:        defaultConnectTimeout,
+		ResponseHeaderTimeout: defaultResponseHeaderTimeout,
+		StreamIdleTimeout:     defaultStreamIdleTimeout,
+		MaxRequestTimeout:     defaultMaxRequestTimeout,
+	}
+	o.HTTPClient = o.buildHTTPClient()
+	return o
+}
+
+// RebuildHTTPClient refreshes HTTPClient from the timeout fields. Call after
+// changing ConnectTimeout / ResponseHeaderTimeout when not supplying a custom client.
+func (o *OpenAI) RebuildHTTPClient() {
+	o.HTTPClient = o.buildHTTPClient()
+}
+
+func (o *OpenAI) buildHTTPClient() *http.Client {
+	connect := o.ConnectTimeout
+	if connect <= 0 {
+		connect = defaultConnectTimeout
+	}
+	header := o.ResponseHeaderTimeout
+	if header <= 0 {
+		header = defaultResponseHeaderTimeout
+	}
+	dialer := &net.Dialer{Timeout: connect}
+	return &http.Client{
+		// Timeout left 0: Chat uses MaxRequestTimeout via context; Stream uses idle reads.
+		Timeout: 0,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           dialer.DialContext,
+			TLSHandshakeTimeout:   connect,
+			ResponseHeaderTimeout: header,
+			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}
 }
@@ -52,6 +105,11 @@ func (o *OpenAI) ChatWithChoice(ctx context.Context, messages []Message, tools [
 }
 
 func (o *OpenAI) chat(ctx context.Context, messages []Message, tools []ToolSpec, choice *ToolChoice) (Message, error) {
+	if o.MaxRequestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, o.MaxRequestTimeout)
+		defer cancel()
+	}
 	client, reqBody, err := o.prepareChat(ctx, messages, tools, false, choice)
 	if err != nil {
 		return Message{}, err
@@ -114,17 +172,42 @@ func (o *OpenAI) chatStream(ctx context.Context, messages []Message, tools []Too
 	}
 
 	url := o.BaseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return Message{}, fmt.Errorf("openai_compatible: build request: %w", err)
+	retries := o.MaxRetries
+	if retries < 0 {
+		retries = 0
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.APIKey)
-	req.Header.Set("Accept", "text/event-stream")
+	var resp *http.Response
+	for attempt := 0; attempt <= retries; attempt++ {
+		if attempt > 0 {
+			if err := sleepCtx(ctx, retryBackoff(attempt)); err != nil {
+				return Message{}, err
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return Message{}, fmt.Errorf("openai_compatible: build request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+o.APIKey)
+		req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return Message{}, fmt.Errorf("openai_compatible: http: %w", err)
+		resp, err = client.Do(req)
+		if err != nil {
+			if attempt < retries && RetryableHTTP(0, err) {
+				continue
+			}
+			return Message{}, fmt.Errorf("openai_compatible: http: %w", err)
+		}
+		if RetryableHTTP(resp.StatusCode, nil) && attempt < retries {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			resp = nil
+			continue
+		}
+		break
+	}
+	if resp == nil {
+		return Message{}, fmt.Errorf("openai_compatible: empty response after retries")
 	}
 	defer resp.Body.Close()
 
@@ -138,7 +221,7 @@ func (o *OpenAI) chatStream(ctx context.Context, messages []Message, tools []Too
 		return Message{}, fmt.Errorf("openai_compatible: non-SSE response (%s): %s", ct, truncateBytes(body, 512))
 	}
 
-	return o.readChatSSE(resp.Body, onThink, onContent)
+	return o.readChatSSE(ctx, resp.Body, onThink, onContent)
 }
 
 func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []ToolSpec, stream bool, choice *ToolChoice) (*http.Client, openAIRequest, error) {
@@ -188,8 +271,12 @@ func (o *OpenAI) prepareChat(ctx context.Context, messages []Message, tools []To
 	return client, reqBody, nil
 }
 
-func (o *OpenAI) readChatSSE(r io.Reader, onThink, onContent func(string)) (Message, error) {
-	scanner := bufio.NewScanner(r)
+func (o *OpenAI) readChatSSE(ctx context.Context, r io.Reader, onThink, onContent func(string)) (Message, error) {
+	idle := o.StreamIdleTimeout
+	if idle <= 0 {
+		idle = defaultStreamIdleTimeout
+	}
+	scanner := bufio.NewScanner(&idleTimeoutReader{ctx: ctx, r: r, idle: idle})
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var thinkBuf, contentBuf strings.Builder
@@ -296,6 +383,38 @@ type openAIStreamToolCall struct {
 	Function openAIFunctionCall `json:"function"`
 }
 
+// idleTimeoutReader fails a Read if no bytes arrive within idle, or ctx cancels.
+type idleTimeoutReader struct {
+	ctx  context.Context
+	r    io.Reader
+	idle time.Duration
+}
+
+func (i *idleTimeoutReader) Read(p []byte) (int, error) {
+	if i.idle <= 0 {
+		return i.r.Read(p)
+	}
+	type result struct {
+		n   int
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		n, err := i.r.Read(p)
+		ch <- result{n, err}
+	}()
+	t := time.NewTimer(i.idle)
+	defer t.Stop()
+	select {
+	case <-i.ctx.Done():
+		return 0, i.ctx.Err()
+	case <-t.C:
+		return 0, fmt.Errorf("openai_compatible: stream idle timeout after %s", i.idle)
+	case res := <-ch:
+		return res.n, res.err
+	}
+}
+
 func streamThinkingDelta(d openAIStreamDelta) string {
 	if strings.TrimSpace(d.ReasoningContent) != "" {
 		return d.ReasoningContent
@@ -317,6 +436,42 @@ func (o *OpenAI) postChat(ctx context.Context, client *http.Client, reqBody open
 	}
 
 	url := o.BaseURL + "/chat/completions"
+	retries := o.MaxRetries
+	if retries < 0 {
+		retries = 0
+	}
+	var lastBody []byte
+	var lastStatus int
+	var lastErr error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if attempt > 0 {
+			if err := sleepCtx(ctx, retryBackoff(attempt)); err != nil {
+				return nil, 0, err
+			}
+		}
+		body, status, err := o.postChatOnce(ctx, client, url, payload)
+		if err != nil {
+			lastErr = err
+			lastStatus = 0
+			lastBody = nil
+			if attempt < retries && RetryableHTTP(0, err) {
+				continue
+			}
+			return nil, 0, err
+		}
+		lastBody, lastStatus, lastErr = body, status, nil
+		if attempt < retries && RetryableHTTP(status, nil) {
+			continue
+		}
+		return body, status, nil
+	}
+	if lastErr != nil {
+		return nil, 0, lastErr
+	}
+	return lastBody, lastStatus, nil
+}
+
+func (o *OpenAI) postChatOnce(ctx context.Context, client *http.Client, url string, payload []byte) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, 0, fmt.Errorf("openai_compatible: build request: %w", err)

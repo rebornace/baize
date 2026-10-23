@@ -2,7 +2,6 @@ package run
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -73,6 +72,11 @@ const (
 // ErrHITLRejected reports that a human rejected the pending tool approval.
 var ErrHITLRejected = errors.New("hitl rejected")
 
+// ErrWaitingHuman reports that the run paused for HITL/login and released the
+// worker slot. The run remains waiting_human until ContinueFromHITL (typically
+// via a KindHitlResume job) continues it. Callers must not treat this as failure.
+var ErrWaitingHuman = errors.New("waiting human")
+
 // HITLRejectedNote is the neutral, user-facing system note recorded when a
 // human declines an approval. It deliberately avoids "失败"/error wording: a
 // rejection is an intentional decision, not a run error.
@@ -86,6 +90,9 @@ type Engine struct {
 	MaxSteps int // default 16
 	// ToolTimeout bounds a single Tools.Invoke (default 60s).
 	ToolTimeout time.Duration
+	// ParallelToolLimit caps concurrent safe tool invokes in one LLM turn
+	// (default 8). Values <=1 force serial execution.
+	ParallelToolLimit int
 	// Messages optionally persists conversation history across runs.
 	// nil = legacy behavior (no cross-run message persistence). When non-nil,
 	// Execute injects a windowed history into the LLM prompt and the engine
@@ -748,70 +755,12 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			msg.Thinking = ""
 			msg.ThinkingRedacted = false
 			messages = append(messages, msg)
-			loginPaused := false
-			pauseTool := ""
-			for _, tc := range msg.ToolCalls {
-				if err := ctx.Err(); err != nil {
-					return err
+			loginPaused, pauseTool, tcErr := e.runToolCalls(ctx, runID, &messages, msg.ToolCalls)
+			if tcErr != nil {
+				if errors.Is(tcErr, errRunComplete) {
+					return nil
 				}
-				if e.isCancelled(runID) {
-					return context.Canceled
-				}
-
-				convID := identity.ConversationIDFrom(ctx)
-
-				if loginPaused {
-					// Same-turn remaining calls: do not invoke; keep provider
-					// tool_call_id pairing without burning more backend tokens.
-					stub := tool.LoginRequiredContentMsg("已暂停：请先完成浏览器登录后再继续")
-					e.persistToolResult(runID, tc.ID, tc.Name, stub, true)
-					msg := e.toolResultMessage(tc.ID, stub)
-					msg = e.applyToolOffload(ctx, runID, convID, msg, stub, true)
-					messages = append(messages, msg)
-					continue
-				}
-
-				if tc.Name == skill.ActivateToolName {
-					content, isError := e.handleActivateSkill(runID, tc.Arguments)
-					if !isError && len(messages) > 0 && messages[0].Role == llm.RoleSystem {
-						messages[0].Content = e.composeSystem("", runID)
-					}
-					_ = e.Store.AppendEvent(runID, store.Event{
-						Type: EventToolResult,
-						Data: map[string]any{
-							"tool_call_id": tc.ID,
-							"name":         tc.Name,
-							"content":      identity.RedactSensitive(content),
-							"is_error":     isError,
-						},
-					})
-					raw, _ := json.Marshal(content)
-					msg := llm.Message{
-						Role:       llm.RoleTool,
-						ToolCallID: tc.ID,
-						Content:    string(raw),
-					}
-					msg = e.applyToolOffload(ctx, runID, convID, msg, content, isError)
-					messages = append(messages, msg)
-					if !isError {
-						if werr := e.maybeRunWorkflow(ctx, runID); werr != errNoWorkflow {
-							return werr
-						}
-					}
-					continue
-				}
-
-				content, isError, tcErr := e.invokeTool(ctx, runID, tc.ID, tc.Name, tc.Arguments, false)
-				if tcErr != nil && errors.Is(tcErr, ErrHITLRejected) {
-					return tcErr
-				}
-				msg := e.toolResultMessage(tc.ID, content)
-				msg = e.applyToolOffload(ctx, runID, convID, msg, content, isError)
-				messages = append(messages, msg)
-				if tool.NeedsLoginPause(content) {
-					loginPaused = true
-					pauseTool = tc.Name
-				}
+				return tcErr
 			}
 			if loginPaused {
 				connID := e.connectorIDForTool(pauseTool)
@@ -881,7 +830,48 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	if e.isCancelled(runID) {
 		return context.Canceled
 	}
+	// Budget grace: one tools-disabled concluding turn instead of failing
+	// immediately (Hermes-style). Does not bump maxSteps / reopen ReAct.
+	locale := ""
+	if st := e.getRunSkillState(runID); st != nil {
+		locale = st.locale
+	}
+	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: budgetGraceHint(locale, maxSteps)})
+	graceCtx := ctx
+	if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
+		if rec.ModelProfileID != "" {
+			graceCtx = llm.WithModelProfileID(ctx, rec.ModelProfileID)
+		}
+		if rec.ThinkingLevel != "" {
+			graceCtx = llm.WithThinkingLevel(graceCtx, rec.ThinkingLevel)
+		}
+	}
+	graceMsg, graceErr := e.LLM.Chat(graceCtx, messages, nil)
+	if graceErr == nil && e.isCancelled(runID) {
+		return context.Canceled
+	}
+	if graceErr == nil && strings.TrimSpace(graceMsg.Content) != "" && len(graceMsg.ToolCalls) == 0 {
+		msgData := map[string]any{"content": graceMsg.Content, "budget_grace": true}
+		if graceMsg.Usage.TotalTokens > 0 {
+			for k, v := range usageData(maxSteps, graceMsg.Usage) {
+				msgData[k] = v
+			}
+		}
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventLLMMessage,
+			Data: msgData,
+		})
+		if err := e.Store.UpdateRun(runID, store.StatusSucceeded, graceMsg.Content, ""); err != nil {
+			return err
+		}
+		e.recordTerminalMessage(runID)
+		e.triggerMemoryExtract(ctx, runID, graceMsg.Content)
+		return nil
+	}
 	errMsg := fmt.Sprintf("max steps exceeded (%d)", maxSteps)
+	if graceErr != nil {
+		errMsg = errMsg + ": grace: " + graceErr.Error()
+	}
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventLLMError,
 		Data: map[string]any{"error": errMsg},
@@ -889,6 +879,19 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	_ = e.Store.UpdateRun(runID, store.StatusFailed, "", errMsg)
 	e.recordTerminalMessage(runID)
 	return fmt.Errorf("%s", errMsg)
+}
+
+func budgetGraceHint(locale string, maxSteps int) string {
+	if isChineseLocale(locale) {
+		return fmt.Sprintf(
+			"[系统] 本轮推理步数已用尽（上限 %d）。请不要再调用任何工具；仅根据对话与已有工具结果，用现有信息给出尽量完整的结论或说明缺口。",
+			maxSteps,
+		)
+	}
+	return fmt.Sprintf(
+		"[system] Step budget exhausted (limit %d). Do not call any tools; conclude with the best answer from the conversation and tool results so far, or state what is still missing.",
+		maxSteps,
+	)
 }
 
 func (e *Engine) injectAuthCtx(ctx context.Context, runID string) context.Context {

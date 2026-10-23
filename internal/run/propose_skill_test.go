@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -95,16 +96,8 @@ func TestProposeSkillRejectedInstallsNothing(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: false}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("want reject error")
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: false}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if _, ok := cat.Get("demo"); ok {
 		t.Fatal("skill must not be installed on reject")
@@ -128,16 +121,8 @@ func TestProposeSkillApprovedInstalls(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: true}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	pkg, ok := cat.Get("demo")
 	if !ok {
@@ -174,19 +159,11 @@ func TestProposeSkillOperatorApproveDenied(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{
 		Approve: true,
 		Role:    controlplane.RoleOperator,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if _, ok := cat.Get("demo"); ok {
 		t.Fatal("operator approve must not install skill")
@@ -233,19 +210,11 @@ func TestProposeSkillAdminApproveInstalls(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{
 		Approve: true,
 		Role:    controlplane.RoleAdmin,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if _, ok := cat.Get("demo"); !ok {
 		t.Fatal("admin approve must install skill")

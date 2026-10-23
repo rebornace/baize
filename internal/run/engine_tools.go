@@ -203,6 +203,12 @@ func (e *Engine) awaitHITL(ctx context.Context, runID string, tc llm.ToolCall) (
 // one interaction keep the last-known return shape so the value/error contract
 // stays uniform.
 func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval bool) (map[string]any, bool, error) {
+	return e.invokeToolPersist(ctx, runID, callID, name, args, skipApproval, true)
+}
+
+// invokeToolPersist is invokeTool with optional deferred persistence (parallel
+// tool batches persist in original tool_call order on refill).
+func (e *Engine) invokeToolPersist(ctx context.Context, runID, callID, name string, args map[string]any, skipApproval, persist bool) (map[string]any, bool, error) {
 	isError := false
 	content := map[string]any{}
 
@@ -263,6 +269,9 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 			var err error
 			hitl, err = e.awaitHITL(ctx, runID, llm.ToolCall{ID: callID, Name: resolved, Arguments: args})
 			if err != nil {
+				if errors.Is(err, ErrWaitingHuman) {
+					return false, ErrWaitingHuman
+				}
 				if !errors.Is(err, ErrHITLRejected) {
 					if ctx.Err() != nil || e.isCancelled(runID) {
 						return false, context.Canceled
@@ -303,6 +312,9 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 	if rejected {
 		return nil, true, ErrHITLRejected
 	}
+	if errors.Is(rerr, ErrWaitingHuman) {
+		return nil, false, ErrWaitingHuman
+	}
 	if rerr != nil && (ctx.Err() != nil || e.isCancelled(runID)) {
 		return nil, false, rerr
 	}
@@ -320,12 +332,17 @@ func (e *Engine) invokeTool(ctx context.Context, runID, callID, name string, arg
 			}
 		}
 	}
-	e.persistToolResult(runID, callID, resolved, content, isError)
+	if persist {
+		e.persistToolResult(runID, callID, resolved, content, isError)
+	}
 	return content, isError, nil
 }
 
 func (e *Engine) awaitHITLPayload(ctx context.Context, runID, prompt, toolName string, args map[string]any) error {
-	_, err := e.awaitHITLDecision(ctx, runID, &store.HITLPayload{
+	// Workflow steps still use a blocking Gate wait: cold resume cannot rebuild
+	// in-flight pipeline state (see workflowInterrupted). ReAct tool approvals
+	// use non-blocking awaitHITLDecision instead.
+	_, err := e.awaitHITLDecisionBlocking(ctx, runID, &store.HITLPayload{
 		Prompt:    prompt,
 		ToolName:  toolName,
 		Arguments: args,
@@ -357,67 +374,33 @@ func (e *Engine) connectorIDForTool(name string) string {
 
 // awaitLoginDecision pauses the run until the user signs in, skips step/system, or aborts.
 func (e *Engine) awaitLoginDecision(ctx context.Context, runID, toolName, connectorID string) error {
-	if e.Gate == nil {
-		// No gate (rare): end the run with a login hint instead of hanging.
-		return e.finalizeLoginPaused(runID)
-	}
-	d, err := e.awaitHITLDecision(ctx, runID, &store.HITLPayload{
+	_, err := e.awaitHITLDecision(ctx, runID, &store.HITLPayload{
 		Prompt:      "需要登录后才能继续。请点击「浏览器登录」，或「忽略当前步骤」改用其它方式，或「忽略此系统」跳过该业务系统。",
 		ToolName:    toolName,
 		Kind:        store.HITLKindLogin,
 		ConnectorID: connectorID,
 	})
-	if err != nil {
-		return err
-	}
-	if d.Approve {
-		return ErrLoginResumedContinue
-	}
-	comment := strings.TrimSpace(d.Comment)
-	if comment == store.HITLCommentSkipStep {
-		e.skipToolForRun(runID, toolName)
-		_ = e.Store.AppendEvent(runID, store.Event{
-			Type: EventHITLResumed,
-			Data: map[string]any{
-				"decision":     "skip_step",
-				"connector_id": connectorID,
-				"tool_name":    toolName,
-				"kind":         store.HITLKindLogin,
-			},
-		})
-		_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
-		_ = e.Store.SetHITL(runID, nil)
-		return ErrLoginStepSkippedContinue
-	}
-	if comment == store.HITLCommentSkipLogin {
-		e.skipConnectorForRun(runID, connectorID)
-		_ = e.Store.AppendEvent(runID, store.Event{
-			Type: EventHITLResumed,
-			Data: map[string]any{
-				"decision":     "skip_login",
-				"connector_id": connectorID,
-				"tool_name":    toolName,
-				"kind":         store.HITLKindLogin,
-			},
-		})
-		_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
-		_ = e.Store.SetHITL(runID, nil)
-		return ErrLoginSkippedContinue
-	}
-	// abort or plain reject
-	e.finalizeRejectedRun(runID)
-	return ErrHITLRejected
+	return err
 }
 
+// awaitHITLDecision persists waiting_human + HITL payload and returns
+// ErrWaitingHuman so the worker can release its slot. Resume is via
+// ContinueFromHITL (cold path / KindHitlResume job).
 func (e *Engine) awaitHITLDecision(ctx context.Context, runID string, payload *store.HITLPayload) (Decision, error) {
+	if err := e.persistHITLWaiting(ctx, runID, payload); err != nil {
+		return Decision{}, err
+	}
+	return Decision{}, ErrWaitingHuman
+}
+
+// awaitHITLDecisionBlocking is the legacy select-on-Gate path used by workflow
+// step approvals (cold resume cannot rebuild pipeline state mid-flight).
+func (e *Engine) awaitHITLDecisionBlocking(ctx context.Context, runID string, payload *store.HITLPayload) (Decision, error) {
 	if e.Gate == nil {
 		return Decision{}, fmt.Errorf("approval required but gate is nil")
 	}
-	if payload == nil {
-		return Decision{}, fmt.Errorf("nil hitl payload")
-	}
-	if payload.Kind == "" {
-		payload.Kind = store.HITLKindApproval
+	if err := e.persistHITLWaiting(ctx, runID, payload); err != nil {
+		return Decision{}, err
 	}
 
 	ch, err := e.Gate.BeginWait(runID)
@@ -425,20 +408,6 @@ func (e *Engine) awaitHITLDecision(ctx context.Context, runID string, payload *s
 		return Decision{}, err
 	}
 	defer e.Gate.EndWait(runID)
-
-	data := map[string]any{
-		"prompt":    payload.Prompt,
-		"tool_name": payload.ToolName,
-		"arguments": payload.Arguments,
-		"kind":      payload.Kind,
-	}
-	if payload.ConnectorID != "" {
-		data["connector_id"] = payload.ConnectorID
-	}
-	_ = e.Store.AppendEvent(runID, store.Event{Type: EventHITLWaiting, Data: data})
-	_ = e.Store.UpdateRun(runID, store.StatusWaitingHuman, "", "")
-	_ = e.Store.SetHITL(runID, payload)
-	e.deliverHITLNotify(runID, payload)
 
 	var d Decision
 	select {
@@ -448,7 +417,6 @@ func (e *Engine) awaitHITLDecision(ctx context.Context, runID string, payload *s
 		return Decision{}, context.Canceled
 	}
 	if payload.Kind == store.HITLKindLogin {
-		// Login waits: caller interprets Approve / skip / abort.
 		if d.Approve {
 			_ = e.Store.AppendEvent(runID, store.Event{
 				Type: EventHITLResumed,
@@ -474,6 +442,35 @@ func (e *Engine) awaitHITLDecision(ctx context.Context, runID string, payload *s
 	_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
 	_ = e.Store.SetHITL(runID, nil)
 	return d, nil
+}
+
+func (e *Engine) persistHITLWaiting(ctx context.Context, runID string, payload *store.HITLPayload) error {
+	if payload == nil {
+		return fmt.Errorf("nil hitl payload")
+	}
+	if payload.Kind == "" {
+		payload.Kind = store.HITLKindApproval
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if e.isCancelled(runID) {
+		return context.Canceled
+	}
+	data := map[string]any{
+		"prompt":    payload.Prompt,
+		"tool_name": payload.ToolName,
+		"arguments": payload.Arguments,
+		"kind":      payload.Kind,
+	}
+	if payload.ConnectorID != "" {
+		data["connector_id"] = payload.ConnectorID
+	}
+	_ = e.Store.AppendEvent(runID, store.Event{Type: EventHITLWaiting, Data: data})
+	_ = e.Store.UpdateRun(runID, store.StatusWaitingHuman, "", "")
+	_ = e.Store.SetHITL(runID, payload)
+	e.deliverHITLNotify(runID, payload)
+	return nil
 }
 
 func lastToolCallID(st store.Store, runID string) string {

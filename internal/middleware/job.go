@@ -8,6 +8,9 @@ type JobKind string
 const (
 	// KindRun is a normal agent run (chat / webhook / channel message).
 	KindRun JobKind = "run"
+	// KindHitlResume continues a waiting_human run after an approve/reject
+	// decision (worker-side ContinueFromHITL; does not hold a slot while waiting).
+	KindHitlResume JobKind = "hitl_resume"
 )
 
 // Job is a unit of work: a run to execute. The DB run row is authoritative;
@@ -22,6 +25,11 @@ type Job struct {
 	UserParts  []Part    `json:"user_parts,omitempty"`
 	Locale     string    `json:"locale,omitempty"`
 	EnqueuedAt time.Time `json:"enqueued_at"`
+	// HITL fields are set when Kind == KindHitlResume.
+	HITLApprove    bool   `json:"hitl_approve,omitempty"`
+	HITLComment    string `json:"hitl_comment,omitempty"`
+	HITLRole       string `json:"hitl_role,omitempty"`
+	HITLOperatorID string `json:"hitl_operator_id,omitempty"`
 }
 
 // Part is a serializable multimodal content part (text or image data URI).

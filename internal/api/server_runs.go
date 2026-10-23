@@ -14,6 +14,7 @@ import (
 	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/plugincallback"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/skill"
@@ -616,12 +617,24 @@ func (s *Server) handlePostResume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := s.principalFrom(r.Context())
-	_ = s.Runner.ContinueFromHITL(r.Context(), id, run.Decision{
-		Approve:    approve,
-		Comment:    body.Comment,
-		Role:       p.Role,
-		OperatorID: p.OperatorID,
-	})
+	job := middleware.Job{
+		RunID:          id,
+		Kind:           middleware.KindHitlResume,
+		AgentID:        runRec.AgentID,
+		HITLApprove:    approve,
+		HITLComment:    body.Comment,
+		HITLOperatorID: p.OperatorID,
+	}
+	// With a queue, enqueue so a worker runs ContinueFromHITL. Without one,
+	// run ExecuteJob inline (same cold path) so the response reflects the
+	// resumed status and tests observe ContinueFromHITL without racing a
+	// background goroutine. The wait-phase worker slot is already released via
+	// ErrWaitingHuman.
+	if s.Queue != nil {
+		s.Dispatch(r.Context(), job)
+	} else {
+		_ = s.ExecuteJob(r.Context(), job)
+	}
 
 	updated, err := s.Store.GetRun(id)
 	if err != nil {

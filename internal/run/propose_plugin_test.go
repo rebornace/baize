@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -75,16 +76,8 @@ func TestProposePluginRejectedWritesNothing(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: false}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("want reject error")
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: false}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if _, err := st.GetConnector("orders-ro"); err == nil {
 		t.Fatal("connector must not be written on reject")
@@ -108,19 +101,11 @@ func TestProposePluginAdminApproveWritesDisabled(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{
 		Approve: true,
 		Role:    controlplane.RoleAdmin,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if _, err := st.GetConnector("orders-ro"); err != nil {
 		t.Fatal(err)
@@ -151,19 +136,11 @@ func TestProposePluginOperatorApproveDenied(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{
 		Approve: true,
 		Role:    controlplane.RoleOperator,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if _, err := st.GetConnector("orders-ro"); err == nil {
 		t.Fatal("operator approve must not write connector")

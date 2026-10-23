@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   supports_vision BOOLEAN,
   context_tokens INTEGER NOT NULL DEFAULT 128000,
   auto_tier TEXT NOT NULL DEFAULT 'standard',
+  fallback_profile_ids TEXT NOT NULL DEFAULT '[]',
   created_at TEXT,
   updated_at TEXT
 );
@@ -287,6 +288,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS thinking_dialect TEXT NOT NULL DEFAULT 'auto'`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles thinking_dialect: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS fallback_profile_ids TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles fallback_profile_ids: %w", err)
 	}
 	// Backfill: legacy disable_thinking=true → off; ALTER DEFAULT already set medium/auto.
 	if _, err := db.Exec(`UPDATE model_profiles SET thinking_level='off' WHERE disable_thinking=true`); err != nil {

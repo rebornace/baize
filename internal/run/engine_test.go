@@ -48,6 +48,54 @@ func (s *scriptLLM) Chat(ctx context.Context, messages []llm.Message, tools []ll
 
 func (s *scriptLLM) SupportsVision() bool { return false }
 
+// alwaysToolsLLM always returns a tool call so the step budget is exhausted.
+type alwaysToolsLLM struct{ calls int }
+
+func (a *alwaysToolsLLM) Chat(_ context.Context, messages []llm.Message, tools []llm.ToolSpec) (llm.Message, error) {
+	a.calls++
+	if len(tools) == 0 {
+		// Grace turn: no tools offered — return a conclusion.
+		return llm.Message{Role: llm.RoleAssistant, Content: "步数用尽，根据已有信息：先到这里。"}, nil
+	}
+	return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+		{ID: fmt.Sprintf("c%d", a.calls), Name: "ping", Arguments: map[string]any{}},
+	}}, nil
+}
+
+func (a *alwaysToolsLLM) SupportsVision() bool { return false }
+
+func TestEngineBudgetGraceSucceedsInsteadOfFail(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	reg.Register("ping", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	})
+	ag := agent.Def{ID: "agent", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "长任务"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	llmStub := &alwaysToolsLLM{}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, MaxSteps: 2}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, err := st.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s want succeeded (grace); err=%q", got.Status, got.Error)
+	}
+	if !strings.Contains(got.Output, "步数用尽") {
+		t.Fatalf("output=%q", got.Output)
+	}
+	// 2 tool turns + 1 grace chat
+	if llmStub.calls < 3 {
+		t.Fatalf("calls=%d want >=3", llmStub.calls)
+	}
+}
+
 func TestEngineReActToolThenMessage(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()
@@ -149,16 +197,8 @@ func TestEngineResolvesDeleteToRemoveBeforeHITL(t *testing.T) {
 	if !sawResolved {
 		t.Fatalf("expected llm.tool_call with resolved_from; events=%+v", evs)
 	}
-	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
-		t.Fatalf("Resume: %v", err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute timed out")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("invoke count=%d want 1", calls.Load())
@@ -193,17 +233,8 @@ func TestEngineHITLApproveInvokesOnce(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatalf("tool called before approve: %d", calls.Load())
 	}
-	if err := gate.Resume(r.ID, Decision{Approve: true, Comment: "lgtm"}); err != nil {
-		t.Fatalf("Resume: %v", err)
-	}
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute timed out")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: true, Comment: "lgtm"}); err != nil {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("invoke count=%d want 1", calls.Load())
@@ -239,17 +270,8 @@ func TestEngineHITLRejectNoInvoke(t *testing.T) {
 	}()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: false, Comment: "nope"}); err != nil {
-		t.Fatalf("Resume: %v", err)
-	}
-
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("expected reject error")
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute timed out")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: false, Comment: "nope"}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("invoke count=%d want 0", calls.Load())
@@ -291,14 +313,7 @@ func TestHITLRejectWritesHumanizedNote(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: false, Comment: "请先补充影响范围"}); err != nil {
-		t.Fatalf("Resume: %v", err)
-	}
-	select {
-	case <-errCh:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute timed out")
-	}
+	_ = resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: false, Comment: "请先补充影响范围"})
 
 	got, _ := st.GetRun(r.ID)
 	if got.Status != store.StatusRejected {
@@ -325,6 +340,7 @@ func TestHITLRejectWritesHumanizedNote(t *testing.T) {
 
 func TestLoginGateBeforeHITL(t *testing.T) {
 	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
 	reg := tool.NewRegistry()
 	var calls atomic.Int32
 	reg.RegisterMeta(tool.Meta{
@@ -352,11 +368,8 @@ func TestLoginGateBeforeHITL(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatalf("invoke=%d", calls.Load())
 	}
-	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: store.HITLCommentAbortLogin}); err != nil {
+	if err := resumeAfterWait(t, eng, done, r.ID, Decision{Approve: false, Comment: store.HITLCommentAbortLogin}); err != nil && !errors.Is(err, ErrHITLRejected) {
 		t.Fatalf("abort: %v", err)
-	}
-	if err := <-done; err != nil && !errors.Is(err, ErrHITLRejected) {
-		t.Fatalf("Execute: %v", err)
 	}
 	if llmStub.calls != 1 {
 		t.Fatalf("llm calls=%d want 1 (paused at login)", llmStub.calls)
@@ -380,6 +393,7 @@ func (s *multiToolLoginLLM) SupportsVision() bool { return false }
 
 func TestLoginRequiredPausesBeforeMoreTools(t *testing.T) {
 	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
 	reg := tool.NewRegistry()
 	var pets, dash atomic.Int32
 	reg.RegisterMeta(tool.Meta{
@@ -418,11 +432,8 @@ func TestLoginRequiredPausesBeforeMoreTools(t *testing.T) {
 	if llmStub.calls != 1 {
 		t.Fatalf("llm calls=%d want 1 while waiting", llmStub.calls)
 	}
-	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: store.HITLCommentSkipLogin}); err != nil {
+	if err := resumeAfterWait(t, eng, done, r.ID, Decision{Approve: false, Comment: store.HITLCommentSkipLogin}); err != nil {
 		t.Fatalf("skip: %v", err)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("Execute: %v", err)
 	}
 	if llmStub.calls < 2 {
 		t.Fatalf("after skip, llm should continue, calls=%d", llmStub.calls)
@@ -453,6 +464,7 @@ func (s *skipStepLoginLLM) SupportsVision() bool { return false }
 
 func TestLoginSkipStepHidesOnlyFailedTool(t *testing.T) {
 	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
 	reg := tool.NewRegistry()
 	reg.RegisterMeta(tool.Meta{
 		Spec: llm.ToolSpec{Name: "front_list", Description: "front"}, ConnectorID: "anxu",
@@ -479,11 +491,8 @@ func TestLoginSkipStepHidesOnlyFailedTool(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: store.HITLCommentSkipStep}); err != nil {
+	if err := resumeAfterWait(t, eng, done, r.ID, Decision{Approve: false, Comment: store.HITLCommentSkipStep}); err != nil {
 		t.Fatalf("skip_step: %v", err)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("Execute: %v", err)
 	}
 	if llmStub.calls < 2 {
 		t.Fatalf("after skip_step, llm should continue, calls=%d", llmStub.calls)

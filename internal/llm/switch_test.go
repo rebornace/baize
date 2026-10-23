@@ -130,6 +130,41 @@ func TestSwitchRebuildsOnUpdate(t *testing.T) {
 	}
 }
 
+func TestSwitchFallbackSecondProfile(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	src.byID["mp_a"] = ModelProfileView{
+		ID:                 "mp_a",
+		Model:              "primary",
+		FallbackProfileIDs: []string{"mp_b"},
+	}
+	src.byID["mp_b"] = ModelProfileView{ID: "mp_b", Model: "fallback"}
+	src.list = []ModelProfileView{src.byID["mp_a"], src.byID["mp_b"]}
+
+	sw := NewSwitch(src)
+	sw.build = func(v ModelProfileView) Provider {
+		if v.ID == "mp_a" {
+			return &failingProvider{err: context.DeadlineExceeded}
+		}
+		return &recordingProvider{model: v.Model}
+	}
+
+	ctx := WithModelProfileID(context.Background(), "mp_a")
+	msg, err := sw.Chat(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Content != "from:fallback" {
+		t.Fatalf("want fallback, got %q", msg.Content)
+	}
+}
+
+type failingProvider struct{ err error }
+
+func (f *failingProvider) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (Message, error) {
+	return Message{}, f.err
+}
+func (f *failingProvider) SupportsVision() bool { return false }
+
 func TestSwitchDefaultBuildCopiesThinkingFields(t *testing.T) {
 	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
 	sw := NewSwitch(src)

@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -96,16 +97,8 @@ func TestScheduleCreateRejectedInsertsNothing(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: false}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("want reject error")
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: false}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	items, _ := sched.List("alice")
 	if len(items) != 0 {
@@ -130,16 +123,8 @@ func TestScheduleCreateApprovedInsertsInstruction(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: true}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	items, _ := sched.List("alice")
 	if len(items) != 1 {
@@ -177,16 +162,8 @@ func TestScheduleCreateActiveCapAfterApprove(t *testing.T) {
 	go func() { errCh <- eng.Execute(ctx, r.ID, ag, r.Input) }()
 
 	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout")
+	if err := resumeAfterWait(t, eng, errCh, r.ID, Decision{Approve: true}); err != nil && !errors.Is(err, ErrHITLRejected) {
+		t.Fatalf("ContinueFromHITL: %v", err)
 	}
 	items, _ := sched.List("alice")
 	if len(items) != schedule.MaxActivePerOwner {

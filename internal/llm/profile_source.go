@@ -19,19 +19,20 @@ type ModelProfileStore interface {
 
 func toView(p store.ModelProfile) ModelProfileView {
 	return ModelProfileView{
-		ID:              p.ID,
-		Provider:        p.Provider,
-		BaseURL:         p.BaseURL,
-		Model:           p.Model,
-		APIKey:          p.APIKey,
-		APIKeyEnv:       p.APIKeyEnv,
-		DisableThinking: p.DisableThinking,
-		ThinkingLevel:   p.ThinkingLevel,
-		ThinkingDialect: p.ThinkingDialect,
-		SupportsVision:  p.SupportsVision,
-		ContextTokens:   p.ContextTokens,
-		Tier:            store.NormalizeAutoTier(p.AutoTier),
-		UpdatedAt:       p.UpdatedAt,
+		ID:                 p.ID,
+		Provider:           p.Provider,
+		BaseURL:            p.BaseURL,
+		Model:              p.Model,
+		APIKey:             p.APIKey,
+		APIKeyEnv:          p.APIKeyEnv,
+		DisableThinking:    p.DisableThinking,
+		ThinkingLevel:      p.ThinkingLevel,
+		ThinkingDialect:    p.ThinkingDialect,
+		SupportsVision:     p.SupportsVision,
+		ContextTokens:      p.ContextTokens,
+		Tier:               store.NormalizeAutoTier(p.AutoTier),
+		FallbackProfileIDs: append([]string(nil), p.FallbackProfileIDs...),
+		UpdatedAt:          p.UpdatedAt,
 	}
 }
 

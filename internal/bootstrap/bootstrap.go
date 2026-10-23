@@ -264,7 +264,13 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 			return nil, nil, err
 		}
 		profileSrc = &llm.StoreProfileSource{Store: st}
-		provider = llm.NewSwitch(profileSrc)
+		sw := llm.NewSwitch(profileSrc)
+		if cfg.LLM.APIMaxRetries != nil {
+			sw.SetOpenAIMaxRetries(*cfg.LLM.APIMaxRetries)
+		}
+		c, h, idle, maxReq := llmTimeoutsFromConfig(cfg)
+		sw.SetOpenAITimeouts(c, h, idle, maxReq)
+		provider = sw
 	}
 
 	reg := tool.NewRegistry()
@@ -427,8 +433,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		LLM:         provider,
 		Tools:       reg,
 		Gate:        run.NewGate(),
-		MaxSteps:    cfg.Run.MaxSteps,
-		ToolTimeout: time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
+		MaxSteps:          cfg.Run.MaxSteps,
+		ToolTimeout:       time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
+		ParallelToolLimit: cfg.Run.ParallelToolLimit,
 		Messages:    messages,
 		MaxMessages: cfg.Conversation.MaxMessages,
 		Compactor:   compactor,
@@ -1434,6 +1441,44 @@ func seedModelProfile(st store.Store, cfg config.Config) error {
 	return nil
 }
 
+func llmTimeoutsFromConfig(cfg config.Config) (connect, header, idle, maxReq time.Duration) {
+	sec := func(p *int, def int) time.Duration {
+		if p == nil {
+			return time.Duration(def) * time.Second
+		}
+		if *p <= 0 {
+			return 0
+		}
+		return time.Duration(*p) * time.Second
+	}
+	return sec(cfg.LLM.ConnectTimeoutSec, 10),
+		sec(cfg.LLM.ResponseHeaderTimeoutSec, 60),
+		sec(cfg.LLM.StreamIdleTimeoutSec, 120),
+		sec(cfg.LLM.MaxRequestTimeoutSec, 120)
+}
+
+func applyLLMTimeouts(p *llm.OpenAI, cfg config.Config) {
+	c, h, idle, maxReq := llmTimeoutsFromConfig(cfg)
+	rebuild := false
+	if c > 0 {
+		p.ConnectTimeout = c
+		rebuild = true
+	}
+	if h > 0 {
+		p.ResponseHeaderTimeout = h
+		rebuild = true
+	}
+	if idle > 0 {
+		p.StreamIdleTimeout = idle
+	}
+	if maxReq > 0 {
+		p.MaxRequestTimeout = maxReq
+	}
+	if rebuild {
+		p.RebuildHTTPClient()
+	}
+}
+
 func newLLM(cfg config.Config) (llm.Provider, error) {
 	switch strings.ToLower(cfg.LLM.Provider) {
 	case "", "mock":
@@ -1450,6 +1495,10 @@ func newLLM(cfg config.Config) (llm.Provider, error) {
 		p.ThinkingLevel = cfg.LLM.ThinkingLevel
 		p.ThinkingDialect = cfg.LLM.ThinkingDialect
 		p.VisionSupported = cfg.LLM.SupportsVision
+		if cfg.LLM.APIMaxRetries != nil {
+			p.MaxRetries = *cfg.LLM.APIMaxRetries
+		}
+		applyLLMTimeouts(p, cfg)
 		return p, nil
 	default:
 		return nil, fmt.Errorf("unknown llm.provider: %s", cfg.LLM.Provider)

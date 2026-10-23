@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,7 +25,10 @@ type ModelProfileView struct {
 	SupportsVision  bool
 	ContextTokens   int
 	Tier            string
-	UpdatedAt       time.Time
+	// FallbackProfileIDs is an ordered list of profile ids to try when the
+	// primary call fails after its own retries are exhausted.
+	FallbackProfileIDs []string
+	UpdatedAt          time.Time
 }
 
 // ProfileSource resolves model profiles (backed by store.Store in production).
@@ -90,6 +94,16 @@ type Switch struct {
 	mu    sync.Mutex
 	cache map[string]*cachedProvider
 
+	// openAIMaxRetries, when non-nil, overrides NewOpenAI's default MaxRetries
+	// for providers built by defaultBuild (0 disables retries).
+	openAIMaxRetries *int
+
+	// Optional timeout overrides applied in defaultBuild.
+	openAIConnectTimeout        time.Duration
+	openAIResponseHeaderTimeout time.Duration
+	openAIStreamIdleTimeout     time.Duration
+	openAIMaxRequestTimeout     time.Duration
+
 	// build constructs a Provider from a profile. Overridable in tests.
 	build func(ModelProfileView) Provider
 }
@@ -98,6 +112,22 @@ func NewSwitch(src ProfileSource) *Switch {
 	s := &Switch{src: src, cache: map[string]*cachedProvider{}}
 	s.build = s.defaultBuild
 	return s
+}
+
+// SetOpenAIMaxRetries applies llm.api_max_retries to OpenAI clients built by
+// this Switch. Pass 0 to disable retries (pre-P0 behaviour).
+func (s *Switch) SetOpenAIMaxRetries(n int) {
+	s.openAIMaxRetries = &n
+}
+
+// SetOpenAITimeouts applies llm connect / header / stream-idle / max-request
+// timeouts (seconds already converted to durations by the caller). Zero values
+// leave NewOpenAI defaults unchanged.
+func (s *Switch) SetOpenAITimeouts(connect, responseHeader, streamIdle, maxRequest time.Duration) {
+	s.openAIConnectTimeout = connect
+	s.openAIResponseHeaderTimeout = responseHeader
+	s.openAIStreamIdleTimeout = streamIdle
+	s.openAIMaxRequestTimeout = maxRequest
 }
 
 func (s *Switch) defaultBuild(v ModelProfileView) Provider {
@@ -110,14 +140,35 @@ func (s *Switch) defaultBuild(v ModelProfileView) Provider {
 	p.ThinkingLevel = v.ThinkingLevel
 	p.ThinkingDialect = v.ThinkingDialect
 	p.VisionSupported = v.SupportsVision
+	if s.openAIMaxRetries != nil {
+		p.MaxRetries = *s.openAIMaxRetries
+	}
+	rebuild := false
+	if s.openAIConnectTimeout > 0 {
+		p.ConnectTimeout = s.openAIConnectTimeout
+		rebuild = true
+	}
+	if s.openAIResponseHeaderTimeout > 0 {
+		p.ResponseHeaderTimeout = s.openAIResponseHeaderTimeout
+		rebuild = true
+	}
+	if s.openAIStreamIdleTimeout > 0 {
+		p.StreamIdleTimeout = s.openAIStreamIdleTimeout
+	}
+	if s.openAIMaxRequestTimeout > 0 {
+		p.MaxRequestTimeout = s.openAIMaxRequestTimeout
+	}
+	if rebuild {
+		p.RebuildHTTPClient()
+	}
 	return p
 }
 
-func (s *Switch) providerFor(ctx context.Context) (Provider, error) {
+func (s *Switch) viewFor(ctx context.Context) (ModelProfileView, error) {
 	id := ModelProfileIDFromContext(ctx)
 	if id != "" {
 		if view, err := s.src.ModelProfileByID(id); err == nil && view.ID != "" {
-			return s.cached(view), nil
+			return view, nil
 		}
 	}
 	// No/invalid per-run id: use the Auto primary model (earliest standard-tier
@@ -125,13 +176,45 @@ func (s *Switch) providerFor(ctx context.Context) (Provider, error) {
 	// text and the target for background callers without a pinned run id.
 	list, err := s.src.ListProfiles()
 	if err != nil {
-		return nil, fmt.Errorf("no usable model profile: %w", err)
+		return ModelProfileView{}, fmt.Errorf("no usable model profile: %w", err)
 	}
 	view, err := PrimaryModelProfile(list)
 	if err != nil {
-		return nil, fmt.Errorf("no usable model profile: %w", err)
+		return ModelProfileView{}, fmt.Errorf("no usable model profile: %w", err)
+	}
+	return view, nil
+}
+
+func (s *Switch) providerFor(ctx context.Context) (Provider, error) {
+	view, err := s.viewFor(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return s.cached(view), nil
+}
+
+// fallbackChain returns the primary profile followed by its FallbackProfileIDs
+// (skipping missing/cyclic ids).
+func (s *Switch) fallbackChain(ctx context.Context) ([]ModelProfileView, error) {
+	primary, err := s.viewFor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	chain := []ModelProfileView{primary}
+	seen := map[string]bool{primary.ID: true}
+	for _, id := range primary.FallbackProfileIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		view, err := s.src.ModelProfileByID(id)
+		if err != nil || view.ID == "" {
+			continue
+		}
+		seen[id] = true
+		chain = append(chain, view)
+	}
+	return chain, nil
 }
 
 func (s *Switch) cached(v ModelProfileView) Provider {
@@ -146,11 +229,19 @@ func (s *Switch) cached(v ModelProfileView) Provider {
 }
 
 func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (Message, error) {
-	prov, err := s.providerFor(ctx)
+	chain, err := s.fallbackChain(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	return prov.Chat(ctx, messages, tools)
+	var lastErr error
+	for _, view := range chain {
+		msg, err := s.cached(view).Chat(ctx, messages, tools)
+		if err == nil {
+			return msg, nil
+		}
+		lastErr = err
+	}
+	return Message{}, lastErr
 }
 
 // ChatWithChoice implements Chooser (DP-2b) by forwarding to the resolved
@@ -159,27 +250,56 @@ func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec)
 // downgrading to Chat — dropping the constraint would make the call look
 // constrained when it was not.
 func (s *Switch) ChatWithChoice(ctx context.Context, messages []Message, tools []ToolSpec, choice ToolChoice) (Message, error) {
-	prov, err := s.providerFor(ctx)
+	chain, err := s.fallbackChain(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	ch, ok := prov.(Chooser)
-	if !ok {
+	var lastErr error
+	var sawUnsupported bool
+	for _, view := range chain {
+		prov := s.cached(view)
+		ch, ok := prov.(Chooser)
+		if !ok {
+			sawUnsupported = true
+			continue
+		}
+		msg, err := ch.ChatWithChoice(ctx, messages, tools, choice)
+		if err == nil {
+			return msg, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return Message{}, lastErr
+	}
+	if sawUnsupported {
 		return Message{}, errChoiceUnsupported
 	}
-	return ch.ChatWithChoice(ctx, messages, tools, choice)
+	return Message{}, fmt.Errorf("no usable model profile")
 }
 
 // ChatStream implements Streamer: prefers a streaming provider, otherwise Chat.
 func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
-	p, err := s.providerFor(ctx)
+	chain, err := s.fallbackChain(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	if st, ok := p.(Streamer); ok {
-		return st.ChatStream(ctx, messages, tools, onThink, onContent)
+	var lastErr error
+	for _, view := range chain {
+		p := s.cached(view)
+		var msg Message
+		var err error
+		if st, ok := p.(Streamer); ok {
+			msg, err = st.ChatStream(ctx, messages, tools, onThink, onContent)
+		} else {
+			msg, err = p.Chat(ctx, messages, tools)
+		}
+		if err == nil {
+			return msg, nil
+		}
+		lastErr = err
 	}
-	return p.Chat(ctx, messages, tools)
+	return Message{}, lastErr
 }
 
 // ChatStreamWithChoice implements StreamChooser (DP-2b). Prefers a streaming
@@ -192,17 +312,39 @@ func (s *Switch) ChatStreamWithChoice(
 	choice ToolChoice,
 	onThink, onContent func(cumulative string),
 ) (Message, error) {
-	p, err := s.providerFor(ctx)
+	chain, err := s.fallbackChain(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	if sc, ok := p.(StreamChooser); ok {
-		return sc.ChatStreamWithChoice(ctx, messages, tools, choice, onThink, onContent)
+	var lastErr error
+	var sawUnsupported bool
+	for _, view := range chain {
+		p := s.cached(view)
+		if sc, ok := p.(StreamChooser); ok {
+			msg, err := sc.ChatStreamWithChoice(ctx, messages, tools, choice, onThink, onContent)
+			if err == nil {
+				return msg, nil
+			}
+			lastErr = err
+			continue
+		}
+		if c, ok := p.(Chooser); ok {
+			msg, err := c.ChatWithChoice(ctx, messages, tools, choice)
+			if err == nil {
+				return msg, nil
+			}
+			lastErr = err
+			continue
+		}
+		sawUnsupported = true
 	}
-	if c, ok := p.(Chooser); ok {
-		return c.ChatWithChoice(ctx, messages, tools, choice)
+	if lastErr != nil {
+		return Message{}, lastErr
 	}
-	return Message{}, errChoiceUnsupported
+	if sawUnsupported {
+		return Message{}, errChoiceUnsupported
+	}
+	return Message{}, fmt.Errorf("no usable model profile")
 }
 
 // SupportsVision reports whether ANY configured model can accept image parts.

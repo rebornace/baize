@@ -185,7 +185,7 @@ func (s *SQLStore) LeaseRun(id string, ttl time.Duration) (bool, error) {
 	now := time.Now().UTC()
 	res, err := s.exec(
 		`UPDATE runs SET lease_until = ?
-		 WHERE id = ? AND status IN ('queued','running')
+		 WHERE id = ? AND status IN ('queued','running','waiting_human')
 		   AND (lease_until IS NULL OR lease_until < ?)`,
 		s.timeArg(now.Add(ttl)), id, s.timeArg(now),
 	)

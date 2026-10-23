@@ -40,8 +40,13 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		return err
 	}
 	switch cur.Status {
-	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected, store.StatusWaitingHuman:
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
 		return nil
+	case store.StatusWaitingHuman:
+		// Normal run jobs skip waiting HITL; resume jobs continue below.
+		if job.Kind != middleware.KindHitlResume {
+			return nil
+		}
 	}
 
 	ttl := s.LeaseTTL
@@ -61,6 +66,22 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 	defer stopHB()
 	go s.leaseHeartbeat(hbCtx, job.RunID, ttl)
 
+	if job.Kind == middleware.KindHitlResume {
+		d := run.Decision{
+			Approve:    job.HITLApprove,
+			Comment:    job.HITLComment,
+			OperatorID: job.HITLOperatorID,
+		}
+		if err := s.Runner.ContinueFromHITL(ctx, job.RunID, d); err != nil {
+			if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) {
+				return nil
+			}
+			s.finalizeRunError(job.RunID, cur.ConversationID, err)
+			return err
+		}
+		return nil
+	}
+
 	def, input, opts, err := s.resolveJob(job, cur)
 	if err != nil {
 		s.finalizeRunError(job.RunID, cur.ConversationID, err)
@@ -70,6 +91,10 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		// A human declining an approval is an intentional terminal outcome
 		// (run settled as "rejected"), not a job failure to log/retry.
 		if errors.Is(err, run.ErrHITLRejected) {
+			return nil
+		}
+		// HITL/login pause: run stays waiting_human; lease clears via defer.
+		if errors.Is(err, run.ErrWaitingHuman) {
 			return nil
 		}
 		s.finalizeRunError(job.RunID, cur.ConversationID, err)

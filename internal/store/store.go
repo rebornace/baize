@@ -503,9 +503,12 @@ type ModelProfile struct {
 	// AutoTier classifies the model for task-aware Auto routing:
 	// "light" (fast/cheap), "standard" (default), "power" (strong reasoning).
 	// Empty/unknown values normalize to "standard".
-	AutoTier  string    `json:"auto_tier"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	AutoTier string `json:"auto_tier"`
+	// FallbackProfileIDs is an ordered list of other profile ids tried when
+	// this profile's LLM call fails after retries are exhausted.
+	FallbackProfileIDs []string  `json:"fallback_profile_ids,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // MCPExportIdentitySlot binds one export identity to a connector (and optional role).
@@ -543,9 +546,9 @@ type Store interface {
 	CreateRun(in CreateRunInput) (*Run, error)
 	GetRun(id string) (*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
-	// LeaseRun atomically acquires a worker lease for a queued/running run whose
-	// lease is absent or expired. Returns acquired=false when another worker
-	// holds a live lease or the run is terminal.
+	// LeaseRun atomically acquires a worker lease for a queued/running/waiting_human
+	// run whose lease is absent or expired. Returns acquired=false when another
+	// worker holds a live lease or the run is terminal.
 	LeaseRun(id string, ttl time.Duration) (acquired bool, err error)
 	// HeartbeatRun extends the lease of a run the caller is executing.
 	HeartbeatRun(id string, ttl time.Duration) (ok bool, err error)
