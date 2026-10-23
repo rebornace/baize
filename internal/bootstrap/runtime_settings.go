@@ -46,8 +46,10 @@ func runtimeBaseline(cfg config.Config, operatorToken, adminToken string, operat
 			// DP-2a defaults: feature masters default off, but the threshold and
 			// prefilter width are populated so GET reports real effective values
 			// once an operator turns decide + tool routing on.
-			DecideToolThreshold: 12,
-			DecideToolPreTopK:   16,
+			DecideToolThreshold:        12,
+			DecideToolPreTopK:          16,
+			DecideToolStickyEnabled:    true,
+			DecideToolStickyMinJaccard: 0.7,
 			// DP-3 (redirected): prune master defaults off, but size/cap
 			// defaults are populated so GET reports real effective values.
 			DecideToolPruneThreshold: 500,

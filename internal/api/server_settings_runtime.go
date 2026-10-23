@@ -31,6 +31,8 @@ type runtimeKnobsJSON struct {
 	DecideToolRoutingEnabled     bool    `json:"decide_tool_routing_enabled"`
 	DecideToolThreshold          int     `json:"decide_tool_threshold"`
 	DecideToolPreTopK            int     `json:"decide_tool_pre_topk"`
+	DecideToolStickyEnabled      bool    `json:"decide_tool_sticky_enabled"`
+	DecideToolStickyMinJaccard   float64 `json:"decide_tool_sticky_min_jaccard"`
 	DecideToolChoiceEnabled      bool    `json:"decide_tool_choice_enabled"`
 	DecideToolPruneEnabled       bool    `json:"decide_tool_prune_enabled"`
 	DecideToolPruneThreshold     int     `json:"decide_tool_prune_threshold"`
@@ -65,6 +67,8 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		DecideToolRoutingEnabled:     k.DecideToolRoutingEnabled,
 		DecideToolThreshold:          k.DecideToolThreshold,
 		DecideToolPreTopK:            k.DecideToolPreTopK,
+		DecideToolStickyEnabled:      k.DecideToolStickyEnabled,
+		DecideToolStickyMinJaccard:   k.DecideToolStickyMinJaccard,
 		DecideToolChoiceEnabled:      k.DecideToolChoiceEnabled,
 		DecideToolPruneEnabled:       k.DecideToolPruneEnabled,
 		DecideToolPruneThreshold:     k.DecideToolPruneThreshold,

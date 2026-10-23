@@ -77,6 +77,28 @@ func (e *Engine) effectiveDecidePreTopK() int {
 	return 16
 }
 
+// effectiveDecideToolSticky reports whether DP-2a sticky Top-K is on.
+// Default true when Settings is nil (tests that enable routing still get
+// sticky unless they set DecideToolStickyEnabled=false).
+func (e *Engine) effectiveDecideToolSticky() bool {
+	if e.Settings == nil {
+		return true
+	}
+	return e.Settings.Knobs().DecideToolStickyEnabled
+}
+
+// effectiveDecideToolStickyMinJaccard is the similarity floor for reusing the
+// previous conversation narrow set. Default 0.7.
+func (e *Engine) effectiveDecideToolStickyMinJaccard() float64 {
+	if e.Settings == nil {
+		return 0.7
+	}
+	if j := e.Settings.Knobs().DecideToolStickyMinJaccard; j > 0 && j <= 1 {
+		return j
+	}
+	return 0.7
+}
+
 // buildExtractProbe assembles the (truncated) context for the worth-extracting
 // judgment. It mirrors the shape of the extraction payload but is capped.
 func buildExtractProbe(input, output string) string {

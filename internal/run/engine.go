@@ -148,6 +148,11 @@ type Engine struct {
 
 	cancelMu sync.Mutex
 	cancels  map[string]context.CancelFunc
+
+	// stickyNarrow retains the last DP-2a sent tool set per conversation so
+	// small ranking jitter does not reshuffle schemas (prefix-cache friendly).
+	stickyMu     sync.Mutex
+	stickyNarrow map[string]stickyNarrowState
 }
 
 // RunOptions carries per-run overrides for ExecuteWithOpts.

@@ -133,11 +133,19 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 
 	sent := specs
 	sentCount := len(specs)
+	stickyReused := false
+	stickyJaccard := 0.0
 	// Fail open: retrieval found nothing in common, keep full set
 	// rather than send an empty tool list. Otherwise retain protected system
 	// tools (activate_skill) alongside the narrowed set.
 	if !noMatch && len(preSpecs) > 0 {
 		sent = preserveEssentialTools(preSpecs, specs)
+		convID := ""
+		if runRec, err := e.Store.GetRun(runID); err == nil && runRec != nil {
+			convID = runRec.ConversationID
+		}
+		sent, stickyReused, stickyJaccard = e.applyStickyNarrow(convID, sent, specs)
+		sent = preserveEssentialTools(sent, specs)
 		sentCount = len(sent)
 	}
 	data := map[string]any{
@@ -155,6 +163,8 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		"tool_choice":      e.effectiveDecideToolChoice(),
 		"sent_count":       sentCount,
 		"sent":             e.sentToolAudit(sent),
+		"sticky_reused":    stickyReused,
+		"sticky_jaccard":   stickyJaccard,
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventDecideToolNarrow,
