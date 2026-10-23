@@ -50,6 +50,27 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		}
 	}
 
+	if job.Kind == middleware.KindHitlResume {
+		d := run.Decision{
+			Approve:    job.HITLApprove,
+			Comment:    job.HITLComment,
+			OperatorID: job.HITLOperatorID,
+		}
+		// Workflow (and other Gate-blocking) HITL keeps Execute on the run lease
+		// while select-waiting. Wake that waiter without competing for the lease;
+		// cold resume (no waiter) still takes the lease below.
+		if eng, ok := s.Runner.(*run.Engine); ok && eng.Gate != nil && eng.Gate.HasWaiter(job.RunID) {
+			if err := eng.ContinueFromHITL(ctx, job.RunID, d); err != nil {
+				if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) {
+					return nil
+				}
+				s.finalizeRunError(job.RunID, cur.ConversationID, err)
+				return err
+			}
+			return nil
+		}
+	}
+
 	ttl := s.LeaseTTL
 	if ttl <= 0 {
 		ttl = 60 * time.Second

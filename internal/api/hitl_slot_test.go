@@ -148,3 +148,51 @@ func TestHITLResumeInvokesOnce(t *testing.T) {
 		t.Fatalf("double resume invoked tool again: %d", invokes.Load())
 	}
 }
+
+// TestHITLResumeWakesGateWhileLeaseHeld covers workflow-style HITL: Execute
+// remains on the run lease while blocked on Gate. KindHitlResume must wake the
+// waiter without competing for that lease (otherwise resume silently no-ops).
+func TestHITLResumeWakesGateWhileLeaseHeld(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	gate := run.NewGate()
+	eng := &run.Engine{Store: st, Gate: gate}
+	srv := &api.Server{Store: st, Runner: eng, LeaseTTL: time.Minute}
+
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "wf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.UpdateRun(r.ID, store.StatusWaitingHuman, "", "")
+	_ = st.SetHITL(r.ID, &store.HITLPayload{Prompt: "approve?", ToolName: "create_ticket"})
+
+	acquired, err := st.LeaseRun(r.ID, time.Minute)
+	if err != nil || !acquired {
+		t.Fatalf("hold lease: acquired=%v err=%v", acquired, err)
+	}
+	defer func() { _ = st.ClearRunLease(r.ID) }()
+
+	ch, err := gate.BeginWait(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.EndWait(r.ID)
+
+	done := make(chan run.Decision, 1)
+	go func() { done <- <-ch }()
+
+	if err := srv.ExecuteJob(context.Background(), middleware.Job{
+		RunID: r.ID, Kind: middleware.KindHitlResume, AgentID: "a", HITLApprove: true, HITLComment: "ok",
+	}); err != nil {
+		t.Fatalf("ExecuteJob resume: %v", err)
+	}
+
+	select {
+	case d := <-done:
+		if !d.Approve || d.Comment != "ok" {
+			t.Fatalf("decision=%+v", d)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Gate waiter was not woken (resume likely lost the lease race)")
+	}
+}

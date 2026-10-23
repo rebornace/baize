@@ -72,3 +72,22 @@ func TestGateResumeNotWaiting(t *testing.T) {
 		t.Fatal("expected error when not waiting")
 	}
 }
+
+func TestGateHasWaiter(t *testing.T) {
+	g := NewGate()
+	if g.HasWaiter("r1") {
+		t.Fatal("empty gate should have no waiter")
+	}
+	ch, err := g.BeginWait("r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.HasWaiter("r1") {
+		t.Fatal("expected waiter after BeginWait")
+	}
+	_ = ch
+	g.EndWait("r1")
+	if g.HasWaiter("r1") {
+		t.Fatal("waiter should be gone after EndWait")
+	}
+}

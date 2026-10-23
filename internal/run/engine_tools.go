@@ -415,15 +415,17 @@ func (e *Engine) awaitHITLDecisionBlocking(ctx context.Context, runID string, pa
 	if e.Gate == nil {
 		return Decision{}, fmt.Errorf("approval required but gate is nil")
 	}
-	if err := e.persistHITLWaiting(ctx, runID, payload); err != nil {
-		return Decision{}, err
-	}
-
+	// Register the waiter before advertising waiting_human so a concurrent
+	// KindHitlResume cannot miss the channel and fall into the cold path.
 	ch, err := e.Gate.BeginWait(runID)
 	if err != nil {
 		return Decision{}, err
 	}
 	defer e.Gate.EndWait(runID)
+
+	if err := e.persistHITLWaiting(ctx, runID, payload); err != nil {
+		return Decision{}, err
+	}
 
 	var d Decision
 	select {

@@ -84,6 +84,19 @@ func (g *Gate) Wait(ctx context.Context, runID string) (Decision, error) {
 	}
 }
 
+// HasWaiter reports whether an in-process waiter is registered for runID.
+// Used by the job executor so KindHitlResume can wake a workflow Gate without
+// competing for the run lease that Execute still holds while blocked.
+func (g *Gate) HasWaiter(runID string) bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	_, ok := g.waiters[runID]
+	g.mu.Unlock()
+	return ok
+}
+
 // Resume delivers a decision to a waiting Wait call.
 // Returns an error if no waiter is registered for runID.
 func (g *Gate) Resume(runID string, d Decision) error {
