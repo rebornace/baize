@@ -7,17 +7,17 @@ Baize has two separate mobile-related paths:
 | Path | Where it runs | Role |
 |------|---------------|------|
 | **Capacitor / browser shell** (this doc’s focus) | Phone WebView / browser | **Remote control** of a deployed sidecar `baize serve` |
-| **MOBILE-RT** (on-device orchestration) | Trimmed Go agent embedded on the device | **Offload the server**: Run loop on-device; device talks to the LLM API by default |
+| **On-device trimmed orchestration** | Trimmed Go package on the device | Run loop on-device; device talks to the LLM API by default (eases server load) |
 
-**MOBILE-RT** (M0–M2 + iOS bind landed): public package `mobileagent/` + shells under `mobile/rt-shell` / `mobile/rt-shell-ios`. Not shipping full `baize serve` inside an app. Store listing is a later milestone — public docs do not promise a ship date.
+The on-device path ships as public package `mobileagent/`, with sample shells under `mobile/rt-shell` (Android) and `mobile/rt-shell-ios` (iOS). It does **not** embed full `baize serve`. Store listing is a later product decision — this page does not promise a date.
 
 ## Boundaries
 
 | Layer | Where it runs | Notes |
 |-------|---------------|--------|
-| Runtime (`baize serve`) | Linux / macOS / Windows | HTTP API, SSE, connectors, HITL, channels; sidecar mainline |
+| Sidecar (`baize serve`) | Linux / macOS / Windows | HTTP API, SSE, connectors, approvals, channels |
 | Console UI (`web/chat`) | Browser or Capacitor WebView | Same-origin `/ui` + `/v0`, or `BAIZE_API_ORIGIN` in the shell |
-| gomobile (MOBILE-RT) | Public `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / HITL; AAR at `mobile/rt-shell/app/libs/`, iOS at `mobile/rt-shell-ios/Frameworks/`; **do not** bind `./cmd/baize` |
+| On-device bind (gomobile) | `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / approve; AAR at `mobile/rt-shell/app/libs/`, iOS at `mobile/rt-shell-ios/Frameworks/`; **do not** bind `./cmd/baize` |
 
 ## Phone-browser baseline (before the shell)
 
@@ -27,8 +27,8 @@ On a device (or DevTools device mode) open `https://<host>/ui/` (reachable from 
 |------------|-------------|------|
 | Auth | Bearer in `localStorage` when the gate is on | `controlAuth.ts`, `GateRoot` |
 | SSE streaming | Incremental assistant output | `openRunStream` (`fetch` + stream, not `EventSource`) |
-| HITL | Approve/reject on cards; drawer on narrow screens | Chat list + ≤768 drawer |
-| Hosted login | Opens the system browser; resume after login | `openExternal` → Capacitor Browser / `window.open` |
+| Human approval | Approve/reject on cards; drawer on narrow screens | Chat list + ≤768 drawer |
+| Browser login | Opens the system browser; resume after login | `openExternal` → Capacitor Browser / `window.open` |
 | Uploads | Composer / skill upload via `<input type="file">` | OS picker; add store permissions as needed |
 
 If this fails, fix **reachability / mixed content** first (`http://127.0.0.1` is not reachable from a phone).
@@ -47,7 +47,7 @@ npm run open:android
 
 | Variable | Role |
 |----------|------|
-| `BAIZE_SERVER_URL` | **Recommended**; WebView loads remote `/ui/` same-origin (SSE/HITL without CORS) |
+| `BAIZE_SERVER_URL` | **Recommended**; WebView loads remote `/ui/` same-origin (SSE/approvals without CORS) |
 | `BAIZE_API_ORIGIN` | Baked `VITE_API_ORIGIN` when shipping bundled www (no `BAIZE_SERVER_URL`) |
 | Runtime `BAIZE_CORS_ORIGINS` | Comma-separated Origins on the **baize process** for bundled cross-origin API (e.g. `https://localhost,capacitor://localhost`); `*` for dev only |
 
@@ -55,16 +55,13 @@ Default server embeds are unchanged (`BAIZE_MOBILE` unset → `internal/ui/dist`
 
 ### Out of scope (Capacitor shell path)
 
-- Treating the shell as an on-device Agent (the shell does not run a local Engine; that is MOBILE-RT)
+- Treating the shell as on-device orchestration (the shell does not run a local engine; that is the `mobileagent` path)
 - Embedding full `baize serve`, push notifications, or a React Native / Flutter console rewrite
 
-### MOBILE-RT (separate path, summary)
+## On-device trimmed orchestration (summary)
 
-- **API:** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`; impl in `internal/mobileagent`.  
-- **M0:** one no-tools turn + AAR.  
-- **M1:** `get_time` + `http_get`; `Send`/`Approve`/`Deny`.  
-- **M2:** Android EncryptedSharedPreferences vault; `FetchRemoteConfig`; iOS Keychain parity. Rebuild AAR: `scripts/build-mobileagent-aar.ps1`.  
-- **iOS bind:** XCFramework + shell `mobile/rt-shell-ios/` (Keychain); rebuild: `./scripts/build-mobileagent-ios.sh`; evidence `docs/superpowers/notes/2026-10-23-mobile-rt-ios-bind-evidence.md`.  
-- **Later:** M3 store listing; no public README promise until ready.
+- **Package / API:** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`; implementation in `internal/mobileagent`.
+- **Available today:** no-tools single turn; `get_time` / `http_get`; send and approve/deny; Android encrypted credential store and remote config fetch; iOS Keychain parity.
+- **Rebuild:** Android AAR — `scripts/build-mobileagent-aar.ps1`; iOS XCFramework — `./scripts/build-mobileagent-ios.sh`. Shells: `mobile/rt-shell/`, `mobile/rt-shell-ios/`.
 
 See also: [deployment](./deployment.en.md), [configuration](./configuration.en.md), [architecture](./architecture.en.md).

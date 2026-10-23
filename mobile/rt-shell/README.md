@@ -1,6 +1,6 @@
-# MOBILE-RT Android 空壳（真机 AAR）
+# Android 机上空壳（真机 AAR）
 
-机上编排：Go `mobileagent` → `gomobile bind` → `app/libs/mobileagent.aar` → 本空壳 App。**路径上无 `baize serve`。**
+机上精简编排：Go `mobileagent` → `gomobile bind` → `app/libs/mobileagent.aar` → 本空壳 App。**路径上无 `baize serve`。**
 
 ## 已产出（本机）
 
@@ -10,7 +10,7 @@
 | sources | `app/libs/mobileagent-sources.jar` |
 | Debug APK | `app/build/outputs/apk/debug/app-debug.apk`（本地构建；gitignore） |
 
-Java / Kotlin API（M2）：
+Java / Kotlin API：
 
 ```kotlin
 mobileagent.Mobileagent.configure(apiBase, apiKey, model)
@@ -49,4 +49,4 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 | 路径 | 作用 |
 |------|------|
 | `mobile/`（Capacitor） | 遥控远端 `baize serve` |
-| `mobile/rt-shell/`（本目录） | **机上** Run 循环（MOBILE-RT） |
+| `mobile/rt-shell/`（本目录） | **机上**对话循环（`mobileagent`） |

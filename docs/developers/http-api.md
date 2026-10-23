@@ -28,7 +28,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |
 | Tools | `GET /v0/tools`、`PATCH /v0/tools/{name}` | 工具目录（含停用行） |
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
-| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为 R1 依赖闭包（Chat 助手消息旁「查看运行绑定」只读 Modal） |
+| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为当轮依赖闭包（Chat「查看运行绑定」） |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
@@ -43,7 +43,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
 
-## 匹配与决策（工具预筛 + System One）
+## 匹配与决策（工具预筛 + 决策模型）
 
 设置页「匹配与决策」同时管理增强匹配与决策模型；下列接口均需 **admin**（读接口在 Gate 下亦需已登录角色）。
 
@@ -59,7 +59,9 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 
 未接线管理器时 `GET` 仍返回标准匹配快照；写接口可能 `503 tool_retrieval_unavailable`。国内 Windows 安装优先 ModelScope 同步源。
 
-### 决策模型（System One）
+### 决策模型
+
+路径前缀为 `/v0/settings/systemone*`（历史路径名保留）。
 
 | 路径 | 作用 |
 |------|------|

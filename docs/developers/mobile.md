@@ -7,22 +7,22 @@
 | 路径 | 跑在哪 | 作用 |
 |------|--------|------|
 | **Capacitor / 浏览器壳**（本文主体） | 手机 WebView / 浏览器 | **遥控**已部署的旁挂 `baize serve`（控制台客户端） |
-| **MOBILE-RT**（机上编排） | 用户设备内嵌的裁剪版 Go Agent | **分摊服务端**：Run 循环在设备上跑；默认设备直连 LLM API |
+| **机上精简编排** | 设备内嵌的裁剪版 Go 包 | 对话循环在手机上跑；默认设备直连大模型 API，减轻旁挂服务压力 |
 
-**MOBILE-RT**（M0–M2 + iOS bind 已落地）：公开包 `mobileagent/` 与 `mobile/rt-shell*` 空壳。**不是**把完整 `baize serve` 搬进 App。商店上架为后续里程碑，公开文档不承诺发版日期。
+机上路径的公开包是 `mobileagent/`，示例空壳在 `mobile/rt-shell`（Android）与 `mobile/rt-shell-ios`（iOS）。**不是**把完整 `baize serve` 搬进 App。是否上架应用商店由后续产品决定，本文不承诺日期。
 
 ## 架构边界
 
 | 层级 | 跑在哪 | 说明 |
 |------|--------|------|
-| Runtime（`baize serve`） | Linux / macOS / Windows 服务器或本机 | HTTP API、SSE、连接器、HITL、渠道；旁挂主线 |
+| 旁挂服务（`baize serve`） | Linux / macOS / Windows 服务器或本机 | HTTP API、SSE、连接器、审批、渠道 |
 | 控制台 UI（`web/chat`） | 浏览器，或 Capacitor WebView | 同源 `/ui` + `/v0`，或壳内配置 `BAIZE_API_ORIGIN` |
-| gomobile（MOBILE-RT） | 公开包 `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / HITL；AAR 在 `mobile/rt-shell/app/libs/`，iOS 在 `mobile/rt-shell-ios/Frameworks/`；**禁止** bind `./cmd/baize` |
+| 机上绑定包（gomobile） | `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / 审批；AAR 在 `mobile/rt-shell/app/libs/`，iOS 在 `mobile/rt-shell-ios/Frameworks/`；**禁止** bind `./cmd/baize` |
 
 ```text
 手机 Capacitor 壳  ──HTTPS──►  远端 baize（public_base_url / 局域网 IP）
        │                              │
-       └──── 系统浏览器打开 ──────────┴── hosted login / OAuth
+       └──── 系统浏览器打开 ──────────┴── 托管登录 / OAuth
 ```
 
 ## 手机浏览器基线（先于壳）
@@ -32,9 +32,9 @@
 | 能力 | 预期 | 代码落点 |
 |------|------|----------|
 | 鉴权 | Gate 开启时 Bearer 存 `localStorage`；刷新后仍可用 | [`controlAuth.ts`](../../web/chat/src/controlAuth.ts)、[`GateRoot`](../../web/chat/src/pages/GateRoot.tsx) |
-| SSE 流式 | 发消息后助手增量输出；断流可致命退出 | [`openRunStream`](../../web/chat/src/api/runs.ts)（`fetch` + `ReadableStream`，非 `EventSource`） |
-| HITL | 审批卡可批准/拒绝；窄屏抽屉可关 | 聊天消息列表 + ≤768 抽屉（[`layout.css`](../../web/chat/src/styles/layout.css)） |
-| Hosted login | 「浏览器登录」打开系统页；完成后回对话可续跑 | [`openExternal`](../../web/chat/src/openExternal.ts) → Capacitor Browser / `window.open` |
+| SSE 流式 | 发消息后助手增量输出 | [`openRunStream`](../../web/chat/src/api/runs.ts)（`fetch` + `ReadableStream`，非 `EventSource`） |
+| 人工审批 | 审批卡可批准/拒绝；窄屏抽屉可关 | 聊天消息列表 + ≤768 抽屉（[`layout.css`](../../web/chat/src/styles/layout.css)） |
+| 浏览器登录 | 「浏览器登录」打开系统页；完成后回对话可续跑 | [`openExternal`](../../web/chat/src/openExternal.ts) → Capacitor Browser / `window.open` |
 | 附件上传 | Composer / 技能上传走 `<input type="file">` | 系统文件选择器；iOS 需相册/文件权限（见下方 Capacitor） |
 
 走查不通过时，优先修 **可达性与 CORS/混合内容**（手机访问 `http://127.0.0.1` 无效；用局域网 IP 或 HTTPS）。
@@ -59,7 +59,7 @@ npm run open:android
 
 | 变量 | 作用 |
 |------|------|
-| `BAIZE_SERVER_URL` | **推荐**；WebView 直接加载远端 `/ui/`，与 API 同源，SSE/HITL 无需 CORS |
+| `BAIZE_SERVER_URL` | **推荐**；WebView 直接加载远端 `/ui/`，与 API 同源，SSE/审批无需 CORS |
 | `BAIZE_API_ORIGIN` | 打包进 www 的 `VITE_API_ORIGIN`（仅在不设 `BAIZE_SERVER_URL`、使用本地 www 时需要） |
 | Runtime `BAIZE_CORS_ORIGINS` | 逗号分隔 Origin；捆绑 www 跨域调 API 时在 **baize 进程**上设置，例如 `https://localhost,capacitor://localhost`；`*` 仅建议开发用 |
 
@@ -74,17 +74,14 @@ npm run open:android
 
 ### 明确不做（Capacitor 壳路径）
 
-- 用壳冒充「机上 Agent」（壳不跑本机 Engine；那是 MOBILE-RT）
+- 用壳冒充「机上编排」（壳不跑本机对话引擎；那是 `mobileagent` 路径）
 - App 内嵌完整 `baize serve`、推送通知、React Native / Flutter 重写控制台
 
-### MOBILE-RT（另路径，摘要）
+## 机上精简编排（摘要）
 
-- **API：** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`；实现 `internal/mobileagent`。  
-- **M0：** 一轮无工具对话 + AAR。  
-- **M1：** `get_time` + `http_get`；`Send`/`Approve`/`Deny`。  
-- **M2：** Android `EncryptedSharedPreferences` 保险箱；`FetchRemoteConfig`；iOS Keychain 对位。重建 AAR：`scripts/build-mobileagent-aar.ps1`。  
-- **iOS bind：** XCFramework + 空壳 `mobile/rt-shell-ios/`（Keychain）；重建：`./scripts/build-mobileagent-ios.sh`；证据 `docs/superpowers/notes/2026-10-23-mobile-rt-ios-bind-evidence.md`。  
-- **其后：** M3 商店上架；公开 README 达标前不写承诺。
+- **包与 API：** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`；实现见 `internal/mobileagent`。
+- **已具备：** 无工具单轮对话；`get_time` / `http_get`；发送与批准/驳回；Android 加密本地保险箱与远程配置拉取；iOS Keychain 对位。
+- **重建：** Android AAR — `scripts/build-mobileagent-aar.ps1`；iOS XCFramework — `./scripts/build-mobileagent-ios.sh`。空壳工程：`mobile/rt-shell/`、`mobile/rt-shell-ios/`。
 
 ## 相关文档
 

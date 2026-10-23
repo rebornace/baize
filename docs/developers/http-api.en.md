@@ -28,7 +28,7 @@ This is not downstream business IAM or multi-tenant SSO.
 | MCP OAuth | `POST .../mcp/oauth/start`, etc. | MCP connector OAuth |
 | Tools | `GET /v0/tools`, `PATCH /v0/tools/{name}` | Tool catalog (incl. disabled rows) |
 | Skills | `GET/POST /v0/skills`, `GET/DELETE /v0/skills/{id}` | Skill packs |
-| Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `GET .../binding` is the R1 dependency closure (Chat “View run binding” read-only modal) |
+| Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `GET .../binding` is the turn dependency closure (Chat “View run binding”) |
 | Inbox | `POST /v0/inbox/{channel_id}` | Signed webhook inbox ingress |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
 | Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |
@@ -43,7 +43,7 @@ This is not downstream business IAM or multi-tenant SSO.
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 
-## Matching & decisions (tool prefilter + System One)
+## Matching & decisions (tool prefilter + decision model)
 
 Settings → Matching & decisions covers both enhanced matching and the decision model. These endpoints require **admin** (reads also need an authenticated role when the gate is on).
 
@@ -59,7 +59,9 @@ Settings → Matching & decisions covers both enhanced matching and the decision
 
 If the manager is not wired, `GET` still returns a standard-matching snapshot; writes may return `503 tool_retrieval_unavailable`. On CN Windows, installer download prefers the ModelScope sync.
 
-### Decision model (System One)
+### Decision model
+
+HTTP prefix remains `/v0/settings/systemone*` (legacy path name).
 
 | Path | Role |
 |------|------|

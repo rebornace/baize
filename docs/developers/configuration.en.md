@@ -74,7 +74,7 @@ Optional **`tls`** (outbound mTLS, local file paths):
 
 ### `connector_groups`
 
-Optional. Named connector sets so tool narrowing keeps same-domain siblings eligible (L1). See commented sample in `configs/config.yaml`:
+Optional. Named connector sets so tool narrowing keeps other same-domain connectors eligible. See commented sample in `configs/config.yaml`:
 
 ```yaml
 connector_groups:
@@ -82,7 +82,7 @@ connector_groups:
     connectors: [expense, invoice]
 ```
 
-Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings → Matching & decisions → Connector groups (KV) without a YAML restart. “Allow group sub-tasks” is the L2 switch (required before `spawn_group_run`); boundaries in [Architecture](./architecture.en.md).
+Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings → Matching & decisions → Connector groups (KV) without a YAML restart. “Allow group sub-tasks” must be on before `spawn_group_run`; boundaries in [Architecture](./architecture.en.md).
 
 ### `run`
 
@@ -93,7 +93,7 @@ Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings �
 
 > The decision layer (`internal/decide`) behaviors — memory pre-extraction judgment, tool-candidate narrowing, tool-choice enum constraint, bulky tool-result pruning, Auto-tier fallback — are **not YAML keys**. They are in-store hot-reloadable settings under Runtime → Smart speed-up (master `decide_enabled` plus per-feature toggles, all off by default) via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline. Under Memory & compaction, “keep important facts in long chats” (`context_projection_enabled`, default off) is a model-facing projection only; saved messages are not rewritten.
 >
-> **Matching & decisions** (tool prefilter + System One) lives on its own settings page: enhanced matching via `/v0/settings/tool-retrieval*`; the decision model via `/v0/settings/systemone*` (local Ollama ≥0.35 pulls `tev1`, or an API). Enablement writes `decide_systemone_*` knobs; `decide_profile_id` is only a **standby model** when System One is unavailable (empty never bills the main model). Not in YAML.
+> **Matching & decisions** (tool prefilter + decision model) lives on its own settings page: enhanced matching via `/v0/settings/tool-retrieval*`; the decision model via `/v0/settings/systemone*` (local Ollama ≥0.35 pulls default model `tev1`, or an API). Enablement writes `decide_systemone_*` knobs; `decide_profile_id` is only a **standby model** when the decision model is unavailable (empty never bills the main model). Not in YAML.
 
 
 ### `conversation`

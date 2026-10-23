@@ -2,7 +2,7 @@
 
 Cross-platform **client** for the operator console. The Go Runtime stays on a server; this package wraps [`web/chat`](../web/chat) in a WebView.
 
-Full guide (Capacitor **and** on-device MOBILE-RT): [docs/developers/mobile.md](../docs/developers/mobile.md) · [EN](../docs/developers/mobile.en.md)
+Full guide (Capacitor shell **and** on-device trimmed orchestration): [docs/developers/mobile.md](../docs/developers/mobile.md) · [EN](../docs/developers/mobile.en.md)
 
 ```powershell
 copy .env.example .env

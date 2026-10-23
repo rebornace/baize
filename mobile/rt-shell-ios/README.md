@@ -1,6 +1,6 @@
-# MOBILE-RT iOS 空壳（XCFramework）
+# iOS 机上空壳（XCFramework）
 
-机上编排：Go `mobileagent` → `gomobile bind` → `Frameworks/Mobileagent.xcframework` → 本空壳 App。**路径上无 `baize serve`。**
+机上精简编排：Go `mobileagent` → `gomobile bind` → `Frameworks/Mobileagent.xcframework` → 本空壳 App。**路径上无 `baize serve`。**
 
 ## 已产出（本机 Mac）
 

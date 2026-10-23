@@ -8,8 +8,8 @@ Baize（白泽）是独立进程的 **Agent Runtime**（侧车 / 网关）：把
 
 | 做 | 不做 |
 |----|------|
-| OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、HITL、可选线性 workflow；连接器分组与 depth=1 分组子任务；可选 Capacitor **控制台壳**与裁剪版机上编排（`mobileagent`，见 [移动端](./mobile.md)） | 把完整 `baize serve`（HTTP/SSE/连接器农场）原样塞进手机；官方桌面 App；官方 TS/Python SDK；重画布 / depth≥2 子代理树；绑死单一云或 Agent 框架 |
-| SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导 **CatalogDiff**；**run.binding** 执行期依赖闭包；可选 OTLP（默认关，设置页可热更新）；**Admin 鉴权的** Prometheus **`GET /metrics`**（默认开）与设置页「运行指标」/ **`GET /v0/settings/logs`**（内存近期日志）；结构化 slog（`log_format` / `BAIZE_LOG_FORMAT`，可热更新）；连接器出站 mTLS（文件路径：OpenAPI / HTTP 插件 / MCP HTTP；设置页可配） | 把 OTel/APM 当作必选；进程内指标/日志库持久化；per-tenant cgroup/egress 沙箱；完整 IdP OBO；服务端强制对方 mTLS；Agent 侧 tool schema version pin；保证重跑结果一致 |
+| OpenAPI → Tool、HTTP 插件 / MCP 连接器、执行回调、人工审批、可选线性 workflow；连接器分组与仅一层分组子任务；可选 Capacitor **控制台壳**与机上精简编排（`mobileagent`，见 [移动端](./mobile.md)） | 把完整 `baize serve`（HTTP/SSE/连接器农场）原样塞进手机；官方桌面 App；官方 TS/Python SDK；重画布 / 多层嵌套子任务树；绑死单一云或 Agent 框架 |
+| SQLite 默认可跑；可选 Postgres / Redis / S3；连接器重导返回接口变更对照；**run.binding** 运行绑定；可选 OTLP（默认关，设置页可热更新）；**Admin 鉴权的** Prometheus **`GET /metrics`**（默认开）与设置页「运行指标」/ **`GET /v0/settings/logs`**（内存近期日志）；结构化 slog（`log_format` / `BAIZE_LOG_FORMAT`，可热更新）；连接器出站 mTLS（文件路径：OpenAPI / HTTP 插件 / MCP HTTP；设置页可配） | 把 OTel/APM 当作必选；进程内指标/日志库持久化；per-tenant cgroup/egress 沙箱；完整 IdP OBO；服务端强制对方 mTLS；Agent 侧 tool schema version pin；保证重跑结果一致 |
 
 **五抽象：** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
 Skill / Memory / Channel / 线性 workflow 是配置或插件形态，不升格为第六抽象。
@@ -32,9 +32,9 @@ Baize Runtime (Go)
 ```
 
 - **MCP 桥（客户端）**：`PUT /v0/connectors/{id}` 注册 `type: mcp`；`tools/list` → 目录 `source=mcp`，Run 内 `tools/call`。
-- **CatalogDiff**：连接器重导（OpenAPI / 插件 / MCP）成功后，`PUT /v0/connectors/{id}` 响应含 `catalog_diff`（新增 / 删除 / method·path·schema 变更）；设置页保存成功提示展示摘要。Diff **非空**且配置了 `events.webhook` 时，异步 POST `type=catalog.diff`（同 URL / 重试 / 死信；空 Diff 或无 URL 跳过；fail-open）。目录以 Runtime 当前接线为准，不做客户端 version pinning。
-- **执行期依赖闭包（R1）**：每个 Chat Run 在首次主模型调用前写入 `run.binding`（模型端点/profile、策略 knobs、记忆注入、收窄后工具契约指纹、连接器 `catalog_revision`）；写入失败则 Run 失败。工具调用事件带 `contract_hash` / `catalog_revision`，便于接口修复前后对比。`GET /v0/runs/{id}/binding`；Chat 助手消息旁「查看运行绑定」只读 Modal；连接器修订见 `GET /v0/connectors/{id}/catalog-revisions`。
-- **可选可观测性**：`runtime.otel_otlp_endpoint` 非空时订阅 eventbus，将 Run / `tool.result`（及 MCP 导出调用）导出为 OTLP span；Chat `tool.result` span 含 `baize.contract_hash` / `baize.catalog_revision`（事件 Data 有时）。空 endpoint 则零开销关闭。事件可带非密钥审计字段（如 `connector_id`），永不写 token/密码。CatalogDiff 出站告警走 `events.webhook`，**不是**必选 OTel。**进程内**另提供 Admin 的 `GET /metrics` 与近期日志缓冲（设置 → 运行指标）；二者均不跨重启持久化。`log_format` / OTel 端点可在设置 → 运行参数 → **观测** 热更新（KV 覆盖，不写 YAML）。
+- **接口变更对照**：连接器重导（OpenAPI / 插件 / MCP）成功后，`PUT /v0/connectors/{id}` 响应含 `catalog_diff`（新增 / 删除 / method·path·schema 变更）；设置页保存成功提示展示摘要。Diff **非空**且配置了 `events.webhook` 时，异步 POST `type=catalog.diff`（同 URL / 重试 / 死信；空 Diff 或无 URL 跳过；fail-open）。目录以 Runtime 当前接线为准，不做客户端 version pinning。
+- **运行绑定**：每个 Chat Run 在首次主模型调用前写入 `run.binding`（模型端点/profile、策略 knobs、记忆注入、收窄后工具契约指纹、连接器 `catalog_revision`）；写入失败则 Run 失败。工具调用事件带 `contract_hash` / `catalog_revision`，便于接口修复前后对比。`GET /v0/runs/{id}/binding`；Chat 助手消息旁「查看运行绑定」只读 Modal；连接器修订见 `GET /v0/connectors/{id}/catalog-revisions`。
+- **可选可观测性**：`runtime.otel_otlp_endpoint` 非空时订阅 eventbus，将 Run / `tool.result`（及 MCP 导出调用）导出为 OTLP span；Chat `tool.result` span 含 `baize.contract_hash` / `baize.catalog_revision`（事件 Data 有时）。空 endpoint 则零开销关闭。事件可带非密钥审计字段（如 `connector_id`），永不写 token/密码。接口变更出站告警走 `events.webhook`，**不是**必选 OTel。**进程内**另提供 Admin 的 `GET /metrics` 与近期日志缓冲（设置 → 运行指标）；二者均不跨重启持久化。`log_format` / OTel 端点可在设置 → 运行参数 → **观测** 热更新（KV 覆盖，不写 YAML）。
 - **连接器出站 mTLS**：OpenAPI / HTTP 插件 / **MCP HTTP** 连接器可配 `tls`（`cert_file` / `key_file` / 可选 `ca_file`，本机文件路径）；工具 invoke（及 MCP HTTP discover）使用客户端证书。与 `auth.mode` 正交。Store 只存路径。设置页连接器编辑器「出站 TLS / mTLS」可填路径。**stdio** MCP 不适用。
 - **MCP 导出**：Runtime 作为 MCP 服务端（`/v0/mcp/export`），把工具目录的只读子集提供给 Cursor、Claude Desktop、豆包等支持 MCP 的 Agent 客户端；与「MCP 桥」方向相反，不经白泽自己的大语言模型。导出 Key 可配置 **`identity_slots`**（按连接器 / 可选角色绑定身份）——权限边界是**下游业务账号**，不是终端用户 IdP OBO。下游鉴权失败时优先 URL elicitation，客户端不支持 elicitation 时工具错误中**立即**带上公网托管登录 URL（`hosted_login_url`），勿把密码贴进 Agent 对话。`auth.mode: passthrough` 仅把该次 Chat Run 的白名单头带给下游，同样不是 OBO。
 - **存储**：默认 SQLite；支持 `postgres` / `memory`。Blob：`file` / `s3` / `memory`。
@@ -79,10 +79,10 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 - Registry **只**挂 `enabled=true` 的行；引擎与 HITL 读 Registry，`GET /v0/tools` 读目录（可见停用行）。
 - Agent **不**绑定 Connector 子集：默认每次 Run 把全部启用工具交给模型（跨 Connector 工具名全局唯一）。开启工具收敛且工具数超过阈值时，会先经工具预筛（默认标准匹配：BM25；可选增强匹配：BM25 + Embedding 混合检索，见设置「匹配与决策」与 `internal/toolindex`）+ 决策层收敛，只把候选子集下发给主模型（总开关与各功能、TopK 在「运行参数 → 智能提速」；开总开关前需先配决策后端才有收益）。技能 `tools:` 默认是**最低保留集合**（除非 Agent 设置 `tool_binding: exclusive`）：声明过的工具在筛选时尽量保留，未声明的启用连接器工具仍是候选，不会被技能名单单独关掉。exclusive 模式下仅暴露当前已激活技能声明的工具（另加 `activate_skill`）。每条用户消息是新 Run，工具集会重新预筛；会话已有登录凭证后，预筛不再把登录建立类工具（及 managed `connector_login` 技能的 tools 最低保留）硬塞进 Top-K，避免登录成功后仍占满名额。System 会注入当前时间，便于解读工具结果里的时间字段。
 - **工具匹配（增强）**：`internal/toolretrieval` 管理本机 Ollama 一键安装 / 模型拉取 / 路径与清理，或 OpenAI 兼容 Embedding API；状态经 `GET/POST…/tool-retrieval*` 见 [HTTP API](./http-api.md)。Windows 国内安装优先 [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files)（按稳定 tag 解析 `OllamaSetup.exe`），再回退 ghproxy / 官网等；体积与官方不符的陈旧镜像会跳过。未启用或探测失败时仍用标准匹配，失败则回退原路径。
-- **决策服务（System One）**：`internal/systemoneenable` 对称管理本机 Ollama 拉取 `tev1`（需 Ollama ≥0.35，复用同一安装链路）或 System One 兼容 API；启用后写入 `decide_systemone_*` knobs；`GET/POST…/systemone*`。判定链路为 System One → `decide_profile_id`（可选备用模型，空则不调用主模型）→ Rules。
+- **决策模型**：设置「匹配与决策」一键启用；`internal/systemoneenable` 管理本机 Ollama 拉取默认模型 `tev1`（需 Ollama ≥0.35）或兼容 API；写入 `decide_systemone_*`；HTTP 前缀 `/v0/settings/systemone*`。判定顺序：决策模型 → 可选备用 `decide_profile_id`（空则不调主模型）→ 规则。
 - **工作区**：Web 对话带 `workspace_id`（缺省 `default`）。同一工作区内的捕获登录身份共享（设置 → 账号）；不同工作区、渠道会话（`source:account:peer`）与 MCP 导出身份（设置 → 对外提供能力）隔离。v1 不迁移已有对话到其他工作区。
-- **连接器分组（L1）**：YAML / 设置页「匹配与决策 → 连接器分组」维护命名集合（若干 `connector.id`）。工具收窄时，组内任一成员被选中或强制命中，同组 sibling 仍进 eligibility（事件可带 `groups_expanded`）。**不**自动起子 Run。上一轮工具结果含 error 时清会话 sticky，避免粘在错系统。
-- **分组子任务（L2，opt-in）**：开启「允许分组内子任务」后，模型可 `spawn_group_run`（depth=1）：子 Run 工具面 ⊆ 该组连接器，独立 `run.binding` 与 HITL；父 Run 进入 `waiting_child` 直至子回执。禁止 depth≥2 / 通用 leaf 树。
+- **连接器分组**：YAML / 设置页「匹配与决策 → 连接器分组」维护命名集合（若干 `connector.id`）。工具收窄时，组内任一成员被选中或强制命中，同组其它连接器仍可进候选（事件可带 `groups_expanded`）。**不**自动起子任务。上一轮工具结果含 error 时清会话粘性，避免粘在错系统。
+- **分组子任务（需开启）**：打开「允许分组内子任务」后，模型可调用 `spawn_group_run`（仅一层）：子任务工具面限于该组连接器，独立 `run.binding` 与审批；父任务进入 `waiting_child` 直至子回执。禁止再嵌套子任务。
 - **上下文卸出**：超大体量工具结果或用户粘贴可写入会话工作区 `offload/`；模型侧仅预览 + 路径，可用 `read_file` 分段回读。落库事件 / 气泡仍可保留全文策略。
 - **给模型看的投影**（运行参数「长对话保留重点」，默认关）：只改模型输入侧的投影（钉住 / 摘要 / 丢掉过大工具结果），**不改写** `conversation.Messages`。失败则回退 Compactor。不承诺降低云端 API token。
 - **滚动摘要（Compactor）**：超预算时把较旧轮次压成结构化检查点（目标、进度、决定、必须保留的事实），不删原文、不把「先执行某步再探索」写成全局策略。
@@ -94,7 +94,7 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 |------|------|
 | 默认 | 单 Agent ReAct：选 Tool → 执行 → 写轨迹 → 结束 |
 | 可选 | Skill 包内线性 `workflow.yaml`（顺序步骤 + 可选 HITL；无 branch / 循环） |
-| 可选 | 分组子任务：`spawn_group_run` → 子 Run（depth=1）+ 父 `waiting_child` |
+| 可选 | 分组子任务：`spawn_group_run` → 子任务（仅一层）+ 父任务等待回执（`waiting_child`） |
 | Skill | 配置形态：`SKILL.md`（可选 `SKILL.en.md`）+ tools；`agent.skills` 为新对话预激活（样板含 `baize-help`），未入默认仍可 `@`/`activate_skill`；`@id`/`/id` pin 写入用户消息 `pinned_skills`（历史可见）；Composer 可补全 `/reload`；`skills_reload`/`/reload` 或会话自动 dirty；可选 `tool_binding: exclusive` |
 | Channel | 带签名的来信入口；即时消息等为进程外适配器 + 声明式 `channels`（见 [部署](./deployment.md)）。**正式适配器：个人微信**；飞书 / 钉钉见 `examples/im-adapter-*` 参考实现 |
 
