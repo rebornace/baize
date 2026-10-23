@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>白泽 Baize — 团队 AI 助手运行时</title>
-  <meta name="description" content="白泽：旁挂现有业务的 AI 助手运行时。接口变工具、人审写操作、连接器分组与子任务、MCP 导出、决策层收窄、定时任务与评测语料、运行可追溯与运维可观测。">
+  <title>白泽 Baize — 团队 AI 助手</title>
+  <meta name="description" content="白泽：挂在现有业务旁边的团队 AI 助手。用接口文档办事、重要操作先审批、系统多也能管得住、过程看得见。">
   <meta property="og:title" content="白泽 Baize">
-  <meta property="og:description" content="旁挂现有业务：文档变工具、人审、连接器分组、托管登录与 MCP 导出、决策层、CatalogDiff 与 run.binding、指标与 mTLS。">
+  <meta property="og:description" content="给团队用的 AI 助手：能聊天、会调用业务系统，重要操作可先让人确认。">
   <meta property="og:image" content="assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,9 +26,9 @@
     </div>
     <div class="wrap hero-copy">
       <h1 class="brand">白泽<span>Baize</span></h1>
-      <p class="lede">面向团队的 AI 助手运行时：能对话、会调用业务系统，重要操作可先让人确认。</p>
+      <p class="lede">给团队用的 AI 助手：能聊天、会调用业务系统，重要操作可先让人确认。</p>
       <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">下载二进制</a>
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">下载安装包</a>
         <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
       </div>
       <a
@@ -49,68 +49,68 @@
 
   <main>
     <section class="section wrap" id="capabilities">
-      <h2>旁挂即用，把接口变成能力</h2>
-      <p class="support">业务系统一般不用改代码。有接口文档，就能让助手真正去执行，并在操作台里看得见、控得住。</p>
+      <h2>挂在现有业务旁边就能用</h2>
+      <p class="support">一般不用改业务代码。有一份接口文档，助手就能真正动手，并在网页操作台里看得见、控得住。</p>
       <ul class="feature-list">
         <li>
-          <h3>接口文档变工具</h3>
-          <p>导入 OpenAPI / Swagger 等文档，接口进入工具列表；也可接 HTTP 插件与 MCP。调用过程可在操作台跟随。</p>
+          <h3>接口文档变能力</h3>
+          <p>导入常见接口文档，助手就能按接口办事；过程可在操作台跟随。</p>
         </li>
         <li>
-          <h3>重要操作可先审批</h3>
-          <p>建单、改状态等写操作，可要求运营批准后再执行，过程可追溯。</p>
+          <h3>重要操作先审批</h3>
+          <p>建单、改状态等，可要求同事批准后再执行，过程可追溯。</p>
         </li>
         <li>
-          <h3>同一套助手，多种入口</h3>
-          <p>网页操作台、告警来信、即时消息渠道共用审批、记忆与出站。正式适配器含个人微信；飞书 / 钉钉有参考示例。</p>
+          <h3>一个助手，多种入口</h3>
+          <p>网页操作台、告警来信、微信等即时消息，共用审批、记忆和对外回复。飞书、钉钉有参考示例。</p>
         </li>
         <li>
-          <h3>需要登录的下游也能接</h3>
-          <p>托管登录页完成认证（凭证不经大模型）；也可把已接好的能力经 MCP 导出给 Cursor 等 Agent，鉴权过期时打开登录链接即可。</p>
+          <h3>对方系统要登录也能接</h3>
+          <p>用浏览器完成登录（密码不经大模型）；已接好的能力也可给 Cursor 等常用 AI 工具接着用，过期时打开登录链接即可。</p>
         </li>
       </ul>
     </section>
 
     <section class="section wrap" id="upgrades">
-      <h2>当前产品面的核心能力</h2>
-      <p class="support">多轮迭代后已写入设置与聊天路径：工具多时能收窄、多域可分组、接口变了看得见、跑过的轮次可复盘、运维进操作台。</p>
+      <h2>系统多、对话长，也能管得住</h2>
+      <p class="support">面向真实团队日常：能力多时先收一收、业务域可分组、接口变了看得见、做过的事能复盘、监控就在操作台。</p>
       <ul class="feature-list">
         <li>
-          <h3>工具多也能收得住</h3>
-          <p>「匹配与决策」一键启用增强匹配与 System One 决策模型；智能提速打开后，主模型只看收窄后的工具 schema，失败自动回退。</p>
+          <h3>系统一多也不乱</h3>
+          <p>可先判断本轮该用哪些能力，再交给大模型——更省、更快；失败会自动退回，保证还能用。</p>
         </li>
         <li>
-          <h3>连接器分组与分组子任务</h3>
-          <p>把多个系统收成业务域；收窄时同组仍可进候选。需要强隔离时，可开启 depth=1 分组子任务：子 Run 独立审批与绑定，父 Run 等待回执。</p>
+          <h3>按业务域分组</h3>
+          <p>财务、交易等可分成组。需要更强隔离时，可单独开一条子任务，审批互不影响。</p>
         </li>
         <li>
-          <h3>接口变了看得见 · 运行可追溯</h3>
-          <p>连接器重导返回 CatalogDiff（可 webhook 告警）；每轮 Chat 写入 run.binding，聊天旁可查看当时绑了什么。</p>
+          <h3>接口变了看得见 · 过程可复盘</h3>
+          <p>重新导入接口后能对照改了什么；每轮对话旁可查看当时用了哪套模型与能力。</p>
         </li>
         <li>
-          <h3>长对话、定时与评测</h3>
-          <p>上下文压缩与可选重点投影；超大结果可卸到工作区；人同意后可设一次性 / 每天 / 每周日程；Admin 评测语料做确定性 evidence 复盘。</p>
+          <h3>长对话、定时与复盘</h3>
+          <p>对话太长会自动摘要；特别大的内容可存成工作文件；可设每日/每周提醒；管理员可把失败对话收进评测库对照检查。</p>
         </li>
         <li>
-          <h3>运维与合规进操作台</h3>
-          <p>设置页看运行指标与近期日志；Prometheus /metrics、可选 OTel；连接器出站 mTLS；观测项可热更新。</p>
+          <h3>监控与安全进操作台</h3>
+          <p>设置里看运行情况和近期日志；支持常见监控；出站可配加密连接；部分选项改完即生效。</p>
         </li>
         <li>
-          <h3>手机也能接上</h3>
-          <p>Capacitor / 浏览器壳遥控远端 Runtime；另有裁剪版机上编排（mobileagent）用于分摊服务端压力——不是把完整 baize serve 塞进 App。</p>
+          <h3>手机也能用</h3>
+          <p>手机浏览器或 App 壳连上已部署的助手；另有精简的机上方案用于减轻服务器压力——不是把整套服务硬塞进手机。</p>
         </li>
       </ul>
     </section>
 
     <section class="start wrap" id="start">
       <h2>开始使用</h2>
-      <p class="support">无需安装 Go：从 Releases 下载对应平台压缩包，配置密钥后即可启动。</p>
+      <p class="support">不必先装开发环境：从 Releases 下载对应平台安装包，填好密钥即可启动。</p>
       <pre><code>cp .env.example .env
-# 填写 BAIZE_API_KEY 与 BAIZE_SETTINGS_KEY
+# 填写模型密钥与设置加密密钥
 ./baize serve
 # 打开 http://127.0.0.1:8080/ui</code></pre>
       <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.zh-CN.md">中文 README</a>
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.zh-CN.md">中文介绍</a>
         <a class="btn btn-ghost" href="https://github.com/rebornace/baize/tree/main/docs/developers">开发者文档</a>
       </div>
     </section>

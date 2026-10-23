@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Baize — team AI assistant runtime</title>
-  <meta name="description" content="Baize is a sidecar AI assistant runtime: API docs as tools, human approval, connector groups and scoped sub-runs, MCP export, decision-layer narrowing, schedules, eval corpus, reconstructable runs, and ops observability.">
+  <title>Baize — team AI assistant</title>
+  <meta name="description" content="Baize is a team AI assistant that sits beside your stack: turn API docs into abilities, approve important writes, stay clear when you have many systems, and keep a trail.">
   <meta property="og:title" content="Baize">
-  <meta property="og:description" content="Sidecar AI assistant: docs→tools, HITL, connector groups, hosted login + MCP export, decision layer, CatalogDiff + run.binding, metrics and mTLS.">
+  <meta property="og:description" content="An AI assistant for your team: chat, call your systems, and ask a person to confirm when it matters.">
   <meta property="og:image" content="../assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,9 +26,9 @@
     </div>
     <div class="wrap hero-copy">
       <h1 class="brand">Baize<span>白泽</span></h1>
-      <p class="lede">A team AI assistant runtime: converse, call your systems, and pause for human approval when it matters.</p>
+      <p class="lede">An AI assistant for your team: chat, call your systems, and ask a person to confirm when it matters.</p>
       <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">Download binaries</a>
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">Download</a>
         <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
       </div>
       <a
@@ -49,64 +49,64 @@
 
   <main>
     <section class="section wrap" id="capabilities">
-      <h2>Sit beside your stack. Turn APIs into abilities.</h2>
-      <p class="support">You usually don’t rewrite the business service. With an API document, the assistant can execute for real—visible and controllable in the console.</p>
+      <h2>Sit beside your stack and go</h2>
+      <p class="support">You usually don’t rewrite the business service. With an API document, the assistant can act for real—visible and controllable in the web console.</p>
       <ul class="feature-list">
         <li>
-          <h3>API docs become tools</h3>
-          <p>Import OpenAPI / Swagger and each operation joins the catalog; HTTP plugins and MCP work too. Follow calls live in the console.</p>
+          <h3>API docs become abilities</h3>
+          <p>Import common API documents and the assistant can call those operations. Follow the steps live in the console.</p>
         </li>
         <li>
-          <h3>Approve sensitive writes</h3>
-          <p>Creates and status changes can wait for an operator to approve or reject—with an audit trail.</p>
+          <h3>Approve important writes</h3>
+          <p>Creates and status changes can wait for a teammate to approve—with a clear trail.</p>
         </li>
         <li>
           <h3>One assistant, many doors</h3>
-          <p>Web console, inbound alerts, and messaging channels share approval, memory, and outbound delivery. Production adapter: personal WeChat; Feishu / DingTalk reference examples included.</p>
+          <p>Web console, alert inbox, and messaging (WeChat shipped; Feishu / DingTalk examples) share approvals, memory, and outbound replies.</p>
         </li>
         <li>
           <h3>Downstream login supported</h3>
-          <p>Sign in on a hosted login page (credentials never hit the LLM). Export wired tools over MCP to agents like Cursor; when auth expires, open the login link.</p>
+          <p>Sign in with a browser (passwords never hit the model). Export wired abilities to everyday AI tools like Cursor; when login expires, open the link.</p>
         </li>
       </ul>
     </section>
 
     <section class="section wrap" id="upgrades">
-      <h2>What the product surface covers today</h2>
-      <p class="support">After multiple upgrades these capabilities are in Settings and Chat—not Changelog-only: scale with many tools, group domains, see catalog drift, reconstruct runs, and operate from the console.</p>
+      <h2>Built for messy, real teams</h2>
+      <p class="support">Many systems, long chats, drifting APIs—without burying people in jargon. Narrow what this turn needs, group domains, see what changed, and operate from the console.</p>
       <ul class="feature-list">
         <li>
-          <h3>Stay usable with many tools</h3>
-          <p>Matching &amp; decisions one-click enables enhanced matching and the System One decision model. With Smart speed-up on, the main model sees a narrowed schema set; failures fail open.</p>
+          <h3>Stays clear with many systems</h3>
+          <p>Optionally judge which abilities this turn needs before the main model runs—cheaper and faster. If that fails, it falls back so the turn still works.</p>
         </li>
         <li>
-          <h3>Connector groups and scoped sub-runs</h3>
-          <p>Group systems into business domains so siblings stay eligible when narrowing. For strong isolation, enable depth=1 group sub-tasks: child Runs keep their own approvals and binding while the parent waits on a receipt.</p>
+          <h3>Group by business domain</h3>
+          <p>Keep finance, commerce, and similar systems together. For stronger isolation, start a separate sub-task so approvals do not collide.</p>
         </li>
         <li>
-          <h3>Catalog drift · reconstructable runs</h3>
-          <p>Connector re-import returns a CatalogDiff (optional webhook). Each Chat run writes run.binding—open “View run binding” beside the assistant message.</p>
+          <h3>See API drift · replay a turn</h3>
+          <p>After re-import, compare what changed. Beside each chat turn, open what model and abilities were used.</p>
         </li>
         <li>
-          <h3>Long chats, schedules, and eval</h3>
-          <p>Compaction and optional fact projection; oversized results can offload to the workspace; approved one-shot / daily / weekly schedules; Admin eval corpus for deterministic evidence replay.</p>
+          <h3>Long chats, schedules, and review</h3>
+          <p>Long threads get summaries; oversized content can become workspace files; set daily or weekly reminders; admins can collect failed chats for review.</p>
         </li>
         <li>
-          <h3>Ops and compliance in the console</h3>
-          <p>Runtime metrics and recent logs in Settings; Prometheus /metrics and optional OTel; connector outbound mTLS via local cert paths; observability knobs hot-reload.</p>
+          <h3>Ops and security in the console</h3>
+          <p>Runtime health and recent logs in Settings; common metrics; encrypted outbound connections when you need them; some options apply without a restart.</p>
         </li>
         <li>
           <h3>Phones can connect</h3>
-          <p>Capacitor / browser shell remotes a deployed Runtime; a trimmed on-device orchestration path (`mobileagent`) can offload the server—not a full `baize serve` inside the app.</p>
+          <p>Use a phone browser or app shell against a deployed assistant. A trimmed on-device option can ease server load—not shipping the full service inside the phone.</p>
         </li>
       </ul>
     </section>
 
     <section class="start wrap" id="start">
       <h2>Get started</h2>
-      <p class="support">No Go toolchain required: download a release archive for your platform, set secrets, and start.</p>
+      <p class="support">No toolchain required: download a release for your platform, set secrets, and start.</p>
       <pre><code>cp .env.example .env
-# set BAIZE_API_KEY and BAIZE_SETTINGS_KEY
+# set your model key and settings key
 ./baize serve
 # open http://127.0.0.1:8080/ui</code></pre>
       <div class="cta">
