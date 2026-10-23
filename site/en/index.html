@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baize — team AI assistant</title>
-  <meta name="description" content="Baize is a team AI assistant that sits beside your stack: turn API docs into abilities, approve important writes, stay clear when you have many systems, and keep a trail.">
+  <meta name="description" content="Baize runs beside your stack: read API docs, call existing systems, pause for approval on important writes.">
   <meta property="og:title" content="Baize">
-  <meta property="og:description" content="An AI assistant for your team: chat, call your systems, and ask a person to confirm when it matters.">
+  <meta property="og:description" content="A team AI assistant beside your services: chat, call systems, confirm writes when needed.">
   <meta property="og:image" content="../assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
     </div>
     <div class="wrap hero-copy">
       <h1 class="brand">Baize<span>白泽</span></h1>
-      <p class="lede">An AI assistant for your team: chat, call your systems, and ask a person to confirm when it matters.</p>
+      <p class="lede">A team AI assistant beside your stack: chat, call your systems, pause for approval when a write matters.</p>
       <div class="cta">
         <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">Download</a>
         <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
@@ -49,64 +49,64 @@
 
   <main>
     <section class="section wrap" id="capabilities">
-      <h2>Sit beside your stack and go</h2>
-      <p class="support">You usually don’t rewrite the business service. With an API document, the assistant can act for real—visible and controllable in the web console.</p>
+      <h2>You usually don’t rewrite the business service</h2>
+      <p class="support">With an API document, the assistant calls systems you already run. Steps show in the web console; writes can wait for approve or reject.</p>
       <ul class="feature-list">
         <li>
-          <h3>API docs become abilities</h3>
-          <p>Import common API documents and the assistant can call those operations. Follow the steps live in the console.</p>
+          <h3>API docs become callable abilities</h3>
+          <p>Import common API documents and the assistant invokes those operations. Incomplete docs can use a small companion service or a callback to your URL.</p>
         </li>
         <li>
-          <h3>Approve important writes</h3>
-          <p>Creates and status changes can wait for a teammate to approve—with a clear trail.</p>
+          <h3>Creates and status changes can wait</h3>
+          <p>Sensitive writes pause on a console card until a teammate approves or rejects, with a trail.</p>
         </li>
         <li>
-          <h3>One assistant, many doors</h3>
-          <p>Web console, alert inbox, and messaging (WeChat shipped; Feishu / DingTalk examples) share approvals, memory, and outbound replies.</p>
+          <h3>Console, inbox, and messaging share one path</h3>
+          <p>Approvals, memory, and outbound replies are shared. Personal WeChat ships; Feishu and DingTalk examples are included.</p>
         </li>
         <li>
-          <h3>Downstream login supported</h3>
-          <p>Sign in with a browser (passwords never hit the model). Export wired abilities to everyday AI tools like Cursor; when login expires, open the link.</p>
+          <h3>Downstream login</h3>
+          <p>Sign in in a browser; passwords never hit the model. Export wired abilities to clients like Cursor; when login expires, open the returned link.</p>
         </li>
       </ul>
     </section>
 
     <section class="section wrap" id="upgrades">
-      <h2>Built for messy, real teams</h2>
-      <p class="support">Many systems, long chats, drifting APIs—without burying people in jargon. Narrow what this turn needs, group domains, see what changed, and operate from the console.</p>
+      <h2>Many systems and long chats</h2>
+      <p class="support">Narrow what this turn needs, group domains, compare API re-imports, inspect what a turn used, and read metrics in Settings.</p>
       <ul class="feature-list">
         <li>
-          <h3>Stays clear with many systems</h3>
-          <p>Optionally judge which abilities this turn needs before the main model runs—cheaper and faster. If that fails, it falls back so the turn still works.</p>
+          <h3>Judge first, then the main model</h3>
+          <p>With Matching &amp; decisions and Smart speed-up, send a shorter ability list first; on failure use the full list. A judge model alone does not cut usage until those switches are on.</p>
         </li>
         <li>
           <h3>Group by business domain</h3>
-          <p>Keep finance, commerce, and similar systems together. For stronger isolation, start a separate sub-task so approvals do not collide.</p>
+          <p>Group finance, commerce, and similar systems. Start a sub-task when approvals must not collide.</p>
         </li>
         <li>
-          <h3>See API drift · replay a turn</h3>
-          <p>After re-import, compare what changed. Beside each chat turn, open what model and abilities were used.</p>
+          <h3>Compare API changes; open a turn’s binding</h3>
+          <p>After re-import, see what changed. Beside each chat turn, open which model and abilities were used.</p>
         </li>
         <li>
-          <h3>Long chats, schedules, and review</h3>
-          <p>Long threads get summaries; oversized content can become workspace files; set daily or weekly reminders; admins can collect failed chats for review.</p>
+          <h3>Summaries, schedules, eval</h3>
+          <p>Long threads get summaries; oversized content can become workspace files; set daily or weekly instructions; admins can collect failed chats for review.</p>
         </li>
         <li>
-          <h3>Ops and security in the console</h3>
-          <p>Runtime health and recent logs in Settings; common metrics; encrypted outbound connections when you need them; some options apply without a restart.</p>
+          <h3>Metrics, logs, outbound certificates</h3>
+          <p>Runtime health and recent logs in Settings; local certificates for outbound encryption when needed; some observability options apply without a restart.</p>
         </li>
         <li>
-          <h3>Phones can connect</h3>
-          <p>Use a phone browser or app shell against a deployed assistant. A trimmed on-device option can ease server load—not shipping the full service inside the phone.</p>
+          <h3>Phones</h3>
+          <p>Phone browser or app shell against a deployed assistant. A trimmed on-device option can ease server load; the full service stays off the phone.</p>
         </li>
       </ul>
     </section>
 
     <section class="start wrap" id="start">
       <h2>Get started</h2>
-      <p class="support">No toolchain required: download a release for your platform, set secrets, and start.</p>
+      <p class="support">Download a release for your platform, set secrets, and start. No Go toolchain required.</p>
       <pre><code>cp .env.example .env
-# set your model key and settings key
+# set model key and settings key
 ./baize serve
 # open http://127.0.0.1:8080/ui</code></pre>
       <div class="cta">
