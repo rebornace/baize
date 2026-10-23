@@ -660,6 +660,27 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, runRec)
 }
 
+func (s *Server) handleGetRunChildren(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	runRec, err := s.Store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run_not_found", "run not found")
+		return
+	}
+	if !s.requireConversationAccess(w, r, runRec.ConversationID) {
+		return
+	}
+	kids, err := s.Store.ListChildRuns(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if kids == nil {
+		kids = []*store.Run{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"children": kids})
+}
+
 // maxPluginCallbackPayloadBytes is the upper bound on the serialized payload
 // field of a plugin callback body (spec §3.4: 64KiB). The whole body is
 // bounded by http.MaxBytesReader; the payload itself is checked after decode.

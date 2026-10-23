@@ -212,6 +212,10 @@ const SettingKeySystemOneEnable = "systemone_enable"
 // key allowlists from legacy guard-only export rules.
 const SettingKeyMCPExportAllowlistMigrated = "mcp_export_allowlist_migrated"
 
+// SettingKeyConnectorGroups persists operator-edited connector groups (KV
+// overlay over YAML baseline). Empty / missing → use YAML.
+const SettingKeyConnectorGroups = "connector_groups"
+
 // WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.
 const WebhookOutboxMaxAttempts = 5
 
@@ -369,6 +373,14 @@ type Run struct {
 	// LeaseUntil is the worker lease deadline for an in-flight run. nil = no
 	// lease. Never serialized to JSON (json:"-"). Used by queue reconciliation.
 	LeaseUntil *time.Time `json:"-"`
+	// ParentRunID links a depth-1 group-scoped child to its parent (L2).
+	ParentRunID string `json:"parent_run_id,omitempty"`
+	// Depth is 0 for normal runs and 1 for group-scoped children.
+	Depth int `json:"depth,omitempty"`
+	// GroupID is the connector group for a scoped child run.
+	GroupID string `json:"group_id,omitempty"`
+	// SpawnMode is readonly|readwrite for scoped children.
+	SpawnMode string `json:"spawn_mode,omitempty"`
 }
 
 // reconcileGrace is how long a queued/running run may go without a lease
@@ -386,20 +398,33 @@ type CreateRunInput struct {
 	ThinkingLevel      string // empty = profile default
 	PassthroughHeaders map[string]string
 	WebhookConfig      *WebhookConfig
+	ParentRunID        string
+	Depth              int
+	GroupID            string
+	SpawnMode          string
 }
 
 // HITL kinds. Empty / "approval" = tool approval; "login" = wait for browser login or skip.
 const (
-	HITLKindApproval = "approval"
-	HITLKindLogin    = "login"
+	HITLKindApproval     = "approval"
+	HITLKindLogin        = "login"
+	HITLKindWaitingChild = "waiting_child" // parent paused until child receipt
+)
+
+// Spawn modes for group-scoped child runs.
+const (
+	SpawnModeReadonly  = "readonly"
+	SpawnModeReadwrite = "readwrite"
 )
 
 type HITLPayload struct {
 	Prompt      string         `json:"prompt"`
 	ToolName    string         `json:"tool_name"`
 	Arguments   map[string]any `json:"arguments"`
-	Kind        string         `json:"kind,omitempty"`         // approval (default) | login
+	Kind        string         `json:"kind,omitempty"`         // approval (default) | login | waiting_child
 	ConnectorID string         `json:"connector_id,omitempty"` // login waits: which system
+	ChildRunID  string         `json:"child_run_id,omitempty"` // waiting_child: scoped child
+	ToolCallID  string         `json:"tool_call_id,omitempty"` // waiting_child: spawn tool_call id
 }
 
 // HITLCommentSkipLogin is sent with reject to skip login for the connector and continue.
@@ -545,6 +570,8 @@ type Store interface {
 	DeleteConnector(id string) error
 	CreateRun(in CreateRunInput) (*Run, error)
 	GetRun(id string) (*Run, error)
+	// ListChildRuns returns depth-1 children of parentRunID (newest last).
+	ListChildRuns(parentRunID string) ([]*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
 	// LeaseRun atomically acquires a worker lease for a queued/running/waiting_human
 	// run whose lease is absent or expired. Returns acquired=false when another

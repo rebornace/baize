@@ -339,7 +339,7 @@ func OpenSQLite(path string) (*SQLite, error) {
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
 // existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id", "thinking_level"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id", "thinking_level", "parent_run_id", "group_id", "spawn_mode"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue
@@ -347,6 +347,9 @@ func migrateRunsColumns(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN lease_until TIMESTAMP`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN depth INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumnErr(err) {
 		return err
 	}
 	return nil

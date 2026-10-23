@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/runtimecfg"
@@ -440,5 +441,76 @@ func TestNarrowToolsKeepsSkillDeclaredTools(t *testing.T) {
 	got := specSet(out)
 	if !got["create_analysis_page"] {
 		t.Fatalf("skill-declared tool must survive routing; got %v", got)
+	}
+}
+
+// L1: picking one group member expands PreferredSources to siblings so
+// same-domain tools stay eligible (recorded on decide.tool_narrow).
+func TestNarrowToolsExpandsConnectorGroups(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	noop := func(_ context.Context, _ map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	}
+	for i := 0; i < 15; i++ {
+		reg.RegisterSpecApproved(llm.ToolSpec{
+			Name: "expense_" + strconv.Itoa(i), Description: "报销单据 " + strconv.Itoa(i), Source: "expense",
+		}, noop, false)
+		reg.RegisterSpecApproved(llm.ToolSpec{
+			Name: "invoice_" + strconv.Itoa(i), Description: "发票查验 " + strconv.Itoa(i), Source: "invoice",
+		}, noop, false)
+		reg.RegisterSpecApproved(llm.ToolSpec{
+			Name: "mall_" + strconv.Itoa(i), Description: "商城商品 " + strconv.Itoa(i), Source: "mall",
+		}, noop, false)
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "查报销单"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decider := &stubDecider{byKind: map[string]decide.Answer{
+		decide.KindSystemTargets: {Verdict: decide.VerdictYes, Values: []string{"expense"}, Source: decide.SourceRemote},
+	}}
+	eng := &Engine{
+		Store: st, Tools: reg, Decider: decider, Settings: narrowKnobs(12, 8),
+	}
+	eng.SetConnectorGroups([]config.ConnectorGroup{
+		{ID: "finance", Connectors: []string{"expense", "invoice"}},
+	})
+	specs := eng.specsForRun(r.ID)
+	_ = eng.narrowTools(context.Background(), r.ID, 0, specs, []llm.Message{
+		{Role: llm.RoleUser, Content: "查报销单"},
+	})
+	evs, _ := eng.Store.ListEvents(r.ID)
+	var narrow *store.Event
+	for i := range evs {
+		if evs[i].Type == EventDecideToolNarrow {
+			narrow = &evs[i]
+		}
+	}
+	if narrow == nil {
+		t.Fatal("missing decide.tool_narrow")
+	}
+	expanded, _ := narrow.Data["groups_expanded"].([]string)
+	if expanded == nil {
+		// JSON round-trip via map[string]any may store []any
+		if raw, ok := narrow.Data["groups_expanded"].([]any); ok {
+			for _, v := range raw {
+				if s, ok := v.(string); ok {
+					expanded = append(expanded, s)
+				}
+			}
+		}
+	}
+	foundInvoice := false
+	for _, s := range expanded {
+		if s == "invoice" {
+			foundInvoice = true
+		}
+		if s == "mall" {
+			t.Fatalf("must not expand other groups: %v", expanded)
+		}
+	}
+	if !foundInvoice {
+		t.Fatalf("groups_expanded=%v want invoice", narrow.Data["groups_expanded"])
 	}
 }

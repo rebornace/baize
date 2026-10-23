@@ -114,6 +114,8 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		}
 	}
 	allowed = expandAllowedForHTTPIntent(matchQuery, specs, allowed)
+	var groupsExpanded []string
+	allowed, groupsExpanded = expandAllowedByConnectorGroups(e.connectorGroups, specs, allowed)
 
 	// --- Level 2: Tool-RAG retrieve (dense+BM25 or lexical; soft source boost)
 	preSpecs, noMatch, widened, retrievalMode := prefilterRetrieve(e, ctx, matchQuery, specs, allowed, e.effectiveDecidePreTopK())
@@ -144,6 +146,11 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		if runRec, err := e.Store.GetRun(runID); err == nil && runRec != nil {
 			convID = runRec.ConversationID
 		}
+		// Wrong first-system picks often surface as tool errors; drop sticky so
+		// the next turn's re-narrow (with trajectory) is not glued to the miss.
+		if lastTurnHadToolError(messages) {
+			e.clearStickyNarrow(convID)
+		}
 		sent, stickyReused, stickyJaccard = e.applyStickyNarrow(convID, sent, specs)
 		sent = preserveEssentialTools(sent, specs)
 		sentCount = len(sent)
@@ -165,6 +172,7 @@ func (e *Engine) narrowTools(ctx context.Context, runID string, turn int, specs 
 		"sent":             e.sentToolAudit(sent),
 		"sticky_reused":    stickyReused,
 		"sticky_jaccard":   stickyJaccard,
+		"groups_expanded":  groupsExpanded,
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventDecideToolNarrow,

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -43,8 +44,8 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
 		return nil
 	case store.StatusWaitingHuman:
-		// Normal run jobs skip waiting HITL; resume jobs continue below.
-		if job.Kind != middleware.KindHitlResume {
+		// Normal run jobs skip waiting HITL; resume / child-receipt continue below.
+		if job.Kind != middleware.KindHitlResume && job.Kind != middleware.KindChildReceipt {
 			return nil
 		}
 	}
@@ -80,6 +81,23 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 			return err
 		}
 		return nil
+	}
+	if job.Kind == middleware.KindChildReceipt {
+		var receipt run.GroupRunReceipt
+		if job.ChildReceiptJSON != "" {
+			_ = json.Unmarshal([]byte(job.ChildReceiptJSON), &receipt)
+		}
+		if eng, ok := s.Runner.(*run.Engine); ok {
+			if err := eng.ContinueFromChildReceipt(ctx, job.RunID, receipt); err != nil {
+				if errors.Is(err, run.ErrWaitingHuman) {
+					return nil
+				}
+				s.finalizeRunError(job.RunID, cur.ConversationID, err)
+				return err
+			}
+			return nil
+		}
+		return fmt.Errorf("child receipt requires *run.Engine")
 	}
 
 	def, input, opts, err := s.resolveJob(job, cur)
@@ -162,6 +180,11 @@ func (s *Server) finalizeRunError(runID, convID string, runErr error) {
 		Type: run.EventLLMError,
 		Data: map[string]any{"error": runErr.Error()},
 	})
+	if eng, ok := s.Runner.(*run.Engine); ok {
+		if child, gerr := s.Store.GetRun(runID); gerr == nil && child != nil && child.ParentRunID != "" {
+			eng.NotifyChildTerminal(child)
+		}
+	}
 	if s.Messages != nil && convID != "" {
 		note := strings.TrimSpace(runErr.Error())
 		if note == "" {

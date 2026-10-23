@@ -44,6 +44,7 @@ type runtimeKnobsJSON struct {
 	ActiveGoalEnabled            bool    `json:"active_goal_enabled"`
 	ActiveGoalMaxDepth           int     `json:"active_goal_max_depth"`
 	ActiveGoalMaxTextRunes       int     `json:"active_goal_max_text_runes"`
+	ScopedSubrunEnabled          bool    `json:"scoped_subrun_enabled"`
 }
 
 func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
@@ -80,6 +81,7 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 		ActiveGoalEnabled:            k.ActiveGoalEnabled,
 		ActiveGoalMaxDepth:           k.ActiveGoalMaxDepth,
 		ActiveGoalMaxTextRunes:       k.ActiveGoalMaxTextRunes,
+		ScopedSubrunEnabled:          k.ScopedSubrunEnabled,
 	}
 }
 

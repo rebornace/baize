@@ -273,6 +273,17 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs thinking_level: %w", err)
 	}
+	for _, q := range []string{
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id TEXT`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS group_id TEXT`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS spawn_mode TEXT`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate runs scoped child columns: %w", err)
+		}
+	}
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles context_tokens: %w", err)

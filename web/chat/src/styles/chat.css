@@ -2427,6 +2427,38 @@
   margin-top: 0.75rem;
 }
 
+/* Connector groups (tool-matching page): member picker + list rhythm */
+.connector-groups {
+  margin-top: var(--space-6);
+  max-width: 40rem;
+}
+.connector-groups-list {
+  margin-top: var(--space-4);
+}
+.connector-groups-meta {
+  min-height: 0;
+}
+.connector-groups-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+}
+.connector-groups-member {
+  margin: 0.15rem 0;
+  align-items: flex-start;
+}
+.connector-groups-member-id {
+  font-weight: var(--text-title-weight, 600);
+  word-break: break-all;
+}
+.connector-groups-member-type {
+  font-size: var(--text-meta-size, 0.8rem);
+}
+.connector-groups .settings-actions.tool-matching-actions {
+  margin-top: var(--space-4);
+}
+
 .tool-matching-progress {
   display: flex;
   flex-direction: column;

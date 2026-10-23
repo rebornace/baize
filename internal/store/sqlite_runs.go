@@ -11,17 +11,20 @@ import (
 
 // runSelectColumns is the canonical runs column order scanned by scanRunRow;
 // GetRun and ListRunsForReconcile must select exactly these columns in order.
-const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until, thinking_level`
+const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until, thinking_level, parent_run_id, depth, group_id, spawn_mode`
 
 // scanRunRow decodes one runs row selected via runSelectColumns.
 func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	var r Run
 	var status, createdAt string
 	var conversationID, identityID, passthroughSQL, webhookSQL, modelProfileID, thinkingLevel sql.NullString
+	var parentRunID, groupID, spawnMode sql.NullString
+	var depth sql.NullInt64
 	var leaseUntil sql.NullTime
 	if err := sc.Scan(
 		&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt,
 		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil, &thinkingLevel,
+		&parentRunID, &depth, &groupID, &spawnMode,
 	); err != nil {
 		return nil, err
 	}
@@ -37,6 +40,18 @@ func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	}
 	if thinkingLevel.Valid {
 		r.ThinkingLevel = thinkingLevel.String
+	}
+	if parentRunID.Valid {
+		r.ParentRunID = parentRunID.String
+	}
+	if depth.Valid {
+		r.Depth = int(depth.Int64)
+	}
+	if groupID.Valid {
+		r.GroupID = groupID.String
+	}
+	if spawnMode.Valid {
+		r.SpawnMode = spawnMode.String
 	}
 	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
 		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
@@ -96,6 +111,10 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		ThinkingLevel:      in.ThinkingLevel,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
+		ParentRunID:        in.ParentRunID,
+		Depth:              in.Depth,
+		GroupID:            in.GroupID,
+		SpawnMode:          in.SpawnMode,
 	}
 	var passthroughSQL, webhookSQL sql.NullString
 	if len(r.PassthroughHeaders) > 0 {
@@ -113,15 +132,23 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		webhookSQL = sql.NullString{String: string(b), Valid: true}
 	}
 	_, err := s.exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, thinking_level)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, thinking_level, parent_run_id, depth, group_id, spawn_mode)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), formatSQLiteTime(r.CreatedAt),
 		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID, r.ThinkingLevel,
+		nullIfEmpty(r.ParentRunID), r.Depth, nullIfEmpty(r.GroupID), nullIfEmpty(r.SpawnMode),
 	)
 	if err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+func nullIfEmpty(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
 }
 
 func (s *SQLStore) GetRun(id string) (*Run, error) {
@@ -135,6 +162,20 @@ func (s *SQLStore) GetRun(id string) (*Run, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+func (s *SQLStore) ListChildRuns(parentRunID string) ([]*Run, error) {
+	if parentRunID == "" {
+		return nil, nil
+	}
+	rows, err := s.query(
+		`SELECT `+runSelectColumns+` FROM runs WHERE parent_run_id = ? ORDER BY created_at ASC`,
+		parentRunID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanRuns(rows)
 }
 
 func (s *SQLStore) SetPassthroughHeaders(id string, headers map[string]string) error {

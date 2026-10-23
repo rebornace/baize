@@ -85,6 +85,8 @@ type Knobs struct {
 	// ContextOffloadEnabled writes bulky tool/paste bodies to workspace offload/
 	// and sends the model a short preview+path stub. Default on; KV can override.
 	ContextOffloadEnabled bool
+	// ScopedSubrunEnabled allows the model to call spawn_group_run (L2). Default off.
+	ScopedSubrunEnabled bool
 }
 
 // Credentials is the effective control-plane credential set.
@@ -151,6 +153,7 @@ type knobsOverride struct {
 	ActiveGoalMaxDepth       *int     `json:"active_goal_max_depth,omitempty"`
 	ActiveGoalMaxTextRunes   *int     `json:"active_goal_max_text_runes,omitempty"`
 	ContextOffloadEnabled    *bool    `json:"context_offload_enabled,omitempty"`
+	ScopedSubrunEnabled      *bool    `json:"scoped_subrun_enabled,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -373,6 +376,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.ContextOffloadEnabled != nil {
 		k.ContextOffloadEnabled = *ko.ContextOffloadEnabled
 	}
+	if ko.ScopedSubrunEnabled != nil {
+		k.ScopedSubrunEnabled = *ko.ScopedSubrunEnabled
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -447,6 +453,7 @@ type KnobsFieldFlags struct {
 	ActiveGoalMaxDepth     bool `json:"active_goal_max_depth"`
 	ActiveGoalMaxTextRunes bool `json:"active_goal_max_text_runes"`
 	ContextOffloadEnabled  bool `json:"context_offload_enabled"`
+	ScopedSubrunEnabled    bool `json:"scoped_subrun_enabled"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -498,6 +505,7 @@ func (h *Holder) KnobsView() KnobsView {
 			ActiveGoalMaxDepth:     ko.ActiveGoalMaxDepth != nil,
 			ActiveGoalMaxTextRunes: ko.ActiveGoalMaxTextRunes != nil,
 			ContextOffloadEnabled:  ko.ContextOffloadEnabled != nil,
+			ScopedSubrunEnabled:    ko.ScopedSubrunEnabled != nil,
 		},
 	}
 }

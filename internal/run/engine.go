@@ -153,6 +153,18 @@ type Engine struct {
 	// small ranking jitter does not reshuffle schemas (prefix-cache friendly).
 	stickyMu     sync.Mutex
 	stickyNarrow map[string]stickyNarrowState
+
+	// connectorGroups optionally expands DP-2a allowed sources to group siblings.
+	connectorGroups *ConnectorGroupIndex
+
+	// DispatchJob enqueues child KindRun jobs (bootstrap wires Server.Dispatch).
+	DispatchJob DispatchJobFunc
+	// OnChildTerminal wakes the parent with a receipt (bootstrap wires KindChildReceipt).
+	OnChildTerminal ChildTerminalFunc
+	// childScopeByRun holds in-process jail for depth-1 children.
+	childScopeByRun *sync.Map
+	// childReceiptOnce dedupes parent wake-ups per child run id.
+	childReceiptOnce *sync.Map
 }
 
 // RunOptions carries per-run overrides for ExecuteWithOpts.
@@ -257,6 +269,19 @@ func (e *Engine) Cancel(runID string) error {
 	case store.StatusQueued, store.StatusRunning, store.StatusWaitingHuman:
 	default:
 		return fmt.Errorf("run is not active")
+	}
+
+	// Cancel parent → cancel active children first (kill tree).
+	if runRec.Depth == 0 {
+		if kids, lerr := e.Store.ListChildRuns(runID); lerr == nil {
+			for _, c := range kids {
+				switch c.Status {
+				case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
+					continue
+				}
+				_ = e.Cancel(c.ID)
+			}
+		}
 	}
 
 	e.cancelMu.Lock()
@@ -459,6 +484,12 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		return fmt.Errorf("%s", errMsg)
 	}
 
+	if payload.Kind == store.HITLKindWaitingChild {
+		// Parent is waiting on a child receipt; operators resume the child run,
+		// or cancel the child (which wakes the parent). Do not approve/reject here.
+		return fmt.Errorf("parent is waiting_child; resume or cancel child %s", payload.ChildRunID)
+	}
+
 	isLoginWait := payload.Kind == store.HITLKindLogin
 
 	if !d.Approve {
@@ -619,7 +650,7 @@ func (e *Engine) finalizeLoginPaused(runID string) error {
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
 	// Read once at loop start so the step bound is stable for the whole run
 	// even if an operator hot-patches knobs mid-run.
-	maxSteps := e.effectiveMaxSteps()
+	maxSteps := e.effectiveMaxStepsForRun(runID)
 	var turnThinking []string
 	anyRedacted := false
 

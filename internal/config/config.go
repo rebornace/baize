@@ -10,6 +10,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ConnectorGroup bundles related connector ids for DP-2a eligibility expansion.
+type ConnectorGroup struct {
+	ID         string   `yaml:"id"`
+	Connectors []string `yaml:"connectors"`
+}
+
 type Config struct {
 	Listen string `yaml:"listen"`
 	Store  struct {
@@ -54,6 +60,10 @@ type Config struct {
 		// ArchiveAfterDays archives idle user skills (default 30). 0 disables.
 		ArchiveAfterDays *int `yaml:"archive_after_days"`
 	} `yaml:"skills"`
+	// ConnectorGroups names related connectors for DP-2a routing floor:
+	// when any member is forced/picked, siblings in the same group stay eligible.
+	// Does not spawn sub-runs. Empty = no group expansion.
+	ConnectorGroups []ConnectorGroup `yaml:"connector_groups"`
 	Agent struct {
 		ID          string   `yaml:"id"`
 		System      string   `yaml:"system"`

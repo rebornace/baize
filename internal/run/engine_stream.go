@@ -14,10 +14,13 @@ import (
 // conversation_id. waiting_human is intentionally not recorded (the resume
 // path will write the terminal message when it reaches succeeded/failed).
 func (e *Engine) recordTerminalMessage(runID string) {
+	runRec, err := e.Store.GetRun(runID)
+	if err == nil && runRec != nil && runRec.ParentRunID != "" {
+		e.NotifyChildTerminal(runRec)
+	}
 	if e.Messages == nil {
 		return
 	}
-	runRec, err := e.Store.GetRun(runID)
 	if err != nil || runRec == nil || runRec.ConversationID == "" {
 		return
 	}

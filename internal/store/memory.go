@@ -230,10 +230,36 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 		ThinkingLevel:      in.ThinkingLevel,
 		PassthroughHeaders: cloneHeaders(in.PassthroughHeaders),
 		WebhookConfig:      cloneWebhookConfig(in.WebhookConfig),
+		ParentRunID:        in.ParentRunID,
+		Depth:              in.Depth,
+		GroupID:            in.GroupID,
+		SpawnMode:          in.SpawnMode,
 	}
 	s.runs[id] = r
 	s.events[id] = nil
 	return r, nil
+}
+
+func (s *Memory) ListChildRuns(parentRunID string) ([]*Run, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if parentRunID == "" {
+		return nil, nil
+	}
+	var out []*Run
+	for _, r := range s.runs {
+		if r.ParentRunID != parentRunID {
+			continue
+		}
+		cp := *r
+		cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
+		cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
 }
 
 func (s *Memory) GetRun(id string) (*Run, error) {

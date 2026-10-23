@@ -365,6 +365,9 @@ func (rt *storeRuntime) ReloadLayeredConfig() error {
 		holder.ReplaceBaseline(base)
 		rt.srv.CallbackPublicBase = holder.PublicBaseURL()
 	}
+	if groups, _, gerr := loadConnectorGroupsOverlay(rt.current(), cfg.ConnectorGroups); gerr == nil && rt.engine != nil {
+		rt.engine.SetConnectorGroups(groups)
+	}
 	if mismatch {
 		log.Printf("store config mismatch after reload: YAML driver=%q effective=%q; use PUT /v0/settings/store to hot-swap",
 			cfg.Store.Driver, rt.EffectiveStore().Driver)

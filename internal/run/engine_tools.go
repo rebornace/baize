@@ -247,6 +247,19 @@ func (e *Engine) invokeToolPersist(ctx context.Context, runID, callID, name stri
 			Data: callData,
 		})
 
+		if sc, ok := e.getChildScope(runID); ok && sc.Mode == store.SpawnModeReadonly {
+			if e.Tools != nil && e.Tools.RequiresApproval(resolved) {
+				content = map[string]any{"error": "readonly scoped child cannot use approval-gated tools"}
+				isError = true
+				return false, nil
+			}
+			if info, ok := e.Tools.Get(resolved); ok && info.RequireLogin {
+				content = map[string]any{"error": "readonly scoped child cannot use login-gated tools"}
+				isError = true
+				return false, nil
+			}
+		}
+
 		if e.blockedByLogin(ctx, resolved) {
 			content = tool.LoginRequiredContent()
 			if _, _, cid := e.toolContractFields(resolved); cid != "" {
@@ -289,6 +302,9 @@ func (e *Engine) invokeToolPersist(ctx context.Context, runID, callID, name stri
 		toolCtx, cancel := context.WithTimeout(invokeCtx, e.toolTimeout())
 		c, toolIsErr, ierr := e.Tools.Invoke(toolCtx, resolved, args)
 		cancel()
+		if errors.Is(ierr, ErrWaitingHuman) {
+			return false, ErrWaitingHuman
+		}
 		isError = toolIsErr
 		if ierr != nil {
 			isError = true

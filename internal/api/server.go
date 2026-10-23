@@ -178,6 +178,8 @@ type Server struct {
 	// ReloadConfig re-reads layered YAML into runtimecfg baseline (SIGHUP /
 	// POST /v0/settings/reload). nil = reload endpoint unavailable.
 	ReloadConfig func() error
+	// ApplyConnectorGroups hot-applies DP-2a connector groups (nil = no-op).
+	ApplyConnectorGroups func([]config.ConnectorGroup)
 	// EffectiveStoreDriver / StoreConfigMismatch feed GET /settings/store.
 	EffectiveStoreDriver func() string
 	StoreConfigMismatch  func() bool
@@ -586,6 +588,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/runs/{id}/events", s.handleGetEvents)
 	s.mux.HandleFunc("GET /v0/runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /v0/runs/{id}", s.handleGetRun)
+	s.mux.HandleFunc("GET /v0/runs/{id}/children", s.handleGetRunChildren)
 	s.mux.HandleFunc("GET /v0/runs/{id}/binding", s.handleGetRunBinding)
 	s.mux.HandleFunc("GET /v0/artifacts/{id}", s.handleGetArtifact)
 	s.mux.HandleFunc("GET /v0/channels/media/{conv}/{object}", s.handleChannelMedia)
@@ -618,6 +621,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/events-webhook/deliveries/{id}/retry", s.handlePostEventsWebhookDeliveryRetry)
 	s.mux.HandleFunc("GET /v0/settings/inbox-channels", s.handleGetInboxChannels)
 	s.mux.HandleFunc("PUT /v0/settings/inbox-channels", s.handlePutInboxChannels)
+	s.mux.HandleFunc("GET /v0/settings/connector-groups", s.handleGetConnectorGroups)
+	s.mux.HandleFunc("PUT /v0/settings/connector-groups", s.handlePutConnectorGroups)
 	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/rotate-secret", s.handlePostInboxRotateSecret)
 	s.mux.HandleFunc("POST /v0/settings/inbox-channels/{id}/test", s.handlePostInboxTest)
 	s.mux.HandleFunc("GET /v0/settings/store", s.handleGetStoreSettings)

@@ -34,6 +34,13 @@ agent:
   skills:
     - baize-help
     - data-analytics
+# 连接器分组（L1）：DP-2a 选中组内任一 source 时，同组 sibling 仍进 eligibility，
+# 降低「首轮判错系统」导致同域工具被裁掉的概率。不启用不影响现有行为。
+# connector_groups:
+#   - id: finance
+#     connectors: [expense, invoice]
+#   - id: commerce
+#     connectors: [mall, order]
 run:
   max_steps: 16
 events:

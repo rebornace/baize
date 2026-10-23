@@ -43,6 +43,7 @@ const baseKnobs: RuntimeKnobs = {
   decide_tool_prune_max_judged: 8,
   decide_route_enabled: false,
   decide_route_min_runes: 400,
+  scoped_subrun_enabled: false,
 }
 
 describe('knobsToForm', () => {

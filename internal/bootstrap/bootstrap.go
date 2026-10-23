@@ -457,6 +457,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		Memory:      mem,
 		Decider:     decider,
 	}
+	engine.SetConnectorGroups(cfg.ConnectorGroups)
+	if groups, _, gerr := loadConnectorGroupsOverlay(st, cfg.ConnectorGroups); gerr == nil {
+		engine.SetConnectorGroups(groups)
+	}
 	if em := strings.TrimSpace(cfg.LLM.EmbeddingModel); em != "" {
 		env := cfg.LLM.APIKeyEnv
 		if env == "" {
@@ -479,6 +483,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
 	for _, tm := range engine.ProbeTools() {
+		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+	}
+	for _, tm := range engine.SpawnTools() {
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
 	srv := api.NewServer(st, reg, engine)
@@ -653,8 +660,20 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	rt.setWrapped(st)
 	srv.HotSwapStore = rt.HotSwap
 	srv.ReloadConfig = rt.ReloadLayeredConfig
+	srv.ApplyConnectorGroups = engine.SetConnectorGroups
 	srv.EffectiveStoreDriver = func() string { return rt.EffectiveStore().Driver }
 	srv.StoreConfigMismatch = rt.StoreConfigMismatch
+	engine.DispatchJob = func(job middleware.Job) {
+		srv.Dispatch(context.Background(), job)
+	}
+	engine.OnChildTerminal = func(parentRunID string, receipt run.GroupRunReceipt) {
+		raw, _ := json.Marshal(receipt)
+		srv.Dispatch(context.Background(), middleware.Job{
+			RunID:            parentRunID,
+			Kind:             middleware.KindChildReceipt,
+			ChildReceiptJSON: string(raw),
+		})
+	}
 
 	go runtimeHolder.StartRefreshFunc(refreshCtx, rt.current, runtimeRefreshInterval)
 

@@ -11,6 +11,8 @@ const (
 	// KindHitlResume continues a waiting_human run after an approve/reject
 	// decision (worker-side ContinueFromHITL; does not hold a slot while waiting).
 	KindHitlResume JobKind = "hitl_resume"
+	// KindChildReceipt wakes a parent waiting_child run with a structured receipt.
+	KindChildReceipt JobKind = "child_receipt"
 )
 
 // Job is a unit of work: a run to execute. The DB run row is authoritative;
@@ -30,6 +32,8 @@ type Job struct {
 	HITLComment    string `json:"hitl_comment,omitempty"`
 	HITLRole       string `json:"hitl_role,omitempty"`
 	HITLOperatorID string `json:"hitl_operator_id,omitempty"`
+	// ChildReceiptJSON is set when Kind == KindChildReceipt (parent wake).
+	ChildReceiptJSON string `json:"child_receipt_json,omitempty"`
 }
 
 // Part is a serializable multimodal content part (text or image data URI).

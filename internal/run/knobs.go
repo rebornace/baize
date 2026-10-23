@@ -21,6 +21,14 @@ func (e *Engine) effectiveMaxSteps() int {
 	return 16
 }
 
+func (e *Engine) effectiveMaxStepsForRun(runID string) int {
+	base := e.effectiveMaxSteps()
+	if sc, ok := e.getChildScope(runID); ok && sc.MaxSteps > 0 && sc.MaxSteps < base {
+		return sc.MaxSteps
+	}
+	return base
+}
+
 func (e *Engine) effectiveMaxMessages() int {
 	if e.Settings != nil {
 		if n := e.Settings.Knobs().MaxMessages; n > 0 {

@@ -25,6 +25,7 @@ import {
   ToastRegion,
   useToast,
 } from '../components/ui'
+import { ConnectorGroupsPanel } from '../components/settings/ConnectorGroupsPanel'
 import { useGate } from '../gateContext'
 import { RUNTIME, friendlyError } from '../strings'
 
@@ -852,6 +853,14 @@ export function ToolMatchingSettings() {
           </section>
         </details>
       ) : null}
+
+      <ConnectorGroupsPanel
+        readOnly={readOnly}
+        onToast={(msg, kind) => {
+          if (kind === 'err') push({ tone: 'error', title: msg })
+          else push({ tone: 'success', title: msg })
+        }}
+      />
 
       <ConfirmDialog
         open={cleanupOpen}

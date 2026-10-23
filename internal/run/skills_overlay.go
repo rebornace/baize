@@ -164,7 +164,7 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 	all := e.Tools.Specs()
 	st := e.getRunSkillState(runID)
 	if e.Skills == nil || len(e.Skills.List()) == 0 {
-		return e.withContextTools(e.filterSkippedTools(all, st), all, runID)
+		return e.filterSpecsForChild(runID, e.withContextTools(e.filterSkippedTools(all, st), all, runID))
 	}
 
 	enabled := e.enabledToolMap()
@@ -203,7 +203,8 @@ func (e *Engine) specsForRun(runID string) []llm.ToolSpec {
 	}
 	out = e.filterSkippedTools(out, st)
 	out = append(out, skill.ActivateToolSpec())
-	return e.withContextTools(out, all, runID)
+	out = e.withContextTools(out, all, runID)
+	return e.filterSpecsForChild(runID, out)
 }
 
 // filterSkippedTools drops tools the user ignored for this run (single tool or whole connector).
