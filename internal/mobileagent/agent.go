@@ -342,7 +342,7 @@ func (a *Agent) execHTTPGet(client *http.Client, argsJSON string) (string, error
 	}
 	out, _ := json.Marshal(map[string]any{
 		"status":    resp.StatusCode,
-		"truncated":  truncated,
+		"truncated": truncated,
 		"body":      string(body),
 		"final_url": resp.Request.URL.String(),
 	})

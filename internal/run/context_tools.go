@@ -208,8 +208,8 @@ func sessionSearchSpec() llm.ToolSpec {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"query":  map[string]any{"type": "string", "description": "Search keywords"},
-				"top_k":  map[string]any{"type": "integer", "description": "Max hits (default 8, max 20)"},
+				"query": map[string]any{"type": "string", "description": "Search keywords"},
+				"top_k": map[string]any{"type": "integer", "description": "Max hits (default 8, max 20)"},
 			},
 			"required": []string{"query"},
 		},

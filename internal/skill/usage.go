@@ -8,10 +8,10 @@ import (
 
 // Usage tracks activate_skill counts for curator archival decisions.
 type Usage struct {
-	SkillID           string
-	ActivateCount     int
-	LastActivatedAt   time.Time
-	InstalledAt       time.Time
+	SkillID         string
+	ActivateCount   int
+	LastActivatedAt time.Time
+	InstalledAt     time.Time
 }
 
 // UsageStore persists per-skill usage. Implementations must be safe for concurrent use.

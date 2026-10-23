@@ -442,20 +442,20 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	)
 
 	engine := &run.Engine{
-		Store:       st,
-		LLM:         provider,
-		Tools:       reg,
-		Gate:        run.NewGate(),
+		Store:             st,
+		LLM:               provider,
+		Tools:             reg,
+		Gate:              run.NewGate(),
 		MaxSteps:          cfg.Run.MaxSteps,
 		ToolTimeout:       time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
 		ParallelToolLimit: cfg.Run.ParallelToolLimit,
-		Messages:    messages,
-		MaxMessages: cfg.Conversation.MaxMessages,
-		Compactor:   compactor,
-		Identities:  identities,
-		Skills:      skillCat,
-		Memory:      mem,
-		Decider:     decider,
+		Messages:          messages,
+		MaxMessages:       cfg.Conversation.MaxMessages,
+		Compactor:         compactor,
+		Identities:        identities,
+		Skills:            skillCat,
+		Memory:            mem,
+		Decider:           decider,
 	}
 	engine.SetConnectorGroups(cfg.ConnectorGroups)
 	if groups, _, gerr := loadConnectorGroupsOverlay(st, cfg.ConnectorGroups); gerr == nil {

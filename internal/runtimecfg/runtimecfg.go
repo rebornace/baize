@@ -121,39 +121,39 @@ type operatorEntry struct {
 // are nil when "not overridden" (keep baseline); a non-nil pointer (even to 0
 // for compaction off) is an explicit override.
 type knobsOverride struct {
-	MaxMessages              *int     `json:"max_messages,omitempty"`
-	MaxSteps                 *int     `json:"max_steps,omitempty"`
-	ToolTimeoutSeconds       *int     `json:"tool_timeout_seconds,omitempty"`
-	CompactionEnabled        *bool    `json:"compaction_enabled,omitempty"`
-	CompactThreshold         *float64 `json:"compact_threshold,omitempty"`
-	CompactReserveTokens     *int     `json:"compact_reserve_tokens,omitempty"`
-	CompactKeepRecent        *int     `json:"compact_keep_recent,omitempty"`
-	CompactSummaryTimeoutSec *int     `json:"compact_summary_timeout_seconds,omitempty"`
-	MemoryEnabled            *bool    `json:"memory_enabled,omitempty"`
-	MemoryAutoExtract        *bool    `json:"memory_auto_extract,omitempty"`
-	DecideEnabled            *bool    `json:"decide_enabled,omitempty"`
-	DecideMemoryEnabled      *bool    `json:"decide_memory_enabled,omitempty"`
-	DecideProfileID          *string  `json:"decide_profile_id,omitempty"`
-	DecideSystemOneBaseURL   *string  `json:"decide_systemone_base_url,omitempty"`
-	DecideSystemOneAPIKey    *string  `json:"decide_systemone_api_key,omitempty"`
-	DecideSystemOneModel     *string  `json:"decide_systemone_model,omitempty"`
+	MaxMessages                *int     `json:"max_messages,omitempty"`
+	MaxSteps                   *int     `json:"max_steps,omitempty"`
+	ToolTimeoutSeconds         *int     `json:"tool_timeout_seconds,omitempty"`
+	CompactionEnabled          *bool    `json:"compaction_enabled,omitempty"`
+	CompactThreshold           *float64 `json:"compact_threshold,omitempty"`
+	CompactReserveTokens       *int     `json:"compact_reserve_tokens,omitempty"`
+	CompactKeepRecent          *int     `json:"compact_keep_recent,omitempty"`
+	CompactSummaryTimeoutSec   *int     `json:"compact_summary_timeout_seconds,omitempty"`
+	MemoryEnabled              *bool    `json:"memory_enabled,omitempty"`
+	MemoryAutoExtract          *bool    `json:"memory_auto_extract,omitempty"`
+	DecideEnabled              *bool    `json:"decide_enabled,omitempty"`
+	DecideMemoryEnabled        *bool    `json:"decide_memory_enabled,omitempty"`
+	DecideProfileID            *string  `json:"decide_profile_id,omitempty"`
+	DecideSystemOneBaseURL     *string  `json:"decide_systemone_base_url,omitempty"`
+	DecideSystemOneAPIKey      *string  `json:"decide_systemone_api_key,omitempty"`
+	DecideSystemOneModel       *string  `json:"decide_systemone_model,omitempty"`
 	DecideToolRoutingEnabled   *bool    `json:"decide_tool_routing_enabled,omitempty"`
 	DecideToolThreshold        *int     `json:"decide_tool_threshold,omitempty"`
 	DecideToolPreTopK          *int     `json:"decide_tool_pre_topk,omitempty"`
 	DecideToolStickyEnabled    *bool    `json:"decide_tool_sticky_enabled,omitempty"`
 	DecideToolStickyMinJaccard *float64 `json:"decide_tool_sticky_min_jaccard,omitempty"`
 	DecideToolChoiceEnabled    *bool    `json:"decide_tool_choice_enabled,omitempty"`
-	DecideToolPruneEnabled   *bool    `json:"decide_tool_prune_enabled,omitempty"`
-	DecideToolPruneThreshold *int     `json:"decide_tool_prune_threshold,omitempty"`
-	DecideToolPruneMaxJudged *int     `json:"decide_tool_prune_max_judged,omitempty"`
-	DecideRouteEnabled       *bool    `json:"decide_route_enabled,omitempty"`
-	DecideRouteMinRunes      *int     `json:"decide_route_min_runes,omitempty"`
-	ContextProjectionEnabled *bool    `json:"context_projection_enabled,omitempty"`
-	ActiveGoalEnabled        *bool    `json:"active_goal_enabled,omitempty"`
-	ActiveGoalMaxDepth       *int     `json:"active_goal_max_depth,omitempty"`
-	ActiveGoalMaxTextRunes   *int     `json:"active_goal_max_text_runes,omitempty"`
-	ContextOffloadEnabled    *bool    `json:"context_offload_enabled,omitempty"`
-	ScopedSubrunEnabled      *bool    `json:"scoped_subrun_enabled,omitempty"`
+	DecideToolPruneEnabled     *bool    `json:"decide_tool_prune_enabled,omitempty"`
+	DecideToolPruneThreshold   *int     `json:"decide_tool_prune_threshold,omitempty"`
+	DecideToolPruneMaxJudged   *int     `json:"decide_tool_prune_max_judged,omitempty"`
+	DecideRouteEnabled         *bool    `json:"decide_route_enabled,omitempty"`
+	DecideRouteMinRunes        *int     `json:"decide_route_min_runes,omitempty"`
+	ContextProjectionEnabled   *bool    `json:"context_projection_enabled,omitempty"`
+	ActiveGoalEnabled          *bool    `json:"active_goal_enabled,omitempty"`
+	ActiveGoalMaxDepth         *int     `json:"active_goal_max_depth,omitempty"`
+	ActiveGoalMaxTextRunes     *int     `json:"active_goal_max_text_runes,omitempty"`
+	ContextOffloadEnabled      *bool    `json:"context_offload_enabled,omitempty"`
+	ScopedSubrunEnabled        *bool    `json:"scoped_subrun_enabled,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -421,39 +421,39 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 // KnobsFieldFlags reports which knobs are overridden in the KV. Field tags
 // are the wire keys consumed by the HTTP layer (task 6).
 type KnobsFieldFlags struct {
-	MaxMessages            bool `json:"max_messages"`
-	MaxSteps               bool `json:"max_steps"`
-	ToolTimeout            bool `json:"tool_timeout_seconds"`
-	CompactionEnabled      bool `json:"compaction_enabled"`
-	CompactThreshold       bool `json:"compact_threshold"`
-	CompactReserveTokens   bool `json:"compact_reserve_tokens"`
-	CompactKeepRecent      bool `json:"compact_keep_recent"`
-	CompactSummaryTimeout  bool `json:"compact_summary_timeout_seconds"`
-	MemoryEnabled          bool `json:"memory_enabled"`
-	MemoryAutoExtract      bool `json:"memory_auto_extract"`
-	DecideEnabled          bool `json:"decide_enabled"`
-	DecideMemoryEnabled    bool `json:"decide_memory_enabled"`
-	DecideProfileID        bool `json:"decide_profile_id"`
-	DecideSystemOneBase    bool `json:"decide_systemone_base_url"`
-	DecideSystemOneKey     bool `json:"decide_systemone_api_key"`
-	DecideSystemOneModel   bool `json:"decide_systemone_model"`
-	DecideToolRouting      bool `json:"decide_tool_routing_enabled"`
-	DecideToolThreshold    bool `json:"decide_tool_threshold"`
+	MaxMessages                bool `json:"max_messages"`
+	MaxSteps                   bool `json:"max_steps"`
+	ToolTimeout                bool `json:"tool_timeout_seconds"`
+	CompactionEnabled          bool `json:"compaction_enabled"`
+	CompactThreshold           bool `json:"compact_threshold"`
+	CompactReserveTokens       bool `json:"compact_reserve_tokens"`
+	CompactKeepRecent          bool `json:"compact_keep_recent"`
+	CompactSummaryTimeout      bool `json:"compact_summary_timeout_seconds"`
+	MemoryEnabled              bool `json:"memory_enabled"`
+	MemoryAutoExtract          bool `json:"memory_auto_extract"`
+	DecideEnabled              bool `json:"decide_enabled"`
+	DecideMemoryEnabled        bool `json:"decide_memory_enabled"`
+	DecideProfileID            bool `json:"decide_profile_id"`
+	DecideSystemOneBase        bool `json:"decide_systemone_base_url"`
+	DecideSystemOneKey         bool `json:"decide_systemone_api_key"`
+	DecideSystemOneModel       bool `json:"decide_systemone_model"`
+	DecideToolRouting          bool `json:"decide_tool_routing_enabled"`
+	DecideToolThreshold        bool `json:"decide_tool_threshold"`
 	DecideToolPreTopK          bool `json:"decide_tool_pre_topk"`
 	DecideToolStickyEnabled    bool `json:"decide_tool_sticky_enabled"`
 	DecideToolStickyMinJaccard bool `json:"decide_tool_sticky_min_jaccard"`
 	DecideToolChoice           bool `json:"decide_tool_choice_enabled"`
-	DecideToolPrune        bool `json:"decide_tool_prune_enabled"`
-	DecideToolPruneThresh  bool `json:"decide_tool_prune_threshold"`
-	DecideToolPruneMax     bool `json:"decide_tool_prune_max_judged"`
-	DecideRoute            bool `json:"decide_route_enabled"`
-	DecideRouteMinRunes    bool `json:"decide_route_min_runes"`
-	ContextProjection      bool `json:"context_projection_enabled"`
-	ActiveGoalEnabled      bool `json:"active_goal_enabled"`
-	ActiveGoalMaxDepth     bool `json:"active_goal_max_depth"`
-	ActiveGoalMaxTextRunes bool `json:"active_goal_max_text_runes"`
-	ContextOffloadEnabled  bool `json:"context_offload_enabled"`
-	ScopedSubrunEnabled    bool `json:"scoped_subrun_enabled"`
+	DecideToolPrune            bool `json:"decide_tool_prune_enabled"`
+	DecideToolPruneThresh      bool `json:"decide_tool_prune_threshold"`
+	DecideToolPruneMax         bool `json:"decide_tool_prune_max_judged"`
+	DecideRoute                bool `json:"decide_route_enabled"`
+	DecideRouteMinRunes        bool `json:"decide_route_min_runes"`
+	ContextProjection          bool `json:"context_projection_enabled"`
+	ActiveGoalEnabled          bool `json:"active_goal_enabled"`
+	ActiveGoalMaxDepth         bool `json:"active_goal_max_depth"`
+	ActiveGoalMaxTextRunes     bool `json:"active_goal_max_text_runes"`
+	ContextOffloadEnabled      bool `json:"context_offload_enabled"`
+	ScopedSubrunEnabled        bool `json:"scoped_subrun_enabled"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -473,39 +473,39 @@ func (h *Holder) KnobsView() KnobsView {
 	return KnobsView{
 		Effective: h.Knobs(),
 		Overridden: KnobsFieldFlags{
-			MaxMessages:            ko.MaxMessages != nil,
-			MaxSteps:               ko.MaxSteps != nil,
-			ToolTimeout:            ko.ToolTimeoutSeconds != nil,
-			CompactionEnabled:      ko.CompactionEnabled != nil,
-			CompactThreshold:       ko.CompactThreshold != nil,
-			CompactReserveTokens:   ko.CompactReserveTokens != nil,
-			CompactKeepRecent:      ko.CompactKeepRecent != nil,
-			CompactSummaryTimeout:  ko.CompactSummaryTimeoutSec != nil,
-			MemoryEnabled:          ko.MemoryEnabled != nil,
-			MemoryAutoExtract:      ko.MemoryAutoExtract != nil,
-			DecideEnabled:          ko.DecideEnabled != nil,
-			DecideMemoryEnabled:    ko.DecideMemoryEnabled != nil,
-			DecideProfileID:        ko.DecideProfileID != nil,
-			DecideSystemOneBase:    ko.DecideSystemOneBaseURL != nil,
-			DecideSystemOneKey:     ko.DecideSystemOneAPIKey != nil,
-			DecideSystemOneModel:   ko.DecideSystemOneModel != nil,
-			DecideToolRouting:      ko.DecideToolRoutingEnabled != nil,
-			DecideToolThreshold:    ko.DecideToolThreshold != nil,
+			MaxMessages:                ko.MaxMessages != nil,
+			MaxSteps:                   ko.MaxSteps != nil,
+			ToolTimeout:                ko.ToolTimeoutSeconds != nil,
+			CompactionEnabled:          ko.CompactionEnabled != nil,
+			CompactThreshold:           ko.CompactThreshold != nil,
+			CompactReserveTokens:       ko.CompactReserveTokens != nil,
+			CompactKeepRecent:          ko.CompactKeepRecent != nil,
+			CompactSummaryTimeout:      ko.CompactSummaryTimeoutSec != nil,
+			MemoryEnabled:              ko.MemoryEnabled != nil,
+			MemoryAutoExtract:          ko.MemoryAutoExtract != nil,
+			DecideEnabled:              ko.DecideEnabled != nil,
+			DecideMemoryEnabled:        ko.DecideMemoryEnabled != nil,
+			DecideProfileID:            ko.DecideProfileID != nil,
+			DecideSystemOneBase:        ko.DecideSystemOneBaseURL != nil,
+			DecideSystemOneKey:         ko.DecideSystemOneAPIKey != nil,
+			DecideSystemOneModel:       ko.DecideSystemOneModel != nil,
+			DecideToolRouting:          ko.DecideToolRoutingEnabled != nil,
+			DecideToolThreshold:        ko.DecideToolThreshold != nil,
 			DecideToolPreTopK:          ko.DecideToolPreTopK != nil,
 			DecideToolStickyEnabled:    ko.DecideToolStickyEnabled != nil,
 			DecideToolStickyMinJaccard: ko.DecideToolStickyMinJaccard != nil,
 			DecideToolChoice:           ko.DecideToolChoiceEnabled != nil,
-			DecideToolPrune:        ko.DecideToolPruneEnabled != nil,
-			DecideToolPruneThresh:  ko.DecideToolPruneThreshold != nil,
-			DecideToolPruneMax:     ko.DecideToolPruneMaxJudged != nil,
-			DecideRoute:            ko.DecideRouteEnabled != nil,
-			DecideRouteMinRunes:    ko.DecideRouteMinRunes != nil,
-			ContextProjection:      ko.ContextProjectionEnabled != nil,
-			ActiveGoalEnabled:      ko.ActiveGoalEnabled != nil,
-			ActiveGoalMaxDepth:     ko.ActiveGoalMaxDepth != nil,
-			ActiveGoalMaxTextRunes: ko.ActiveGoalMaxTextRunes != nil,
-			ContextOffloadEnabled:  ko.ContextOffloadEnabled != nil,
-			ScopedSubrunEnabled:    ko.ScopedSubrunEnabled != nil,
+			DecideToolPrune:            ko.DecideToolPruneEnabled != nil,
+			DecideToolPruneThresh:      ko.DecideToolPruneThreshold != nil,
+			DecideToolPruneMax:         ko.DecideToolPruneMaxJudged != nil,
+			DecideRoute:                ko.DecideRouteEnabled != nil,
+			DecideRouteMinRunes:        ko.DecideRouteMinRunes != nil,
+			ContextProjection:          ko.ContextProjectionEnabled != nil,
+			ActiveGoalEnabled:          ko.ActiveGoalEnabled != nil,
+			ActiveGoalMaxDepth:         ko.ActiveGoalMaxDepth != nil,
+			ActiveGoalMaxTextRunes:     ko.ActiveGoalMaxTextRunes != nil,
+			ContextOffloadEnabled:      ko.ContextOffloadEnabled != nil,
+			ScopedSubrunEnabled:        ko.ScopedSubrunEnabled != nil,
 		},
 	}
 }

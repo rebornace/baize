@@ -79,8 +79,8 @@ func TestCompactLiveMessagesFoldsMiddleKeepsRecent(t *testing.T) {
 func TestCompactLiveMessagesUnderBudgetNoop(t *testing.T) {
 	sumLLM := &fakeCompactLLM{reply: "不应调用"}
 	c := &Compactor{
-		LLM: sumLLM,
-		Profiles: fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 128000}},
+		LLM:       sumLLM,
+		Profiles:  fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 128000}},
 		Threshold: 0.9, ReserveTokens: 1000, KeepRecent: 8,
 	}
 	msgs := []llm.Message{
@@ -102,8 +102,8 @@ func TestCompactLiveMessagesUnderBudgetNoop(t *testing.T) {
 func TestCompactLiveMessagesFailurePropagates(t *testing.T) {
 	sumLLM := &fakeCompactLLM{err: errCompactBoom}
 	c := &Compactor{
-		LLM: sumLLM,
-		Profiles: fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 4000}},
+		LLM:       sumLLM,
+		Profiles:  fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 4000}},
 		Threshold: 0.5, ReserveTokens: 200, KeepRecent: 2,
 	}
 	msgs := []llm.Message{{Role: llm.RoleSystem, Content: "sys"}}
@@ -172,8 +172,8 @@ func TestMaybeCompactInTurnFailureIsBestEffort(t *testing.T) {
 	eng := &Engine{
 		Store: st,
 		Compactor: &Compactor{
-			LLM: sumLLM,
-			Profiles: fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 4000}},
+			LLM:       sumLLM,
+			Profiles:  fakeProfiles{def: llm.ModelProfileView{ID: "p", ContextTokens: 4000}},
 			Threshold: 0.5, ReserveTokens: 200, KeepRecent: 2,
 		},
 	}

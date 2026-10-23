@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	ProbeReadonlyName   = "probe_readonly"
-	EventProbeReadonly  = "probe.readonly"
+	ProbeReadonlyName  = "probe_readonly"
+	EventProbeReadonly = "probe.readonly"
 )
 
 // probeDeniedNames are builtins that must never run inside a readonly probe
@@ -31,10 +31,10 @@ var probeDeniedNames = map[string]bool{
 	ContextDropName:        true,
 	ContextRewriteName:     true,
 	ContextCompactName:     true,
-	GoalSetName:      true,
-	GoalPushName:     true,
-	GoalCompleteName: true,
-	GoalUpdateName:   true,
+	GoalSetName:            true,
+	GoalPushName:           true,
+	GoalCompleteName:       true,
+	GoalUpdateName:         true,
 }
 
 // ProbeTools registers the readonly fan-out probe builtin.

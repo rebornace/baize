@@ -64,7 +64,7 @@ type Config struct {
 	// when any member is forced/picked, siblings in the same group stay eligible.
 	// Does not spawn sub-runs. Empty = no group expansion.
 	ConnectorGroups []ConnectorGroup `yaml:"connector_groups"`
-	Agent struct {
+	Agent           struct {
 		ID          string   `yaml:"id"`
 		System      string   `yaml:"system"`
 		Skills      []string `yaml:"skills"`
