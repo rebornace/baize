@@ -1,90 +1,164 @@
 **中文** | [English](./mobile.en.md)
 
-# 移动端
+# 移动端：两套用法
 
-白泽有两条互不替代的移动相关路径：
+| 你想要… | 用这条 | 界面谁做 |
+|---------|--------|----------|
+| 手机上用完整操作台（对话、设置、审批） | **A. 遥控旁挂服务** | 白泽自带 `/ui`（浏览器或 Capacitor 壳） |
+| 自己的 App 界面，对话引擎跑在手机上 | **B. 机上 SDK** | **你自己画 UI**；调用 Go 编译出的 `mobileagent` |
 
-| 路径 | 跑在哪 | 作用 |
-|------|--------|------|
-| **Capacitor / 浏览器壳**（本文主体） | 手机 WebView / 浏览器 | **遥控**已部署的旁挂 `baize serve`（控制台客户端） |
-| **机上精简编排** | 设备内嵌的裁剪版 Go 包 | 对话循环在手机上跑；默认设备直连大模型 API，减轻旁挂服务压力 |
+两条路径互不替代。B **不是**把完整 `baize serve` 塞进 App：没有连接器农场、MCP、渠道、完整 HITL 产品面；有的是内存会话、兼容 OpenAI 的对话，以及少量工具（`get_time` / 需审批的 `http_get`）。
 
-机上路径的公开包是 `mobileagent/`，示例空壳在 `mobile/rt-shell`（Android）与 `mobile/rt-shell-ios`（iOS）。**不是**把完整 `baize serve` 搬进 App。是否上架应用商店由后续产品决定，本文不承诺日期。
+---
 
-## 架构边界
+## A. 遥控旁挂服务（最快上手）
 
-| 层级 | 跑在哪 | 说明 |
-|------|--------|------|
-| 旁挂服务（`baize serve`） | Linux / macOS / Windows 服务器或本机 | HTTP API、SSE、连接器、审批、渠道 |
-| 控制台 UI（`web/chat`） | 浏览器，或 Capacitor WebView | 同源 `/ui` + `/v0`，或壳内配置 `BAIZE_API_ORIGIN` |
-| 机上绑定包（gomobile） | `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / 审批；AAR 在 `mobile/rt-shell/app/libs/`，iOS 在 `mobile/rt-shell-ios/Frameworks/`；**禁止** bind `./cmd/baize` |
+手机打开已部署的白泽操作台，或用 Capacitor 包一层 WebView。
 
-```text
-手机 Capacitor 壳  ──HTTPS──►  远端 baize（public_base_url / 局域网 IP）
-       │                              │
-       └──── 系统浏览器打开 ──────────┴── 托管登录 / OAuth
-```
+**先确认手机浏览器能打开** `https://<可达主机>/ui/`（`runtime.public_base_url` 或局域网 IP；不要用手机访问电脑的 `127.0.0.1`）。鉴权、流式回复、审批卡、浏览器登录应可用。
 
-## 手机浏览器基线（先于壳）
-
-在真机或 DevTools 设备模式访问 `https://<host>/ui/`（须已配置可从手机到达的地址，常见为 `runtime.public_base_url`）：
-
-| 能力 | 预期 | 代码落点 |
-|------|------|----------|
-| 鉴权 | Gate 开启时 Bearer 存 `localStorage`；刷新后仍可用 | [`controlAuth.ts`](../../web/chat/src/controlAuth.ts)、[`GateRoot`](../../web/chat/src/pages/GateRoot.tsx) |
-| SSE 流式 | 发消息后助手增量输出 | [`openRunStream`](../../web/chat/src/api/runs.ts)（`fetch` + `ReadableStream`，非 `EventSource`） |
-| 人工审批 | 审批卡可批准/拒绝；窄屏抽屉可关 | 聊天消息列表 + ≤768 抽屉（[`layout.css`](../../web/chat/src/styles/layout.css)） |
-| 浏览器登录 | 「浏览器登录」打开系统页；完成后回对话可续跑 | [`openExternal`](../../web/chat/src/openExternal.ts) → Capacitor Browser / `window.open` |
-| 附件上传 | Composer / 技能上传走 `<input type="file">` | 系统文件选择器；iOS 需相册/文件权限（见下方 Capacitor） |
-
-走查不通过时，优先修 **可达性与 CORS/混合内容**（手机访问 `http://127.0.0.1` 无效；用局域网 IP 或 HTTPS）。
-
-## Capacitor 壳（`mobile/`）
-
-仓库 [`mobile/`](../../mobile/) 用 Capacitor 包装同一套 `web/chat` 构建产物。
-
-### 一次性准备
+再用 Capacitor 壳（仓库 [`mobile/`](../../mobile/)）：
 
 ```powershell
 cd mobile
 copy .env.example .env
-# 推荐：BAIZE_SERVER_URL=http://192.168.x.x:8080  （手机能访问的 baize，同源 /ui + SSE）
+# 推荐：BAIZE_SERVER_URL=http://192.168.x.x:8080
 npm install
 npm run sync
-npm run add:android   # 或 add:ios（需 macOS + Xcode）
+npm run add:android   # 或 add:ios（需 macOS）
 npm run open:android
 ```
 
-### 环境变量
-
 | 变量 | 作用 |
 |------|------|
-| `BAIZE_SERVER_URL` | **推荐**；WebView 直接加载远端 `/ui/`，与 API 同源，SSE/审批无需 CORS |
-| `BAIZE_API_ORIGIN` | 打包进 www 的 `VITE_API_ORIGIN`（仅在不设 `BAIZE_SERVER_URL`、使用本地 www 时需要） |
-| Runtime `BAIZE_CORS_ORIGINS` | 逗号分隔 Origin；捆绑 www 跨域调 API 时在 **baize 进程**上设置，例如 `https://localhost,capacitor://localhost`；`*` 仅建议开发用 |
+| `BAIZE_SERVER_URL` | WebView 直接加载远端 `/ui/`（同源，SSE/审批最省事） |
+| `BAIZE_API_ORIGIN` | 仅在打本地 www、跨域调 API 时需要 |
+| 旁挂进程 `BAIZE_CORS_ORIGINS` | 跨域时在 **baize** 上配置，如 `https://localhost,capacitor://localhost` |
 
-嵌入服务端的默认构建 **不受影响**（`BAIZE_MOBILE` 未设时仍输出到 `internal/ui/dist`，`base=/ui/`）。
+壳已处理安全区、键盘、系统浏览器打开登录页。它**不**跑机上对话引擎。
 
-### WebView 适配（已做）
+服务端安装与公开基址：[部署](./deployment.md)、[配置](./configuration.md)。
 
-- **安全区**：`viewport-fit=cover`；移动顶栏 / Composer 使用 `env(safe-area-inset-*)`
-- **键盘**：`interactive-widget=resizes-content`（Android Chrome）
-- **深链登录 / OAuth**：原生平台走 `@capacitor/browser`
-- **上传**：沿用隐藏 file input；Android/iOS 工程生成后按商店要求补权限说明
+---
 
-### 明确不做（Capacitor 壳路径）
+## B. 机上 SDK：自定义界面
 
-- 用壳冒充「机上编排」（壳不跑本机对话引擎；那是 `mobileagent` 路径）
-- App 内嵌完整 `baize serve`、推送通知、React Native / Flutter 重写控制台
+把编排编译进 App：你负责 Kotlin/Swift（或其它原生）界面；Go 包负责对话与工具循环。参考空壳（可当最小示例，也可只抄调用方式）：
 
-## 机上精简编排（摘要）
+- Android：[`mobile/rt-shell/`](../../mobile/rt-shell/)（依赖 `app/libs/mobileagent.aar`）
+- iOS：[`mobile/rt-shell-ios/`](../../mobile/rt-shell-ios/)（依赖 `Frameworks/Mobileagent.xcframework`）
 
-- **包与 API：** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`；实现见 `internal/mobileagent`。
-- **已具备：** 无工具单轮对话；`get_time` / `http_get`；发送与批准/驳回；Android 加密本地保险箱与远程配置拉取；iOS Keychain 对位。
-- **重建：** Android AAR — `scripts/build-mobileagent-aar.ps1`；iOS XCFramework — `./scripts/build-mobileagent-ios.sh`。空壳工程：`mobile/rt-shell/`、`mobile/rt-shell-ios/`。
+### 1. 编译绑定包
+
+公开绑定入口是 [`mobileagent/`](../../mobileagent/)（gomobile **不能** bind `internal/`）。
+
+```powershell
+# Android AAR（需 JDK 17+、ANDROID_HOME、NDK、gomobile）
+.\scripts\build-mobileagent-aar.ps1
+# 产出：mobile/rt-shell/app/libs/mobileagent.aar
+```
+
+```bash
+# iOS XCFramework（需 macOS、Xcode、gomobile）
+./scripts/build-mobileagent-ios.sh
+# 产出：mobile/rt-shell-ios/Frameworks/Mobileagent.xcframework
+```
+
+把 AAR / XCFramework 链进**你自己的**工程（Gradle `implementation files(...)` / Xcode Embed & Sign），不必使用空壳 App。
+
+### 2. 调用约定（你画 UI）
+
+**启动时配置一次**（兼容 OpenAI 的 `base` + key + model；key 只放内存，**不要**指望 Go 落盘）：
+
+```kotlin
+// Android（包名 mobileagent）
+mobileagent.Mobileagent.configure(
+  "https://api.example.com/v1",
+  apiKeyFromYourVault,  // 建议用 EncryptedSharedPreferences 等由 App 保管
+  "your-model"
+)
+```
+
+```swift
+// iOS
+var err: NSError?
+MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-model", &err)
+```
+
+可选：从你们自己的配置 URL 拉取（JSON 含 `api_base` / `model`，可选 `api_key`）：
+
+- `FetchRemoteConfig(url)` → 返回 JSON 状态字符串  
+- 或 `ApplyRemoteConfigJSON(raw)`  
+
+空壳里 Android `CredentialStore` / iOS Keychain 演示了「App 持钥、再 Configure」——自定义 UI 也应同样做。
+
+**发消息（带工具循环）：**
+
+```kotlin
+val raw = mobileagent.Mobileagent.send(userText)
+// 解析 raw（见下表），更新你的聊天气泡 / 审批卡片
+```
+
+```swift
+let raw = MobileagentSend(userText)
+```
+
+**`Send` / `Approve` / `Deny` 返回的都是 JSON 字符串**，由你的界面解析：
+
+| `status` | 含义 | 界面建议 |
+|----------|------|----------|
+| `done` | 本轮结束 | 展示字段 `text` |
+| `needs_approval` | 待批工具（当前为 `http_get`） | 展示 `summary` / `name`；用户点批准 → `Approve(call_id)`，驳回 → `Deny(call_id)` |
+| `error` | 失败 | 展示 `message` |
+
+`needs_approval` 时还会有 `call_id`、`name`、`args_json`、`summary`。在用户点选之前不要再 `Send`。
+
+```kotlin
+when (val status = JSONObject(raw).getString("status")) {
+  "done" -> showAssistant(JSONObject(raw).getString("text"))
+  "needs_approval" -> showApproveCard(
+    callId = JSONObject(raw).getString("call_id"),
+    summary = JSONObject(raw).optString("summary")
+  )
+  "error" -> showError(JSONObject(raw).getString("message"))
+}
+// 用户批准：
+val cont = mobileagent.Mobileagent.approve(callId)
+// 再按同样方式解析 cont
+```
+
+其它常用 API：
+
+| API | 作用 |
+|-----|------|
+| `ChatOnce(text)` | 单轮、**不走工具**（快速试连通） |
+| `Reset()` | 清空内存历史（保留已 Configure 的地址/模型） |
+| `MessageCount()` | 当前会话消息条数 |
+| `HasAPIKey()` | 内存里是否已有 key |
+| `NewAgent()` | 独立会话（多会话时用实例方法，而不是包级默认会话） |
+
+桌面可先不绑手机：`go run ./cmd/mobilebind`；本地假模型：`go run ./cmd/mobilebind/mockllm`（模拟器里 Android 访问宿主机常用 `http://10.0.2.2:端口/v1`）。
+
+### 3. 你负责 / SDK 负责
+
+| 你（App） | `mobileagent` |
+|-----------|----------------|
+| 布局、主题、历史列表、输入框、审批卡片 | `Configure` / `Send` / `Approve` / `Deny` |
+| 安全存 key、远程配置拉取策略 | 内存里的会话与工具循环 |
+| 线程：网络调用勿堵主线程 | 返回 JSON，不碰 UI |
+
+当前工具面：`get_time`（直接执行）；`http_get`（先 `needs_approval`）。没有完整旁挂上的连接器 / MCP / 渠道。
+
+---
+
+## 怎么选
+
+- 要完整设置页、连接器、运营审批流程 → **路径 A**。  
+- 要品牌化原生界面、对话在设备上跑、少依赖常驻旁挂 → **路径 B**，以 `rt-shell` 为调用样板自己画 UI。  
+- 需要两者：运营用 A；面向终端用户的 App 用 B。
 
 ## 相关文档
 
-- [部署](./deployment.md) — 服务端安装与 `public_base_url`
-- [配置](./configuration.md) — Runtime 公开基址
-- [架构](./architecture.md) — 运行时边界
+- [部署](./deployment.md) · [配置](./configuration.md) · [架构](./architecture.md)
+- Android 空壳细节：[`mobile/rt-shell/README.md`](../../mobile/rt-shell/README.md)
+- iOS 空壳细节：[`mobile/rt-shell-ios/README.md`](../../mobile/rt-shell-ios/README.md)

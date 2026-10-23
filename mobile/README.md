@@ -1,8 +1,8 @@
 # Baize mobile shell (Capacitor)
 
-Cross-platform **client** for the operator console. The Go Runtime stays on a server; this package wraps [`web/chat`](../web/chat) in a WebView.
+Cross-platform **client** for the full operator console. The Go Runtime stays on a server; this package wraps [`web/chat`](../web/chat) in a WebView.
 
-Full guide (Capacitor shell **and** on-device trimmed orchestration): [docs/developers/mobile.md](../docs/developers/mobile.md) · [EN](../docs/developers/mobile.en.md)
+For **custom native UI** with the on-device Go SDK (`mobileagent`), see path B in [docs/developers/mobile.md](../docs/developers/mobile.md) · [EN](../docs/developers/mobile.en.md) — not this Capacitor package.
 
 ```powershell
 copy .env.example .env

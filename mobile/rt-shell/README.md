@@ -1,52 +1,41 @@
-# Android 机上空壳（真机 AAR）
+# Android 机上空壳（示例 App）
 
-机上精简编排：Go `mobileagent` → `gomobile bind` → `app/libs/mobileagent.aar` → 本空壳 App。**路径上无 `baize serve`。**
+演示如何把 `mobileagent.aar` 嵌进原生界面：**你画 UI，SDK 跑对话**。完整步骤与 JSON 约定见开发者文档：
 
-## 已产出（本机）
+→ [docs/developers/mobile.md](../../docs/developers/mobile.md)（「B. 机上 SDK」）
+
+本目录是最小可运行样板，不是唯一界面。可只取 AAR + 调用代码，换成自己的 Activity / Compose。
+
+## 产物
 
 | 产物 | 路径 |
 |------|------|
-| AAR | [`app/libs/mobileagent.aar`](app/libs/mobileagent.aar)（含 arm64-v8a / armeabi-v7a / x86 / x86_64） |
+| AAR | [`app/libs/mobileagent.aar`](app/libs/mobileagent.aar) |
 | sources | `app/libs/mobileagent-sources.jar` |
-| Debug APK | `app/build/outputs/apk/debug/app-debug.apk`（本地构建；gitignore） |
 
-Java / Kotlin API：
+## 调用摘录
 
 ```kotlin
 mobileagent.Mobileagent.configure(apiBase, apiKey, model)
-mobileagent.Mobileagent.fetchRemoteConfig(configUrl) // optional
+mobileagent.Mobileagent.fetchRemoteConfig(configUrl) // 可选
 val json = mobileagent.Mobileagent.send(userText)
-// needs_approval → approve(callId) / deny(callId)
+// status=needs_approval → approve(callId) / deny(callId)
 ```
 
-**密钥保险箱：** Android 用 `CredentialStore`（EncryptedSharedPreferences）；Go **不**把 key 写盘。  
-**iOS：** 对位 Keychain + XCFramework 空壳见 [`../rt-shell-ios/`](../rt-shell-ios/)；重建：`./scripts/build-mobileagent-ios.sh`。
+密钥由 App 侧 `CredentialStore`（EncryptedSharedPreferences）保管，再传入 `configure`。iOS 对位见 [`../rt-shell-ios/`](../rt-shell-ios/)。
 
-模拟器访问宿主机 mock：API base 用 `http://10.0.2.2:18080/v1`（先跑 `go run ./cmd/mobilebind/mockllm`）。
+模拟器访问宿主机 mock：`http://10.0.2.2:18080/v1`（先 `go run ./cmd/mobilebind/mockllm`）。
 
-## 重建 AAR
+## 重建 AAR / 安装 APK
 
 ```powershell
-# 需：JDK 17+、ANDROID_HOME、NDK、gomobile（见 scripts）
 .\scripts\build-mobileagent-aar.ps1
-```
-
-绑定包为公开路径 `./mobileagent`（包装 `internal/mobileagent`；gomobile **不能** bind `internal/`）。
-
-## 构建 APK
-
-```powershell
-$env:JAVA_HOME = "D:\tools\jdk-17.0.13+11"   # 按本机调整
-$env:ANDROID_HOME = "D:\android-sdk"
-# 编辑 local.properties 的 sdk.dir，或复制示例
 cd mobile\rt-shell
-gradle assembleDebug   # 或 Android Studio Open 本目录
+gradle assembleDebug
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-## 与 Capacitor `mobile/` 的关系
-
 | 路径 | 作用 |
 |------|------|
-| `mobile/`（Capacitor） | 遥控远端 `baize serve` |
-| `mobile/rt-shell/`（本目录） | **机上**对话循环（`mobileagent`） |
+| `mobile/`（Capacitor） | 遥控远端完整操作台 |
+| `mobile/rt-shell/`（本目录） | 机上 SDK + 示例原生 UI |

@@ -1,4 +1,4 @@
-// Package mobileagent is the public gomobile bind surface for MOBILE-RT.
+// Package mobileagent is the public gomobile bind surface for on-device chat.
 // Implementation lives in internal/mobileagent; this package only re-exports
 // bind-friendly APIs (gomobile cannot bind packages under internal/).
 package mobileagent
