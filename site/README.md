@@ -1,6 +1,6 @@
 # 白泽官网（GitHub Pages）
 
-静态站点源码。推送到开源仓 `main` 后，由 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) 部署。文案与根目录 README、[`docs/developers`](../docs/developers/README.md) 对齐；避免规划代号。
+静态站点源码。推送到开源仓 `main` 后，由 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) 部署。文案与根目录 README、[`docs/developers`](../docs/developers/README.md) 对齐；避免规划代号。视觉约定见 [`DESIGN.md`](./DESIGN.md)。
 
 - 中文：[`index.html`](./index.html)
 - English：[`en/index.html`](./en/index.html)

@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>白泽 Baize — 团队 AI 助手</title>
-  <meta name="description" content="白泽：挂在现有业务旁边的团队 AI 助手。读接口文档、调用已有系统、重要写操作可先审批。">
+  <meta name="description" content="白泽：挂在现有业务旁边的团队 AI 助手。读接口文档、调用已有系统、重要写操作可先审批。手机可遥控操作台或自绘界面。">
   <meta property="og:title" content="白泽 Baize">
   <meta property="og:description" content="挂在现有业务旁边：聊天、调系统、重要操作等人确认。">
   <meta property="og:image" content="assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,420;12..96,550;12..96,600;12..96,650&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
   <header class="hero">
     <div class="hero-media" aria-hidden="true">
-      <img src="assets/baize-banner.jpg" alt="">
+      <img src="assets/baize-banner.jpg" alt="" width="1920" height="1080">
     </div>
     <div class="wrap top">
       <nav class="lang" aria-label="语言">
@@ -31,19 +31,6 @@
         <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">下载安装包</a>
         <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
       </div>
-      <a
-        class="ph-badge"
-        href="https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <img
-          alt="baize - Lightweight AI Agent Framework | Product Hunt"
-          width="250"
-          height="54"
-          src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=light&t=1789790934744"
-        >
-      </a>
     </div>
   </header>
 
@@ -71,33 +58,45 @@
       </ul>
     </section>
 
+    <section class="section wrap phone" id="mobile">
+      <h2>手机也能用</h2>
+      <p class="support">两条路互不替代：遥控完整操作台，或把精简对话引擎编进你自己的 App。</p>
+      <table class="path-table">
+        <tbody>
+          <tr>
+            <th scope="row">遥控远端操作台</th>
+            <td>浏览器打开可达的 <code>/ui/</code>，或用仓库 Capacitor 壳包一层。</td>
+          </tr>
+          <tr>
+            <th scope="row">自绘界面 + 机上 SDK</th>
+            <td>Go 编译的 <code>mobileagent</code>（AAR / XCFramework）；你负责 Kotlin / Swift 界面。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="support support-tight">
+        <a href="https://github.com/rebornace/baize/blob/main/docs/developers/mobile.md">移动端指南</a>
+      </p>
+    </section>
+
     <section class="section wrap" id="upgrades">
-      <h2>系统多、对话长时怎么处理</h2>
-      <p class="support">先收窄本轮要用的能力，业务域可分组，接口变更可对照，当轮用了什么可查，监控在设置里。</p>
+      <h2>系统多、对话长时</h2>
+      <p class="support">先收窄本轮能力，业务域可分组；接口变更可对照，当轮用了什么可查。</p>
       <ul class="feature-list">
         <li>
           <h3>先判断再交给主模型</h3>
-          <p>打开匹配与决策、智能提速后，先缩短本轮能力列表；失败则退回全量。只配模型不开开关，不会省用量。</p>
+          <p>打开匹配与决策、智能提速后，先缩短本轮能力列表；失败则退回全量。</p>
         </li>
         <li>
           <h3>按业务域分组</h3>
           <p>财务、交易等可分组。审批需要互不影响时，可另开子任务。</p>
         </li>
         <li>
-          <h3>对照接口变更，查看当轮绑定</h3>
+          <h3>对照变更，查看当轮绑定</h3>
           <p>重新导入后看改了什么；对话旁可打开当时用的模型与能力。</p>
         </li>
         <li>
           <h3>摘要、日程与评测</h3>
-          <p>长对话自动摘要；大段内容可存工作文件；可设每日/每周指令；管理员可把失败对话收进评测库。</p>
-        </li>
-        <li>
-          <h3>指标、日志与出站加密</h3>
-          <p>设置里看运行情况与近期日志；出站可配本机证书；部分观测选项改完即生效。</p>
-        </li>
-        <li>
-          <h3>手机</h3>
-          <p>手机浏览器或 App 壳连已部署的助手。另有机上精简方案减轻服务器压力；完整服务不进手机。</p>
+          <p>长对话自动摘要；可设每日或每周指令；管理员可把失败对话收进评测库。</p>
         </li>
       </ul>
     </section>
@@ -123,6 +122,19 @@
       ·
       <a href="https://github.com/rebornace/baize/releases">Releases</a>
     </span>
+    <a
+      class="ph-badge"
+      href="https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <img
+        alt="baize on Product Hunt"
+        width="200"
+        height="43"
+        src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=neutral&t=1789790934744"
+      >
+    </a>
   </footer>
 </body>
 </html>

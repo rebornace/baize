@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baize — team AI assistant</title>
-  <meta name="description" content="Baize runs beside your stack: read API docs, call existing systems, pause for approval on important writes.">
+  <meta name="description" content="Baize runs beside your stack: read API docs, call existing systems, pause for approval on important writes. Remote the console on phone, or embed a trimmed on-device SDK.">
   <meta property="og:title" content="Baize">
   <meta property="og:description" content="A team AI assistant beside your services: chat, call systems, confirm writes when needed.">
   <meta property="og:image" content="../assets/baize-banner.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,420;12..96,550;12..96,600;12..96,650&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/site.css">
 </head>
 <body>
   <header class="hero">
     <div class="hero-media" aria-hidden="true">
-      <img src="../assets/baize-banner.jpg" alt="">
+      <img src="../assets/baize-banner.jpg" alt="" width="1920" height="1080">
     </div>
     <div class="wrap top">
       <nav class="lang" aria-label="Language">
@@ -31,19 +31,6 @@
         <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">Download</a>
         <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
       </div>
-      <a
-        class="ph-badge"
-        href="https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <img
-          alt="baize - Lightweight AI Agent Framework | Product Hunt"
-          width="250"
-          height="54"
-          src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=light&t=1789790934744"
-        >
-      </a>
     </div>
   </header>
 
@@ -71,13 +58,33 @@
       </ul>
     </section>
 
+    <section class="section wrap phone" id="mobile">
+      <h2>Works on phone</h2>
+      <p class="support">Two paths, not substitutes: remote the full console, or embed trimmed orchestration in your own app.</p>
+      <table class="path-table">
+        <tbody>
+          <tr>
+            <th scope="row">Remote console</th>
+            <td>Open reachable <code>/ui/</code> in a browser, or wrap it with the Capacitor shell in the repo.</td>
+          </tr>
+          <tr>
+            <th scope="row">Your UI + on-device SDK</th>
+            <td>Go-built <code>mobileagent</code> (AAR / XCFramework); you draw the Kotlin / Swift interface.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="support support-tight">
+        <a href="https://github.com/rebornace/baize/blob/main/docs/developers/mobile.en.md">Mobile guide</a>
+      </p>
+    </section>
+
     <section class="section wrap" id="upgrades">
       <h2>Many systems and long chats</h2>
-      <p class="support">Narrow what this turn needs, group domains, compare API re-imports, inspect what a turn used, and read metrics in Settings.</p>
+      <p class="support">Narrow what this turn needs, group domains, compare API re-imports, and inspect what a turn used.</p>
       <ul class="feature-list">
         <li>
           <h3>Judge first, then the main model</h3>
-          <p>With Matching &amp; decisions and Smart speed-up, send a shorter ability list first; on failure use the full list. A judge model alone does not cut usage until those switches are on.</p>
+          <p>With Matching &amp; decisions and Smart speed-up, send a shorter ability list first; on failure use the full list.</p>
         </li>
         <li>
           <h3>Group by business domain</h3>
@@ -89,15 +96,7 @@
         </li>
         <li>
           <h3>Summaries, schedules, eval</h3>
-          <p>Long threads get summaries; oversized content can become workspace files; set daily or weekly instructions; admins can collect failed chats for review.</p>
-        </li>
-        <li>
-          <h3>Metrics, logs, outbound certificates</h3>
-          <p>Runtime health and recent logs in Settings; local certificates for outbound encryption when needed; some observability options apply without a restart.</p>
-        </li>
-        <li>
-          <h3>Phones</h3>
-          <p>Phone browser or app shell against a deployed assistant. A trimmed on-device option can ease server load; the full service stays off the phone.</p>
+          <p>Long threads get summaries; set daily or weekly instructions; admins can collect failed chats for review.</p>
         </li>
       </ul>
     </section>
@@ -123,6 +122,19 @@
       ·
       <a href="https://github.com/rebornace/baize/releases">Releases</a>
     </span>
+    <a
+      class="ph-badge"
+      href="https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <img
+        alt="baize on Product Hunt"
+        width="200"
+        height="43"
+        src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=neutral&t=1789790934744"
+      >
+    </a>
   </footer>
 </body>
 </html>
