@@ -322,10 +322,23 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	tm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
 	reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
 	_ = reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
+	skillUsage, err := openSkillUsage(st, cfg)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("open skill usage store: %w", err)
+	}
 	if skillCat != nil {
+		skillCat.Usage = skillUsage
+		skill.SeedUsageInstalled(skillCat, skillUsage, time.Now().UTC())
+		if n := skill.CurateArchives(skillCat, skillUsage, cfg.SkillArchiveAfterDays(), time.Now().UTC()); len(n) > 0 {
+			log.Printf("skill curator: archived %d idle user skill(s): %v", len(n), n)
+		}
 		ptm := skill.ProposeToolMeta(skillCat)
 		reg.RegisterSpecApproved(ptm.Spec, ptm.Invoker, true)
 		_ = reg.RegisterArgsPrecheck(skill.ProposeName, skill.ValidateProposeArgs)
+		utm := skill.UnarchiveToolMeta(skillCat)
+		reg.RegisterSpecApproved(utm.Spec, utm.Invoker, true)
+		_ = reg.RegisterArgsPrecheck(skill.UnarchiveName, skill.ValidateUnarchiveArgs)
 	}
 	pptm := capfill.ProposePluginToolMeta(st)
 	reg.RegisterSpecApproved(pptm.Spec, pptm.Invoker, true)
@@ -463,6 +476,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
 	for _, tm := range engine.GoalTools() {
+		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
+	}
+	for _, tm := range engine.ProbeTools() {
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
 	srv := api.NewServer(st, reg, engine)
@@ -1263,6 +1279,21 @@ func openMemory(st store.Store, cfg config.Config) (memory.Store, error) {
 		return memory.NewMemoryStore(), nil
 	}
 	return memory.Open(driver, sqlBackend.DB())
+}
+
+func openSkillUsage(st store.Store, cfg config.Config) (skill.UsageStore, error) {
+	driver := strings.ToLower(cfg.Store.Driver)
+	if driver == "" {
+		driver = "memory"
+	}
+	if driver == "memory" {
+		return skill.NewMemoryUsageStore(), nil
+	}
+	sqlBackend, ok := st.(store.SQLBackend)
+	if !ok {
+		return skill.NewMemoryUsageStore(), nil
+	}
+	return skill.OpenUsage(driver, sqlBackend.DB())
 }
 
 func openSchedule(st store.Store, cfg config.Config) (schedule.Store, error) {

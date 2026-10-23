@@ -51,6 +51,8 @@ type Config struct {
 		BuiltinDir  string   `yaml:"builtin_dir"`
 		BuiltinDirs []string `yaml:"builtin_dirs"`
 		UserDir     string   `yaml:"user_dir"`
+		// ArchiveAfterDays archives idle user skills (default 30). 0 disables.
+		ArchiveAfterDays *int `yaml:"archive_after_days"`
 	} `yaml:"skills"`
 	Agent struct {
 		ID          string   `yaml:"id"`
@@ -455,6 +457,15 @@ func (c Config) StorageUseSSL() bool {
 		return true
 	}
 	return *c.Storage.S3.UseSSL
+}
+
+// SkillArchiveAfterDays returns days of idle use before a user skill is
+// archived. Default 30; explicit 0 disables the curator.
+func (c *Config) SkillArchiveAfterDays() int {
+	if c.Skills.ArchiveAfterDays != nil {
+		return *c.Skills.ArchiveAfterDays
+	}
+	return 30
 }
 
 // SkillBuiltinDirs returns builtin skill scan roots. builtin_dirs wins over builtin_dir when set.

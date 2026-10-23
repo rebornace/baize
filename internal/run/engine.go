@@ -637,6 +637,10 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		}
 		turn := step
 		specs := e.specsForRun(runID)
+		// P1-⑥: mid-run live compaction after prune, before Chat. Folds
+		// accumulated assistant/tool turns in *messages*; also opportunistically
+		// MaybeCompact's the conversation store for the next run.
+		e.maybeCompactInTurn(ctx, runID, &messages, specs)
 		// DP-2a: consult the decision layer. In shadow this only records a
 		// pick and returns specs unchanged; in enforce it returns the
 		// deterministic prefilter set that actually narrows what the model

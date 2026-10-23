@@ -25,4 +25,7 @@ func TestSkillObjectKey(t *testing.T) {
 	if blob.SkillObjectKey("managed", "m1", "workflow.yaml") != "skills/managed/m1/workflow.yaml" {
 		t.Fatal()
 	}
+	if blob.SkillObjectKey("archived", "old", "SKILL.md") != "skills/archived/old/SKILL.md" {
+		t.Fatal()
+	}
 }

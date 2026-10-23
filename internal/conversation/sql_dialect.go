@@ -38,6 +38,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if err := migrateChatWorkspaces(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
+		if err := ensureMessagesFTS(db); err != nil {
+			return nil, err
+		}
 	case store.DialectPostgres:
 		// messages table is created by store.OpenPostgres; ensure meta for shared DB.
 		const pgMeta = `
@@ -214,6 +217,42 @@ func (s *SQLiteStore) query(query string, args ...any) (*sql.Rows, error) {
 
 func (s *SQLiteStore) queryRow(query string, args ...any) *sql.Row {
 	return s.db.QueryRow(s.q(query), args...)
+}
+
+// ensureMessagesFTS creates the FTS5 virtual table + triggers when missing
+// (schema string already includes them for fresh DBs) and backfills when the
+// FTS index is empty but messages already exist.
+func ensureMessagesFTS(db *sql.DB) error {
+	const ddl = `
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  content, content='messages', content_rowid='rowid'
+);
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;`
+	if _, err := db.Exec(ddl); err != nil {
+		return fmt.Errorf("migrate messages_fts: %w", err)
+	}
+	var msgCount, ftsCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&msgCount); err != nil {
+		return err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM messages_fts`).Scan(&ftsCount); err != nil {
+		return err
+	}
+	if msgCount > 0 && ftsCount == 0 {
+		if _, err := db.Exec(`INSERT INTO messages_fts(rowid, content) SELECT rowid, content FROM messages`); err != nil {
+			return fmt.Errorf("backfill messages_fts: %w", err)
+		}
+	}
+	return nil
 }
 
 // OpenSQL opens a message store on db for the given SQL dialect.

@@ -217,6 +217,9 @@ func (rt *storeRuntime) HotSwap(overlay config.StoreOverlay) error {
 		ptm := skill.ProposeToolMeta(skillCat)
 		rt.reg.RegisterSpecApproved(ptm.Spec, ptm.Invoker, true)
 		_ = rt.reg.RegisterArgsPrecheck(skill.ProposeName, skill.ValidateProposeArgs)
+		utm := skill.UnarchiveToolMeta(skillCat)
+		rt.reg.RegisterSpecApproved(utm.Spec, utm.Invoker, true)
+		_ = rt.reg.RegisterArgsPrecheck(skill.UnarchiveName, skill.ValidateUnarchiveArgs)
 	}
 	pptm := capfill.ProposePluginToolMeta(wrapped)
 	rt.reg.RegisterSpecApproved(pptm.Spec, pptm.Invoker, true)

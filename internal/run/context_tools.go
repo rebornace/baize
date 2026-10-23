@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rebornace/baize/internal/identity"
@@ -21,9 +22,11 @@ const (
 	ContextDropName    = "context_drop_tool_results"
 	ContextRewriteName = "context_rewrite_summary"
 	ContextCompactName = "context_compact_now"
+	SessionSearchName  = "session_search"
 
 	maxContextPins     = 32
 	maxContextPinRunes = 500
+	maxSessionSnippet  = 240
 )
 
 var contextToolNames = map[string]bool{
@@ -31,17 +34,19 @@ var contextToolNames = map[string]bool{
 	ContextDropName:    true,
 	ContextRewriteName: true,
 	ContextCompactName: true,
+	SessionSearchName:  true,
 }
 
-// ContextTools registers the four whitelist projection editors. They only
-// mutate conversation.ContextProjection / trigger Compactor; they never rewrite
-// persisted messages.
+// ContextTools registers projection editors plus session_search. Projection
+// tools only mutate conversation.ContextProjection / trigger Compactor; they
+// never rewrite persisted messages. session_search is read-only over history.
 func (e *Engine) ContextTools() []contextToolReg {
 	return []contextToolReg{
 		{Spec: contextPinSpec(), Invoker: e.contextPin},
 		{Spec: contextDropSpec(), Invoker: e.contextDrop},
 		{Spec: contextRewriteSpec(), Invoker: e.contextRewrite},
 		{Spec: contextCompactSpec(), Invoker: e.contextCompactNow},
+		{Spec: sessionSearchSpec(), Invoker: e.sessionSearch},
 	}
 }
 
@@ -193,6 +198,61 @@ func (e *Engine) contextCompactNow(ctx context.Context, args map[string]any) (ma
 		return failContext("%v", err)
 	}
 	return map[string]any{"ok": true, "changed": changed}, false, nil
+}
+
+func sessionSearchSpec() llm.ToolSpec {
+	return llm.ToolSpec{
+		Name: SessionSearchName,
+		Description: "在当前会话已落库的对话原文里检索（含被滚动摘要折叠的旧消息）。" +
+			"Search persisted messages in this conversation; compacted history remains searchable.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query":  map[string]any{"type": "string", "description": "Search keywords"},
+				"top_k":  map[string]any{"type": "integer", "description": "Max hits (default 8, max 20)"},
+			},
+			"required": []string{"query"},
+		},
+	}
+}
+
+func (e *Engine) sessionSearch(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+	conv, errPayload, ok := convFromToolCtx(ctx)
+	if !ok {
+		return errPayload, true, nil
+	}
+	if e.Messages == nil {
+		return failContext("session search is not available")
+	}
+	query, ok := strArg(args, "query")
+	if !ok {
+		return failContext("query is required")
+	}
+	topK := 8
+	if v, has := args["top_k"]; has && v != nil {
+		switch n := v.(type) {
+		case float64:
+			topK = int(n)
+		case int:
+			topK = n
+		case int64:
+			topK = int(n)
+		}
+	}
+	hits, err := e.Messages.Search(conv, query, topK)
+	if err != nil {
+		return failContext("%v", err)
+	}
+	results := make([]map[string]any, 0, len(hits))
+	for _, m := range hits {
+		results = append(results, map[string]any{
+			"id":         m.ID,
+			"role":       m.Role,
+			"snippet":    truncateRunes(m.Content, maxSessionSnippet),
+			"created_at": m.CreatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	return map[string]any{"ok": true, "results": results, "count": len(results)}, false, nil
 }
 
 func convFromToolCtx(ctx context.Context) (string, map[string]any, bool) {

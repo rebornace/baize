@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rebornace/baize/internal/blob"
 	"github.com/rebornace/baize/internal/workflow"
@@ -37,6 +38,8 @@ type Catalog struct {
 	builtinDirs []string
 	userDir     string // retained for API paths; user packages live in Blobs
 	Blobs       blob.Store
+	// Usage optionally records install/activate timestamps for the curator.
+	Usage UsageStore
 	// generation increments on every successful Reload (including the initial
 	// LoadCatalog Reload). Callers use it to detect catalog changes across runs.
 	generation uint64
@@ -423,6 +426,9 @@ func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
 	if !ok {
 		return Package{}, fmt.Errorf("installed skill %q not found after reload", id)
 	}
+	if c.Usage != nil {
+		_ = c.Usage.EnsureInstalled(id, time.Now().UTC())
+	}
 	return p, nil
 }
 
@@ -538,6 +544,9 @@ func (c *Catalog) InstallZip(raw []byte) (Package, error) {
 	p, ok := c.Get(id)
 	if !ok {
 		return Package{}, fmt.Errorf("installed skill %q not found after reload", id)
+	}
+	if c.Usage != nil {
+		_ = c.Usage.EnsureInstalled(id, time.Now().UTC())
 	}
 	return p, nil
 }

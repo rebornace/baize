@@ -25,6 +25,19 @@ CREATE TABLE IF NOT EXISTS messages (
   pinned_skills TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  content, content='messages', content_rowid='rowid'
+);
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
 CREATE TABLE IF NOT EXISTS conversation_meta (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,
@@ -56,6 +69,11 @@ CREATE TABLE IF NOT EXISTS conversation_goals (
   updated_at TEXT NOT NULL
 );
 `
+
+const (
+	defaultSearchTopK = 8
+	maxSearchTopK     = 20
+)
 
 // SQLiteStore persists conversation messages in SQLite.
 //
@@ -128,6 +146,110 @@ func (s *SQLiteStore) ListWindow(conversationID string, n int) []Message {
 		return all
 	}
 	return all[len(all)-n:]
+}
+
+func clampSearchTopK(topK int) int {
+	if topK <= 0 {
+		return defaultSearchTopK
+	}
+	if topK > maxSearchTopK {
+		return maxSearchTopK
+	}
+	return topK
+}
+
+func messagesFTSMatchQuery(term string) string {
+	term = strings.ReplaceAll(term, `"`, `""`)
+	return `"` + term + `"`
+}
+
+// Search finds messages in a conversation by content. SQLite uses FTS5 with
+// LIKE fallback; Postgres uses ILIKE.
+func (s *SQLiteStore) Search(conversationID, query string, topK int) ([]Message, error) {
+	topK = clampSearchTopK(topK)
+	q := strings.TrimSpace(query)
+	if conversationID == "" || q == "" {
+		return nil, nil
+	}
+	if s.dialect == store.DialectPostgres {
+		return s.searchPostgres(conversationID, q, topK)
+	}
+	out, err := s.searchFTS(conversationID, q, topK)
+	if err != nil || len(out) == 0 {
+		like, likeErr := s.searchLIKE(conversationID, q, topK)
+		if likeErr != nil {
+			if err != nil {
+				return nil, err
+			}
+			return nil, likeErr
+		}
+		if len(like) > 0 {
+			return like, nil
+		}
+		return out, err
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) searchFTS(conversationID, query string, topK int) ([]Message, error) {
+	rows, err := s.query(
+		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
+		 FROM messages m
+		 INNER JOIN messages_fts fts ON fts.rowid = m.rowid
+		 WHERE m.conversation_id = ? AND fts MATCH ?
+		 ORDER BY m.created_at DESC
+		 LIMIT ?`,
+		conversationID, messagesFTSMatchQuery(query), topK,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessageRows(rows)
+}
+
+func (s *SQLiteStore) searchLIKE(conversationID, query string, topK int) ([]Message, error) {
+	rows, err := s.query(
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
+		 FROM messages
+		 WHERE conversation_id = ? AND content LIKE ?
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		conversationID, "%"+query+"%", topK,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessageRows(rows)
+}
+
+func (s *SQLiteStore) searchPostgres(conversationID, query string, topK int) ([]Message, error) {
+	rows, err := s.query(
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
+		 FROM messages
+		 WHERE conversation_id = ? AND content ILIKE ?
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		conversationID, "%"+query+"%", topK,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessageRows(rows)
+}
+
+func scanMessageRows(rows *sql.Rows) ([]Message, error) {
+	var out []Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLiteStore) ListSummaries() []Summary {

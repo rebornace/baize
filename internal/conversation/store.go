@@ -15,6 +15,10 @@ type Store interface {
 	Append(conversationID string, msg Message) (Message, error)
 	List(conversationID string) []Message
 	ListWindow(conversationID string, n int) []Message
+	// Search returns messages in conversationID whose content matches query
+	// (FTS5 on SQLite; substring on MemoryStore; ILIKE/tsquery on Postgres).
+	// topK caps results (default 8, max 20). Empty query returns nil.
+	Search(conversationID, query string, topK int) ([]Message, error)
 	ListSummaries() []Summary
 	Clear(conversationID string)
 	TruncateFrom(conversationID, messageID string) (deleted int, err error)
@@ -142,6 +146,27 @@ func (s *MemoryStore) ListWindow(conversationID string, n int) []Message {
 		return all
 	}
 	return all[len(all)-n:]
+}
+
+func (s *MemoryStore) Search(conversationID, query string, topK int) ([]Message, error) {
+	topK = clampSearchTopK(topK)
+	q := strings.TrimSpace(query)
+	if conversationID == "" || q == "" {
+		return nil, nil
+	}
+	all := s.List(conversationID)
+	out := make([]Message, 0)
+	// Newest first to match SQL Search ordering.
+	for i := len(all) - 1; i >= 0; i-- {
+		if !strings.Contains(all[i].Content, q) {
+			continue
+		}
+		out = append(out, all[i])
+		if len(out) >= topK {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *MemoryStore) ListSummaries() []Summary {

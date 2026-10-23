@@ -8,6 +8,7 @@ import (
 
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/store"
 )
 
 const (
@@ -50,6 +51,43 @@ const (
 若提供了「已有摘要」，在其栏目上增量整合：保留仍有效的条目，已完成的从「进行中」挪到「已完成」，过时条目可删。输出一份完整最新摘要，不要分「旧摘要/新增」两段。
 若用户材料前附带了「系统 Active Goal」块，摘要中「## 目标」栏目必须与该块中的主目标/当前焦点句逐字对齐（可另写进度，但不得改写、省略或替换目标句）。`
 )
+
+// maybeCompactInTurn folds live ReAct messages when they exceed the compact
+// budget, then opportunistically MaybeCompacts persisted history. Failures are
+// best-effort: emit llm.error and continue. Never blocks the reply.
+func (e *Engine) maybeCompactInTurn(ctx context.Context, runID string, messages *[]llm.Message, tools []llm.ToolSpec) {
+	if e == nil || e.Compactor == nil || messages == nil {
+		return
+	}
+	profileID, convID := "", ""
+	if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
+		profileID = rec.ModelProfileID
+		convID = rec.ConversationID
+	}
+	changed, err := e.Compactor.CompactLiveMessages(ctx, messages, tools, profileID, convID)
+	if err != nil {
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventLLMError,
+			Data: map[string]any{"error": "in-turn compaction skipped: " + err.Error()},
+		})
+	} else if changed {
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventContextCompacted,
+			Data: map[string]any{
+				"note":  "in-turn history folded into rolling summary",
+				"phase": "in_turn",
+			},
+		})
+	}
+	if convID != "" {
+		if _, cerr := e.Compactor.MaybeCompact(ctx, convID, tools, profileID); cerr != nil {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventLLMError,
+				Data: map[string]any{"error": "context compaction skipped: " + cerr.Error()},
+			})
+		}
+	}
+}
 
 // Compactor produces a rolling structured checkpoint of older conversation
 // messages once the estimated prompt size approaches the active model's
@@ -203,6 +241,114 @@ func (c *Compactor) exceedsCompactBudget(convID string, tools []llm.ToolSpec, pr
 		return false
 	}
 	return c.projectedTokens(convID, tools) > budget
+}
+
+const inTurnSummaryPrefix = "以下是本轮较早步骤的滚动摘要（供参考，不要向用户提及这是摘要）：\n\n"
+
+// CompactLiveMessages folds the middle of an in-flight ReAct prompt when
+// messages+tools exceed the compaction budget. Leading RoleSystem messages and
+// the newest KeepRecent messages stay verbatim; the fold region is replaced by
+// one RoleSystem summary. Returns changed=true when *messages was rewritten.
+// Does not touch the conversation store (tool results are not persisted mid-run).
+func (c *Compactor) CompactLiveMessages(ctx context.Context, messages *[]llm.Message, tools []llm.ToolSpec, profileID, convID string) (bool, error) {
+	if c == nil || c.LLM == nil || c.Profiles == nil || messages == nil {
+		return false, nil
+	}
+	enabled, threshold, reserve, keep := c.effectiveCompaction()
+	if !enabled {
+		return false, nil
+	}
+	budget, ok := c.promptBudget(profileID, threshold, reserve)
+	if !ok {
+		return false, nil
+	}
+	projected := EstimateMessagesTokens(*messages) + EstimateToolsTokens(tools)
+	if projected <= budget {
+		return false, nil
+	}
+
+	msgs := *messages
+	prefixLen := 0
+	for prefixLen < len(msgs) && msgs[prefixLen].Role == llm.RoleSystem {
+		prefixLen++
+	}
+	keepStart := len(msgs) - keep
+	if keepStart < prefixLen {
+		keepStart = prefixLen
+	}
+	if keepStart <= prefixLen {
+		return false, nil // nothing foldable between system prefix and keep window
+	}
+	fold := msgs[prefixLen:keepStart]
+	if len(fold) == 0 {
+		return false, nil
+	}
+
+	prior := ""
+	if prefixLen > 0 {
+		lastSys := msgs[prefixLen-1].Content
+		if strings.HasPrefix(lastSys, inTurnSummaryPrefix) {
+			prior = strings.TrimSpace(strings.TrimPrefix(lastSys, inTurnSummaryPrefix))
+			prefixLen-- // replace prior in-turn summary rather than stacking
+		} else if strings.Contains(lastSys, "较早对话的滚动摘要") {
+			// Persist-backed rolling summary from buildMessages: feed as prior
+			// context for incremental fold without dropping the block itself.
+			if i := strings.Index(lastSys, "：\n\n"); i >= 0 {
+				prior = strings.TrimSpace(lastSys[i+len("：\n\n"):])
+			}
+		}
+	}
+
+	summaryTimeout := c.effectiveSummaryTimeout()
+	newSummary, err := c.summarizeLive(ctx, summaryTimeout, convID, prior, fold)
+	if err != nil {
+		return false, err
+	}
+	summaryMsg := llm.Message{
+		Role:    llm.RoleSystem,
+		Content: inTurnSummaryPrefix + newSummary,
+	}
+	out := make([]llm.Message, 0, prefixLen+1+(len(msgs)-keepStart))
+	out = append(out, msgs[:prefixLen]...)
+	out = append(out, summaryMsg)
+	out = append(out, msgs[keepStart:]...)
+	*messages = out
+	return true, nil
+}
+
+func (c *Compactor) summarizeLive(ctx context.Context, timeout time.Duration, convID, prior string, fold []llm.Message) (string, error) {
+	asConv := make([]conversation.Message, 0, len(fold))
+	for _, m := range fold {
+		switch m.Role {
+		case llm.RoleUser, llm.RoleAssistant:
+			asConv = append(asConv, conversation.Message{Role: string(m.Role), Content: m.Content})
+		case llm.RoleTool:
+			// Tool results carry facts the next turns need; include as assistant-side notes.
+			content := m.Content
+			if content == "" && len(m.Parts) > 0 {
+				var b strings.Builder
+				for _, p := range m.Parts {
+					if p.Text != "" {
+						b.WriteString(p.Text)
+					}
+				}
+				content = b.String()
+			}
+			if strings.TrimSpace(content) == "" {
+				continue
+			}
+			asConv = append(asConv, conversation.Message{Role: conversation.RoleAssistant, Content: "[工具结果] " + content})
+		case llm.RoleSystem:
+			if strings.TrimSpace(m.Content) == "" {
+				continue
+			}
+			asConv = append(asConv, conversation.Message{Role: conversation.RoleAssistant, Content: m.Content})
+		}
+	}
+	if len(asConv) == 0 {
+		return "", fmt.Errorf("summarize: nothing foldable in live messages")
+	}
+	return c.summarize(ctx, timeout, convID, prior, asConv)
 }
 
 func (c *Compactor) foldOlder(ctx context.Context, convID string, full []conversation.Message, existing conversation.RollingSummary, hasSummary bool, keep int) (bool, error) {

@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	PrefixConnectors    = "connectors/"
-	PrefixSkillsUser    = "skills/user/"
-	PrefixSkillsManaged = "skills/managed/"
+	PrefixConnectors     = "connectors/"
+	PrefixSkillsUser     = "skills/user/"
+	PrefixSkillsManaged  = "skills/managed/"
+	PrefixSkillsArchived = "skills/archived/"
 )
 
 // ConnectorNormalizedKey is the blob key for normalized OpenAPI stored in Connector.Spec.
@@ -21,8 +22,8 @@ func ConnectorImportedKey(id string) string {
 	return PrefixConnectors + id + "/imported.bin"
 }
 
-// SkillObjectKey builds a blob key for a user or managed skill object.
-// source must be "user" or "managed"; rel is a path relative to the skill package root (e.g. SKILL.md).
+// SkillObjectKey builds a blob key for a user, managed, or archived skill object.
+// source must be "user", "managed", or "archived"; rel is relative to the skill package root.
 func SkillObjectKey(source, id, rel string) string {
 	var prefix string
 	switch source {
@@ -30,8 +31,10 @@ func SkillObjectKey(source, id, rel string) string {
 		prefix = PrefixSkillsUser
 	case "managed":
 		prefix = PrefixSkillsManaged
+	case "archived":
+		prefix = PrefixSkillsArchived
 	default:
-		panic(fmt.Sprintf("blob: unknown skill source %q (want user or managed)", source))
+		panic(fmt.Sprintf("blob: unknown skill source %q (want user, managed, or archived)", source))
 	}
 	rel = strings.TrimPrefix(rel, "/")
 	return prefix + id + "/" + rel

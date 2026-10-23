@@ -351,12 +351,14 @@ func (e *Engine) handleActivateSkill(runID string, args map[string]any) (map[str
 	}
 
 	var added []string
+	var newly []string
 	for _, pkg := range pkgs {
 		if _, dup := seen[pkg.ID]; dup {
 			continue
 		}
 		seen[pkg.ID] = struct{}{}
 		st.activated = append(st.activated, pkg.ID)
+		newly = append(newly, pkg.ID)
 		for _, toolName := range pkg.Tools {
 			if enabled[toolName] {
 				added = append(added, toolName)
@@ -365,6 +367,13 @@ func (e *Engine) handleActivateSkill(runID string, args map[string]any) (map[str
 	}
 
 	available := skill.VisibleTools(e.Skills, st.activated, enabled)
+
+	if e.Skills != nil && e.Skills.Usage != nil {
+		now := time.Now().UTC()
+		for _, id := range newly {
+			_ = e.Skills.Usage.RecordActivate(id, now)
+		}
+	}
 
 	return map[string]any{
 		"activated":       append([]string(nil), st.activated...),
