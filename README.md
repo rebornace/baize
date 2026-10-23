@@ -15,7 +15,7 @@
 
 [![baize - Lightweight AI Agent Framework | Product Hunt](https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=light&t=1789790934744)](https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize)
 
-Baize is a team AI assistant that runs beside your existing services. It reads API docs, calls systems you already have, waits for a person in the web console when a write needs approval, and writes results back to the chat or a messaging channel. You usually do not change business code.
+Baize is a team AI assistant that runs beside your existing services. It reads API docs, calls systems you already have, waits for a person in the web console when a write needs approval, and writes results back to the chat or a messaging channel. You usually do not change business code. On a phone you can remote the same console, or embed a trimmed chat engine in your own app.
 
 The name comes from the legendary Baize that knows the names of all things. The web console is for product, ops, and integrators.
 
@@ -23,11 +23,13 @@ The name comes from the legendary Baize that knows the names of all things. The 
 
 ## What it does
 
+**Works on phone.** Two paths: (1) open remote `/ui` in a browser or a Capacitor shell (same chat, settings, and approvals as desktop); (2) ship the Go-built `mobileagent` (AAR / XCFramework) for on-device trimmed orchestration and **draw your own UI**. Full guide: [Mobile](docs/developers/mobile.en.md).
+
 **Connect systems.** Upload or point to API docs (OpenAPI / Swagger, etc.); each operation becomes something the assistant can call, visible in the console. When docs are incomplete, run a small service that declares abilities and how to invoke them, or have Baize call your URL so you execute on your side. You can also attach MCP-capable tool servers.
 
 **Approve writes.** Creates and status changes can pause until a teammate approves or rejects on a card, with a trail. Abilities can be disabled anytime; full secrets stay out of conversation replay.
 
-**One assistant, several doors.** Console, alert/ticket inbox, and messaging share approvals, memory, and outbound replies. This repo ships personal WeChat DM; Feishu and DingTalk examples are included. Events can also go to your own notification URL.
+**One assistant, several doors.** Console, phone shell, alert/ticket inbox, and messaging share approvals, memory, and outbound replies (the on-device SDK is a separate trimmed path). This repo ships personal WeChat DM; Feishu and DingTalk examples are included. Events can also go to your own notification URL.
 
 **Downstream login.** Use “browser login” in chat, or configure a login page in Settings. Passwords never go through the model; then the assistant calls systems with the session. Wired abilities can be exposed read-only to Cursor, Claude Desktop, Doubao, and similar clients; when login expires, open the returned link—do not paste passwords into the chat. The login page must be reachable from the client’s browser.
 
@@ -42,6 +44,17 @@ The name comes from the legendary Baize that knows the names of all things. The 
 **Console.** Chinese and English; chats, call cards, settings, and runtime options. Matching & decisions, external login, expose abilities, runtime metrics, and eval corpus live under Settings. Full HTTP management surface; no mandatory language SDK. A local database is enough to start.
 
 Trial can use a built-in mock model (no cloud key yet); production uses a real model. One process, config outside the app; stop it and leave almost nothing on the business side.
+
+---
+
+## On phone: remote console, or your UI + on-device SDK
+
+| You want… | Do this |
+|-----------|---------|
+| Full console on a phone | Open reachable `/ui/` in a browser, or use the [`mobile/`](mobile/) Capacitor shell |
+| Your own app UI | Build the [`mobileagent/`](mobileagent/) bind package; call `Configure` / `Send` / approve from Kotlin or Swift |
+
+The on-device path is **not** full `baize serve` in the app: no connector farm or full HITL product surface—in-memory sessions, OpenAI-compatible chat, and a small tool set. Guide and sample shells: [Mobile](docs/developers/mobile.en.md).
 
 ---
 
@@ -140,7 +153,7 @@ Restart after changing listen port or model URL. Most wiring is done in the cons
 Build, test, configuration, deployment, and HTTP (system names kept; Chinese and English):
 
 - [Developer docs (English)](docs/developers/README.en.md) · [中文](docs/developers/README.md)
-- [Mobile](docs/developers/mobile.en.md): phone to a remote assistant, plus on-device trimmed orchestration · [中文](docs/developers/mobile.md)
+- [Mobile](docs/developers/mobile.en.md) (detail for the section above) · [中文](docs/developers/mobile.md)
 
 ---
 

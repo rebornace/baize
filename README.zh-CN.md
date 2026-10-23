@@ -15,7 +15,7 @@
 
 [![baize - Lightweight AI Agent Framework | Product Hunt](https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=light&t=1789790934744)](https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize)
 
-白泽是挂在现有业务旁边跑的团队 AI 助手。它读接口文档、调用你们已有的系统，需要时在网页操作台等人确认，再把结果写回对话或消息渠道。业务代码通常不用改。
+白泽是挂在现有业务旁边跑的团队 AI 助手。它读接口文档、调用你们已有的系统，需要时在网页操作台等人确认，再把结果写回对话或消息渠道。业务代码通常不用改。手机可遥控同一套操作台，或把精简对话引擎编进你自己的 App。
 
 命名取自传说中通晓万物之名的白泽。网页操作台给产品、运营和集成同学用。
 
@@ -23,11 +23,13 @@
 
 ## 能做什么
 
+**手机也能用。** 两条路：① 用浏览器或 Capacitor 壳打开远端 `/ui`（对话、设置、审批与电脑相同）；② 用 Go 编译的 `mobileagent`（AAR / XCFramework）在机上跑精简编排，**界面完全自绘**。完整步骤：[移动端](docs/developers/mobile.md)。
+
 **接业务。** 上传或指定接口文档（OpenAPI / Swagger 等），每个接口成为助手可调用的一项能力；过程在操作台可见。文档不全时，可自建一个小服务声明能力与调用方式，或让白泽回调你们自己的地址由你们执行。也可接入支持 MCP 的外部工具服务。
 
 **写操作可先审批。** 建单、改状态等可停住，等同事在卡片上批准或驳回后再执行，过程可追溯。能力可随时停用；完整密钥不进对话回放。
 
-**一个助手，多种入口。** 操作台、告警/工单来信、即时消息共用审批、记忆和对外回复。仓库正式支持个人微信私信；飞书、钉钉有参考示例。事件也可推到你们自己的通知地址。
+**一个助手，多种入口。** 操作台、手机壳、告警/工单来信、即时消息共用审批、记忆和对外回复（机上 SDK 是另一条精简路径）。仓库正式支持个人微信私信；飞书、钉钉有参考示例。事件也可推到你们自己的通知地址。
 
 **对方系统要登录。** 对话里用「浏览器登录」，或在设置里配置登录页。密码不经大模型；登录后再调业务。已接好的能力可只读提供给 Cursor、Claude Desktop、豆包等；登录过期时打开返回的链接，不要把密码贴进对话。登录页地址需对对方浏览器可达。
 
@@ -42,6 +44,17 @@
 **操作台。** 中英文；对话、调用卡片、设置与运行参数。「匹配与决策」「对外登录」「对外提供能力」「运行指标」「评测语料」等在设置里。提供 HTTP 管理接口，不强制某语言 SDK。默认本地数据库可起步。
 
 试用可用内置模拟模型（不必先有云厂商密钥）；正式环境再配真实模型。单独一个进程，配置在外；停掉后业务侧几乎不留痕迹。
+
+---
+
+## 手机：遥控操作台，或自绘 UI + 机上 SDK
+
+| 你想要… | 怎么做 |
+|---------|--------|
+| 手机上用完整操作台 | 浏览器打开可达的 `/ui/`，或用仓库 [`mobile/`](mobile/) Capacitor 壳 |
+| App 里自己画界面 | 编译 [`mobileagent/`](mobileagent/) 绑定包，在 Kotlin/Swift 里 `Configure` / `Send` / 审批 |
+
+机上路径**不是**把完整 `baize serve` 塞进手机：没有连接器农场与完整 HITL 产品面；有的是内存会话、兼容 OpenAI 的对话，以及少量工具。说明与示例空壳：[移动端指南](docs/developers/mobile.md)。
 
 ---
 
@@ -140,7 +153,7 @@ BAIZE_SETTINGS_KEY=一串足够长的随机字符
 构建、测试、配置、部署与接口（含系统名词，中英双语）：
 
 - [开发者文档（中文）](docs/developers/README.md) · [English](docs/developers/README.en.md)
-- [移动端](docs/developers/mobile.md)：手机连远端助手，以及机上精简编排 · [EN](docs/developers/mobile.en.md)
+- [移动端](docs/developers/mobile.md)（上文专节的详细版）· [EN](docs/developers/mobile.en.md)
 
 ---
 
