@@ -81,8 +81,9 @@ npm run open:android
 
 - **API：** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`；实现 `internal/mobileagent`。  
 - **M0：** 一轮无工具对话 + AAR。  
-- **M1：** `get_time` + `http_get`（后者前台 HITL）；空壳 Approve/Deny。重建 AAR：`scripts/build-mobileagent-aar.ps1`。  
-- **其后：** M2 密钥/双端；M3 商店上架；公开 README 达标前不写承诺。
+- **M1：** `get_time` + `http_get`；`Send`/`Approve`/`Deny`。  
+- **M2：** Android `EncryptedSharedPreferences` 保险箱；`FetchRemoteConfig`；iOS 用 Keychain（Mac 编 Framework）。重建 AAR：`scripts/build-mobileagent-aar.ps1`。  
+- **其后：** M3 商店上架；公开 README 达标前不写承诺。
 
 ## 相关文档
 

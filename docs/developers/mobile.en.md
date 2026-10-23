@@ -62,7 +62,8 @@ Default server embeds are unchanged (`BAIZE_MOBILE` unset → `internal/ui/dist`
 
 - **API:** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`; impl in `internal/mobileagent`.  
 - **M0:** one no-tools turn + AAR.  
-- **M1:** `get_time` + `http_get` (HITL on the latter); shell Approve/Deny. Rebuild AAR: `scripts/build-mobileagent-aar.ps1`.  
-- **Later:** M2 secrets/dual platform; M3 store listing; no public README promise until ready.
+- **M1:** `get_time` + `http_get`; `Send`/`Approve`/`Deny`.  
+- **M2:** Android EncryptedSharedPreferences vault; `FetchRemoteConfig`; iOS Keychain (build Framework on Mac). Rebuild AAR: `scripts/build-mobileagent-aar.ps1`.  
+- **Later:** M3 store listing; no public README promise until ready.
 
 See also: [deployment](./deployment.en.md), [configuration](./configuration.en.md), [architecture](./architecture.en.md).

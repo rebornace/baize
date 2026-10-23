@@ -17,9 +17,9 @@
         android:id="@+id/apiKey"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="API key"
+        android:hint="API key (vault)"
         android:inputType="textPassword"
-        android:text="demo" />
+        android:text="" />
 
     <EditText
         android:id="@+id/model"
@@ -27,6 +27,31 @@
         android:layout_height="wrap_content"
         android:hint="model"
         android:text="mock" />
+
+    <EditText
+        android:id="@+id/configUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Remote config URL (optional JSON)"
+        android:inputType="textUri" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/saveVault"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Save vault" />
+        <Button
+            android:id="@+id/fetchConfig"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Fetch config" />
+    </LinearLayout>
 
     <EditText
         android:id="@+id/userInput"
@@ -70,6 +95,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textIsSelectable="true"
-            android:text="Reply / HITL summary. Path does not use baize serve." />
+            android:text="Keys stay in Android EncryptedSharedPreferences; Go holds them only in memory." />
     </ScrollView>
 </LinearLayout>

@@ -32,6 +32,15 @@ func Reset() { intma.Reset() }
 // MessageCount returns the number of stored messages.
 func MessageCount() int { return intma.MessageCount() }
 
+// FetchRemoteConfig GETs remote JSON config (api_base/model/optional api_key).
+func FetchRemoteConfig(url string) string { return intma.FetchRemoteConfig(url) }
+
+// ApplyRemoteConfigJSON merges config JSON into the in-memory session.
+func ApplyRemoteConfigJSON(raw string) string { return intma.ApplyRemoteConfigJSON(raw) }
+
+// HasAPIKey reports whether an API key is held in memory.
+func HasAPIKey() bool { return intma.HasAPIKey() }
+
 // Agent is a bindable session handle (optional; free functions use the default).
 type Agent struct {
 	inner *intma.Agent
@@ -66,3 +75,14 @@ func (a *Agent) Reset() { a.inner.Reset() }
 
 // MessageCount returns this agent's message count.
 func (a *Agent) MessageCount() int { return a.inner.MessageCount() }
+
+// FetchRemoteConfig on this agent.
+func (a *Agent) FetchRemoteConfig(url string) string { return a.inner.FetchRemoteConfig(url) }
+
+// ApplyRemoteConfigJSON on this agent.
+func (a *Agent) ApplyRemoteConfigJSON(raw string) string {
+	return a.inner.ApplyRemoteConfigJSON(raw)
+}
+
+// HasAPIKey on this agent.
+func (a *Agent) HasAPIKey() bool { return a.inner.HasAPIKey() }

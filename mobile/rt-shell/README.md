@@ -10,14 +10,17 @@
 | sources | `app/libs/mobileagent-sources.jar` |
 | Debug APK | `app/build/outputs/apk/debug/app-debug.apk`（本地构建；gitignore） |
 
-Java API（M1）：
+Java / Kotlin API（M2）：
 
 ```kotlin
 mobileagent.Mobileagent.configure(apiBase, apiKey, model)
+mobileagent.Mobileagent.fetchRemoteConfig(configUrl) // optional
 val json = mobileagent.Mobileagent.send(userText)
-// status=done | needs_approval → approve(callId) / deny(callId)
-// chatOnce(userText) 仍可用（无工具快捷路径）
+// needs_approval → approve(callId) / deny(callId)
 ```
+
+**密钥保险箱：** Android 用 `CredentialStore`（EncryptedSharedPreferences）；Go **不**把 key 写盘。  
+**iOS：** 对位 Keychain，启动后注入 `configure`；`gomobile bind -target=ios` 须在 Mac 执行。
 
 模拟器访问宿主机 mock：API base 用 `http://10.0.2.2:18080/v1`（先跑 `go run ./cmd/mobilebind/mockllm`）。
 
