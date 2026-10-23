@@ -17,7 +17,7 @@ Baize has two separate mobile-related paths:
 |-------|---------------|--------|
 | Runtime (`baize serve`) | Linux / macOS / Windows | HTTP API, SSE, connectors, HITL, channels; sidecar mainline |
 | Console UI (`web/chat`) | Browser or Capacitor WebView | Same-origin `/ui` + `/v0`, or `BAIZE_API_ORIGIN` in the shell |
-| gomobile (MOBILE-RT) | Public `mobileagent/` → AAR | `Configure` / `ChatOnce`; AAR at `mobile/rt-shell/app/libs/`; **do not** bind `./cmd/baize` |
+| gomobile (MOBILE-RT) | Public `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / HITL; AAR at `mobile/rt-shell/app/libs/`, iOS at `mobile/rt-shell-ios/Frameworks/`; **do not** bind `./cmd/baize` |
 
 ## Phone-browser baseline (before the shell)
 
@@ -63,7 +63,8 @@ Default server embeds are unchanged (`BAIZE_MOBILE` unset → `internal/ui/dist`
 - **API:** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`; impl in `internal/mobileagent`.  
 - **M0:** one no-tools turn + AAR.  
 - **M1:** `get_time` + `http_get`; `Send`/`Approve`/`Deny`.  
-- **M2:** Android EncryptedSharedPreferences vault; `FetchRemoteConfig`; iOS Keychain (build Framework on Mac). Rebuild AAR: `scripts/build-mobileagent-aar.ps1`.  
+- **M2:** Android EncryptedSharedPreferences vault; `FetchRemoteConfig`; iOS Keychain parity. Rebuild AAR: `scripts/build-mobileagent-aar.ps1`.  
+- **iOS bind:** XCFramework + shell `mobile/rt-shell-ios/` (Keychain); rebuild: `./scripts/build-mobileagent-ios.sh`; evidence `docs/superpowers/notes/2026-10-23-mobile-rt-ios-bind-evidence.md`.  
 - **Later:** M3 store listing; no public README promise until ready.
 
 See also: [deployment](./deployment.en.md), [configuration](./configuration.en.md), [architecture](./architecture.en.md).

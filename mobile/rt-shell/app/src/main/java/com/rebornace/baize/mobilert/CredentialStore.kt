@@ -7,7 +7,7 @@ import androidx.security.crypto.MasterKey
 /**
  * MOBILE-RT M2 key vault (Android).
  * API keys never persist in the Go mobileagent package — only here.
- * iOS counterpart: Keychain (document only until Mac build).
+ * iOS counterpart: Keychain in `mobile/rt-shell-ios` (CredentialStore.swift).
  */
 class CredentialStore(context: Context) {
     private val prefs = EncryptedSharedPreferences.create(

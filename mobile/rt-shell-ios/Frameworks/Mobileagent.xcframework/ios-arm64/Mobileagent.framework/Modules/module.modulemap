@@ -1,0 +1,8 @@
+framework module "Mobileagent" {
+	header "ref.h"
+    header "Mobileagent.objc.h"
+    header "Universe.objc.h"
+    header "Mobileagent.h"
+
+    export *
+}

@@ -5,9 +5,10 @@
 //
 //	go run ./cmd/mobilebind -base http://127.0.0.1:18080/v1 -key demo -model mock -message "你好"
 //
-// gomobile (when Android NDK / SDK available; does not use cmd/baize):
+// gomobile (does not use cmd/baize):
 //
-//	gomobile bind -target=android -o mobileagent.aar github.com/rebornace/baize/mobileagent
+//	# Android (JDK + NDK):  .\scripts\build-mobileagent-aar.ps1
+//	# iOS (macOS + Xcode): ./scripts/build-mobileagent-ios.sh
 //
 // This binary only imports mobileagent (thin public bind) — proving the Run loop is local.
 package main

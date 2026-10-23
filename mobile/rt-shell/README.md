@@ -20,7 +20,7 @@ val json = mobileagent.Mobileagent.send(userText)
 ```
 
 **密钥保险箱：** Android 用 `CredentialStore`（EncryptedSharedPreferences）；Go **不**把 key 写盘。  
-**iOS：** 对位 Keychain，启动后注入 `configure`；`gomobile bind -target=ios` 须在 Mac 执行。
+**iOS：** 对位 Keychain + XCFramework 空壳见 [`../rt-shell-ios/`](../rt-shell-ios/)；重建：`./scripts/build-mobileagent-ios.sh`。
 
 模拟器访问宿主机 mock：API base 用 `http://10.0.2.2:18080/v1`（先跑 `go run ./cmd/mobilebind/mockllm`）。
 

@@ -17,7 +17,7 @@
 |------|--------|------|
 | Runtime（`baize serve`） | Linux / macOS / Windows 服务器或本机 | HTTP API、SSE、连接器、HITL、渠道；旁挂主线 |
 | 控制台 UI（`web/chat`） | 浏览器，或 Capacitor WebView | 同源 `/ui` + `/v0`，或壳内配置 `BAIZE_API_ORIGIN` |
-| gomobile（MOBILE-RT） | 公开包 `mobileagent/` → AAR | `Configure` / `ChatOnce`；AAR 在 `mobile/rt-shell/app/libs/`；**禁止** bind `./cmd/baize` |
+| gomobile（MOBILE-RT） | 公开包 `mobileagent/` → AAR / XCFramework | `Configure` / `Send` / HITL；AAR 在 `mobile/rt-shell/app/libs/`，iOS 在 `mobile/rt-shell-ios/Frameworks/`；**禁止** bind `./cmd/baize` |
 
 ```text
 手机 Capacitor 壳  ──HTTPS──►  远端 baize（public_base_url / 局域网 IP）
@@ -82,7 +82,8 @@ npm run open:android
 - **API：** `mobileagent/` — `Configure` / `ChatOnce` / `Send` / `Approve` / `Deny`；实现 `internal/mobileagent`。  
 - **M0：** 一轮无工具对话 + AAR。  
 - **M1：** `get_time` + `http_get`；`Send`/`Approve`/`Deny`。  
-- **M2：** Android `EncryptedSharedPreferences` 保险箱；`FetchRemoteConfig`；iOS 用 Keychain（Mac 编 Framework）。重建 AAR：`scripts/build-mobileagent-aar.ps1`。  
+- **M2：** Android `EncryptedSharedPreferences` 保险箱；`FetchRemoteConfig`；iOS Keychain 对位。重建 AAR：`scripts/build-mobileagent-aar.ps1`。  
+- **iOS bind：** XCFramework + 空壳 `mobile/rt-shell-ios/`（Keychain）；重建：`./scripts/build-mobileagent-ios.sh`；证据 `docs/superpowers/notes/2026-10-23-mobile-rt-ios-bind-evidence.md`。  
 - **其后：** M3 商店上架；公开 README 达标前不写承诺。
 
 ## 相关文档

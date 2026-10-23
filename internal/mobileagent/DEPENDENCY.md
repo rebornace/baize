@@ -7,7 +7,7 @@
 | `internal/run` Engine | **不链接**；编排 = 本包内存会话 + ChatOnce / Send 工具循环 |
 | `internal/llm` | M0 **不导入**（避开 `store`→pgx）；自含 OpenAI 兼容 HTTP 客户端 |
 | gomobile | 绑定公开包 **`./mobileagent`**（再导出本包）；**不能** bind `internal/` |
-| 工具依赖 | `go.mod` `tool`：`golang.org/x/mobile/cmd/gobind`（重建 AAR 用） |
+| 工具依赖 | 重建用 **`gomobile@latest`** / `gobind`（Go 1.26+ 勿用过旧 x/mobile）；脚本 `scripts/build-mobileagent-aar.ps1`、`scripts/build-mobileagent-ios.sh` |
 
 验证：
 
