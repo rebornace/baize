@@ -216,10 +216,8 @@ func (e *Engine) validateProbeCall(c probeCall, allowed map[string]bool) error {
 	if e.Tools == nil {
 		return fmt.Errorf("tool registry unavailable")
 	}
-	resolved := c.Name
-	if canon, err := e.Tools.ResolveName(c.Name); err == nil {
-		resolved = canon
-	} else {
+	resolved, err := e.Tools.ResolveName(c.Name)
+	if err != nil {
 		return fmt.Errorf("unknown tool %q", c.Name)
 	}
 	if probeDeniedNames[resolved] {

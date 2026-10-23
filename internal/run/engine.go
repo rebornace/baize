@@ -633,20 +633,6 @@ func (e *Engine) isCancelled(runID string) bool {
 	return err == nil && runRec != nil && runRec.Status == store.StatusCancelled
 }
 
-// finalizeLoginPaused ends the run when there is no HITL gate to wait on.
-func (e *Engine) finalizeLoginPaused(runID string) error {
-	msg := "需要先登录才能继续。请点击「浏览器登录」，或「忽略当前步骤」改用其它方式，或「忽略此系统」跳过该业务系统后继续。"
-	_ = e.Store.AppendEvent(runID, store.Event{
-		Type: EventLLMMessage,
-		Data: map[string]any{"content": msg},
-	})
-	if err := e.Store.UpdateRun(runID, store.StatusSucceeded, msg, ""); err != nil {
-		return err
-	}
-	e.recordTerminalMessage(runID)
-	return nil
-}
-
 func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Message) error {
 	// Read once at loop start so the step bound is stable for the whole run
 	// even if an operator hot-patches knobs mid-run.
