@@ -25,6 +25,7 @@ import {
   runUsageFromEvents,
   type ToolOrWorkflowBlock,
 } from '../../historyBlocks'
+import { runDurationMsFromEvents } from '../../runDuration'
 import { appendLiveEvent, coalesceLiveEvents } from '../../liveEventAppend'
 import { commitLiveAssistant, handoffTranscript } from '../../liveCommit'
 import { CHAT } from '../../strings'
@@ -58,6 +59,7 @@ export type UseChatRunStreamArgs = {
   mergeHistoryPages: (runId: string, urls: string[]) => void
   setHistoryBlocks: Dispatch<SetStateAction<Record<string, ToolOrWorkflowBlock[]>>>
   setHistoryUsage: Dispatch<SetStateAction<Record<string, UsageMeta>>>
+  setHistoryDurationMs: Dispatch<SetStateAction<Record<string, number>>>
   refreshConversations: () => Promise<void>
 }
 
@@ -67,6 +69,7 @@ export function useChatRunStream({
   mergeHistoryPages,
   setHistoryBlocks,
   setHistoryUsage,
+  setHistoryDurationMs,
   refreshConversations,
 }: UseChatRunStreamArgs) {
   const [liveEvents, setLiveEvents] = useState<Event[]>([])
@@ -151,6 +154,10 @@ export function useChatRunStream({
         if (usage) {
           setHistoryUsage((prev) => (prev[runId] ? prev : { ...prev, [runId]: usage }))
         }
+        const durationMs = runDurationMsFromEvents(events)
+        if (durationMs != null) {
+          setHistoryDurationMs((prev) => (prev[runId] != null ? prev : { ...prev, [runId]: durationMs }))
+        }
         // Do not mark fetched here: the session effect still lists events so
         // token usage that arrives after the last SSE snapshot is not skipped.
       }
@@ -187,6 +194,7 @@ export function useChatRunStream({
       refreshConversations,
       setHistoryBlocks,
       setHistoryUsage,
+      setHistoryDurationMs,
       setMessages,
       stopPoll,
       stopStream,

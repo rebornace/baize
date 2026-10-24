@@ -36,6 +36,7 @@ export type UseChatRunArgs = {
   setHistoryPages: Dispatch<SetStateAction<Record<string, string[]>>>
   setHistoryBlocks: Dispatch<SetStateAction<Record<string, ToolOrWorkflowBlock[]>>>
   setHistoryUsage: Dispatch<SetStateAction<Record<string, UsageMeta>>>
+  setHistoryDurationMs: Dispatch<SetStateAction<Record<string, number>>>
   fetchedRunsRef: MutableRefObject<Set<string>>
   mergeHistoryPages: (runId: string, urls: string[]) => void
   refreshConversations: () => Promise<void>
@@ -61,6 +62,7 @@ export function useChatRun({
   setHistoryPages,
   setHistoryBlocks,
   setHistoryUsage,
+  setHistoryDurationMs,
   fetchedRunsRef,
   mergeHistoryPages,
   refreshConversations,
@@ -83,6 +85,7 @@ export function useChatRun({
     mergeHistoryPages,
     setHistoryBlocks,
     setHistoryUsage,
+    setHistoryDurationMs,
     refreshConversations,
   })
 
@@ -131,6 +134,7 @@ export function useChatRun({
     setHistoryPages({})
     setHistoryBlocks({})
     setHistoryUsage({})
+    setHistoryDurationMs({})
     fetchedRunsRef.current = new Set()
 
     const id = conversationId

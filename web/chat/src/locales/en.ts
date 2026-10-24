@@ -1,3 +1,4 @@
+import { formatWallDuration } from '../runDuration'
 import type { StringsPack } from './zh'
 
 /** English UI string pack — same keys as zhPack. */
@@ -166,6 +167,7 @@ export const enPack = {
     usageSavedLine: (saved: number) => `Smart speed-up saved ~${saved} tokens`,
     usageBothLine: (prompt: number, completion: number, total: number, saved: number, cached = 0) =>
       `Input ${prompt}${cached > 0 ? ` (${cached} cached)` : ''} · Output ${completion} · ${total} tokens total · smart speed-up saved ~${saved} tokens`,
+    replyDuration: (ms: number) => `Took ${formatWallDuration(ms, 'en')}`,
   },
   MEMORY: {
     title: 'Account memory',

@@ -1,3 +1,5 @@
+import { formatWallDuration } from '../runDuration'
+
 /** Chinese UI string pack (canonical key shape). */
 export const zhPack = {
   TIER_LABELS: {
@@ -176,6 +178,7 @@ export const zhPack = {
   usageSavedLine: (saved: number) => `智能提速约节省 ${saved} tokens`,
   usageBothLine: (prompt: number, completion: number, total: number, saved: number, cached = 0) =>
     `输入 ${prompt}${cached > 0 ? `（缓存命中 ${cached}）` : ''} · 输出 ${completion} · 共 ${total} tokens · 智能提速约节省 ${saved} tokens`,
+  replyDuration: (ms: number) => `用时 ${formatWallDuration(ms, 'zh-CN')}`,
 },
   MEMORY: {
   title: '账号记忆',

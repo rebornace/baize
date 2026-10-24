@@ -20,6 +20,7 @@ import {
   type ToolOrWorkflowBlock,
 } from '../../historyBlocks'
 import type { UsageMeta } from '../../foldEvents'
+import { runDurationMsFromEvents } from '../../runDuration'
 import { useLocale } from '../../locale/LocaleContext'
 import { CHAT } from '../../strings'
 import { uuid } from '../../uuid'
@@ -94,6 +95,7 @@ export function useChatSession({
   const [historyBlocks, setHistoryBlocks] = useState<Record<string, ToolOrWorkflowBlock[]>>({})
   /** run_id → aggregated token usage / savings for the historical assistant row. */
   const [historyUsage, setHistoryUsage] = useState<Record<string, UsageMeta>>({})
+  const [historyDurationMs, setHistoryDurationMs] = useState<Record<string, number>>({})
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   /** runIds whose events have already been fetched once (drives both pages and blocks). */
@@ -224,6 +226,10 @@ export function useChatSession({
             if (usage) {
               setHistoryUsage((prev) => ({ ...prev, [runId]: usage }))
             }
+            const durationMs = runDurationMsFromEvents(events)
+            if (durationMs != null) {
+              setHistoryDurationMs((prev) => ({ ...prev, [runId]: durationMs }))
+            }
             inFlight.delete(runId)
           } catch {
             inFlight.delete(runId)
@@ -244,6 +250,7 @@ export function useChatSession({
     setHistoryPages({})
     setHistoryBlocks({})
     setHistoryUsage({})
+    setHistoryDurationMs({})
     fetchedRunsRef.current = new Set()
     setMessages([])
     setComposerDraft(undefined)
@@ -448,6 +455,8 @@ export function useChatSession({
     setHistoryBlocks,
     historyUsage,
     setHistoryUsage,
+    historyDurationMs,
+    setHistoryDurationMs,
     confirmDelete,
     setConfirmDelete,
     fetchedRunsRef,

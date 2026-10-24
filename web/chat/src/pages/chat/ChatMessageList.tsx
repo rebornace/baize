@@ -1,6 +1,7 @@
 import { CornerUpLeft, GitBranch } from 'lucide-react'
 import type { ReactNode, RefObject } from 'react'
-import type { ChatMessage } from '../../api'
+import type { ChatMessage, Event } from '../../api'
+import { useLiveRunDurationMs } from '../../hooks/useLiveRunDurationMs'
 import {
   partitionHistoryActivity,
   partitionLiveActivity,
@@ -62,6 +63,8 @@ export type ChatMessageListProps = {
   historyPages: Record<string, string[]>
   historyBlocks: Record<string, ToolOrWorkflowBlock[]>
   historyUsage: Record<string, UsageMeta>
+  historyDurationMs: Record<string, number>
+  liveEvents: Event[]
   toolCatalog: ToolCatalog
   busy: boolean
   historyMutating: boolean
@@ -116,6 +119,8 @@ export function ChatMessageList({
   historyPages,
   historyBlocks,
   historyUsage,
+  historyDurationMs,
+  liveEvents,
   toolCatalog,
   busy,
   historyMutating,
@@ -133,6 +138,8 @@ export function ChatMessageList({
   suppressLoginActions = false,
   cloudModelRisk = false,
 }: ChatMessageListProps) {
+  const liveDurationMs = useLiveRunDurationMs(liveEvents, Boolean(busy && liveRunId))
+
   // Low-frequency actions live in the "more" menu. system_note additionally
   // exposes "roll back to here" at the top; it never gets a copy action.
   const buildMessageMenuItems = (m: ChatMessage): MenuItem[] => {
@@ -293,8 +300,11 @@ export function ChatMessageList({
               {m.role === 'assistant' &&
                 m.run_id &&
                 isFirstAssistantMessageOfRun(msgIndex, messages) &&
-                historyUsage[m.run_id] && (
-                  <UsageMetaLine usage={historyUsage[m.run_id]} />
+                (historyUsage[m.run_id] || historyDurationMs[m.run_id] != null) && (
+                  <UsageMetaLine
+                    usage={historyUsage[m.run_id]}
+                    durationMs={historyDurationMs[m.run_id]}
+                  />
                 )}
               {canAct && (
                 <div className="msg-actions">
@@ -380,7 +390,9 @@ export function ChatMessageList({
                   <div className="msg assistant">
                     <TypewriterText text={block.text} active={Boolean(block.streaming)} />
                   </div>
-                  {block.usage && <UsageMetaLine usage={block.usage} />}
+                  {(block.usage || liveDurationMs != null) && (
+                    <UsageMetaLine usage={block.usage} durationMs={liveDurationMs} />
+                  )}
                   {block.usage && liveRunId ? <RunBindingButton runId={liveRunId} /> : null}
                 </div>
               )

@@ -80,13 +80,16 @@ export function ChatSidebar({
           </select>
           <button
             type="button"
-            className="btn ghost sm workspace-new"
+            className="btn secondary sm workspace-new"
             onClick={() => {
               const name = window.prompt(CHAT.newWorkspacePrompt)?.trim()
               if (!name) return
               void onCreateWorkspace(name).catch(() => undefined)
             }}
           >
+            <span className="workspace-new-plus" aria-hidden="true">
+              +
+            </span>
             {CHAT.newWorkspace}
           </button>
         </div>

@@ -133,6 +133,7 @@ export function ChatPage() {
     setHistoryPages: session.setHistoryPages,
     setHistoryBlocks: session.setHistoryBlocks,
     setHistoryUsage: session.setHistoryUsage,
+    setHistoryDurationMs: session.setHistoryDurationMs,
     fetchedRunsRef: session.fetchedRunsRef,
     mergeHistoryPages: session.mergeHistoryPages,
     refreshConversations: session.refreshConversations,
@@ -527,6 +528,8 @@ export function ChatPage() {
           historyPages={session.historyPages}
           historyBlocks={session.historyBlocks}
           historyUsage={session.historyUsage}
+          historyDurationMs={session.historyDurationMs}
+          liveEvents={run.liveEvents}
           toolCatalog={toolCatalog}
           busy={run.busy}
           historyMutating={session.historyMutating}

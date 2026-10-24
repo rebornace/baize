@@ -51,10 +51,16 @@
 }
 
 .workspace-new {
-  align-self: flex-start;
-  padding-left: 0;
-  padding-right: 0;
-  min-height: 0;
+  width: 100%;
+  margin-top: var(--space-1);
+  justify-content: center;
+  font-weight: 600;
+}
+
+.workspace-new-plus {
+  font-size: 1.05em;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .conversation-list {
@@ -757,9 +763,27 @@
   background: var(--assistant-bubble);
 }
 
-.msg-usage-details {
+.msg-run-meta {
   margin: var(--space-1) 0 0;
   padding: 0 var(--space-1);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.msg-duration {
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.msg-usage-details {
+  margin: 0;
+  padding: 0;
 }
 
 .msg-usage-summary {
