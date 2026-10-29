@@ -13,7 +13,10 @@ afterEach(() => { act(() => { root.unmount() }); host.remove() })
 
 const flush = async (n = 3) => { await act(async () => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)) }) }
 const setValue = (el: Element, value: string) => act(async () => {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+  const proto = el instanceof HTMLTextAreaElement
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!
   setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); await new Promise((r) => setTimeout(r, 0))
 })
 const btn = (txt: string) => [...host.querySelectorAll('button')].find((b) => b.textContent!.includes(txt))!
@@ -529,8 +532,10 @@ describe('ConnectorEditorModal advanced', () => {
     expect(host.textContent).toContain(TOOLS.captureToolGlob)
     expect(host.textContent).toContain(TOOLS.captureIntro)
     expect(host.textContent).toContain(TOOLS.captureToolGlobHint)
-    // callback + capture + hosted login jump link + outbound TLS
-    expect(host.querySelectorAll('.settings-advanced-block').length).toBe(4)
+    expect(host.textContent).toContain(TOOLS.loginSignalsSection)
+    expect(host.querySelector('[data-testid="login-signals-section"]')).not.toBeNull()
+    // callback + capture + login signals + hosted login jump link + outbound TLS
+    expect(host.querySelectorAll('.settings-advanced-block').length).toBe(5)
     expect(host.querySelector('[data-testid="connector-tls-section"]')).not.toBeNull()
     expect(host.textContent).toContain(CONNECTORS.hostedLoginSection)
     expect(host.textContent).toContain(CONNECTORS.hostedLoginConfigureHint)
@@ -565,6 +570,16 @@ describe('ConnectorEditorModal advanced', () => {
       (el as HTMLInputElement).placeholder.includes('*login*'),
     ) as HTMLInputElement
     await setValue(glob, '*login*')
+    const needStatuses = host.querySelector(
+      '[data-testid="login-signals-fields"] textarea',
+    ) as HTMLTextAreaElement | null
+    // Second textarea in login-signals is http_statuses_need_signal (after http_statuses).
+    const signalAreas = host.querySelectorAll('[data-testid="login-signals-fields"] textarea')
+    expect(signalAreas.length).toBeGreaterThanOrEqual(2)
+    await setValue(signalAreas[1] as HTMLTextAreaElement, '400\n404')
+    const msgArea = signalAreas[signalAreas.length - 1] as HTMLTextAreaElement
+    await setValue(msgArea, '未登录')
+    expect(needStatuses).toBeTruthy()
     await act(async () => { btn('保存连接').click(); await new Promise((r) => setTimeout(r, 0)) })
     await flush()
     expect(onSaveInfo).toHaveBeenCalledWith(expect.objectContaining({
@@ -573,6 +588,10 @@ describe('ConnectorEditorModal advanced', () => {
       executionCallbackUrl: 'https://gw.example/execute',
       auth: expect.objectContaining({
         capture: expect.objectContaining({ tool_name_glob: '*login*' }),
+        login_signals: expect.objectContaining({
+          http_statuses_need_signal: [400, 404],
+          message_contains: ['未登录'],
+        }),
       }),
     }))
   })

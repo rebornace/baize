@@ -23,6 +23,7 @@ const baseKnobs: RuntimeKnobs = {
   compact_keep_recent: 8,
   compact_summary_timeout_seconds: 60,
   context_projection_enabled: false,
+  context_offload_enabled: true,
   active_goal_enabled: true,
   active_goal_max_depth: 8,
   active_goal_max_text_runes: 500,
@@ -137,6 +138,11 @@ describe('buildKnobsPatch', () => {
   it('includes context projection toggle', () => {
     const form: KnobsForm = { ...knobsToForm(baseKnobs), context_projection_enabled: true }
     expect(buildKnobsPatch(form, baseKnobs)).toEqual({ context_projection_enabled: true })
+  })
+
+  it('includes context offload toggle', () => {
+    const form: KnobsForm = { ...knobsToForm(baseKnobs), context_offload_enabled: false }
+    expect(buildKnobsPatch(form, baseKnobs)).toEqual({ context_offload_enabled: false })
   })
 
   it('includes active goal toggle', () => {

@@ -1403,6 +1403,7 @@ func registerConnector(st store.Store, reg *tool.Registry, cfg config.Config, id
 				HeaderTemplate: cfg.Connector.Auth.Capture.HeaderTemplate,
 				DefaultScheme:  cfg.Connector.Auth.Capture.DefaultScheme,
 			},
+			LoginSignals: cfg.Connector.Auth.LoginSignals,
 		},
 		TLS:                cfg.Connector.TLS,
 		CallbackSigner:     cb.Signer,

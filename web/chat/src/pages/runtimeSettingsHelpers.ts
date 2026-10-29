@@ -12,6 +12,7 @@ export interface KnobsForm {
   compact_keep_recent: string
   compact_summary_timeout_seconds: string
   context_projection_enabled: boolean
+  context_offload_enabled: boolean
   active_goal_enabled: boolean
   active_goal_max_depth: string
   active_goal_max_text_runes: string
@@ -40,6 +41,7 @@ export interface KnobsForm {
 type NonNumericKnobKeys =
   | 'compaction_enabled'
   | 'context_projection_enabled'
+  | 'context_offload_enabled'
   | 'active_goal_enabled'
   | 'memory_enabled'
   | 'memory_auto_extract'
@@ -236,6 +238,7 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
     compact_keep_recent: String(k.compact_keep_recent),
     compact_summary_timeout_seconds: String(k.compact_summary_timeout_seconds),
     context_projection_enabled: Boolean(k.context_projection_enabled),
+    context_offload_enabled: k.context_offload_enabled !== false,
     active_goal_enabled: k.active_goal_enabled,
     active_goal_max_depth: String(k.active_goal_max_depth),
     active_goal_max_text_runes: String(k.active_goal_max_text_runes),
@@ -298,6 +301,9 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   }
   if (form.context_projection_enabled !== effective.context_projection_enabled) {
     patch.context_projection_enabled = form.context_projection_enabled
+  }
+  if (form.context_offload_enabled !== effective.context_offload_enabled) {
+    patch.context_offload_enabled = form.context_offload_enabled
   }
   if (form.active_goal_enabled !== effective.active_goal_enabled) {
     patch.active_goal_enabled = form.active_goal_enabled

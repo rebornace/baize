@@ -135,6 +135,14 @@ export interface HostedLoginMethodSuggestion {
   recommend_default?: boolean
 }
 
+export interface LoginSignalsAuth {
+  http_statuses?: number[]
+  http_statuses_need_signal?: number[]
+  body_code_path?: string
+  body_codes?: string[]
+  message_contains?: string[]
+}
+
 export interface ConnectorAuth {
   mode?: string
   static?: { headers?: Record<string, string> }
@@ -147,6 +155,7 @@ export interface ConnectorAuth {
     header_template?: string
     default_scheme?: string
   }
+  login_signals?: LoginSignalsAuth
   hosted_login?: HostedLoginConfig
 }
 

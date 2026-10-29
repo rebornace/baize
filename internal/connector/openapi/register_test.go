@@ -194,6 +194,46 @@ func TestConversation401RemapsToLoginRequired(t *testing.T) {
 	}
 }
 
+func TestConversation400WithLoginSignalsRemaps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":401,"message":"未登录"}`))
+	}))
+	t.Cleanup(srv.Close)
+	spec := writeLoginGetMeSpec(t)
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	ids := identity.NewMemoryStore()
+	_, _ = ids.Upsert(identity.Scope("conv_400"), identity.Identity{
+		Label: "stale", Scheme: "bearer",
+		CredentialHeaders: map[string]string{"Authorization": "Bearer dead"},
+		IsDefault:         true,
+	})
+	if _, _, err := openapi.RegisterWithOpts(st, reg, openapi.RegisterOpts{
+		ID: "c400", SpecPath: spec, BaseURL: srv.URL,
+		RequireLogin: []string{"getMe"},
+		Identities:   ids,
+		Resolver:     authresolve.OpenAPISecurityResolver{},
+		Auth: store.ConnectorAuth{
+			LoginSignals: store.LoginSignalsAuth{
+				HTTPStatusesNeedSignal: []int{400},
+				BodyCodes:              []string{"401"},
+				MessageContains:        []string{"未登录"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := identity.WithConversationID(context.Background(), "conv_400")
+	content, isErr, err := reg.Invoke(ctx, "getMe", nil)
+	if err != nil || !isErr || content["code"] != "login_required" {
+		t.Fatalf("content=%v isErr=%v err=%v", content, isErr, err)
+	}
+	if content["connector_id"] != "c400" {
+		t.Fatalf("connector_id=%v", content["connector_id"])
+	}
+}
+
 func writeLoginGetMeSpec(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -327,7 +327,42 @@ func (s *SQLStore) UpsertStreamingDelta(runID string, ev Event) (int, error) {
 		return -1, err
 	}
 	turn := EventTurn(ev.Data)
+	ts := ev.Timestamp.Format(time.RFC3339Nano)
 
+	var matchID int64
+	err = s.queryRow(
+		`SELECT id FROM events WHERE run_id = ? AND type = ? AND CAST(json_extract(data_json, '$.turn') AS INTEGER) = ? ORDER BY id DESC LIMIT 1`,
+		runID, ev.Type, turn,
+	).Scan(&matchID)
+	if err == nil {
+		if _, err := s.exec(
+			`UPDATE events SET timestamp = ?, data_json = ? WHERE id = ?`,
+			ts, string(dataJSON), matchID,
+		); err != nil {
+			return -1, err
+		}
+		return s.eventIndexByID(runID, matchID)
+	}
+	if err != sql.ErrNoRows {
+		// json_extract unavailable / malformed: fall back to scan (tests + old DBs).
+		return s.upsertStreamingDeltaScan(runID, ev, dataJSON, turn, ts)
+	}
+
+	res, err := s.exec(
+		`INSERT INTO events (run_id, type, timestamp, data_json) VALUES (?, ?, ?, ?)`,
+		runID, ev.Type, ts, string(dataJSON),
+	)
+	if err != nil {
+		return -1, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return -1, err
+	}
+	return s.eventIndexByID(runID, id)
+}
+
+func (s *SQLStore) upsertStreamingDeltaScan(runID string, ev Event, dataJSON []byte, turn int, ts string) (int, error) {
 	rows, err := s.query(
 		`SELECT id, data_json FROM events WHERE run_id = ? AND type = ? ORDER BY id ASC`,
 		runID, ev.Type,
@@ -363,47 +398,37 @@ func (s *SQLStore) UpsertStreamingDelta(runID string, ev Event) (int, error) {
 	if found {
 		if _, err := s.exec(
 			`UPDATE events SET timestamp = ?, data_json = ? WHERE id = ?`,
-			ev.Timestamp.Format(time.RFC3339Nano), string(dataJSON), matchID,
+			ts, string(dataJSON), matchID,
 		); err != nil {
 			return -1, err
 		}
 		return s.eventIndexByID(runID, matchID)
 	}
 
-	if _, err := s.exec(
+	res, err := s.exec(
 		`INSERT INTO events (run_id, type, timestamp, data_json) VALUES (?, ?, ?, ?)`,
-		runID, ev.Type, ev.Timestamp.Format(time.RFC3339Nano), string(dataJSON),
-	); err != nil {
-		return -1, err
-	}
-	evs, err := s.ListEvents(runID)
+		runID, ev.Type, ts, string(dataJSON),
+	)
 	if err != nil {
 		return -1, err
 	}
-	return len(evs) - 1, nil
+	id, err := res.LastInsertId()
+	if err != nil {
+		return -1, err
+	}
+	return s.eventIndexByID(runID, id)
 }
 
 func (s *SQLStore) eventIndexByID(runID string, id int64) (int, error) {
-	rows, err := s.query(`SELECT id FROM events WHERE run_id = ? ORDER BY id ASC`, runID)
+	var idx int
+	err := s.queryRow(
+		`SELECT COUNT(*) FROM events WHERE run_id = ? AND id < ?`,
+		runID, id,
+	).Scan(&idx)
 	if err != nil {
 		return -1, err
 	}
-	defer rows.Close()
-	idx := 0
-	for rows.Next() {
-		var rowID int64
-		if err := rows.Scan(&rowID); err != nil {
-			return -1, err
-		}
-		if rowID == id {
-			return idx, nil
-		}
-		idx++
-	}
-	if err := rows.Err(); err != nil {
-		return -1, err
-	}
-	return -1, fmt.Errorf("event id %d not found for run %s", id, runID)
+	return idx, nil
 }
 
 func (s *SQLStore) ListEvents(runID string) ([]Event, error) {

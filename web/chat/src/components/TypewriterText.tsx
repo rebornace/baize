@@ -2,9 +2,9 @@ import { MarkdownText } from './MarkdownText'
 import { useSmoothStreamText } from '../useSmoothStreamText'
 
 /**
- * Live assistant text: server `text` is the target buffer; the visible string
- * is paced locally (adaptive drain). While `active`, always render plain text
- * so we never flip plain↔markdown mid-stream (that layout swap caused jitter).
+ * Live assistant text: shows the server `text` snapshot immediately (no local
+ * drain). While `active`, render plain text so we never flip plain↔markdown
+ * mid-stream (that layout swap caused jitter).
  */
 export function TypewriterText({
   text,

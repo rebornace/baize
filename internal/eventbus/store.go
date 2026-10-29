@@ -32,11 +32,12 @@ func (n *notifyingStore) UpsertStreamingDelta(runID string, ev store.Event) (int
 	if err != nil {
 		return -1, err
 	}
-	evs, listErr := inner.ListEvents(runID)
-	if listErr != nil || idx < 0 || idx >= len(evs) {
+	if idx < 0 {
 		return idx, nil
 	}
-	n.hub.Publish(runID, IndexedEvent{Index: idx, Event: evs[idx]})
+	// Publish the upsert payload directly — do not ListEvents the whole run on
+	// every token (that was slower than the model on the stream hot path).
+	n.hub.Publish(runID, IndexedEvent{Index: idx, Event: ev})
 	return idx, nil
 }
 

@@ -21,6 +21,7 @@ const baseKnobs: RuntimeKnobs = {
   compact_keep_recent: 8,
   compact_summary_timeout_seconds: 60,
   context_projection_enabled: false,
+  context_offload_enabled: true,
   active_goal_enabled: true,
   active_goal_max_depth: 8,
   active_goal_max_text_runes: 500,
@@ -158,6 +159,7 @@ describe('RuntimeSettings humanize shell', () => {
     await selectTab(host, 'memory')
     expect(host.textContent).toContain(RUNTIME.sectionCompact)
     expect(host.textContent).toContain(RUNTIME.contextProjectionEnabled)
+    expect(host.textContent).toContain(RUNTIME.contextOffloadEnabled)
     expect(host.textContent).toContain(RUNTIME.sectionMemory)
     expect(host.textContent).toContain(RUNTIME.memoryEnabled)
     expect(host.textContent).toContain(RUNTIME.memoryAutoExtract)

@@ -1,9 +1,12 @@
-/** Reveal backlog over roughly this horizon (jitter buffer). */
-export const DRAIN_HORIZON_MS = 380
-/** Floor so a near-empty backlog still trickles instead of freezing. */
-export const MIN_CPS = 48
-/** Cap so a huge backlog (reconnect / burst) still looks like typing, not a dump. */
-export const MAX_CPS = 900
+/**
+ * Reveal backlog over a short horizon so the UI tracks the SSE snapshot
+ * instead of a deliberate typewriter lag (fast models otherwise feel slow).
+ */
+export const DRAIN_HORIZON_MS = 60
+/** Floor: keep up with ~fast-model English decode even when backlog is tiny. */
+export const MIN_CPS = 240
+/** Cap high enough that deepseek-flash bursts dump in well under a second. */
+export const MAX_CPS = 6000
 /**
  * If the target is already longer than this when animation starts, snap —
  * treat as resume/history, not a fresh stream to replay from char 0.

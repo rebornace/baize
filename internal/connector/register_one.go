@@ -39,6 +39,8 @@ type registerOneContext struct {
 	// openapi-only:
 	inv     *openapi.Invoker
 	capture identity.CaptureConfig
+	// loginSignals remaps connector-specific auth errors to login_required.
+	loginSignals tool.LoginSignals
 	// requireApprovalMutating forces HITL on non-GET/HEAD/OPTIONS spec routes.
 	requireApprovalMutating bool
 
@@ -192,8 +194,9 @@ func openapiInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		if usedID != "" && ctx.identities != nil {
 			_ = ctx.identities.Touch(identity.KeyFrom(c), usedID)
 		}
-		maybeCaptureLogin(c, ctx.identities, ctx.capture, name, out.Content, out.IsError)
-		return out.Content, out.IsError, nil
+		content, isErr := remapAuthToolResult(c, ctx, out.Content, out.IsError)
+		maybeCaptureLogin(c, ctx.identities, ctx.capture, name, content, isErr)
+		return content, isErr, nil
 	}
 }
 
@@ -257,8 +260,9 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 			if usedID != "" && ctx.identities != nil {
 				_ = ctx.identities.Touch(identity.KeyFrom(c), usedID)
 			}
-			maybeCaptureLogin(c, ctx.identities, ctx.capture, name, out.Content, out.IsError)
-			return out.Content, out.IsError, nil
+			content, isErr := remapAuthToolResult(c, ctx, out.Content, out.IsError)
+			maybeCaptureLogin(c, ctx.identities, ctx.capture, name, content, isErr)
+			return content, isErr, nil
 		}
 		out, invErr := ctx.client.Invoke(c, name, args, httpplugin.InvokeMeta{
 			RunID:            identity.RunIDFrom(c),
@@ -272,9 +276,26 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		if usedID != "" && ctx.identities != nil {
 			_ = ctx.identities.Touch(identity.KeyFrom(c), usedID)
 		}
-		maybeCaptureLogin(c, ctx.identities, ctx.capture, name, out.Content, out.IsError)
-		return out.Content, out.IsError, nil
+		content, isErr := remapAuthToolResult(c, ctx, out.Content, out.IsError)
+		maybeCaptureLogin(c, ctx.identities, ctx.capture, name, content, isErr)
+		return content, isErr, nil
 	}
+}
+
+// remapAuthToolResult rewrites auth-failure payloads to login_required so Chat
+// shows the login card instead of letting the model retry ordinary errors.
+func remapAuthToolResult(c context.Context, ctx registerOneContext, content map[string]any, isError bool) (map[string]any, bool) {
+	if !isError || content == nil {
+		return content, isError
+	}
+	if identity.ConversationIDFrom(c) == "" {
+		return content, isError
+	}
+	out, ok := tool.RemapAuthFailureContent(content, ctx.loginSignals, ctx.id)
+	if !ok {
+		return content, isError
+	}
+	return out, true
 }
 
 // mcpInvokerClosure builds the conversation-aware invoker for an MCP tool row.
@@ -517,7 +538,13 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 		if err != nil {
 			return err
 		}
-		inv = &openapi.Invoker{BaseURL: c.BaseURL, Tools: routes, HTTPClient: hcOpenAPI}
+		loginSignals := LoginSignalsFromAuth(c.Auth.LoginSignals)
+		inv = &openapi.Invoker{
+			BaseURL:      c.BaseURL,
+			Tools:        routes,
+			HTTPClient:   hcOpenAPI,
+			LoginSignals: loginSignals,
+		}
 		// Extend with extra rows from the store so the shared invoker can
 		// dispatch extras alongside spec routes (mirrors Apply).
 		for _, et := range st.ListToolsByConnector(c.ID) {
@@ -545,6 +572,7 @@ func RegisterOneFromConnector(st store.Store, reg *tool.Registry, ids identity.S
 		resolver:           authresolve.OpenAPISecurityResolver{},
 		inv:                inv,
 		capture:            capture,
+		loginSignals:       LoginSignalsFromAuth(c.Auth.LoginSignals),
 		client:             client,
 		mcpSession:         mcpSession,
 		mcpHTTPURL:         mcpHTTPURL,

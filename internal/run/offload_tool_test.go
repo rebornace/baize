@@ -24,10 +24,10 @@ func newMemWorkspace(t *testing.T) *workspace.Service {
 	return workspace.New(st)
 }
 
-// bulkyToolPayload returns a tool result whose estimated tokens exceed the
-// default offload threshold (500).
+// bulkyToolPayload returns a tool result whose estimated tokens exceed
+// minToolOffloadTokens (ASCII ≈ 4 bytes/token).
 func bulkyToolPayload() map[string]any {
-	return map[string]any{"data": strings.Repeat("z", 2500)}
+	return map[string]any{"data": strings.Repeat("z", 20000)}
 }
 
 func TestToolResultOffloadsWhenBulky(t *testing.T) {
@@ -92,7 +92,7 @@ func TestToolResultOffloadsWhenBulky(t *testing.T) {
 	}
 	content, _ := toolResult.Data["content"].(map[string]any)
 	data, _ := content["data"].(string)
-	if data != strings.Repeat("z", 2500) {
+	if data != strings.Repeat("z", 20000) {
 		t.Fatalf("tool.result must keep full body, got len=%d", len(data))
 	}
 	if offloaded == nil {

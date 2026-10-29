@@ -149,12 +149,13 @@ type Tool struct {
 // ConnectorAuth stores the connector auth configuration shape (mode + references),
 // not resolved secrets. Mirrors internal/authcred.Config / internal/config Auth.
 type ConnectorAuth struct {
-	Mode        string            `json:"mode,omitempty"`
-	Static      StaticAuth        `json:"static,omitempty"`
-	Passthrough PassThruAuth      `json:"passthrough,omitempty"`
-	VaultRef    VaultRefAuth      `json:"vault_ref,omitempty"`
-	Capture     CaptureAuth       `json:"capture,omitempty"`
-	HostedLogin HostedLoginConfig `json:"hosted_login,omitempty"`
+	Mode         string            `json:"mode,omitempty"`
+	Static       StaticAuth        `json:"static,omitempty"`
+	Passthrough  PassThruAuth      `json:"passthrough,omitempty"`
+	VaultRef     VaultRefAuth      `json:"vault_ref,omitempty"`
+	Capture      CaptureAuth       `json:"capture,omitempty"`
+	LoginSignals LoginSignalsAuth  `json:"login_signals,omitempty"`
+	HostedLogin  HostedLoginConfig `json:"hosted_login,omitempty"`
 }
 
 type CaptureAuth struct {
@@ -163,6 +164,16 @@ type CaptureAuth struct {
 	LabelJSONPaths []string `json:"label_json_paths,omitempty"`
 	HeaderTemplate string   `json:"header_template,omitempty"`
 	DefaultScheme  string   `json:"default_scheme,omitempty"`
+}
+
+// LoginSignalsAuth configures how tool errors are recognized as auth failures
+// for a connector (remap to login_required). Empty means built-in 401/403 heuristics.
+type LoginSignalsAuth struct {
+	HTTPStatuses           []int    `json:"http_statuses,omitempty" yaml:"http_statuses,omitempty"`
+	HTTPStatusesNeedSignal []int    `json:"http_statuses_need_signal,omitempty" yaml:"http_statuses_need_signal,omitempty"`
+	BodyCodePath           string   `json:"body_code_path,omitempty" yaml:"body_code_path,omitempty"`
+	BodyCodes              []string `json:"body_codes,omitempty" yaml:"body_codes,omitempty"`
+	MessageContains        []string `json:"message_contains,omitempty" yaml:"message_contains,omitempty"`
 }
 
 type StaticAuth struct {

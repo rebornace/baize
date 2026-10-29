@@ -186,7 +186,12 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		if err != nil {
 			return store.Connector{}, nil, CatalogDiff{}, err
 		}
-		inv = &openapi.Invoker{BaseURL: in.BaseURL, Tools: routes, HTTPClient: hcOpenAPI}
+		inv = &openapi.Invoker{
+			BaseURL:      in.BaseURL,
+			Tools:        routes,
+			HTTPClient:   hcOpenAPI,
+			LoginSignals: LoginSignalsFromAuth(in.Auth.LoginSignals),
+		}
 	case "mcp":
 		cfg := in.MCP
 		transport := strings.TrimSpace(cfg.Transport)
@@ -337,6 +342,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		}
 	} else {
 		auth.Capture = store.CaptureAuth{}
+		auth.LoginSignals = store.LoginSignalsAuth{}
 	}
 	c := store.Connector{
 		ID:                   in.ID,
@@ -394,6 +400,7 @@ func Apply(in ApplyInput) (store.Connector, []tool.Info, CatalogDiff, error) {
 		resolver:                authresolve.OpenAPISecurityResolver{},
 		inv:                     inv,
 		capture:                 capture,
+		loginSignals:            LoginSignalsFromAuth(in.Auth.LoginSignals),
 		requireApprovalMutating: in.RequireApprovalMutating,
 		client:                  client,
 		mcpSession:              mcpSession,

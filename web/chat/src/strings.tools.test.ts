@@ -9,6 +9,8 @@ describe('TOOLS', () => {
     expect(TOOLS.requireApprovalBadge).toBe('需确认')
     expect(TOOLS.captureSection).toBe('登录令牌捕获')
     expect(TOOLS.captureIntro).toBeTruthy()
+    expect(TOOLS.loginSignalsSection).toBe('鉴权失败识别')
+    expect(TOOLS.loginSignalsIntro).toBeTruthy()
     expect(TOOLS.captureToolGlob).toBe('登录工具名匹配')
     expect(TOOLS.captureToolGlobHint).toMatch(/\*/)
     expect(TOOLS.captureTokenPaths).toBe('令牌 JSON 路径')

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rebornace/baize/internal/connector/openapi"
 	"github.com/rebornace/baize/internal/connector/specimport"
 )
 
@@ -109,6 +110,24 @@ func TestNormalizeSwagger2NestedPropertySchema(t *testing.T) {
 		t.Fatalf("detected = %q, want swagger2", detected)
 	}
 	assertNormalizedHasPath(t, out, "/q/")
+	if !strings.Contains(string(out), "chart_style") {
+		t.Fatalf("nested object properties were dropped:\n%s", out)
+	}
+	tools, err := openapi.LoadToolsFromBytes(out)
+	if err != nil {
+		t.Fatalf("LoadToolsFromBytes: %v", err)
+	}
+	var desc string
+	for _, tool := range tools {
+		if tool.Name == "list_q" {
+			desc = tool.Description
+		}
+	}
+	for _, want := range []string{"返回字段：", "stat_display: object", "stat_display.chart_style: integer"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("description missing %q:\n%s", want, desc)
+		}
+	}
 }
 
 func TestNormalizeSwagger2YAMLWithScalarTypes(t *testing.T) {

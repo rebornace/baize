@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { act, useState } from 'react'
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { useSmoothStreamText } from './useSmoothStreamText'
 
 function HookProbe({
@@ -28,11 +28,6 @@ describe('useSmoothStreamText', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     latest = ''
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16) as unknown as number,
-    )
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id))
   })
 
   afterEach(() => {
@@ -40,10 +35,9 @@ describe('useSmoothStreamText', () => {
       root.unmount()
     })
     container.remove()
-    vi.unstubAllGlobals()
   })
 
-  it('snaps when inactive', () => {
+  it('returns the full target when inactive', () => {
     act(() => {
       root.render(
         <HookProbe
@@ -58,32 +52,18 @@ describe('useSmoothStreamText', () => {
     expect(latest).toBe('完整历史')
   })
 
-  it('drains toward a growing target while active', async () => {
-    function Grow() {
-      const [t, setT] = useState('你好')
-      const v = useSmoothStreamText(t, true)
-      latest = v
-      return (
-        <button type="button" onClick={() => setT('你好，世界，这是更长的流式文本')}>
-          grow
-        </button>
+  it('returns the server snapshot immediately while active', () => {
+    act(() => {
+      root.render(
+        <HookProbe
+          target="你好，世界，这是流式文本"
+          active={true}
+          onValue={(v) => {
+            latest = v
+          }}
+        />,
       )
-    }
-    act(() => {
-      root.render(<Grow />)
     })
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 80))
-    })
-    expect(latest.length).toBeGreaterThan(0)
-    expect(latest.length).toBeLessThanOrEqual('你好，世界，这是更长的流式文本'.length)
-
-    act(() => {
-      container.querySelector('button')?.click()
-    })
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 500))
-    })
-    expect(latest).toBe('你好，世界，这是更长的流式文本')
+    expect(latest).toBe('你好，世界，这是流式文本')
   })
 })

@@ -32,6 +32,9 @@ type Invoker struct {
 	Tools      []ToolRoute
 	Headers    map[string]string
 	HTTPClient *http.Client
+	// LoginSignals recognizes HTTP 200 business auth failures for this connector.
+	// Empty uses built-in 401/403 heuristics.
+	LoginSignals tool.LoginSignals
 }
 
 // Invoke looks up toolName and performs the corresponding HTTP request.
@@ -116,7 +119,7 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	// Some gateways return HTTP 200 with a business auth failure body.
-	if tool.LooksLikeAuthFailure(content) {
+	if tool.MatchAuthFailure(content, inv.LoginSignals) {
 		return InvokeResult{Content: content, IsError: true}, nil
 	}
 	return InvokeResult{Content: content, IsError: false}, nil

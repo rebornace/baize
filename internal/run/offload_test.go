@@ -43,8 +43,27 @@ func TestFormatOffloadMessageErrorFirstLine(t *testing.T) {
 	if !strings.Contains(first, "错误结果") {
 		t.Fatalf("first line=%q", first)
 	}
+	if strings.Contains(first, "可用 read_file 分段读取") {
+		t.Fatalf("must not push immediate read_file: %q", first)
+	}
 	if !IsOffloadPreview(msg) {
 		t.Fatal("error stub must be detected as offload preview")
+	}
+}
+
+func TestFormatOffloadMessagePrefersPreviewOverReadFile(t *testing.T) {
+	msg := FormatOffloadMessage("offload/x.txt", "hello", false)
+	first := strings.Split(msg, "\n")[0]
+	if !strings.Contains(first, "优先根据下方预览") {
+		t.Fatalf("first line=%q", first)
+	}
+	if !IsOffloadPreview(msg) {
+		t.Fatal("ok stub must be detected as offload preview")
+	}
+	// Legacy stubs still detect.
+	legacy := "[已卸出到工作区文件，可用 read_file 分段读取]\npath: offload/old.txt\npreview: x"
+	if !IsOffloadPreview(legacy) {
+		t.Fatal("legacy stub must still detect")
 	}
 }
 

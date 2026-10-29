@@ -827,6 +827,21 @@ export function RuntimeSettings() {
           <label className="settings-checkbox">
             <input
               type="checkbox"
+              checked={form.context_offload_enabled}
+              onChange={(e) => setField('context_offload_enabled', e.target.checked)}
+              disabled={busy || readOnly}
+              data-testid="runtime-context-offload"
+            />
+            {RUNTIME.contextOffloadEnabled}
+            {knobView.overridden.context_offload_enabled && (
+              <Badge>{RUNTIME.badgeOverridden}</Badge>
+            )}
+          </label>
+          <p className="settings-muted">{RUNTIME.contextOffloadHint}</p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
               checked={form.active_goal_enabled}
               onChange={(e) => setField('active_goal_enabled', e.target.checked)}
               disabled={busy || readOnly}

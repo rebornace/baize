@@ -183,6 +183,7 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 	needExisting := body.ExecutionCallbackURL == nil ||
 		body.TLS == nil ||
 		(body.Type != "mcp" && body.Auth.Capture == nil) ||
+		(body.Type != "mcp" && body.Auth.LoginSignals == nil) ||
 		(body.Type != "mcp" && body.Auth.HostedLogin == nil) ||
 		(body.Type == "mcp" && body.MCP.OAuth != nil)
 	if needExisting {
@@ -208,6 +209,12 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			// 避免一次普通保存把本人登录链路清空。
 			capture = existingConn.Auth.Capture
 		}
+		loginSignals := store.LoginSignalsAuth{}
+		if body.Auth.LoginSignals != nil {
+			loginSignals = *body.Auth.LoginSignals
+		} else if hasExisting {
+			loginSignals = existingConn.Auth.LoginSignals
+		}
 		hosted := store.HostedLoginConfig{}
 		if body.Auth.HostedLogin != nil {
 			hosted = *body.Auth.HostedLogin
@@ -232,8 +239,9 @@ func (s *Server) handlePutConnector(w http.ResponseWriter, r *http.Request) {
 			VaultRef: store.VaultRefAuth{
 				Headers: body.Auth.VaultRef.Headers,
 			},
-			Capture:     capture,
-			HostedLogin: hosted,
+			Capture:      capture,
+			LoginSignals: loginSignals,
+			HostedLogin:  hosted,
 		}
 	}
 
@@ -382,6 +390,9 @@ type authBody struct {
 		HeaderTemplate string   `json:"header_template"`
 		DefaultScheme  string   `json:"default_scheme"`
 	} `json:"capture"`
+	// LoginSignals is a pointer so omit vs explicit empty can be distinguished
+	// (nil = preserve existing; non-nil = replace, including clear).
+	LoginSignals *store.LoginSignalsAuth `json:"login_signals"`
 	// HostedLogin is a pointer so omit vs explicit empty can be distinguished
 	// (nil = preserve existing; non-nil = replace, including clear).
 	HostedLogin *store.HostedLoginConfig `json:"hosted_login"`

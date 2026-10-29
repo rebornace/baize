@@ -5,11 +5,16 @@ import { CONNECTORS, TOOLS } from '../../strings'
 import { FilePickerButton } from './FilePickerButton'
 import { type ConnectorAuth, type ConnectorTLS, type ImportFormat, type MCPConfig } from '../../api'
 import { CaptureSettingsFields } from '../../pages/CaptureSettingsFields'
+import { LoginSignalsSettingsFields } from '../../pages/LoginSignalsSettingsFields'
 import {
   captureToDraft,
-  mergeAuthWithCapture,
   type CaptureDraft,
 } from '../../pages/captureForm'
+import {
+  loginSignalsToDraft,
+  mergeAuthWithAdvanced,
+  type LoginSignalsDraft,
+} from '../../pages/loginSignalsForm'
 import { validateConnection } from '../../pages/connectorForms/validate'
 import {
   connectorToMcpForm,
@@ -90,6 +95,9 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
   const [mcpErrors, setMcpErrors] = useState<McpFieldErrors>({})
   const [executionCallbackUrl, setExecutionCallbackUrl] = useState('')
   const [captureDraft, setCaptureDraft] = useState<CaptureDraft>(() => captureToDraft(undefined))
+  const [loginSignalsDraft, setLoginSignalsDraft] = useState<LoginSignalsDraft>(() =>
+    loginSignalsToDraft(undefined),
+  )
   const [tlsDraft, setTlsDraft] = useState<ConnectorTLS>(() => tlsFromConnector(undefined))
   const [tlsCleared, setTlsCleared] = useState(false)
   const [tlsError, setTlsError] = useState<string | null>(null)
@@ -115,6 +123,7 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
     setMcpErrors({})
     setExecutionCallbackUrl(init.executionCallbackUrl ?? '')
     setCaptureDraft(captureToDraft(init.auth?.capture))
+    setLoginSignalsDraft(loginSignalsToDraft(init.auth?.login_signals))
     setTlsDraft(tlsFromConnector(init.tls))
     setTlsCleared(false)
     setTlsError(null)
@@ -183,7 +192,11 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
         return
       }
       setFieldErrors({})
-      const advancedAuth = mergeAuthWithCapture(initialRef.current.auth, captureDraft)
+      const advancedAuth = mergeAuthWithAdvanced(
+        initialRef.current.auth,
+        captureDraft,
+        loginSignalsDraft,
+      )
       const callbackUrl = executionCallbackUrl.trim()
       if (kind === 'openapi') {
         conn = {
@@ -408,6 +421,13 @@ export function ConnectorEditorModal(props: ConnectorEditorModalProps) {
                 connectorType={kind === 'plugin' ? 'http' : 'openapi'}
                 draft={captureDraft}
                 onDraftChange={(patch) => setCaptureDraft((d) => ({ ...d, ...patch }))}
+              />
+            </section>
+            <section className="settings-advanced-block" data-testid="login-signals-section">
+              <h4 className="settings-advanced-title">{TOOLS.loginSignalsSection}</h4>
+              <LoginSignalsSettingsFields
+                draft={loginSignalsDraft}
+                onDraftChange={(patch) => setLoginSignalsDraft((d) => ({ ...d, ...patch }))}
               />
             </section>
             <section className="settings-advanced-block">

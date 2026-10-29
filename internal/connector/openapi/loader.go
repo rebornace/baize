@@ -73,6 +73,7 @@ func loadFromDoc(doc *openapi3.T) ([]ToolRoute, error) {
 			if desc == "" {
 				desc = op.Summary
 			}
+			desc = appendResponseOutline(desc, op)
 			schema, bodyKind := mergeInputSchema(item, op)
 			tools = append(tools, ToolRoute{
 				Name:        name,

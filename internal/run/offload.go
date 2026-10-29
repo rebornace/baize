@@ -13,11 +13,16 @@ import (
 )
 
 const (
-	offloadPreviewRunes   = 500
+	// Prefer a longer in-prompt preview so the model can often answer without
+	// an extra read_file round-trip (speed over maximum context savings).
+	offloadPreviewRunes = 2000
 	EventContextOffloaded = "context.offloaded"
 	// PasteOffloadThreshold is the rune count at which paste/attachment text
 	// is written to the workspace and replaced with a model-facing stub (AC-04).
 	PasteOffloadThreshold = 64 << 10
+	// minToolOffloadTokens: keep medium tool results in-context; only offload
+	// truly bulky payloads. Avoids an almost-certain follow-up read_file.
+	minToolOffloadTokens = 4000
 )
 
 // OffloadFileWriter persists large paste/tool bodies under offload/.
@@ -27,8 +32,8 @@ type OffloadFileWriter interface {
 }
 
 const (
-	offloadHeaderOK    = "[已卸出到工作区文件，可用 read_file 分段读取]"
-	offloadHeaderError = "[已卸出到工作区文件（错误结果），可用 read_file 分段读取]"
+	offloadHeaderOK = "[结果较大，已卸出到工作区。请优先根据下方预览直接作答；仅当预览缺少必要字段时再用 read_file 读取 path]"
+	offloadHeaderError = "[错误结果较大，已卸出到工作区。请优先根据下方预览判断；仅当预览不够时再用 read_file 读取 path]"
 )
 
 // FormatOffloadMessage builds the unified model-facing stub (spec §2.3).
@@ -44,7 +49,9 @@ func FormatOffloadMessage(path, fullBody string, isError bool) string {
 
 // IsOffloadPreview reports whether text is already an offload stub (skip DP-3).
 func IsOffloadPreview(text string) bool {
-	return strings.Contains(text, "[已卸出到工作区文件") &&
+	return (strings.Contains(text, "[已卸出到工作区文件") ||
+		strings.Contains(text, "[结果较大，已卸出到工作区") ||
+		strings.Contains(text, "[错误结果较大，已卸出到工作区")) &&
 		strings.Contains(text, "\npath: offload/")
 }
 
@@ -122,9 +129,14 @@ func (e *Engine) effectiveContextOffload() bool {
 }
 
 // effectiveOffloadToolThreshold is the estimated-token size above which a tool
-// result is written to the workspace. Mirrors the DP-3 prune threshold.
+// result is written to the workspace. Uses at least minToolOffloadTokens so
+// ordinary API payloads stay in-context (fewer read_file round-trips).
 func (e *Engine) effectiveOffloadToolThreshold() int {
-	return e.effectiveDecidePruneThreshold()
+	t := e.effectiveDecidePruneThreshold()
+	if t < minToolOffloadTokens {
+		return minToolOffloadTokens
+	}
+	return t
 }
 
 // applyToolOffload rewrites a model-facing tool message to an offload stub when

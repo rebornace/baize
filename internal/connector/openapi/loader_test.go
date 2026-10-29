@@ -7,10 +7,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	mockticket "github.com/rebornace/baize/examples/mock-ticket"
 	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/tool"
 )
 
 func TestLoadToolsFromBytesMinimalJSON(t *testing.T) {
@@ -361,6 +363,32 @@ func TestInvokerBusiness401IsError(t *testing.T) {
 	}
 }
 
+func TestInvokerCustomBodyCodeIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":"AUTH_REQUIRED","message":"need login"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "get_summary",
+			Method: http.MethodGet,
+			Path:   "/dashboard",
+		}},
+		LoginSignals: tool.LoginSignals{BodyCodes: []string{"AUTH_REQUIRED"}},
+	}
+	res, err := inv.Invoke(context.Background(), "get_summary", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected custom body code IsError, got %+v", res)
+	}
+}
+
 func TestLoadToolsPathParamOps(t *testing.T) {
 	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
 	if err != nil {
@@ -447,6 +475,134 @@ func TestInvokerGetTicketByID(t *testing.T) {
 	}
 	if got.Content["id"] != id {
 		t.Fatalf("content=%v", got.Content)
+	}
+}
+
+func TestLoadToolsResponseObjectFields(t *testing.T) {
+	spec := []byte(`openapi: "3.0.3"
+info: {title: t, version: "1"}
+paths:
+  /users/{id}:
+    get:
+      operationId: getUser
+      summary: 查询用户
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                description: 用户查询结果
+                properties:
+                  code: {type: integer, description: 状态码}
+                  data:
+                    description: 用户
+                    allOf:
+                      - $ref: "#/components/schemas/User"
+                  status:
+                    type: string
+                    enum: [open, closed]
+                    description: 状态
+                  meta:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        k: {type: string, description: 键}
+  /items:
+    get:
+      operationId: listItems
+      summary: 列表示例
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  id: 7
+                  name: ada
+                  profile:
+                    city: hz
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id: {type: string, description: 用户编号}
+        name: {type: string}
+        tags:
+          type: array
+          items:
+            type: object
+            properties:
+              label: {type: string, description: 标签}
+`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := findRoute(t, tools, "getUser")
+	for _, want := range []string{
+		"查询用户",
+		"返回字段：",
+		"说明：用户查询结果",
+		"code: integer，状态码",
+		"data: object，用户",
+		"data.id: string，用户编号",
+		"data.name: string",
+		"data.tags: array<object>",
+		"data.tags[].label: string，标签",
+		"status: string，可选 open、closed，状态",
+		"meta: object",
+		"meta.*: object",
+		"meta.*.k: string，键",
+	} {
+		if !strings.Contains(user.Description, want) {
+			t.Fatalf("getUser description missing %q:\n%s", want, user.Description)
+		}
+	}
+
+	items := findRoute(t, tools, "listItems")
+	for _, want := range []string{
+		"返回字段：",
+		"（按文档示例）",
+		"id: integer",
+		"name: string",
+		"profile: object",
+		"profile.city: string",
+	} {
+		if !strings.Contains(items.Description, want) {
+			t.Fatalf("listItems description missing %q:\n%s", want, items.Description)
+		}
+	}
+}
+
+func TestLoadToolsResponseWithoutSchemaUnchanged(t *testing.T) {
+	spec := []byte(`openapi: "3.0.3"
+info: {title: t, version: "1"}
+paths:
+  /ping:
+    get:
+      operationId: ping
+      summary: 健康检查
+      responses:
+        "200": {description: ok}
+`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := findRoute(t, tools, "ping")
+	if route.Description != "健康检查" {
+		t.Fatalf("description=%q", route.Description)
 	}
 }
 

@@ -80,7 +80,17 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 	sort.Strings(requireLogin)
 	// Headers are applied only via InvokeWithHeaders overlay so conversation
 	// paths can omit connector defaults without inv.Headers falling through.
-	inv := &Invoker{BaseURL: opts.BaseURL, Tools: routes}
+	inv := &Invoker{
+		BaseURL: opts.BaseURL,
+		Tools:   routes,
+		LoginSignals: tool.LoginSignals{
+			HTTPStatuses:           append([]int(nil), opts.Auth.LoginSignals.HTTPStatuses...),
+			HTTPStatusesNeedSignal: append([]int(nil), opts.Auth.LoginSignals.HTTPStatusesNeedSignal...),
+			BodyCodePath:           opts.Auth.LoginSignals.BodyCodePath,
+			BodyCodes:              append([]string(nil), opts.Auth.LoginSignals.BodyCodes...),
+			MessageContains:        append([]string(nil), opts.Auth.LoginSignals.MessageContains...),
+		},
+	}
 	for _, route := range routes {
 		route := route
 		name := route.Name
@@ -158,14 +168,10 @@ func RegisterWithOpts(st store.Store, reg *tool.Registry, opts RegisterOpts) (st
 			}
 			// Expired / rejected credentials often surface as raw 401; remap so Chat
 			// ToolCard shows「浏览器登录」instead of only a dead error payload.
-			if conv != "" && out.IsError && LooksLikeAuthFailure(out.Content) {
-				msg := "登录已失效或未登录，请点击「浏览器登录」、「忽略当前步骤」或「忽略此系统」"
-				if m, ok := out.Content["message"].(string); ok {
-					if t := strings.TrimSpace(m); t != "" {
-						msg = t + " — 请点击「浏览器登录」、「忽略当前步骤」或「忽略此系统」"
-					}
+			if conv != "" && out.IsError {
+				if remapped, ok := tool.RemapAuthFailureContent(out.Content, inv.LoginSignals, opts.ID); ok {
+					return remapped, true, nil
 				}
-				return tool.LoginRequiredContentMsg(msg), true, nil
 			}
 			if usedID != "" && opts.Identities != nil {
 				_ = opts.Identities.Touch(identity.KeyFrom(ctx), usedID)

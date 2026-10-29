@@ -4,7 +4,20 @@ import (
 	"strings"
 
 	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/tool"
 )
+
+// LoginSignalsFromAuth converts stored connector login_signals into the matcher shape.
+func LoginSignalsFromAuth(a store.LoginSignalsAuth) tool.LoginSignals {
+	return tool.LoginSignals{
+		HTTPStatuses:           append([]int(nil), a.HTTPStatuses...),
+		HTTPStatusesNeedSignal: append([]int(nil), a.HTTPStatusesNeedSignal...),
+		BodyCodePath:           a.BodyCodePath,
+		BodyCodes:              append([]string(nil), a.BodyCodes...),
+		MessageContains:        append([]string(nil), a.MessageContains...),
+	}
+}
 
 // CaptureDefaults fills open-box login capture when config omits capture.
 // default.local.yaml often only sets auth.static; without defaults, login never persists.

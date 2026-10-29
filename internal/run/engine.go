@@ -687,19 +687,11 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 				chatCtx = llm.WithThinkingLevel(chatCtx, rec.ThinkingLevel)
 			}
 		}
-		// Upsert (not append): one thinking/content delta per turn keeps the live
-		// typewriter without stacking a full cumulative snapshot every coalesce tick.
-		co := llm.NewCoalescer(100*time.Millisecond, func(s string) {
-			_, _ = e.Store.UpsertStreamingDelta(runID, store.Event{
-				Type: EventLLMThinkingDelta,
-				Data: map[string]any{"turn": turn, "text": s},
-			})
-		}, func(s string) {
-			_, _ = e.Store.UpsertStreamingDelta(runID, store.Event{
-				Type: EventLLMContentDelta,
-				Data: map[string]any{"turn": turn, "text": s},
-			})
-		})
+		// Upsert off the SSE read loop: one thinking/content delta per turn.
+		// Pump must not block token reads — sync SQLite upserts were slower than
+		// the model and made Flash feel capped vs other agents.
+		pump := newStreamDeltaPump(e.Store, runID, turn)
+		co := llm.NewCoalescer(0, pump.Think, pump.Content)
 		var msg llm.Message
 		var err error
 		// DP-2b: when an enum constraint is requested (enforce mode), prefer
@@ -734,6 +726,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			msg, err = e.LLM.Chat(chatCtx, messages, specs)
 		}
 		co.Flush()
+		pump.Close()
 		if err != nil {
 			if ctx.Err() != nil || e.isCancelled(runID) {
 				return context.Canceled

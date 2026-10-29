@@ -237,6 +237,7 @@ export function mergeAuthWithHostedLogin(
   if (base?.passthrough) auth.passthrough = { ...base.passthrough }
   if (base?.vault_ref) auth.vault_ref = { ...base.vault_ref }
   if (base?.capture) auth.capture = { ...base.capture }
+  if (base?.login_signals) auth.login_signals = { ...base.login_signals }
   const config = buildHostedLoginFromDraft(draft)
   if (configIsMeaningful(config)) {
     auth.hosted_login = config

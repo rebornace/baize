@@ -11,6 +11,7 @@ export interface RuntimeKnobs {
   compact_keep_recent: number
   compact_summary_timeout_seconds: number
   context_projection_enabled: boolean
+  context_offload_enabled: boolean
   active_goal_enabled: boolean
   active_goal_max_depth: number
   active_goal_max_text_runes: number
@@ -66,6 +67,7 @@ export type RuntimeKnobsPatch = Partial<{
   compact_keep_recent: number
   compact_summary_timeout_seconds: number
   context_projection_enabled: boolean
+  context_offload_enabled: boolean
   active_goal_enabled: boolean
   active_goal_max_depth: number
   active_goal_max_text_runes: number

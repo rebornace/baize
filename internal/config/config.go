@@ -97,6 +97,7 @@ type Config struct {
 				HeaderTemplate string   `yaml:"header_template"`
 				DefaultScheme  string   `yaml:"default_scheme"` // 空则注册时若仅一个 security scheme 则填入
 			} `yaml:"capture"`
+			LoginSignals store.LoginSignalsAuth `yaml:"login_signals"`
 		} `yaml:"auth"`
 		TLS store.ConnectorTLS `yaml:"tls"`
 	} `yaml:"connector"`
