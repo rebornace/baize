@@ -94,7 +94,7 @@ describe('OpenApiSettings page', () => {
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'openapi', spec_url: 'https://api.example.com/openapi.json' })
     // 高级区默认回传空 capture（mode=static），便于后端按显式字段落库/清空
-    expect(first.auth).toEqual({ mode: 'static', capture: {} })
+    expect(first.auth).toEqual({ mode: 'static', capture: {}, login_signals: {} })
     expect(host.textContent).not.toContain('工具权限')
     expect(host.textContent).toContain('已保存')
   })
@@ -118,7 +118,7 @@ describe('OpenApiSettings page', () => {
       base_url: 'https://api.example.com',
       spec_url: 'https://api.example.com/openapi.json',
     })
-    expect(first.auth).toEqual({ mode: 'static', capture: {} })
+    expect(first.auth).toEqual({ mode: 'static', capture: {}, login_signals: {} })
     expect(first.spec_content).toBeUndefined()
     expect(host.textContent).not.toContain('工具权限')
   })

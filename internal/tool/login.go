@@ -343,4 +343,3 @@ func RemapAuthFailureContent(content map[string]any, signals LoginSignals, conne
 	}
 	return out, true
 }
-

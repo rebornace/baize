@@ -15,7 +15,7 @@ import (
 const (
 	// Prefer a longer in-prompt preview so the model can often answer without
 	// an extra read_file round-trip (speed over maximum context savings).
-	offloadPreviewRunes = 2000
+	offloadPreviewRunes   = 2000
 	EventContextOffloaded = "context.offloaded"
 	// PasteOffloadThreshold is the rune count at which paste/attachment text
 	// is written to the workspace and replaced with a model-facing stub (AC-04).
@@ -32,7 +32,7 @@ type OffloadFileWriter interface {
 }
 
 const (
-	offloadHeaderOK = "[结果较大，已卸出到工作区。请优先根据下方预览直接作答；仅当预览缺少必要字段时再用 read_file 读取 path]"
+	offloadHeaderOK    = "[结果较大，已卸出到工作区。请优先根据下方预览直接作答；仅当预览缺少必要字段时再用 read_file 读取 path]"
 	offloadHeaderError = "[错误结果较大，已卸出到工作区。请优先根据下方预览判断；仅当预览不够时再用 read_file 读取 path]"
 )
 

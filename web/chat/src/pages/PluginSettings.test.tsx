@@ -58,7 +58,7 @@ describe('PluginSettings page', () => {
     const first = JSON.parse((puts[0][1] as RequestInit).body as string)
     expect(first).toMatchObject({ type: 'http', base_url: 'http://127.0.0.1:19090' })
     // 高级区默认回传空 capture（mode=static）
-    expect(first.auth).toEqual({ mode: 'static', capture: {} })
+    expect(first.auth).toEqual({ mode: 'static', capture: {}, login_signals: {} })
     expect(host.textContent).not.toContain('工具权限')
     expect(host.textContent).toContain('已保存')
   })
