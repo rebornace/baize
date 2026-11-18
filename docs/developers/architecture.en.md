@@ -86,7 +86,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 - **Context offload:** oversized tool results or user pastes can land in conversation workspace `offload/`; the model sees preview + path and may `read_file` chunks. Event/bubble storage may still keep full text per policy.
 - **Model-facing projection** (Runtime “keep important facts in long chats”, default off): edits only the projection fed to the model (pin / summary / drop bulky tool results); it does **not** rewrite `conversation.Messages`. Fail-open to the Compactor. Does not promise lower cloud API tokens.
 - **Rolling summary (Compactor):** when over budget, older turns become a structured checkpoint (goal, progress, decisions, facts to keep). Raw messages stay; the prompt must not encode a global “do this before exploring” policy.
-- **Schedules:** after human approval, save one-shot / daily / weekly instructions; at fire time start a new Run on the same conversation; write tools still HITL. Per-account isolation in Settings → Schedules.
+- **Schedules:** after human approval, save one-shot / daily / weekly instructions; at fire time start a new Run on the same conversation; write tools still HITL. Per-account isolation in Settings → Schedules. A schedule skips its tick while the previous Run is not terminal; if that Run is waiting for approval it keeps skipping, and Settings → Schedules shows “Paused · awaiting approval” with a shortcut back to the conversation. WebUI conversations have no approval push.
 
 ## Agent run shapes
 
@@ -103,3 +103,10 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry.
 
 When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.
+
+## Known limits
+
+- **Workflow step approvals hold a worker slot:** an `approve: true` step in `workflow.yaml` blocks, so the Run keeps its lease and worker slot until a human approves or rejects; approvals have no automatic timeout. After a process restart such a Run cannot cold-resume and fails with a "re-run" message. Avoid stacking several pending workflow approvals when concurrency is tight, and avoid restarts while they wait.
+- **Multi-replica schedule claim window:** every replica runs the 15-second schedule scan, and a starting process clears all `running_run_id=pending` placeholders. If another replica is between `ClaimDue` and `CompleteOpen`, a run can be opened twice. Single-replica deployments are unaffected; with multiple replicas, avoid restarting them at the same time.
+- **Memory does not overwrite same-key entries:** auto-extraction skips a `key` that already exists instead of rewriting it. To correct or update, use explicit memory (`remember_fact`) or edit the entry in Settings → Memory.
+- **Scheduled Runs carry no origin marker:** a due Run's input is the schedule instruction verbatim, so history cannot tell it from a human message and the model does not know the turn was timer-triggered. There is no "stay quiet when nothing is new" behavior yet.

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api'
 import { SCHEDULE } from '../strings'
@@ -8,13 +9,25 @@ import { ScheduleSettings } from './ScheduleSettings'
 
 const CONV_KEY = 'baize.conversation_id'
 
-async function renderSchedule() {
+const settingsRoutes = createElement(
+  Routes,
+  null,
+  createElement(Route, { path: '/', element: createElement('div', null, 'chat-home') }),
+  createElement(Route, {
+    path: '/settings/schedules',
+    element: createElement(ScheduleSettings),
+  }),
+)
+
+async function renderSchedule(items: api.ScheduleEntry[] = []) {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
-  vi.spyOn(api, 'listSchedules').mockResolvedValue([])
+  vi.spyOn(api, 'listSchedules').mockResolvedValue(items)
   await act(async () => {
-    root.render(createElement(ScheduleSettings))
+    root.render(
+      createElement(MemoryRouter, { initialEntries: ['/settings/schedules'] }, settingsRoutes),
+    )
     await new Promise((r) => setTimeout(r, 0))
     await new Promise((r) => setTimeout(r, 0))
   })
@@ -228,7 +241,9 @@ describe('ScheduleSettings', () => {
     document.body.appendChild(host)
     const root = createRoot(host)
     await act(async () => {
-      root.render(createElement(ScheduleSettings))
+      root.render(
+        createElement(MemoryRouter, { initialEntries: ['/settings/schedules'] }, settingsRoutes),
+      )
       await new Promise((r) => setTimeout(r, 0))
       await new Promise((r) => setTimeout(r, 0))
     })
@@ -244,6 +259,98 @@ describe('ScheduleSettings', () => {
     })
 
     expect(pauseSpy).toHaveBeenCalledWith('sch_1')
+
+    root.unmount()
+    host.remove()
+  })
+
+  it('shows a blocked badge and opens the conversation from the action', async () => {
+    const { host, root } = await renderSchedule([
+      {
+        id: 'sch_1',
+        owner_id: 'alice',
+        conversation_id: 'conv_2',
+        instruction: '每日报表',
+        kind: 'daily',
+        timezone: 'Asia/Shanghai',
+        time_of_day: '09:00',
+        status: 'active',
+        next_run_at: '2026-11-19T01:00:00Z',
+        revision: 2,
+        blocked_reason: 'awaiting_approval',
+      },
+    ])
+
+    expect(host.textContent).toContain('等待审批')
+    const open = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('去处理'),
+    )
+    expect(open).toBeTruthy()
+
+    await act(async () => {
+      open!.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    expect(localStorage.getItem(CONV_KEY)).toBe('conv_2')
+    expect(host.textContent).toContain('chat-home')
+
+    root.unmount()
+    host.remove()
+  })
+
+  it('renders each blocked reason label', async () => {
+    const cases: Array<[string, string]> = [
+      ['awaiting_approval', '等待审批'],
+      ['awaiting_login', '等待登录'],
+      ['waiting_child', '等待子任务'],
+      ['awaiting_input', '等待处理'],
+      ['run_unavailable', '运行记录不可用'],
+    ]
+    for (const [reason, label] of cases) {
+      vi.restoreAllMocks()
+      const { host, root } = await renderSchedule([
+        {
+          id: 'sch_1',
+          owner_id: 'alice',
+          conversation_id: 'conv_2',
+          instruction: '每日报表',
+          kind: 'daily',
+          timezone: 'Asia/Shanghai',
+          time_of_day: '09:00',
+          status: 'active',
+          next_run_at: '2026-11-19T01:00:00Z',
+          revision: 2,
+          blocked_reason: reason,
+        },
+      ])
+      expect(host.textContent).toContain(label)
+      root.unmount()
+      host.remove()
+    }
+  })
+
+  it('hides the open action when the schedule is not blocked', async () => {
+    const { host, root } = await renderSchedule([
+      {
+        id: 'sch_1',
+        owner_id: 'alice',
+        conversation_id: 'conv_2',
+        instruction: '每日报表',
+        kind: 'daily',
+        timezone: 'Asia/Shanghai',
+        time_of_day: '09:00',
+        status: 'active',
+        next_run_at: '2026-11-19T01:00:00Z',
+        revision: 1,
+      },
+    ])
+
+    expect(host.textContent).not.toContain('等待审批')
+    const open = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('去处理'),
+    )
+    expect(open).toBeUndefined()
 
     root.unmount()
     host.remove()

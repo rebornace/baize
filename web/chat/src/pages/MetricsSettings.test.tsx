@@ -71,7 +71,7 @@ describe('MetricsSettings', () => {
       new ApiError(403, 'forbidden', 'HTTP 403: forbidden'),
     )
     await renderPage()
-    expect(host.textContent).toMatch(/没有访问权限|登录已失效|No access|unauthorized|session expired/i)
+    expect(host.textContent).toMatch(/没有.*权限|No access|not allowed|unauthorized|session expired/i)
   })
 
   it('switches to logs tab and loads recent lines', async () => {

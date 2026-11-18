@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { CalendarClock } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import {
   createSchedule,
   deleteSchedule,
@@ -9,6 +10,7 @@ import {
   type ScheduleEntry,
 } from '../api'
 import {
+  Badge,
   Button,
   ConfirmDialog,
   EmptyState,
@@ -55,8 +57,26 @@ function statusLabel(status: string): string {
   }
 }
 
+function blockedLabel(reason?: string): string | null {
+  switch (reason) {
+    case 'awaiting_approval':
+      return SCHEDULE.blockedAwaitingApproval
+    case 'awaiting_login':
+      return SCHEDULE.blockedAwaitingLogin
+    case 'waiting_child':
+      return SCHEDULE.blockedWaitingChild
+    case 'awaiting_input':
+      return SCHEDULE.blockedAwaitingInput
+    case 'run_unavailable':
+      return SCHEDULE.blockedRunUnavailable
+    default:
+      return null
+  }
+}
+
 export function ScheduleSettings() {
   const { toasts, push, dismiss } = useToast()
+  const navigate = useNavigate()
   const [conversationId] = useState(loadConversationId)
   const [items, setItems] = useState<ScheduleEntry[] | null>(null)
   const [kind, setKind] = useState<ScheduleKind>('daily')
@@ -265,9 +285,28 @@ export function ScheduleSettings() {
                     {entry.weekday ? ` · ${SCHEDULE.weekdayOption(entry.weekday)}` : ''}
                     {' · '}
                     {statusLabel(entry.status)}
+                    {blockedLabel(entry.blocked_reason) && (
+                      <>
+                        {' · '}
+                        <Badge tone="warning">{blockedLabel(entry.blocked_reason)}</Badge>
+                      </>
+                    )}
                   </p>
                 </div>
                 <div className="accounts-actions">
+                  {blockedLabel(entry.blocked_reason) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        localStorage.setItem(CONV_KEY, entry.conversation_id)
+                        navigate('/')
+                      }}
+                    >
+                      {SCHEDULE.blockedGoHandle}
+                    </Button>
+                  )}
                   {entry.status === 'active' && (
                     <Button
                       type="button"

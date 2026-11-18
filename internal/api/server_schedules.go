@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/schedule"
+	"github.com/rebornace/baize/internal/store"
 )
 
 type scheduleItemJSON struct {
@@ -24,6 +25,7 @@ type scheduleItemJSON struct {
 	NextRunAt      string `json:"next_run_at"`
 	RunningRunID   string `json:"running_run_id,omitempty"`
 	LastError      string `json:"last_error,omitempty"`
+	BlockedReason  string `json:"blocked_reason,omitempty"`
 	Revision       int    `json:"revision"`
 }
 
@@ -78,9 +80,42 @@ func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]scheduleItemJSON, 0, len(items))
 	for _, it := range items {
-		out = append(out, scheduleItemToJSON(it))
+		item := scheduleItemToJSON(it)
+		item.BlockedReason = s.scheduleBlockedReason(it)
+		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// scheduleBlockedReason derives why an active schedule is not firing even
+// though it is due. It is read-only: lookups fail soft so the list never 500s.
+func (s *Server) scheduleBlockedReason(it schedule.Item) string {
+	if it.Status != schedule.StatusActive {
+		return ""
+	}
+	runID := strings.TrimSpace(it.RunningRunID)
+	if runID == "" || runID == schedule.ClaimPending || s.Store == nil {
+		return ""
+	}
+	runRec, err := s.Store.GetRun(runID)
+	if err != nil || runRec == nil {
+		return "run_unavailable"
+	}
+	if runRec.Status != store.StatusWaitingHuman {
+		return ""
+	}
+	payload, err := s.Store.GetHITL(runID)
+	if err != nil || payload == nil {
+		return "awaiting_input"
+	}
+	switch payload.Kind {
+	case store.HITLKindWaitingChild:
+		return "waiting_child"
+	case store.HITLKindLogin:
+		return "awaiting_login"
+	default: // approval or empty kind
+		return "awaiting_approval"
+	}
 }
 
 func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {

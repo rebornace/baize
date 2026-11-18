@@ -10,6 +10,7 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/controlplane"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/runtimecfg"
 	"github.com/rebornace/baize/internal/store"
@@ -133,6 +134,16 @@ func TestGateOperatorForbiddenOnAdminRoutes(t *testing.T) {
 		t.Fatalf("POST runs must not be blocked for operator: code=%d %s", rr.Code, rr.Body.String())
 	}
 
+	// The Chat UI's Stop button posts to /cancel; an operator must be able to
+	// stop their own run instead of falling into the default admin rule.
+	req = httptest.NewRequest(http.MethodPost, "/v0/runs/run_missing/cancel", nil)
+	auth(req)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code == 401 || rr.Code == 403 {
+		t.Fatalf("POST cancel must not be blocked for operator: code=%d %s", rr.Code, rr.Body.String())
+	}
+
 	// P2 设置信息架构：GET /v0/tools 已降为 RoleOperator，运营可只读工具列表。
 	req = httptest.NewRequest(http.MethodGet, "/v0/tools", nil)
 	auth(req)
@@ -149,6 +160,39 @@ func TestGateOperatorForbiddenOnAdminRoutes(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != 403 || !strings.Contains(rr.Body.String(), "需要管理员口令") {
 		t.Fatalf("PUT connector=%d %s", rr.Code, rr.Body.String())
+	}
+}
+
+// Operators own their conversations, so the Active Goal API must be reachable
+// with an operator token; otherwise the Chat UI shows "目标加载失败".
+func TestGateOperatorCanUseGoalAPI(t *testing.T) {
+	st := store.NewMemory()
+	msgs := conversation.NewMemoryStore()
+	srv := NewServer(st, tool.NewRegistry(), &gateFakeRunner{store: st})
+	srv.Messages = msgs
+	srv.OperatorToken = "op"
+	srv.DefaultAgentID = "a"
+	if err := msgs.EnsureMeta(conversation.Meta{ID: "c1", OwnerID: "operator"}); err != nil {
+		t.Fatalf("ensure meta: %v", err)
+	}
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/goal", nil)
+	req.Header.Set("Authorization", "Bearer op")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("operator GET goal: code=%d %s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/v0/conversations/c1/goal",
+		strings.NewReader(`{"text":"完成季度复盘"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer op")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("operator PUT goal: code=%d %s", rr.Code, rr.Body.String())
 	}
 }
 

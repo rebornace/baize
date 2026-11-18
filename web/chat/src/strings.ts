@@ -86,8 +86,11 @@ export function friendlyError(e: unknown): FriendlyError {
   if (e instanceof ApiError) {
     const codeTitle = (p.CODE_TITLE as Record<string, string>)[e.code]
     if (codeTitle) return { title: codeTitle }
-    if (e.status === 401 || e.status === 403) {
+    if (e.status === 401) {
       return { title: p.ERRORS.unauthorized }
+    }
+    if (e.status === 403) {
+      return { title: p.ERRORS.forbidden }
     }
     if (e.status >= 500) {
       return { title: p.CODE_TITLE.internal_error, detail: `${e.code}: ${e.message}` }
