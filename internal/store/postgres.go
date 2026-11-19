@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS runs (
   output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
   conversation_id TEXT, identity_id TEXT,
   passthrough_json TEXT, webhook_json TEXT, model_profile_id TEXT,
-  lease_until TIMESTAMPTZ
+  lease_until TIMESTAMPTZ,
+  origin TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY,
@@ -278,6 +279,7 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS group_id TEXT`,
 		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS spawn_mode TEXT`,
 		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS origin TEXT`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			_ = db.Close()

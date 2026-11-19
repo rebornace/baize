@@ -29,6 +29,27 @@ func postRun(t *testing.T, srv *Server, body string) *httptest.ResponseRecorder 
 	return rr
 }
 
+func TestPostRunDefaultsManualOrigin(t *testing.T) {
+	srv := runGuardServer(t)
+	rr := postRun(t, srv, `{"agent_id":"a","input":"hi","conversation_id":"c-manual"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := srv.Store.GetRun(body.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Origin != store.RunOriginManual {
+		t.Fatalf("origin=%q want %q", rec.Origin, store.RunOriginManual)
+	}
+}
+
 func TestPostRunRejectsBusyConversation(t *testing.T) {
 	srv := runGuardServer(t)
 	active, err := srv.Store.CreateRun(store.CreateRunInput{

@@ -397,6 +397,8 @@ type Run struct {
 	GroupID string `json:"group_id,omitempty"`
 	// SpawnMode is readonly|readwrite for scoped children.
 	SpawnMode string `json:"spawn_mode,omitempty"`
+	// Origin marks who opened the run: manual (default) or scheduled.
+	Origin string `json:"origin,omitempty"`
 }
 
 // reconcileGrace is how long a queued/running run may go without a lease
@@ -418,6 +420,7 @@ type CreateRunInput struct {
 	Depth              int
 	GroupID            string
 	SpawnMode          string
+	Origin             string
 }
 
 // HITL kinds. Empty / "approval" = tool approval; "login" = wait for browser login or skip.
@@ -431,6 +434,12 @@ const (
 const (
 	SpawnModeReadonly  = "readonly"
 	SpawnModeReadwrite = "readwrite"
+)
+
+// Run origins.
+const (
+	RunOriginManual    = "manual"
+	RunOriginScheduled = "scheduled"
 )
 
 type HITLPayload struct {

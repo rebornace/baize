@@ -22,6 +22,8 @@ export interface Run {
   depth?: number
   group_id?: string
   spawn_mode?: string
+  /** manual | scheduled; old rows may omit it. */
+  origin?: string
 }
 
 export interface Event {

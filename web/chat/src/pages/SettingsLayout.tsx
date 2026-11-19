@@ -7,6 +7,7 @@ import { useGate } from '../gateContext'
 import { useLocale } from '../locale/LocaleContext'
 import { OVERVIEW_ITEM, SETTINGS_GROUPS, visibleNavItems } from '../settingsNav'
 import { useDrawer } from '../useDrawer'
+import { FeatureSearchButton } from '../components/FeatureSearch'
 
 export function SettingsLayout() {
   const { role } = useGate()
@@ -25,6 +26,7 @@ export function SettingsLayout() {
       />
       <aside className="settings-nav" aria-label={navCopy.navAria}>
         <p className="settings-nav-title">{navCopy.title}</p>
+        <FeatureSearchButton className="settings-search" />
         <nav className="settings-nav-list">
           <NavLink
             to={OVERVIEW_ITEM.to}

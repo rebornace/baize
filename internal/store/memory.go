@@ -234,6 +234,7 @@ func (s *Memory) CreateRun(in CreateRunInput) (*Run, error) {
 		Depth:              in.Depth,
 		GroupID:            in.GroupID,
 		SpawnMode:          in.SpawnMode,
+		Origin:             in.Origin,
 	}
 	s.runs[id] = r
 	s.events[id] = nil

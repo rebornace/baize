@@ -11,7 +11,7 @@ import (
 
 // runSelectColumns is the canonical runs column order scanned by scanRunRow;
 // GetRun and ListRunsForReconcile must select exactly these columns in order.
-const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until, thinking_level, parent_run_id, depth, group_id, spawn_mode`
+const runSelectColumns = `id, agent_id, input, status, output, error, created_at, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, lease_until, thinking_level, parent_run_id, depth, group_id, spawn_mode, origin`
 
 // scanRunRow decodes one runs row selected via runSelectColumns.
 func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
@@ -21,10 +21,11 @@ func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	var parentRunID, groupID, spawnMode sql.NullString
 	var depth sql.NullInt64
 	var leaseUntil sql.NullTime
+	var origin sql.NullString
 	if err := sc.Scan(
 		&r.ID, &r.AgentID, &r.Input, &status, &r.Output, &r.Error, &createdAt,
 		&conversationID, &identityID, &passthroughSQL, &webhookSQL, &modelProfileID, &leaseUntil, &thinkingLevel,
-		&parentRunID, &depth, &groupID, &spawnMode,
+		&parentRunID, &depth, &groupID, &spawnMode, &origin,
 	); err != nil {
 		return nil, err
 	}
@@ -52,6 +53,9 @@ func scanRunRow(sc interface{ Scan(dest ...any) error }) (*Run, error) {
 	}
 	if spawnMode.Valid {
 		r.SpawnMode = spawnMode.String
+	}
+	if origin.Valid {
+		r.Origin = origin.String
 	}
 	if passthroughSQL.Valid && passthroughSQL.String != "" && passthroughSQL.String != "null" {
 		if err := json.Unmarshal([]byte(passthroughSQL.String), &r.PassthroughHeaders); err != nil {
@@ -115,6 +119,7 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		Depth:              in.Depth,
 		GroupID:            in.GroupID,
 		SpawnMode:          in.SpawnMode,
+		Origin:             in.Origin,
 	}
 	var passthroughSQL, webhookSQL sql.NullString
 	if len(r.PassthroughHeaders) > 0 {
@@ -132,11 +137,11 @@ func (s *SQLStore) CreateRun(in CreateRunInput) (*Run, error) {
 		webhookSQL = sql.NullString{String: string(b), Valid: true}
 	}
 	_, err := s.exec(
-		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, thinking_level, parent_run_id, depth, group_id, spawn_mode)
-		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO runs (id, agent_id, input, status, output, error, created_at, hitl_json, conversation_id, identity_id, passthrough_json, webhook_json, model_profile_id, thinking_level, parent_run_id, depth, group_id, spawn_mode, origin)
+		 VALUES (?, ?, ?, ?, '', '', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.AgentID, r.Input, string(r.Status), formatSQLiteTime(r.CreatedAt),
 		r.ConversationID, r.IdentityID, passthroughSQL, webhookSQL, r.ModelProfileID, r.ThinkingLevel,
-		nullIfEmpty(r.ParentRunID), r.Depth, nullIfEmpty(r.GroupID), nullIfEmpty(r.SpawnMode),
+		nullIfEmpty(r.ParentRunID), r.Depth, nullIfEmpty(r.GroupID), nullIfEmpty(r.SpawnMode), nullIfEmpty(r.Origin),
 	)
 	if err != nil {
 		return nil, err

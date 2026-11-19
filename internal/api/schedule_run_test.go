@@ -69,6 +69,9 @@ func TestScheduleRunOpenCopiesLatestRun(t *testing.T) {
 	if got.Input != "喝水" || got.AgentID != "agent-a" {
 		t.Fatalf("run=%+v", got)
 	}
+	if got.Origin != store.RunOriginScheduled {
+		t.Fatalf("origin=%q want %q", got.Origin, store.RunOriginScheduled)
+	}
 	if got.IdentityID != "id-1" || got.ModelProfileID != "mp-1" || got.ThinkingLevel != store.ThinkingLow {
 		t.Fatalf("identity/model/thinking=%+v", got)
 	}

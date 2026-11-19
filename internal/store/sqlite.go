@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
   output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
   conversation_id TEXT, identity_id TEXT,
-  lease_until TIMESTAMP
+  lease_until TIMESTAMP,
+  origin TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,7 +340,7 @@ func OpenSQLite(path string) (*SQLite, error) {
 // migrateRunsColumns adds conversation_id / identity_id / passthrough_json to
 // existing DBs. Duplicate-column errors from ALTER are ignored.
 func migrateRunsColumns(db *sql.DB) error {
-	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id", "thinking_level", "parent_run_id", "group_id", "spawn_mode"} {
+	for _, col := range []string{"conversation_id", "identity_id", "passthrough_json", "webhook_json", "model_profile_id", "thinking_level", "parent_run_id", "group_id", "spawn_mode", "origin"} {
 		_, err := db.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`)
 		if err == nil || isDuplicateColumnErr(err) {
 			continue

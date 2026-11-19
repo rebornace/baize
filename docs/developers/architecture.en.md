@@ -86,7 +86,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 - **Context offload:** oversized tool results or user pastes can land in conversation workspace `offload/`; the model sees preview + path and may `read_file` chunks. Event/bubble storage may still keep full text per policy.
 - **Model-facing projection** (Runtime “keep important facts in long chats”, default off): edits only the projection fed to the model (pin / summary / drop bulky tool results); it does **not** rewrite `conversation.Messages`. Fail-open to the Compactor. Does not promise lower cloud API tokens.
 - **Rolling summary (Compactor):** when over budget, older turns become a structured checkpoint (goal, progress, decisions, facts to keep). Raw messages stay; the prompt must not encode a global “do this before exploring” policy.
-- **Schedules:** after human approval, save one-shot / daily / weekly instructions; at fire time start a new Run on the same conversation; write tools still HITL. Per-account isolation in Settings → Schedules. A schedule skips its tick while the previous Run is not terminal; if that Run is waiting for approval it keeps skipping, and Settings → Schedules shows “Paused · awaiting approval” with a shortcut back to the conversation. WebUI conversations have no approval push.
+- **Schedules:** after human approval, save one-shot / daily / weekly instructions; at fire time start a new Run on the same conversation; write tools still HITL. Per-account isolation in Settings → Schedules. A schedule skips its tick while the previous Run is not terminal; if that Run is waiting for approval it keeps skipping, and Settings → Schedules shows “Paused · awaiting approval” with a shortcut back to the conversation. WebUI conversations have no approval push. Scheduled Runs carry `origin=scheduled`; the model can reply `NO_UPDATE` to finish silently (WebUI note, no channel delivery).
 
 ## Agent run shapes
 
@@ -107,6 +107,20 @@ When downstream login is required (`login_required`), chat can pause with a host
 ## Write honesty
 
 If a succeeded Run made no `llm.tool_call` at all but its final reply claims a completed write (“created / copied / updated / deleted”), the engine appends a `run.unverified_write` event and the system note “This turn called no tools, but the reply claims a write completed. Please verify.” The Run stays `succeeded`; the assistant text and `output` are unchanged. Any tool call suppresses the check (v1 boundary).
+
+## Scheduled origin and silence
+
+Runs opened by a schedule persist `origin=scheduled`; the system prompt asks the model to reply with only `NO_UPDATE` when nothing new happened. If the trimmed final reply (ignoring trailing punctuation) equals `NO_UPDATE`:
+
+- the Run stays `succeeded` with an empty `output` and a `run.silent` event;
+- no assistant message, no channel delivery, no memory extraction;
+- the WebUI adds the system note “Scheduled check: nothing new.”
+
+A manual Run's `NO_UPDATE` is a normal reply. `waiting_child`, failed and cancelled runs are unaffected.
+
+## Feature search
+
+The WebUI sidebars expose “Search features” / `Ctrl/Cmd+K` / `/`. Settings pages are indexed from `settingsNav` and navigate directly; chat actions (run binding, regenerate, approve/login, etc.) show a location hint without executing anything.
 
 ## Known limits
 

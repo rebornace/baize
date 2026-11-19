@@ -41,6 +41,17 @@ function modeLabel(mode?: string): string {
   return ''
 }
 
+function originLabel(origin: string): string {
+  switch (origin) {
+    case 'manual':
+      return CHAT.bindingOriginManual
+    case 'scheduled':
+      return CHAT.bindingOriginScheduled
+    default:
+      return CHAT.bindingOriginOther(origin)
+  }
+}
+
 function childCaption(child: Run): string {
   const group = (child.group_id ?? '').trim()
   const mode = modeLabel(child.spawn_mode)
@@ -55,6 +66,7 @@ export function RunBindingButton({ runId }: RunBindingButtonProps) {
   const [jsonText, setJsonText] = useState('')
   const [hidden, setHidden] = useState(false)
   const [viewRunId, setViewRunId] = useState(runId)
+  const [viewOrigin, setViewOrigin] = useState('')
   const [parentRunId, setParentRunId] = useState<string | null>(null)
   const [children, setChildren] = useState<Run[]>([])
   const [navHint, setNavHint] = useState<string | null>(null)
@@ -70,6 +82,8 @@ export function RunBindingButton({ runId }: RunBindingButtonProps) {
       ])
       setJsonText(JSON.stringify(bindingBody.binding ?? bindingBody, null, 2))
       setViewRunId(targetId)
+      // Old runs predate the origin field; the spec treats them as manual.
+      setViewOrigin(runRec ? ((runRec.origin ?? '').trim() || 'manual') : '')
 
       const parentId = (runRec?.parent_run_id ?? '').trim()
       setParentRunId(parentId || null)
@@ -106,6 +120,7 @@ export function RunBindingButton({ runId }: RunBindingButtonProps) {
 
   const openBinding = async () => {
     setViewRunId(runId)
+    setViewOrigin('')
     setParentRunId(null)
     setChildren([])
     await loadBindingFor(runId, { hideOnMissing: true })
@@ -145,6 +160,11 @@ export function RunBindingButton({ runId }: RunBindingButtonProps) {
         <p className="settings-muted" data-testid="run-binding-viewing">
           {CHAT.bindingViewingRun(shortRunId(viewRunId))}
         </p>
+        {viewOrigin ? (
+          <p className="settings-muted" data-testid="run-binding-origin">
+            {CHAT.bindingOrigin} {originLabel(viewOrigin)}
+          </p>
+        ) : null}
         {showNav ? (
           <div className="run-binding-nav" data-testid="run-binding-nav">
             {parentRunId ? (

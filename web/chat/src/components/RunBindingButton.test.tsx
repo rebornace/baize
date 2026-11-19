@@ -41,6 +41,45 @@ function render(el: ReactNode) {
 }
 
 describe('RunBindingButton', () => {
+  it('defaults a missing origin to manual for old runs', async () => {
+    vi.mocked(getRunBinding).mockResolvedValue({ run_id: 'r1', binding: { model_profile_id: 'mp1' } })
+    vi.mocked(getRun).mockResolvedValue({
+      id: 'r1',
+      agent_id: 'a',
+      input: 'x',
+      status: 'succeeded',
+      created_at: '2026-01-01T00:00:00Z',
+    })
+    render(<RunBindingButton runId="r1" />)
+    const btn = host.querySelector('[data-testid="run-binding-open"]') as HTMLButtonElement
+    await act(async () => {
+      btn.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    const origin = host.querySelector('[data-testid="run-binding-origin"]')
+    expect(origin?.textContent).toContain('手动')
+  })
+
+  it('shows scheduled origin in the modal', async () => {
+    vi.mocked(getRunBinding).mockResolvedValue({ run_id: 'r1', binding: { model_profile_id: 'mp1' } })
+    vi.mocked(getRun).mockResolvedValue({
+      id: 'r1',
+      agent_id: 'a',
+      input: 'x',
+      status: 'succeeded',
+      created_at: '2026-01-01T00:00:00Z',
+      origin: 'scheduled',
+    })
+    render(<RunBindingButton runId="r1" />)
+    const btn = host.querySelector('[data-testid="run-binding-open"]') as HTMLButtonElement
+    await act(async () => {
+      btn.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    const origin = host.querySelector('[data-testid="run-binding-origin"]')
+    expect(origin?.textContent).toContain('定时')
+  })
+
   it('opens modal with pretty JSON on success', async () => {
     vi.mocked(getRunBinding).mockResolvedValue({
       run_id: 'r1',

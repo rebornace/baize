@@ -24,6 +24,7 @@ type startRunInput struct {
 	ThinkingLevel                              string // empty = profile default
 	WorkspaceID                                string
 	Locale                                     string // UI locale for skill bodies (en / zh-CN)
+	Origin                                     string // empty = manual
 	// BubbleContent is the exact text persisted to the conversation message
 	// for display. It may carry UI-only attachment reference lines
 	// (![图片](…)/[file:…](…)) that must not reach the model or a mirrored
@@ -76,6 +77,10 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		WebhookConfig:      in.Webhook,
 		ModelProfileID:     in.ModelProfileID,
 		ThinkingLevel:      in.ThinkingLevel,
+		Origin:             strings.TrimSpace(in.Origin),
+	}
+	if createIn.Origin == "" {
+		createIn.Origin = store.RunOriginManual
 	}
 
 	runRec, err := s.createRunIfIdle(conv, createIn)

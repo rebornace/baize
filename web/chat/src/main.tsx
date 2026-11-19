@@ -25,13 +25,15 @@ import { EvalSettings } from './pages/EvalSettings'
 import { ToolsSettings } from './pages/ToolsSettings'
 import { WeixinChannelSettings } from './pages/WeixinChannelSettings'
 import { ExternalLoginSettings } from './pages/ExternalLoginSettings'
+import { LocaleProvider } from './locale/LocaleContext'
+import { FeatureSearchProvider } from './components/FeatureSearch'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/components.css'
 import './styles/layout.css'
 import './styles/settings.css'
 import './styles/chat.css'
-import { LocaleProvider } from './locale/LocaleContext'
+import './styles/feature-search.css'
 import { initSidebarWidth } from './sidebarResize'
 import { installApiOrigin } from './api/origin'
 import { routerBasename } from './routerBasename'
@@ -50,102 +52,104 @@ createRoot(document.getElementById('app')!).render(
     <BrowserRouter basename={routerBasename() || undefined}>
       <LocaleProvider>
       <GateRoot>
-        <Routes>
-          <Route path="/" element={<ChatPage />} />
-          <Route path="/settings" element={<SettingsLayout />}>
-            <Route index element={<SettingsHome />} />
-            <Route path="tools" element={<ToolsSettings />} />
-            <Route
-              path="openapi"
-              element={
-                <AdminOnly>
-                  <OpenApiSettings />
-                </AdminOnly>
-              }
-            />
-            <Route path="skills" element={<SkillsSettings />} />
-            <Route path="memory" element={<MemorySettings />} />
-            <Route path="schedules" element={<ScheduleSettings />} />
-            <Route path="identities" element={<IdentitiesSettings />} />
-            <Route
-              path="mcp"
-              element={
-                <AdminOnly>
-                  <McpSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="external-login"
-              element={
-                <AdminOnly>
-                  <ExternalLoginSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="mcp-export"
-              element={
-                <AdminOnly>
-                  <McpExportSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="plugins"
-              element={
-                <AdminOnly>
-                  <PluginSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="webhooks"
-              element={
-                <AdminOnly>
-                  <WebhookSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="inbox"
-              element={
-                <AdminOnly>
-                  <InboxSettings />
-                </AdminOnly>
-              }
-            />
-            <Route path="channels/weixin" element={<WeixinChannelSettings />} />
-            <Route path="models" element={<ModelSettings />} />
-            <Route
-              path="storage"
-              element={
-                <AdminOnly>
-                  <StorageSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="metrics"
-              element={
-                <AdminOnly>
-                  <MetricsSettings />
-                </AdminOnly>
-              }
-            />
-            <Route
-              path="eval"
-              element={
-                <AdminOnly>
-                  <EvalSettings />
-                </AdminOnly>
-              }
-            />
-            <Route path="runtime" element={<RuntimeSettings />} />
-            <Route path="tool-matching" element={<ToolMatchingSettings />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <FeatureSearchProvider>
+          <Routes>
+            <Route path="/" element={<ChatPage />} />
+            <Route path="/settings" element={<SettingsLayout />}>
+              <Route index element={<SettingsHome />} />
+              <Route path="tools" element={<ToolsSettings />} />
+              <Route
+                path="openapi"
+                element={
+                  <AdminOnly>
+                    <OpenApiSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route path="skills" element={<SkillsSettings />} />
+              <Route path="memory" element={<MemorySettings />} />
+              <Route path="schedules" element={<ScheduleSettings />} />
+              <Route path="identities" element={<IdentitiesSettings />} />
+              <Route
+                path="mcp"
+                element={
+                  <AdminOnly>
+                    <McpSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="external-login"
+                element={
+                  <AdminOnly>
+                    <ExternalLoginSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="mcp-export"
+                element={
+                  <AdminOnly>
+                    <McpExportSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="plugins"
+                element={
+                  <AdminOnly>
+                    <PluginSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="webhooks"
+                element={
+                  <AdminOnly>
+                    <WebhookSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="inbox"
+                element={
+                  <AdminOnly>
+                    <InboxSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route path="channels/weixin" element={<WeixinChannelSettings />} />
+              <Route path="models" element={<ModelSettings />} />
+              <Route
+                path="storage"
+                element={
+                  <AdminOnly>
+                    <StorageSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="metrics"
+                element={
+                  <AdminOnly>
+                    <MetricsSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route
+                path="eval"
+                element={
+                  <AdminOnly>
+                    <EvalSettings />
+                  </AdminOnly>
+                }
+              />
+              <Route path="runtime" element={<RuntimeSettings />} />
+              <Route path="tool-matching" element={<ToolMatchingSettings />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </FeatureSearchProvider>
       </GateRoot>
       </LocaleProvider>
     </BrowserRouter>

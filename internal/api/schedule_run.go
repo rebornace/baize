@@ -36,6 +36,7 @@ func (o ScheduleRunOpener) Open(conversationID, instruction, ownerID string) (st
 		IdentityID:     prev.IdentityID,
 		ModelProfileID: prev.ModelProfileID,
 		ThinkingLevel:  prev.ThinkingLevel,
+		Origin:         store.RunOriginScheduled,
 	})
 	if err != nil {
 		return "", err

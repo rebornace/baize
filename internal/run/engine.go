@@ -242,6 +242,7 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)
 	sys = e.appendActiveGoalHint(sys)
+	sys = e.appendScheduleHint(sys, runRec, opts.Locale)
 	if e.Compactor != nil && runRec.ConversationID != "" {
 		changed, cerr := e.Compactor.MaybeCompact(ctx, runRec.ConversationID, e.specsForRun(runID), runRec.ModelProfileID)
 		if cerr != nil {
@@ -591,6 +592,11 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, run.ConversationID)
 	sys = e.appendActiveGoalHint(sys)
+	locale := ""
+	if st := e.getRunSkillState(runID); st != nil {
+		locale = st.locale
+	}
+	sys = e.appendScheduleHint(sys, run, locale)
 	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
 }
@@ -618,6 +624,11 @@ func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, 
 	sys := e.composeSystem(ag.System, runID)
 	sys = e.appendSessionAuthHint(sys, run.ConversationID)
 	sys = e.appendActiveGoalHint(sys)
+	locale := ""
+	if st := e.getRunSkillState(runID); st != nil {
+		locale = st.locale
+	}
+	sys = e.appendScheduleHint(sys, run, locale)
 	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: loginWaitContinueHint(kind, connectorID, toolName)})
 	return e.runLoop(ctx, runID, messages)
@@ -657,6 +668,10 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	// Read once at loop start so the step bound is stable for the whole run
 	// even if an operator hot-patches knobs mid-run.
 	maxSteps := e.effectiveMaxStepsForRun(runID)
+	scheduled := false
+	if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
+		scheduled = rec.Origin == store.RunOriginScheduled
+	}
 	var turnThinking []string
 	anyRedacted := false
 
@@ -854,6 +869,15 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			// Estimator-bias observation (no behavior change).
 			e.emitTokenEstimate(runID, turn, messages, specs, msg.Usage)
 		}
+		if scheduled && isSilentMarker(msg.Content) {
+			if msg.Usage.TotalTokens > 0 {
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventLLMUsage,
+					Data: usageData(turn, msg.Usage),
+				})
+			}
+			return e.finishSilentRun(runID)
+		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMMessage,
 			Data: msgData,
@@ -895,6 +919,15 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			for k, v := range usageData(maxSteps, graceMsg.Usage) {
 				msgData[k] = v
 			}
+		}
+		if scheduled && isSilentMarker(graceMsg.Content) {
+			if graceMsg.Usage.TotalTokens > 0 {
+				_ = e.Store.AppendEvent(runID, store.Event{
+					Type: EventLLMUsage,
+					Data: usageData(maxSteps, graceMsg.Usage),
+				})
+			}
+			return e.finishSilentRun(runID)
 		}
 		_ = e.Store.AppendEvent(runID, store.Event{
 			Type: EventLLMMessage,

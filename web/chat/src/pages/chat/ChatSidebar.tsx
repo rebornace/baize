@@ -8,6 +8,7 @@ import { conversationUpdatedLabel } from '../../conversationUpdatedLabel'
 import { useLocale } from '../../locale/LocaleContext'
 import { clearControlToken } from '../../controlAuth'
 import { CHAT } from '../../strings'
+import { FeatureSearchButton } from '../../components/FeatureSearch'
 
 export type ChatSidebarProps = {
   role: string
@@ -57,6 +58,7 @@ export function ChatSidebar({
         >
           {CHAT.newChat}
         </button>
+        <FeatureSearchButton className="sidebar-search" />
         <div className="workspace-picker">
           <label className="workspace-picker-label" htmlFor="workspace-select">
             {CHAT.workspaceLabel}
