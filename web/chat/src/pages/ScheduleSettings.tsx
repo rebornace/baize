@@ -69,6 +69,8 @@ function blockedLabel(reason?: string): string | null {
       return SCHEDULE.blockedAwaitingInput
     case 'run_unavailable':
       return SCHEDULE.blockedRunUnavailable
+    case 'conversation_busy':
+      return SCHEDULE.blockedConversationBusy
     default:
       return null
   }

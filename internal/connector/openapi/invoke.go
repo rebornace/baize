@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -60,10 +61,20 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{}, err
 	}
 	url := strings.TrimRight(inv.BaseURL, "/") + path
+	if len(route.QueryParams) > 0 {
+		url = appendQuery(url, route.QueryParams, args)
+	}
 
 	var body io.Reader
 	if route.Method == http.MethodPost || route.Method == http.MethodPut || route.Method == http.MethodPatch {
-		bodyArgs := omitKeys(args, pathKeys)
+		skip := map[string]bool{}
+		for k := range pathKeys {
+			skip[k] = true
+		}
+		for _, k := range route.QueryParams {
+			skip[k] = true
+		}
+		bodyArgs := omitKeys(args, skip)
 		payload, err := marshalRequestBody(route.BodyKind, bodyArgs)
 		if err != nil {
 			return InvokeResult{}, fmt.Errorf("marshal args: %w", err)
@@ -76,7 +87,11 @@ func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string
 		return InvokeResult{}, fmt.Errorf("build request: %w", err)
 	}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		contentType := "application/json"
+		if route.BodyKind == "form" {
+			contentType = "application/x-www-form-urlencoded"
+		}
+		req.Header.Set("Content-Type", contentType)
 	}
 	// Go's default User-Agent ("Go-http-client/1.1") is blocked by some edge WAFs
 	// (e.g. Alibaba ESA http_custom). Set a stable product UA unless the caller
@@ -163,6 +178,40 @@ func expandPath(tmpl string, args map[string]any) (string, map[string]bool, erro
 	return path, keys, nil
 }
 
+// appendQuery adds named args to the URL as query parameters. Slice values are
+// repeated under the same key; nil/absent values are skipped.
+func appendQuery(rawURL string, names []string, args map[string]any) string {
+	q := url.Values{}
+	for _, name := range names {
+		v, ok := args[name]
+		if !ok || v == nil {
+			continue
+		}
+		switch vv := v.(type) {
+		case []any:
+			for _, item := range vv {
+				q.Add(name, fmt.Sprint(item))
+			}
+		case map[string]any, []map[string]any:
+			b, err := json.Marshal(vv)
+			if err != nil {
+				continue
+			}
+			q.Set(name, string(b))
+		default:
+			q.Set(name, fmt.Sprint(vv))
+		}
+	}
+	if len(q) == 0 {
+		return rawURL
+	}
+	sep := "?"
+	if strings.Contains(rawURL, "?") {
+		sep = "&"
+	}
+	return rawURL + sep + q.Encode()
+}
+
 func omitKeys(args map[string]any, keys map[string]bool) map[string]any {
 	if len(keys) == 0 {
 		return args
@@ -191,6 +240,29 @@ func marshalRequestBody(bodyKind string, args map[string]any) ([]byte, error) {
 			return nil, fmt.Errorf("missing body field %q", "value")
 		}
 		return json.Marshal(v)
+	case "form":
+		values := url.Values{}
+		for k, v := range args {
+			switch vv := v.(type) {
+			case nil:
+				continue
+			case string:
+				values.Set(k, vv)
+			case []any:
+				for _, item := range vv {
+					values.Add(k, fmt.Sprint(item))
+				}
+			case map[string]any, []map[string]any:
+				b, err := json.Marshal(vv)
+				if err != nil {
+					return nil, err
+				}
+				values.Set(k, string(b))
+			default:
+				values.Set(k, fmt.Sprint(vv))
+			}
+		}
+		return []byte(values.Encode()), nil
 	default:
 		return json.Marshal(args)
 	}

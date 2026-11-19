@@ -22,11 +22,15 @@ type ToolRoute struct {
 	Path        string
 	InputSchema map[string]any
 	// BodyKind: ""|"object" (default JSON object body), "array" (send args[bodyArrayKey] as JSON array),
-	// "value" (send args["value"] as scalar/json body).
+	// "value" (send args["value"] as scalar/json body), "form" (send args as
+	// application/x-www-form-urlencoded).
 	BodyKind string
 	// Security lists OpenAPI security scheme names required by the operation
 	// (operation-level security overrides document-level when present).
 	Security []string
+	// QueryParams names arguments sent as URL query parameters instead of a
+	// JSON/form body.
+	QueryParams []string
 }
 
 // LoadToolsFromBytes parses OpenAPI 3 spec bytes and returns one ToolRoute per operation.
@@ -84,6 +88,7 @@ func loadFromDoc(doc *openapi3.T) ([]ToolRoute, error) {
 				InputSchema: schema,
 				BodyKind:    bodyKind,
 				Security:    operationSecurity(doc, op),
+				QueryParams: queryParamNames(item, op),
 			})
 		}
 	}
@@ -123,6 +128,31 @@ func schemeNames(reqs openapi3.SecurityRequirements) []string {
 	return out
 }
 
+// queryParamNames collects query parameter names for both path-item and
+// operation parameters (operation-level entries win by name).
+func queryParamNames(item *openapi3.PathItem, op *openapi3.Operation) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(params openapi3.Parameters) {
+		for _, ref := range params {
+			if ref == nil || ref.Value == nil {
+				continue
+			}
+			p := ref.Value
+			if p.In != openapi3.ParameterInQuery || p.Name == "" || seen[p.Name] {
+				continue
+			}
+			seen[p.Name] = true
+			out = append(out, p.Name)
+		}
+	}
+	if item != nil {
+		add(item.Parameters)
+	}
+	add(op.Parameters)
+	return out
+}
+
 func normalizeOpName(method, path string) string {
 	trimmed := strings.Trim(path, "/")
 	parts := strings.Split(trimmed, "/")
@@ -142,7 +172,7 @@ func normalizeOpName(method, path string) string {
 }
 
 func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) (map[string]any, string) {
-	body := requestBodySchema(op)
+	body, form := requestBodySchema(op)
 	var bodyKind string
 	var schema map[string]any
 
@@ -164,6 +194,9 @@ func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) (map[stri
 		body["type"] = "object"
 		schema = body
 		bodyKind = "object"
+		if form {
+			bodyKind = "form"
+		}
 	default:
 		schema = map[string]any{
 			"type": "object",
@@ -194,12 +227,15 @@ func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) (map[stri
 				continue
 			}
 			p := ref.Value
-			if p.In != openapi3.ParameterInPath {
+			if p.In != openapi3.ParameterInPath && p.In != openapi3.ParameterInQuery {
 				continue
 			}
 			prop := map[string]any{"type": "string"}
 			if p.Schema != nil && p.Schema.Value != nil {
 				prop = schemaToMap(p.Schema.Value)
+			}
+			if p.Description != "" {
+				prop["description"] = p.Description
 			}
 			props[p.Name] = prop
 			if p.Required {
@@ -223,7 +259,7 @@ func mergeInputSchema(item *openapi3.PathItem, op *openapi3.Operation) (map[stri
 	return schema, bodyKind
 }
 
-func requestBodySchema(op *openapi3.Operation) map[string]any {
+func requestBodySchema(op *openapi3.Operation) (map[string]any, bool) {
 	emptyObject := func() map[string]any {
 		return map[string]any{
 			"type":       "object",
@@ -231,17 +267,21 @@ func requestBodySchema(op *openapi3.Operation) map[string]any {
 		}
 	}
 	if op.RequestBody == nil || op.RequestBody.Value == nil {
-		return emptyObject()
+		return emptyObject(), false
 	}
 	content := op.RequestBody.Value.Content
 	if content == nil {
-		return emptyObject()
+		return emptyObject(), false
 	}
-	mt := content.Get("application/json")
-	if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
-		return emptyObject()
+	if mt := content.Get("application/json"); mt != nil && mt.Schema != nil && mt.Schema.Value != nil {
+		return schemaToMap(mt.Schema.Value), false
 	}
-	return schemaToMap(mt.Schema.Value)
+	// Django/DRF and many legacy backends read request.POST, which requires a
+	// form-encoded body. Accept it when the spec only declares that media type.
+	if mt := content.Get("application/x-www-form-urlencoded"); mt != nil && mt.Schema != nil && mt.Schema.Value != nil {
+		return schemaToMap(mt.Schema.Value), true
+	}
+	return emptyObject(), false
 }
 
 func schemaToMap(s *openapi3.Schema) map[string]any {

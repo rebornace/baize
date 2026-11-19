@@ -52,3 +52,7 @@ baize-stderr.log
 # npm (root or any nested accidental install)
 node_modules/
 
+# Python
+__pycache__/
+*.pyc
+

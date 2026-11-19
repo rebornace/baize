@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,20 @@ import (
 	"testing"
 	"time"
 )
+
+// freeAddr returns a loopback address with an OS-assigned port. Tests used to
+// hardcode 180xx ports, which collided with whatever else was listening on the
+// machine (a running baize instance answers /healthz, so the supervisor
+// adopted it and never entered the backoff state under test).
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("freeAddr: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
+}
 
 // fakeAdapterSource is a tiny HTTP server used as a supervised child process.
 // It is compiled to a real binary (NOT `go run`) so that Process.Kill on
@@ -60,7 +75,7 @@ func TestSupervisorStartsAndStopsChild(t *testing.T) {
 
 	// Fixed loopback port for the child healthz. The child is a single
 	// directly-exec'd binary, so kill releases the port with no orphan.
-	addr := "127.0.0.1:18099"
+	addr := freeAddr(t)
 	sup := &supervisor{
 		command:    exe,
 		args:       nil,
@@ -116,7 +131,7 @@ func TestSupervisorEmptyCommand(t *testing.T) {
 // process spawned).
 func TestSupervisorAdoptsCompatibleOrphan(t *testing.T) {
 	exe := buildFakeAdapter(t)
-	addr := "127.0.0.1:18097"
+	addr := freeAddr(t)
 	// Pre-launch a "orphan" adapter holding the port.
 	orphan := exec.Command(exe)
 	orphan.Env = append(os.Environ(), "FAKE_ADDR="+addr)
@@ -154,7 +169,7 @@ func TestSupervisorAdoptsCompatibleOrphan(t *testing.T) {
 // compatibility check must NOT be adopted (it holds an old/foreign secret).
 func TestSupervisorRejectsStaleListener(t *testing.T) {
 	exe := buildFakeAdapter(t)
-	addr := "127.0.0.1:18096"
+	addr := freeAddr(t)
 	stale := exec.Command(exe)
 	stale.Env = append(os.Environ(), "FAKE_ADDR="+addr)
 	if err := stale.Start(); err != nil {
@@ -238,7 +253,7 @@ func buildFakeCrashAdapter(t *testing.T) string {
 
 func TestWatchdogRestartsCrashedChild(t *testing.T) {
 	exe := buildFakeCrashAdapter(t)
-	addr := "127.0.0.1:18089"
+	addr := freeAddr(t)
 	lifeCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	sup := &supervisor{
@@ -275,7 +290,7 @@ func TestWatchdogRestartsCrashedChild(t *testing.T) {
 
 func TestWatchdogNoRestartOnIntentionalStop(t *testing.T) {
 	exe := buildFakeAdapter(t) // long-lived (select{})
-	addr := "127.0.0.1:18088"
+	addr := freeAddr(t)
 	sup := &supervisor{
 		command:    exe,
 		healthzURL: "http://" + addr + "/healthz",
@@ -300,7 +315,7 @@ func TestWatchdogNoRestartOnIntentionalStop(t *testing.T) {
 
 func TestWatchdogStopsOnLifecycleCancel(t *testing.T) {
 	exe := buildFakeCrashAdapter(t)
-	addr := "127.0.0.1:18087"
+	addr := freeAddr(t)
 	lifeCtx, cancel := context.WithCancel(context.Background())
 	sup := &supervisor{
 		command:      exe,
@@ -341,7 +356,7 @@ func TestWatchdogStopsOnLifecycleCancel(t *testing.T) {
 // waitReaped path when watch is not blocked on cmd.Wait().
 func TestWatchdogStopDuringBackoffReapsAndDoesNotRespawn(t *testing.T) {
 	exe := buildFakeCrashAdapter(t)
-	addr := "127.0.0.1:18086"
+	addr := freeAddr(t)
 	lifeCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	sup := &supervisor{
@@ -487,7 +502,7 @@ func waitPortDown(t *testing.T, url string) {
 
 func TestTerminateGracefulViaShutdownEndpoint(t *testing.T) {
 	exe := buildFakeExe(t, fakeShutdownSource, "fakeshutdown")
-	addr := "127.0.0.1:18086"
+	addr := freeAddr(t)
 	marker := filepath.Join(t.TempDir(), "graceful.marker")
 	sup := &supervisor{
 		command:    exe,
@@ -525,7 +540,7 @@ func TestTerminateSigtermFallback(t *testing.T) {
 		t.Skip("SIGTERM fallback is POSIX-only; Windows uses /admin/shutdown")
 	}
 	exe := buildFakeExe(t, fakeSignalSource, "fakesignal")
-	addr := "127.0.0.1:18085"
+	addr := freeAddr(t)
 	marker := filepath.Join(t.TempDir(), "sigterm.marker")
 	sup := &supervisor{
 		command:    exe,
@@ -550,7 +565,7 @@ func TestTerminateSigtermFallback(t *testing.T) {
 
 func TestTerminateForceKillsIgnoringChild(t *testing.T) {
 	exe := buildFakeExe(t, fakeIgnoreSource, "fakeignore")
-	addr := "127.0.0.1:18084"
+	addr := freeAddr(t)
 	sup := &supervisor{
 		command:    exe,
 		healthzURL: "http://" + addr + "/healthz",
@@ -645,7 +660,7 @@ func waitPortStaysDown(t *testing.T, url string, window time.Duration) {
 // child — the healthz port must release and never rebound.
 func TestTerminateCancelsInFlightSpawn(t *testing.T) {
 	exe := buildFakeExe(t, fakeSpawnHangSource, "fakespawnhang")
-	addr := "127.0.0.1:18083"
+	addr := freeAddr(t)
 	marker := filepath.Join(t.TempDir(), "run.counter")
 	lifeCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -726,7 +741,7 @@ func TestTerminateCancelsInFlightSpawn(t *testing.T) {
 // short so its crash-restart cycle remains fast.
 func TestStartDuringBackoffRetiresOldWatchdog(t *testing.T) {
 	exe := buildFakeCrashAdapter(t)
-	addr := "127.0.0.1:18082"
+	addr := freeAddr(t)
 	lifeCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	var backoffCalls atomic.Int32

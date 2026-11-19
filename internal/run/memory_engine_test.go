@@ -15,6 +15,38 @@ import (
 	"github.com/rebornace/baize/internal/tool"
 )
 
+func TestMemoryBlockShowsKeysAndCorrectionHint(t *testing.T) {
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{
+		OwnerID: "alice", Key: "pref.drink", Text: "喜欢绿茶", Source: memory.SourceExplicit,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.Upsert(memory.Entry{
+		OwnerID: "alice", Text: "没有 key 的事实", Source: memory.SourceAuto,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{
+		Memory:   mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true}},
+	}
+	withKey := eng.memoryBlock("alice", "绿茶")
+	if !strings.Contains(withKey, "- [pref.drink] 喜欢绿茶") {
+		t.Fatalf("keyed entry missing bracket key: %q", withKey)
+	}
+	if !strings.Contains(withKey, "supersedes") {
+		t.Fatalf("correction hint missing: %q", withKey)
+	}
+	withoutKey := eng.memoryBlock("alice", "事实")
+	if !strings.Contains(withoutKey, "- 没有 key 的事实") {
+		t.Fatalf("empty-key entry must stay unprefixed: %q", withoutKey)
+	}
+	if strings.Contains(withoutKey, "[]") {
+		t.Fatalf("empty key must not render brackets: %q", withoutKey)
+	}
+}
+
 func TestMemoryInjectSameOwnerAcrossConversations(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})

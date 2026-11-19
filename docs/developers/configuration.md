@@ -60,6 +60,8 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 
 样板默认连接器：`id`、`type`（默认 `openapi`）、`spec`、`base_url`、`execution_callback_url`、`require_approval` / `require_approval_mutating`、`require_login`，以及 `auth`（`mode`、`static` / `passthrough` / `vault_ref` / `capture`）。
 
+OpenAPI 导入支持 path / query 参数；请求体支持 `application/json` 与 `application/x-www-form-urlencoded`（Django/DRF 等读 `request.POST` 的后端）。`auth.static.headers` 在对话内调用中同样作为兜底凭证，捕获/托管登录得到的身份优先。
+
 可选 **`tls`**（出站 mTLS，本机文件路径）：
 
 | 字段 | 含义 |

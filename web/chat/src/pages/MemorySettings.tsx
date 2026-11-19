@@ -43,6 +43,8 @@ export function MemorySettings() {
   const [busy, setBusy] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<MemoryEntry | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'explicit' | 'auto'>('all')
+  const [search, setSearch] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -133,6 +135,14 @@ export function MemorySettings() {
   }
 
   const showEmpty = items !== null && items.length === 0
+  const filtered = (items ?? []).filter((entry) => {
+    if (sourceFilter !== 'all' && entry.source !== sourceFilter) return false
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return (
+      (entry.key ?? '').toLowerCase().includes(q) || entry.text.toLowerCase().includes(q)
+    )
+  })
 
   return (
     <div className="settings-panel settings-memory">
@@ -174,8 +184,36 @@ export function MemorySettings() {
       )}
 
       {items !== null && items.length > 0 && (
+        <div className="settings-toolbar">
+          <select
+            name="memory-source"
+            aria-label={MEMORY.filterLabel}
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value as 'all' | 'explicit' | 'auto')}
+            disabled={busy}
+          >
+            <option value="all">{MEMORY.filterAll}</option>
+            <option value="explicit">{MEMORY.filterExplicit}</option>
+            <option value="auto">{MEMORY.filterAuto}</option>
+          </select>
+          <Input
+            name="memory-search"
+            aria-label={MEMORY.searchPlaceholder}
+            placeholder={MEMORY.searchPlaceholder}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            disabled={busy}
+          />
+        </div>
+      )}
+
+      {items !== null && items.length > 0 && filtered.length === 0 && (
+        <p className="settings-muted">{MEMORY.noMatches}</p>
+      )}
+
+      {items !== null && items.length > 0 && (
         <ul className="settings-list">
-          {items.map((entry) => {
+          {filtered.map((entry) => {
             const editing = editingId === entry.id
             return (
               <li key={entry.id} className="settings-list-item">

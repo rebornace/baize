@@ -307,6 +307,7 @@ describe('ScheduleSettings', () => {
       ['waiting_child', '等待子任务'],
       ['awaiting_input', '等待处理'],
       ['run_unavailable', '运行记录不可用'],
+      ['conversation_busy', '对话忙'],
     ]
     for (const [reason, label] of cases) {
       vi.restoreAllMocks()

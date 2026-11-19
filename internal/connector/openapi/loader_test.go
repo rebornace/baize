@@ -291,6 +291,165 @@ func TestLoadToolsOperationID(t *testing.T) {
 	}
 }
 
+func TestLoadToolsFormBody(t *testing.T) {
+	spec := []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "form", "version": "1.0.0"},
+  "paths": {
+    "/copy": {
+      "post": {
+        "operationId": "copy_questionnaire",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": {"type": "integer"},
+                  "team": {"type": "integer"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route openapi.ToolRoute
+	for _, tr := range tools {
+		if tr.Name == "copy_questionnaire" {
+			route = tr
+		}
+	}
+	if route.Name == "" {
+		t.Fatalf("tool missing: %+v", tools)
+	}
+	if route.BodyKind != "form" {
+		t.Fatalf("BodyKind=%q want form", route.BodyKind)
+	}
+	props, _ := route.InputSchema["properties"].(map[string]any)
+	if props == nil || props["id"] == nil || props["team"] == nil {
+		t.Fatalf("schema=%+v", route.InputSchema)
+	}
+}
+
+func TestInvokerFormBody(t *testing.T) {
+	var gotType, gotID, gotTeam string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+		gotID = r.PostFormValue("id")
+		gotTeam = r.PostFormValue("team")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	tools := []openapi.ToolRoute{{
+		Name:     "copy_questionnaire",
+		Method:   http.MethodPost,
+		Path:     "/copy",
+		BodyKind: "form",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":   map[string]any{"type": "integer"},
+				"team": map[string]any{"type": "integer"},
+			},
+		},
+	}}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+	if _, err := inv.Invoke(context.Background(), "copy_questionnaire", map[string]any{
+		"id": 11, "team": 11,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotType != "application/x-www-form-urlencoded" {
+		t.Fatalf("content-type=%q", gotType)
+	}
+	if gotID != "11" || gotTeam != "11" {
+		t.Fatalf("id=%q team=%q", gotID, gotTeam)
+	}
+}
+
+func TestLoadToolsQueryParams(t *testing.T) {
+	spec := []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "query", "version": "1.0.0"},
+  "paths": {
+    "/detail": {
+      "get": {
+        "operationId": "get_detail",
+        "parameters": [
+          {"name": "id", "in": "query", "required": true, "schema": {"type": "integer"}},
+          {"name": "verbose", "in": "query", "schema": {"type": "boolean"}}
+        ],
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route openapi.ToolRoute
+	for _, tr := range tools {
+		if tr.Name == "get_detail" {
+			route = tr
+		}
+	}
+	if route.Name == "" {
+		t.Fatalf("tool missing: %+v", tools)
+	}
+	if len(route.QueryParams) != 2 || route.QueryParams[0] != "id" {
+		t.Fatalf("QueryParams=%v", route.QueryParams)
+	}
+	props, _ := route.InputSchema["properties"].(map[string]any)
+	if props == nil || props["id"] == nil || props["verbose"] == nil {
+		t.Fatalf("schema=%+v", route.InputSchema)
+	}
+	req, _ := route.InputSchema["required"].([]any)
+	if len(req) != 1 || req[0] != "id" {
+		t.Fatalf("required=%v", route.InputSchema["required"])
+	}
+}
+
+func TestInvokerQueryParams(t *testing.T) {
+	var gotID, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotID = r.URL.Query().Get("id")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	tools := []openapi.ToolRoute{{
+		Name:        "get_detail",
+		Method:      http.MethodGet,
+		Path:        "/detail",
+		QueryParams: []string{"id"},
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"id": map[string]any{"type": "integer"}},
+			"required":   []any{"id"},
+		},
+	}}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+	if _, err := inv.Invoke(context.Background(), "get_detail", map[string]any{"id": 11}); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodGet || gotID != "11" {
+		t.Fatalf("method=%q id=%q", gotMethod, gotID)
+	}
+}
+
 func TestInvokerCreateTicket(t *testing.T) {
 	srv := httptest.NewServer(mockticket.NewHandler())
 	t.Cleanup(srv.Close)

@@ -75,6 +75,7 @@ func TestScheduleListBlockedReason(t *testing.T) {
 		running   string       // write running_run_id directly; do not create a run
 		runStatus store.Status // when non-empty, create a real run in this status
 		hitl      *store.HITLPayload
+		otherRun  bool // create an active run in the conversation, not linked to this schedule
 		want      string
 	}{
 		{
@@ -150,6 +151,12 @@ func TestScheduleListBlockedReason(t *testing.T) {
 			want:      "",
 		},
 		{
+			name:     "conversation_busy",
+			status:   schedule.StatusActive,
+			otherRun: true,
+			want:     "conversation_busy",
+		},
+		{
 			name:   "no_running_run",
 			status: schedule.StatusActive,
 			want:   "",
@@ -164,6 +171,9 @@ func TestScheduleListBlockedReason(t *testing.T) {
 			runID := tc.running
 			if tc.runStatus != "" {
 				runID = createBlockedTestRun(t, srv, tc.runStatus, tc.hitl)
+			}
+			if tc.otherRun {
+				createBlockedTestRun(t, srv, store.StatusQueued, nil)
 			}
 			if runID != "" {
 				if err := srv.Schedules.SetRunningRunID(it.ID, runID); err != nil {

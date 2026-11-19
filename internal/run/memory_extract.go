@@ -15,6 +15,9 @@ import (
 const (
 	EventMemoryExtractSkipped = "memory.extract_skipped"
 
+	// memoryExtractMaxPerRun caps how many new auto entries one run may add.
+	memoryExtractMaxPerRun = 3
+
 	memoryExtractSystem = `你是记忆抽取器。根据用户输入与助手回复，提取值得跨会话长期保留的短事实。
 只输出 JSON 数组，不要其它文字。格式：[{"key":"","text":"..."}]
 最多 5 条；每条 text 不超过 500 字；key 可空。无值得记录的事实时输出 []。`
@@ -41,6 +44,17 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 	input = strings.TrimSpace(input)
 	output = strings.TrimSpace(output)
 	if input == "" && output == "" {
+		return
+	}
+
+	// Explicit memory writes in this run already carry the user's intent; a
+	// follow-up auto extraction tends to duplicate them under new keys.
+	// Skip before the decider/LLM so the extraction call is not paid for.
+	if e.runHasExplicitMemoryWrite(runID) {
+		_ = e.Store.AppendEvent(runID, store.Event{
+			Type: EventMemoryExtractSkipped,
+			Data: map[string]any{"reason": "explicit_in_run"},
+		})
 		return
 	}
 
@@ -96,9 +110,27 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 		})
 		return
 	}
-	for _, it := range items {
+	existing := e.existingMemoryIndex(owner)
+	written := 0
+	for i, it := range items {
 		text := strings.TrimSpace(it.Text)
 		if text == "" {
+			continue
+		}
+		norm := normalizeMemoryText(text)
+		if norm != "" && existing.exact[norm] {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventMemoryExtractSkipped,
+				Data: map[string]any{"reason": "duplicate_text"},
+			})
+			continue
+		}
+		candidate := newNearDupText(text)
+		if nearDuplicateAny(candidate, existing.near) {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventMemoryExtractSkipped,
+				Data: map[string]any{"reason": "near_duplicate"},
+			})
 			continue
 		}
 		key := strings.TrimSpace(it.Key)
@@ -119,13 +151,86 @@ func (e *Engine) maybeExtractMemory(ctx context.Context, runID, owner, input, ou
 				continue
 			}
 		}
+		if written >= memoryExtractMaxPerRun {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventMemoryExtractSkipped,
+				Data: map[string]any{"reason": "cap_reached", "count": len(items) - i},
+			})
+			break
+		}
 		_, _ = e.Memory.Upsert(memory.Entry{
 			OwnerID: owner,
 			Key:     key,
 			Text:    text,
 			Source:  memory.SourceAuto,
 		})
+		if norm != "" {
+			existing.exact[norm] = true
+		}
+		existing.near = append(existing.near, candidate)
+		written++
 	}
+}
+
+// runHasExplicitMemoryWrite reports whether this run already wrote or removed
+// memory through the explicit tools. A read failure fails open (extract).
+func (e *Engine) runHasExplicitMemoryWrite(runID string) bool {
+	if e.Store == nil {
+		return false
+	}
+	events, err := e.Store.ListEvents(runID)
+	if err != nil {
+		return false
+	}
+	for _, ev := range events {
+		if ev.Type != "tool.result" {
+			continue
+		}
+		name, _ := ev.Data["name"].(string)
+		if name != memory.RememberName && name != memory.ForgetName {
+			continue
+		}
+		if isErr, _ := ev.Data["is_error"].(bool); !isErr {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeMemoryText collapses case and whitespace for duplicate detection.
+func normalizeMemoryText(s string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(s))), " ")
+}
+
+// memoryMatchIndex holds the existing entries used by the extractor's
+// duplicate checks: exact normalized text plus precomputed near-dup features.
+type memoryMatchIndex struct {
+	exact map[string]bool
+	near  []nearDupText
+}
+
+// existingMemoryIndex loads the owner's entries (bounded pagination) and
+// precomputes both exact and near-duplicate features. A read failure yields
+// whatever was collected so far.
+func (e *Engine) existingMemoryIndex(owner string) memoryMatchIndex {
+	idx := memoryMatchIndex{exact: map[string]bool{}}
+	const page = 200
+	for offset := 0; offset < 5000; offset += page {
+		items, err := e.Memory.List(owner, page, offset)
+		if err != nil {
+			break
+		}
+		for _, it := range items {
+			if n := normalizeMemoryText(it.Text); n != "" {
+				idx.exact[n] = true
+			}
+			idx.near = append(idx.near, newNearDupText(it.Text))
+		}
+		if len(items) < page {
+			break
+		}
+	}
+	return idx
 }
 
 func parseMemoryExtractJSON(content string) ([]memoryExtractItem, error) {

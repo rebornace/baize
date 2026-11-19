@@ -52,7 +52,7 @@ func (e *Engine) memoryBlock(ownerID, query string) string {
 		return memoryEmptyNotice
 	}
 
-	const header = "以下是该账号的相关长期记忆（供回答参考；不要主动向用户逐条复述清单，除非用户问起）："
+	const header = "以下是该账号的相关长期记忆（供回答参考；不要主动向用户逐条复述清单，除非用户问起）：\n若用户纠正已有偏好，记住时复用该条目的 key，或用 supersedes 列出旧 key。"
 	n := len([]rune(header))
 	var body strings.Builder
 	for _, ent := range entries {
@@ -60,7 +60,11 @@ func (e *Engine) memoryBlock(ownerID, query string) string {
 		if text == "" {
 			continue
 		}
+		key := strings.TrimSpace(ent.Key)
 		line := "\n- " + text
+		if key != "" {
+			line = "\n- [" + key + "] " + text
+		}
 		lineN := len([]rune(line))
 		if n+lineN > memory.DefaultMaxInjectChars {
 			break

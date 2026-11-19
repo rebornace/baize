@@ -138,15 +138,15 @@ func openapiInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		resOK := false
 		if ctx.identities != nil && ctx.resolver != nil {
 			force := identity.ForceIdentityIDFrom(c)
-			var defaultHeaders map[string]string
-			if conv == "" {
-				defaultHeaders = ctx.headers
-				if ctx.authMode == "passthrough" {
-					if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
-						defaultHeaders = h
-					} else {
-						defaultHeaders = nil
-					}
+			// Static defaults are the connector-level fallback for every run,
+			// including conversation runs; a captured/hosted identity still wins
+			// because the resolver checks identities before defaults.
+			defaultHeaders := ctx.headers
+			if ctx.authMode == "passthrough" {
+				if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
+					defaultHeaders = h
+				} else {
+					defaultHeaders = nil
 				}
 			}
 			var routeSecurity []string
@@ -220,15 +220,15 @@ func pluginInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		resOK := false
 		if ctx.identities != nil && ctx.resolver != nil {
 			force := identity.ForceIdentityIDFrom(c)
-			var defaultHeaders map[string]string
-			if conv == "" {
-				defaultHeaders = ctx.headers
-				if ctx.authMode == "passthrough" {
-					if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
-						defaultHeaders = h
-					} else {
-						defaultHeaders = nil
-					}
+			// Static defaults are the connector-level fallback for every run,
+			// including conversation runs; a captured/hosted identity still wins
+			// because the resolver checks identities before defaults.
+			defaultHeaders := ctx.headers
+			if ctx.authMode == "passthrough" {
+				if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
+					defaultHeaders = h
+				} else {
+					defaultHeaders = nil
 				}
 			}
 			in := authresolve.ResolveInput{
@@ -318,15 +318,15 @@ func mcpInvokerClosure(ctx registerOneContext, name string) tool.Invoker {
 		resOK := false
 		if ctx.identities != nil && ctx.resolver != nil {
 			force := identity.ForceIdentityIDFrom(c)
-			var defaultHeaders map[string]string
-			if conv == "" {
-				defaultHeaders = ctx.headers
-				if ctx.authMode == "passthrough" {
-					if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
-						defaultHeaders = h
-					} else {
-						defaultHeaders = nil
-					}
+			// Static defaults are the connector-level fallback for every run,
+			// including conversation runs; a captured/hosted identity still wins
+			// because the resolver checks identities before defaults.
+			defaultHeaders := ctx.headers
+			if ctx.authMode == "passthrough" {
+				if h := identity.PassthroughHeadersFrom(c); len(h) > 0 {
+					defaultHeaders = h
+				} else {
+					defaultHeaders = nil
 				}
 			}
 			in := authresolve.ResolveInput{

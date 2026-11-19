@@ -93,8 +93,21 @@ func (s *Server) scheduleBlockedReason(it schedule.Item) string {
 	if it.Status != schedule.StatusActive {
 		return ""
 	}
+	if s.Store == nil {
+		return ""
+	}
 	runID := strings.TrimSpace(it.RunningRunID)
-	if runID == "" || runID == schedule.ClaimPending || s.Store == nil {
+	if runID == "" {
+		// RUN-GUARD also skips a due schedule when the conversation has an
+		// active Run that this schedule did not open (a manual/scheduled turn
+		// waiting for approval). Surface that instead of showing "active".
+		busy, err := s.Store.HasActiveRun(it.ConversationID)
+		if err == nil && busy {
+			return "conversation_busy"
+		}
+		return ""
+	}
+	if runID == schedule.ClaimPending {
 		return ""
 	}
 	runRec, err := s.Store.GetRun(runID)

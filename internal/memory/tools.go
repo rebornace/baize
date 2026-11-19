@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
@@ -25,7 +26,7 @@ type ToolMeta struct {
 func RememberSpec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:        RememberName,
-		Description: "Remember a durable fact about the current account for later turns and sessions.",
+		Description: "Remember a durable fact about the current account for later turns and sessions. When correcting an existing preference, reuse its key or list the old keys in supersedes so the new value replaces them.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -36,6 +37,12 @@ func RememberSpec() llm.ToolSpec {
 				"key": map[string]any{
 					"type":        "string",
 					"description": "Optional stable key; same key overwrites the prior fact for this account",
+				},
+				"supersedes": map[string]any{
+					"type":        "array",
+					"maxItems":    10,
+					"description": "Optional keys of older facts to forget before writing this one (at most 10)",
+					"items":       map[string]any{"type": "string"},
 				},
 			},
 			"required": []string{"text"},
@@ -84,6 +91,19 @@ func RememberInvoker(store Store, meta conversation.MetaStore) tool.Invoker {
 			return fail("text is required")
 		}
 		key, _ := strArg(args, "key")
+		supersedes := stringListArg(args, "supersedes", 10)
+		forgotten := 0
+		supersededErr := ""
+		for _, oldKey := range supersedes {
+			n, ferr := store.Forget(owner, oldKey, "")
+			if ferr != nil {
+				if supersededErr == "" {
+					supersededErr = shortErr(ferr.Error())
+				}
+				continue
+			}
+			forgotten += n
+		}
 		e, err := store.Upsert(Entry{
 			OwnerID: owner,
 			Key:     key,
@@ -100,6 +120,13 @@ func RememberInvoker(store Store, meta conversation.MetaStore) tool.Invoker {
 		}
 		if e.Key != "" {
 			out["key"] = e.Key
+		}
+		if len(supersedes) > 0 {
+			out["superseded"] = len(supersedes)
+			out["forgotten"] = forgotten
+			if supersededErr != "" {
+				out["superseded_error"] = supersededErr
+			}
 		}
 		return out, false, nil
 	}
@@ -150,6 +177,50 @@ func strArg(args map[string]any, key string) (string, bool) {
 	}
 	s, ok := v.(string)
 	return s, ok && s != ""
+}
+
+// stringListArg reads an optional string array, trimming, deduping and capping
+// the entries.
+func stringListArg(args map[string]any, name string, max int) []string {
+	raw, ok := args[name]
+	if !ok || raw == nil {
+		return nil
+	}
+	var vals []string
+	switch v := raw.(type) {
+	case []string:
+		vals = v
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				vals = append(vals, s)
+			}
+		}
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(vals))
+	seen := map[string]bool{}
+	for _, v := range vals {
+		k := strings.TrimSpace(v)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
+		if max > 0 && len(out) == max {
+			break
+		}
+	}
+	return out
+}
+
+func shortErr(s string) string {
+	const max = 200
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }
 
 func fail(format string, a ...any) (map[string]any, bool, error) {

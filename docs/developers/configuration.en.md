@@ -60,6 +60,8 @@ Startup default model (may seed a model profile in the store on first run; after
 
 Sample default connector: `id`, `type` (default `openapi`), `spec`, `base_url`, `execution_callback_url`, `require_approval` / `require_approval_mutating`, `require_login`, plus `auth` (`mode`, `static` / `passthrough` / `vault_ref` / `capture`).
 
+OpenAPI import supports path and query parameters; request bodies may be `application/json` or `application/x-www-form-urlencoded` (backends such as Django/DRF that read `request.POST`). `auth.static.headers` also acts as the fallback credential for conversation-bound calls; a captured or hosted-login identity still wins.
+
 Optional **`tls`** (outbound mTLS, local file paths):
 
 | Field | Meaning |
