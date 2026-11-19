@@ -221,6 +221,7 @@ export const enPack = {
     timeOfDayLabel: 'Time of day',
     weekdayLabel: 'Weekday',
     weekdayOption: (d: number) => `Weekday ${d}`,
+    statusEnabled: 'Enabled',
     statusActive: 'Active',
     statusPaused: 'Paused',
     statusCompleted: 'Completed',

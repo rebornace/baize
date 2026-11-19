@@ -282,6 +282,7 @@ describe('ScheduleSettings', () => {
     ])
 
     expect(host.textContent).toContain('等待审批')
+    expect(host.textContent).toContain('已启用')
     const open = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes('去处理'),
     )
@@ -347,6 +348,7 @@ describe('ScheduleSettings', () => {
     ])
 
     expect(host.textContent).not.toContain('等待审批')
+    expect(host.textContent).toContain('进行中')
     const open = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes('去处理'),
     )

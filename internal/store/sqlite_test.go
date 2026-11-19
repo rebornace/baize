@@ -580,6 +580,39 @@ func TestSQLiteInboxDeliveryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSQLiteDeleteInboxDeliveryReleasesClaim(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inbox-del.db")
+	s, err := store.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := s.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	d := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k-del",
+		DeliveryID: "dlv_1", BodyHash: "hash",
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteInboxDelivery("alerts", "k-del"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.GetInboxDelivery("alerts", "k-del"); err != nil || ok {
+		t.Fatalf("claim not released ok=%v err=%v", ok, err)
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatalf("re-claim after delete: %v", err)
+	}
+	if err := s.DeleteInboxDelivery("alerts", "k-dele"); err != nil {
+		t.Fatalf("missing row delete must be a no-op: %v", err)
+	}
+}
+
 func TestSQLiteInboxDeliveryTTLAndUpdate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inbox-ttl.db")
 	s, err := store.Open("sqlite", path)

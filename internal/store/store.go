@@ -334,6 +334,11 @@ const InboxDeliveryTTL = 24 * time.Hour
 // already occupies the (channel_id, idempotency_key) slot.
 var ErrInboxDeliveryExists = errors.New("inbox delivery already exists")
 
+// ErrConversationBusy is returned when a conversation already has an active
+// Run (queued / running / waiting_human). Callers should treat it as a
+// retryable "busy" state, not as a failed run.
+var ErrConversationBusy = errors.New("conversation busy")
+
 // ErrNoPriorConversationRun is returned when a conversation has no persisted runs.
 var ErrNoPriorConversationRun = errors.New("no prior run for conversation")
 
@@ -629,6 +634,7 @@ type Store interface {
 	GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error)
 	PutInboxDelivery(d InboxDelivery) error
 	UpdateInboxDelivery(channelID, idempotencyKey, runID string) error
+	DeleteInboxDelivery(channelID, idempotencyKey string) error
 	GetInboxThread(channelID, externalID string) (conversationID string, ok bool, err error)
 	PutInboxThread(channelID, externalID, conversationID string) error
 

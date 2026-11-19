@@ -363,6 +363,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		PinnedSkills:   pinnedSkills,
 	})
 	if err != nil {
+		if errors.Is(err, store.ErrConversationBusy) {
+			writeError(w, http.StatusConflict, "conversation_busy", "该对话还有未结束的运行")
+			return
+		}
 		if errors.Is(err, errConversationForbidden) || err.Error() == "无权访问该会话" {
 			writeError(w, http.StatusForbidden, "forbidden", err.Error())
 			return

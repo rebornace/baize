@@ -265,6 +265,58 @@ func TestHandleInboundEmitsModelRoutedEvent(t *testing.T) {
 	}
 }
 
+// activeOnCreateRuns marks a conversation active as soon as a run is created,
+// so the guard's own check reflects prior creates (the base fakeRuns used by
+// other tests leaves active state to the test).
+type activeOnCreateRuns struct{ *fakeRuns }
+
+func (r *activeOnCreateRuns) CreateRun(in store.CreateRunInput) (*store.Run, error) {
+	rec, err := r.fakeRuns.CreateRun(in)
+	if err != nil {
+		return nil, err
+	}
+	r.fakeRuns.mu.Lock()
+	r.fakeRuns.active[in.ConversationID] = true
+	r.fakeRuns.mu.Unlock()
+	return rec, nil
+}
+
+func TestHandleInboundConcurrentOnlyOneRun(t *testing.T) {
+	base := &fakeRuns{active: map[string]bool{}}
+	rt, _ := newTestRuntime(t, base)
+	rt.Runs = &activeOnCreateRuns{base}
+	ch := &fakeChannel{name: "fake"}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := rt.HandleInbound(context.Background(), ch, Inbound{
+				PeerID: "peer-1",
+				Text:   "并发消息",
+				Extras: map[string]string{"account": "acc-1"},
+			}); err != nil {
+				t.Errorf("HandleInbound: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if base.createCount() != 1 {
+		t.Fatalf("CreateRun calls=%d want 1", base.createCount())
+	}
+	busy := 0
+	for _, sent := range ch.texts() {
+		if sent.text == BusyReply {
+			busy++
+		}
+	}
+	if busy != 1 {
+		t.Fatalf("busy replies=%d want 1 (sent=%+v)", busy, ch.texts())
+	}
+}
+
 func TestHandleInboundBusySendsFixedText(t *testing.T) {
 	convID := "weixin:acc-1:peer-1"
 	runs := &fakeRuns{active: map[string]bool{convID: true}}

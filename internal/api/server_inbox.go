@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/settingscrypto"
@@ -230,7 +232,7 @@ func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, ch
 		preEventData["metadata"] = payload.Metadata
 	}
 
-	runRec, err := s.startRun(r.Context(), startRunInput{
+	runRec, err := s.startRun(s.inboxContext(r), startRunInput{
 		AgentID:        channel.AgentID,
 		Input:          inputText,
 		ConversationID: convID,
@@ -243,6 +245,15 @@ func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, ch
 		}},
 	})
 	if err != nil {
+		if claimed {
+			// Release the idempotency slot so the caller can retry the same key.
+			_ = s.Store.DeleteInboxDelivery(channelID, idempotencyKey)
+		}
+		if errors.Is(err, store.ErrConversationBusy) {
+			w.Header().Set("Retry-After", "5")
+			writeError(w, http.StatusConflict, "conversation_busy", "该对话还有未结束的运行")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -433,6 +444,19 @@ func readSignedInboxBody(r *http.Request, maxBytes int64) (body []byte, timestam
 		return nil, "", "", errInboxPayloadTooLarge
 	}
 	return body, timestamp, sigHeader, nil
+}
+
+// inboxContext gives public inbox calls the machine identity that owns
+// inbox-created conversations. Without it, a second message to the same thread
+// would fail the conversation ACL under the control-plane gate (inbox has no
+// human operator). New inbox conversations already default to this owner.
+func (s *Server) inboxContext(r *http.Request) context.Context {
+	ctx := r.Context()
+	if !s.gateTokens().Enabled() {
+		return ctx
+	}
+	ctx = controlplane.WithRole(ctx, controlplane.RoleOperator)
+	return controlplane.WithOperatorID(ctx, "local-dev")
 }
 
 func resolveConversation(st store.Store, channel inbox.Channel, payload inbox.Payload) string {

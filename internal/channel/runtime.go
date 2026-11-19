@@ -12,12 +12,51 @@ import (
 
 	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/convlock"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 )
 
 // BusyReply is sent when the conversation already has an active run.
 const BusyReply = "请稍候，上一轮还在处理"
+
+// runStarts returns the shared start guard, creating one lazily for runtimes
+// built directly in tests.
+func (r *Runtime) runStarts() *convlock.Guard {
+	r.guardOnce.Do(func() {
+		if r.RunStarts == nil {
+			r.RunStarts = convlock.New()
+		}
+	})
+	return r.RunStarts
+}
+
+// createRunIfIdle creates a run only when the conversation has no active run.
+// Check and create share the guard so concurrent inbound messages cannot open
+// two runs on the same conversation.
+func (r *Runtime) createRunIfIdle(convID string, in store.CreateRunInput) (*store.Run, error) {
+	var runRec *store.Run
+	var busy bool
+	err := r.runStarts().Do(convID, func() error {
+		active, err := r.Runs.HasActiveRun(convID)
+		if err != nil {
+			return err
+		}
+		if active {
+			busy = true
+			return nil
+		}
+		runRec, err = r.Runs.CreateRun(in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if busy {
+		return nil, store.ErrConversationBusy
+	}
+	return runRec, nil
+}
 
 // Validation errors for HandleInbound.
 var (
@@ -65,6 +104,10 @@ type Runtime struct {
 	// ResumeHITL continues a waiting_human run (approve/reject). Optional;
 	// when nil, waiting_human inbound only gets HITLHelpReply.
 	ResumeHITL func(ctx context.Context, runID string, approve bool, comment string) error
+	// RunStarts serializes "check active -> create run" per conversation.
+	// Bootstrap injects the API server's guard so UI and channel share one lock.
+	RunStarts *convlock.Guard
+	guardOnce sync.Once
 	// Source is the meta.Source / conv-id prefix for this channel (e.g. "weixin").
 	// Empty defaults to "weixin" to preserve historical conversation ids.
 	Source string
@@ -208,12 +251,15 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		}
 	}
 
-	runRec, err := r.Runs.CreateRun(store.CreateRunInput{
+	runRec, err := r.createRunIfIdle(convID, store.CreateRunInput{
 		AgentID:        agentID,
 		Input:          displayText,
 		ConversationID: convID,
 		ModelProfileID: runModelProfileID,
 	})
+	if errors.Is(err, store.ErrConversationBusy) {
+		return r.handleBusyInbound(ctx, ch, convID, peerID, in)
+	}
 	if err != nil {
 		return fmt.Errorf("channel: create run: %w", err)
 	}

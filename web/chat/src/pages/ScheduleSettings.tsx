@@ -284,7 +284,9 @@ export function ScheduleSettings() {
                     {entry.time_of_day ? ` · ${entry.time_of_day}` : ''}
                     {entry.weekday ? ` · ${SCHEDULE.weekdayOption(entry.weekday)}` : ''}
                     {' · '}
-                    {statusLabel(entry.status)}
+                    {blockedLabel(entry.blocked_reason)
+                      ? SCHEDULE.statusEnabled
+                      : statusLabel(entry.status)}
                     {blockedLabel(entry.blocked_reason) && (
                       <>
                         {' · '}

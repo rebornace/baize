@@ -43,6 +43,10 @@ This is not downstream business IAM or multi-tenant SSO.
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.
 
+A conversation allows one active Run at a time (`queued` / `running` / `waiting_human`). While busy, `POST /v0/runs` returns `409 conversation_busy`; `POST /v0/inbox/{channel_id}` returns 409 with `Retry-After`, and the same `idempotency_key` may be retried once the conversation is idle. The guard is process-local; see “Known limits” in Architecture for multi-replica behavior.
+
+Inbox-created conversations belong to the machine identity `local-dev` and are isolated from UI conversations; passing a `conversation_id` that points at a human conversation is still refused.
+
 ## Matching & decisions (tool prefilter + decision model)
 
 Settings → Matching & decisions covers both enhanced matching and the decision model. These endpoints require **admin** (reads also need an authenticated role when the gate is on).

@@ -18,6 +18,7 @@ import (
 	"github.com/rebornace/baize/internal/connector/mcpoauth"
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/convlock"
 	"github.com/rebornace/baize/internal/eventbus"
 	"github.com/rebornace/baize/internal/hostedlogin"
 	"github.com/rebornace/baize/internal/identity"
@@ -130,6 +131,10 @@ type Server struct {
 	// Queue optionally dispatches runs to competing workers. nil = in-process
 	// goroutine execution (legacy single-instance behavior).
 	Queue middleware.JobQueue
+	// RunStarts serializes "check active run -> create run" per conversation.
+	// Bootstrap shares one instance with every channel Runtime.
+	RunStarts     *convlock.Guard
+	runStartsOnce sync.Once
 	// LeaseTTL is the worker lease duration for executed runs (default 60s).
 	LeaseTTL time.Duration
 	// AuthMode is the active connector's normalized auth mode. Only "passthrough"
@@ -249,10 +254,22 @@ func NewServer(st store.Store, reg *tool.Registry, runner Runner) *Server {
 		HostedLoginAudit: hostedlogin.LogAuditor{},
 		MCPExportEnabled: true,
 		OAuthSessions:    mcpoauth.NewSessionStore(),
+		RunStarts:        convlock.New(),
 		mux:              http.NewServeMux(),
 	}
 	s.routes()
 	return s
+}
+
+// runStarts returns the per-conversation start guard, creating one lazily for
+// Servers built as struct literals in tests.
+func (s *Server) runStarts() *convlock.Guard {
+	s.runStartsOnce.Do(func() {
+		if s.RunStarts == nil {
+			s.RunStarts = convlock.New()
+		}
+	})
+	return s.RunStarts
 }
 
 // inboxLimiter returns the configured limiter, lazily creating a default once

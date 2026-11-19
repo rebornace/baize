@@ -652,6 +652,22 @@ func (s *Memory) UpdateInboxDelivery(channelID, idempotencyKey, runID string) er
 	return nil
 }
 
+// DeleteInboxDelivery removes a claimed idempotency slot. It is a no-op when
+// the slot is already gone, so releasing a failed claim twice is safe.
+func (s *Memory) DeleteInboxDelivery(channelID, idempotencyKey string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byKey, ok := s.inboxDeliveries[channelID]
+	if !ok {
+		return nil
+	}
+	delete(byKey, idempotencyKey)
+	if len(byKey) == 0 {
+		delete(s.inboxDeliveries, channelID)
+	}
+	return nil
+}
+
 func (s *Memory) GetInboxThread(channelID, externalID string) (string, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

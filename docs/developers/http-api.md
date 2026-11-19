@@ -43,6 +43,10 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。
 
+同一会话同一时刻只允许一轮活跃 Run（`queued` / `running` / `waiting_human`）。会话忙时 `POST /v0/runs` 返回 `409 conversation_busy`；`POST /v0/inbox/{channel_id}` 同样返回 409 并带 `Retry-After`，同一 `idempotency_key` 可在会话空闲后重试。并发守卫是进程内的，多副本行为见「架构与插件边界 → 已知限制」。
+
+Inbox 创建的会话归机器身份 `local-dev`，与 UI 会话隔离；带 `conversation_id` 指向人工会话仍会被拒绝。
+
 ## 匹配与决策（工具预筛 + 决策模型）
 
 设置页「匹配与决策」同时管理增强匹配与决策模型；下列接口均需 **admin**（读接口在 Gate 下亦需已登录角色）。

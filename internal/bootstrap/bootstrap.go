@@ -1060,6 +1060,10 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 				return fmt.Errorf("bootstrap channel %s: %w", instName, err)
 			}
 			handle.Runtime = rt
+			if rt != nil && d.srv != nil {
+				// One guard shared by UI/API and every channel runtime.
+				rt.RunStarts = d.srv.RunStarts
+			}
 			if dir != "" {
 				handle.CredsDir = dir
 			}

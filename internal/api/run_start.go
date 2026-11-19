@@ -34,6 +34,28 @@ type startRunInput struct {
 	PinnedSkills []string
 }
 
+// createRunIfIdle creates a run only when the conversation has no active run.
+// The check and the create share one per-conversation guard, so two callers
+// cannot both observe "idle" and then create parallel runs.
+func (s *Server) createRunIfIdle(conv string, in store.CreateRunInput) (*store.Run, error) {
+	var runRec *store.Run
+	err := s.runStarts().Do(conv, func() error {
+		busy, err := s.Store.HasActiveRun(conv)
+		if err != nil {
+			return err
+		}
+		if busy {
+			return store.ErrConversationBusy
+		}
+		runRec, err = s.Store.CreateRun(in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return runRec, nil
+}
+
 func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, error) {
 	ag, err := s.Store.GetAgent(in.AgentID)
 	if err != nil {
@@ -56,7 +78,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		ThinkingLevel:      in.ThinkingLevel,
 	}
 
-	runRec, err := s.Store.CreateRun(createIn)
+	runRec, err := s.createRunIfIdle(conv, createIn)
 	if err != nil {
 		return nil, err
 	}

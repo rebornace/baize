@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { goalEventCount } from '../goalEvents'
 import {
   createConversationHostedLogin,
   getGoal,
@@ -268,6 +269,27 @@ export function ChatPage() {
     runWasBusyRef.current = run.busy
     if (wasBusy && !run.busy) void refreshGoal(false)
   }, [run.busy, refreshGoal])
+
+  // Mid-run goal edits (goal.set / push / pop / update) refresh the bar
+  // without waiting for the run to finish. Debounced to one request per edit
+  // burst; the busy→idle refresh above still runs at the end.
+  const goalEventSeenRef = useRef(0)
+  useEffect(() => {
+    goalEventSeenRef.current = 0
+  }, [session.conversationId])
+  useEffect(() => {
+    const count = goalEventCount(run.liveEvents)
+    if (count === 0) {
+      goalEventSeenRef.current = 0
+      return
+    }
+    if (count <= goalEventSeenRef.current) return
+    goalEventSeenRef.current = count
+    const timer = window.setTimeout(() => {
+      void refreshGoal(false)
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [run.liveEvents, refreshGoal])
 
   const goalWriteDisabled = run.busy || session.historyMutating
 

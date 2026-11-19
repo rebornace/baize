@@ -232,6 +232,7 @@ export const zhPack = {
   timeOfDayLabel: '每天时间',
   weekdayLabel: '星期',
   weekdayOption: (d: number) => `星期${d}`,
+  statusEnabled: '已启用',
   statusActive: '进行中',
   statusPaused: '已暂停',
   statusCompleted: '已完成',

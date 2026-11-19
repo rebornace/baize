@@ -98,6 +98,16 @@ func (s *SQLStore) UpdateInboxDelivery(channelID, idempotencyKey, runID string) 
 	return nil
 }
 
+// DeleteInboxDelivery removes a claimed idempotency slot. Missing rows are not
+// an error so a failed claim can be released defensively.
+func (s *SQLStore) DeleteInboxDelivery(channelID, idempotencyKey string) error {
+	_, err := s.exec(
+		`DELETE FROM inbox_deliveries WHERE channel_id = ? AND idempotency_key = ?`,
+		channelID, idempotencyKey,
+	)
+	return err
+}
+
 func (s *SQLStore) GetInboxThread(channelID, externalID string) (string, bool, error) {
 	var conversationID string
 	err := s.queryRow(

@@ -68,9 +68,13 @@ func TestScheduledRunStillWaitsForApproval(t *testing.T) {
 
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "agent-a", System: "sys"})
-	if _, err := st.CreateRun(store.CreateRunInput{
+	seed, err := st.CreateRun(store.CreateRunInput{
 		AgentID: "agent-a", Input: "setup", ConversationID: "conv1",
-	}); err != nil {
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(seed.ID, store.StatusSucceeded, "done", ""); err != nil {
 		t.Fatal(err)
 	}
 

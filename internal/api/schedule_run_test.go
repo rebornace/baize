@@ -44,6 +44,15 @@ func TestScheduleRunOpenCopiesLatestRun(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Scheduled opens require an idle conversation; the seed run only supplies
+	// the latest-run fields to copy.
+	seed, err := st.LatestConversationRun("conv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(seed.ID, store.StatusSucceeded, "done", ""); err != nil {
+		t.Fatal(err)
+	}
 
 	srv := api.NewServer(st, tool.NewRegistry(), scheduleNoopRunner{})
 	srv.Queue = scheduleNoopJobQueue{}
@@ -102,6 +111,13 @@ func TestScheduleRunOpenGateExistingMetaAsOwner(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seed, err := st.LatestConversationRun("conv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateRun(seed.ID, store.StatusSucceeded, "done", ""); err != nil {
+		t.Fatal(err)
+	}
 	if err := msgs.EnsureMeta(conversation.Meta{
 		ID: "conv1", OwnerID: "alice", Source: "ui", UpdatedAt: time.Now().UTC(),
 	}); err != nil {
@@ -139,16 +155,23 @@ func TestScheduleRunOpenUsesNewestRun(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "old-agent", System: "sys"})
 	st.UpsertAgent(store.Agent{ID: "new-agent", System: "sys"})
-	if _, err := st.CreateRun(store.CreateRunInput{
+	oldRun, err := st.CreateRun(store.CreateRunInput{
 		AgentID: "old-agent", Input: "old", ConversationID: "conv1",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	if _, err := st.CreateRun(store.CreateRunInput{
+	newRun, err := st.CreateRun(store.CreateRunInput{
 		AgentID: "new-agent", Input: "new", ConversationID: "conv1",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	for _, id := range []string{oldRun.ID, newRun.ID} {
+		if err := st.UpdateRun(id, store.StatusSucceeded, "done", ""); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	srv := api.NewServer(st, tool.NewRegistry(), scheduleNoopRunner{})

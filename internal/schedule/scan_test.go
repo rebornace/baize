@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/schedule"
+	"github.com/rebornace/baize/internal/store"
 )
 
 type openCall struct {
@@ -230,6 +231,42 @@ func TestScanOpenFailureKeepsDue(t *testing.T) {
 	}
 	if got.LastError == "" || contains(got.LastError, "retry me") {
 		t.Fatalf("last_error=%q", got.LastError)
+	}
+}
+
+func TestScanBusySkipsWithoutError(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{err: store.ErrConversationBusy}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	it := insertDaily(t, s, "alice", "c1", "wait for idle", due)
+
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatalf("busy tick must not fail the scan: %v", err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RunningRunID != "" {
+		t.Fatalf("row after busy: %+v", got)
+	}
+	if got.LastError != "" {
+		t.Fatalf("busy must not record last_error: %q", got.LastError)
+	}
+	const retry = 15 * time.Second
+	if got.NextRunAt.Before(now.Add(retry)) {
+		t.Fatalf("next_run_at must be pushed to the retry window: %v", got.NextRunAt)
+	}
+
+	opener.mu.Lock()
+	opener.err = nil
+	opener.mu.Unlock()
+	later := now.Add(2 * retry)
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, later); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID == "" {
+		t.Fatalf("expected a run after the conversation freed up: %+v", got)
 	}
 }
 

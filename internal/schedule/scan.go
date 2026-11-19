@@ -3,6 +3,8 @@ package schedule
 import (
 	"errors"
 	"time"
+
+	storepkg "github.com/rebornace/baize/internal/store"
 )
 
 const (
@@ -10,6 +12,16 @@ const (
 	errOwnerMismatch        = "schedule: conversation owner mismatch"
 	errOpenRunFailed        = "schedule: failed to open run"
 )
+
+// errConversationBusy means the target conversation already has an active run.
+// The tick is skipped quietly: release the claim, push the retry out by one
+// scan interval, and try again on a later scan.
+var errConversationBusy = errors.New("schedule: conversation busy")
+
+// busyRetryDelay spaces out retries while the conversation is busy. It matches
+// the default 15s scanner interval (bootstrap.scheduleScanInterval) and keeps
+// the claim loop from re-picking the same row within one scan.
+const busyRetryDelay = 15 * time.Second
 
 // RunOpener starts a scheduled run for a conversation.
 type RunOpener interface {
@@ -54,6 +66,12 @@ func Scan(store Store, meta MetaReader, opener RunOpener, runStatus RunStatus, n
 			break
 		}
 		softMsg, err := processClaimed(store, meta, opener, now, it)
+		if errors.Is(err, errConversationBusy) {
+			// Busy is expected: release the pending claim and retry next tick.
+			_ = store.FailOpen(it.ID, "")
+			_ = store.AdvanceNextRunAt(it.ID, now.Add(busyRetryDelay))
+			continue
+		}
 		if err != nil {
 			return err
 		}
@@ -123,6 +141,9 @@ func processClaimed(store Store, meta MetaReader, opener RunOpener, now time.Tim
 	}
 	runID, err := opener.Open(it.ConversationID, it.Instruction, owner)
 	if err != nil {
+		if errors.Is(err, storepkg.ErrConversationBusy) {
+			return "", errConversationBusy
+		}
 		return errOpenRunFailed, nil
 	}
 	switch it.Kind {

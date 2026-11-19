@@ -436,6 +436,32 @@ func TestInboxDeliveryTTLAndUpdate(t *testing.T) {
 	}
 }
 
+func TestDeleteInboxDeliveryReleasesClaim(t *testing.T) {
+	s := store.NewMemory()
+	d := store.InboxDelivery{
+		ChannelID: "alerts", IdempotencyKey: "k-del",
+		DeliveryID: "dlv_1", BodyHash: "hash",
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteInboxDelivery("alerts", "k-del"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.GetInboxDelivery("alerts", "k-del"); err != nil || ok {
+		t.Fatalf("claim not released ok=%v err=%v", ok, err)
+	}
+	if err := s.PutInboxDelivery(d); err != nil {
+		t.Fatalf("re-claim after delete: %v", err)
+	}
+	if err := s.DeleteInboxDelivery("alerts", "k-del"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteInboxDelivery("alerts", "k-del"); err != nil {
+		t.Fatalf("second delete must be a no-op: %v", err)
+	}
+}
+
 func TestInboxThreadRoundTrip(t *testing.T) {
 	s := store.NewMemory()
 	if err := s.PutInboxThread("alerts", "jira-1", "conv-1"); err != nil {

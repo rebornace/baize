@@ -79,6 +79,92 @@ func TestInboxPostRequiresSignature(t *testing.T) {
 	}
 }
 
+func TestInboxBusyReleasesIdempotencyClaim(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := testServerWithInbox(t, st, reg)
+	h := srv.Handler()
+
+	active, err := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "first", ConversationID: "conv_busy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := []byte(`{"input":"hello","conversation_id":"conv_busy","idempotency_key":"k-busy"}`)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("busy: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Retry-After") == "" {
+		t.Fatal("busy response must carry Retry-After")
+	}
+	var got struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error.Code != "conversation_busy" {
+		t.Fatalf("code=%q", got.Error.Code)
+	}
+	if _, found, err := st.GetInboxDelivery("alerts", "k-busy"); err != nil || found {
+		t.Fatalf("claim must be released after busy: found=%v err=%v", found, err)
+	}
+
+	if err := st.UpdateRun(active.ID, store.StatusSucceeded, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", body))
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("retry after free: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestInboxSecondMessageToSamePeerUnderGate(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
+	reg := inbox.NewRegistry()
+	reg.Replace([]inbox.Channel{{ID: "alerts", AgentID: "a", Secret: "sec", Enabled: true}})
+	srv := api.NewServer(st, tool.NewRegistry(), scheduleNoopRunner{})
+	srv.Inbox = reg
+	srv.InboxLimiter = inbox.NewRateLimiter(inbox.DefaultRateLimit, inbox.DefaultRateWindow)
+	srv.Queue = scheduleNoopJobQueue{}
+	srv.OperatorToken = "op" // gate on: inbox must still reuse its own thread
+	h := srv.Handler()
+
+	firstBody := []byte(`{"input":"first","external_id":"peer-g","idempotency_key":"g1"}`)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", firstBody))
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("first: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var first map[string]any
+	if err := json.NewDecoder(rr.Body).Decode(&first); err != nil {
+		t.Fatal(err)
+	}
+	if first["conversation_id"] == "" {
+		t.Fatalf("first response missing conversation_id: %v", first)
+	}
+
+	secondBody := []byte(`{"input":"second","external_id":"peer-g","idempotency_key":"g2"}`)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, signedInboxRequest(t, http.MethodPost, "/v0/inbox/alerts", "sec", secondBody))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("second: want 409 busy, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Retry-After") == "" {
+		t.Fatal("busy response must carry Retry-After")
+	}
+}
+
 func TestInboxPostCreatesRun(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "hi"})
