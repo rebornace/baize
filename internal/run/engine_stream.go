@@ -42,6 +42,7 @@ func (e *Engine) recordTerminalMessage(runID string) {
 			RunID:            runID,
 		})
 		e.deliverOutbound(runID, runRec.ConversationID, runRec.Output)
+		e.noteUnverifiedWrite(runID, runRec)
 	case store.StatusFailed:
 		note := strings.TrimSpace(runRec.Error)
 		if note == "" {

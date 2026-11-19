@@ -104,6 +104,10 @@ Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /
 
 When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.
 
+## Write honesty
+
+If a succeeded Run made no `llm.tool_call` at all but its final reply claims a completed write (“created / copied / updated / deleted”), the engine appends a `run.unverified_write` event and the system note “This turn called no tools, but the reply claims a write completed. Please verify.” The Run stays `succeeded`; the assistant text and `output` are unchanged. Any tool call suppresses the check (v1 boundary).
+
 ## Known limits
 
 - **Workflow step approvals hold a worker slot:** an `approve: true` step in `workflow.yaml` blocks, so the Run keeps its lease and worker slot until a human approves, rejects, or the default 24-hour approval TTL expires (`hitl.approval_ttl_sec`, `0` disables). After a process restart such a Run cannot cold-resume and fails at startup with a re-run message. Avoid stacking several pending workflow approvals when concurrency is tight.

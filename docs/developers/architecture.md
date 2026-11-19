@@ -104,6 +104,10 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 下游需要登录时（`login_required`）：对话可暂停并展示托管登录入口——打开浏览器托管页、忽略该连接器并继续本轮，或结束本轮。MCP 导出侧见上文「鉴权失败 → elicitation / `hosted_login_url`」。
 
+## 写操作诚实性
+
+成功 Run 若整个 Run 没有一次 `llm.tool_call`，但最终回复命中“已创建 / 已复制 / 已更新 / 已删除”等写完成声明，会追加 `run.unverified_write` 事件与系统提示「本轮没有调用任何工具，但回复声称写操作已完成。请核实结果。」。Run 仍为 `succeeded`，助手原文与 `output` 不变；有任意工具调用时不检查（v1 边界）。
+
 ## 已知限制
 
 - **工作流步骤审批占槽**：`workflow.yaml` 的 `approve: true` 步骤走阻塞等待，Run 会一直持有租约与 worker 槽位，直到人批准、拒绝或默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭）。进程重启后这类 Run 无法冷恢复，启动时会直接失败并要求重跑。并发紧张时不要同时挂多个待审批工作流。
