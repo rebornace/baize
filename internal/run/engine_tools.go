@@ -475,6 +475,9 @@ func (e *Engine) persistHITLWaiting(ctx context.Context, runID string, payload *
 	if e.isCancelled(runID) {
 		return context.Canceled
 	}
+	if payload.WaitingSince.IsZero() {
+		payload.WaitingSince = e.now().UTC()
+	}
 	data := map[string]any{
 		"prompt":    payload.Prompt,
 		"tool_name": payload.ToolName,

@@ -201,3 +201,69 @@ func TestScheduleListBlockedReasonOmittedWhenEmpty(t *testing.T) {
 		t.Fatalf("empty blocked_reason must be omitted, got %s", body)
 	}
 }
+
+func listScheduleItem(t *testing.T, srv *Server, scheduleID string) scheduleItemJSON {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, withNamedOp(
+		httptest.NewRequest(http.MethodGet, "/v0/settings/schedules", nil), "alice-token"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET list: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var list scheduleListResp
+	if err := json.NewDecoder(strings.NewReader(rec.Body.String())).Decode(&list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	for _, it := range list.Items {
+		if it.ID == scheduleID {
+			return it
+		}
+	}
+	t.Fatalf("schedule %s not in list: %s", scheduleID, rec.Body.String())
+	return scheduleItemJSON{}
+}
+
+func TestScheduleListBlockedSinceForApproval(t *testing.T) {
+	srv := schedulesSettingsServer(t)
+	it := insertBlockedTestSchedule(t, srv, schedule.StatusActive)
+	since := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	runID := createBlockedTestRun(t, srv, store.StatusWaitingHuman, &store.HITLPayload{
+		Kind:         store.HITLKindApproval,
+		WaitingSince: since,
+	})
+	if err := srv.Schedules.SetRunningRunID(it.ID, runID); err != nil {
+		t.Fatal(err)
+	}
+	got := listScheduleItem(t, srv, it.ID)
+	if got.BlockedReason != "awaiting_approval" {
+		t.Fatalf("blocked_reason=%q", got.BlockedReason)
+	}
+	parsed, err := time.Parse(time.RFC3339, got.BlockedSince)
+	if err != nil {
+		t.Fatalf("blocked_since=%q: %v", got.BlockedSince, err)
+	}
+	if !parsed.Equal(since) {
+		t.Fatalf("blocked_since=%v want %v", parsed, since)
+	}
+}
+
+func TestScheduleListBlockedSinceForConversationBusy(t *testing.T) {
+	srv := schedulesSettingsServer(t)
+	it := insertBlockedTestSchedule(t, srv, schedule.StatusActive)
+	since := time.Now().UTC().Add(-90 * time.Minute).Truncate(time.Second)
+	createBlockedTestRun(t, srv, store.StatusWaitingHuman, &store.HITLPayload{
+		Kind:         store.HITLKindLogin,
+		WaitingSince: since,
+	})
+	got := listScheduleItem(t, srv, it.ID)
+	if got.BlockedReason != "conversation_busy" {
+		t.Fatalf("blocked_reason=%q", got.BlockedReason)
+	}
+	parsed, err := time.Parse(time.RFC3339, got.BlockedSince)
+	if err != nil {
+		t.Fatalf("blocked_since=%q: %v", got.BlockedSince, err)
+	}
+	if !parsed.Equal(since) {
+		t.Fatalf("blocked_since=%v want %v", parsed, since)
+	}
+}

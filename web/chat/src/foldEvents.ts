@@ -35,6 +35,8 @@ export type ChatBlock =
       result?: unknown
       isError?: boolean
       runId: string
+      /** Timestamp of the last hitl.waiting event, for "waited N" display. */
+      waitingSince?: string
       contractHash?: string
       catalogRevision?: number
     }
@@ -279,6 +281,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         const card = findTopUnfinished(blocks, name)
         if (card) {
           card.status = 'waiting_human'
+          card.waitingSince = ev.timestamp
           if (data?.arguments !== undefined) card.arguments = data.arguments
         } else {
           blocks.push({
@@ -287,6 +290,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
             status: 'waiting_human',
             arguments: data?.arguments,
             runId,
+            waitingSince: ev.timestamp,
           })
         }
         break

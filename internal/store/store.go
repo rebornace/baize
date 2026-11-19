@@ -441,6 +441,9 @@ type HITLPayload struct {
 	ConnectorID string         `json:"connector_id,omitempty"` // login waits: which system
 	ChildRunID  string         `json:"child_run_id,omitempty"` // waiting_child: scoped child
 	ToolCallID  string         `json:"tool_call_id,omitempty"` // waiting_child: spawn tool_call id
+	// WaitingSince is when this wait began. Older rows omit it; callers fall
+	// back to the latest hitl.waiting event timestamp.
+	WaitingSince time.Time `json:"waiting_since,omitempty"`
 }
 
 // HITLCommentSkipLogin is sent with reject to skip login for the connector and continue.
@@ -619,6 +622,9 @@ type Store interface {
 	// WaitingHumanRun returns the newest waiting_human run for the conversation,
 	// or (nil, nil) when none.
 	WaitingHumanRun(conversationID string) (*Run, error)
+	// ListWaitingHumanRuns returns waiting_human runs oldest first, capped by
+	// limit (limit<=0 → 500). Used by HITL expiry and startup reconciliation.
+	ListWaitingHumanRuns(limit int) ([]*Run, error)
 
 	ListConnectors() []Connector
 	ListTools() []Tool
@@ -746,6 +752,19 @@ const evalListDefaultLimit = 100
 const evalListMaxLimit = 500
 
 const conversationRunsDefaultLimit = 50
+
+const waitingRunsDefaultLimit = 500
+const waitingRunsMaxLimit = 1000
+
+func normalizeWaitingRunsLimit(limit int) int {
+	if limit <= 0 {
+		return waitingRunsDefaultLimit
+	}
+	if limit > waitingRunsMaxLimit {
+		return waitingRunsMaxLimit
+	}
+	return limit
+}
 
 func normalizeConversationRunsLimit(limit int) int {
 	if limit <= 0 {

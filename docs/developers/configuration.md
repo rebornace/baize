@@ -98,6 +98,14 @@ connector_groups:
 > **匹配与决策**（工具预筛 + 决策模型）在独立设置页配置：增强匹配经 `/v0/settings/tool-retrieval*`；决策模型经 `/v0/settings/systemone*`（本机 Ollama ≥0.35 拉默认模型 `tev1`，或 API）。`decide_systemone_*` 由启用流程写入 knobs；`decide_profile_id` 仅为决策模型不可用时的**备用模型**（留空不会改用主模型）。不在 YAML。
 
 
+### `hitl`
+
+| 字段 | 默认 / 说明 |
+|------|-------------|
+| `approval_ttl_sec` | 86400（24 小时）。等待审批 / 登录超过此时长会自动取消并释放会话；显式 `0` 关闭 |
+
+工作流步骤审批仍占 worker 直到决策或过期；启动时无法冷恢复的工作流审批会直接失败并提示重新发起。等待时长在聊天审批卡与日程列表可见。
+
 ### `conversation`
 
 | 字段 | 默认 / 说明 |

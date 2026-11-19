@@ -7,6 +7,7 @@ import type { ChatBlock } from '../foldEvents'
 import { connectorIdFromLoginResult, isLoginRequiredContent } from '../loginEntry'
 import type { PriorEvidenceItem } from '../priorEvidence'
 import { CHAT, HITL, LOGIN_AT } from '../strings'
+import { waitedLabel } from '../waitTime'
 import { AnalysisPagePreview } from './AnalysisPagePreview'
 import { Button } from './ui'
 
@@ -43,6 +44,7 @@ function toolCardPropsEqual(prev: ToolCardProps, next: ToolCardProps): boolean {
     a.isError === b.isError &&
     a.contractHash === b.contractHash &&
     a.catalogRevision === b.catalogRevision &&
+    a.waitingSince === b.waitingSince &&
     prev.catalog === next.catalog &&
     prev.readOnly === next.readOnly &&
     prev.onError === next.onError &&
@@ -72,6 +74,14 @@ function ToolCardImpl({
   const [failed, setFailed] = useState(false)
   const [showComment, setShowComment] = useState(false)
   const [comment, setComment] = useState('')
+  const [waitedNow, setWaitedNow] = useState(() => Date.now())
+
+  const waited = waiting ? waitedLabel(block.waitingSince, waitedNow, HITL) : null
+  useEffect(() => {
+    if (!waiting || !block.waitingSince) return
+    const id = window.setInterval(() => setWaitedNow(Date.now()), 30_000)
+    return () => window.clearInterval(id)
+  }, [waiting, block.waitingSince])
 
   const analysisPage =
     block.result !== undefined ? parseAnalysisPageResult(block.result) : null
@@ -126,6 +136,7 @@ function ToolCardImpl({
             {label}
             {description ? ` · ${description}` : ''}
           </p>
+          {waited ? <p className="hitl-waited">{waited}</p> : null}
           {priorEvidence !== undefined && (
             <div className="hitl-evidence" data-testid="hitl-evidence">
               <p className="hitl-evidence-title">{HITL.evidenceTitle}</p>

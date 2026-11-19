@@ -100,13 +100,14 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 ## HITL
 
-写操作等可标 `require_approval`：Run 进入 `waiting_human`，运营 / API `POST /v0/runs/{id}/resume` 后继续。Chat UI（`/ui`）提供运营入口。
+写操作等可标 `require_approval`：Run 进入 `waiting_human`，运营 / API `POST /v0/runs/{id}/resume` 后继续。Chat UI（`/ui`）提供运营入口。审批 / 登录等待默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭），过期后 Run 记为 `cancelled` 并释放会话；审批卡与日程列表显示已等待时长。
 
 下游需要登录时（`login_required`）：对话可暂停并展示托管登录入口——打开浏览器托管页、忽略该连接器并继续本轮，或结束本轮。MCP 导出侧见上文「鉴权失败 → elicitation / `hosted_login_url`」。
 
 ## 已知限制
 
-- **工作流步骤审批占槽**：`workflow.yaml` 的 `approve: true` 步骤走阻塞等待，Run 会一直持有租约与 worker 槽位，直到人批准或拒绝；审批没有自动超时。进程重启后这类 Run 无法冷恢复，会直接失败并要求重跑。并发紧张时不要同时挂多个待审批工作流；等待期间避免重启。
+- **工作流步骤审批占槽**：`workflow.yaml` 的 `approve: true` 步骤走阻塞等待，Run 会一直持有租约与 worker 槽位，直到人批准、拒绝或默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭）。进程重启后这类 Run 无法冷恢复，启动时会直接失败并要求重跑。并发紧张时不要同时挂多个待审批工作流。
+- **HITL 过期是进程内协调**：`hitlMu` 只串行化单进程内的过期与同意；多副本部署时仍可能一边过期一边同意，最终以最后写入的终态为准。
 - **多副本日程抢领窗口**：每个副本都会跑 15 秒一次的日程扫描；进程启动时会把全库 `running_run_id=pending` 的占位清空。若另一副本正好处在 `ClaimDue` 与 `CompleteOpen` 之间，可能出现重复开一轮。单副本没有这个问题；多副本部署时避免同时重启。
 - **记忆不覆盖同名条目**：自动抽取遇到已存在的 `key` 会跳过，不会改写旧值。要纠正或更新，请用显式记忆（`remember_fact`）或「设置 → 记忆」编辑。
 - **定时 Run 无来源标记**：到点 Run 的输入就是日程指令原文，会话历史里与人工输入不可区分，模型也不知道这一轮由定时唤醒，因此目前没有「无事则静默」。

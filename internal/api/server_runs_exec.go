@@ -61,7 +61,7 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		// cold resume (no waiter) still takes the lease below.
 		if eng, ok := s.Runner.(*run.Engine); ok && eng.Gate != nil && eng.Gate.HasWaiter(job.RunID) {
 			if err := eng.ContinueFromHITL(ctx, job.RunID, d); err != nil {
-				if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) {
+				if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) || errors.Is(err, run.ErrHITLExpired) {
 					return nil
 				}
 				s.finalizeRunError(job.RunID, cur.ConversationID, err)
@@ -95,7 +95,7 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 			OperatorID: job.HITLOperatorID,
 		}
 		if err := s.Runner.ContinueFromHITL(ctx, job.RunID, d); err != nil {
-			if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) {
+			if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) || errors.Is(err, run.ErrHITLExpired) {
 				return nil
 			}
 			s.finalizeRunError(job.RunID, cur.ConversationID, err)

@@ -100,13 +100,14 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 
 ## Human approval
 
-Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry.
+Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry. Approval / login waits expire after 24 hours by default (`hitl.approval_ttl_sec`, `0` disables); an expired Run becomes `cancelled` and releases the conversation. Approval cards and schedule rows show the elapsed wait.
 
 When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.
 
 ## Known limits
 
-- **Workflow step approvals hold a worker slot:** an `approve: true` step in `workflow.yaml` blocks, so the Run keeps its lease and worker slot until a human approves or rejects; approvals have no automatic timeout. After a process restart such a Run cannot cold-resume and fails with a "re-run" message. Avoid stacking several pending workflow approvals when concurrency is tight, and avoid restarts while they wait.
+- **Workflow step approvals hold a worker slot:** an `approve: true` step in `workflow.yaml` blocks, so the Run keeps its lease and worker slot until a human approves, rejects, or the default 24-hour approval TTL expires (`hitl.approval_ttl_sec`, `0` disables). After a process restart such a Run cannot cold-resume and fails at startup with a re-run message. Avoid stacking several pending workflow approvals when concurrency is tight.
+- **HITL expiry is process-local:** `hitlMu` only serializes expiry and approval inside one process; with multiple replicas an expiry and an approval can still race, and the last terminal write wins.
 - **Multi-replica schedule claim window:** every replica runs the 15-second schedule scan, and a starting process clears all `running_run_id=pending` placeholders. If another replica is between `ClaimDue` and `CompleteOpen`, a run can be opened twice. Single-replica deployments are unaffected; with multiple replicas, avoid restarting them at the same time.
 - **Memory does not overwrite same-key entries:** auto-extraction skips a `key` that already exists instead of rewriting it. To correct or update, use explicit memory (`remember_fact`) or edit the entry in Settings → Memory.
 - **Scheduled Runs carry no origin marker:** a due Run's input is the schedule instruction verbatim, so history cannot tell it from a human message and the model does not know the turn was timer-triggered. There is no "stay quiet when nothing is new" behavior yet.

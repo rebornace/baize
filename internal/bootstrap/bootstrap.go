@@ -449,6 +449,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		MaxSteps:          cfg.Run.MaxSteps,
 		ToolTimeout:       time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
 		ParallelToolLimit: cfg.Run.ParallelToolLimit,
+		HITLApprovalTTL:   cfg.HITLApprovalTTL(),
 		Messages:          messages,
 		MaxMessages:       cfg.Conversation.MaxMessages,
 		Compactor:         compactor,
@@ -658,6 +659,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		},
 	}
 	rt.setWrapped(st)
+	if settled, rerr := engine.ReconcileHITL(time.Now()); rerr != nil {
+		log.Printf("hitl reconcile: %v", rerr)
+	} else if settled > 0 {
+		log.Printf("hitl reconcile: settled %d waiting run(s)", settled)
+	}
 	srv.HotSwapStore = rt.HotSwap
 	srv.ReloadConfig = rt.ReloadLayeredConfig
 	srv.ApplyConnectorGroups = engine.SetConnectorGroups
@@ -786,6 +792,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	scanCtx, scanCancel := context.WithCancel(context.Background())
 	closer.stops = append(closer.stops, scanCancel)
 	go runScheduleScanner(scanCtx, rt, srv)
+	go runHITLSweeper(scanCtx, engine)
 
 	return srv, closer, nil
 }

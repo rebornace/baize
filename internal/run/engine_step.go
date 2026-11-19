@@ -93,6 +93,14 @@ func (e *Engine) triggerMemoryExtract(ctx context.Context, runID, output string)
 }
 
 func (e *Engine) finalizeFailedRun(runID string, cause error) error {
+	// A concurrent cancel/expiry may have settled the run already. Do not
+	// overwrite its terminal state or record a second system note.
+	if cur, err := e.Store.GetRun(runID); err == nil && cur != nil {
+		switch cur.Status {
+		case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
+			return cause
+		}
+	}
 	errMsg := cause.Error()
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventLLMError,

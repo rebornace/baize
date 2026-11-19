@@ -22,6 +22,7 @@ import {
   useToast,
 } from '../components/ui'
 import { SCHEDULE, friendlyError } from '../strings'
+import { waitedLabel } from '../waitTime'
 
 const CONV_KEY = 'baize.conversation_id'
 
@@ -90,6 +91,12 @@ export function ScheduleSettings() {
   const [busy, setBusy] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<ScheduleEntry | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [nowTick, setNowTick] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -276,7 +283,10 @@ export function ScheduleSettings() {
 
       {items !== null && items.length > 0 && (
         <ul className="settings-list">
-          {items.map((entry) => (
+          {items.map((entry) => {
+            const blocked = blockedLabel(entry.blocked_reason)
+            const waited = waitedLabel(entry.blocked_since, nowTick, SCHEDULE)
+            return (
             <li key={entry.id} className="settings-list-item">
               <div className="settings-tool-row">
                 <div>
@@ -286,19 +296,18 @@ export function ScheduleSettings() {
                     {entry.time_of_day ? ` · ${entry.time_of_day}` : ''}
                     {entry.weekday ? ` · ${SCHEDULE.weekdayOption(entry.weekday)}` : ''}
                     {' · '}
-                    {blockedLabel(entry.blocked_reason)
-                      ? SCHEDULE.statusEnabled
-                      : statusLabel(entry.status)}
-                    {blockedLabel(entry.blocked_reason) && (
+                    {blocked ? SCHEDULE.statusEnabled : statusLabel(entry.status)}
+                    {blocked && (
                       <>
                         {' · '}
-                        <Badge tone="warning">{blockedLabel(entry.blocked_reason)}</Badge>
+                        <Badge tone="warning">{blocked}</Badge>
+                        {waited ? <span className="settings-muted"> · {waited}</span> : null}
                       </>
                     )}
                   </p>
                 </div>
                 <div className="accounts-actions">
-                  {blockedLabel(entry.blocked_reason) && (
+                  {blocked && (
                     <Button
                       type="button"
                       size="sm"
@@ -359,7 +368,8 @@ export function ScheduleSettings() {
                 </div>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
 

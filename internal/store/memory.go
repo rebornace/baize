@@ -262,6 +262,33 @@ func (s *Memory) ListChildRuns(parentRunID string) ([]*Run, error) {
 	return out, nil
 }
 
+func (s *Memory) ListWaitingHumanRuns(limit int) ([]*Run, error) {
+	limit = normalizeWaitingRunsLimit(limit)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Run
+	for _, r := range s.runs {
+		if r.Status != StatusWaitingHuman {
+			continue
+		}
+		cp := *r
+		cp.PassthroughHeaders = cloneHeaders(r.PassthroughHeaders)
+		cp.WebhookConfig = cloneWebhookConfig(r.WebhookConfig)
+		if until, held := s.leaseUntil[r.ID]; held {
+			lease := until
+			cp.LeaseUntil = &lease
+		}
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (s *Memory) GetRun(id string) (*Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

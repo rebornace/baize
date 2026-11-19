@@ -15,6 +15,7 @@ export interface ScheduleEntry {
   running_run_id?: string
   last_error?: string
   blocked_reason?: string
+  blocked_since?: string
   revision: number
 }
 

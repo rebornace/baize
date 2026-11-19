@@ -137,6 +137,10 @@ type Engine struct {
 	// Tool-RAG (ToolBench-style). nil ⇒ lexical BM25/sparse fallback only.
 	// Mutate only via SetToolEmbedder so the catalog cache is invalidated.
 	ToolEmbedder toolindex.Embedder
+	// HITLApprovalTTL bounds how long a run may wait for an approval or login.
+	// Expired waits settle as cancelled (reason waiting_expired). Zero disables
+	// automatic expiry.
+	HITLApprovalTTL time.Duration
 	// Now overrides the clock for tool argument prechecks (tests). nil uses time.Now.
 	Now func() time.Time
 
@@ -148,6 +152,10 @@ type Engine struct {
 
 	cancelMu sync.Mutex
 	cancels  map[string]context.CancelFunc
+
+	// hitlMu serializes HITL decisions with expiry/reconciliation so an
+	// approval cannot execute a tool after the wait was settled.
+	hitlMu sync.Mutex
 
 	// stickyNarrow retains the last DP-2a sent tool set per conversation so
 	// small ranking jitter does not reshuffle schemas (prefix-cache friendly).
@@ -445,16 +453,34 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 // After restart (no waiter): reads HITLPayload, applies approve/reject, and continues ReAct.
 func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision) error {
 	ctx = applyDecisionPrincipal(e.injectAuthCtx(ctx, runID), d)
+
+	e.hitlMu.Lock()
+	defer e.hitlMu.Unlock()
+
+	run, err := e.Store.GetRun(runID)
+	if err != nil {
+		return err
+	}
+	if run != nil && run.Status == store.StatusWaitingHuman {
+		payload, perr := e.Store.GetHITL(runID)
+		if perr != nil {
+			return perr
+		}
+		now := e.now()
+		if e.hitlOverdue(run, payload, now) {
+			if err := e.expireHITLLocked(run, payload, now, HITLExpiredReason); err != nil {
+				return err
+			}
+			return ErrHITLExpired
+		}
+	}
+
 	if e.Gate != nil {
 		if err := e.Gate.Resume(runID, d); err == nil {
 			return nil
 		}
 	}
 
-	run, err := e.Store.GetRun(runID)
-	if err != nil {
-		return err
-	}
 	if run.Status != store.StatusWaitingHuman {
 		return fmt.Errorf("run not waiting_human")
 	}
@@ -474,14 +500,8 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	// pending step — the persisted tree/step state cannot be rebuilt, and
 	// firing side effects from a broken pipeline is worse than stopping.
 	if workflowInterrupted(evs0) {
-		errMsg := "workflow run interrupted by restart; please re-run"
-		_ = e.Store.AppendEvent(runID, store.Event{
-			Type: EventLLMError,
-			Data: map[string]any{"error": errMsg},
-		})
-		_ = e.Store.UpdateRun(runID, store.StatusFailed, "", errMsg)
-		e.recordTerminalMessage(runID)
-		return fmt.Errorf("%s", errMsg)
+		_ = e.Store.SetHITL(runID, nil)
+		return e.finalizeFailedRun(runID, errors.New(HITLWorkflowRestartNote))
 	}
 
 	if payload.Kind == store.HITLKindWaitingChild {

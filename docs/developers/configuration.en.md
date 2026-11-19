@@ -98,6 +98,14 @@ Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings â
 > **Matching & decisions** (tool prefilter + decision model) lives on its own settings page: enhanced matching via `/v0/settings/tool-retrieval*`; the decision model via `/v0/settings/systemone*` (local Ollama â‰¥0.35 pulls default model `tev1`, or an API). Enablement writes `decide_systemone_*` knobs; `decide_profile_id` is only a **standby model** when the decision model is unavailable (empty never bills the main model). Not in YAML.
 
 
+### `hitl`
+
+| Field | Default / notes |
+|------|-----------------|
+| `approval_ttl_sec` | 86400 (24 hours). Approval / login waits longer than this are cancelled and release the conversation; explicit `0` disables |
+
+Workflow step approvals still hold a worker until decided or expired; a workflow approval that cannot cold-resume after a restart fails immediately with a re-run message. Wait duration is visible on chat approval cards and schedule rows.
+
 ### `conversation`
 
 | Field | Default / notes |

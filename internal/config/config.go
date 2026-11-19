@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/store"
@@ -108,6 +109,11 @@ type Config struct {
 		// ParallelToolLimit caps concurrent safe tool invokes per turn (default 8).
 		ParallelToolLimit int `yaml:"parallel_tool_limit"`
 	} `yaml:"run"`
+	HITL struct {
+		// ApprovalTTLSec bounds how long a run may wait for approval/login.
+		// nil → 24h; explicit 0 disables automatic expiry.
+		ApprovalTTLSec *int `yaml:"approval_ttl_sec"`
+	} `yaml:"hitl"`
 	Conversation struct {
 		MaxMessages       int   `yaml:"max_messages"`
 		PersistIdentities *bool `yaml:"persist_identities"`
@@ -495,4 +501,16 @@ func (c *Config) SkillBuiltinDirs() []string {
 		return []string{d}
 	}
 	return nil
+}
+
+// HITLApprovalTTL resolves the approval/login wait lifetime. Unset defaults
+// to 24h; explicit 0 (or negative) disables automatic expiry.
+func (c Config) HITLApprovalTTL() time.Duration {
+	if c.HITL.ApprovalTTLSec == nil {
+		return 24 * time.Hour
+	}
+	if *c.HITL.ApprovalTTLSec <= 0 {
+		return 0
+	}
+	return time.Duration(*c.HITL.ApprovalTTLSec) * time.Second
 }

@@ -362,7 +362,7 @@ func TestContinueFromHITLWorkflowFailFast(t *testing.T) {
 	if got.Status != store.StatusFailed {
 		t.Fatalf("status=%s want failed", got.Status)
 	}
-	if got.Error != "workflow run interrupted by restart; please re-run" {
+	if got.Error != HITLWorkflowRestartNote {
 		t.Fatalf("error=%q", got.Error)
 	}
 	evs, _ := st.ListEvents(r.ID)

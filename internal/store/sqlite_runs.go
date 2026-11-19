@@ -178,6 +178,18 @@ func (s *SQLStore) ListChildRuns(parentRunID string) ([]*Run, error) {
 	return scanRuns(rows)
 }
 
+func (s *SQLStore) ListWaitingHumanRuns(limit int) ([]*Run, error) {
+	limit = normalizeWaitingRunsLimit(limit)
+	rows, err := s.query(
+		`SELECT `+runSelectColumns+` FROM runs WHERE status = ? ORDER BY created_at ASC LIMIT ?`,
+		string(StatusWaitingHuman), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanRuns(rows)
+}
+
 func (s *SQLStore) SetPassthroughHeaders(id string, headers map[string]string) error {
 	var passthroughSQL sql.NullString
 	if len(headers) > 0 {

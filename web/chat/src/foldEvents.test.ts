@@ -79,6 +79,7 @@ describe('foldEvents', () => {
         status: 'rejected',
         arguments: {},
         runId: 'run_4',
+        waitingSince: '2026-08-15T00:00:00Z',
       },
     ])
   })
@@ -97,6 +98,7 @@ describe('foldEvents', () => {
         status: 'approved',
         arguments: {},
         runId: 'run_approved',
+        waitingSince: '2026-08-15T00:00:00Z',
       },
     ])
   })
@@ -117,6 +119,7 @@ describe('foldEvents', () => {
         status: 'rejected',
         arguments: { x: 1 },
         runId: 'run_parallel',
+        waitingSince: '2026-08-15T00:00:00Z',
       },
       {
         kind: 'tool',
@@ -124,6 +127,7 @@ describe('foldEvents', () => {
         status: 'waiting_human',
         arguments: { y: 2 },
         runId: 'run_parallel',
+        waitingSince: '2026-08-15T00:00:00Z',
       },
     ])
   })

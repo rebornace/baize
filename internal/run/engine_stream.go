@@ -55,9 +55,13 @@ func (e *Engine) recordTerminalMessage(runID string) {
 			RunID:   runID,
 		})
 	case store.StatusCancelled:
+		note := "已取消"
+		if runRec.Error == HITLExpiredReason {
+			note = HITLExpiredNote
+		}
 		_, _ = e.Messages.Append(runRec.ConversationID, conversation.Message{
 			Role:    conversation.RoleSystemNote,
-			Content: "已取消",
+			Content: note,
 			RunID:   runID,
 		})
 	case store.StatusRejected:

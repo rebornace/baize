@@ -278,10 +278,12 @@ describe('ScheduleSettings', () => {
         next_run_at: '2026-11-19T01:00:00Z',
         revision: 2,
         blocked_reason: 'awaiting_approval',
+        blocked_since: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
       },
     ])
 
     expect(host.textContent).toContain('等待审批')
+    expect(host.textContent).toContain('已等待 2 小时')
     expect(host.textContent).toContain('已启用')
     const open = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.includes('去处理'),

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rebornace/baize/internal/run"
 	"github.com/rebornace/baize/internal/schedule"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -26,6 +27,7 @@ type scheduleItemJSON struct {
 	RunningRunID   string `json:"running_run_id,omitempty"`
 	LastError      string `json:"last_error,omitempty"`
 	BlockedReason  string `json:"blocked_reason,omitempty"`
+	BlockedSince   string `json:"blocked_since,omitempty"`
 	Revision       int    `json:"revision"`
 }
 
@@ -81,7 +83,7 @@ func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
 	out := make([]scheduleItemJSON, 0, len(items))
 	for _, it := range items {
 		item := scheduleItemToJSON(it)
-		item.BlockedReason = s.scheduleBlockedReason(it)
+		item.BlockedReason, item.BlockedSince = s.scheduleBlockedReason(it)
 		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
@@ -89,12 +91,13 @@ func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
 
 // scheduleBlockedReason derives why an active schedule is not firing even
 // though it is due. It is read-only: lookups fail soft so the list never 500s.
-func (s *Server) scheduleBlockedReason(it schedule.Item) string {
+// The second result is when the blocking wait began (empty when unknown).
+func (s *Server) scheduleBlockedReason(it schedule.Item) (string, string) {
 	if it.Status != schedule.StatusActive {
-		return ""
+		return "", ""
 	}
 	if s.Store == nil {
-		return ""
+		return "", ""
 	}
 	runID := strings.TrimSpace(it.RunningRunID)
 	if runID == "" {
@@ -103,32 +106,44 @@ func (s *Server) scheduleBlockedReason(it schedule.Item) string {
 		// waiting for approval). Surface that instead of showing "active".
 		busy, err := s.Store.HasActiveRun(it.ConversationID)
 		if err == nil && busy {
-			return "conversation_busy"
+			since := ""
+			if waiting, werr := s.Store.WaitingHumanRun(it.ConversationID); werr == nil && waiting != nil {
+				since = formatBlockedSince(run.HITLWaitingSince(s.Store, waiting))
+			}
+			return "conversation_busy", since
 		}
-		return ""
+		return "", ""
 	}
 	if runID == schedule.ClaimPending {
-		return ""
+		return "", ""
 	}
 	runRec, err := s.Store.GetRun(runID)
 	if err != nil || runRec == nil {
-		return "run_unavailable"
+		return "run_unavailable", ""
 	}
 	if runRec.Status != store.StatusWaitingHuman {
-		return ""
+		return "", ""
 	}
+	since := formatBlockedSince(run.HITLWaitingSince(s.Store, runRec))
 	payload, err := s.Store.GetHITL(runID)
 	if err != nil || payload == nil {
-		return "awaiting_input"
+		return "awaiting_input", since
 	}
 	switch payload.Kind {
 	case store.HITLKindWaitingChild:
-		return "waiting_child"
+		return "waiting_child", since
 	case store.HITLKindLogin:
-		return "awaiting_login"
+		return "awaiting_login", since
 	default: // approval or empty kind
-		return "awaiting_approval"
+		return "awaiting_approval", since
 	}
+}
+
+func formatBlockedSince(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {

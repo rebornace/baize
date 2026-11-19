@@ -54,6 +54,16 @@ function setInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe('ToolCard HITL 两段式拒绝链路', () => {
+  it('显示审批已等待时长', () => {
+    render(
+      <ToolCard
+        block={{ ...block, waitingSince: new Date(Date.now() - 2 * 3600 * 1000).toISOString() }}
+        catalog={[]}
+      />,
+    )
+    expect(host.textContent).toContain('已等待 2 小时')
+  })
+
   it('初始只有同意/拒绝，无确认拒绝按钮与留言框', () => {
     render(<ToolCard block={block} catalog={[]} />)
     expect(buttonByText('同意')).toBeTruthy()
