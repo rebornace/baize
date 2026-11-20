@@ -1554,6 +1554,7 @@ export const zhPack = {
     group: (id: string) => `组：${id}`,
     readonly: '只读',
     readwrite: '读写',
+    async: '异步',
     running: '运行中',
     waitingApproval: '等待审批',
     waitingLogin: '等待登录',

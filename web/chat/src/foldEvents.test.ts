@@ -476,6 +476,7 @@ describe('foldEvents', () => {
         group_id: 'finance',
         mode: 'readonly',
         goal: '核对发票',
+        async: true,
       }),
       ev('hitl.waiting', { kind: 'waiting_child', tool_name: 'spawn_group_run' }),
       ev('run.receipt', {
@@ -505,6 +506,7 @@ describe('foldEvents', () => {
       status: 'succeeded',
       summary: '税额合计 1240',
       facts: { total_tax: '1240.00' },
+      async: true,
     })
   })
 

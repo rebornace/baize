@@ -8,6 +8,7 @@ import (
 
 	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/config"
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/middleware"
@@ -170,6 +171,106 @@ func TestNotifyChildTerminalPublishesFacts(t *testing.T) {
 	facts, _ := receipt["facts"].(map[string]any)
 	if facts["total_tax"] != "1240.00" {
 		t.Fatalf("facts=%+v", receipt["facts"])
+	}
+}
+
+func TestSpawnAsyncReturnsStartedWithoutWaiting(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	parent, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "p", ConversationID: "c1"})
+	eng := &Engine{Store: st, Settings: scopedKnobs{on: true}, Tools: tool.NewRegistry()}
+	eng.SetConnectorGroups([]config.ConnectorGroup{{ID: "finance", Connectors: []string{"expense"}}})
+	ctx := identity.WithToolCallID(identity.WithRunID(context.Background(), parent.ID), "tc1")
+	out, isErr, err := eng.spawnGroupRun(ctx, map[string]any{
+		"group_id": "finance", "goal": "核对发票", "mode": "readonly", "async": true,
+	})
+	if err != nil || isErr {
+		t.Fatalf("err=%v out=%v", err, out)
+	}
+	if out["status"] != "started" || out["async"] != true || out["child_run_id"] == "" {
+		t.Fatalf("out=%+v", out)
+	}
+	got, _ := st.GetRun(parent.ID)
+	if got.Status == store.StatusWaitingHuman {
+		t.Fatal("async spawn must not wait")
+	}
+	if h, _ := st.GetHITL(parent.ID); h != nil {
+		t.Fatalf("async spawn must not persist HITL: %+v", h)
+	}
+	evs, _ := st.ListEvents(parent.ID)
+	var spawned map[string]any
+	for _, ev := range evs {
+		if ev.Type == EventRunSpawned {
+			spawned = ev.Data
+		}
+	}
+	if spawned == nil || spawned["async"] != true {
+		t.Fatalf("run.spawned=%+v", spawned)
+	}
+}
+
+func TestAsyncChildTerminalAddsNoteWithoutWakingParent(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	convs := conversation.NewMemoryStore()
+	parent, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "p", ConversationID: "c1"})
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, GroupID: "finance",
+	})
+	_ = st.AppendEvent(parent.ID, store.Event{
+		Type: EventRunSpawned,
+		Data: map[string]any{
+			"child_run_id": child.ID, "group_id": "finance", "goal": "核对发票", "async": true,
+		},
+	})
+	_ = st.UpdateRun(child.ID, store.StatusSucceeded,
+		"合计 1240\nRECEIPT_JSON: {\"summary\":\"合计 1240\",\"facts\":{\"total_tax\":\"1240.00\"}}", "")
+	var woke bool
+	eng := &Engine{Store: st, Messages: convs, OnChildTerminal: func(string, GroupRunReceipt) { woke = true }}
+	eng.NotifyChildTerminal(child)
+	if woke {
+		t.Fatal("async child must not wake the parent")
+	}
+	evs, _ := st.ListEvents(parent.ID)
+	var receipt map[string]any
+	for _, ev := range evs {
+		if ev.Type == EventRunReceipt {
+			receipt = ev.Data
+		}
+	}
+	if receipt == nil || receipt["async"] != true || receipt["summary"] != "合计 1240" {
+		t.Fatalf("receipt=%+v", receipt)
+	}
+	msgs := convs.List("c1")
+	found := false
+	for _, m := range msgs {
+		if m.Role == conversation.RoleSystemNote && strings.Contains(m.Content, "子代理完成") &&
+			strings.Contains(m.Content, "合计 1240") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing async child system note: %+v", msgs)
+	}
+}
+
+func TestSyncChildTerminalWakesWaitingParent(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	parent, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "p"})
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, GroupID: "finance",
+	})
+	_ = st.UpdateRun(parent.ID, store.StatusWaitingHuman, "", "")
+	_ = st.SetHITL(parent.ID, &store.HITLPayload{
+		Kind: store.HITLKindWaitingChild, ChildRunID: child.ID, ToolName: SpawnGroupRunName,
+	})
+	_ = st.UpdateRun(child.ID, store.StatusSucceeded, "ok", "")
+	var woke bool
+	eng := &Engine{Store: st, OnChildTerminal: func(string, GroupRunReceipt) { woke = true }}
+	eng.NotifyChildTerminal(child)
+	if !woke {
+		t.Fatal("sync child terminal must wake a waiting parent")
 	}
 }
 

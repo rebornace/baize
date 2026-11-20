@@ -1592,6 +1592,7 @@ export const enPack = {
     group: (id: string) => `Group: ${id}`,
     readonly: 'read-only',
     readwrite: 'read-write',
+    async: 'Async',
     running: 'Running',
     waitingApproval: 'Awaiting approval',
     waitingLogin: 'Awaiting login',

@@ -60,6 +60,7 @@ export type ChatBlock =
       goal: string
       groupId?: string
       mode?: string
+      async?: boolean
       status: 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled' | 'rejected'
       waitingKind?: 'approval' | 'login'
       summary?: string
@@ -489,6 +490,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         if (existing) {
           existing.status = 'running'
           existing.waitingKind = undefined
+          if (data?.async) existing.async = true
           break
         }
         blocks.push({
@@ -497,6 +499,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
           goal: String(data?.goal ?? ''),
           groupId: typeof data?.group_id === 'string' ? data.group_id : undefined,
           mode: typeof data?.mode === 'string' ? data.mode : undefined,
+          async: Boolean(data?.async),
           status: 'running',
           runId,
         })

@@ -66,11 +66,13 @@ describe('SubagentCard', () => {
           status: 'succeeded',
           summary: '税额合计 1240',
           facts: { total_tax: '1240.00' },
+          async: true,
         }}
       />,
     )
     expect(host.textContent).toContain('核对发票')
     expect(host.textContent).toContain('已完成')
+    expect(host.textContent).toContain('异步')
     expect(host.textContent).toContain('税额合计 1240')
     expect(host.textContent).toContain('1240.00')
   })

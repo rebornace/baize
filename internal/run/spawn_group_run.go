@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/middleware"
@@ -159,6 +160,10 @@ func spawnGroupRunSpec() llm.ToolSpec {
 					"type": "string", "enum": []any{store.SpawnModeReadonly, store.SpawnModeReadwrite},
 					"description": "readonly rejects approval/login tools",
 				},
+				"async": map[string]any{
+					"type":        "boolean",
+					"description": "return immediately and let the child run in the background",
+				},
 				"success_criteria": map[string]any{"type": "string"},
 				"budget": map[string]any{
 					"type": "object",
@@ -212,6 +217,7 @@ func (e *Engine) spawnGroupRun(ctx context.Context, args map[string]any) (map[st
 	if mode != store.SpawnModeReadonly && mode != store.SpawnModeReadwrite {
 		return map[string]any{"error": "mode must be readonly or readwrite"}, true, nil
 	}
+	async, _ := args["async"].(bool)
 	members := e.groupMembers(groupID)
 	if len(members) == 0 {
 		return map[string]any{"error": "unknown or empty connector group: " + groupID}, true, nil
@@ -287,6 +293,7 @@ func (e *Engine) spawnGroupRun(ctx context.Context, args map[string]any) (map[st
 			"group_id":     groupID,
 			"mode":         mode,
 			"goal":         goal,
+			"async":        async,
 		},
 	})
 
@@ -297,6 +304,16 @@ func (e *Engine) spawnGroupRun(ctx context.Context, args map[string]any) (map[st
 			AgentID: child.AgentID,
 			Input:   child.Input,
 		})
+	}
+
+	if async {
+		return map[string]any{
+			"status":       "started",
+			"child_run_id": child.ID,
+			"group_id":     groupID,
+			"mode":         mode,
+			"async":        true,
+		}, false, nil
 	}
 
 	_, waitErr := e.awaitHITLDecision(ctx, runID, &store.HITLPayload{
@@ -438,6 +455,7 @@ func (e *Engine) NotifyChildTerminal(child *store.Run) {
 		return
 	}
 	summary, facts := parseChildReceipt(child.Output)
+	goal, async := e.childSpawnInfo(child.ParentRunID, child.ID)
 	receipt := GroupRunReceipt{
 		Status:     string(child.Status),
 		Summary:    summary,
@@ -458,11 +476,94 @@ func (e *Engine) NotifyChildTerminal(child *store.Run) {
 			"facts":        receipt.Facts,
 			"group_id":     receipt.GroupID,
 			"error":        receipt.Error,
+			"async":        async,
 		},
 	})
-	if e.OnChildTerminal != nil {
-		e.OnChildTerminal(child.ParentRunID, receipt)
+	if async {
+		e.appendChildReceiptNote(child, goal, receipt)
 	}
+	// Only wake a parent that is actually waiting on this child. Async parents
+	// keep running (or may already be terminal); never start a resume for them.
+	if p, _ := e.Store.GetHITL(child.ParentRunID); p != nil &&
+		p.Kind == store.HITLKindWaitingChild && p.ChildRunID == child.ID {
+		if e.OnChildTerminal != nil {
+			e.OnChildTerminal(child.ParentRunID, receipt)
+		}
+	}
+}
+
+// childSpawnInfo returns the spawn goal and whether the child was async.
+func (e *Engine) childSpawnInfo(parentID, childID string) (string, bool) {
+	evs, err := e.Store.ListEvents(parentID)
+	if err != nil {
+		return "", false
+	}
+	for _, ev := range evs {
+		if ev.Type != EventRunSpawned {
+			continue
+		}
+		if cid, _ := ev.Data["child_run_id"].(string); cid != childID {
+			continue
+		}
+		goal, _ := ev.Data["goal"].(string)
+		async, _ := ev.Data["async"].(bool)
+		return goal, async
+	}
+	return "", false
+}
+
+// appendChildReceiptNote makes an async child's terminal state visible in the
+// conversation even if the parent run already ended.
+func (e *Engine) appendChildReceiptNote(child *store.Run, goal string, receipt GroupRunReceipt) {
+	if child == nil || e.Messages == nil || child.ParentRunID == "" {
+		return
+	}
+	parent, err := e.Store.GetRun(child.ParentRunID)
+	if err != nil || parent == nil || strings.TrimSpace(parent.ConversationID) == "" {
+		return
+	}
+	title := "[子代理完成]"
+	switch child.Status {
+	case store.StatusFailed:
+		title = "[子代理失败]"
+	case store.StatusCancelled:
+		title = "[子代理已取消]"
+	case store.StatusRejected:
+		title = "[子代理已拒绝]"
+	}
+	lines := []string{title}
+	if strings.TrimSpace(goal) != "" {
+		lines = append(lines, "目标："+strings.TrimSpace(goal))
+	}
+	if strings.TrimSpace(receipt.Summary) != "" {
+		lines = append(lines, "摘要："+strings.TrimSpace(receipt.Summary))
+	}
+	i := 0
+	for k, v := range receipt.Facts {
+		if i >= 5 {
+			break
+		}
+		lines = append(lines, "- "+k+": "+shortFact(v))
+		i++
+	}
+	if receipt.Error != "" {
+		lines = append(lines, "错误："+receipt.Error)
+	}
+	_, _ = e.Messages.Append(parent.ConversationID, conversation.Message{
+		Role: conversation.RoleSystemNote, Content: strings.Join(lines, "\n"), RunID: parent.ID,
+	})
+}
+
+func shortFact(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	text := strings.Trim(string(raw), "\"")
+	if len(text) > 160 {
+		text = text[:160] + "…"
+	}
+	return text
 }
 
 // notifyParentChildWaiting tells the parent that a child needs a human. The

@@ -273,6 +273,7 @@ export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardPro
             <span className="subagent-meta">
               {SUBAGENT.group(block.groupId)}
               {block.mode ? ` · ${block.mode === 'readwrite' ? SUBAGENT.readwrite : SUBAGENT.readonly}` : ''}
+              {block.async ? ` · ${SUBAGENT.async}` : ''}
             </span>
           ) : null}
           <ChevronDown
