@@ -1575,6 +1575,9 @@ export const zhPack = {
     abort: '放弃',
     copyId: '复制 ID',
     copied: '已复制',
+    stop: '停止子代理',
+    confirmStop: '确认停止',
+    stopCancel: '取消',
   },
   LOCALE: {
     sectionTitle: '界面语言',

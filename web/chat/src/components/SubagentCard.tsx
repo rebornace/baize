@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, ChevronDown, RefreshCw } from 'lucide-react'
 import {
+  cancelRun,
+  getRun,
   getRunBinding,
   listEvents,
   resumeRun,
@@ -26,10 +28,13 @@ type WaitingInfo = {
   args?: unknown
 }
 
-function statusLabel(block: SubagentBlock): string {
-  switch (block.status) {
+function statusLabel(
+  status: SubagentBlock['status'],
+  waitingKind?: 'approval' | 'login',
+): string {
+  switch (status) {
     case 'waiting':
-      return block.waitingKind === 'login' ? SUBAGENT.waitingLogin : SUBAGENT.waitingApproval
+      return waitingKind === 'login' ? SUBAGENT.waitingLogin : SUBAGENT.waitingApproval
     case 'running':
       return SUBAGENT.running
     case 'succeeded':
@@ -42,6 +47,33 @@ function statusLabel(block: SubagentBlock): string {
       return SUBAGENT.rejected
     default:
       return SUBAGENT.running
+  }
+}
+
+const terminalSubagentStatuses = new Set<SubagentBlock['status']>([
+  'succeeded',
+  'failed',
+  'cancelled',
+  'rejected',
+])
+
+function mapRunStatus(status: string | undefined): SubagentBlock['status'] | undefined {
+  switch (status) {
+    case 'queued':
+    case 'running':
+      return 'running'
+    case 'waiting_human':
+      return 'waiting'
+    case 'succeeded':
+      return 'succeeded'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'cancelled'
+    case 'rejected':
+      return 'rejected'
+    default:
+      return undefined
   }
 }
 
@@ -103,47 +135,104 @@ export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardPro
   const [loadError, setLoadError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [remoteStatus, setRemoteStatus] = useState<string | undefined>()
+  const [confirmStop, setConfirmStop] = useState(false)
+  const inFlight = useRef(false)
 
   useEffect(() => {
     setEvents([])
     setBinding(null)
     setLoadError(false)
     setExpanded(false)
+    setRemoteStatus(undefined)
+    setConfirmStop(false)
+    inFlight.current = false
   }, [block.childRunId])
 
-  const load = async () => {
-    setLoading(true)
-    setLoadError(false)
-    const [evs, bind] = await Promise.allSettled([
-      listEvents(block.childRunId),
-      getRunBinding(block.childRunId),
-    ])
-    if (evs.status === 'fulfilled') {
-      setEvents(evs.value)
-    } else {
-      setLoadError(true)
-    }
-    setBinding(bind.status === 'fulfilled' ? bind.value.binding : null)
-    setLoading(false)
-  }
+  const load = useCallback(
+    async (silent = false, includeBinding = true) => {
+      if (inFlight.current) return
+      inFlight.current = true
+      if (!silent) setLoading(true)
+      setLoadError(false)
+      const [evs, run, bind] = await Promise.allSettled([
+        listEvents(block.childRunId),
+        getRun(block.childRunId),
+        includeBinding ? getRunBinding(block.childRunId) : Promise.resolve(undefined),
+      ])
+      if (evs.status === 'fulfilled') {
+        setEvents(evs.value)
+      } else {
+        setLoadError(true)
+      }
+      if (run.status === 'fulfilled') {
+        setRemoteStatus(run.value.status)
+      }
+      if (bind.status === 'fulfilled' && bind.value) {
+        setBinding(bind.value.binding)
+      }
+      inFlight.current = false
+      if (!silent) setLoading(false)
+    },
+    [block.childRunId],
+  )
 
   const toggle = () => {
     const next = !expanded
     setExpanded(next)
-    if (next && events.length === 0 && !loading) void load()
+    if (next && events.length === 0 && !loading) void load(false, true)
   }
 
-  const waiting = block.status === 'waiting' ? lastWaiting(events) : undefined
+  const mappedStatus = mapRunStatus(remoteStatus)
+  const openWait = lastWaiting(events)
+  let effectiveStatus = block.status
+  if (terminalSubagentStatuses.has(block.status)) {
+    effectiveStatus = block.status
+  } else if (mappedStatus && terminalSubagentStatuses.has(mappedStatus)) {
+    effectiveStatus = mappedStatus
+  } else if (block.status === 'waiting') {
+    // Keep a parent-reported wait only while the child events still show one;
+    // otherwise a missed run.child_resumed falls back to the remote status.
+    effectiveStatus = openWait ? 'waiting' : mappedStatus ?? 'waiting'
+  } else {
+    effectiveStatus = mappedStatus ?? block.status
+  }
+  const waiting = effectiveStatus === 'waiting' ? openWait : undefined
+  const effectiveWaitingKind =
+    effectiveStatus === 'waiting' ? block.waitingKind ?? waiting?.kind : undefined
+  const canStop = effectiveStatus === 'running' || effectiveStatus === 'waiting'
+
+  useEffect(() => {
+    if (!expanded) return
+    if (effectiveStatus !== 'running' && effectiveStatus !== 'waiting') return
+    const id = window.setInterval(() => {
+      void load(true, false)
+    }, 3000)
+    return () => window.clearInterval(id)
+  }, [expanded, effectiveStatus, load])
 
   const decide = async (decision: 'approve' | 'reject', comment = '') => {
     setBusy(true)
     try {
       await resumeRun(block.childRunId, decision, comment)
-      await load()
+      await load(false, true)
     } catch (err) {
       onError?.(err)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const stop = async () => {
+    setBusy(true)
+    try {
+      await cancelRun(block.childRunId)
+      await load(false, true)
+    } catch (err) {
+      onError?.(err)
+    } finally {
+      setBusy(false)
+      setConfirmStop(false)
     }
   }
 
@@ -175,8 +264,8 @@ export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardPro
         <span className="subagent-title">
           <Bot size={15} aria-hidden />
           <span className="subagent-goal">{block.goal || SUBAGENT.title}</span>
-          <span className={`subagent-status subagent-status-${block.status}`}>
-            {statusLabel(block)}
+          <span className={`subagent-status subagent-status-${effectiveStatus}`}>
+            {statusLabel(effectiveStatus, effectiveWaitingKind)}
           </span>
         </span>
         <span className="subagent-head-right">
@@ -212,7 +301,43 @@ export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardPro
           <div className="subagent-trace-head">
             <span>{SUBAGENT.viewTrace}</span>
             <span className="subagent-trace-actions">
-              <Button size="sm" variant="ghost" disabled={loading} onClick={() => void load()}>
+              {canStop ? (
+                confirmStop ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={() => void stop()}
+                    >
+                      {SUBAGENT.confirmStop}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setConfirmStop(false)}
+                    >
+                      {SUBAGENT.stopCancel}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setConfirmStop(true)}
+                  >
+                    {SUBAGENT.stop}
+                  </Button>
+                )
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={loading}
+                onClick={() => void load(false, true)}
+              >
                 <RefreshCw size={13} className={loading ? 'icon-spin' : undefined} aria-hidden />
                 {SUBAGENT.refresh}
               </Button>
@@ -222,7 +347,7 @@ export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardPro
             </span>
           </div>
 
-          {block.status === 'waiting' ? (
+          {effectiveStatus === 'waiting' ? (
             <div className="subagent-waiting" data-testid="subagent-waiting">
               {waiting ? (
                 <>

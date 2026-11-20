@@ -19,10 +19,21 @@ const block: Extract<ChatBlock, { kind: 'subagent' }> = {
 let host: HTMLDivElement
 let root: Root
 
+const runStub: api.Run = {
+  id: 'run_child',
+  agent_id: 'a',
+  input: 'child',
+  status: 'running',
+  created_at: '2026-11-20T00:00:00Z',
+}
+
 beforeEach(() => {
   ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   host = document.createElement('div')
   document.body.appendChild(host)
+  vi.spyOn(api, 'getRun').mockResolvedValue(runStub)
+  vi.spyOn(api, 'getRunBinding').mockResolvedValue({ run_id: 'run_child', binding: {} })
+  vi.spyOn(api, 'listEvents').mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -104,6 +115,51 @@ describe('SubagentCard', () => {
       buttonByText('同意')?.click()
     })
     expect(resume).toHaveBeenCalledWith('run_child', 'approve', '')
+  })
+
+  it('cancels a child only after a second confirmation', async () => {
+    const cancel = vi
+      .spyOn(api, 'cancelRun')
+      .mockResolvedValue({ run_id: 'run_child', status: 'cancelled' })
+    render(<SubagentCard block={block} />)
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="subagent-toggle"]')?.click()
+    })
+    act(() => {
+      buttonByText('停止子代理')!.click()
+    })
+    expect(cancel).not.toHaveBeenCalled()
+    await act(async () => {
+      buttonByText('确认停止')!.click()
+    })
+    expect(cancel).toHaveBeenCalledWith('run_child')
+  })
+
+  it('auto refreshes an expanded running child', async () => {
+    vi.useFakeTimers()
+    const events = vi.spyOn(api, 'listEvents').mockResolvedValue([])
+    try {
+      render(<SubagentCard block={block} />)
+      await act(async () => {
+        host.querySelector<HTMLButtonElement>('[data-testid="subagent-toggle"]')?.click()
+      })
+      const before = events.mock.calls.length
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(events.mock.calls.length).toBeGreaterThan(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses the remote child status when the parent event is missing', async () => {
+    vi.spyOn(api, 'getRun').mockResolvedValue({ ...runStub, status: 'succeeded' })
+    render(<SubagentCard block={block} />)
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="subagent-toggle"]')?.click()
+    })
+    expect(host.textContent).toContain('已完成')
   })
 
   it('fails open when the trace cannot be loaded', async () => {

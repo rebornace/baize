@@ -173,6 +173,34 @@ func TestNotifyChildTerminalPublishesFacts(t *testing.T) {
 	}
 }
 
+func TestCancelChildPublishesCancelledReceipt(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	parent, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "p"})
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, GroupID: "finance",
+	})
+	_ = st.UpdateRun(child.ID, store.StatusRunning, "", "")
+	eng := &Engine{Store: st}
+	if err := eng.Cancel(child.ID); err != nil {
+		t.Fatal(err)
+	}
+	evs, _ := st.ListEvents(parent.ID)
+	var receipt map[string]any
+	for _, ev := range evs {
+		if ev.Type == EventRunReceipt && ev.Data["child_run_id"] == child.ID {
+			receipt = ev.Data
+		}
+	}
+	if receipt == nil || receipt["status"] != string(store.StatusCancelled) {
+		t.Fatalf("receipt=%+v", receipt)
+	}
+	got, _ := st.GetRun(child.ID)
+	if got.Status != store.StatusCancelled {
+		t.Fatalf("child status=%s", got.Status)
+	}
+}
+
 func TestScopedChildRunEndToEndReceipt(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})

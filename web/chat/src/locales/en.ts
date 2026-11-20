@@ -1613,6 +1613,9 @@ export const enPack = {
     abort: 'Abort',
     copyId: 'Copy ID',
     copied: 'Copied',
+    stop: 'Stop subagent',
+    confirmStop: 'Confirm stop',
+    stopCancel: 'Cancel',
   },
   LOCALE: {
     sectionTitle: 'Interface language',
