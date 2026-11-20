@@ -9,6 +9,10 @@ export interface WorkflowCardProps {
   block: WorkflowBlock
 }
 
+function waitingLabel(step: WorkflowBlock['steps'][number]): string {
+  return step.waitingKind === 'login' ? WORKFLOW.waitingLogin : WORKFLOW.waiting
+}
+
 function focusStepIndex(steps: WorkflowBlock['steps']): number {
   if (steps.length === 0) return -1
   const waiting = steps.findIndex((s) => s.status === 'waiting')
@@ -46,7 +50,9 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
               <StepIcon status={block.steps[0].status} />
               <span>{WORKFLOW.step(1)}</span>
               {block.steps[0].status === 'waiting' ? (
-                <span className="workflow-step-waiting-label">{WORKFLOW.waiting}</span>
+                <span className="workflow-step-waiting-label">
+                  {waitingLabel(block.steps[0])}
+                </span>
               ) : null}
             </span>
           ) : null}
@@ -73,7 +79,9 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
               <StepIcon status={block.steps[focusIdx].status} />
               <span>{WORKFLOW.step(focusIdx + 1)}</span>
               {block.steps[focusIdx].status === 'waiting' ? (
-                <span className="workflow-step-waiting-label">{WORKFLOW.waiting}</span>
+                <span className="workflow-step-waiting-label">
+                  {waitingLabel(block.steps[focusIdx])}
+                </span>
               ) : null}
             </span>
           ) : null}
@@ -98,7 +106,7 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
               <StepIcon status={step.status} />
               <span>{WORKFLOW.step(i + 1)}</span>
               {step.status === 'waiting' ? (
-                <span className="workflow-step-waiting-label">{WORKFLOW.waiting}</span>
+                <span className="workflow-step-waiting-label">{waitingLabel(step)}</span>
               ) : null}
             </li>
           ))}

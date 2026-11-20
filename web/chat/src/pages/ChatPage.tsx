@@ -595,22 +595,26 @@ export function ChatPage() {
                     >
                       {LOGIN_AT.pendingContinue}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      data-testid="chat-login-banner-skip-step"
-                      onClick={() => void onLoginResume('reject', 'skip_step')}
-                    >
-                      {LOGIN_AT.pendingSkipStep}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      data-testid="chat-login-banner-skip"
-                      onClick={() => void onLoginResume('reject', 'skip_login')}
-                    >
-                      {LOGIN_AT.pendingSkip}
-                    </Button>
+                    {!pendingLogin.workflowStep ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          data-testid="chat-login-banner-skip-step"
+                          onClick={() => void onLoginResume('reject', 'skip_step')}
+                        >
+                          {LOGIN_AT.pendingSkipStep}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          data-testid="chat-login-banner-skip"
+                          onClick={() => void onLoginResume('reject', 'skip_login')}
+                        >
+                          {LOGIN_AT.pendingSkip}
+                        </Button>
+                      </>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="ghost"

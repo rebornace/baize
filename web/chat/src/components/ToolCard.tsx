@@ -46,6 +46,7 @@ function toolCardPropsEqual(prev: ToolCardProps, next: ToolCardProps): boolean {
     a.catalogRevision === b.catalogRevision &&
     a.waitingSince === b.waitingSince &&
     a.workflowStep === b.workflowStep &&
+    a.hitlKind === b.hitlKind &&
     prev.catalog === next.catalog &&
     prev.readOnly === next.readOnly &&
     prev.onError === next.onError &&
@@ -66,7 +67,9 @@ function ToolCardImpl({
   cloudModelRisk = false,
   priorEvidence,
 }: ToolCardProps) {
-  const waiting = block.status === 'waiting_human' && !readOnly
+  // Login waits use the login actions, not the approve/reject gate.
+  const waiting =
+    block.status === 'waiting_human' && block.hitlKind !== 'login' && !readOnly
   // Login CTA must remain on history cards (readOnly); only HITL approve is gated.
   const loginRequired = isLoginRequiredContent(block.result)
   const showLoginActions = loginRequired && !suppressLoginActions

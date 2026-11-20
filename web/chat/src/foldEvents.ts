@@ -37,15 +37,21 @@ export type ChatBlock =
       runId: string
       /** Timestamp of the last hitl.waiting event, for "waited N" display. */
       waitingSince?: string
-      /** Workflow step ID when this card is a workflow approval. */
+      /** Workflow step ID when this card belongs to a workflow wait. */
       workflowStep?: string
+      /** Human gate kind for a waiting card; login keeps the login actions. */
+      hitlKind?: 'approval' | 'login'
       contractHash?: string
       catalogRevision?: number
     }
   | {
       kind: 'workflow'
       skill: string
-      steps: { id: string; status: WorkflowStepStatus }[]
+      steps: {
+        id: string
+        status: WorkflowStepStatus
+        waitingKind?: 'approval' | 'login'
+      }[]
       runId: string
     }
 
@@ -168,6 +174,14 @@ function findTopUnfinished(
   return undefined
 }
 
+function findTopByName(blocks: ChatBlock[], name: string): ToolBlock | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'tool' && b.name === name) return b
+  }
+  return undefined
+}
+
 function findTopWaiting(blocks: ChatBlock[], name?: string): ToolBlock | undefined {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i]
@@ -192,11 +206,9 @@ function findLastWorkflow(blocks: ChatBlock[]): WorkflowBlock | undefined {
   return undefined
 }
 
-function workflowStepFromPrompt(data: Record<string, unknown> | undefined): string | undefined {
-  const prompt = data?.prompt
-  if (typeof prompt !== 'string') return undefined
-  const m = /workflow step "([^"]+)":/.exec(prompt)
-  return m?.[1]
+function workflowStepFromData(data: Record<string, unknown> | undefined): string | undefined {
+  const raw = data?.workflow_step
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined
 }
 
 function markWorkflowStepForCard(
@@ -221,7 +233,20 @@ function setWorkflowStepStatus(
   status: WorkflowStepStatus,
 ): void {
   const step = block.steps.find((s) => s.id === stepId)
-  if (step) step.status = status
+  if (!step) return
+  step.status = status
+  if (status !== 'waiting') delete step.waitingKind
+}
+
+function setWorkflowStepWaiting(
+  block: WorkflowBlock,
+  stepId: string,
+  kind: 'approval' | 'login',
+): void {
+  const step = block.steps.find((s) => s.id === stepId)
+  if (!step) return
+  step.status = 'waiting'
+  step.waitingKind = kind
 }
 
 export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
@@ -291,33 +316,42 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         break
       }
       case 'hitl.waiting': {
-        // Login waits keep the existing login_required tool card; do not swap
-        // it for an approve/reject HITL card.
-        if (data?.kind === 'login') {
-          break
-        }
+        const kind = data?.kind === 'login' ? 'login' : 'approval'
         const name = hitlToolName(data) ?? 'tool'
-        const workflowStep = workflowStepFromPrompt(data)
-        const card = findTopUnfinished(blocks, name)
-        if (card) {
-          card.status = 'waiting_human'
-          card.waitingSince = ev.timestamp
-          card.workflowStep = workflowStep
-          if (data?.arguments !== undefined) card.arguments = data.arguments
+        const workflowStep = workflowStepFromData(data)
+        if (kind === 'login') {
+          // Login waits keep the existing login_required tool card; do not
+          // swap it for an approve/reject HITL card. The card can already be
+          // marked failed by the login_required tool.result, so match by name.
+          const card = findTopByName(blocks, name)
+          if (card) {
+            card.status = 'waiting_human'
+            card.waitingSince = ev.timestamp
+            card.hitlKind = 'login'
+            if (workflowStep) card.workflowStep = workflowStep
+          }
         } else {
-          blocks.push({
-            kind: 'tool',
-            name,
-            status: 'waiting_human',
-            arguments: data?.arguments,
-            runId,
-            waitingSince: ev.timestamp,
-            workflowStep,
-          })
+          const card = findTopUnfinished(blocks, name)
+          if (card) {
+            card.status = 'waiting_human'
+            card.waitingSince = ev.timestamp
+            if (workflowStep) card.workflowStep = workflowStep
+            if (data?.arguments !== undefined) card.arguments = data.arguments
+          } else {
+            blocks.push({
+              kind: 'tool',
+              name,
+              status: 'waiting_human',
+              arguments: data?.arguments,
+              runId,
+              waitingSince: ev.timestamp,
+              workflowStep,
+            })
+          }
         }
         if (workflowStep) {
           const wf = findLastWorkflow(blocks)
-          if (wf) setWorkflowStepStatus(wf, workflowStep, 'waiting')
+          if (wf) setWorkflowStepWaiting(wf, workflowStep, kind)
         }
         break
       }
@@ -331,6 +365,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
             : findTopWaiting(blocks)
         if (card) {
           card.status = 'approved'
+          if (card.hitlKind === 'login' || data?.kind === 'login') card.result = undefined
           markWorkflowStepForCard(blocks, card, 'running')
         }
         break
@@ -343,6 +378,7 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
             : findTopWaiting(blocks)
         if (card) {
           card.status = 'rejected'
+          if (card.hitlKind === 'login' || data?.kind === 'login') card.result = undefined
           markWorkflowStepForCard(blocks, card, 'failed')
         }
         break
@@ -418,7 +454,10 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
       case 'hitl.expired':
       case 'run.cancelled': {
         const card = findTopWaiting(blocks)
-        markWorkflowStepForCard(blocks, card, 'failed')
+        if (card) {
+          if (card.hitlKind === 'login' || data?.kind === 'login') card.result = undefined
+          markWorkflowStepForCard(blocks, card, 'failed')
+        }
         break
       }
       default:

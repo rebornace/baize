@@ -222,6 +222,19 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 	if runRec == nil {
 		return fmt.Errorf("run not found: %s", runID)
 	}
+	// A running workflow step whose completion never landed was interrupted by
+	// a process stop. Replaying it could repeat an external write, so fail
+	// loudly and let a human check the side effect instead.
+	if runRec.Status == store.StatusRunning {
+		if evs, lerr := e.Store.ListEvents(runID); lerr == nil && workflowStepInterrupted(evs) {
+			_ = e.Store.AppendEvent(runID, store.Event{
+				Type: EventHITLInterrupted,
+				Data: map[string]any{"reason": "workflow_step_interrupted"},
+			})
+			_ = e.Store.SetHITL(runID, nil)
+			return e.finalizeFailedRun(runID, errors.New(HITLWorkflowStepInterruptedNote))
+		}
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	e.registerCancel(runID, cancel)
 	defer e.clearCancel(runID)
@@ -485,6 +498,11 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	if payload == nil {
 		return fmt.Errorf("no hitl payload")
 	}
+	if payload.Kind == store.HITLKindWaitingChild {
+		// Parent is waiting on a child receipt; operators resume the child run,
+		// or cancel the child (which wakes the parent). Do not approve/reject here.
+		return fmt.Errorf("parent is waiting_child; resume or cancel child %s", payload.ChildRunID)
+	}
 	if payload.Workflow != nil {
 		return e.continueWorkflowFromHITL(ctx, runID, payload, d)
 	}
@@ -499,12 +517,6 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	if workflowInterrupted(evs0) {
 		_ = e.Store.SetHITL(runID, nil)
 		return e.finalizeFailedRun(runID, errors.New(HITLWorkflowRestartNote))
-	}
-
-	if payload.Kind == store.HITLKindWaitingChild {
-		// Parent is waiting on a child receipt; operators resume the child run,
-		// or cancel the child (which wakes the parent). Do not approve/reject here.
-		return fmt.Errorf("parent is waiting_child; resume or cancel child %s", payload.ChildRunID)
 	}
 
 	isLoginWait := payload.Kind == store.HITLKindLogin

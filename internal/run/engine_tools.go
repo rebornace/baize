@@ -13,6 +13,7 @@ import (
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/workflow"
 )
 
 // buildResumeMessages assembles the LLM prompt for a cold HITL resume: the
@@ -403,6 +404,16 @@ func (e *Engine) persistHITLWaiting(ctx context.Context, runID string, payload *
 	if payload.Kind == "" {
 		payload.Kind = store.HITLKindApproval
 	}
+	// Any HITL pause raised inside a workflow step carries the step position
+	// through ctx, so resume can return to the same step even when the pause
+	// comes from a tool's own approval or login gate.
+	if payload.Workflow == nil && payload.Kind != store.HITLKindWaitingChild {
+		if st, ok := workflow.StepStateFromContext(ctx); ok {
+			payload.Workflow = &store.WorkflowState{
+				Skill: st.Skill, StepIndex: st.NextStep, StepID: st.StepID, Tree: st.Tree,
+			}
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -420,6 +431,15 @@ func (e *Engine) persistHITLWaiting(ctx context.Context, runID string, payload *
 	}
 	if payload.ConnectorID != "" {
 		data["connector_id"] = payload.ConnectorID
+	}
+	if payload.Workflow != nil {
+		if payload.Workflow.Skill != "" {
+			data["workflow_skill"] = payload.Workflow.Skill
+		}
+		if payload.Workflow.StepID != "" {
+			data["workflow_step"] = payload.Workflow.StepID
+		}
+		data["workflow_step_index"] = payload.Workflow.StepIndex
 	}
 	_ = e.Store.AppendEvent(runID, store.Event{Type: EventHITLWaiting, Data: data})
 	_ = e.Store.UpdateRun(runID, store.StatusWaitingHuman, "", "")

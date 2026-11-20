@@ -100,7 +100,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 
 ## Human approval
 
-Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry. Approval / login waits expire after 24 hours by default (`hitl.approval_ttl_sec`, `0` disables); an expired Run becomes `cancelled` and releases the conversation. Approval cards and schedule rows show the elapsed wait. While a workflow step waits, the workflow card marks it “Awaiting approval” and the approval card notes that it can resume after a restart.
+Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry. Approval / login waits expire after 24 hours by default (`hitl.approval_ttl_sec`, `0` disables); an expired Run becomes `cancelled` and releases the conversation. Approval cards and schedule rows show the elapsed wait. While a workflow step waits, the workflow card marks it “Awaiting approval” or “Awaiting login”, and the approval card notes that it can resume after a restart. Logins and a tool's own approval gate inside a workflow step persist the step position and resume at the same step. If the process exits mid-step, the re-enqueued run fails with a check-the-side-effect note instead of replaying a write that may already have happened.
 
 When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.
 

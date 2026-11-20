@@ -103,4 +103,14 @@ func TestWorkflowApprovalReleasesLeaseAndResumes(t *testing.T) {
 	if tbCalls.Load() != 1 {
 		t.Fatalf("tb calls=%d want 1", tbCalls.Load())
 	}
+	evs, _ := st.ListEvents(r.ID)
+	completed := false
+	for _, ev := range evs {
+		if ev.Type == "workflow.step_completed" && ev.Data["step"] == "b" {
+			completed = true
+		}
+	}
+	if !completed {
+		t.Fatalf("approved step b must emit workflow.step_completed; events=%+v", evs)
+	}
 }

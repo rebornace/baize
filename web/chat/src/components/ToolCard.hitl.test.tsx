@@ -74,6 +74,23 @@ describe('ToolCard HITL 两段式拒绝链路', () => {
     expect(host.textContent).not.toContain('重启后仍可继续')
   })
 
+  it('login waits show login actions instead of approve/reject', () => {
+    render(
+      <ToolCard
+        block={{
+          ...block,
+          hitlKind: 'login',
+          workflowStep: 'b',
+          result: { code: 'login_required', message: '需要登录', connector_id: 'c1' },
+        }}
+        catalog={[]}
+      />,
+    )
+    expect(buttonByText('同意')).toBeUndefined()
+    expect(buttonByText('拒绝')).toBeUndefined()
+    expect(host.textContent).toContain('需要登录')
+  })
+
   it('初始只有同意/拒绝，无确认拒绝按钮与留言框', () => {
     render(<ToolCard block={block} catalog={[]} />)
     expect(buttonByText('同意')).toBeTruthy()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/tool"
 	"github.com/rebornace/baize/internal/workflow"
 )
 
@@ -74,9 +75,32 @@ func (e *Engine) workflowHooks(runID string, wf *workflow.Workflow) workflow.Exe
 			return false, ErrWaitingHuman
 		},
 		Invoke: func(ctx context.Context, toolName, stepID string, args map[string]any) (map[string]any, bool, error) {
-			return e.invokeTool(ctx, runID, fmt.Sprintf("wf-%s-%s", wf.Name, stepID), toolName, args, stepApproved[stepID])
+			return e.invokeWorkflowStep(ctx, runID, wf.Name, stepID, toolName, args, stepApproved[stepID])
 		},
 	}
+}
+
+// invokeWorkflowStep runs one workflow step and turns a login gate into a
+// resumable HITL pause. The step state is carried by ctx, so the wait payload
+// remembers where to resume.
+func (e *Engine) invokeWorkflowStep(ctx context.Context, runID, wfName, stepID, toolName string, args map[string]any, skipApproval bool) (map[string]any, bool, error) {
+	content, isErr, ierr := e.invokeTool(ctx, runID,
+		fmt.Sprintf("wf-%s-%s", wfName, stepID), toolName, args, skipApproval)
+	if errors.Is(ierr, ErrWaitingHuman) {
+		return nil, false, ierr
+	}
+	if ierr == nil && isErr && tool.NeedsLoginPause(content) {
+		cid := e.connectorIDForTool(toolName)
+		if cid == "" {
+			if s, ok := content["connector_id"].(string); ok {
+				cid = s
+			}
+		}
+		if lerr := e.awaitLoginDecision(ctx, runID, toolName, cid); lerr != nil {
+			return nil, false, lerr
+		}
+	}
+	return content, isErr, ierr
 }
 
 func (e *Engine) persistWorkflowWait(ctx context.Context, runID string, state workflow.State, payload store.HITLPayload) error {
@@ -142,6 +166,34 @@ func (e *Engine) finalizeRejectedRun(runID string) {
 	_ = e.Store.SetHITL(runID, nil)
 	_ = e.Store.UpdateRun(runID, store.StatusRejected, "", "")
 	e.recordTerminalMessage(runID)
+}
+
+// workflowStepInterrupted reports whether a workflow step started but never
+// completed and the run has no terminal marker. A running run in this state
+// stopped mid-step (process exit), so replaying it could repeat side effects.
+func workflowStepInterrupted(evs []store.Event) bool {
+	return len(openWorkflowSteps(evs)) > 0
+}
+
+// openWorkflowSteps returns steps whose workflow.step_started has no matching
+// workflow.step_completed (and no terminal marker reset).
+func openWorkflowSteps(evs []store.Event) map[string]bool {
+	open := map[string]bool{}
+	for _, ev := range evs {
+		switch ev.Type {
+		case "workflow.step_started":
+			if id, _ := ev.Data["step"].(string); id != "" {
+				open[id] = true
+			}
+		case "workflow.step_completed":
+			if id, _ := ev.Data["step"].(string); id != "" {
+				delete(open, id)
+			}
+		case "workflow.completed", EventLLMMessage, EventLLMError, EventRunCancelled:
+			open = map[string]bool{}
+		}
+	}
+	return open
 }
 
 // workflowInterrupted reports whether the event stream shows a workflow run

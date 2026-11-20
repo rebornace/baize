@@ -20,6 +20,9 @@ const (
 	// HITLWorkflowRestartNote explains why a workflow approval cannot resume
 	// after a process restart.
 	HITLWorkflowRestartNote = "服务重启，工作流审批无法恢复，请重新发起"
+	// HITLWorkflowStepInterruptedNote explains why a step that was executing
+	// when the process stopped is not replayed automatically.
+	HITLWorkflowStepInterruptedNote = "工作流步骤执行中断，可能已执行；请核对后再重新发起"
 
 	hitlWaitingSweepLimit = 500
 )

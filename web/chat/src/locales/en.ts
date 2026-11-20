@@ -1583,6 +1583,7 @@ export const enPack = {
     progress: (current: number, total: number) => `Step ${current} / ${total}`,
     step: (n: number) => `Step ${n}`,
     waiting: 'Awaiting approval',
+    waitingLogin: 'Awaiting login',
     expand: 'Show steps',
     collapse: 'Collapse',
   },

@@ -439,3 +439,297 @@ func TestWorkflowTwoApprovalsAndRestartResume(t *testing.T) {
 		t.Fatalf("status=%s", got.Status)
 	}
 }
+
+func lastEventOfType(t *testing.T, st store.Store, runID, typ string) *store.Event {
+	t.Helper()
+	evs, err := st.ListEvents(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := len(evs) - 1; i >= 0; i-- {
+		if evs[i].Type == typ {
+			return &evs[i]
+		}
+	}
+	return nil
+}
+
+func countEvents(evs []store.Event, typ, step string) int {
+	n := 0
+	for _, ev := range evs {
+		if ev.Type != typ {
+			continue
+		}
+		if step != "" && ev.Data["step"] != step {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+func TestWorkflowApprovalEmitsStepEventsAndStructuredWait(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	})
+	reg.Register("tb", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"id": "1"}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n  - id: b\n    tool: tb\n    approve: true\n")
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v", err)
+	}
+
+	wait := lastEventOfType(t, st, r.ID, EventHITLWaiting)
+	if wait == nil {
+		t.Fatal("missing hitl.waiting")
+	}
+	if wait.Data["workflow_step"] != "b" || wait.Data["workflow_skill"] != "demo" {
+		t.Fatalf("hitl.waiting data=%+v", wait.Data)
+	}
+	if wait.Data["workflow_step_index"] != 1 {
+		t.Fatalf("workflow_step_index=%v want 1", wait.Data["workflow_step_index"])
+	}
+	if _, ok := wait.Data["tree"]; ok {
+		t.Fatal("hitl.waiting must not expose the workflow tree")
+	}
+
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	if got := countEvents(evs, "workflow.step_started", "b"); got != 1 {
+		t.Fatalf("step_started b=%d want 1; events=%+v", got, evs)
+	}
+	done := lastEventOfType(t, st, r.ID, "workflow.step_completed")
+	if done == nil || done.Data["step"] != "b" || done.Data["is_error"] != false {
+		t.Fatalf("step_completed=%+v", done)
+	}
+	if got := countEvents(evs, "workflow.step_completed", "b"); got != 1 {
+		t.Fatalf("step_completed b=%d want 1", got)
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s", got.Status)
+	}
+}
+
+func TestWorkflowLoginPausesAndResumes(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		if calls.Add(1) == 1 {
+			return tool.LoginRequiredContentMsg("please login"), true, nil
+		}
+		return map[string]any{"ok": true}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n")
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v", err)
+	}
+	payload, _ := st.GetHITL(r.ID)
+	if payload == nil || payload.Kind != store.HITLKindLogin || payload.Workflow == nil {
+		t.Fatalf("payload=%+v", payload)
+	}
+	if payload.Workflow.StepIndex != 0 || payload.Workflow.StepID != "a" {
+		t.Fatalf("workflow=%+v", payload.Workflow)
+	}
+	wait := lastEventOfType(t, st, r.ID, EventHITLWaiting)
+	if wait == nil || wait.Data["kind"] != store.HITLKindLogin || wait.Data["workflow_step"] != "a" {
+		t.Fatalf("hitl.waiting=%+v", wait)
+	}
+
+	eng2 := &Engine{Store: st, Tools: reg, Skills: cat}
+	if err := eng2.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("resume login: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls=%d want 2", calls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s", got.Status)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	if got := countEvents(evs, "workflow.step_started", "a"); got != 1 {
+		t.Fatalf("step_started a=%d want 1; events=%+v", got, evs)
+	}
+	if got := countEvents(evs, "workflow.step_completed", "a"); got != 1 {
+		t.Fatalf("step_completed a=%d want 1", got)
+	}
+}
+
+func TestWorkflowApproveStepLoginDoesNotReapprove(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		if calls.Add(1) == 1 {
+			return tool.LoginRequiredContentMsg("please login"), true, nil
+		}
+		return map[string]any{"ok": true}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n    approve: true\n")
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v", err)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("approve err=%v", err)
+	}
+	payload, _ := st.GetHITL(r.ID)
+	if payload == nil || payload.Kind != store.HITLKindLogin {
+		t.Fatalf("after approve payload=%+v", payload)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	approvals := 0
+	for _, ev := range evs {
+		if ev.Type == EventHITLWaiting && ev.Data["kind"] == store.HITLKindApproval {
+			approvals++
+		}
+	}
+	if approvals != 1 {
+		t.Fatalf("approval waits=%d want 1", approvals)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("resume login: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls=%d want 2", calls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s", got.Status)
+	}
+}
+
+func TestWorkflowLoginRejectStops(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return tool.LoginRequiredContentMsg("please login"), true, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n")
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v", err)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: "abort_login"}); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d want 1", calls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusRejected {
+		t.Fatalf("status=%s want rejected", got.Status)
+	}
+}
+
+func TestWorkflowToolApprovalInsideStepResumes(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var calls atomic.Int32
+	reg.RegisterSpecApproved(llm.ToolSpec{Name: "ta"}, func(context.Context, map[string]any) (map[string]any, bool, error) {
+		calls.Add(1)
+		return map[string]any{"ok": true}, false, nil
+	}, true)
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n")
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("calls before approve=%d", calls.Load())
+	}
+	payload, _ := st.GetHITL(r.ID)
+	if payload == nil || payload.Workflow == nil || payload.Kind == store.HITLKindLogin {
+		t.Fatalf("payload=%+v", payload)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d want 1", calls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s", got.Status)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	if got := countEvents(evs, "workflow.step_started", "a"); got != 1 {
+		t.Fatalf("step_started a=%d want 1; events=%+v", got, evs)
+	}
+	if got := countEvents(evs, "workflow.step_completed", "a"); got != 1 {
+		t.Fatalf("step_completed a=%d want 1", got)
+	}
+}
+
+func TestExecuteFailsInterruptedWorkflowStep(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	_ = st.UpdateRun(r.ID, store.StatusRunning, "", "")
+	_ = st.AppendEvent(r.ID, store.Event{Type: "workflow.started", Data: map[string]any{"skill": "demo", "steps": []string{"a"}}})
+	_ = st.AppendEvent(r.ID, store.Event{Type: "workflow.step_started", Data: map[string]any{"step": "a", "tool": "ta"}})
+	_ = st.SetHITL(r.ID, &store.HITLPayload{
+		Kind:     store.HITLKindApproval,
+		Workflow: &store.WorkflowState{Skill: "demo", StepIndex: 0, StepID: "a"},
+	})
+	var llmCalls atomic.Int32
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		llmCalls.Add(1)
+		return llm.Message{Role: llm.RoleAssistant, Content: "must not run"}
+	}}}
+	err := eng.Execute(context.Background(), r.ID, ag, r.Input)
+	if err == nil || err.Error() != HITLWorkflowStepInterruptedNote {
+		t.Fatalf("err=%v want %q", err, HITLWorkflowStepInterruptedNote)
+	}
+	if llmCalls.Load() != 0 {
+		t.Fatalf("LLM must not run, calls=%d", llmCalls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusFailed {
+		t.Fatalf("status=%s want failed", got.Status)
+	}
+	ev := lastEventOfType(t, st, r.ID, EventHITLInterrupted)
+	if ev == nil || ev.Data["reason"] != "workflow_step_interrupted" {
+		t.Fatalf("hitl.interrupted=%+v", ev)
+	}
+	if p, _ := st.GetHITL(r.ID); p != nil {
+		t.Fatalf("HITL must be cleared, got %+v", p)
+	}
+}

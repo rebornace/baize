@@ -453,13 +453,13 @@ type HITLPayload struct {
 	// WaitingSince is when this wait began. Older rows omit it; callers fall
 	// back to the latest hitl.waiting event timestamp.
 	WaitingSince time.Time `json:"waiting_since,omitempty"`
-	// Workflow carries the resumable workflow state while an approve step
-	// waits. Older rows predate it and are not resumable.
+	// Workflow carries the resumable workflow state while a step waits for
+	// approval or login. Older rows predate it and are not resumable.
 	Workflow *WorkflowState `json:"workflow,omitempty"`
 }
 
 // WorkflowState is persisted inside HITLPayload while a workflow step waits
-// for approval. Tree is the rendered input plus completed step results.
+// for approval or login. Tree is the rendered input plus completed step results.
 type WorkflowState struct {
 	Skill     string         `json:"skill"`
 	StepIndex int            `json:"step_index"`

@@ -356,7 +356,7 @@ describe('foldEvents', () => {
     })
   })
 
-  it('marks the waiting workflow step from the HITL prompt', () => {
+  it('marks the waiting workflow step from structured HITL data', () => {
     const events: Event[] = [
       ev('workflow.started', { skill: 'demo', steps: ['a', 'b'] }),
       ev('workflow.step_started', { step: 'a', tool: 'ta' }),
@@ -364,16 +364,61 @@ describe('foldEvents', () => {
       ev('hitl.waiting', {
         tool_name: 'tb',
         kind: 'approval',
-        prompt: 'workflow step "b": tb',
+        workflow_skill: 'demo',
+        workflow_step: 'b',
+        workflow_step_index: 1,
       }),
     ]
     const blocks = foldEvents('run_wf_wait', events)
     const wf = blocks.find((b) => b.kind === 'workflow')
     if (!wf || wf.kind !== 'workflow') throw new Error('workflow block missing')
     expect(wf.steps[1].status).toBe('waiting')
+    expect(wf.steps[1].waitingKind).toBe('approval')
     const card = blocks.find((b) => b.kind === 'tool')
     if (!card || card.kind !== 'tool') throw new Error('tool card missing')
     expect(card.workflowStep).toBe('b')
+  })
+
+  it('marks a workflow login wait without swapping the login card', () => {
+    const base: Event[] = [
+      ev('workflow.started', { skill: 'demo', steps: ['a'] }),
+      ev('workflow.step_started', { step: 'a', tool: 'ta' }),
+      ev('llm.tool_call', { id: 'c1', name: 'ta', arguments: {} }),
+      ev('tool.result', {
+        name: 'ta',
+        is_error: true,
+        content: { code: 'login_required', message: '需要登录', connector_id: 'c1' },
+      }),
+      ev('hitl.waiting', {
+        tool_name: 'ta',
+        kind: 'login',
+        connector_id: 'c1',
+        workflow_step: 'a',
+      }),
+    ]
+    const blocks = foldEvents('run_wf_login', base)
+    const wf = blocks.find((b) => b.kind === 'workflow')
+    if (!wf || wf.kind !== 'workflow') throw new Error('workflow missing')
+    expect(wf.steps[0]).toMatchObject({ status: 'waiting', waitingKind: 'login' })
+    const card = blocks.find((b) => b.kind === 'tool')
+    if (!card || card.kind !== 'tool') throw new Error('tool card missing')
+    expect(card).toMatchObject({
+      status: 'waiting_human',
+      hitlKind: 'login',
+      workflowStep: 'a',
+    })
+    expect(card.result).toMatchObject({ code: 'login_required' })
+
+    const resumed = foldEvents('run_wf_login_resumed', [
+      ...base,
+      ev('hitl.resumed', { decision: 'approve', kind: 'login' }),
+    ])
+    const wfResumed = resumed.find((b) => b.kind === 'workflow')
+    if (!wfResumed || wfResumed.kind !== 'workflow') throw new Error('workflow missing')
+    expect(wfResumed.steps[0].status).toBe('running')
+    const cardResumed = resumed.find((b) => b.kind === 'tool')
+    if (!cardResumed || cardResumed.kind !== 'tool') throw new Error('tool card missing')
+    expect(cardResumed.result).toBeUndefined()
   })
 
   it('moves the workflow step on resume and marks failure on reject/expire', () => {
@@ -381,7 +426,7 @@ describe('foldEvents', () => {
       ev('workflow.started', { skill: 'demo', steps: ['a', 'b'] }),
       ev('workflow.step_started', { step: 'a', tool: 'ta' }),
       ev('workflow.step_completed', { step: 'a', is_error: false }),
-      ev('hitl.waiting', { tool_name: 'tb', prompt: 'workflow step "b": tb' }),
+      ev('hitl.waiting', { tool_name: 'tb', workflow_step: 'b' }),
     ]
     const resumed = foldEvents('run_wf_resume', [
       ...base,

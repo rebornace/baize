@@ -132,13 +132,17 @@ func (w *Workflow) RunFrom(ctx context.Context, state State, h ExecHooks) (State
 			return state, err
 		}
 
-		content, isErr, ierr := h.Invoke(ctx, s.Tool, s.ID, args)
-		if ierr != nil || isErr {
-			detail := "tool returned is_error"
-			if ierr != nil {
-				detail = ierr.Error()
-			}
-			return state, fmt.Errorf("step %q: invoke failed: %s", s.ID, detail)
+		invokeCtx := WithStepState(ctx, State{
+			Skill: w.Name, NextStep: i, StepID: s.ID, Tree: tree,
+		})
+		content, isErr, ierr := h.Invoke(invokeCtx, s.Tool, s.ID, args)
+		if ierr != nil {
+			// Preserve sentinels (for example the engine's waiting-human pause)
+			// so callers can distinguish a pause from a real failure.
+			return state, fmt.Errorf("step %q: invoke failed: %w", s.ID, ierr)
+		}
+		if isErr {
+			return state, fmt.Errorf("step %q: invoke failed: tool returned is_error", s.ID)
 		}
 
 		SetResult(tree, s.ID, content)

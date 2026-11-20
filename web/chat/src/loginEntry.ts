@@ -84,6 +84,8 @@ export type PendingLoginWait = {
   /** True when the run is paused for login (tool result and/or hitl.waiting). */
   active: boolean
   connectorId?: string
+  /** Workflow step waiting on login; workflow logins allow continue/abort only. */
+  workflowStep?: string
 }
 
 function isLoginHitlResumed(data: Record<string, unknown> | undefined): boolean {
@@ -99,7 +101,7 @@ function isLoginHitlResumed(data: Record<string, unknown> | undefined): boolean 
  * earlier tool.result still says login_required.
  */
 export function findPendingLoginWait(
-  blocks: ReadonlyArray<{ kind: string; name?: string; result?: unknown }>,
+  blocks: ReadonlyArray<{ kind: string; name?: string; result?: unknown; workflowStep?: string }>,
   catalog: ToolCatalog,
   events?: ReadonlyArray<{ type: string; data?: Record<string, unknown> }>,
 ): PendingLoginWait {
@@ -110,22 +112,34 @@ export function findPendingLoginWait(
         return { active: false }
       }
       if (ev.type === 'hitl.waiting' && ev.data?.kind === 'login') {
+        const workflowStep =
+          typeof ev.data.workflow_step === 'string' && ev.data.workflow_step.trim()
+            ? ev.data.workflow_step.trim()
+            : undefined
         return {
           active: true,
           connectorId: resolveConnectorId(
             typeof ev.data.connector_id === 'string' ? ev.data.connector_id : undefined,
           ),
+          workflowStep,
         }
       }
     }
   }
   const fromBlocks = findLoginRequiredConnector(blocks, catalog)
   if (fromBlocks) {
-    return { active: true, connectorId: fromBlocks }
+    return {
+      active: true,
+      connectorId: fromBlocks,
+      workflowStep: blocks.find((b) => b.kind === 'tool' && b.workflowStep)?.workflowStep,
+    }
   }
   for (const b of blocks) {
     if (b.kind !== 'tool' || !isLoginRequiredContent(b.result)) continue
-    return { active: true }
+    return {
+      active: true,
+      workflowStep: b.workflowStep,
+    }
   }
   return { active: false }
 }

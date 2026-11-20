@@ -100,7 +100,7 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 ## HITL
 
-写操作等可标 `require_approval`：Run 进入 `waiting_human`，运营 / API `POST /v0/runs/{id}/resume` 后继续。Chat UI（`/ui`）提供运营入口。审批 / 登录等待默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭），过期后 Run 记为 `cancelled` 并释放会话；审批卡与日程列表显示已等待时长。工作流步骤等待时，工作流卡片标出「等待审批」，审批卡提示重启后仍可继续。
+写操作等可标 `require_approval`：Run 进入 `waiting_human`，运营 / API `POST /v0/runs/{id}/resume` 后继续。Chat UI（`/ui`）提供运营入口。审批 / 登录等待默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭），过期后 Run 记为 `cancelled` 并释放会话；审批卡与日程列表显示已等待时长。工作流步骤等待时，工作流卡片标出「等待审批」或「等待登录」，审批卡提示重启后仍可继续。工作流步骤内的登录与工具自身审批都会持久化步骤状态，恢复后回到同一步；若进程在步骤执行中途退出，重新入队时判失败并提示核对，不自动重放可能已发生的写入。
 
 下游需要登录时（`login_required`）：对话可暂停并展示托管登录入口——打开浏览器托管页、忽略该连接器并继续本轮，或结束本轮。MCP 导出侧见上文「鉴权失败 → elicitation / `hosted_login_url`」。
 

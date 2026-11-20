@@ -63,6 +63,21 @@ describe('isLoginRequiredContent', () => {
     expect(wait).toEqual({ active: true, connectorId: 'mall' })
   })
 
+  it('findPendingLoginWait carries the workflow step for workflow logins', () => {
+    expect(
+      findPendingLoginWait(
+        [],
+        [],
+        [
+          {
+            type: 'hitl.waiting',
+            data: { kind: 'login', connector_id: 'mall', workflow_step: 'b' },
+          },
+        ],
+      ),
+    ).toEqual({ active: true, connectorId: 'mall', workflowStep: 'b' })
+  })
+
   it('findPendingLoginWait stays active without catalog connector', () => {
     expect(
       findPendingLoginWait(
