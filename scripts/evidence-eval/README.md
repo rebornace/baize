@@ -10,6 +10,7 @@
 |---------|----------|
 | tool-routing-eval | 选得到对的工具吗？（工具收窄 / 预筛） |
 | **evidence-eval** | 动手改状态前，该查的查了吗？多步依赖满足了吗？ |
+| [`ev-pres`](../ev-pres/) | 基线 vs 候选：新过/新挂、Pass/CI、成本与机制归因 |
 
 本 harness 只通过 HTTP API 驱动白泽，不 import Go 代码。评分对事件轨迹做确定性检查，**不用 LLM 裁判**。
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.31.0 — 2026-11-20
+
+EV-PRES 薄规格：给现有评测加一层保全感知的成对报告，先预注册，再报 Pass/Avg、新过/新挂、成本与机制归因。纯脚本与文档，不改 Runtime。
+
+### 新增
+
+- **`scripts/ev-pres/summarize.py`**：校验 JSONL；输出每 arm Pass/Wilson 95% CI/Avg score/tokens/时长；成对 Win/Tie/Loss、新过/新挂/未配对；成本只算成对样本；按 mechanism 分组。
+- **退出码**：`--fail-on-new-fail` 在有“基线过、候选挂”时退出 1，可供 PR/CI 使用。
+- **模板**：`prereg.md`（预注册）与 `report.md`（报告）；示例 `sample.jsonl` 与用法说明。
+- **测试**：`test_summarize.py` 覆盖校验、统计、得失、成本、机制与退出码。
+
+### 口径
+
+- `pass` 是主指标；`score` 只作辅助，不替代二元结果。
+- 小样本必须报 Wilson 区间；不得用点估计宣称显著改善。
+- 未配对 case 必须显式列出，不能悄悄丢弃。
+
 ## 0.30.0 — 2026-11-20
 
 MOBILE-RT M3 工程收口：iOS 空壳具备商店上架所需的图标、隐私、工程设置、归档脚本与资料。签名/提审仍需 Apple 账号。
