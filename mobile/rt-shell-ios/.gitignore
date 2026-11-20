@@ -7,3 +7,6 @@ DerivedData/
 *.ipa
 *.dSYM.zip
 *.dSYM
+build/
+*.xcarchive
+ExportOptions.local.plist

@@ -27,6 +27,17 @@ let json = MobileagentSend(userText)
 
 模拟器访问宿主机 mock：`http://127.0.0.1:18080/v1`（先 `go run ./cmd/mobilebind/mockllm`）。
 
+## M3 上架
+
+已备：AppIcon / AccentColor / LaunchBackground、`PrivacyInfo.xcprivacy`、iPhone-only 工程、`ExportOptions.plist`、归档脚本与商店资料。
+
+```bash
+python mobile/rt-shell-ios/scripts/check-release.py
+DEVELOPMENT_TEAM=<team> ./mobile/rt-shell-ios/scripts/archive-ios.sh
+```
+
+签名、TestFlight 与 App Review 需要 Apple Developer 账号；审核演示端点、真实截图与隐私政策 URL 由 App 所有者补齐。商店文案与提审清单见 [`AppStore/README.md`](AppStore/README.md)。
+
 ## 重建
 
 ```bash

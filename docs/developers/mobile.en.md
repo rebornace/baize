@@ -149,6 +149,15 @@ Desktop without a phone: `go run ./cmd/mobilebind`. Local mock LLM: `go run ./cm
 
 Tools today: `get_time` (runs immediately); `http_get` (pauses for approval). No full sidecar connectors / MCP / channels.
 
+### 4. iOS App Store (M3)
+
+- Project: [`mobile/rt-shell-ios/`](../../mobile/rt-shell-ios/); includes AppIcon, AccentColor, launch background, `PrivacyInfo.xcprivacy`, and iPhone-only settings.
+- Validate: `python mobile/rt-shell-ios/scripts/check-release.py`
+- Archive: `DEVELOPMENT_TEAM=<team> ./mobile/rt-shell-ios/scripts/archive-ios.sh`
+- Store copy / privacy answers / review notes / screenshot sizes / submission checklist: [`mobile/rt-shell-ios/AppStore/README.md`](../../mobile/rt-shell-ios/AppStore/README.md)
+
+Signing, TestFlight and App Review need an Apple Developer account. The repo contains no certificates, Team ID, or reviewer demo key.
+
 ---
 
 ## Which path

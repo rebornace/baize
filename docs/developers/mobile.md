@@ -149,6 +149,15 @@ val cont = mobileagent.Mobileagent.approve(callId)
 
 当前工具面：`get_time`（直接执行）；`http_get`（先 `needs_approval`）。没有完整旁挂上的连接器 / MCP / 渠道。
 
+### 4. iOS 上架（M3）
+
+- 工程：[`mobile/rt-shell-ios/`](../../mobile/rt-shell-ios/)；已含 AppIcon、AccentColor、启动背景、`PrivacyInfo.xcprivacy`、iPhone-only 设置。
+- 校验：`python mobile/rt-shell-ios/scripts/check-release.py`
+- 归档：`DEVELOPMENT_TEAM=<team> ./mobile/rt-shell-ios/scripts/archive-ios.sh`
+- 商店文案 / 隐私回答 / 审核备注 / 截图尺寸 / 提审清单：[`mobile/rt-shell-ios/AppStore/README.md`](../../mobile/rt-shell-ios/AppStore/README.md)
+
+签名、TestFlight、App Review 需要 Apple Developer 账号；仓库不包含证书、Team ID 或审核用演示 key。
+
 ---
 
 ## 怎么选

@@ -36,11 +36,15 @@ IDS = {
     "file_cred": uid(),
     "file_info": uid(),
     "file_bridge": uid(),
+    "file_assets": uid(),
+    "file_privacy": uid(),
     "file_xcfw": uid(),
     "build_app": uid(),
     "build_content": uid(),
     "build_cred": uid(),
     "build_info": uid(),
+    "build_assets": uid(),
+    "build_privacy": uid(),
     "build_xcfw": uid(),
 }
 
@@ -57,6 +61,8 @@ pbx = f"""// !$*UTF8*$!
 		{IDS["build_content"]} /* ContentView.swift in Sources */ = {{isa = PBXBuildFile; fileRef = {IDS["file_content"]} /* ContentView.swift */; }};
 		{IDS["build_cred"]} /* CredentialStore.swift in Sources */ = {{isa = PBXBuildFile; fileRef = {IDS["file_cred"]} /* CredentialStore.swift */; }};
 		{IDS["build_info"]} /* Info.plist in Resources */ = {{isa = PBXBuildFile; fileRef = {IDS["file_info"]} /* Info.plist */; }};
+		{IDS["build_assets"]} /* Assets.xcassets in Resources */ = {{isa = PBXBuildFile; fileRef = {IDS["file_assets"]} /* Assets.xcassets */; }};
+		{IDS["build_privacy"]} /* PrivacyInfo.xcprivacy in Resources */ = {{isa = PBXBuildFile; fileRef = {IDS["file_privacy"]} /* PrivacyInfo.xcprivacy */; }};
 		{IDS["build_xcfw"]} /* Mobileagent.xcframework in Frameworks */ = {{isa = PBXBuildFile; fileRef = {IDS["file_xcfw"]} /* Mobileagent.xcframework */; }};
 /* End PBXBuildFile section */
 
@@ -67,6 +73,8 @@ pbx = f"""// !$*UTF8*$!
 		{IDS["file_cred"]} /* CredentialStore.swift */ = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; }};
 		{IDS["file_info"]} /* Info.plist */ = {{isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; }};
 		{IDS["file_bridge"]} /* Bridging-Header.h */ = {{isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Bridging-Header.h"; sourceTree = "<group>"; }};
+		{IDS["file_assets"]} /* Assets.xcassets */ = {{isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; }};
+		{IDS["file_privacy"]} /* PrivacyInfo.xcprivacy */ = {{isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; }};
 		{IDS["file_xcfw"]} /* Mobileagent.xcframework */ = {{isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Mobileagent.xcframework; sourceTree = "<group>"; }};
 /* End PBXFileReference section */
 
@@ -99,6 +107,8 @@ pbx = f"""// !$*UTF8*$!
 				{IDS["file_cred"]} /* CredentialStore.swift */,
 				{IDS["file_bridge"]} /* Bridging-Header.h */,
 				{IDS["file_info"]} /* Info.plist */,
+				{IDS["file_assets"]} /* Assets.xcassets */,
+				{IDS["file_privacy"]} /* PrivacyInfo.xcprivacy */,
 			);
 			path = BaizeMobileRT;
 			sourceTree = "<group>";
@@ -172,6 +182,8 @@ pbx = f"""// !$*UTF8*$!
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				{IDS["build_assets"]} /* Assets.xcassets in Resources */,
+				{IDS["build_privacy"]} /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		}};
@@ -226,6 +238,8 @@ pbx = f"""// !$*UTF8*$!
 		{IDS["cfg_tgt_debug"]} /* Debug */ = {{
 			isa = XCBuildConfiguration;
 			buildSettings = {{
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -239,7 +253,7 @@ pbx = f"""// !$*UTF8*$!
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rebornace.baize.mobilert;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -247,13 +261,15 @@ pbx = f"""// !$*UTF8*$!
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "BaizeMobileRT/Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1";
 			}};
 			name = Debug;
 		}};
 		{IDS["cfg_tgt_release"]} /* Release */ = {{
 			isa = XCBuildConfiguration;
 			buildSettings = {{
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -267,7 +283,7 @@ pbx = f"""// !$*UTF8*$!
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rebornace.baize.mobilert;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -275,7 +291,7 @@ pbx = f"""// !$*UTF8*$!
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "BaizeMobileRT/Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1";
 			}};
 			name = Release;
 		}};

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.30.0 — 2026-11-20
+
+MOBILE-RT M3 工程收口：iOS 空壳具备商店上架所需的图标、隐私、工程设置、归档脚本与资料。签名/提审仍需 Apple 账号。
+
+### 变更
+
+- **iOS 商店工程**：AppIcon 1024、AccentColor、LaunchBackground、`PrivacyInfo.xcprivacy`、iPhone-only、版本 1.0.0、加密豁免、本地网络说明。
+- **归档与校验**：`ExportOptions.plist`、`scripts/archive-ios.sh`、`scripts/check-release.py`。
+- **商店资料**：`AppStore/README.md` 覆盖文案、关键词、隐私回答、审核备注、截图尺寸、签名/TestFlight 清单与已知阻塞。
+
+### 待账号
+
+- Apple Developer Team ID、Bundle ID 注册、审核演示端点/测试 key、真实截图、公开隐私政策 URL、TestFlight / App Review。
+
 ## 0.29.0 — 2026-11-20
 
 记忆设置页按 key 分组、标冲突/近似并支持批量清理。向后兼容；选 **minor**（v0.29.0）。
