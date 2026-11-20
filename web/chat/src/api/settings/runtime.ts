@@ -34,6 +34,7 @@ export interface RuntimeKnobs {
   decide_route_enabled: boolean
   decide_route_min_runes: number
   scoped_subrun_enabled: boolean
+  subagent_async_wake_enabled: boolean
 }
 
 /** Per-field flags: true when the value is overridden from the YAML baseline. */
@@ -89,6 +90,7 @@ export type RuntimeKnobsPatch = Partial<{
   decide_route_enabled: boolean
   decide_route_min_runes: number
   scoped_subrun_enabled: boolean
+  subagent_async_wake_enabled: boolean
   public_base_url: string
   log_format: string
   otel_otlp_endpoint: string

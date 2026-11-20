@@ -20,6 +20,7 @@ const (
 	SpawnGroupRunName  = "spawn_group_run"
 	EventRunSpawned    = "run.spawned"
 	EventRunReceipt    = "run.receipt"
+	EventRunAutoWake   = "run.auto_wake"
 	maxConcurrentChild = 2
 )
 
@@ -481,6 +482,7 @@ func (e *Engine) NotifyChildTerminal(child *store.Run) {
 	})
 	if async {
 		e.appendChildReceiptNote(child, goal, receipt)
+		e.maybeAutoWakeAsyncChild(child, goal, receipt)
 	}
 	// Only wake a parent that is actually waiting on this child. Async parents
 	// keep running (or may already be terminal); never start a resume for them.
@@ -564,6 +566,134 @@ func shortFact(v any) string {
 		text = text[:160] + "…"
 	}
 	return text
+}
+
+func (e *Engine) effectiveSubagentAsyncWake() bool {
+	if e.Settings == nil {
+		return false
+	}
+	return e.Settings.Knobs().SubagentAsyncWakeEnabled
+}
+
+// maybeAutoWakeAsyncChild starts one follow-up parent run from an async child's
+// receipt when the setting is on and the conversation is completely idle. It
+// never interrupts a running or waiting parent, and marks both sides so one
+// auto-wake cannot chain into a loop.
+func (e *Engine) maybeAutoWakeAsyncChild(child *store.Run, goal string, receipt GroupRunReceipt) {
+	if child == nil || !e.effectiveSubagentAsyncWake() || e.DispatchJob == nil {
+		return
+	}
+	if receipt.Status != string(store.StatusSucceeded) {
+		return
+	}
+	parent, err := e.Store.GetRun(child.ParentRunID)
+	if err != nil || parent == nil || parent.Depth > 0 || parent.ConversationID == "" {
+		return
+	}
+	switch parent.Status {
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusRejected:
+	default:
+		return
+	}
+	if e.hasAutoWakeEvent(parent.ID) {
+		return
+	}
+	if active, _ := e.Store.HasActiveRun(parent.ConversationID); active {
+		return
+	}
+
+	input := autoWakeInput(goal, receipt)
+	next, err := e.Store.CreateRun(store.CreateRunInput{
+		AgentID:            parent.AgentID,
+		Input:              input,
+		ConversationID:     parent.ConversationID,
+		IdentityID:         parent.IdentityID,
+		ModelProfileID:     parent.ModelProfileID,
+		ThinkingLevel:      parent.ThinkingLevel,
+		PassthroughHeaders: parent.PassthroughHeaders,
+		WebhookConfig:      parent.WebhookConfig,
+		Origin:             store.RunOriginManual,
+	})
+	if err != nil {
+		return
+	}
+	_ = e.Store.AppendEvent(parent.ID, store.Event{
+		Type: EventRunAutoWake,
+		Data: map[string]any{"child_run_id": child.ID, "new_run_id": next.ID},
+	})
+	_ = e.Store.AppendEvent(next.ID, store.Event{
+		Type: EventRunAutoWake,
+		Data: map[string]any{"source_child_run_id": child.ID, "source_parent_run_id": parent.ID},
+	})
+	if e.Messages != nil {
+		_, _ = e.Messages.Append(parent.ConversationID, conversation.Message{
+			Role:    conversation.RoleSystemNote,
+			Content: autoWakeNote(goal, receipt),
+			RunID:   next.ID,
+		})
+	}
+	e.DispatchJob(middleware.Job{
+		RunID:   next.ID,
+		Kind:    middleware.KindRun,
+		AgentID: next.AgentID,
+		Input:   next.Input,
+	})
+}
+
+func (e *Engine) hasAutoWakeEvent(runID string) bool {
+	evs, err := e.Store.ListEvents(runID)
+	if err != nil {
+		return false
+	}
+	for _, ev := range evs {
+		if ev.Type == EventRunAutoWake {
+			return true
+		}
+	}
+	return false
+}
+
+func autoWakeInput(goal string, receipt GroupRunReceipt) string {
+	var b strings.Builder
+	b.WriteString("[子代理回执]")
+	if goal != "" {
+		b.WriteString(" 目标：" + goal + "。")
+	}
+	b.WriteString(" 状态：" + receipt.Status + "。")
+	if receipt.Summary != "" {
+		b.WriteString(" 摘要：" + receipt.Summary + "。")
+	}
+	if len(receipt.Facts) > 0 {
+		b.WriteString(" 事实：")
+		i := 0
+		for k, v := range receipt.Facts {
+			if i >= 6 {
+				break
+			}
+			if i > 0 {
+				b.WriteString("；")
+			}
+			b.WriteString(k + "=" + shortFact(v))
+			i++
+		}
+		b.WriteString("。")
+	}
+	if receipt.Error != "" {
+		b.WriteString(" 错误：" + receipt.Error + "。")
+	}
+	b.WriteString("请根据回执继续处理；如果没有需要继续的动作，简要告知用户。")
+	return b.String()
+}
+
+func autoWakeNote(goal string, receipt GroupRunReceipt) string {
+	summary := strings.TrimSpace(receipt.Summary)
+	if summary == "" {
+		summary = "子代理已完成"
+	}
+	if goal != "" {
+		return "[子代理完成，自动继续] " + goal + "：" + summary
+	}
+	return "[子代理完成，自动继续] " + summary
 }
 
 // notifyParentChildWaiting tells the parent that a child needs a human. The

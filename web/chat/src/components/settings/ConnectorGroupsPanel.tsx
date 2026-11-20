@@ -36,9 +36,11 @@ export function ConnectorGroupsPanel({ readOnly, onToast }: Props) {
   const [source, setSource] = useState('')
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([])
   const [scopedOn, setScopedOn] = useState(false)
+  const [autoWakeOn, setAutoWakeOn] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingGroups, setSavingGroups] = useState(false)
   const [togglingScoped, setTogglingScoped] = useState(false)
+  const [togglingWake, setTogglingWake] = useState(false)
   const [removeIdx, setRemoveIdx] = useState<number | null>(null)
 
   const reload = useCallback(async () => {
@@ -57,6 +59,7 @@ export function ConnectorGroupsPanel({ readOnly, onToast }: Props) {
       )
       setSource(g.source ?? '')
       setScopedOn(!!rt.effective?.scoped_subrun_enabled)
+      setAutoWakeOn(!!rt.effective?.subagent_async_wake_enabled)
       setConnectors(cons)
     } catch (e) {
       toastErr(onToast, e)
@@ -102,6 +105,19 @@ export function ConnectorGroupsPanel({ readOnly, onToast }: Props) {
       toastErr(onToast, e)
     } finally {
       setTogglingScoped(false)
+    }
+  }
+
+  const onToggleAutoWake = async (next: boolean) => {
+    setTogglingWake(true)
+    try {
+      const v = await patchRuntimeSettings({ subagent_async_wake_enabled: next })
+      setAutoWakeOn(!!v.effective?.subagent_async_wake_enabled)
+      onToast(RUNTIME.connectorGroupsScopedSaved, 'ok')
+    } catch (e) {
+      toastErr(onToast, e)
+    } finally {
+      setTogglingWake(false)
     }
   }
 
@@ -151,6 +167,16 @@ export function ConnectorGroupsPanel({ readOnly, onToast }: Props) {
           <span>{RUNTIME.connectorGroupsScopedEnable}</span>
         </label>
         <p className="settings-muted">{RUNTIME.connectorGroupsScopedHint}</p>
+        <label className="settings-checkbox" data-testid="subagent-auto-wake-toggle">
+          <input
+            type="checkbox"
+            checked={autoWakeOn}
+            disabled={readOnly || togglingWake || loading || !scopedOn}
+            onChange={(e) => void onToggleAutoWake(e.target.checked)}
+          />
+          <span>{RUNTIME.connectorGroupsAutoWakeEnable}</span>
+        </label>
+        <p className="settings-muted">{RUNTIME.connectorGroupsAutoWakeHint}</p>
         {readOnly ? <p className="settings-muted">{RUNTIME.descriptionOperator}</p> : null}
       </section>
 

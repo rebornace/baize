@@ -87,6 +87,9 @@ type Knobs struct {
 	ContextOffloadEnabled bool
 	// ScopedSubrunEnabled allows the model to call spawn_group_run (L2). Default off.
 	ScopedSubrunEnabled bool
+	// SubagentAsyncWakeEnabled lets an async child's receipt start a new parent
+	// run when the conversation is idle. Default off.
+	SubagentAsyncWakeEnabled bool
 }
 
 // Credentials is the effective control-plane credential set.
@@ -154,6 +157,7 @@ type knobsOverride struct {
 	ActiveGoalMaxTextRunes     *int     `json:"active_goal_max_text_runes,omitempty"`
 	ContextOffloadEnabled      *bool    `json:"context_offload_enabled,omitempty"`
 	ScopedSubrunEnabled        *bool    `json:"scoped_subrun_enabled,omitempty"`
+	SubagentAsyncWakeEnabled   *bool    `json:"subagent_async_wake_enabled,omitempty"`
 }
 
 // credsOverride holds the persisted KV delta for control-plane credentials.
@@ -379,6 +383,9 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.ScopedSubrunEnabled != nil {
 		k.ScopedSubrunEnabled = *ko.ScopedSubrunEnabled
 	}
+	if ko.SubagentAsyncWakeEnabled != nil {
+		k.SubagentAsyncWakeEnabled = *ko.SubagentAsyncWakeEnabled
+	}
 	s.Knobs = k
 
 	c := s.Creds
@@ -454,6 +461,7 @@ type KnobsFieldFlags struct {
 	ActiveGoalMaxTextRunes     bool `json:"active_goal_max_text_runes"`
 	ContextOffloadEnabled      bool `json:"context_offload_enabled"`
 	ScopedSubrunEnabled        bool `json:"scoped_subrun_enabled"`
+	SubagentAsyncWakeEnabled   bool `json:"subagent_async_wake_enabled"`
 }
 
 // KnobsView is the GET /settings/runtime body: effective values + override flags.
@@ -506,6 +514,7 @@ func (h *Holder) KnobsView() KnobsView {
 			ActiveGoalMaxTextRunes:     ko.ActiveGoalMaxTextRunes != nil,
 			ContextOffloadEnabled:      ko.ContextOffloadEnabled != nil,
 			ScopedSubrunEnabled:        ko.ScopedSubrunEnabled != nil,
+			SubagentAsyncWakeEnabled:   ko.SubagentAsyncWakeEnabled != nil,
 		},
 	}
 }

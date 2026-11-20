@@ -43,6 +43,7 @@ const baseKnobs: RuntimeKnobs = {
   decide_route_enabled: false,
   decide_route_min_runes: 400,
   scoped_subrun_enabled: false,
+  subagent_async_wake_enabled: false,
 }
 
 const overridden = Object.fromEntries(

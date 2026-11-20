@@ -19,11 +19,14 @@ import (
 )
 
 type scopedKnobs struct {
-	on bool
+	on   bool
+	wake bool
 }
 
 func (s scopedKnobs) Knobs() runtimecfg.Knobs {
-	return runtimecfg.Knobs{ScopedSubrunEnabled: s.on, MaxSteps: 16}
+	return runtimecfg.Knobs{
+		ScopedSubrunEnabled: s.on, SubagentAsyncWakeEnabled: s.wake, MaxSteps: 16,
+	}
 }
 
 func TestSpawnGroupRunRequiresFlag(t *testing.T) {
@@ -271,6 +274,141 @@ func TestSyncChildTerminalWakesWaitingParent(t *testing.T) {
 	eng.NotifyChildTerminal(child)
 	if !woke {
 		t.Fatal("sync child terminal must wake a waiting parent")
+	}
+}
+
+func TestNotifyChildTerminalAutoWakesWhenEnabled(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	convs := conversation.NewMemoryStore()
+	parent, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "p", ConversationID: "c1",
+	})
+	_ = st.UpdateRun(parent.ID, store.StatusSucceeded, "done", "")
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, ConversationID: "c1",
+	})
+	_ = st.AppendEvent(parent.ID, store.Event{
+		Type: EventRunSpawned,
+		Data: map[string]any{
+			"child_run_id": child.ID, "group_id": "tickets", "goal": "count", "async": true,
+		},
+	})
+	_ = st.UpdateRun(child.ID, store.StatusSucceeded,
+		"1 ticket\nRECEIPT_JSON: {\"summary\":\"1 ticket\",\"facts\":{\"total\":1}}", "")
+	var jobs []middleware.Job
+	eng := &Engine{
+		Store: st, Messages: convs, Settings: scopedKnobs{on: true, wake: true},
+		DispatchJob: func(j middleware.Job) { jobs = append(jobs, j) },
+	}
+	eng.NotifyChildTerminal(child)
+	if len(jobs) != 1 {
+		t.Fatalf("jobs=%d want 1", len(jobs))
+	}
+	msgs := convs.List("c1")
+	found := false
+	for _, m := range msgs {
+		if m.Role == conversation.RoleSystemNote && strings.Contains(m.Content, "自动继续") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing auto-wake note: %+v", msgs)
+	}
+}
+
+func TestAutoWakeStartsFollowUpWhenIdle(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	convs := conversation.NewMemoryStore()
+	parent, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "p", ConversationID: "c1",
+	})
+	_ = st.UpdateRun(parent.ID, store.StatusSucceeded, "done", "")
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, ConversationID: "c1",
+	})
+	_ = st.UpdateRun(child.ID, store.StatusSucceeded, "ok", "")
+	var jobs []middleware.Job
+	eng := &Engine{
+		Store: st, Messages: convs, Settings: scopedKnobs{on: true, wake: true},
+		DispatchJob: func(j middleware.Job) { jobs = append(jobs, j) },
+	}
+	eng.maybeAutoWakeAsyncChild(child, "count tickets", GroupRunReceipt{
+		Status: "succeeded", Summary: "1 ticket", ChildRunID: child.ID,
+		Facts: map[string]any{"total": 1},
+	})
+	if len(jobs) != 1 {
+		t.Fatalf("jobs=%d want 1", len(jobs))
+	}
+	next, _ := st.GetRun(jobs[0].RunID)
+	if next == nil || next.ConversationID != "c1" || !strings.Contains(next.Input, "子代理回执") {
+		t.Fatalf("next run=%+v", next)
+	}
+	evs, _ := st.ListEvents(parent.ID)
+	if findEvent(evs, EventRunAutoWake) == nil {
+		t.Fatal("missing parent run.auto_wake")
+	}
+	msgs := convs.List("c1")
+	found := false
+	for _, m := range msgs {
+		if m.Role == conversation.RoleSystemNote && strings.Contains(m.Content, "自动继续") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing auto-wake note: %+v", msgs)
+	}
+}
+
+func TestAutoWakeSkipsBusyOrOff(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	parent, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "p", ConversationID: "c1",
+	})
+	_ = st.UpdateRun(parent.ID, store.StatusSucceeded, "done", "")
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, ConversationID: "c1",
+	})
+	// Another active run in the same conversation.
+	_, _ = st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "user again", ConversationID: "c1"})
+	var jobs []middleware.Job
+	eng := &Engine{
+		Store: st, Settings: scopedKnobs{on: true, wake: true},
+		DispatchJob: func(j middleware.Job) { jobs = append(jobs, j) },
+	}
+	eng.maybeAutoWakeAsyncChild(child, "goal", GroupRunReceipt{Status: "succeeded", Summary: "ok"})
+	if len(jobs) != 0 {
+		t.Fatalf("busy conversation must not auto-wake: %+v", jobs)
+	}
+
+	eng.Settings = scopedKnobs{on: true, wake: false}
+	eng.maybeAutoWakeAsyncChild(child, "goal", GroupRunReceipt{Status: "succeeded", Summary: "ok"})
+	if len(jobs) != 0 {
+		t.Fatalf("setting off must not auto-wake: %+v", jobs)
+	}
+}
+
+func TestAutoWakeDoesNotChain(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	parent, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "p", ConversationID: "c1",
+	})
+	_ = st.UpdateRun(parent.ID, store.StatusSucceeded, "done", "")
+	_ = st.AppendEvent(parent.ID, store.Event{Type: EventRunAutoWake})
+	child, _ := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "c", Depth: 1, ParentRunID: parent.ID, ConversationID: "c1",
+	})
+	var jobs []middleware.Job
+	eng := &Engine{
+		Store: st, Settings: scopedKnobs{on: true, wake: true},
+		DispatchJob: func(j middleware.Job) { jobs = append(jobs, j) },
+	}
+	eng.maybeAutoWakeAsyncChild(child, "goal", GroupRunReceipt{Status: "succeeded", Summary: "ok"})
+	if len(jobs) != 0 {
+		t.Fatalf("auto-wake chain must stop: %+v", jobs)
 	}
 }
 

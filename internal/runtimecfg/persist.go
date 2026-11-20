@@ -54,6 +54,7 @@ type KnobsPatch struct {
 	ActiveGoalMaxTextRunes       *int     `json:"active_goal_max_text_runes,omitempty"`
 	ContextOffloadEnabled        *bool    `json:"context_offload_enabled,omitempty"`
 	ScopedSubrunEnabled          *bool    `json:"scoped_subrun_enabled,omitempty"`
+	SubagentAsyncWakeEnabled     *bool    `json:"subagent_async_wake_enabled,omitempty"`
 	PublicBaseURL                *string  `json:"public_base_url,omitempty"`
 	LogFormat                    *string  `json:"log_format,omitempty"`
 	OtelOTLPEndpoint             *string  `json:"otel_otlp_endpoint,omitempty"`
@@ -360,6 +361,9 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.ScopedSubrunEnabled != nil {
 		next.ScopedSubrunEnabled = p.ScopedSubrunEnabled
+	}
+	if p.SubagentAsyncWakeEnabled != nil {
+		next.SubagentAsyncWakeEnabled = p.SubagentAsyncWakeEnabled
 	}
 	nextPO := h.po
 	if p.PublicBaseURL != nil {

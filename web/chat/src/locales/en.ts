@@ -610,6 +610,9 @@ export const enPack = {
     connectorGroupsScopedHint:
       'When on, the assistant can run a task inside one group and summarize back. Keep off unless you need isolation or parallel investigation.',
     connectorGroupsScopedSaved: 'Sub-task toggle applied',
+    connectorGroupsAutoWakeEnable: 'Auto-continue when an async subagent finishes (default off)',
+    connectorGroupsAutoWakeHint:
+      'Only when the parent run has finished and the conversation is idle; never interrupts a running or waiting parent. Uses an extra model call.',
     connectorGroupsId: 'Group name',
     connectorGroupsIdHint: 'Short English id, e.g. finance or commerce',
     connectorGroupsIdPlaceholder: 'e.g. finance',

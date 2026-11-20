@@ -613,6 +613,9 @@ export const zhPack = {
   connectorGroupsScopedHint:
     '打开后，助手可在某一组里单独跑一段任务，完成后再汇总。一般保持关闭；需要强隔离或并行调查时再开。',
   connectorGroupsScopedSaved: '子任务开关已生效',
+  connectorGroupsAutoWakeEnable: '子代理完成后自动继续（默认关）',
+  connectorGroupsAutoWakeHint:
+    '仅在父 Run 已结束且会话空闲时，用子代理回执自动开一轮；父忙或等审批时不插队。会消耗模型调用。',
   connectorGroupsId: '分组名称',
   connectorGroupsIdHint: '用短英文 id，例如 finance、commerce',
   connectorGroupsIdPlaceholder: '例如 finance',
