@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rebornace/baize/internal/agent"
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/llm"
@@ -169,6 +170,56 @@ func TestNotifyChildTerminalPublishesFacts(t *testing.T) {
 	facts, _ := receipt["facts"].(map[string]any)
 	if facts["total_tax"] != "1240.00" {
 		t.Fatalf("facts=%+v", receipt["facts"])
+	}
+}
+
+func TestScopedChildRunEndToEndReceipt(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	parent, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "parent goal", ConversationID: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dispatched []middleware.Job
+	eng := &Engine{
+		Store: st, Tools: tool.NewRegistry(), Settings: scopedKnobs{on: true},
+		DispatchJob: func(job middleware.Job) { dispatched = append(dispatched, job) },
+		LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+			return llm.Message{Role: llm.RoleAssistant,
+				Content: "合计 1240\nRECEIPT_JSON: {\"summary\":\"合计 1240\",\"facts\":{\"total_tax\":\"1240.00\"}}"}
+		}},
+	}
+	eng.SetConnectorGroups([]config.ConnectorGroup{{ID: "finance", Connectors: []string{"expense"}}})
+	ctx := identity.WithToolCallID(identity.WithRunID(context.Background(), parent.ID), "tc1")
+	if _, _, err := eng.spawnGroupRun(ctx, map[string]any{
+		"group_id": "finance", "goal": "核对发票", "mode": "readonly",
+	}); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("spawn err=%v", err)
+	}
+	kids, _ := st.ListChildRuns(parent.ID)
+	if len(kids) != 1 {
+		t.Fatalf("children=%d", len(kids))
+	}
+	if err := eng.Execute(context.Background(), kids[0].ID, agent.Def{ID: "a", System: "sys"}, kids[0].Input); err != nil {
+		t.Fatalf("child execute: %v", err)
+	}
+	child, _ := st.GetRun(kids[0].ID)
+	if child.Status != store.StatusSucceeded {
+		t.Fatalf("child status=%s", child.Status)
+	}
+	eng.NotifyChildTerminal(child)
+	summary, facts := parseChildReceipt(child.Output)
+	if summary != "合计 1240" || facts["total_tax"] != "1240.00" {
+		t.Fatalf("receipt summary=%q facts=%+v", summary, facts)
+	}
+	if err := eng.ContinueFromChildReceipt(context.Background(), parent.ID, GroupRunReceipt{
+		Status: string(child.Status), Summary: summary, Facts: facts, ChildRunID: child.ID,
+	}); err != nil {
+		t.Fatalf("parent resume: %v", err)
+	}
+	got, _ := st.GetRun(parent.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("parent status=%s", got.Status)
 	}
 }
 
