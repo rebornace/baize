@@ -14,6 +14,7 @@ import { ThinkingBlock, MessageThinkingFallback } from '../../components/Thinkin
 import { ToolCard } from '../../components/ToolCard'
 import { TypewriterText } from '../../components/TypewriterText'
 import { RunBindingButton } from '../../components/RunBindingButton'
+import { SubagentCard } from '../../components/SubagentCard'
 import { UsageMetaLine } from '../../components/UsageMetaLine'
 import { UserBubble } from '../../components/UserBubble'
 import { WorkflowCard } from '../../components/WorkflowCard'
@@ -40,6 +41,16 @@ function renderActivityStepBlock(
 ): ReactNode {
   if (b.kind === 'workflow') {
     return <WorkflowCard key={key} block={b} />
+  }
+  if (b.kind === 'subagent') {
+    return (
+      <SubagentCard
+        key={key}
+        block={b}
+        onBrowserLogin={opts.onBrowserLogin}
+        onError={opts.reportError}
+      />
+    )
   }
   return (
     <ToolCard
@@ -203,7 +214,7 @@ export function ChatMessageList({
           const hasHistoryToolBlocks = Boolean(
             m.run_id &&
               historyBlocks[m.run_id]?.some(
-                (b) => b.kind === 'tool' || b.kind === 'workflow',
+                (b) => b.kind === 'tool' || b.kind === 'workflow' || b.kind === 'subagent',
               ),
           )
           const pages =

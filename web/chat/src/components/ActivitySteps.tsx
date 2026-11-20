@@ -7,7 +7,7 @@ import {
   type ActivityStepBlock,
 } from '../activitySteps'
 import { toolPhrase, type ToolCatalog } from '../friendlyTool'
-import { CHAT, WORKFLOW, WORKFLOW_PREPARING } from '../strings'
+import { CHAT, SUBAGENT, WORKFLOW, WORKFLOW_PREPARING } from '../strings'
 
 export type ActivityStepsProps = {
   blocks: ActivityStepBlock[]
@@ -19,6 +19,10 @@ function stepLabel(block: ActivityStepBlock, catalog: ToolCatalog): string {
   if (block.kind === 'tool') {
     return toolPhrase(block.name, block.status, catalog)
   }
+  if (block.kind === 'subagent') {
+    const goal = block.goal.trim()
+    return goal ? `${SUBAGENT.title} · ${goal}` : SUBAGENT.title
+  }
   const total = block.steps.length
   if (total === 0) return WORKFLOW_PREPARING
   const current = block.steps.filter((s) => s.status === 'done' || s.status === 'running').length
@@ -26,6 +30,13 @@ function stepLabel(block: ActivityStepBlock, catalog: ToolCatalog): string {
 }
 
 function StepStatusIcon({ block }: { block: ActivityStepBlock }) {
+  if (block.kind === 'subagent') {
+    if (block.status === 'succeeded') return <Check size={15} aria-hidden />
+    if (block.status === 'failed' || block.status === 'cancelled' || block.status === 'rejected') {
+      return <X size={15} aria-hidden />
+    }
+    return <Loader2 size={15} className="icon-spin" aria-hidden />
+  }
   if (block.kind === 'workflow') {
     if (block.steps.some((s) => s.status === 'running')) {
       return <Loader2 size={15} className="icon-spin" aria-hidden />

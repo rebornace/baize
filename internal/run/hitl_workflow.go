@@ -63,6 +63,7 @@ func (e *Engine) continueWorkflowFromHITL(ctx context.Context, runID string, pay
 		Data: map[string]any{"decision": "approve", "comment": d.Comment, "kind": kind},
 	})
 	_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+	e.notifyParentChildResumed(runID)
 
 	// The gate pauses before workflow.step_started, so emit the start here. A
 	// step that already emitted it before a login/approval pause keeps the

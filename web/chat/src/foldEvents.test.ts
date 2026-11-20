@@ -464,6 +464,98 @@ describe('foldEvents', () => {
     expect(wf.steps[0].status).toBe('pending')
   })
 
+  it('folds spawn and receipt into one subagent block', () => {
+    const events: Event[] = [
+      ev('llm.tool_call', {
+        id: 'c1',
+        name: 'spawn_group_run',
+        arguments: { group_id: 'finance', goal: '核对发票' },
+      }),
+      ev('run.spawned', {
+        child_run_id: 'run_child',
+        group_id: 'finance',
+        mode: 'readonly',
+        goal: '核对发票',
+      }),
+      ev('hitl.waiting', { kind: 'waiting_child', tool_name: 'spawn_group_run' }),
+      ev('run.receipt', {
+        child_run_id: 'run_child',
+        status: 'succeeded',
+        summary: '税额合计 1240',
+        facts: { total_tax: '1240.00' },
+        group_id: 'finance',
+        mode: 'readonly',
+      }),
+      ev('tool.result', {
+        name: 'spawn_group_run',
+        content: { status: 'succeeded', child_run_id: 'run_child', summary: '税额合计 1240' },
+        is_error: false,
+      }),
+    ]
+    const blocks = foldEvents('run_parent', events)
+    const tools = blocks.filter((b) => b.kind === 'tool')
+    expect(tools).toHaveLength(0)
+    const sub = blocks.find((b) => b.kind === 'subagent')
+    if (!sub || sub.kind !== 'subagent') throw new Error('subagent block missing')
+    expect(sub).toMatchObject({
+      childRunId: 'run_child',
+      goal: '核对发票',
+      groupId: 'finance',
+      mode: 'readonly',
+      status: 'succeeded',
+      summary: '税额合计 1240',
+      facts: { total_tax: '1240.00' },
+    })
+  })
+
+  it('tracks subagent waiting and resumed events', () => {
+    const base: Event[] = [
+      ev('run.spawned', {
+        child_run_id: 'run_child',
+        group_id: 'finance',
+        mode: 'readonly',
+        goal: '核对发票',
+      }),
+    ]
+    const waiting = foldEvents('run_parent_wait', [
+      ...base,
+      ev('run.child_waiting', {
+        child_run_id: 'run_child',
+        kind: 'approval',
+        tool_name: 'create_ticket',
+      }),
+    ])
+    const wf = waiting.find((b) => b.kind === 'subagent')
+    if (!wf || wf.kind !== 'subagent') throw new Error('subagent missing')
+    expect(wf.status).toBe('waiting')
+    expect(wf.waitingKind).toBe('approval')
+
+    const resumed = foldEvents('run_parent_resume', [
+      ...base,
+      ev('run.child_waiting', { child_run_id: 'run_child', kind: 'login', tool_name: 't' }),
+      ev('run.child_resumed', { child_run_id: 'run_child' }),
+    ])
+    const wr = resumed.find((b) => b.kind === 'subagent')
+    if (!wr || wr.kind !== 'subagent') throw new Error('subagent missing')
+    expect(wr.status).toBe('running')
+    expect(wr.waitingKind).toBeUndefined()
+  })
+
+  it('keeps a failed spawn as a normal tool card', () => {
+    const blocks = foldEvents('run_spawn_fail', [
+      ev('llm.tool_call', { id: 'c1', name: 'spawn_group_run', arguments: {} }),
+      ev('tool.result', {
+        name: 'spawn_group_run',
+        is_error: true,
+        content: { error: 'scoped_subrun_enabled is false' },
+      }),
+    ])
+    expect(blocks.filter((b) => b.kind === 'subagent')).toHaveLength(0)
+    const card = blocks.find((b) => b.kind === 'tool')
+    if (!card || card.kind !== 'tool') throw new Error('tool card missing')
+    expect(card.status).toBe('failed')
+  })
+
   it('does not attach usage when nothing reported tokens or savings', () => {
     const blocks = foldEvents('run_plain', [
       ev('llm.message', { content: '无用量' }),

@@ -534,6 +534,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 					},
 				})
 				_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+				e.notifyParentChildResumed(runID)
 				_ = e.Store.SetHITL(runID, nil)
 				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipStep)
 			}
@@ -547,6 +548,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 					},
 				})
 				_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+				e.notifyParentChildResumed(runID)
 				_ = e.Store.SetHITL(runID, nil)
 				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipSystem)
 			}
@@ -564,6 +566,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		Data: map[string]any{"decision": "approve", "comment": d.Comment, "kind": payload.Kind},
 	})
 	_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
+	e.notifyParentChildResumed(runID)
 	_ = e.Store.SetHITL(runID, nil)
 
 	if isLoginWait {

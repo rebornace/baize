@@ -12,6 +12,7 @@ import (
 	"github.com/rebornace/baize/internal/middleware"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/workflow"
 )
 
 const (
@@ -30,6 +31,100 @@ type GroupRunReceipt struct {
 	GroupID    string         `json:"group_id,omitempty"`
 	OpenHITL   bool           `json:"open_hitl,omitempty"`
 	Error      string         `json:"error,omitempty"`
+}
+
+const (
+	childReceiptMarker   = "RECEIPT_JSON:"
+	childReceiptMaxBytes = 8192
+	childFactMaxBytes    = 500
+	childFactsMax        = 20
+)
+
+// parseChildReceipt extracts the optional structured facts line from a child
+// answer. A missing or malformed marker is not an error: the parent still gets
+// the plain answer.
+func parseChildReceipt(output string) (string, map[string]any) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return "", nil
+	}
+	lines := strings.Split(trimmed, "\n")
+	markerAt := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, childReceiptMarker) {
+			continue
+		}
+		if len(line) > childReceiptMaxBytes {
+			break
+		}
+		markerAt = i
+		break
+	}
+	if markerAt < 0 {
+		return trimmed, nil
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[markerAt]), childReceiptMarker))
+	var parsed struct {
+		Summary string         `json:"summary"`
+		Facts   map[string]any `json:"facts"`
+	}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return trimmed, nil
+	}
+	summary := strings.TrimSpace(parsed.Summary)
+	if summary == "" {
+		summary = strings.TrimSpace(strings.Join(lines[:markerAt], "\n"))
+	}
+	if summary == "" {
+		summary = trimmed
+	}
+	return summary, sanitizeChildFacts(parsed.Facts)
+}
+
+func sanitizeChildFacts(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if len(out) >= childFactsMax {
+			break
+		}
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		switch t := v.(type) {
+		case string:
+			out[key] = truncateText(t, childFactMaxBytes)
+		case bool:
+			out[key] = t
+		case float64:
+			out[key] = t
+		default:
+			raw, err := json.Marshal(v)
+			if err != nil || len(raw) > childFactMaxBytes {
+				continue
+			}
+			out[key] = string(raw)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func truncateText(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
 }
 
 // DispatchJobFunc enqueues a worker job (set by bootstrap).
@@ -87,6 +182,10 @@ func (e *Engine) effectiveScopedSubrunEnabled() bool {
 func (e *Engine) spawnGroupRun(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
 	runID := identity.RunIDFrom(ctx)
 	callID := identity.ToolCallIDFrom(ctx)
+
+	if _, ok := workflow.StepStateFromContext(ctx); ok {
+		return map[string]any{"error": "spawn_group_run is not available inside a workflow step; split it into a normal step"}, true, nil
+	}
 
 	if !e.effectiveScopedSubrunEnabled() {
 		return map[string]any{"error": "scoped_subrun_enabled is false; enable in settings"}, true, nil
@@ -236,6 +335,8 @@ func buildChildInput(goal, criteria string, keys map[string]string, groupID, mod
 		}
 	}
 	b.WriteString("\nComplete the goal using only tools in this connector group. Return a concise factual answer.")
+	b.WriteString("\nEnd with one line: RECEIPT_JSON: {\"summary\":\"one-line result\",\"facts\":{\"key\":\"value\"}}")
+	b.WriteString("\nfacts must contain stable IDs, totals, or error text the parent needs. Never include secrets.")
 	return b.String()
 }
 
@@ -336,9 +437,11 @@ func (e *Engine) NotifyChildTerminal(child *store.Run) {
 	if _, loaded := e.childReceiptOnce.LoadOrStore(child.ID, true); loaded {
 		return
 	}
+	summary, facts := parseChildReceipt(child.Output)
 	receipt := GroupRunReceipt{
 		Status:     string(child.Status),
-		Summary:    strings.TrimSpace(child.Output),
+		Summary:    summary,
+		Facts:      facts,
 		ChildRunID: child.ID,
 		GroupID:    child.GroupID,
 		Error:      child.Error,
@@ -352,6 +455,7 @@ func (e *Engine) NotifyChildTerminal(child *store.Run) {
 			"child_run_id": child.ID,
 			"status":       receipt.Status,
 			"summary":      receipt.Summary,
+			"facts":        receipt.Facts,
 			"group_id":     receipt.GroupID,
 			"error":        receipt.Error,
 		},
@@ -359,6 +463,69 @@ func (e *Engine) NotifyChildTerminal(child *store.Run) {
 	if e.OnChildTerminal != nil {
 		e.OnChildTerminal(child.ParentRunID, receipt)
 	}
+}
+
+// notifyParentChildWaiting tells the parent that a child needs a human. The
+// parent stays waiting_child; the event only drives the parent card.
+func (e *Engine) notifyParentChildWaiting(runID string, payload *store.HITLPayload) {
+	if payload == nil || payload.Kind == store.HITLKindWaitingChild {
+		return
+	}
+	rec, err := e.Store.GetRun(runID)
+	if err != nil || rec == nil || rec.Depth != 1 || rec.ParentRunID == "" {
+		return
+	}
+	if e.parentChildWaitOpen(rec.ParentRunID, runID, payload.Kind, payload.ToolName) {
+		return
+	}
+	_ = e.Store.AppendEvent(rec.ParentRunID, store.Event{
+		Type: "run.child_waiting",
+		Data: map[string]any{
+			"child_run_id": runID,
+			"kind":         payload.Kind,
+			"tool_name":    payload.ToolName,
+			"prompt":       payload.Prompt,
+			"connector_id": payload.ConnectorID,
+		},
+	})
+}
+
+// notifyParentChildResumed clears the parent card's waiting state after the
+// child actually returns to running.
+func (e *Engine) notifyParentChildResumed(runID string) {
+	rec, err := e.Store.GetRun(runID)
+	if err != nil || rec == nil || rec.Depth != 1 || rec.ParentRunID == "" {
+		return
+	}
+	_ = e.Store.AppendEvent(rec.ParentRunID, store.Event{
+		Type: "run.child_resumed",
+		Data: map[string]any{"child_run_id": runID},
+	})
+}
+
+// parentChildWaitOpen reports whether the parent already carries this exact
+// open child wait, so repeated persistence does not spam the event stream.
+func (e *Engine) parentChildWaitOpen(parentID, childID, kind, toolName string) bool {
+	evs, err := e.Store.ListEvents(parentID)
+	if err != nil {
+		return false
+	}
+	open := map[string]string{}
+	for _, ev := range evs {
+		cid, _ := ev.Data["child_run_id"].(string)
+		if cid == "" {
+			continue
+		}
+		switch ev.Type {
+		case "run.child_waiting":
+			k, _ := ev.Data["kind"].(string)
+			t, _ := ev.Data["tool_name"].(string)
+			open[cid] = k + "\x00" + t
+		case "run.child_resumed", EventRunReceipt:
+			delete(open, cid)
+		}
+	}
+	return open[childID] == kind+"\x00"+toolName
 }
 
 // ContinueFromChildReceipt injects the spawn tool result and resumes the parent ReAct loop.

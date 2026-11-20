@@ -1,7 +1,10 @@
 import type { Event } from './api'
 import { foldEvents, type ChatBlock, type UsageMeta } from './foldEvents'
 
-export type HistoryBlock = Extract<ChatBlock, { kind: 'tool' | 'workflow' | 'thinking' }>
+export type HistoryBlock = Extract<
+  ChatBlock,
+  { kind: 'tool' | 'workflow' | 'subagent' | 'thinking' }
+>
 
 /** @deprecated Prefer HistoryBlock; kept for call-site compatibility. */
 export type ToolOrWorkflowBlock = HistoryBlock
@@ -32,7 +35,10 @@ export function isFirstAssistantMessageOfRun(
 export function foldToolBlocks(runId: string, events: Event[]): HistoryBlock[] {
   return foldEvents(runId, events).filter(
     (b): b is HistoryBlock =>
-      b.kind === 'tool' || b.kind === 'workflow' || b.kind === 'thinking',
+      b.kind === 'tool' ||
+      b.kind === 'workflow' ||
+      b.kind === 'subagent' ||
+      b.kind === 'thinking',
   )
 }
 

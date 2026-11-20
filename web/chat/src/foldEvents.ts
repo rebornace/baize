@@ -54,6 +54,19 @@ export type ChatBlock =
       }[]
       runId: string
     }
+  | {
+      kind: 'subagent'
+      childRunId: string
+      goal: string
+      groupId?: string
+      mode?: string
+      status: 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled' | 'rejected'
+      waitingKind?: 'approval' | 'login'
+      summary?: string
+      facts?: Record<string, unknown>
+      error?: string
+      runId: string
+    }
 
 type ToolBlock = Extract<ChatBlock, { kind: 'tool' }>
 type WorkflowBlock = Extract<ChatBlock, { kind: 'workflow' }>
@@ -206,6 +219,33 @@ function findLastWorkflow(blocks: ChatBlock[]): WorkflowBlock | undefined {
   return undefined
 }
 
+function findSubagent(
+  blocks: ChatBlock[],
+  childRunId: string,
+): Extract<ChatBlock, { kind: 'subagent' }> | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'subagent' && b.childRunId === childRunId) return b
+  }
+  return undefined
+}
+
+function removeLastSpawnToolCard(blocks: ChatBlock[]): void {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'tool' && b.name === 'spawn_group_run' && b.status === 'running') {
+      blocks.splice(i, 1)
+      return
+    }
+  }
+}
+
+function subagentFacts(data: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const raw = data?.facts
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  return raw as Record<string, unknown>
+}
+
 function workflowStepFromData(data: Record<string, unknown> | undefined): string | undefined {
   const raw = data?.workflow_step
   return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined
@@ -291,6 +331,12 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
       }
       case 'tool.result': {
         const name = String(data?.name ?? 'tool')
+        if (name === 'spawn_group_run') {
+          const content = data?.content as { child_run_id?: unknown } | undefined
+          const childRunId =
+            typeof content?.child_run_id === 'string' ? content.child_run_id : ''
+          if (childRunId && findSubagent(blocks, childRunId)) break
+        }
         const card = findTopUnfinished(blocks, name)
         const isError = Boolean(data?.is_error)
         const hash = typeof data?.contract_hash === 'string' ? data.contract_hash : undefined
@@ -316,6 +362,8 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         break
       }
       case 'hitl.waiting': {
+        // The parent waits on a child receipt; the subagent card carries it.
+        if (data?.kind === 'waiting_child') break
         const kind = data?.kind === 'login' ? 'login' : 'approval'
         const name = hitlToolName(data) ?? 'tool'
         const workflowStep = workflowStepFromData(data)
@@ -425,7 +473,79 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         break
       }
       case 'llm.error': {
+        for (const b of blocks) {
+          if (b.kind === 'subagent' && (b.status === 'running' || b.status === 'waiting')) {
+            b.status = 'failed'
+          }
+        }
         blocks.push({ kind: 'system', text: String(data?.error ?? '未知错误') })
+        break
+      }
+      case 'run.spawned': {
+        const childRunId = String(data?.child_run_id ?? '')
+        if (!childRunId) break
+        removeLastSpawnToolCard(blocks)
+        const existing = findSubagent(blocks, childRunId)
+        if (existing) {
+          existing.status = 'running'
+          existing.waitingKind = undefined
+          break
+        }
+        blocks.push({
+          kind: 'subagent',
+          childRunId,
+          goal: String(data?.goal ?? ''),
+          groupId: typeof data?.group_id === 'string' ? data.group_id : undefined,
+          mode: typeof data?.mode === 'string' ? data.mode : undefined,
+          status: 'running',
+          runId,
+        })
+        break
+      }
+      case 'run.child_waiting': {
+        const childRunId = String(data?.child_run_id ?? '')
+        const block = childRunId ? findSubagent(blocks, childRunId) : undefined
+        if (!block) break
+        block.status = 'waiting'
+        block.waitingKind = data?.kind === 'login' ? 'login' : 'approval'
+        break
+      }
+      case 'run.child_resumed': {
+        const childRunId = String(data?.child_run_id ?? '')
+        const block = childRunId ? findSubagent(blocks, childRunId) : undefined
+        if (!block) break
+        block.status = 'running'
+        block.waitingKind = undefined
+        break
+      }
+      case 'run.receipt': {
+        const childRunId = String(data?.child_run_id ?? '')
+        if (!childRunId) break
+        const existing = findSubagent(blocks, childRunId)
+        const status = String(data?.status ?? '')
+        const block =
+          existing ??
+          ({
+            kind: 'subagent',
+            childRunId,
+            goal: '',
+            status: 'running',
+            runId,
+          } as Extract<ChatBlock, { kind: 'subagent' }>)
+        if (!existing) blocks.push(block)
+        block.status =
+          status === 'succeeded' ||
+          status === 'failed' ||
+          status === 'cancelled' ||
+          status === 'rejected'
+            ? status
+            : 'running'
+        block.waitingKind = undefined
+        block.summary = typeof data?.summary === 'string' ? data.summary : undefined
+        block.facts = subagentFacts(data)
+        block.error = typeof data?.error === 'string' && data.error ? data.error : undefined
+        if (!block.groupId && typeof data?.group_id === 'string') block.groupId = data.group_id
+        if (!block.mode && typeof data?.mode === 'string') block.mode = data.mode
         break
       }
       case 'workflow.started': {
@@ -453,6 +573,13 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
       }
       case 'hitl.expired':
       case 'run.cancelled': {
+        if (ev.type === 'run.cancelled') {
+          for (const b of blocks) {
+            if (b.kind === 'subagent' && (b.status === 'running' || b.status === 'waiting')) {
+              b.status = 'cancelled'
+            }
+          }
+        }
         const card = findTopWaiting(blocks)
         if (card) {
           if (card.hitlKind === 'login' || data?.kind === 'login') card.result = undefined

@@ -444,6 +444,7 @@ func (e *Engine) persistHITLWaiting(ctx context.Context, runID string, payload *
 	_ = e.Store.AppendEvent(runID, store.Event{Type: EventHITLWaiting, Data: data})
 	_ = e.Store.UpdateRun(runID, store.StatusWaitingHuman, "", "")
 	_ = e.Store.SetHITL(runID, payload)
+	e.notifyParentChildWaiting(runID, payload)
 	e.deliverHITLNotify(runID, payload)
 	return nil
 }

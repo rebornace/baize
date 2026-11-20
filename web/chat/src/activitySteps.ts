@@ -1,7 +1,10 @@
 import type { ChatBlock } from './foldEvents'
 import type { HistoryBlock } from './historyBlocks'
 
-export type ActivityStepBlock = Extract<ChatBlock, { kind: 'tool' | 'workflow' }>
+export type ActivityStepBlock = Extract<
+  ChatBlock,
+  { kind: 'tool' | 'workflow' | 'subagent' }
+>
 export type ActivityThinkingBlock = Extract<ChatBlock, { kind: 'thinking' }>
 export type LiveChromeBlock = Exclude<ChatBlock, ActivityStepBlock | ActivityThinkingBlock>
 
@@ -23,7 +26,9 @@ export type HistoryActivitySegment =
   | { type: 'steps'; items: HistoryActivityItem[]; stepBlocks: ActivityStepBlock[] }
 
 function isActivityKind(kind: string): boolean {
-  return kind === 'tool' || kind === 'workflow' || kind === 'thinking'
+  return (
+    kind === 'tool' || kind === 'workflow' || kind === 'subagent' || kind === 'thinking'
+  )
 }
 
 /**
@@ -104,11 +109,16 @@ export function partitionHistoryActivity(blocks: readonly HistoryBlock[]): Histo
 /** Prefer waiting / running, else the latest step (for the collapsed ticker). */
 export function focusActivityStepIndex(blocks: readonly ActivityStepBlock[]): number {
   if (blocks.length === 0) return -1
-  const waiting = blocks.findIndex((b) => b.kind === 'tool' && b.status === 'waiting_human')
+  const waiting = blocks.findIndex(
+    (b) =>
+      (b.kind === 'tool' && b.status === 'waiting_human') ||
+      (b.kind === 'subagent' && b.status === 'waiting'),
+  )
   if (waiting >= 0) return waiting
   const running = blocks.findIndex(
     (b) =>
       (b.kind === 'tool' && (b.status === 'running' || b.status === 'approved')) ||
+      (b.kind === 'subagent' && b.status === 'running') ||
       (b.kind === 'workflow' && b.steps.some((s) => s.status === 'running')),
   )
   if (running >= 0) return running
@@ -116,7 +126,11 @@ export function focusActivityStepIndex(blocks: readonly ActivityStepBlock[]): nu
 }
 
 export function activityStepsNeedAttention(blocks: readonly ActivityStepBlock[]): boolean {
-  return blocks.some((b) => b.kind === 'tool' && b.status === 'waiting_human')
+  return blocks.some(
+    (b) =>
+      (b.kind === 'tool' && b.status === 'waiting_human') ||
+      (b.kind === 'subagent' && b.status === 'waiting'),
+  )
 }
 
 /** Compact strip whenever there are 2+ tool/workflow steps. */
