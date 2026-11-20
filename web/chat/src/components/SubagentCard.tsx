@@ -61,6 +61,31 @@ const terminalSubagentStatuses = new Set<SubagentBlock['status']>([
   'rejected',
 ])
 
+const terminalRunStatuses = new Set(['succeeded', 'failed', 'cancelled', 'rejected'])
+
+type RemoteReceipt = {
+  summary?: string
+  facts?: Record<string, unknown>
+  error?: string
+}
+
+function receiptFromParent(events: Event[], childRunId: string): RemoteReceipt | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]
+    if (ev.type !== 'run.receipt' || ev.data?.child_run_id !== childRunId) continue
+    const facts =
+      ev.data.facts && typeof ev.data.facts === 'object' && !Array.isArray(ev.data.facts)
+        ? (ev.data.facts as Record<string, unknown>)
+        : undefined
+    return {
+      summary: typeof ev.data.summary === 'string' ? ev.data.summary : undefined,
+      facts,
+      error: typeof ev.data.error === 'string' ? ev.data.error : undefined,
+    }
+  }
+  return undefined
+}
+
 function mapRunStatus(status: string | undefined): SubagentBlock['status'] | undefined {
   switch (status) {
     case 'queued':
@@ -164,8 +189,10 @@ export function SubagentCard({
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [remoteStatus, setRemoteStatus] = useState<string | undefined>()
+  const [remoteReceipt, setRemoteReceipt] = useState<RemoteReceipt | undefined>()
   const [confirmStop, setConfirmStop] = useState(false)
   const inFlight = useRef(false)
+  const receiptFetched = useRef(false)
 
   useEffect(() => {
     setEvents([])
@@ -173,8 +200,10 @@ export function SubagentCard({
     setLoadError(false)
     setExpanded(false)
     setRemoteStatus(undefined)
+    setRemoteReceipt(undefined)
     setConfirmStop(false)
     inFlight.current = false
+    receiptFetched.current = false
   }, [block.childRunId])
 
   const load = useCallback(
@@ -194,7 +223,21 @@ export function SubagentCard({
         setLoadError(true)
       }
       if (run.status === 'fulfilled') {
-        setRemoteStatus(run.value.status)
+        const status = run.value.status
+        setRemoteStatus(status)
+        // A parent run may have ended before its async child; the card in
+        // history then lacks summary/facts. Read the parent receipt once.
+        if (!receiptFetched.current && terminalRunStatuses.has(status) && block.runId) {
+          const parent = await Promise.allSettled([listEvents(block.runId)])
+          const parentEvs = parent[0]
+          if (parentEvs.status === 'fulfilled') {
+            const receipt = receiptFromParent(parentEvs.value, block.childRunId)
+            if (receipt) {
+              setRemoteReceipt(receipt)
+              receiptFetched.current = true
+            }
+          }
+        }
       }
       if (bind.status === 'fulfilled' && bind.value) {
         setBinding(bind.value.binding)
@@ -202,8 +245,15 @@ export function SubagentCard({
       inFlight.current = false
       if (!silent) setLoading(false)
     },
-    [block.childRunId],
+    [block.childRunId, block.runId],
   )
+
+  // History cards may mount after the async child already finished; a single
+  // silent refresh lets them fill in terminal status and receipt facts.
+  useEffect(() => {
+    if (!block.async || terminalSubagentStatuses.has(block.status)) return
+    void load(true, false)
+  }, [block.async, block.status, block.childRunId, load])
 
   const toggle = () => {
     const next = !expanded
@@ -229,6 +279,18 @@ export function SubagentCard({
   const effectiveWaitingKind =
     effectiveStatus === 'waiting' ? block.waitingKind ?? waiting?.kind : undefined
   const canStop = effectiveStatus === 'running' || effectiveStatus === 'waiting'
+  const shownSummary = block.summary?.trim() ? block.summary : remoteReceipt?.summary
+  const shownFacts =
+    block.facts && Object.keys(block.facts).length > 0 ? block.facts : remoteReceipt?.facts
+  const shownError = block.error?.trim() ? block.error : remoteReceipt?.error
+  const displayBlock: SubagentBlock = {
+    ...block,
+    status: effectiveStatus,
+    waitingKind: effectiveWaitingKind,
+    summary: shownSummary,
+    facts: shownFacts,
+    error: shownError,
+  }
 
   useEffect(() => {
     if (!expanded) return
@@ -274,7 +336,7 @@ export function SubagentCard({
     }
   }
 
-  const facts = Object.entries(block.facts ?? {}).slice(0, 6)
+  const facts = Object.entries(shownFacts ?? {}).slice(0, 6)
   const trace = events
     .map((ev) => ({ ev, line: eventLine(ev) }))
     .filter((x) => x.line)
@@ -312,8 +374,8 @@ export function SubagentCard({
         </span>
       </button>
 
-      {block.summary ? <p className="subagent-summary">{block.summary}</p> : null}
-      {block.error ? <p className="subagent-error">{block.error}</p> : null}
+      {shownSummary ? <p className="subagent-summary">{shownSummary}</p> : null}
+      {shownError ? <p className="subagent-error">{shownError}</p> : null}
       {facts.length > 0 ? (
         <dl className="subagent-facts" data-testid="subagent-facts">
           {facts.map(([k, v]) => (
@@ -331,7 +393,7 @@ export function SubagentCard({
             size="sm"
             variant="secondary"
             disabled={continueDisabled}
-            onClick={() => onContinue(subagentContinuePrompt(block))}
+            onClick={() => onContinue(subagentContinuePrompt(displayBlock))}
           >
             {SUBAGENT.continueWork}
           </Button>

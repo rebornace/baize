@@ -119,6 +119,33 @@ describe('SubagentCard', () => {
     expect(resume).toHaveBeenCalledWith('run_child', 'approve', '')
   })
 
+  it('fills summary and facts from the parent receipt when the child already finished', async () => {
+    vi.spyOn(api, 'getRun').mockResolvedValue({ ...runStub, status: 'succeeded' })
+    vi.spyOn(api, 'listEvents').mockImplementation(async (id) =>
+      id === block.runId
+        ? [
+            {
+              type: 'run.receipt',
+              timestamp: 't1',
+              data: {
+                child_run_id: block.childRunId,
+                status: 'succeeded',
+                summary: '税额合计 1240',
+                facts: { total_tax: '1240.00' },
+              },
+            },
+          ]
+        : [],
+    )
+    render(<SubagentCard block={{ ...block, async: true, status: 'running' }} />)
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(host.textContent).toContain('税额合计 1240')
+    expect(host.textContent).toContain('1240.00')
+  })
+
   it('offers continue for an async terminal child and prefills a receipt prompt', () => {
     const onContinue = vi.fn()
     render(
