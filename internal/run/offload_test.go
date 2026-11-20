@@ -26,6 +26,24 @@ func TestFormatOffloadMessageShape(t *testing.T) {
 	}
 }
 
+func TestFormatOffloadMessageDeclaresTruncation(t *testing.T) {
+	body := strings.Repeat("x", offloadPreviewRunes+10)
+	msg := FormatOffloadMessage("offload/a.txt", body, false)
+	if !strings.Contains(msg, "truncated: true") {
+		t.Fatalf("missing truncation flag: %q", msg)
+	}
+	if !strings.Contains(msg, "2000 of 2010 chars") {
+		t.Fatalf("missing truncation counts: %q", msg)
+	}
+}
+
+func TestFormatOffloadMessageSmallBodyNotTruncated(t *testing.T) {
+	msg := FormatOffloadMessage("offload/a.txt", "hello", false)
+	if !strings.Contains(msg, "truncated: false (5 of 5 chars)") {
+		t.Fatalf("small body must be explicit: %q", msg)
+	}
+}
+
 func TestFormatOffloadMessageRedactsPreview(t *testing.T) {
 	raw := identityKnownSecretSample(t)
 	msg := FormatOffloadMessage("offload/a.txt", raw, false)

@@ -175,7 +175,7 @@ func TestActivateSkillUnknownIDIsToolError(t *testing.T) {
 	})
 
 	llmMock := &captureLLM{onChat: func(msgs []llm.Message, tools []llm.ToolSpec) llm.Message {
-		if len(msgs) == 2 { // system + user
+		if len(msgs) > 0 && msgs[len(msgs)-1].Role == llm.RoleUser {
 			return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 				{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "missing"}},
 			}}

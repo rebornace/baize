@@ -22,8 +22,8 @@ import (
 // API), followed by the assistant tool-call / tool-result turns already
 // recorded for this run. This keeps cross-restart HITL from dropping prior
 // conversation context while avoiding duplicate system or user-input messages.
-func (e *Engine) buildResumeMessages(system, conversationID, input string, evs []store.Event) []llm.Message {
-	messages := e.buildMessages(system, conversationID, input, nil)
+func (e *Engine) buildResumeMessages(runID, system, conversationID, input string, evs []store.Event) []llm.Message {
+	messages := e.buildMessagesForRun(runID, system, conversationID, input, nil)
 	messages = append(messages, e.eventsAfterInput(evs, conversationID)...)
 	return messages
 }

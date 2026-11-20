@@ -54,9 +54,9 @@ func TestBuildMessagesInjectsRollingSummary(t *testing.T) {
 		t.Fatalf("summary note must use the spec wording; msgs[1]=%+v", msgs[1])
 	}
 	// 游标 CoversThroughOrder=1：6 条历史中只有游标之后的 4 条以原文出现，
-	// 折叠区间 [0..1] 不得重复发送（system + 摘要 + 4 条原文 + 当前输入 = 7）。
-	if len(msgs) != 7 {
-		t.Fatalf("folded messages must be excluded verbatim: got %d messages, want 7: %+v", len(msgs), msgs)
+	// 折叠区间 [0..1] 不得重复发送（system + 摘要 + 4 条原文 + 时钟 + 当前输入 = 8）。
+	if len(msgs) != 8 {
+		t.Fatalf("folded messages must be excluded verbatim: got %d messages, want 8: %+v", len(msgs), msgs)
 	}
 	// 最后一条必须是当前输入
 	if msgs[len(msgs)-1].Content != "现在的问题" {

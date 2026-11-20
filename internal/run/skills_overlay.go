@@ -92,22 +92,19 @@ func (e *Engine) composeSystem(base string, runID string) string {
 		}
 	}
 	if e.Skills == nil {
-		return appendClockHint(base, locale)
+		return base
 	}
 	var activated []string
 	if st != nil {
 		activated = append([]string(nil), st.activated...)
 	}
-	return appendClockHint(skill.ComposeSystem(base, e.Skills, activated, locale), locale)
+	return skill.ComposeSystem(base, e.Skills, activated, locale)
 }
 
-// appendClockHint gives the model an absolute "now" so it can interpret
-// timestamps in tool results (expiry, ranges, "today") instead of claiming it
-// cannot judge time from the tool schema alone.
-func appendClockHint(system, locale string) string {
-	if strings.Contains(system, "当前时间：") || strings.Contains(system, "Current time:") {
-		return system
-	}
+// clockHint gives the model an absolute "now" so it can interpret timestamps
+// in tool results (expiry, ranges, "today"). It is appended after the stable
+// system + history prefix so a new run does not invalidate the prefix cache.
+func clockHint(locale string) string {
 	now := time.Now()
 	if isChineseLocale(locale) {
 		if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
@@ -115,16 +112,10 @@ func appendClockHint(system, locale string) string {
 		}
 	}
 	stamp := now.Format(time.RFC3339)
-	var line string
 	if isChineseLocale(locale) {
-		line = "当前时间：" + stamp + "。解读工具返回或用户提到的日期/时间时，请以此为「现在」，结合结果里的时间字段判断，不要只看工具定义就声称无法判断时间。"
-	} else {
-		line = "Current time: " + stamp + ". Use this as \"now\" when interpreting dates/times in tool results or user requests; read timestamp fields in results—do not claim you cannot determine time from the tool schema alone."
+		return "当前时间：" + stamp + "。解读工具返回或用户提到的日期/时间时，请以此为「现在」，结合结果里的时间字段判断，不要只看工具定义就声称无法判断时间。"
 	}
-	if strings.TrimSpace(system) == "" {
-		return line
-	}
-	return system + "\n\n" + line
+	return "Current time: " + stamp + ". Use this as \"now\" when interpreting dates/times in tool results or user requests; read timestamp fields in results—do not claim you cannot determine time from the tool schema alone."
 }
 
 func isChineseLocale(locale string) bool {

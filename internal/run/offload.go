@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -43,8 +44,12 @@ func FormatOffloadMessage(path, fullBody string, isError bool) string {
 	if isError {
 		header = offloadHeaderError
 	}
-	preview := truncateRunes(redactOffloadBody(fullBody), offloadPreviewRunes)
-	return header + "\npath: " + path + "\npreview: " + preview
+	body := redactOffloadBody(fullBody)
+	total := utf8.RuneCountInString(body)
+	preview := truncateRunes(body, offloadPreviewRunes)
+	shown := utf8.RuneCountInString(preview)
+	return fmt.Sprintf("%s\ntruncated: %t (%d of %d chars)\npath: %s\npreview: %s",
+		header, total > shown, shown, total, path, preview)
 }
 
 // IsOffloadPreview reports whether text is already an offload stub (skip DP-3).

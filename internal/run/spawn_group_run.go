@@ -573,6 +573,6 @@ func (e *Engine) ContinueFromChildReceipt(ctx context.Context, parentRunID strin
 	if err != nil {
 		return err
 	}
-	messages := e.buildResumeMessages(sys, runRec.ConversationID, runRec.Input, evs)
+	messages := e.buildResumeMessages(parentRunID, sys, runRec.ConversationID, runRec.Input, evs)
 	return e.runLoop(ctx, parentRunID, messages)
 }

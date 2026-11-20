@@ -11,7 +11,7 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
-func TestBuildMessagesInjectsActiveGoalBeforeHistory(t *testing.T) {
+func TestBuildMessagesInjectsActiveGoalAfterHistory(t *testing.T) {
 	ms := conversation.NewMemoryStore()
 	_, _ = ms.Append("c1", conversation.Message{Role: conversation.RoleUser, Content: "旧消息"})
 	_ = ms.UpsertGoalStack(conversation.GoalStack{
@@ -36,8 +36,8 @@ func TestBuildMessagesInjectsActiveGoalBeforeHistory(t *testing.T) {
 			histIdx = i
 		}
 	}
-	if goalIdx < 0 || histIdx < 0 || goalIdx >= histIdx {
-		t.Fatalf("goalIdx=%d histIdx=%d msgs=%+v", goalIdx, histIdx, msgs)
+	if goalIdx < 0 || histIdx < 0 || goalIdx <= histIdx {
+		t.Fatalf("goal must sit after history: goalIdx=%d histIdx=%d msgs=%+v", goalIdx, histIdx, msgs)
 	}
 }
 

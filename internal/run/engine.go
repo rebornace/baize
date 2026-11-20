@@ -271,7 +271,7 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 			})
 		}
 	}
-	messages := e.buildMessages(sys, runRec.ConversationID, input, opts.UserParts)
+	messages := e.buildMessagesForRun(runID, sys, runRec.ConversationID, input, opts.UserParts)
 	err = e.runLoop(ctx, runID, messages)
 	if errors.Is(err, context.Canceled) {
 		e.markCancelled(runID)
@@ -388,12 +388,23 @@ func (e *Engine) toolTimeout() time.Duration {
 // user turn in the prompt while injecting attachment text and image parts that
 // are never persisted to SQLite.
 func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
-	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
-	if block := e.memoryBlock(e.memoryOwner(conversationID), input); block != "" {
-		messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: block})
+	return e.buildMessagesWithLocale(system, conversationID, input, userParts, "")
+}
+
+// buildMessagesForRun uses the run's locale for the clock hint while keeping
+// dynamic context (goal, memory, clock) after the stable system + history
+// prefix.
+func (e *Engine) buildMessagesForRun(runID, system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
+	locale := ""
+	if st := e.getRunSkillState(runID); st != nil {
+		locale = st.locale
 	}
+	return e.buildMessagesWithLocale(system, conversationID, input, userParts, locale)
+}
+
+func (e *Engine) buildMessagesWithLocale(system, conversationID, input string, userParts []llm.ContentPart, locale string) []llm.Message {
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
 	if e.Messages != nil && conversationID != "" {
-		messages = e.appendActiveGoal(messages, conversationID)
 		hist := e.Messages.ListWindow(conversationID, e.effectiveMaxMessages())
 		var sum conversation.RollingSummary
 		hasSummary := false
@@ -430,35 +441,62 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 		}
 		messages = e.appendContextProjection(messages, conversationID)
 	}
+
+	// Resolve the current user turn before inserting dynamic context so the
+	// duplicate-input and mention-only replacements keep working.
 	if len(userParts) > 0 {
 		if len(messages) > 0 && messages[len(messages)-1].Role == llm.RoleUser {
 			messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Parts: userParts}
 		} else {
 			messages = append(messages, llm.Message{Role: llm.RoleUser, Parts: userParts})
 		}
-		return messages
-	}
-	if len(messages) > 0 {
+	} else {
 		last := messages[len(messages)-1]
 		if last.Role == llm.RoleUser {
-			if last.Content == input {
-				return messages
-			}
-			// Mention-only bubbles keep @id for display; model-facing input is
-			// a fallback instruction. Replace this turn instead of appending a
-			// second user message.
-			if skillparse.IsMentionOnly(last.Content) {
+			switch {
+			case last.Content == input:
+				// Already persisted as the trailing user message.
+			case skillparse.IsMentionOnly(last.Content), strings.TrimSpace(last.Content) == "":
+				// Mention-only / empty bubbles are display-only; replace the
+				// model-facing text rather than appending a second user turn.
 				messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Content: input}
-				return messages
+			default:
+				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
 			}
-			if strings.TrimSpace(last.Content) == "" {
-				messages[len(messages)-1] = llm.Message{Role: llm.RoleUser, Content: input}
-				return messages
-			}
+		} else {
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
 		}
 	}
-	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
-	return messages
+
+	// Dynamic context sits after history and before the current user turn.
+	// Keeping it out of the prefix lets provider prefix caches survive a new
+	// run, a new clock second, or a changed memory hit.
+	dynamic := make([]llm.Message, 0, 3)
+	dynamic = e.appendActiveGoal(dynamic, conversationID)
+	if block := e.memoryBlock(e.memoryOwner(conversationID), input); block != "" {
+		dynamic = append(dynamic, llm.Message{Role: llm.RoleSystem, Content: block})
+	}
+	if hint := clockHint(locale); hint != "" {
+		dynamic = append(dynamic, llm.Message{Role: llm.RoleSystem, Content: hint})
+	}
+	return insertBeforeLastUser(messages, dynamic)
+}
+
+func insertBeforeLastUser(messages, dynamic []llm.Message) []llm.Message {
+	if len(dynamic) == 0 {
+		return messages
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != llm.RoleUser {
+			continue
+		}
+		out := make([]llm.Message, 0, len(messages)+len(dynamic))
+		out = append(out, messages[:i]...)
+		out = append(out, dynamic...)
+		out = append(out, messages[i:]...)
+		return out
+	}
+	return append(messages, dynamic...)
 }
 
 // ContinueFromHITL applies a human decision to a waiting_human run. It reads
@@ -608,7 +646,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		locale = st.locale
 	}
 	sys = e.appendScheduleHint(sys, run, locale)
-	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
+	messages := e.buildResumeMessages(runID, sys, run.ConversationID, run.Input, evs)
 	return e.runLoop(ctx, runID, messages)
 }
 
@@ -640,7 +678,7 @@ func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, 
 		locale = st.locale
 	}
 	sys = e.appendScheduleHint(sys, run, locale)
-	messages := e.buildResumeMessages(sys, run.ConversationID, run.Input, evs)
+	messages := e.buildResumeMessages(runID, sys, run.ConversationID, run.Input, evs)
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: loginWaitContinueHint(kind, connectorID, toolName)})
 	return e.runLoop(ctx, runID, messages)
 }

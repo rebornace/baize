@@ -865,8 +865,8 @@ func TestExecuteInjectsConversationHistory(t *testing.T) {
 	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "本轮问题"); err != nil {
 		t.Fatal(err)
 	}
-	// expect: system, 上一轮 user, 上一轮 assistant, 本轮 user
-	if len(saw) < 4 || saw[1].Content != "上一轮问题" || saw[3].Content != "本轮问题" {
+	// expect: system, 上一轮 user, 上一轮 assistant, clock, 本轮 user
+	if len(saw) < 5 || saw[1].Content != "上一轮问题" || saw[len(saw)-1].Content != "本轮问题" {
 		t.Fatalf("%+v", saw)
 	}
 }
@@ -930,11 +930,11 @@ func TestExecuteRespectsMaxMessagesWindow(t *testing.T) {
 	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "本轮问题"); err != nil {
 		t.Fatal(err)
 	}
-	// expect: system, 近问题, 近回答, 本轮问题 — not 旧*
-	if len(saw) != 4 {
-		t.Fatalf("len(saw)=%d want 4; saw=%+v", len(saw), saw)
+	// expect: system, 近问题, 近回答, clock, 本轮问题 — not 旧*
+	if len(saw) != 5 {
+		t.Fatalf("len(saw)=%d want 5; saw=%+v", len(saw), saw)
 	}
-	if saw[1].Content != "近问题" || saw[2].Content != "近回答" || saw[3].Content != "本轮问题" {
+	if saw[1].Content != "近问题" || saw[2].Content != "近回答" || saw[len(saw)-1].Content != "本轮问题" {
 		t.Fatalf("window not applied: %+v", saw)
 	}
 	for _, m := range saw {
@@ -974,7 +974,7 @@ func TestExecuteDedupCurrentInput(t *testing.T) {
 	if userCount != 1 {
 		t.Fatalf("expected exactly one 本轮问题 user message, got %d; saw=%+v", userCount, saw)
 	}
-	if len(saw) != 3 || saw[2].Content != "本轮问题" {
+	if len(saw) != 4 || saw[len(saw)-1].Content != "本轮问题" {
 		t.Fatalf("unexpected messages=%+v", saw)
 	}
 }
@@ -1148,9 +1148,10 @@ func TestContinueFromHITLColdInjectsHistory(t *testing.T) {
 		t.Fatalf("invoke count=%d want 1", calls.Load())
 	}
 
-	// Expect: system, 上一轮 user, 上一轮 assistant, 本轮 user, assistant(tool_call), tool(result).
-	if len(saw) != 6 {
-		t.Fatalf("expected 6 messages, got %d: %+v", len(saw), saw)
+	// Expect: system, 上一轮 user, 上一轮 assistant, clock, 本轮 user,
+	// assistant(tool_call), tool(result).
+	if len(saw) != 7 {
+		t.Fatalf("expected 7 messages, got %d: %+v", len(saw), saw)
 	}
 	if saw[0].Role != llm.RoleSystem || !strings.HasPrefix(saw[0].Content, "helper") {
 		t.Fatalf("saw[0]=%+v", saw[0])
@@ -1161,14 +1162,17 @@ func TestContinueFromHITLColdInjectsHistory(t *testing.T) {
 	if saw[2].Role != llm.RoleAssistant || saw[2].Content != "上一轮回答" {
 		t.Fatalf("saw[2]=%+v", saw[2])
 	}
-	if saw[3].Role != llm.RoleUser || saw[3].Content != "创建工单" {
+	if saw[3].Role != llm.RoleSystem || !strings.Contains(saw[3].Content, "当前时间：") {
 		t.Fatalf("saw[3]=%+v", saw[3])
 	}
-	if saw[4].Role != llm.RoleAssistant || len(saw[4].ToolCalls) != 1 || saw[4].ToolCalls[0].Name != "create_ticket" {
+	if saw[4].Role != llm.RoleUser || saw[4].Content != "创建工单" {
 		t.Fatalf("saw[4]=%+v", saw[4])
 	}
-	if saw[5].Role != llm.RoleTool {
+	if saw[5].Role != llm.RoleAssistant || len(saw[5].ToolCalls) != 1 || saw[5].ToolCalls[0].Name != "create_ticket" {
 		t.Fatalf("saw[5]=%+v", saw[5])
+	}
+	if saw[6].Role != llm.RoleTool {
+		t.Fatalf("saw[6]=%+v", saw[6])
 	}
 
 	// The current user input must appear exactly once.
@@ -1253,18 +1257,19 @@ func TestContinueFromHITLColdNoMessageStore(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("invoke count=%d want 1", calls.Load())
 	}
-	// Expect: system, user input, assistant(tool_call), tool(result).
-	if len(saw) != 4 {
-		t.Fatalf("expected 4 messages, got %d: %+v", len(saw), saw)
+	// Expect: system, clock, user input, assistant(tool_call), tool(result).
+	if len(saw) != 5 {
+		t.Fatalf("expected 5 messages, got %d: %+v", len(saw), saw)
 	}
-	if saw[0].Role != llm.RoleSystem || saw[1].Role != llm.RoleUser || saw[1].Content != "创建工单" {
-		t.Fatalf("legacy header mismatch: saw[0]=%+v saw[1]=%+v", saw[0], saw[1])
+	if saw[0].Role != llm.RoleSystem || !strings.Contains(saw[1].Content, "当前时间：") ||
+		saw[2].Role != llm.RoleUser || saw[2].Content != "创建工单" {
+		t.Fatalf("legacy header mismatch: saw[0]=%+v saw[1]=%+v saw[2]=%+v", saw[0], saw[1], saw[2])
 	}
-	if saw[2].Role != llm.RoleAssistant || len(saw[2].ToolCalls) != 1 {
-		t.Fatalf("saw[2]=%+v", saw[2])
-	}
-	if saw[3].Role != llm.RoleTool {
+	if saw[3].Role != llm.RoleAssistant || len(saw[3].ToolCalls) != 1 {
 		t.Fatalf("saw[3]=%+v", saw[3])
+	}
+	if saw[4].Role != llm.RoleTool {
+		t.Fatalf("saw[4]=%+v", saw[4])
 	}
 }
 
@@ -1282,10 +1287,10 @@ func TestBuildMessagesAfterTruncateAndResend(t *testing.T) {
 
 	eng := &Engine{Messages: msgStore, MaxMessages: 40}
 	got := eng.buildMessages("sys", "c1", "u2-edited", nil)
-	if len(got) != 4 {
-		t.Fatalf("len=%d want 4; got=%+v", len(got), got)
+	if len(got) != 5 {
+		t.Fatalf("len=%d want 5; got=%+v", len(got), got)
 	}
-	if got[1].Content != "u1" || got[2].Content != "a1" || got[3].Content != "u2-edited" {
+	if got[1].Content != "u1" || got[2].Content != "a1" || got[len(got)-1].Content != "u2-edited" {
 		t.Fatalf("unexpected window: %+v", got)
 	}
 	for _, m := range got {

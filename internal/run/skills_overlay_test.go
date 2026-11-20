@@ -10,22 +10,25 @@ import (
 	"github.com/rebornace/baize/internal/tool"
 )
 
-func TestAppendClockHint(t *testing.T) {
-	got := appendClockHint("你是助手。", "zh-CN")
-	if !strings.Contains(got, "当前时间：") {
-		t.Fatalf("missing clock hint: %q", got)
+func TestClockHint(t *testing.T) {
+	zh := clockHint("zh-CN")
+	if !strings.Contains(zh, "当前时间：") {
+		t.Fatalf("missing clock hint: %q", zh)
 	}
-	if !strings.Contains(got, "你是助手。") {
-		t.Fatalf("base lost: %q", got)
-	}
-	// Idempotent.
-	again := appendClockHint(got, "zh-CN")
-	if again != got {
-		t.Fatalf("clock hint duplicated")
-	}
-	en := appendClockHint("You are helpful.", "en")
+	en := clockHint("en")
 	if !strings.Contains(en, "Current time:") {
 		t.Fatalf("en clock missing: %q", en)
+	}
+}
+
+func TestComposeSystemHasNoClock(t *testing.T) {
+	eng := &Engine{}
+	got := eng.composeSystem("你是助手。", "r1")
+	if strings.Contains(got, "当前时间：") || strings.Contains(got, "Current time:") {
+		t.Fatalf("clock must stay out of the stable system prefix: %q", got)
+	}
+	if got != "你是助手。" {
+		t.Fatalf("base system changed: %q", got)
 	}
 }
 
