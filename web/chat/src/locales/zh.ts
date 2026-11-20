@@ -34,6 +34,7 @@ export const zhPack = {
   waitedMinutes: (n: number) => `已等待 ${n} 分钟`,
   waitedHours: (n: number) => `已等待 ${n} 小时`,
   waitedDays: (n: number) => `已等待 ${n} 天`,
+  workflowPauseHint: '工作流已暂停；重启后仍可继续。',
 },
   WELCOME: {
   brand: '白泽',
@@ -1543,6 +1544,7 @@ export const zhPack = {
   WORKFLOW: {
     progress: (current: number, total: number) => `第 ${current} / 共 ${total} 步`,
     step: (n: number) => `步骤 ${n}`,
+    waiting: '等待审批',
     expand: '展开步骤',
     collapse: '收起',
   },

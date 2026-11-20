@@ -1048,7 +1048,6 @@ func newHITLServer(t *testing.T) (store.Store, *tool.Registry, *run.Engine, http
 		Store: st,
 		LLM:   &scriptLLM{},
 		Tools: reg,
-		Gate:  run.NewGate(),
 	}
 	srv := api.NewServer(st, reg, eng)
 	return st, reg, eng, srv.Handler()

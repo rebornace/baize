@@ -62,6 +62,39 @@ func TestListWaitingHumanRunsSQLite(t *testing.T) {
 	waitingRunsCase(t, st)
 }
 
+func TestHITLPayloadWorkflowStateRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hitl_workflow.db")
+	st, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	r, err := st.CreateRun(CreateRunInput{AgentID: "a", Input: "x", ConversationID: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &WorkflowState{
+		Skill: "demo", StepIndex: 1, StepID: "b",
+		Tree: map[string]any{"input": map[string]any{"text": "hi"}},
+	}
+	if err := st.SetHITL(r.ID, &HITLPayload{
+		Prompt: "approve", ToolName: "tb", Kind: HITLKindApproval, Workflow: want,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetHITL(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Workflow == nil || got.Workflow.Skill != "demo" ||
+		got.Workflow.StepIndex != 1 || got.Workflow.StepID != "b" {
+		t.Fatalf("workflow state=%+v", got)
+	}
+	if got.Workflow.Tree == nil {
+		t.Fatal("workflow tree lost")
+	}
+}
+
 func TestHITLPayloadWaitingSinceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "hitl_waiting.db")
 	st, err := OpenSQLite(path)

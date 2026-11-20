@@ -86,9 +86,8 @@ func TestProposeSkillRejectedInstallsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposeScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposeScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -111,9 +110,8 @@ func TestProposeSkillApprovedInstalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposeScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposeScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -149,9 +147,8 @@ func TestProposeSkillOperatorApproveDenied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposeScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposeScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -200,9 +197,8 @@ func TestProposeSkillAdminApproveInstalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposeScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposeScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -236,7 +232,7 @@ func TestProposeSkillCancelledInstallsNothing(t *testing.T) {
 	ag := agent.Def{ID: "a", System: "sys"}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "写 skill", ConversationID: "conv1"})
 	eng := &Engine{
-		Store: st, LLM: &proposeScriptLLM{}, Tools: reg2, Gate: NewGate(),
+		Store: st, LLM: &proposeScriptLLM{}, Tools: reg2,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -277,7 +273,7 @@ func TestProposeSkillBadArgsNoHITL(t *testing.T) {
 	ag := agent.Def{ID: "a", System: "sys"}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "写 skill", ConversationID: "conv1"})
 	eng := &Engine{
-		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), MaxSteps: 4,
+		Store: st, LLM: llmStub, Tools: reg, MaxSteps: 4,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")

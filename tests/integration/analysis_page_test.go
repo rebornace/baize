@@ -67,7 +67,6 @@ func TestAnalysisPageE2E(t *testing.T) {
 			args:     analysisPageToolArgs(),
 		},
 		Tools:    reg,
-		Gate:     run.NewGate(),
 		MaxSteps: 4,
 	}
 	srv := api.NewServer(st, reg, engine)

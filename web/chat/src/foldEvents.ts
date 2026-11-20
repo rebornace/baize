@@ -1,6 +1,6 @@
 import type { Event } from './api'
 
-export type WorkflowStepStatus = 'pending' | 'running' | 'done' | 'failed'
+export type WorkflowStepStatus = 'pending' | 'waiting' | 'running' | 'done' | 'failed'
 
 export type UsageMeta = {
   promptTokens: number
@@ -37,6 +37,8 @@ export type ChatBlock =
       runId: string
       /** Timestamp of the last hitl.waiting event, for "waited N" display. */
       waitingSince?: string
+      /** Workflow step ID when this card is a workflow approval. */
+      workflowStep?: string
       contractHash?: string
       catalogRevision?: number
     }
@@ -190,6 +192,23 @@ function findLastWorkflow(blocks: ChatBlock[]): WorkflowBlock | undefined {
   return undefined
 }
 
+function workflowStepFromPrompt(data: Record<string, unknown> | undefined): string | undefined {
+  const prompt = data?.prompt
+  if (typeof prompt !== 'string') return undefined
+  const m = /workflow step "([^"]+)":/.exec(prompt)
+  return m?.[1]
+}
+
+function markWorkflowStepForCard(
+  blocks: ChatBlock[],
+  card: ToolBlock | undefined,
+  status: WorkflowStepStatus,
+): void {
+  if (!card?.workflowStep) return
+  const wf = findLastWorkflow(blocks)
+  if (wf) setWorkflowStepStatus(wf, card.workflowStep, status)
+}
+
 function workflowStepIds(data: Record<string, unknown> | undefined): string[] {
   const raw = data?.steps
   if (!Array.isArray(raw)) return []
@@ -278,10 +297,12 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
           break
         }
         const name = hitlToolName(data) ?? 'tool'
+        const workflowStep = workflowStepFromPrompt(data)
         const card = findTopUnfinished(blocks, name)
         if (card) {
           card.status = 'waiting_human'
           card.waitingSince = ev.timestamp
+          card.workflowStep = workflowStep
           if (data?.arguments !== undefined) card.arguments = data.arguments
         } else {
           blocks.push({
@@ -291,7 +312,12 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
             arguments: data?.arguments,
             runId,
             waitingSince: ev.timestamp,
+            workflowStep,
           })
+        }
+        if (workflowStep) {
+          const wf = findLastWorkflow(blocks)
+          if (wf) setWorkflowStepStatus(wf, workflowStep, 'waiting')
         }
         break
       }
@@ -303,7 +329,10 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
           name !== undefined
             ? findTopWaiting(blocks, name)
             : findTopWaiting(blocks)
-        if (card) card.status = 'approved'
+        if (card) {
+          card.status = 'approved'
+          markWorkflowStepForCard(blocks, card, 'running')
+        }
         break
       }
       case 'hitl.rejected': {
@@ -312,7 +341,10 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
           name !== undefined
             ? findTopWaiting(blocks, name)
             : findTopWaiting(blocks)
-        if (card) card.status = 'rejected'
+        if (card) {
+          card.status = 'rejected'
+          markWorkflowStepForCard(blocks, card, 'failed')
+        }
         break
       }
       case 'llm.thinking.delta': {
@@ -381,6 +413,12 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         if (block && stepId) {
           setWorkflowStepStatus(block, stepId, data?.is_error ? 'failed' : 'done')
         }
+        break
+      }
+      case 'hitl.expired':
+      case 'run.cancelled': {
+        const card = findTopWaiting(blocks)
+        markWorkflowStepForCard(blocks, card, 'failed')
         break
       }
       default:

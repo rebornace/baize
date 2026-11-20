@@ -45,6 +45,7 @@ function toolCardPropsEqual(prev: ToolCardProps, next: ToolCardProps): boolean {
     a.contractHash === b.contractHash &&
     a.catalogRevision === b.catalogRevision &&
     a.waitingSince === b.waitingSince &&
+    a.workflowStep === b.workflowStep &&
     prev.catalog === next.catalog &&
     prev.readOnly === next.readOnly &&
     prev.onError === next.onError &&
@@ -137,6 +138,9 @@ function ToolCardImpl({
             {description ? ` · ${description}` : ''}
           </p>
           {waited ? <p className="hitl-waited">{waited}</p> : null}
+          {block.workflowStep ? (
+            <p className="hitl-workflow-hint">{HITL.workflowPauseHint}</p>
+          ) : null}
           {priorEvidence !== undefined && (
             <div className="hitl-evidence" data-testid="hitl-evidence">
               <p className="hitl-evidence-title">{HITL.evidenceTitle}</p>

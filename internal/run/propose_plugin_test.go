@@ -66,9 +66,8 @@ func TestProposePluginRejectedWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposePluginScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposePluginScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -91,9 +90,8 @@ func TestProposePluginAdminApproveWritesDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposePluginScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposePluginScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -126,9 +124,8 @@ func TestProposePluginOperatorApproveDenied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: &proposePluginScriptLLM{}, Tools: reg, Gate: gate,
+		Store: st, LLM: &proposePluginScriptLLM{}, Tools: reg,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -187,7 +184,7 @@ func TestProposePluginConflictNoHITL(t *testing.T) {
 	ag := agent.Def{ID: "a", System: "sys"}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "补插件", ConversationID: "conv1"})
 	eng := &Engine{
-		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), MaxSteps: 4,
+		Store: st, LLM: llmStub, Tools: reg, MaxSteps: 4,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")
@@ -218,7 +215,7 @@ func TestProposePluginBadArgsNoHITL(t *testing.T) {
 	ag := agent.Def{ID: "a", System: "sys"}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "补插件", ConversationID: "conv1"})
 	eng := &Engine{
-		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), MaxSteps: 4,
+		Store: st, LLM: llmStub, Tools: reg, MaxSteps: 4,
 		Now: func() time.Time { return scheduleTestNow() },
 	}
 	ctx := identity.WithConversationID(context.Background(), "conv1")

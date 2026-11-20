@@ -100,7 +100,7 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 
 ## HITL
 
-写操作等可标 `require_approval`：Run 进入 `waiting_human`，运营 / API `POST /v0/runs/{id}/resume` 后继续。Chat UI（`/ui`）提供运营入口。审批 / 登录等待默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭），过期后 Run 记为 `cancelled` 并释放会话；审批卡与日程列表显示已等待时长。
+写操作等可标 `require_approval`：Run 进入 `waiting_human`，运营 / API `POST /v0/runs/{id}/resume` 后继续。Chat UI（`/ui`）提供运营入口。审批 / 登录等待默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭），过期后 Run 记为 `cancelled` 并释放会话；审批卡与日程列表显示已等待时长。工作流步骤等待时，工作流卡片标出「等待审批」，审批卡提示重启后仍可继续。
 
 下游需要登录时（`login_required`）：对话可暂停并展示托管登录入口——打开浏览器托管页、忽略该连接器并继续本轮，或结束本轮。MCP 导出侧见上文「鉴权失败 → elicitation / `hosted_login_url`」。
 
@@ -124,7 +124,7 @@ WebUI 侧栏「搜索功能」/ `Ctrl/Cmd+K` / `/` 打开命令面板；设置�
 
 ## 已知限制
 
-- **工作流步骤审批占槽**：`workflow.yaml` 的 `approve: true` 步骤走阻塞等待，Run 会一直持有租约与 worker 槽位，直到人批准、拒绝或默认 24 小时过期（`hitl.approval_ttl_sec`，`0` 关闭）。进程重启后这类 Run 无法冷恢复，启动时会直接失败并要求重跑。并发紧张时不要同时挂多个待审批工作流。
+- **工作流步骤审批不再占槽**：`workflow.yaml` 的 `approve: true` 步骤把 skill、下一步与结果树写入 HITL 载荷，Run 进入 `waiting_human` 并释放 worker；同意或重启后从暂停的步骤继续。旧等待（无状态）启动时仍失败并要求重跑；审批后的步骤执行若在结果落库前崩溃，可能重跑该步骤（at-least-once）。
 - **HITL 过期是进程内协调**：`hitlMu` 只串行化单进程内的过期与同意；多副本部署时仍可能一边过期一边同意，最终以最后写入的终态为准。
 - **多副本日程抢领窗口**：每个副本都会跑 15 秒一次的日程扫描；进程启动时会把全库 `running_run_id=pending` 的占位清空。若另一副本正好处在 `ClaimDue` 与 `CompleteOpen` 之间，可能出现重复开一轮。单副本没有这个问题；多副本部署时避免同时重启。
 - **记忆不覆盖同名条目**：自动抽取遇到已存在的 `key` 会跳过，不会改写旧值。要纠正或更新，请用显式记忆（`remember_fact`）或「设置 → 记忆」编辑。

@@ -360,24 +360,19 @@ func TestHITLReconcileSkipsWaitingChild(t *testing.T) {
 	}
 }
 
-func TestHITLReconcileSkipsLiveWaiter(t *testing.T) {
+func TestHITLReconcileKeepsResumableWorkflow(t *testing.T) {
 	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
 	eng, st, _, r := newHITLTestEngine(t, now)
-	eng.Gate = NewGate()
 	markWaiting(t, st, r.ID, &store.HITLPayload{
 		Prompt:       "workflow step b",
-		ToolName:     "create_ticket",
+		ToolName:     "tb",
 		Kind:         store.HITLKindApproval,
-		WaitingSince: now.Add(-1 * time.Hour),
+		WaitingSince: now.Add(-time.Hour),
+		Workflow:     &store.WorkflowState{Skill: "demo", StepIndex: 1, StepID: "b"},
 	})
-	ch, err := eng.Gate.BeginWait(r.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer eng.Gate.EndWait(r.ID)
 	if err := st.AppendEvent(r.ID, store.Event{
 		Type: "workflow.started",
-		Data: map[string]any{"skill": "wf", "steps": []string{"b"}},
+		Data: map[string]any{"skill": "demo", "steps": []string{"a", "b"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -386,14 +381,34 @@ func TestHITLReconcileSkipsLiveWaiter(t *testing.T) {
 		t.Fatal(err)
 	}
 	if settled != 0 {
-		t.Fatalf("live waiter must be skipped, settled=%d", settled)
+		t.Fatalf("settled=%d want 0", settled)
 	}
 	if got, _ := st.GetRun(r.ID); got.Status != store.StatusWaitingHuman {
 		t.Fatalf("status=%s want waiting_human", got.Status)
 	}
-	select {
-	case <-ch:
-		t.Fatal("reconcile must not deliver a decision")
-	default:
+}
+
+func TestHITLWorkflowExpiryClearsState(t *testing.T) {
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	eng, st, _, r := newHITLTestEngine(t, now)
+	markWaiting(t, st, r.ID, &store.HITLPayload{
+		Prompt:       "workflow step b",
+		ToolName:     "tb",
+		Kind:         store.HITLKindApproval,
+		WaitingSince: now.Add(-25 * time.Hour),
+		Workflow:     &store.WorkflowState{Skill: "demo", StepIndex: 1, StepID: "b"},
+	})
+	expired, err := eng.ExpireHITL(r.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !expired {
+		t.Fatal("workflow wait must expire by TTL")
+	}
+	if got, _ := st.GetRun(r.ID); got.Status != store.StatusCancelled {
+		t.Fatalf("status=%s want cancelled", got.Status)
+	}
+	if p, _ := st.GetHITL(r.ID); p != nil {
+		t.Fatalf("workflow payload must be cleared: %+v", p)
 	}
 }

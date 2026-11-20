@@ -100,7 +100,7 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 
 ## Human approval
 
-Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry. Approval / login waits expire after 24 hours by default (`hitl.approval_ttl_sec`, `0` disables); an expired Run becomes `cancelled` and releases the conversation. Approval cards and schedule rows show the elapsed wait.
+Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry. Approval / login waits expire after 24 hours by default (`hitl.approval_ttl_sec`, `0` disables); an expired Run becomes `cancelled` and releases the conversation. Approval cards and schedule rows show the elapsed wait. While a workflow step waits, the workflow card marks it “Awaiting approval” and the approval card notes that it can resume after a restart.
 
 When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.
 
@@ -124,7 +124,7 @@ The WebUI sidebars expose “Search features” / `Ctrl/Cmd+K` / `/`. Settings p
 
 ## Known limits
 
-- **Workflow step approvals hold a worker slot:** an `approve: true` step in `workflow.yaml` blocks, so the Run keeps its lease and worker slot until a human approves, rejects, or the default 24-hour approval TTL expires (`hitl.approval_ttl_sec`, `0` disables). After a process restart such a Run cannot cold-resume and fails at startup with a re-run message. Avoid stacking several pending workflow approvals when concurrency is tight.
+- **Workflow step approvals no longer hold a worker slot:** an `approve: true` step persists skill, next step, and result tree in the HITL payload, moves the Run to `waiting_human`, and releases the worker. Approval or restart resumes from the paused step. Old waits without state still fail at startup with a re-run message. If the process crashes after an approved step starts but before its result is persisted, that step may run again (at-least-once).
 - **HITL expiry is process-local:** `hitlMu` only serializes expiry and approval inside one process; with multiple replicas an expiry and an approval can still race, and the last terminal write wins.
 - **Multi-replica schedule claim window:** every replica runs the 15-second schedule scan, and a starting process clears all `running_run_id=pending` placeholders. If another replica is between `ClaimDue` and `CompleteOpen`, a run can be opened twice. Single-replica deployments are unaffected; with multiple replicas, avoid restarting them at the same time.
 - **Memory does not overwrite same-key entries:** auto-extraction skips a `key` that already exists instead of rewriting it. To correct or update, use explicit memory (`remember_fact`) or edit the entry in Settings → Memory.

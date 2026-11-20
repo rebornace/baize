@@ -32,7 +32,7 @@ func (s *visionStubLLM) Chat(_ context.Context, msgs []llm.Message, _ []llm.Tool
 
 func newWorkspaceEngine(st store.Store, llm_ llm.Provider) (*Engine, *tool.Registry) {
 	reg := tool.NewRegistry()
-	eng := &Engine{Store: st, LLM: llm_, Tools: reg, Gate: NewGate()}
+	eng := &Engine{Store: st, LLM: llm_, Tools: reg}
 	return eng, reg
 }
 

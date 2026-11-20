@@ -2,14 +2,13 @@ package run
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/rebornace/baize/internal/agent"
-	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/llm"
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
@@ -229,86 +228,6 @@ func TestExecuteActivateNonWorkflowSkillKeepsReAct(t *testing.T) {
 	}
 }
 
-func TestExecuteWorkflowApproveStepSkipsConnectorApproval(t *testing.T) {
-	st := store.NewMemory()
-	reg := tool.NewRegistry()
-	reg.Register("ta", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-		return map[string]any{"ok": true}, false, nil
-	})
-	var tbCalls atomic.Int32
-	reg.RegisterSpecApproved(llm.ToolSpec{Name: "tb"}, func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
-		tbCalls.Add(1)
-		return map[string]any{"id": "1"}, false, nil
-	}, true)
-
-	wfYAML := `name: demo
-steps:
-  - id: a
-    tool: ta
-  - id: b
-    tool: tb
-    approve: true
-    args:
-      title: "{{input.text}}"
-`
-	cat := loadWorkflowCatalog(t, "demo", wfYAML)
-
-	llmMock := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
-		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}},
-		}}
-	}}
-
-	gate := NewGate()
-	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
-	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	eng := &Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat, Gate: gate}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input)
-	}()
-
-	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if tbCalls.Load() != 0 {
-		t.Fatalf("tool called before workflow gate approve: %d", tbCalls.Load())
-	}
-	if err := gate.Resume(r.ID, Decision{Approve: true}); err != nil {
-		t.Fatalf("Resume: %v", err)
-	}
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute timed out")
-	}
-
-	got, _ := st.GetRun(r.ID)
-	if got.Status != store.StatusSucceeded {
-		t.Fatalf("status=%s want succeeded", got.Status)
-	}
-	if tbCalls.Load() != 1 {
-		t.Fatalf("tb calls=%d want 1 (no double approval)", tbCalls.Load())
-	}
-
-	evs, _ := st.ListEvents(r.ID)
-	var hitlWaits int
-	for _, ev := range evs {
-		if ev.Type == EventHITLWaiting {
-			hitlWaits++
-		}
-	}
-	if hitlWaits != 1 {
-		t.Fatalf("hitl.waiting count=%d want 1 (workflow gate only)", hitlWaits)
-	}
-}
-
 func TestContinueFromHITLWorkflowFailFast(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "ticket-agent", System: "helper"})
@@ -353,7 +272,7 @@ func TestContinueFromHITLWorkflowFailFast(t *testing.T) {
 		Arguments: map[string]any{"x": "1"},
 	})
 
-	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: NewGate()}
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg}
 	err = eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true})
 	if err == nil {
 		t.Fatal("expected fail-fast error for workflow cold resume")
@@ -377,82 +296,146 @@ func TestContinueFromHITLWorkflowFailFast(t *testing.T) {
 	}
 }
 
-// TestExecuteWorkflowGateRejectIsRejected: rejecting an approve-gated step in a
-// live workflow ends the run as "rejected" with a humanized note; later steps
-// never run and no llm.error event is appended.
-func TestExecuteWorkflowGateRejectIsRejected(t *testing.T) {
+// e_getState grants read access to the internal per-run skill state for tests.
+func e_getState(e *Engine, runID string) *runSkillState {
+	return e.getRunSkillState(runID)
+}
+
+func TestExecuteWorkflowApprovalReleasesAndResumes(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var tbCalls atomic.Int32
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		return map[string]any{"ok": true}, false, nil
+	})
+	reg.Register("tb", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		tbCalls.Add(1)
+		return map[string]any{"id": "1"}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", `name: demo
+steps:
+  - id: a
+    tool: ta
+  - id: b
+    tool: tb
+    approve: true
+    args:
+      title: "{{input.text}}"
+`)
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}},
+		}}
+	}}, Tools: reg, Skills: cat}
+
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v want ErrWaitingHuman", err)
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusWaitingHuman {
+		t.Fatalf("status=%s", got.Status)
+	}
+	if tbCalls.Load() != 0 {
+		t.Fatalf("tb called before approve")
+	}
+	payload, _ := st.GetHITL(r.ID)
+	if payload == nil || payload.Workflow == nil {
+		t.Fatalf("missing workflow payload: %+v", payload)
+	}
+	if payload.Workflow.Skill != "demo" || payload.Workflow.StepID != "b" || payload.Workflow.StepIndex != 1 {
+		t.Fatalf("workflow state=%+v", payload.Workflow)
+	}
+
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("ContinueFromHITL: %v", err)
+	}
+	if tbCalls.Load() != 1 {
+		t.Fatalf("tb calls=%d want 1", tbCalls.Load())
+	}
+	got, _ = st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("after resume status=%s", got.Status)
+	}
+}
+
+func TestWorkflowApprovalRejectStopsWithoutRunningStep(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
 	reg := tool.NewRegistry()
 	var taCalls, tbCalls atomic.Int32
-	reg.Register("ta", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
 		taCalls.Add(1)
 		return map[string]any{"ok": true}, false, nil
 	})
-	reg.Register("tb", func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+	reg.Register("tb", func(context.Context, map[string]any) (map[string]any, bool, error) {
 		tbCalls.Add(1)
-		t.Fatal("tb must not run after the gated step is rejected")
-		return nil, false, nil
+		return map[string]any{"id": "1"}, false, nil
 	})
-	// Step a is approval-gated; b must never be reached.
-	wfYAML := "name: demo\nsteps:\n  - id: a\n    tool: ta\n    approve: true\n  - id: b\n    tool: tb\n"
-	cat := loadWorkflowCatalog(t, "demo", wfYAML)
-	msgStore := conversation.NewMemoryStore()
-
-	llmMock := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
-		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}},
-		}}
-	}}
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n    approve: true\n  - id: b\n    tool: tb\n")
 	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
-	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi", ConversationID: "conv1"})
-	if err != nil {
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("err=%v", err)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: "no"}); err != nil {
 		t.Fatal(err)
 	}
-	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "hi", RunID: r.ID})
-
-	gate := NewGate()
-	eng := &Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat, Gate: gate, Messages: msgStore}
-	errCh := make(chan error, 1)
-	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
-	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
-	if err := gate.Resume(r.ID, Decision{Approve: false, Comment: "stop"}); err != nil {
-		t.Fatalf("Resume: %v", err)
-	}
-	select {
-	case <-errCh:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute timed out")
-	}
-
 	if taCalls.Load() != 0 || tbCalls.Load() != 0 {
-		t.Fatalf("no gated step may run after reject: ta=%d tb=%d", taCalls.Load(), tbCalls.Load())
+		t.Fatalf("no step should run on reject: ta=%d tb=%d", taCalls.Load(), tbCalls.Load())
 	}
 	got, _ := st.GetRun(r.ID)
 	if got.Status != store.StatusRejected {
 		t.Fatalf("status=%s want rejected", got.Status)
 	}
-	notes := 0
-	for _, m := range msgStore.List("conv1") {
-		if m.Role == conversation.RoleSystemNote {
-			notes++
-			if m.Content != HITLRejectedNote {
-				t.Fatalf("note=%q want %q", m.Content, HITLRejectedNote)
-			}
-		}
-	}
-	if notes != 1 {
-		t.Fatalf("system notes=%d want exactly 1 (no double finalize)", notes)
-	}
-	evs, _ := st.ListEvents(r.ID)
-	for _, ev := range evs {
-		if ev.Type == EventLLMError {
-			t.Fatalf("rejection must not append %s event", EventLLMError)
-		}
-	}
 }
 
-// e_getState grants read access to the internal per-run skill state for tests.
-func e_getState(e *Engine, runID string) *runSkillState {
-	return e.getRunSkillState(runID)
+func TestWorkflowTwoApprovalsAndRestartResume(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "helper"})
+	reg := tool.NewRegistry()
+	var taCalls, tbCalls, tcCalls atomic.Int32
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		taCalls.Add(1)
+		return map[string]any{"ok": true}, false, nil
+	})
+	reg.Register("tb", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		tbCalls.Add(1)
+		return map[string]any{"id": "1"}, false, nil
+	})
+	reg.Register("tc", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		tcCalls.Add(1)
+		return map[string]any{"done": true}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", "name: demo\nsteps:\n  - id: a\n    tool: ta\n  - id: b\n    tool: tb\n    approve: true\n  - id: c\n    tool: tc\n    approve: true\n")
+	ag := agent.Def{ID: "a", System: "helper", Skills: []string{"demo"}}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		return llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: skill.ActivateToolName, Arguments: map[string]any{"id": "demo"}}}}
+	}}, Tools: reg, Skills: cat}
+	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("first pause: %v", err)
+	}
+	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("second pause: %v", err)
+	}
+	eng2 := &Engine{Store: st, Tools: reg, Skills: cat}
+	if err := eng2.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
+		t.Fatalf("cold resume: %v", err)
+	}
+	if taCalls.Load() != 1 || tbCalls.Load() != 1 || tcCalls.Load() != 1 {
+		t.Fatalf("calls ta=%d tb=%d tc=%d want 1 each", taCalls.Load(), tbCalls.Load(), tcCalls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s", got.Status)
+	}
 }

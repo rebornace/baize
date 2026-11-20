@@ -118,11 +118,12 @@ func (e *Engine) SweepExpiredHITL(now time.Time) (int, error) {
 }
 
 // ReconcileHITL runs once at startup:
-//   - workflow waits that a restart interrupted cannot resume, so fail them;
+//   - workflow waits without persisted state cannot resume, so fail them;
+//   - workflow waits with persisted state can resume and stay waiting;
 //   - waits with no HITL payload cannot be resumed, so settle them;
-//   - overdue ReAct/login waits expire.
+//   - overdue waits expire.
 //
-// Resumable ReAct/login waits stay waiting_human. waiting_child is untouched.
+// Resumable ReAct/login/workflow waits stay waiting_human. waiting_child is untouched.
 func (e *Engine) ReconcileHITL(now time.Time) (int, error) {
 	if e.Store == nil {
 		return 0, nil
@@ -133,10 +134,6 @@ func (e *Engine) ReconcileHITL(now time.Time) (int, error) {
 	}
 	settled := 0
 	for _, r := range runs {
-		if e.Gate != nil && e.Gate.HasWaiter(r.ID) {
-			// A live same-process workflow wait can still resume.
-			continue
-		}
 		payload, err := e.Store.GetHITL(r.ID)
 		if err != nil {
 			return settled, err
@@ -155,19 +152,21 @@ func (e *Engine) ReconcileHITL(now time.Time) (int, error) {
 			// Parent waits on a child run; do not fail or expire it here.
 			continue
 		}
-		evs, err := e.Store.ListEvents(r.ID)
-		if err != nil {
-			return settled, err
-		}
-		if workflowInterrupted(evs) {
-			ok, err := e.failRestartedWorkflow(r.ID, payload)
+		if payload.Workflow == nil {
+			evs, err := e.Store.ListEvents(r.ID)
 			if err != nil {
 				return settled, err
 			}
-			if ok {
-				settled++
+			if workflowInterrupted(evs) {
+				ok, err := e.failRestartedWorkflow(r.ID, payload)
+				if err != nil {
+					return settled, err
+				}
+				if ok {
+					settled++
+				}
+				continue
 			}
-			continue
 		}
 		expired, err := e.ExpireHITL(r.ID, now)
 		if err != nil {

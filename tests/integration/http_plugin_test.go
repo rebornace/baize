@@ -48,7 +48,6 @@ func TestHTTPPluginPutToolsRun(t *testing.T) {
 		Store:    st,
 		LLM:      &httpPluginScriptLLM{toolName: "echo", args: map[string]any{"msg": "hi"}},
 		Tools:    reg,
-		Gate:     run.NewGate(),
 		MaxSteps: 4,
 	}
 	srv := api.NewServer(st, reg, engine)
@@ -137,12 +136,10 @@ func TestHTTPPluginHITLRequireApproval(t *testing.T) {
 	st := store.NewMemory()
 	st.UpsertAgent(store.Agent{ID: "agent-hitl", System: "helper"})
 	reg := tool.NewRegistry()
-	gate := run.NewGate()
 	engine := &run.Engine{
 		Store:    st,
 		LLM:      &httpPluginScriptLLM{toolName: "create_ticket", args: map[string]any{"title": "need approval"}},
 		Tools:    reg,
-		Gate:     gate,
 		MaxSteps: 4,
 	}
 	srv := api.NewServer(st, reg, engine)

@@ -71,7 +71,6 @@ paths:
 		Store:    st,
 		LLM:      &enterpriseCallbackLLM{toolName: "echo", args: map[string]any{"msg": "hi"}},
 		Tools:    reg,
-		Gate:     run.NewGate(),
 		MaxSteps: 4,
 	}
 	srv := api.NewServer(st, reg, engine)

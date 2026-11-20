@@ -17,13 +17,28 @@ type InvokeFunc func(ctx context.Context, tool string, stepID string, args map[s
 type EmitFunc func(typ string, data map[string]any) error
 
 // GateFunc routes an Approve-gated step through HITL; approved=false stops Run.
+// It is kept for callers of Run that do not need resumable state.
 type GateFunc func(ctx context.Context, payload store.HITLPayload) (approved bool, err error)
 
-// ExecHooks carries the engine-provided collaborators for Run.
+// GateStateFunc is the resumable gate. It receives the current state so the
+// engine can persist skill/step/tree before returning a pause error.
+type GateStateFunc func(ctx context.Context, payload store.HITLPayload, state State) (approved bool, err error)
+
+// State is the resumable position of a linear workflow. NextStep is the index
+// of the next step to run; Tree holds the input plus completed step results.
+type State struct {
+	Skill    string
+	NextStep int
+	StepID   string
+	Tree     map[string]any
+}
+
+// ExecHooks carries the engine-provided collaborators for Run/RunFrom.
 type ExecHooks struct {
-	Emit   EmitFunc
-	Gate   GateFunc
-	Invoke InvokeFunc
+	Emit      EmitFunc
+	Gate      GateFunc
+	GateState GateStateFunc
+	Invoke    InvokeFunc
 }
 
 // ErrRejected is returned (wrapped) when a step was rejected at the HITL gate.
@@ -46,42 +61,75 @@ func SetResult(tree map[string]any, stepID string, result map[string]any) {
 	node["result"] = result
 }
 
-// Run executes the steps linearly against tree. Args are rendered just before
-// each step, and each completed step writes its "<id>.result" back into tree,
-// so later steps can reference earlier results ({{a.result.ok}}). Any failure —
-// unresolved reference, gate rejection or error, invoke error — aborts Run with
-// an error naming the failing step.
+// Run executes the workflow from the beginning. It remains the compatible
+// entry point for callers that do not resume workflows.
 func (w *Workflow) Run(ctx context.Context, tree map[string]any, h ExecHooks) error {
+	_, err := w.RunFrom(ctx, State{Skill: w.Name, NextStep: 0, Tree: tree}, h)
+	return err
+}
+
+// RunFrom executes the linear steps from state.NextStep. A GateState error
+// (for example the engine's waiting-human sentinel) stops execution and is
+// returned wrapped with the failing step id; the caller persists the state
+// from the GateState callback before returning it to the worker.
+func (w *Workflow) RunFrom(ctx context.Context, state State, h ExecHooks) (State, error) {
 	ids := make([]string, 0, len(w.Steps))
 	for _, s := range w.Steps {
 		ids = append(ids, s.ID)
 	}
-	if err := h.Emit("workflow.started", map[string]any{"skill": w.Name, "steps": ids}); err != nil {
-		return err
+	if state.NextStep < 0 {
+		state.NextStep = 0
+	}
+	if state.NextStep > len(w.Steps) {
+		state.NextStep = len(w.Steps)
+	}
+	if state.NextStep == 0 {
+		if err := h.Emit("workflow.started", map[string]any{"skill": w.Name, "steps": ids}); err != nil {
+			return state, err
+		}
+	} else {
+		if err := h.Emit("workflow.resumed", map[string]any{"skill": w.Name, "next_step": state.NextStep}); err != nil {
+			return state, err
+		}
 	}
 
-	for _, s := range w.Steps {
+	tree := state.Tree
+	if tree == nil {
+		tree = map[string]any{}
+	}
+	gate := h.GateState
+	if gate == nil && h.Gate != nil {
+		gate = func(ctx context.Context, p store.HITLPayload, _ State) (bool, error) {
+			return h.Gate(ctx, p)
+		}
+	}
+
+	for i := state.NextStep; i < len(w.Steps); i++ {
+		s := w.Steps[i]
 		args, rerr := TryRenderArgs(s.Args, tree)
 		if rerr != nil {
-			return fmt.Errorf("step %q: %w", s.ID, rerr)
+			return state, fmt.Errorf("step %q: %w", s.ID, rerr)
 		}
 
 		if s.Approve {
-			approved, gerr := h.Gate(ctx, store.HITLPayload{
+			if gate == nil {
+				return state, fmt.Errorf("step %q: missing gate", s.ID)
+			}
+			approved, gerr := gate(ctx, store.HITLPayload{
 				Prompt:    fmt.Sprintf("workflow step %q: %s", s.ID, s.Tool),
 				ToolName:  s.Tool,
 				Arguments: args,
-			})
+			}, State{Skill: w.Name, NextStep: i, StepID: s.ID, Tree: tree})
 			if gerr != nil {
-				return fmt.Errorf("step %q: %w", s.ID, gerr)
+				return state, fmt.Errorf("step %q: %w", s.ID, gerr)
 			}
 			if !approved {
-				return fmt.Errorf("workflow step %q: %w", s.ID, ErrRejected)
+				return state, fmt.Errorf("workflow step %q: %w", s.ID, ErrRejected)
 			}
 		}
 
 		if err := h.Emit("workflow.step_started", map[string]any{"step": s.ID, "tool": s.Tool}); err != nil {
-			return err
+			return state, err
 		}
 
 		content, isErr, ierr := h.Invoke(ctx, s.Tool, s.ID, args)
@@ -90,14 +138,17 @@ func (w *Workflow) Run(ctx context.Context, tree map[string]any, h ExecHooks) er
 			if ierr != nil {
 				detail = ierr.Error()
 			}
-			return fmt.Errorf("step %q: invoke failed: %s", s.ID, detail)
+			return state, fmt.Errorf("step %q: invoke failed: %s", s.ID, detail)
 		}
 
 		SetResult(tree, s.ID, content)
 
 		if err := h.Emit("workflow.step_completed", map[string]any{"step": s.ID, "is_error": false}); err != nil {
-			return err
+			return state, err
 		}
 	}
-	return nil
+
+	state.NextStep = len(w.Steps)
+	state.Tree = tree
+	return state, nil
 }

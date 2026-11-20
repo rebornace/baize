@@ -145,12 +145,10 @@ func TestApprovalBatchStaysSerial(t *testing.T) {
 		Name: "write_y", Description: "write", InputSchema: map[string]any{"type": "object"},
 	}, slow("write_y"), true)
 
-	gate := NewGate()
 	eng := &Engine{
 		Store:             st,
 		LLM:               &approvalDualLLM{},
 		Tools:             reg,
-		Gate:              gate,
 		MaxSteps:          4,
 		ToolTimeout:       3 * time.Second,
 		ParallelToolLimit: 8,

@@ -59,7 +59,7 @@ func TestToolResultOffloadsWhenBulky(t *testing.T) {
 	}}
 
 	ws := newMemWorkspace(t)
-	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), Workspace: ws}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Workspace: ws}
 
 	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv1", Input: "go"})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestToolResultOffloadFailOpen(t *testing.T) {
 	}}
 
 	// Workspace nil → fail-open: model still sees full JSON.
-	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: NewGate()}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg}
 
 	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv1", Input: "go"})
 	if err != nil {
@@ -187,7 +187,7 @@ func TestToolResultBelowThresholdUnchanged(t *testing.T) {
 	}}
 
 	ws := newMemWorkspace(t)
-	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), Workspace: ws}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Workspace: ws}
 
 	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", ConversationID: "conv1", Input: "go"})
 	if err != nil {

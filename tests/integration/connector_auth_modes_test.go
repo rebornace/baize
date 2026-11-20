@@ -148,7 +148,6 @@ func TestConnectorAuthModesPassthrough(t *testing.T) {
 		Store:    st,
 		LLM:      &authModesScriptLLM{toolName: "probePass"},
 		Tools:    reg,
-		Gate:     run.NewGate(),
 		MaxSteps: 4,
 	}
 	apiSrv := api.NewServer(st, reg, engine)

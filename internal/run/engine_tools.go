@@ -354,19 +354,6 @@ func (e *Engine) invokeToolPersist(ctx context.Context, runID, callID, name stri
 	return content, isError, nil
 }
 
-func (e *Engine) awaitHITLPayload(ctx context.Context, runID, prompt, toolName string, args map[string]any) error {
-	// Workflow steps still use a blocking Gate wait: cold resume cannot rebuild
-	// in-flight pipeline state (see workflowInterrupted). ReAct tool approvals
-	// use non-blocking awaitHITLDecision instead.
-	_, err := e.awaitHITLDecisionBlocking(ctx, runID, &store.HITLPayload{
-		Prompt:    prompt,
-		ToolName:  toolName,
-		Arguments: args,
-		Kind:      store.HITLKindApproval,
-	})
-	return err
-}
-
 // ErrLoginSkippedContinue means the user skipped login for a connector; ReAct should continue.
 var ErrLoginSkippedContinue = errors.New("login skipped; continue")
 
@@ -407,59 +394,6 @@ func (e *Engine) awaitHITLDecision(ctx context.Context, runID string, payload *s
 		return Decision{}, err
 	}
 	return Decision{}, ErrWaitingHuman
-}
-
-// awaitHITLDecisionBlocking is the legacy select-on-Gate path used by workflow
-// step approvals (cold resume cannot rebuild pipeline state mid-flight).
-func (e *Engine) awaitHITLDecisionBlocking(ctx context.Context, runID string, payload *store.HITLPayload) (Decision, error) {
-	if e.Gate == nil {
-		return Decision{}, fmt.Errorf("approval required but gate is nil")
-	}
-	// Register the waiter before advertising waiting_human so a concurrent
-	// KindHitlResume cannot miss the channel and fall into the cold path.
-	ch, err := e.Gate.BeginWait(runID)
-	if err != nil {
-		return Decision{}, err
-	}
-	defer e.Gate.EndWait(runID)
-
-	if err := e.persistHITLWaiting(ctx, runID, payload); err != nil {
-		return Decision{}, err
-	}
-
-	var d Decision
-	select {
-	case d = <-ch:
-	case <-ctx.Done():
-		_ = e.Store.SetHITL(runID, nil)
-		return Decision{}, context.Canceled
-	}
-	if payload.Kind == store.HITLKindLogin {
-		if d.Approve {
-			_ = e.Store.AppendEvent(runID, store.Event{
-				Type: EventHITLResumed,
-				Data: map[string]any{"decision": "approve", "comment": d.Comment, "kind": store.HITLKindLogin},
-			})
-			_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
-			_ = e.Store.SetHITL(runID, nil)
-		}
-		return d, nil
-	}
-	if !d.Approve {
-		_ = e.Store.AppendEvent(runID, store.Event{
-			Type: EventHITLRejected,
-			Data: map[string]any{"decision": "reject", "comment": d.Comment},
-		})
-		e.finalizeRejectedRun(runID)
-		return d, ErrHITLRejected
-	}
-	_ = e.Store.AppendEvent(runID, store.Event{
-		Type: EventHITLResumed,
-		Data: map[string]any{"decision": "approve", "comment": d.Comment},
-	})
-	_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
-	_ = e.Store.SetHITL(runID, nil)
-	return d, nil
 }
 
 func (e *Engine) persistHITLWaiting(ctx context.Context, runID string, payload *store.HITLPayload) error {

@@ -4,7 +4,7 @@ import type { ChatBlock } from '../foldEvents'
 import { WorkflowCard } from './WorkflowCard'
 
 const wf = (
-  steps: Array<{ id: string; status: 'pending' | 'running' | 'done' | 'failed' }>,
+  steps: Array<{ id: string; status: 'pending' | 'waiting' | 'running' | 'done' | 'failed' }>,
 ) =>
   ({
     kind: 'workflow',
@@ -29,6 +29,20 @@ describe('WorkflowCard', () => {
     expect(html).toContain('展开步骤')
     expect(html).not.toContain('步骤 1')
     expect(html).not.toContain('步骤 3')
+  })
+
+  it('shows the waiting step and focuses it', () => {
+    const html = renderToStaticMarkup(
+      <WorkflowCard
+        block={wf([
+          { id: 'a', status: 'done' },
+          { id: 'b', status: 'waiting' },
+          { id: 'c', status: 'pending' },
+        ])}
+      />,
+    )
+    expect(html).toContain('第 2 / 共 3 步')
+    expect(html).toContain('等待审批')
   })
 
   it('空 steps 时显示「工作流准备中」而非矛盾的第 1/共 0 步', () => {

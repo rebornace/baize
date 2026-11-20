@@ -35,6 +35,7 @@ export const enPack = {
     waitedMinutes: (n: number) => `Waiting ${n} min`,
     waitedHours: (n: number) => `Waiting ${n} h`,
     waitedDays: (n: number) => `Waiting ${n} d`,
+    workflowPauseHint: 'Workflow paused; it can resume after a restart.',
   },
   WELCOME: {
     brand: 'Baize',
@@ -1581,6 +1582,7 @@ export const enPack = {
   WORKFLOW: {
     progress: (current: number, total: number) => `Step ${current} / ${total}`,
     step: (n: number) => `Step ${n}`,
+    waiting: 'Awaiting approval',
     expand: 'Show steps',
     collapse: 'Collapse',
   },

@@ -100,9 +100,7 @@ func TestScheduledRunStillWaitsForApproval(t *testing.T) {
 	if opened.Input != scheduleInstruction || opened.AgentID != "agent-a" {
 		t.Fatalf("opened run=%+v", opened)
 	}
-
-	gate := run.NewGate()
-	eng := &run.Engine{Store: st, LLM: scheduledApprovalLLM{}, Tools: reg, Gate: gate, MaxSteps: 4}
+	eng := &run.Engine{Store: st, LLM: scheduledApprovalLLM{}, Tools: reg, MaxSteps: 4}
 	ag := agent.Def{ID: "agent-a", System: "sys"}
 
 	errCh := make(chan error, 1)

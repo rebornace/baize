@@ -356,6 +356,69 @@ describe('foldEvents', () => {
     })
   })
 
+  it('marks the waiting workflow step from the HITL prompt', () => {
+    const events: Event[] = [
+      ev('workflow.started', { skill: 'demo', steps: ['a', 'b'] }),
+      ev('workflow.step_started', { step: 'a', tool: 'ta' }),
+      ev('workflow.step_completed', { step: 'a', is_error: false }),
+      ev('hitl.waiting', {
+        tool_name: 'tb',
+        kind: 'approval',
+        prompt: 'workflow step "b": tb',
+      }),
+    ]
+    const blocks = foldEvents('run_wf_wait', events)
+    const wf = blocks.find((b) => b.kind === 'workflow')
+    if (!wf || wf.kind !== 'workflow') throw new Error('workflow block missing')
+    expect(wf.steps[1].status).toBe('waiting')
+    const card = blocks.find((b) => b.kind === 'tool')
+    if (!card || card.kind !== 'tool') throw new Error('tool card missing')
+    expect(card.workflowStep).toBe('b')
+  })
+
+  it('moves the workflow step on resume and marks failure on reject/expire', () => {
+    const base: Event[] = [
+      ev('workflow.started', { skill: 'demo', steps: ['a', 'b'] }),
+      ev('workflow.step_started', { step: 'a', tool: 'ta' }),
+      ev('workflow.step_completed', { step: 'a', is_error: false }),
+      ev('hitl.waiting', { tool_name: 'tb', prompt: 'workflow step "b": tb' }),
+    ]
+    const resumed = foldEvents('run_wf_resume', [
+      ...base,
+      ev('hitl.resumed', { decision: 'approve' }),
+    ])
+    const wfResumed = resumed.find((b) => b.kind === 'workflow')
+    if (!wfResumed || wfResumed.kind !== 'workflow') throw new Error('workflow missing')
+    expect(wfResumed.steps[1].status).toBe('running')
+
+    const rejected = foldEvents('run_wf_reject', [
+      ...base,
+      ev('hitl.rejected', { decision: 'reject' }),
+    ])
+    const wfRejected = rejected.find((b) => b.kind === 'workflow')
+    if (!wfRejected || wfRejected.kind !== 'workflow') throw new Error('workflow missing')
+    expect(wfRejected.steps[1].status).toBe('failed')
+
+    const expired = foldEvents('run_wf_expire', [
+      ...base,
+      ev('hitl.expired', { reason: 'waiting_expired' }),
+    ])
+    const wfExpired = expired.find((b) => b.kind === 'workflow')
+    if (!wfExpired || wfExpired.kind !== 'workflow') throw new Error('workflow missing')
+    expect(wfExpired.steps[1].status).toBe('failed')
+  })
+
+  it('does not touch workflow blocks for a normal ReAct approval', () => {
+    const events: Event[] = [
+      ev('workflow.started', { skill: 'demo', steps: ['a'] }),
+      ev('hitl.waiting', { tool_name: 'write', prompt: 'Approve tool write?' }),
+    ]
+    const blocks = foldEvents('run_react', events)
+    const wf = blocks.find((b) => b.kind === 'workflow')
+    if (!wf || wf.kind !== 'workflow') throw new Error('workflow missing')
+    expect(wf.steps[0].status).toBe('pending')
+  })
+
   it('does not attach usage when nothing reported tokens or savings', () => {
     const blocks = foldEvents('run_plain', [
       ev('llm.message', { content: '无用量' }),

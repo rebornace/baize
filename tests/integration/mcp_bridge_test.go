@@ -91,7 +91,6 @@ func TestMCPBridgeStdioPutToolsRun(t *testing.T) {
 		Store:    st,
 		LLM:      &httpPluginScriptLLM{toolName: "echo", args: map[string]any{"message": "hi"}},
 		Tools:    reg,
-		Gate:     run.NewGate(),
 		MaxSteps: 4,
 	}
 	srv := api.NewServer(st, reg, engine)

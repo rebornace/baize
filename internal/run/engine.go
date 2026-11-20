@@ -86,7 +86,6 @@ type Engine struct {
 	Store    store.Store
 	LLM      llm.Provider
 	Tools    *tool.Registry
-	Gate     *Gate
 	MaxSteps int // default 16
 	// ToolTimeout bounds a single Tools.Invoke (default 60s).
 	ToolTimeout time.Duration
@@ -449,9 +448,9 @@ func (e *Engine) buildMessages(system, conversationID, input string, userParts [
 	return messages
 }
 
-// ContinueFromHITL applies a human decision to a waiting_human run.
-// Same-process: prefers Gate.Resume so a blocked Execute continues.
-// After restart (no waiter): reads HITLPayload, applies approve/reject, and continues ReAct.
+// ContinueFromHITL applies a human decision to a waiting_human run. It reads
+// the persisted HITL payload and applies approve/reject; workflow waits resume
+// from their persisted state.
 func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision) error {
 	ctx = applyDecisionPrincipal(e.injectAuthCtx(ctx, runID), d)
 
@@ -476,12 +475,6 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		}
 	}
 
-	if e.Gate != nil {
-		if err := e.Gate.Resume(runID, d); err == nil {
-			return nil
-		}
-	}
-
 	if run.Status != store.StatusWaitingHuman {
 		return fmt.Errorf("run not waiting_human")
 	}
@@ -492,14 +485,17 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	if payload == nil {
 		return fmt.Errorf("no hitl payload")
 	}
+	if payload.Workflow != nil {
+		return e.continueWorkflowFromHITL(ctx, runID, payload, d)
+	}
 
 	evs0, err := e.Store.ListEvents(runID)
 	if err != nil {
 		return err
 	}
-	// Cold resume into an in-flight workflow run: reject BEFORE invoking the
-	// pending step — the persisted tree/step state cannot be rebuilt, and
-	// firing side effects from a broken pipeline is worse than stopping.
+	// Cold resume into an old in-flight workflow run without persisted state:
+	// reject BEFORE invoking the pending step. New workflow waits carry
+	// payload.Workflow and are handled above.
 	if workflowInterrupted(evs0) {
 		_ = e.Store.SetHITL(runID, nil)
 		return e.finalizeFailedRun(runID, errors.New(HITLWorkflowRestartNote))

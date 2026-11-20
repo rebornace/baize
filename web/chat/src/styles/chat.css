@@ -1156,6 +1156,20 @@
   color: var(--danger);
 }
 
+.workflow-step-waiting {
+  color: var(--warning);
+}
+
+.workflow-step-waiting-icon {
+  color: var(--warning);
+}
+
+.workflow-step-waiting-label {
+  margin-left: var(--space-2);
+  font-size: 0.6875rem;
+  color: var(--warning);
+}
+
 .workflow-step-dot {
   width: 13px;
   height: 13px;
@@ -1571,6 +1585,12 @@
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
+}
+
+.hitl-workflow-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small-size);
+  color: var(--warning);
 }
 
 .hitl-actions {

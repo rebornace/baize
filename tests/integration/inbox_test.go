@@ -181,6 +181,29 @@ func TestInboxIdempotencyReplay(t *testing.T) {
 	}
 }
 
+func waitRunIdle(t *testing.T, baseURL, runID string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp, err := http.Get(baseURL + "/v0/runs/" + runID)
+		if err != nil {
+			t.Fatalf("get run: %v", err)
+		}
+		var body struct {
+			Status string `json:"status"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if body.Status != "queued" && body.Status != "running" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("run %s still %s after 3s", runID, body.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestInboxExternalIDThreadsConversation(t *testing.T) {
 	cfg := config.Config{}
 	cfg.LLM.Provider = "mock"
@@ -206,6 +229,7 @@ func TestInboxExternalIDThreadsConversation(t *testing.T) {
 	if first.ConversationID == "" {
 		t.Fatalf("first response missing conversation_id: %+v", first)
 	}
+	waitRunIdle(t, runtimeURL, first.RunID)
 
 	body2 := []byte(`{"input":"thread message two","external_id":"ext-thread-42"}`)
 	resp2, err := signInboxPOST(runtimeURL, "alerts", inboxTestSecret, body2)

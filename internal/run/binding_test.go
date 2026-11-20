@@ -36,7 +36,7 @@ func TestRunBindingPersistedOnTurnZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng := &Engine{Store: st, LLM: bindingReplyLLM{}, Tools: reg, Gate: NewGate(), MaxSteps: 4}
+	eng := &Engine{Store: st, LLM: bindingReplyLLM{}, Tools: reg, MaxSteps: 4}
 	if err := eng.Execute(context.Background(), r.ID, ag, r.Input); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

@@ -39,29 +39,12 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 	st.workflowSkill = wf.Name
 	e.runMu.Unlock()
 
-	stepApproved := make(map[string]bool, len(wf.Steps))
-	for _, s := range wf.Steps {
-		stepApproved[s.ID] = s.Approve
+	_, werr := wf.RunFrom(ctx, workflow.State{
+		Skill: wf.Name, NextStep: 0, Tree: st.workflowResults,
+	}, e.workflowHooks(runID, wf))
+	if errors.Is(werr, ErrWaitingHuman) {
+		return ErrWaitingHuman
 	}
-
-	werr := wf.Run(ctx, st.workflowResults, workflow.ExecHooks{
-		Emit: func(typ string, data map[string]any) error {
-			return e.Store.AppendEvent(runID, store.Event{Type: typ, Data: data})
-		},
-		Gate: func(gctx context.Context, p store.HITLPayload) (bool, error) {
-			if err := e.awaitHITLPayload(gctx, runID, p.Prompt, p.ToolName, p.Arguments); err != nil {
-				if errors.Is(err, ErrHITLRejected) {
-					return false, nil
-				}
-				return false, err
-			}
-			return true, nil
-		},
-		Invoke: func(ictx context.Context, toolName string, stepID string, args map[string]any) (map[string]any, bool, error) {
-			callID := fmt.Sprintf("wf-%s-%s", st.workflowSkill, stepID)
-			return e.invokeTool(ictx, runID, callID, toolName, args, stepApproved[stepID])
-		},
-	})
 	if werr != nil {
 		if workflow.Rejected(werr) {
 			e.finalizeRejectedRun(runID)
@@ -69,8 +52,42 @@ func (e *Engine) maybeRunWorkflow(ctx context.Context, runID string) error {
 		}
 		return e.finalizeFailedRun(runID, werr)
 	}
+	return e.finishWorkflowSuccess(ctx, runID, "workflow completed")
+}
 
-	content := "workflow completed"
+// workflowHooks wires workflow steps into the engine. Approve steps pause by
+// persisting the workflow state and returning ErrWaitingHuman; the worker
+// releases its slot instead of blocking on a gate.
+func (e *Engine) workflowHooks(runID string, wf *workflow.Workflow) workflow.ExecHooks {
+	stepApproved := make(map[string]bool, len(wf.Steps))
+	for _, s := range wf.Steps {
+		stepApproved[s.ID] = s.Approve
+	}
+	return workflow.ExecHooks{
+		Emit: func(typ string, data map[string]any) error {
+			return e.Store.AppendEvent(runID, store.Event{Type: typ, Data: data})
+		},
+		GateState: func(ctx context.Context, payload store.HITLPayload, state workflow.State) (bool, error) {
+			if err := e.persistWorkflowWait(ctx, runID, state, payload); err != nil {
+				return false, err
+			}
+			return false, ErrWaitingHuman
+		},
+		Invoke: func(ctx context.Context, toolName, stepID string, args map[string]any) (map[string]any, bool, error) {
+			return e.invokeTool(ctx, runID, fmt.Sprintf("wf-%s-%s", wf.Name, stepID), toolName, args, stepApproved[stepID])
+		},
+	}
+}
+
+func (e *Engine) persistWorkflowWait(ctx context.Context, runID string, state workflow.State, payload store.HITLPayload) error {
+	payload.Workflow = &store.WorkflowState{
+		Skill: state.Skill, StepIndex: state.NextStep, StepID: state.StepID, Tree: state.Tree,
+	}
+	return e.persistHITLWaiting(ctx, runID, &payload)
+}
+
+func (e *Engine) finishWorkflowSuccess(ctx context.Context, runID, content string) error {
+	_ = e.Store.SetHITL(runID, nil)
 	_ = e.Store.AppendEvent(runID, store.Event{
 		Type: EventLLMMessage,
 		Data: map[string]any{"content": content},

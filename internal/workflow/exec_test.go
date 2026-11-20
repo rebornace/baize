@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -213,5 +214,102 @@ steps:
 	}
 	if invokes != 0 {
 		t.Fatalf("invokes=%d want 0 (gate error must stop)", invokes)
+	}
+}
+
+var errPause = errors.New("pause for approval")
+
+func TestRunFromPausesAtApproval(t *testing.T) {
+	w, err := Parse([]byte(`name: n
+steps:
+  - id: a
+    tool: ta
+  - id: b
+    tool: tb
+    approve: true
+  - id: c
+    tool: tc
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invoked []string
+	var paused State
+	hooks := ExecHooks{
+		Emit: func(string, map[string]any) error { return nil },
+		GateState: func(_ context.Context, p store.HITLPayload, st State) (bool, error) {
+			paused = st
+			if p.ToolName != "tb" {
+				t.Fatalf("tool=%q", p.ToolName)
+			}
+			return false, errPause
+		},
+		Invoke: func(_ context.Context, tool, stepID string, _ map[string]any) (map[string]any, bool, error) {
+			invoked = append(invoked, stepID)
+			return map[string]any{"ok": true}, false, nil
+		},
+	}
+	tree := map[string]any{"input": map[string]any{"text": "hi"}}
+	_, err = w.RunFrom(context.Background(), State{Skill: "n", NextStep: 0, Tree: tree}, hooks)
+	if !errors.Is(err, errPause) {
+		t.Fatalf("err=%v want pause", err)
+	}
+	if !reflect.DeepEqual(invoked, []string{"a"}) {
+		t.Fatalf("invoked=%v want [a]", invoked)
+	}
+	if paused.Skill != "n" || paused.NextStep != 1 || paused.StepID != "b" {
+		t.Fatalf("paused=%+v", paused)
+	}
+	if v, ok := Resolve(paused.Tree, "a.result.ok"); !ok || v != true {
+		t.Fatalf("tree lost step a result")
+	}
+}
+
+func TestRunFromResumesAtNextStep(t *testing.T) {
+	w, err := Parse([]byte(`name: n
+steps:
+  - id: a
+    tool: ta
+  - id: b
+    tool: tb
+    approve: true
+  - id: c
+    tool: tc
+    args:
+      x: "{{b.result.id}}"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := map[string]any{
+		"input": map[string]any{"text": "hi"},
+		"a":     map[string]any{"result": map[string]any{"ok": true}},
+		"b":     map[string]any{"result": map[string]any{"id": "9"}},
+	}
+	var events []string
+	var invoked []string
+	hooks := ExecHooks{
+		Emit: func(typ string, _ map[string]any) error { events = append(events, typ); return nil },
+		GateState: func(context.Context, store.HITLPayload, State) (bool, error) {
+			t.Fatal("approved step must not gate again")
+			return false, nil
+		},
+		Invoke: func(_ context.Context, tool, stepID string, args map[string]any) (map[string]any, bool, error) {
+			invoked = append(invoked, stepID)
+			if stepID == "c" && args["x"] != "9" {
+				t.Fatalf("args=%v", args)
+			}
+			return map[string]any{"done": true}, false, nil
+		},
+	}
+	_, err = w.RunFrom(context.Background(), State{Skill: "n", NextStep: 2, Tree: tree}, hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(invoked, []string{"c"}) {
+		t.Fatalf("invoked=%v want [c]", invoked)
+	}
+	if len(events) == 0 || events[0] != "workflow.resumed" {
+		t.Fatalf("events=%v want workflow.resumed first", events)
 	}
 }

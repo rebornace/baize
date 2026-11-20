@@ -104,7 +104,7 @@ func attachmentsServer(t *testing.T, vision bool) (*api.Server, store.Store, *ca
 		return map[string]any{"ok": true}, false, nil
 	})
 	llmMock := &captureUserLLM{vision: vision}
-	eng := &run.Engine{Store: st, LLM: llmMock, Tools: reg, Gate: run.NewGate(), Skills: cat}
+	eng := &run.Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat}
 	srv := api.NewServer(st, reg, eng)
 	srv.LLM = llmMock
 	srv.SkillCatalog = cat

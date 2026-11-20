@@ -168,8 +168,7 @@ func TestEngineResolvesDeleteToRemoveBeforeHITL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := NewGate()
-	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: gate}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg}
 	errCh := make(chan error, 1)
 	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
 
@@ -221,8 +220,7 @@ func TestEngineHITLApproveInvokesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gate := NewGate()
-	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: gate}
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -261,8 +259,7 @@ func TestEngineHITLRejectNoInvoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gate := NewGate()
-	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: gate}
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -307,8 +304,7 @@ func TestHITLRejectWritesHumanizedNote(t *testing.T) {
 	}
 	_, _ = msgStore.Append("conv1", conversation.Message{Role: conversation.RoleUser, Content: "创建工单", RunID: r.ID})
 
-	gate := NewGate()
-	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: gate, Messages: msgStore}
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Messages: msgStore}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- eng.Execute(context.Background(), r.ID, ag, r.Input) }()
@@ -357,9 +353,8 @@ func TestLoginGateBeforeHITL(t *testing.T) {
 		t.Fatal(err)
 	}
 	llmStub := &scriptLLM{}
-	gate := NewGate()
 	eng := &Engine{
-		Store: st, LLM: llmStub, Tools: reg, Gate: gate,
+		Store: st, LLM: llmStub, Tools: reg,
 		Identities: identity.NewMemoryStore(),
 	}
 	done := make(chan error, 1)
@@ -417,7 +412,7 @@ func TestLoginRequiredPausesBeforeMoreTools(t *testing.T) {
 	}
 	llmStub := &multiToolLoginLLM{}
 	eng := &Engine{
-		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(),
+		Store: st, LLM: llmStub, Tools: reg,
 		Identities: identity.NewMemoryStore(),
 	}
 	done := make(chan error, 1)
@@ -485,7 +480,7 @@ func TestLoginSkipStepHidesOnlyFailedTool(t *testing.T) {
 	}
 	llmStub := &skipStepLoginLLM{}
 	eng := &Engine{
-		Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(),
+		Store: st, LLM: llmStub, Tools: reg,
 		Identities: identity.NewMemoryStore(),
 	}
 	done := make(chan error, 1)
@@ -650,7 +645,6 @@ func TestContinueFromHITLInjectsConversationID(t *testing.T) {
 		Store: st,
 		LLM:   &scriptLLM{calls: 1},
 		Tools: reg,
-		Gate:  NewGate(),
 	}
 	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
 		t.Fatalf("ContinueFromHITL: %v", err)
@@ -698,7 +692,6 @@ func TestContinueFromHITLColdApprove(t *testing.T) {
 		Store: st,
 		LLM:   &scriptLLM{calls: 1}, // next Chat returns final message
 		Tools: reg,
-		Gate:  NewGate(), // empty — no waiter
 	}
 	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {
 		t.Fatalf("ContinueFromHITL: %v", err)
@@ -748,7 +741,7 @@ func TestContinueFromHITLColdReject(t *testing.T) {
 		Arguments: map[string]any{"title": "x"},
 	})
 
-	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Gate: NewGate(), Messages: msgStore}
+	eng := &Engine{Store: st, LLM: &scriptLLM{}, Tools: reg, Messages: msgStore}
 	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: false, Comment: "nope"}); err != nil {
 		t.Fatalf("ContinueFromHITL reject: %v", err)
 	}
@@ -1070,12 +1063,15 @@ func TestExecuteNoMessageOnWaitingHuman(t *testing.T) {
 			{ID: "c1", Name: "create_ticket", Arguments: map[string]any{"title": "x"}},
 		}}
 	}}
-	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, Gate: NewGate(), MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
+	eng := &Engine{Store: st, LLM: llmStub, Tools: reg, MaxSteps: 4, Messages: msgStore, MaxMessages: 40}
 	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "创建", ConversationID: "conv1"})
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "创建") }()
-	waitStatus(t, st, r.ID, store.StatusWaitingHuman)
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "创建"); !errors.Is(err, ErrWaitingHuman) {
+		t.Fatalf("Execute err=%v want ErrWaitingHuman", err)
+	}
+	if got, _ := st.GetRun(r.ID); got.Status != store.StatusWaitingHuman {
+		t.Fatalf("status=%s want waiting_human", got.Status)
+	}
 
 	// While waiting, no terminal message should have been written.
 	msgs := msgStore.List("conv1")
@@ -1083,14 +1079,6 @@ func TestExecuteNoMessageOnWaitingHuman(t *testing.T) {
 		if m.Role == conversation.RoleAssistant || m.Role == conversation.RoleSystemNote {
 			t.Fatalf("waiting_human should not write terminal message; got %+v", m)
 		}
-	}
-
-	// Unblock the goroutine so it can exit; reject → rejected (writes system_note).
-	_ = eng.Gate.Resume(r.ID, Decision{Approve: false, Comment: "no"})
-	select {
-	case <-errCh:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Execute did not return after reject")
 	}
 }
 
@@ -1150,7 +1138,6 @@ func TestContinueFromHITLColdInjectsHistory(t *testing.T) {
 		Store:       st,
 		LLM:         llmStub,
 		Tools:       reg,
-		Gate:        NewGate(), // empty — no in-process waiter, forces cold path
 		Messages:    msgStore,
 		MaxMessages: 40,
 	}
@@ -1258,7 +1245,6 @@ func TestContinueFromHITLColdNoMessageStore(t *testing.T) {
 		Store: st,
 		LLM:   llmStub,
 		Tools: reg,
-		Gate:  NewGate(),
 		// Messages intentionally nil.
 	}
 	if err := eng.ContinueFromHITL(context.Background(), r.ID, Decision{Approve: true}); err != nil {

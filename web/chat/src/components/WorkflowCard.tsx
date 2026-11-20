@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronDown, Loader2, X } from 'lucide-react'
+import { Check, ChevronDown, Clock, Loader2, X } from 'lucide-react'
 import type { ChatBlock, WorkflowStepStatus } from '../foldEvents'
 import { WORKFLOW, WORKFLOW_PREPARING } from '../strings'
 
@@ -11,6 +11,8 @@ export interface WorkflowCardProps {
 
 function focusStepIndex(steps: WorkflowBlock['steps']): number {
   if (steps.length === 0) return -1
+  const waiting = steps.findIndex((s) => s.status === 'waiting')
+  if (waiting >= 0) return waiting
   const running = steps.findIndex((s) => s.status === 'running')
   if (running >= 0) return running
   const failed = steps.findIndex((s) => s.status === 'failed')
@@ -24,7 +26,7 @@ function focusStepIndex(steps: WorkflowBlock['steps']): number {
 export function WorkflowCard({ block }: WorkflowCardProps) {
   const total = block.steps.length
   const current = block.steps.filter(
-    (s) => s.status === 'done' || s.status === 'running',
+    (s) => s.status === 'done' || s.status === 'running' || s.status === 'waiting',
   ).length
   const focusIdx = focusStepIndex(block.steps)
   const [expanded, setExpanded] = useState(false)
@@ -43,6 +45,9 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
             <span className="workflow-focus-step">
               <StepIcon status={block.steps[0].status} />
               <span>{WORKFLOW.step(1)}</span>
+              {block.steps[0].status === 'waiting' ? (
+                <span className="workflow-step-waiting-label">{WORKFLOW.waiting}</span>
+              ) : null}
             </span>
           ) : null}
         </div>
@@ -67,6 +72,9 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
             <span className="workflow-focus-step" key={focusIdx}>
               <StepIcon status={block.steps[focusIdx].status} />
               <span>{WORKFLOW.step(focusIdx + 1)}</span>
+              {block.steps[focusIdx].status === 'waiting' ? (
+                <span className="workflow-step-waiting-label">{WORKFLOW.waiting}</span>
+              ) : null}
             </span>
           ) : null}
         </span>
@@ -89,6 +97,9 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
             >
               <StepIcon status={step.status} />
               <span>{WORKFLOW.step(i + 1)}</span>
+              {step.status === 'waiting' ? (
+                <span className="workflow-step-waiting-label">{WORKFLOW.waiting}</span>
+              ) : null}
             </li>
           ))}
         </ol>
@@ -98,6 +109,7 @@ export function WorkflowCard({ block }: WorkflowCardProps) {
 }
 
 function StepIcon({ status }: { status: WorkflowStepStatus }) {
+  if (status === 'waiting') return <Clock size={13} className="workflow-step-waiting-icon" aria-hidden />
   if (status === 'running') return <Loader2 size={13} className="icon-spin" aria-hidden />
   if (status === 'failed') return <X size={13} aria-hidden />
   if (status === 'done') return <Check size={13} aria-hidden />
