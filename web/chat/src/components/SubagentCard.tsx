@@ -18,6 +18,10 @@ export interface SubagentCardProps {
   block: SubagentBlock
   onBrowserLogin?: (connectorId: string) => void
   onError?: (e: unknown) => void
+  /** Prefills the composer with a receipt-based continuation prompt. */
+  onContinue?: (text: string) => void
+  /** A live run is active or waiting for a human. */
+  continueDisabled?: boolean
 }
 
 type WaitingInfo = {
@@ -77,6 +81,24 @@ function mapRunStatus(status: string | undefined): SubagentBlock['status'] | und
   }
 }
 
+export function subagentContinuePrompt(block: SubagentBlock): string {
+  const status = statusLabel(block.status, block.waitingKind)
+  const lines = [`${SUBAGENT.title}「${block.goal || '子任务'}」${status}。`]
+  if (block.summary) lines.push(`${SUBAGENT.summary}: ${block.summary}`)
+  const facts = Object.entries(block.facts ?? {}).slice(0, 6)
+  if (facts.length > 0) {
+    lines.push(`${SUBAGENT.facts}:`)
+    for (const [k, v] of facts) lines.push(`- ${k}: ${shortText(v, 160)}`)
+  }
+  if (block.error) lines.push(`${SUBAGENT.error}: ${block.error}`)
+  if (block.status === 'succeeded') {
+    lines.push('请根据以上回执继续处理；如果没有需要继续的动作，简要告知我结果。')
+  } else {
+    lines.push('请判断是否需要重试或改用其他方式，并说明结果。')
+  }
+  return lines.join('\n')
+}
+
 function lastWaiting(events: Event[]): WaitingInfo | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i]
@@ -127,7 +149,13 @@ function eventLine(ev: Event): string | undefined {
   }
 }
 
-export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardProps) {
+export function SubagentCard({
+  block,
+  onBrowserLogin,
+  onError,
+  onContinue,
+  continueDisabled = false,
+}: SubagentCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [events, setEvents] = useState<Event[]>([])
@@ -295,6 +323,22 @@ export function SubagentCard({ block, onBrowserLogin, onError }: SubagentCardPro
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {block.async && terminalSubagentStatuses.has(effectiveStatus) && onContinue ? (
+        <div className="subagent-continue">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={continueDisabled}
+            onClick={() => onContinue(subagentContinuePrompt(block))}
+          >
+            {SUBAGENT.continueWork}
+          </Button>
+          {continueDisabled ? (
+            <span className="subagent-continue-hint">{SUBAGENT.continueBusy}</span>
+          ) : null}
+        </div>
       ) : null}
 
       {expanded ? (

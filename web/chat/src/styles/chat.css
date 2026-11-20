@@ -4111,3 +4111,15 @@ a.model-chip-empty:hover {
 .subagent-binding summary {
   cursor: pointer;
 }
+
+.subagent-continue {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.subagent-continue-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

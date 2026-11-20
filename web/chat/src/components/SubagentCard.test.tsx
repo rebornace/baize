@@ -119,6 +119,54 @@ describe('SubagentCard', () => {
     expect(resume).toHaveBeenCalledWith('run_child', 'approve', '')
   })
 
+  it('offers continue for an async terminal child and prefills a receipt prompt', () => {
+    const onContinue = vi.fn()
+    render(
+      <SubagentCard
+        block={{
+          ...block,
+          async: true,
+          status: 'succeeded',
+          summary: '税额合计 1240',
+          facts: { total_tax: '1240.00' },
+        }}
+        onContinue={onContinue}
+      />,
+    )
+    const btn = buttonByText('继续处理')
+    expect(btn).toBeTruthy()
+    act(() => {
+      btn!.click()
+    })
+    expect(onContinue).toHaveBeenCalledTimes(1)
+    const prompt = onContinue.mock.calls[0][0] as string
+    expect(prompt).toContain('税额合计 1240')
+    expect(prompt).toContain('total_tax')
+    expect(prompt).toContain('继续处理')
+  })
+
+  it('disables continue while a run is active', () => {
+    render(
+      <SubagentCard
+        block={{ ...block, async: true, status: 'succeeded', summary: 'ok' }}
+        onContinue={() => undefined}
+        continueDisabled
+      />,
+    )
+    expect(buttonByText('继续处理')!.disabled).toBe(true)
+    expect(host.textContent).toContain('当前回复结束后可继续')
+  })
+
+  it('does not offer continue for a sync child', () => {
+    render(
+      <SubagentCard
+        block={{ ...block, status: 'succeeded', summary: 'ok' }}
+        onContinue={() => undefined}
+      />,
+    )
+    expect(buttonByText('继续处理')).toBeUndefined()
+  })
+
   it('cancels a child only after a second confirmation', async () => {
     const cancel = vi
       .spyOn(api, 'cancelRun')

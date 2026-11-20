@@ -37,6 +37,8 @@ function renderActivityStepBlock(
     cloudModelRisk: boolean
     readOnly?: boolean
     priorEvidence?: ReturnType<typeof collectPriorEvidence>
+    onContinueSubagent?: (text: string) => void
+    subagentContinueDisabled?: boolean
   },
 ): ReactNode {
   if (b.kind === 'workflow') {
@@ -49,6 +51,8 @@ function renderActivityStepBlock(
         block={b}
         onBrowserLogin={opts.onBrowserLogin}
         onError={opts.reportError}
+        onContinue={opts.onContinueSubagent}
+        continueDisabled={opts.subagentContinueDisabled}
       />
     )
   }
@@ -90,6 +94,8 @@ export type ChatMessageListProps = {
   onCopyMessage: (m: ChatMessage) => void
   reportError: (e: unknown) => void
   onBrowserLogin?: (connectorId: string) => void
+  /** Async subagent completion → prefill the composer with its receipt. */
+  onContinueSubagent?: (text: string) => void
   /** Footer banner owns login CTAs; cards only show the message. */
   suppressLoginActions?: boolean
   cloudModelRisk?: boolean
@@ -146,6 +152,7 @@ export function ChatMessageList({
   onCopyMessage,
   reportError,
   onBrowserLogin,
+  onContinueSubagent,
   suppressLoginActions = false,
   cloudModelRisk = false,
 }: ChatMessageListProps) {
@@ -263,6 +270,8 @@ export function ChatMessageList({
                         suppressLoginActions,
                         cloudModelRisk,
                         readOnly: true,
+                        onContinueSubagent,
+                        subagentContinueDisabled: busy,
                       })
                     })
                     return (
@@ -367,6 +376,8 @@ export function ChatMessageList({
                 onBrowserLogin,
                 suppressLoginActions,
                 cloudModelRisk,
+                onContinueSubagent,
+                subagentContinueDisabled: busy,
                 priorEvidence:
                   block.kind === 'tool' && block.status === 'waiting_human'
                     ? collectPriorEvidence(liveBlocks, i)

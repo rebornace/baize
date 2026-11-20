@@ -566,6 +566,7 @@ export function ChatPage() {
           onCopyMessage={onCopyMessage}
           reportError={reportError}
           onBrowserLogin={onBrowserLogin}
+          onContinueSubagent={(text) => session.setComposerDraft(text)}
           suppressLoginActions={showLoginBanner}
           cloudModelRisk={cloudModelRisk}
         />
