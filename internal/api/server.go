@@ -465,6 +465,12 @@ func (s *Server) checkConversationAccess(ctx context.Context, convID string) err
 		if p.Role == controlplane.RoleAdmin {
 			return nil
 		}
+		// A fresh UI conversation exists in localStorage before its first run
+		// creates meta. Allow read access only while it has no messages; legacy
+		// meta-less rows with content stay forbidden.
+		if s.Messages == nil || len(s.Messages.List(convID)) == 0 {
+			return nil
+		}
 		return errConversationForbidden
 	}
 	if err != nil {

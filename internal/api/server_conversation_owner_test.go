@@ -99,6 +99,33 @@ func TestCrossOwnerMessagesForbidden(t *testing.T) {
 	}
 }
 
+func TestFreshEmptyConversationAllowedBeforeMeta(t *testing.T) {
+	_, _, h := ownerTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/c-fresh/messages", nil)
+	req.Header.Set("Authorization", "Bearer tb")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("fresh empty conversation want 200 got %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestMetaLessConversationWithMessagesStaysForbidden(t *testing.T) {
+	_, msgs, h := ownerTestServer(t)
+	if _, err := msgs.Append("c-legacy", conversation.Message{
+		Role: conversation.RoleUser, Content: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v0/conversations/c-legacy/messages", nil)
+	req.Header.Set("Authorization", "Bearer tb")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("meta-less conversation with messages want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestCreateRunEnsuresMetaOwner(t *testing.T) {
 	srv, msgs, h := ownerTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/v0/runs", strings.NewReader(

@@ -388,7 +388,7 @@ func (e *Engine) toolTimeout() time.Duration {
 // user turn in the prompt while injecting attachment text and image parts that
 // are never persisted to SQLite.
 func (e *Engine) buildMessages(system, conversationID, input string, userParts []llm.ContentPart) []llm.Message {
-	return e.buildMessagesWithLocale(system, conversationID, input, userParts, "")
+	return e.buildMessagesWithLocale(system, conversationID, input, userParts, "", true)
 }
 
 // buildMessagesForRun uses the run's locale for the clock hint while keeping
@@ -399,12 +399,21 @@ func (e *Engine) buildMessagesForRun(runID, system, conversationID, input string
 	if st := e.getRunSkillState(runID); st != nil {
 		locale = st.locale
 	}
-	return e.buildMessagesWithLocale(system, conversationID, input, userParts, locale)
+	includeHistory := true
+	if e.Store != nil {
+		if rec, err := e.Store.GetRun(runID); err == nil && rec != nil && rec.Depth > 0 {
+			// Scoped children get the brief, not the parent's transcript. Sharing
+			// conversation history made children imitate parent answers and
+			// blow up the brief-only contract.
+			includeHistory = false
+		}
+	}
+	return e.buildMessagesWithLocale(system, conversationID, input, userParts, locale, includeHistory)
 }
 
-func (e *Engine) buildMessagesWithLocale(system, conversationID, input string, userParts []llm.ContentPart, locale string) []llm.Message {
+func (e *Engine) buildMessagesWithLocale(system, conversationID, input string, userParts []llm.ContentPart, locale string, includeHistory bool) []llm.Message {
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: system}}
-	if e.Messages != nil && conversationID != "" {
+	if includeHistory && e.Messages != nil && conversationID != "" {
 		hist := e.Messages.ListWindow(conversationID, e.effectiveMaxMessages())
 		var sum conversation.RollingSummary
 		hasSummary := false
@@ -472,9 +481,11 @@ func (e *Engine) buildMessagesWithLocale(system, conversationID, input string, u
 	// Keeping it out of the prefix lets provider prefix caches survive a new
 	// run, a new clock second, or a changed memory hit.
 	dynamic := make([]llm.Message, 0, 3)
-	dynamic = e.appendActiveGoal(dynamic, conversationID)
-	if block := e.memoryBlock(e.memoryOwner(conversationID), input); block != "" {
-		dynamic = append(dynamic, llm.Message{Role: llm.RoleSystem, Content: block})
+	if includeHistory {
+		dynamic = e.appendActiveGoal(dynamic, conversationID)
+		if block := e.memoryBlock(e.memoryOwner(conversationID), input); block != "" {
+			dynamic = append(dynamic, llm.Message{Role: llm.RoleSystem, Content: block})
+		}
 	}
 	if hint := clockHint(locale); hint != "" {
 		dynamic = append(dynamic, llm.Message{Role: llm.RoleSystem, Content: hint})

@@ -117,7 +117,7 @@ export function focusActivityStepIndex(blocks: readonly ActivityStepBlock[]): nu
   if (waiting >= 0) return waiting
   const running = blocks.findIndex(
     (b) =>
-      (b.kind === 'tool' && (b.status === 'running' || b.status === 'approved')) ||
+      (b.kind === 'tool' && b.status === 'running') ||
       (b.kind === 'subagent' && b.status === 'running') ||
       (b.kind === 'workflow' && b.steps.some((s) => s.status === 'running')),
   )

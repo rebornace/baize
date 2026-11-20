@@ -27,6 +27,16 @@ describe('runDurationMsFromEvents', () => {
     expect(runDurationMsFromEvents([ev('')])).toBeUndefined()
     expect(runDurationMsFromEvents([])).toBeUndefined()
   })
+
+  it('ignores zero-value timestamps from old events', () => {
+    const start = Date.parse('2026-10-24T04:00:00.000Z')
+    expect(
+      runDurationMsFromEvents(
+        [ev('0001-01-01T00:00:00Z'), ev('2026-10-24T04:00:00.000Z')],
+        { untilMs: start + 2000 },
+      ),
+    ).toBe(2000)
+  })
 })
 
 describe('formatWallDuration', () => {

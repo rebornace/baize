@@ -1,6 +1,8 @@
 import type { Event } from './api'
 
 /** Wall-clock span of a run from earliest to latest event timestamp (ms). */
+const plausibleEpochMs = Date.UTC(2000, 0, 1)
+
 export function runDurationMsFromEvents(
   events: ReadonlyArray<Pick<Event, 'timestamp'>>,
   opts?: { untilMs?: number },
@@ -9,7 +11,9 @@ export function runDurationMsFromEvents(
   let max = Number.NEGATIVE_INFINITY
   for (const ev of events) {
     const t = Date.parse(ev.timestamp)
-    if (!Number.isFinite(t)) continue
+    // Zero-value Go timestamps serialize as year 1 and would make a live
+    // duration look like millions of hours. Real runs are always after 2000.
+    if (!Number.isFinite(t) || t < plausibleEpochMs) continue
     if (t < min) min = t
     if (t > max) max = t
   }

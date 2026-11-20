@@ -72,6 +72,15 @@ describe('focusActivityStepIndex', () => {
       ]),
     ).toBe(1)
   })
+
+  it('does not keep an approved step focused after its result arrives', () => {
+    expect(
+      focusActivityStepIndex([
+        { kind: 'tool', name: 'create', status: 'approved', runId: 'r' },
+        { kind: 'tool', name: 'create', status: 'succeeded', runId: 'r' },
+      ]),
+    ).toBe(1)
+  })
 })
 
 describe('shouldCollapseActivitySteps', () => {
