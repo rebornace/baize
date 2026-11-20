@@ -121,6 +121,81 @@ describe('MemorySettings', () => {
     host.remove()
   })
 
+  it('groups same-key entries and marks conflicts/near-duplicates', async () => {
+    vi.spyOn(api, 'listMemory').mockResolvedValue([
+      {
+        id: 'm1',
+        owner_id: 'alice',
+        key: 'survey.reporting',
+        text: '用户喜欢按完成人数汇报问卷',
+        source: 'explicit',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'm2',
+        owner_id: 'alice',
+        key: 'survey.reporting',
+        text: '用户喜欢按完成人数汇报',
+        source: 'auto',
+        created_at: '2026-01-02T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    const { host, root } = await renderMemory()
+    expect(host.textContent).toContain('survey.reporting')
+    expect(host.textContent).toContain(MEMORY.conflictSameKey)
+    expect(host.textContent).toContain(MEMORY.nearDup)
+    expect(host.querySelectorAll('[data-testid="memory-group"]')).toHaveLength(1)
+    root.unmount()
+    host.remove()
+  })
+
+  it('bulk deletes selected memories', async () => {
+    vi.spyOn(api, 'listMemory').mockResolvedValue([
+      {
+        id: 'm1',
+        owner_id: 'alice',
+        text: '喜欢绿茶',
+        source: 'explicit',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'm2',
+        owner_id: 'alice',
+        text: '住在杭州',
+        source: 'auto',
+        created_at: '2026-01-02T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    const deleteSpy = vi.spyOn(api, 'deleteMemory').mockResolvedValue()
+    const { host, root } = await renderMemory()
+
+    const checks = [...host.querySelectorAll<HTMLInputElement>('input[aria-label="选择这条记忆"]')]
+    expect(checks).toHaveLength(2)
+    await act(async () => {
+      checks[0].click()
+      checks[1].click()
+    })
+    const bulk = [...host.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(MEMORY.bulkDelete),
+    )
+    expect(bulk).toBeTruthy()
+    await act(async () => {
+      bulk!.click()
+    })
+    await act(async () => {
+      ;(host.querySelector('[data-testid="confirm-ok"]') as HTMLButtonElement).click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(deleteSpy).toHaveBeenCalledTimes(2)
+    root.unmount()
+    host.remove()
+  })
+
   it('filters by source and searches key or text', async () => {
     vi.spyOn(api, 'listMemory').mockResolvedValue([
       {
