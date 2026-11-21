@@ -35,11 +35,25 @@ func TestFormatHITLNotify(t *testing.T) {
 	got := FormatHITLNotify(&store.HITLPayload{
 		ToolName: "create_ticket",
 		Prompt:   "确认开单？",
-	})
+	}, "")
 	if !strings.Contains(got, "create_ticket") || !strings.Contains(got, "确认开单？") {
 		t.Fatalf("notify=%q", got)
 	}
 	if !strings.Contains(got, "批准") || !strings.Contains(got, "拒绝") {
 		t.Fatalf("missing decision hints: %q", got)
+	}
+	if strings.Contains(got, "打开链接审批") {
+		t.Fatalf("empty URL must not add link section: %q", got)
+	}
+}
+
+func TestFormatHITLNotifyWithLink(t *testing.T) {
+	url := "https://baize.example/v0/hitl/approvals/tok"
+	got := FormatHITLNotify(&store.HITLPayload{
+		ToolName: "create_ticket",
+		Prompt:   "确认开单？",
+	}, url)
+	if !strings.Contains(got, "打开链接审批") || !strings.Contains(got, url) {
+		t.Fatalf("missing approval link: %q", got)
 	}
 }

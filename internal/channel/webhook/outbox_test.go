@@ -101,10 +101,14 @@ func TestOutboxWorkerFourxxGoesDead(t *testing.T) {
 
 	ch, mem := newOutboxTestChannel(t, srv.URL)
 	startOutboxWorker(t, ch)
+	run, err := mem.CreateRun(store.CreateRunInput{ConversationID: "c1", Input: "dead outbound"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := ch.SendText(context.Background(), "peer1", "nope", map[string]string{
 		channel.ExtraKind: channel.OutboundKindAssistant,
-		"run_id":          "run_4xx",
+		"run_id":          run.ID,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +118,26 @@ func TestOutboxWorkerFourxxGoesDead(t *testing.T) {
 	}
 	if list[0].Attempt < 1 {
 		t.Fatalf("attempt=%d", list[0].Attempt)
+	}
+	events, err := mem.ListEvents(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.Type != "channel.outbound.dead" {
+			continue
+		}
+		found = true
+		if ev.Data["channel"] != "weixin" || ev.Data["error"] == "" {
+			t.Fatalf("event data=%+v", ev.Data)
+		}
+		if _, leaked := ev.Data["text"]; leaked {
+			t.Fatalf("dead event must not include payload text: %+v", ev.Data)
+		}
+	}
+	if !found {
+		t.Fatalf("missing channel.outbound.dead event: %+v", events)
 	}
 }
 

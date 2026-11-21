@@ -106,6 +106,8 @@ Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings �
 
 Workflow step approvals still hold a worker until decided or expired; a workflow approval that cannot cold-resume after a restart fails immediately with a re-run message. Wait duration is visible on chat approval cards and schedule rows.
 
+Channel approval notifications may include a short-lived signed link (`/v0/hitl/approvals/...`). The link lifetime follows the wait: 24h by default, or 24h when `approval_ttl_sec: 0`. Only `kind=approval` gets a link; login waits still use `/ui` or the hosted browser login.
+
 ### `conversation`
 
 | Field | Default / notes |
@@ -149,8 +151,8 @@ Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbo
 
 ### `runtime`
 
-- `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls` and to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`). Empty → no callback injection and no externally clickable hosted-login URL. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
-- `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing.
+- `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls`, to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`), and to mint **channel HITL approval links** (`/v0/hitl/approvals/...`). Empty → no callback injection and no externally clickable hosted-login or approval links. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
+- `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing; approval links reuse `callback_hmac_secret` with a domain-separated HMAC. To keep issued approval links valid across a process restart, set this secret explicitly; when empty, startup uses an ephemeral secret and old links stop working after restart.
 - `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; Chat `tool.result` spans add `baize.contract_hash` and `baize.catalog_revision` when present on event Data; export failures are fail-open.
 - `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
 - `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup and tees into an in-process ring (~last 500 lines) for Settings and `GET /v0/settings/logs`. **No log database**; cleared on restart. Durable capture depends on how you redirect process stderr (systemd / Docker / etc.).

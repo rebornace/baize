@@ -135,6 +135,57 @@ func TestSQLiteConcurrentInsertActiveCap(t *testing.T) {
 	}
 }
 
+func TestSQLiteMigratesClaimExpiresColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sched-old.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`
+CREATE TABLE conversation_schedules (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  instruction TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  timezone TEXT NOT NULL DEFAULT '',
+  fire_at TEXT NOT NULL DEFAULT '',
+  time_of_day TEXT NOT NULL DEFAULT '',
+  weekday INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  next_run_at TEXT NOT NULL,
+  running_run_id TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO conversation_schedules (
+  id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
+  status, next_run_at, running_run_id, last_error, revision
+) VALUES ('sched_old', 'alice', 'c1', 'old row', 'once', 'UTC', '', '', 0,
+  'active', '2026-10-16T12:00:00Z', '', '', 0);
+`); err != nil {
+		t.Fatal(err)
+	}
+	s, err := schedule.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it, ok, err := s.ClaimDue(now)
+	if err != nil || !ok {
+		t.Fatalf("claim after migration: ok=%v err=%v", ok, err)
+	}
+	if it.ID != "sched_old" || it.ClaimExpiresAt.IsZero() {
+		t.Fatalf("claimed=%+v", it)
+	}
+	if got := rowByID(t, s, "alice", "sched_old"); got.RunningRunID != schedule.ClaimPending ||
+		!got.ClaimExpiresAt.Equal(now.Add(schedule.ClaimLease)) {
+		t.Fatalf("row=%+v", got)
+	}
+}
+
 func TestSQLiteClaimConcurrentOneRow(t *testing.T) {
 	s := openSQLiteScheduleConcurrent(t)
 	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)

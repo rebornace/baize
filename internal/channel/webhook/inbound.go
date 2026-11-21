@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rebornace/baize/internal/channel"
+	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/webhooksig"
 )
 
@@ -67,6 +68,34 @@ func (c *Channel) inboundHandler() http.Handler {
 		if !c.peerAllowed(peer) {
 			log.Printf("webhook %s: peer %q not in allowlist; ignored", c.cfg.Name, peer)
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+			return
+		}
+		// Durable mode (production): persist the verified body and ack, then let
+		// the worker resolve attachments / create the run with retries. This
+		// keeps the adapter response fast even when attachment downloads are
+		// slow, and survives a restart.
+		if c.persist != nil {
+			key := strings.TrimSpace(msg.IdempotencyKey)
+			dedupe := ""
+			if key != "" {
+				dedupe = c.cfg.Name + ":" + key
+			}
+			created, _, err := c.persist.PutWebhookInboundJobIfAbsent(store.WebhookInboundJob{
+				DedupeKey: dedupe,
+				Channel:   c.cfg.Name,
+				Body:      append([]byte(nil), body...),
+			})
+			if err != nil {
+				log.Printf("webhook %s: persist inbound: %v", c.cfg.Name, err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist"})
+				return
+			}
+			if !created {
+				writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
+				return
+			}
+			c.wakeInboundWorker()
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 			return
 		}
 		// Best-effort idempotency (at-least-once delivery). The key is only

@@ -43,6 +43,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/decide"
 	"github.com/rebornace/baize/internal/eventbus"
+	"github.com/rebornace/baize/internal/hitllink"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/inbox"
 	"github.com/rebornace/baize/internal/llm"
@@ -84,7 +85,14 @@ func Serve(cfg config.Config, configPath string) error {
 	runtimeBase := localHTTPBase(listen)
 	logUIHint(cfg, runtimeBase)
 	applog.L().Info("listening", slog.String("component", "bootstrap"), slog.String("addr", listen))
-	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler()}
+	httpSrv := &http.Server{
+		Addr:              listen,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// WriteTimeout stays 0: /v0/runs/{id}/stream is SSE and must stay open.
+	}
 	srv.Shutdown = httpSrv.Shutdown
 	srv.RestartProcess = Reexec
 	reloadCtx, stopReload := context.WithCancel(context.Background())
@@ -179,7 +187,12 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 		t.Fatalf("listen runtime: %v", err)
 	}
 	runtimeURL = "http://" + runtimeLn.Addr().String()
-	httpSrv := &http.Server{Handler: apiSrv.Handler()}
+	httpSrv := &http.Server{
+		Handler:           apiSrv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() { _ = httpSrv.Serve(runtimeLn) }()
 
 	if err := waitHealthy(runtimeURL+"/healthz", 5*time.Second); err != nil {
@@ -621,6 +634,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.TierAdvisor = &routeTierAdvisor{settings: runtimeHolder, decider: decider}
 	// Prefer effective (YAML + KV) over the YAML-only value captured earlier.
 	srv.CallbackPublicBase = runtimeHolder.PublicBaseURL()
+	engine.HITLLinkURL = newHITLLinkURLFunc(callbackSecret, runtimeHolder.PublicBaseURL, cfg.HITLApprovalTTL(), st)
 	obs := runtimeHolder.Observability()
 	applog.Init(obs.LogFormat)
 	if err := otelCtl.Apply(context.Background(), otelx.Config{
@@ -800,7 +814,7 @@ const scheduleScanInterval = 15 * time.Second
 
 func runScheduleScanner(ctx context.Context, rt *storeRuntime, srv *api.Server) {
 	if srv != nil && srv.Schedules != nil {
-		if err := srv.Schedules.ClearStalePending(); err != nil {
+		if err := srv.Schedules.ClearStalePending(time.Now().UTC()); err != nil {
 			log.Printf("schedule scan: clear stale pending: %v", err)
 		}
 	}
@@ -1069,6 +1083,11 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 			if rt != nil && d.srv != nil {
 				// One guard shared by UI/API and every channel runtime.
 				rt.RunStarts = d.srv.RunStarts
+			}
+			if rt != nil && start {
+				// Resume text batches queued before the restart. Disabled
+				// channels keep their rows for the next successful start.
+				rt.RestorePending(ch)
 			}
 			if dir != "" {
 				handle.CredsDir = dir
@@ -1602,6 +1621,39 @@ func localHTTPBase(listen string) string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, port)
+}
+
+// newHITLLinkURLFunc builds the engine's optional approval-link builder. It
+// stays fail-open: no public base, non-approval waits, expired waits and token
+// signing errors all return an empty URL, leaving the channel text unchanged.
+func newHITLLinkURLFunc(secret []byte, publicBase func() string, ttl time.Duration, st store.Store) func(*store.Run, *store.HITLPayload) string {
+	if ttl <= 0 {
+		ttl = hitllink.DefaultTTL
+	}
+	return func(runRec *store.Run, payload *store.HITLPayload) string {
+		if runRec == nil || payload == nil {
+			return ""
+		}
+		if payload.Kind != "" && payload.Kind != store.HITLKindApproval {
+			return ""
+		}
+		base := ""
+		if publicBase != nil {
+			base = strings.TrimSpace(publicBase())
+		}
+		if base == "" || len(secret) == 0 {
+			return ""
+		}
+		wait := run.HITLWaitingSince(st, runRec)
+		if wait.IsZero() {
+			return ""
+		}
+		token, _, err := hitllink.Issue(secret, runRec.ID, wait, ttl, time.Now())
+		if err != nil {
+			return ""
+		}
+		return hitllink.FormatURL(base, token)
+	}
 }
 
 // resolveCallbackSecret returns the configured HMAC secret, or a freshly

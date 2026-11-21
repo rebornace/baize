@@ -34,7 +34,7 @@ foreach ($case in $cases) {
     -Text ([string]$case.input) -ConversationID ''
   $rid = [string]$create.run_id
   if (-not $rid) {
-    Write-Host "FAIL $id: no run_id from create"
+    Write-Host "FAIL ${id}: no run_id from create"
     $results += [pscustomobject]@{ id = $id; pass = $false; codes = @('NO_RUN'); detail = 'create failed'; calls = ''; run_status = 'error' }
     continue
   }
@@ -61,12 +61,19 @@ foreach ($case in $cases) {
   $tl = Get-ToolTimeline -Events $evs
   $stateSnap = $null
   if ($CheckState) {
-    $resp = Invoke-RestMethod -Method Get -Uri ($MockBaseUrl.TrimEnd('/') + '/tickets')
-    if ($resp -is [System.Array]) {
-      $stateSnap = [pscustomobject]@{ tickets = $resp }
-    } else {
-      $stateSnap = $resp
+    # Use curl + UTF-8 file: Invoke-RestMethod on PS5 decodes JSON as Latin-1
+    # and mangles non-ASCII ticket titles.
+    $stateRaw = Join-Path $OutDir ($id + '.state.raw.json')
+    curl.exe -s ($MockBaseUrl.TrimEnd('/') + '/tickets') -o $stateRaw
+    $resp = Get-Content $stateRaw -Raw -Encoding UTF8 | ConvertFrom-Json
+    Remove-Item $stateRaw -ErrorAction SilentlyContinue
+    # PS5 wraps a JSON array in a single object with value/Count; unwrap it so
+    # the snapshot is always {tickets: [...]}.
+    $items = @($resp)
+    if ($items.Count -eq 1 -and ($items[0].PSObject.Properties.Name -contains 'value')) {
+      $items = @($items[0].value)
     }
+    $stateSnap = [pscustomobject]@{ tickets = $items }
     $statePath = Join-Path $OutDir ($id + '.state.json')
     ($stateSnap | ConvertTo-Json -Depth 10) | Out-File $statePath -Encoding utf8
   }

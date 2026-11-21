@@ -1400,8 +1400,85 @@ func TestDeliverHITLNotifyWeixin(t *testing.T) {
 	if !strings.Contains(ch.texts[0].text, "create_ticket") || !strings.Contains(ch.texts[0].text, "批准") {
 		t.Fatalf("text = %q", ch.texts[0].text)
 	}
+	if strings.Contains(ch.texts[0].text, "打开链接审批") {
+		t.Fatalf("nil builder must not add link: %q", ch.texts[0].text)
+	}
 	if ch.texts[0].peer != "peer-1" {
 		t.Fatalf("peer = %q", ch.texts[0].peer)
+	}
+}
+
+func TestDeliverHITLNotifyAddsApprovalLink(t *testing.T) {
+	st := store.NewMemory()
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{
+		ID: "weixin:acc:peer-1", Source: "weixin", ChannelPeer: "peer-1",
+	})
+	ch := &outboundFakeChannel{}
+	called := 0
+	eng := &Engine{
+		Store: st, Messages: msgStore, Meta: msgStore, Outbound: ch,
+		HITLLinkURL: func(_ *store.Run, _ *store.HITLPayload) string {
+			called++
+			return "https://baize.example/v0/hitl/approvals/tok"
+		},
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x", ConversationID: "weixin:acc:peer-1"})
+	eng.deliverHITLNotify(r.ID, &store.HITLPayload{
+		ToolName: "create_ticket", Prompt: "开单？", Kind: store.HITLKindApproval,
+	})
+	if called != 1 {
+		t.Fatalf("builder called=%d", called)
+	}
+	if len(ch.texts) != 1 || !strings.Contains(ch.texts[0].text, "https://baize.example/v0/hitl/approvals/tok") {
+		t.Fatalf("outbound=%+v", ch.texts)
+	}
+}
+
+func TestDeliverHITLNotifySkipsLinkForNonApproval(t *testing.T) {
+	for _, kind := range []string{store.HITLKindLogin, store.HITLKindWaitingChild} {
+		t.Run(kind, func(t *testing.T) {
+			st := store.NewMemory()
+			msgStore := conversation.NewMemoryStore()
+			_ = msgStore.EnsureMeta(conversation.Meta{
+				ID: "weixin:acc:peer-1", Source: "weixin", ChannelPeer: "peer-1",
+			})
+			ch := &outboundFakeChannel{}
+			called := 0
+			eng := &Engine{
+				Store: st, Messages: msgStore, Meta: msgStore, Outbound: ch,
+				HITLLinkURL: func(_ *store.Run, _ *store.HITLPayload) string {
+					called++
+					return "https://baize.example/v0/hitl/approvals/tok"
+				},
+			}
+			r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x", ConversationID: "weixin:acc:peer-1"})
+			eng.deliverHITLNotify(r.ID, &store.HITLPayload{ToolName: "x", Kind: kind})
+			if called != 0 {
+				t.Fatalf("builder called for kind=%s", kind)
+			}
+			if strings.Contains(ch.texts[0].text, "打开链接审批") {
+				t.Fatalf("link leaked for kind=%s: %q", kind, ch.texts[0].text)
+			}
+		})
+	}
+}
+
+func TestDeliverHITLNotifyOmitsEmptyBuilderURL(t *testing.T) {
+	st := store.NewMemory()
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{
+		ID: "weixin:acc:peer-1", Source: "weixin", ChannelPeer: "peer-1",
+	})
+	ch := &outboundFakeChannel{}
+	eng := &Engine{
+		Store: st, Messages: msgStore, Meta: msgStore, Outbound: ch,
+		HITLLinkURL: func(_ *store.Run, _ *store.HITLPayload) string { return "" },
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "x", ConversationID: "weixin:acc:peer-1"})
+	eng.deliverHITLNotify(r.ID, &store.HITLPayload{ToolName: "create_ticket"})
+	if strings.Contains(ch.texts[0].text, "打开链接审批") {
+		t.Fatalf("empty builder must not add link: %q", ch.texts[0].text)
 	}
 }
 

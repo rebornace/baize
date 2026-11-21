@@ -90,6 +90,55 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
 - `FetchRemoteConfig(url)` → 返回 JSON 状态字符串  
 - 或 `ApplyRemoteConfigJSON(raw)`  
 
+远程配置也可以带一个 **OpenAPI 连接器**。默认只解析 GET；连接器设置 `"allow_writes": true` 后才解析 POST/PUT/PATCH（**DELETE 不支持**）：
+
+```json
+{
+  "api_base": "https://api.deepseek.com",
+  "model": "deepseek-chat",
+  "api_key": "...",
+  "readonly_api": {
+    "base_url": "https://tickets.example.com",
+    "auth_header": "Authorization",
+    "auth_value": "Bearer ...",
+    "spec": "openapi: 3.0.3 ...",
+    "allow_writes": true
+  }
+}
+```
+
+也可用 `"spec_url": "https://.../openapi.yaml"` 代替 `spec`（`FetchRemoteConfig` 会代下载）。无论读写，每次连接器调用都先返回 `needs_approval`，用户同意后才发请求。写操作额外约束：
+
+- 只支持 `application/json` request body；对象 schema 展开为工具参数，数组 / 标量 schema 用单个 `body` 参数传完整 JSON。
+- 请求体上限 64 KiB；不跟随 3xx 重定向（直接返回状态，避免请求体或认证头被转到别处）。
+- path / query 参数照常支持；写工具与读工具共用全局唯一工具名。
+
+需要多个连接器时用 `readonly_apis` 数组（与 `readonly_api` 互斥；每个连接器 `spec` / `spec_url` 二选一，并各自决定是否 `allow_writes`）：
+
+```json
+"readonly_apis": [
+  {
+    "id": "tickets",
+    "base_url": "https://tickets.example.com",
+    "auth_header": "Authorization",
+    "auth_value": "Bearer ...",
+    "spec": "openapi: 3.0.3 ...",
+    "allow_writes": true
+  },
+  {
+    "id": "crm",
+    "base_url": "https://crm.example.com",
+    "auth_header": "X-API-Key",
+    "auth_value": "...",
+    "spec_url": "https://crm.example.com/openapi.yaml"
+  }
+]
+```
+
+工具名必须在所有连接器与内置工具之间唯一；最多 8 个连接器、100 个工具。SDK 也可直接调用 `ConfigureReadOnlyAPIs(json)`（JSON 数组，字段同上）。单连接器 API `ConfigureReadOnlyAPI(...)` 始终只读；需要写操作时用 JSON 形式并设置 `allow_writes`。
+
+当前仓库中的 Android AAR 已包含新 API；iOS XCFramework 需要在 macOS 上重跑 `./scripts/build-mobileagent-ios.sh` 后才包含。
+
 空壳里 Android `CredentialStore` / iOS Keychain 演示了「App 持钥、再 Configure」——自定义 UI 也应同样做。
 
 **发消息（带工具循环）：**
@@ -108,10 +157,10 @@ let raw = MobileagentSend(userText)
 | `status` | 含义 | 界面建议 |
 |----------|------|----------|
 | `done` | 本轮结束 | 展示字段 `text` |
-| `needs_approval` | 待批工具（当前为 `http_get`） | 展示 `summary` / `name`；用户点批准 → `Approve(call_id)`，驳回 → `Deny(call_id)` |
+| `needs_approval` | 待批工具（`http_get` 或连接器调用，含写操作） | 展示 `summary` / `name` / `method`；写操作还带 `write: true`。用户点批准 → `Approve(call_id)`，驳回 → `Deny(call_id)` |
 | `error` | 失败 | 展示 `message` |
 
-`needs_approval` 时还会有 `call_id`、`name`、`args_json`、`summary`。在用户点选之前不要再 `Send`。
+`needs_approval` 时还会有 `call_id`、`name`、`args_json`、`summary`、`method`。写操作的 `summary` 形如 `POST /tickets {"title":"VPN 故障"}`，可直接放进审批卡。在用户点选之前不要再 `Send`。
 
 ```kotlin
 when (val status = JSONObject(raw).getString("status")) {
@@ -135,9 +184,31 @@ val cont = mobileagent.Mobileagent.approve(callId)
 | `Reset()` | 清空内存历史（保留已 Configure 的地址/模型） |
 | `MessageCount()` | 当前会话消息条数 |
 | `HasAPIKey()` | 内存里是否已有 key |
+| `ConfigureReadOnlyAPI(base, authHeader, authValue, spec)` | 配置一个 GET-only OpenAPI 连接器；失败保留旧工具 |
+| `ConfigureReadOnlyAPIs(json)` | 用 JSON 数组一次配置多个连接器；`allow_writes` 可选；工具名全局唯一，最多 8 个连接器 |
+| `ClearReadOnlyAPI()` | 清空连接器工具与待批远程调用 |
+| `RemoteToolCount()` | 当前连接器工具数 |
+| `RemoteWriteToolCount()` | 其中 POST/PUT/PATCH 写工具数 |
+| `RemoteToolNames()` | 当前工具名（逗号分隔；空串表示没有） |
 | `NewAgent()` | 独立会话（多会话时用实例方法，而不是包级默认会话） |
 
 桌面可先不绑手机：`go run ./cmd/mobilebind`；本地假模型：`go run ./cmd/mobilebind/mockllm`（模拟器里 Android 访问宿主机常用 `http://10.0.2.2:端口/v1`）。
+
+**本地演示连接器：** 再开一个进程（同一进程同时提供 config、OpenAPI spec 和演示票据 API，含一个 POST 写操作）：
+
+```powershell
+go run ./cmd/mobilebind/demo-connector -addr 127.0.0.1:18081
+```
+
+空壳里的 Remote config URL 填：
+
+- Android 模拟器：`http://10.0.2.2:18081/config.json`
+- iOS 模拟器：`http://127.0.0.1:18081/config.json`
+- 真机：用 `-addr 0.0.0.0:18081`，填电脑的局域网 IP
+
+点 `Fetch config` 后界面应显示 `Tools: list_tickets, create_ticket, get_ticket`（Android 空壳在有写工具时追加 `(1 write)`）；让模型列出工单时会出现 `GET /tickets?...` 审批卡，创建工单时会出现 `POST /tickets {"title":…}` 审批卡（带 `write: true`），同意后才发请求。演示头 `X-API-Key: demo-key` 只用于本机，生产必须换成自己的认证。
+
+空壳启动时若已保存过 Remote config URL，会自动重拉一次，无需再点按钮；网络失败则静默保留本地 LLM 配置（工具为空），下次启动再试。
 
 ### 3. 你负责 / SDK 负责
 
@@ -147,7 +218,7 @@ val cont = mobileagent.Mobileagent.approve(callId)
 | 安全存 key、远程配置拉取策略 | 内存里的会话与工具循环 |
 | 线程：网络调用勿堵主线程 | 返回 JSON，不碰 UI |
 
-当前工具面：`get_time`（直接执行）；`http_get`（先 `needs_approval`）。没有完整旁挂上的连接器 / MCP / 渠道。
+当前工具面：`get_time`（直接执行）；`http_get`（先 `needs_approval`）；最多 8 个 OpenAPI 连接器（GET 默认解析，设置 `allow_writes` 后增加 POST/PUT/PATCH；每次调用都先 `needs_approval`，支持 path/query/JSON body 与每个连接器一个自定义认证头）。没有完整桌面连接器 / MCP / 渠道。
 
 ### 4. iOS 上架（M3）
 
@@ -157,6 +228,15 @@ val cont = mobileagent.Mobileagent.approve(callId)
 - 商店文案 / 隐私回答 / 审核备注 / 截图尺寸 / 提审清单：[`mobile/rt-shell-ios/AppStore/README.md`](../../mobile/rt-shell-ios/AppStore/README.md)
 
 签名、TestFlight、App Review 需要 Apple Developer 账号；仓库不包含证书、Team ID 或审核用演示 key。
+
+### 5. Android 上架（M3）
+
+- 工程：[`mobile/rt-shell/`](../../mobile/rt-shell/)；已含自适应/传统图标、启动背景、Manifest、版本 1.0.0、Gradle Wrapper、签名模板。
+- 校验：`python mobile/rt-shell/scripts/check-release.py`
+- 归档：复制 `keystore.properties.example` 并填本地签名，再运行 `.\mobile\rt-shell\scripts\archive-android.ps1`
+- 商店文案 / Data safety / 截图尺寸 / 提审清单：[`mobile/rt-shell/PlayStore/README.md`](../../mobile/rt-shell/PlayStore/README.md)
+
+Play Console、上传密钥与提审需要账号；仓库不包含 keystore、密码或审核用演示 key。
 
 ---
 

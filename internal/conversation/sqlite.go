@@ -71,8 +71,10 @@ CREATE TABLE IF NOT EXISTS conversation_goals (
 `
 
 const (
-	defaultSearchTopK = 8
-	maxSearchTopK     = 20
+	defaultSearchTopK     = 8
+	maxSearchTopK         = 20
+	defaultSearchAllLimit = 20
+	maxSearchAllLimit     = 50
 )
 
 // SQLiteStore persists conversation messages in SQLite.
@@ -158,6 +160,16 @@ func clampSearchTopK(topK int) int {
 	return topK
 }
 
+func clampSearchAllLimit(limit int) int {
+	if limit <= 0 {
+		return defaultSearchAllLimit
+	}
+	if limit > maxSearchAllLimit {
+		return maxSearchAllLimit
+	}
+	return limit
+}
+
 func messagesFTSMatchQuery(term string) string {
 	term = strings.ReplaceAll(term, `"`, `""`)
 	return `"` + term + `"`
@@ -191,12 +203,123 @@ func (s *SQLiteStore) Search(conversationID, query string, topK int) ([]Message,
 	return out, nil
 }
 
+// SearchAll finds messages across conversations. SQLite uses FTS5 with LIKE
+// fallback; Postgres uses ILIKE.
+func (s *SQLiteStore) SearchAll(query string, limit int) ([]Message, error) {
+	return s.SearchAllFiltered(SearchFilter{Query: query, Limit: limit})
+}
+
+// SearchAllFiltered applies conversation/role/time filters before the limit.
+func (s *SQLiteStore) SearchAllFiltered(filter SearchFilter) ([]Message, error) {
+	filter = filter.normalized()
+	if filter.Query == "" {
+		return nil, nil
+	}
+	if s.dialect == store.DialectPostgres {
+		return s.searchPostgresAll(filter)
+	}
+	out, err := s.searchFTSAll(filter)
+	if err != nil || len(out) == 0 {
+		like, likeErr := s.searchLIKEAll(filter)
+		if likeErr != nil {
+			if err != nil {
+				return nil, err
+			}
+			return nil, likeErr
+		}
+		if len(like) > 0 {
+			return like, nil
+		}
+		// LIKE succeeded (possibly with zero rows), so an FTS syntax error is
+		// not fatal: the fallback already answered the query.
+		return out, nil
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) searchFTSAll(filter SearchFilter) ([]Message, error) {
+	clauses, args := filter.whereClauses()
+	where := append([]string{"messages_fts MATCH ?"}, clauses...)
+	args = append([]any{messagesFTSMatchQuery(filter.Query)}, args...)
+	args = append(args, filter.Limit)
+	rows, err := s.query(
+		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
+		 FROM messages m
+		 INNER JOIN messages_fts ON messages_fts.rowid = m.rowid
+		 WHERE `+strings.Join(where, " AND ")+`
+		 ORDER BY m.created_at DESC
+		 LIMIT ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessageRows(rows)
+}
+
+func (s *SQLiteStore) searchLIKEAll(filter SearchFilter) ([]Message, error) {
+	return s.searchLIKEAllMatching(filter, "LIKE")
+}
+
+func (s *SQLiteStore) searchPostgresAll(filter SearchFilter) ([]Message, error) {
+	return s.searchLIKEAllMatching(filter, "ILIKE")
+}
+
+func (s *SQLiteStore) searchLIKEAllMatching(filter SearchFilter, op string) ([]Message, error) {
+	clauses, args := filter.whereClauses()
+	where := append([]string{"m.content " + op + " ?"}, clauses...)
+	args = append([]any{"%" + filter.Query + "%"}, args...)
+	args = append(args, filter.Limit)
+	rows, err := s.query(
+		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
+		 FROM messages m
+		 WHERE `+strings.Join(where, " AND ")+`
+		 ORDER BY m.created_at DESC
+		 LIMIT ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessageRows(rows)
+}
+
+// whereClauses builds the shared filter predicates for cross-conversation
+// searches. All columns are qualified with the m alias.
+func (f SearchFilter) whereClauses() ([]string, []any) {
+	var clauses []string
+	var args []any
+	if f.ConversationID != "" {
+		clauses = append(clauses, "m.conversation_id = ?")
+		args = append(args, f.ConversationID)
+	}
+	if len(f.Roles) > 0 {
+		placeholders := make([]string, len(f.Roles))
+		for i, role := range f.Roles {
+			placeholders[i] = "?"
+			args = append(args, role)
+		}
+		clauses = append(clauses, "m.role IN ("+strings.Join(placeholders, ", ")+")")
+	}
+	if !f.Since.IsZero() {
+		clauses = append(clauses, "m.created_at >= ?")
+		args = append(args, f.Since.UTC().Format(time.RFC3339Nano))
+	}
+	if !f.Until.IsZero() {
+		clauses = append(clauses, "m.created_at < ?")
+		args = append(args, f.Until.UTC().Format(time.RFC3339Nano))
+	}
+	return clauses, args
+}
+
 func (s *SQLiteStore) searchFTS(conversationID, query string, topK int) ([]Message, error) {
 	rows, err := s.query(
 		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
 		 FROM messages m
-		 INNER JOIN messages_fts fts ON fts.rowid = m.rowid
-		 WHERE m.conversation_id = ? AND fts MATCH ?
+		 INNER JOIN messages_fts ON messages_fts.rowid = m.rowid
+		 WHERE m.conversation_id = ? AND messages_fts MATCH ?
 		 ORDER BY m.created_at DESC
 		 LIMIT ?`,
 		conversationID, messagesFTSMatchQuery(query), topK,

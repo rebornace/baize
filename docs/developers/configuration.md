@@ -106,6 +106,8 @@ connector_groups:
 
 工作流步骤审批仍占 worker 直到决策或过期；启动时无法冷恢复的工作流审批会直接失败并提示重新发起。等待时长在聊天审批卡与日程列表可见。
 
+渠道审批提醒可附带短时签名链接（`/v0/hitl/approvals/...`）。链接有效期跟随等待期：默认 24h；`approval_ttl_sec: 0` 时按 24h 签发。只有 `kind=approval` 才带链接；登录等待仍需回到 `/ui` 或浏览器托管登录。
+
 ### `conversation`
 
 | 字段 | 默认 / 说明 |
@@ -149,8 +151,8 @@ Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
 
 ### `runtime`
 
-- `public_base_url`：公网可达的 Runtime 基址（无尾斜杠）。用于向侧车注入 `callback_urls`，以及签发**托管登录页** / MCP 重登链接（`/v0/auth/hosted/...`）。空则不注入 callback，也无法生成外网可点的托管登录 URL。云端 Agent / 浏览器须能打开该地址（勿对公网场景使用仅本机可达的 `127.0.0.1`）。也可在设置「运行参数」或「对外登录」向导中填写。
-- `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名。
+- `public_base_url`：公网可达的 Runtime 基址（无尾斜杠）。用于向侧车注入 `callback_urls`，以及签发**托管登录页** / MCP 重登链接（`/v0/auth/hosted/...`）和**渠道 HITL 审批链接**（`/v0/hitl/approvals/...`）。空则不注入 callback，也无法生成外网可点的托管登录或审批链接。云端 Agent / 浏览器须能打开该地址（勿对公网场景使用仅本机可达的 `127.0.0.1`）。也可在设置「运行参数」或「对外登录」向导中填写。
+- `callback_hmac_secret`、`callback_token_ttl_sec`（默认 3600）：侧车 callback 签名；审批链接也复用 `callback_hmac_secret` 做域隔离的 HMAC。要让已发出的审批链接在进程重启后仍可用，请显式配置该 secret；留空时使用启动时生成的 ephemeral secret，旧链接会在重启后失效。
 - `otel_otlp_endpoint`：可选 OTLP HTTP traces 端点（如 `http://localhost:4318`）。**空=关闭**，不拨号、不影响默认路径。打开后把 Run 生命周期与 `tool.result`（及 MCP 导出调用）导出为 span；Chat `tool.result` span 在事件 Data 有时写入 `baize.contract_hash`、`baize.catalog_revision`；失败 fail-open。
 - `otel_service_name`：OTel `service.name`，默认 `baize`（仅在 endpoint 非空时生效）。
 - `log_format`：`text`（默认）或 `json`；也可用环境变量 **`BAIZE_LOG_FORMAT`**（非法值回退 `text`）。启动时初始化 `slog` 输出到 stderr，并 tee 到进程内环形缓冲（约最近 500 行），供管理后台与 `GET /v0/settings/logs` 查看；**不写日志库**，重启清空。完整落盘取决于进程 stderr 的重定向（systemd / Docker 等）。

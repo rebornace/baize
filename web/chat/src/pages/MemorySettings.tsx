@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Brain } from 'lucide-react'
 import {
   createMemory,
@@ -22,6 +22,15 @@ import {
 import { groupMemory, type MemoryGroup } from '../memoryGroups'
 import { MEMORY, friendlyError } from '../strings'
 
+const PAGE_SIZE = 50
+
+function queryOpts(query: string, source: 'all' | 'explicit' | 'auto') {
+  const out: { q?: string; source?: 'explicit' | 'auto' } = {}
+  if (query) out.q = query
+  if (source !== 'all') out.source = source
+  return out
+}
+
 function sourceLabel(source: string): string {
   switch (source) {
     case 'explicit':
@@ -36,6 +45,9 @@ function sourceLabel(source: string): string {
 export function MemorySettings() {
   const { toasts, push, dismiss } = useToast()
   const [items, setItems] = useState<MemoryEntry[] | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadedTargetRef = useRef(PAGE_SIZE)
   const [newText, setNewText] = useState('')
   const [newKey, setNewKey] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -48,27 +60,73 @@ export function MemorySettings() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [sourceFilter, setSourceFilter] = useState<'all' | 'explicit' | 'auto'>('all')
-  const [search, setSearch] = useState('')
-
-  const refresh = useCallback(async () => {
-    try {
-      setItems(await listMemory({ limit: 100 }))
-    } catch (err) {
-      setItems(null)
-      const f = friendlyError(err)
-      push({ tone: 'error', title: MEMORY.loadFailed, detail: f.detail ?? f.title })
-    }
-  }, [push])
+  const [searchInput, setSearchInput] = useState('')
+  const [query, setQuery] = useState('')
+  const requestSeqRef = useRef(0)
 
   useEffect(() => {
-    void refresh()
+    const timer = setTimeout(() => setQuery(searchInput.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
+  const refresh = useCallback(
+    async (reset = false) => {
+      const seq = ++requestSeqRef.current
+      if (reset) {
+        loadedTargetRef.current = PAGE_SIZE
+        setHasMore(false)
+      }
+      const limit = loadedTargetRef.current
+      try {
+        const next = await listMemory({ limit, ...queryOpts(query, sourceFilter) })
+        if (seq !== requestSeqRef.current) return
+        setItems(next)
+        loadedTargetRef.current = Math.max(
+          PAGE_SIZE,
+          Math.ceil(next.length / PAGE_SIZE) * PAGE_SIZE,
+        )
+        setHasMore(next.length >= limit)
+      } catch (err) {
+        if (seq !== requestSeqRef.current) return
+        const f = friendlyError(err)
+        push({ tone: 'error', title: MEMORY.loadFailed, detail: f.detail ?? f.title })
+      }
+    },
+    [push, query, sourceFilter],
+  )
+
+  useEffect(() => {
+    void refresh(true)
   }, [refresh])
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || items === null) return
+    const seq = ++requestSeqRef.current
+    setLoadingMore(true)
+    try {
+      const next = await listMemory({
+        limit: PAGE_SIZE,
+        offset: items.length,
+        ...queryOpts(query, sourceFilter),
+      })
+      if (seq !== requestSeqRef.current) return
+      setItems((prev) => [...(prev ?? []), ...next])
+      loadedTargetRef.current += PAGE_SIZE
+      setHasMore(next.length === PAGE_SIZE)
+    } catch (err) {
+      if (seq !== requestSeqRef.current) return
+      const f = friendlyError(err)
+      push({ tone: 'error', title: MEMORY.loadMoreFailed, detail: f.detail ?? f.title })
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [hasMore, items, loadingMore, push, query, sourceFilter])
 
   useEffect(() => {
     setSelected(new Set())
     setBulkOpen(false)
     setBulkError(null)
-  }, [sourceFilter, search])
+  }, [sourceFilter, query])
 
   const onCreate = async (e: FormEvent) => {
     e.preventDefault()
@@ -199,20 +257,13 @@ export function MemorySettings() {
     })
   }
 
-  const filtered = useMemo(() => {
-    return (items ?? []).filter((entry) => {
-      if (sourceFilter !== 'all' && entry.source !== sourceFilter) return false
-      const q = search.trim().toLowerCase()
-      if (!q) return true
-      return (
-        (entry.key ?? '').toLowerCase().includes(q) || entry.text.toLowerCase().includes(q)
-      )
-    })
-  }, [items, sourceFilter, search])
-  const groups = useMemo(() => groupMemory(filtered), [filtered])
+  const groups = useMemo(() => groupMemory(items ?? []), [items])
 
-  const showEmpty = items !== null && items.length === 0
+  const hasActiveFilter = query !== '' || sourceFilter !== 'all'
+  const showEmpty = items !== null && items.length === 0 && !hasActiveFilter
+  const showNoMatches = items !== null && items.length === 0 && hasActiveFilter
   const hasItems = items !== null && items.length > 0
+  const showToolbar = items !== null && (items.length > 0 || hasActiveFilter)
 
   return (
     <div className="settings-panel settings-memory">
@@ -253,7 +304,7 @@ export function MemorySettings() {
         />
       )}
 
-      {hasItems && (
+      {showToolbar && (
         <div className="settings-toolbar">
           <select
             name="memory-source"
@@ -270,10 +321,15 @@ export function MemorySettings() {
             name="memory-search"
             aria-label={MEMORY.searchPlaceholder}
             placeholder={MEMORY.searchPlaceholder}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             disabled={busy}
           />
+          <span className="settings-muted">
+            {hasMore
+              ? MEMORY.loadedCount(items?.length ?? 0)
+              : MEMORY.loadedAll(items?.length ?? 0)}
+          </span>
           {selected.size > 0 ? (
             <span className="memory-selected">
               {MEMORY.selectedCount(selected.size)}
@@ -295,9 +351,11 @@ export function MemorySettings() {
         </div>
       )}
 
-      {hasItems && filtered.length === 0 && (
-        <p className="settings-muted">{MEMORY.noMatches}</p>
+      {showToolbar && hasMore && (
+        <p className="settings-muted memory-scope-hint">{MEMORY.scopeHint}</p>
       )}
+
+      {showNoMatches && <p className="settings-muted">{MEMORY.noMatches}</p>}
 
       <div className="memory-groups">
         {groups.map((group) => {
@@ -424,6 +482,19 @@ export function MemorySettings() {
           )
         })}
       </div>
+
+      {hasItems && hasMore && (
+        <div className="settings-toolbar">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy || loadingMore}
+            onClick={() => void loadMore()}
+          >
+            {loadingMore ? MEMORY.loadingMore : MEMORY.loadMore}
+          </Button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={pendingDelete !== null}

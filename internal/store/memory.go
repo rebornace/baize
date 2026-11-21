@@ -23,7 +23,9 @@ type Memory struct {
 	inboxDeliveries      map[string]map[string]InboxDelivery
 	inboxThreads         map[string]map[string]string
 	webhookOutbox        map[string]WebhookOutboxEntry
+	webhookInbound       map[string]WebhookInboundJob
 	channelOutbox        map[string]ChannelOutboxEntry
+	channelPending       map[string]ChannelPending
 	mcpExportIDs         map[string]MCPExportIdentity
 	mcpExportKeys        map[string]MCPExportKey
 	modelProfiles        map[string]ModelProfile
@@ -46,7 +48,9 @@ func NewMemory() *Memory {
 		inboxDeliveries:  map[string]map[string]InboxDelivery{},
 		inboxThreads:     map[string]map[string]string{},
 		webhookOutbox:    map[string]WebhookOutboxEntry{},
+		webhookInbound:   map[string]WebhookInboundJob{},
 		channelOutbox:    map[string]ChannelOutboxEntry{},
+		channelPending:   map[string]ChannelPending{},
 		mcpExportIDs:     map[string]MCPExportIdentity{},
 		mcpExportKeys:    map[string]MCPExportKey{},
 		modelProfiles:    map[string]ModelProfile{},

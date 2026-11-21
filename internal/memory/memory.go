@@ -144,13 +144,28 @@ func (s *MemoryStore) Delete(ownerID, id string) error {
 }
 
 func (s *MemoryStore) List(ownerID string, limit, offset int) ([]Entry, error) {
+	return s.ListFiltered(ownerID, "", "", limit, offset)
+}
+
+func (s *MemoryStore) ListFiltered(ownerID, query, source string, limit, offset int) ([]Entry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	q := strings.ToLower(strings.TrimSpace(query))
+	src := strings.TrimSpace(source)
 	var all []Entry
 	for _, e := range s.byID {
-		if e.OwnerID == ownerID {
-			all = append(all, e)
+		if e.OwnerID != ownerID {
+			continue
 		}
+		if src != "" && e.Source != src {
+			continue
+		}
+		if q != "" &&
+			!strings.Contains(strings.ToLower(e.Key), q) &&
+			!strings.Contains(strings.ToLower(e.Text), q) {
+			continue
+		}
+		all = append(all, e)
 	}
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].UpdatedAt.Equal(all[j].UpdatedAt) {

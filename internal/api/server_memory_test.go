@@ -98,6 +98,82 @@ func TestMemorySettingsCRUDIsolation(t *testing.T) {
 	}
 }
 
+func TestMemorySettingsListFilter(t *testing.T) {
+	srv := memorySettingsServer(t)
+	h := srv.Handler()
+
+	tea, err := srv.Memory.Upsert(memory.Entry{
+		OwnerID: "alice", Key: "Preference.Tea", Text: "Green tea", Source: memory.SourceExplicit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	city, err := srv.Memory.Upsert(memory.Entry{
+		OwnerID: "alice", Key: "city", Text: "Hangzhou", Source: memory.SourceAuto,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Memory.Upsert(memory.Entry{
+		OwnerID: "bob", Key: "tea", Text: "Green tea", Source: memory.SourceExplicit,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	list := func(path string) (int, []memory.Entry) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, withNamedOp(httptest.NewRequest(http.MethodGet, path, nil), "alice-token"))
+		var body struct {
+			Items []memory.Entry `json:"items"`
+		}
+		if rec.Code == http.StatusOK {
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode %s: %v", path, err)
+			}
+		}
+		return rec.Code, body.Items
+	}
+
+	code, items := list("/v0/settings/memory?q=GREEN")
+	if code != http.StatusOK || len(items) != 1 || items[0].ID != tea.ID {
+		t.Fatalf("q=GREEN code=%d items=%+v", code, items)
+	}
+	code, items = list("/v0/settings/memory?q=city")
+	if code != http.StatusOK || len(items) != 1 || items[0].ID != city.ID {
+		t.Fatalf("q=city code=%d items=%+v", code, items)
+	}
+	code, items = list("/v0/settings/memory?source=auto")
+	if code != http.StatusOK || len(items) != 1 || items[0].ID != city.ID {
+		t.Fatalf("source=auto code=%d items=%+v", code, items)
+	}
+	code, items = list("/v0/settings/memory?q=green&source=explicit")
+	if code != http.StatusOK || len(items) != 1 || items[0].ID != tea.ID {
+		t.Fatalf("q+source code=%d items=%+v", code, items)
+	}
+	code, items = list("/v0/settings/memory?source=all&q=green")
+	if code != http.StatusOK || len(items) != 1 || items[0].ID != tea.ID {
+		t.Fatalf("source=all code=%d items=%+v", code, items)
+	}
+
+	code, _ = list("/v0/settings/memory?source=unknown")
+	if code != http.StatusBadRequest {
+		t.Fatalf("invalid source code=%d", code)
+	}
+
+	for i := 0; i < 60; i++ {
+		if _, err := srv.Memory.Upsert(memory.Entry{
+			OwnerID: "alice", Text: "filler", Source: memory.SourceExplicit,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, items = list("/v0/settings/memory")
+	if code != http.StatusOK || len(items) != 50 {
+		t.Fatalf("default limit code=%d len=%d", code, len(items))
+	}
+}
+
 func TestMemorySettingsPatchOwnEntry(t *testing.T) {
 	srv := memorySettingsServer(t)
 	h := srv.Handler()

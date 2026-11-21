@@ -42,7 +42,9 @@ function Get-ToolTimeline {
         }
       }
     } elseif ($ev.type -eq 'tool.result') {
-      $id = [string]$ev.data.id
+      # Runtime emits tool_call_id; older fixtures used id.
+      $id = [string]$ev.data.tool_call_id
+      if (-not $id) { $id = [string]$ev.data.id }
       if ($byId.ContainsKey($id)) {
         $t = $byId[$id]
         $t.has_result = $true

@@ -110,8 +110,14 @@ func TestRenderSuccessPageLocales(t *testing.T) {
 	if !strings.Contains(zh, "已登录") || !strings.Contains(zh, `lang="zh-CN"`) {
 		t.Fatal(zh)
 	}
+	if !strings.Contains(zh, "我已登录，继续") {
+		t.Fatalf("zh success page must explain the chat continue step: %s", zh)
+	}
 	en := RenderSuccessPage("en")
 	if !strings.Contains(en, "Signed in") || !strings.Contains(en, `lang="en"`) {
 		t.Fatal(en)
+	}
+	if !strings.Contains(en, "MCP / external tool") {
+		t.Fatalf("en success page must explain the chat continue step: %s", en)
 	}
 }

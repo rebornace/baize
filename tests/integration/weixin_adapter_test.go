@@ -147,7 +147,7 @@ func TestWeixinAdapterE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp2.StatusCode != http.StatusOK {
+	if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusAccepted {
 		b, _ := io.ReadAll(resp2.Body)
 		t.Fatalf("inbound=%d body=%s", resp2.StatusCode, b)
 	}

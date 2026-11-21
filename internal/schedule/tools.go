@@ -47,7 +47,11 @@ func CreateSpec() llm.ToolSpec {
 				},
 				"fire_at": map[string]any{
 					"type":        "string",
-					"description": "Required for once: RFC3339 instant strictly after now",
+					"description": "For once: RFC3339 instant strictly after now (or use in_minutes)",
+				},
+				"in_minutes": map[string]any{
+					"type":        "integer",
+					"description": "For once: alternative to fire_at, minutes from now (1–43200)",
 				},
 				"time_of_day": map[string]any{
 					"type":        "string",
@@ -108,6 +112,10 @@ func CreateInvoker(store Store, meta MetaReader, now func() time.Time) tool.Invo
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true, nil
 		}
+		if d.Kind == "once" {
+			// Resolve in_minutes to the concrete instant stored on the row.
+			d.FireAt = next
+		}
 		it, err := store.Insert(Item{
 			OwnerID:        owner,
 			ConversationID: conv,
@@ -146,15 +154,26 @@ func draftFromArgs(args map[string]any) (Draft, error) {
 	d := Draft{Kind: kind, Instruction: instruction, Timezone: tz}
 	switch kind {
 	case "once":
-		fireRaw, ok := stringArg(args, "fire_at")
-		if !ok {
-			return Draft{}, fmt.Errorf("schedule: fire_at required for once")
+		fireRaw, hasFire := stringArg(args, "fire_at")
+		minutes, hasMinutes := intArg(args, "in_minutes")
+		if hasFire && hasMinutes {
+			return Draft{}, fmt.Errorf("schedule: once accepts fire_at or in_minutes, not both")
 		}
-		fire, err := parseFireAt(fireRaw)
-		if err != nil {
-			return Draft{}, err
+		switch {
+		case hasFire:
+			fire, err := parseFireAt(fireRaw)
+			if err != nil {
+				return Draft{}, err
+			}
+			d.FireAt = fire
+		case hasMinutes:
+			if minutes < 1 || minutes > 43200 {
+				return Draft{}, fmt.Errorf("schedule: in_minutes must be between 1 and 43200")
+			}
+			d.InMinutes = minutes
+		default:
+			return Draft{}, fmt.Errorf("schedule: fire_at or in_minutes required for once")
 		}
-		d.FireAt = fire
 	case "daily":
 		tod, ok := stringArg(args, "time_of_day")
 		if !ok {

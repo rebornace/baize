@@ -6,6 +6,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -73,6 +74,15 @@ type Channel struct {
 	outboxWake       chan struct{}
 	outboxMu         sync.RWMutex // guards persist hot-swap
 	outboxWorkerOnce sync.Once    // Bootstrap may only start the worker once
+
+	// Durable inbound jobs: the handler persists the verified body and acks,
+	// then this worker resolves attachments / creates the run with retries.
+	fetch             *http.Client
+	inboundWake       chan struct{}
+	inboundWorkerOnce sync.Once
+	// inboundWorkerDisabled is a test hook: durable tests drive jobs directly
+	// instead of racing the background worker.
+	inboundWorkerDisabled bool
 }
 
 // bgCtx returns the context for adapter management calls made outside of an
@@ -289,6 +299,7 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 	// already created one; otherwise create a lifetime bound to Stop().
 	c.persist = deps.Persist
 	c.blobs = deps.Blobs
+	c.fetch = newFetchClient()
 	if deps.Persist != nil {
 		if c.lifeCtx == nil {
 			c.lifeCtx, c.lifeCancel = context.WithCancel(context.Background())
@@ -299,6 +310,14 @@ func (c *Channel) Bootstrap(deps channel.BuildDeps) (*channel.Runtime, string, b
 		c.outboxWorkerOnce.Do(func() {
 			go c.StartOutboxWorker(c.lifeCtx)
 		})
+		if c.inboundWake == nil {
+			c.inboundWake = make(chan struct{}, 1)
+		}
+		if !c.inboundWorkerDisabled {
+			c.inboundWorkerOnce.Do(func() {
+				go c.runInboundWorker(c.lifeCtx)
+			})
+		}
 	}
 
 	// Only autostart, enabled instances need baize to launch their loop.

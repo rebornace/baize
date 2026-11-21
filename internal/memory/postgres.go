@@ -208,35 +208,48 @@ func (s *PostgresStore) Delete(ownerID, id string) error {
 }
 
 func (s *PostgresStore) List(ownerID string, limit, offset int) ([]Entry, error) {
-	rows, err := s.db.Query(
-		`SELECT id, owner_id, key, text, source, created_at, updated_at
-		 FROM account_memory WHERE owner_id = $1
-		 ORDER BY updated_at DESC, id ASC`,
-		ownerID,
-	)
+	return s.ListFiltered(ownerID, "", "", limit, offset)
+}
+
+func (s *PostgresStore) ListFiltered(ownerID, query, source string, limit, offset int) ([]Entry, error) {
+	where := []string{"owner_id = $1"}
+	args := []any{ownerID}
+	argN := 2
+	if q := strings.TrimSpace(query); q != "" {
+		pattern := "%" + escapeLike(q) + "%"
+		where = append(where, fmt.Sprintf("(key ILIKE $%d ESCAPE '\\' OR text ILIKE $%d ESCAPE '\\')", argN, argN+1))
+		args = append(args, pattern, pattern)
+		argN += 2
+	}
+	if src := strings.TrimSpace(source); src != "" {
+		where = append(where, fmt.Sprintf("source = $%d", argN))
+		args = append(args, src)
+		argN++
+	}
+	querySQL := `SELECT id, owner_id, key, text, source, created_at, updated_at
+		FROM account_memory WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY updated_at DESC, id ASC`
+	if limit > 0 {
+		querySQL += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argN, argN+1)
+		args = append(args, limit, offset)
+	} else if offset > 0 {
+		querySQL += fmt.Sprintf(" OFFSET $%d", argN)
+		args = append(args, offset)
+	}
+	rows, err := s.db.Query(querySQL, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var all []Entry
+	var out []Entry
 	for rows.Next() {
 		e, err := scanEntry(rows)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, e)
+		out = append(out, e)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if offset > len(all) {
-		return nil, nil
-	}
-	all = all[offset:]
-	if limit > 0 && len(all) > limit {
-		all = all[:limit]
-	}
-	return all, nil
+	return out, rows.Err()
 }
 
 func (s *PostgresStore) Search(ownerID, query string, topK int) ([]Entry, error) {

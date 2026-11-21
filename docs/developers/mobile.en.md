@@ -90,6 +90,55 @@ Optional remote config (JSON with `api_base` / `model`, optional `api_key`):
 - `FetchRemoteConfig(url)` → JSON status string  
 - or `ApplyRemoteConfigJSON(raw)`  
 
+Remote config may also carry an **OpenAPI connector**. GET is always parsed; POST/PUT/PATCH are parsed only when the connector sets `"allow_writes": true` (**DELETE is unsupported**):
+
+```json
+{
+  "api_base": "https://api.deepseek.com",
+  "model": "deepseek-chat",
+  "api_key": "...",
+  "readonly_api": {
+    "base_url": "https://tickets.example.com",
+    "auth_header": "Authorization",
+    "auth_value": "Bearer ...",
+    "spec": "openapi: 3.0.3 ...",
+    "allow_writes": true
+  }
+}
+```
+
+Use `"spec_url": "https://.../openapi.yaml"` instead of `spec` when fetching through `FetchRemoteConfig` (it downloads the spec). Every connector call, read or write, returns `needs_approval`; no request is sent until the user approves. Writes add these constraints:
+
+- Only `application/json` request bodies are supported. Object schemas expand into tool parameters; array/scalar schemas use one `body` parameter carrying the complete JSON.
+- Request bodies are capped at 64 KiB; 3xx redirects are not followed (the status is returned), so a body or auth header cannot be replayed elsewhere.
+- Path/query parameters work as usual; write tools share the same global tool-name namespace.
+
+For multiple connectors use the `readonly_apis` array (mutually exclusive with `readonly_api`; each entry uses either `spec` or `spec_url` and decides its own `allow_writes`):
+
+```json
+"readonly_apis": [
+  {
+    "id": "tickets",
+    "base_url": "https://tickets.example.com",
+    "auth_header": "Authorization",
+    "auth_value": "Bearer ...",
+    "spec": "openapi: 3.0.3 ...",
+    "allow_writes": true
+  },
+  {
+    "id": "crm",
+    "base_url": "https://crm.example.com",
+    "auth_header": "X-API-Key",
+    "auth_value": "...",
+    "spec_url": "https://crm.example.com/openapi.yaml"
+  }
+]
+```
+
+Tool names must be unique across every connector and the built-ins; the limit is 8 connectors and 100 tools. The SDK also accepts `ConfigureReadOnlyAPIs(json)` (a JSON array with the same fields). The single-connector `ConfigureReadOnlyAPI(...)` stays GET-only; use the JSON form with `allow_writes` for writes.
+
+The Android AAR in this repo already includes the new APIs; the iOS XCFramework must be rebuilt with `./scripts/build-mobileagent-ios.sh` on macOS to pick them up.
+
 The shells’ Android `CredentialStore` / iOS Keychain show “app holds the key, then Configure”—custom UIs should do the same.
 
 **Send a user turn (with tools):**
@@ -108,10 +157,10 @@ let raw = MobileagentSend(userText)
 | `status` | Meaning | UI hint |
 |----------|---------|---------|
 | `done` | Turn finished | Show `text` |
-| `needs_approval` | Pending tool (currently `http_get`) | Show `summary` / `name`; Approve → `Approve(call_id)`, Deny → `Deny(call_id)` |
+| `needs_approval` | Pending tool (`http_get` or a connector call, including writes) | Show `summary` / `name` / `method`; writes also carry `write: true`. Approve → `Approve(call_id)`, Deny → `Deny(call_id)` |
 | `error` | Failure | Show `message` |
 
-On `needs_approval` you also get `call_id`, `name`, `args_json`, `summary`. Do not call `Send` again until the user chooses.
+On `needs_approval` you also get `call_id`, `name`, `args_json`, `summary`, `method`. A write summary looks like `POST /tickets {"title":"VPN outage"}` and can go straight into the approval card. Do not call `Send` again until the user chooses.
 
 ```kotlin
 when (JSONObject(raw).getString("status")) {
@@ -135,9 +184,31 @@ Other useful APIs:
 | `Reset()` | Clear in-memory history (keeps Configure) |
 | `MessageCount()` | Messages in the session |
 | `HasAPIKey()` | Whether a key is in memory |
+| `ConfigureReadOnlyAPI(base, authHeader, authValue, spec)` | Configure one GET-only OpenAPI connector; failure keeps the old tools |
+| `ConfigureReadOnlyAPIs(json)` | Configure several connectors from a JSON array; optional `allow_writes`; names unique, up to 8 connectors |
+| `ClearReadOnlyAPI()` | Remove connector tools and any pending remote call |
+| `RemoteToolCount()` | Current connector tool count |
+| `RemoteWriteToolCount()` | How many of them are POST/PUT/PATCH write tools |
+| `RemoteToolNames()` | Current tool names (comma-separated; empty means none) |
 | `NewAgent()` | Separate session (instance methods instead of package defaults) |
 
 Desktop without a phone: `go run ./cmd/mobilebind`. Local mock LLM: `go run ./cmd/mobilebind/mockllm` (Android emulator often uses `http://10.0.2.2:<port>/v1` for the host).
+
+**Local connector demo:** start one more process (it serves the config, the OpenAPI spec and a demo ticket API with one POST write):
+
+```powershell
+go run ./cmd/mobilebind/demo-connector -addr 127.0.0.1:18081
+```
+
+Set the shell's Remote config URL to:
+
+- Android emulator: `http://10.0.2.2:18081/config.json`
+- iOS simulator: `http://127.0.0.1:18081/config.json`
+- Physical device: run with `-addr 0.0.0.0:18081` and use your computer's LAN IP
+
+After Fetch config the shell should show `Tools: list_tickets, create_ticket, get_ticket`; listing tickets pauses on a `GET /tickets?...` approval card, and creating one pauses on `POST /tickets {"title":…}` with `write: true`. The request is only sent after Approve. The `X-API-Key: demo-key` header is for local demos only—replace it in production.
+
+On launch the shell re-fetches a saved Remote config URL once, so tools come back without tapping the button. If that request fails it stays quiet, keeps the local LLM config, and tries again next launch.
 
 ### 3. Your job vs the SDK
 
@@ -147,7 +218,7 @@ Desktop without a phone: `go run ./cmd/mobilebind`. Local mock LLM: `go run ./cm
 | Secure key storage, remote-config policy | In-memory session and tool loop |
 | Off-main-thread network calls | Returns JSON; never touches UI |
 
-Tools today: `get_time` (runs immediately); `http_get` (pauses for approval). No full sidecar connectors / MCP / channels.
+Tools today: `get_time` (runs immediately); `http_get` (pauses for approval); up to 8 OpenAPI connectors (GET by default, POST/PUT/PATCH with `allow_writes`; every call pauses for approval, path/query/JSON bodies and one custom auth header per connector). No full desktop connectors / MCP / channels.
 
 ### 4. iOS App Store (M3)
 
@@ -157,6 +228,15 @@ Tools today: `get_time` (runs immediately); `http_get` (pauses for approval). No
 - Store copy / privacy answers / review notes / screenshot sizes / submission checklist: [`mobile/rt-shell-ios/AppStore/README.md`](../../mobile/rt-shell-ios/AppStore/README.md)
 
 Signing, TestFlight and App Review need an Apple Developer account. The repo contains no certificates, Team ID, or reviewer demo key.
+
+### 5. Android Play Store (M3)
+
+- Project: [`mobile/rt-shell/`](../../mobile/rt-shell/); includes adaptive/legacy icons, launch background, manifest, version 1.0.0, Gradle wrapper, and a signing template.
+- Validate: `python mobile/rt-shell/scripts/check-release.py`
+- Archive: copy `keystore.properties.example`, fill local signing values, then run `.\mobile\rt-shell\scripts\archive-android.ps1`
+- Store copy / Data safety / screenshot sizes / submission checklist: [`mobile/rt-shell/PlayStore/README.md`](../../mobile/rt-shell/PlayStore/README.md)
+
+Play Console, upload keys and review need an account. The repo contains no keystore, passwords, or reviewer demo key.
 
 ---
 

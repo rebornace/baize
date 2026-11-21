@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -135,11 +136,24 @@ func (f *fakeRuns) createCount() int {
 	return len(f.creates)
 }
 
+func (f *fakeRuns) setActive(conversationID string, active bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.active == nil {
+		f.active = map[string]bool{}
+	}
+	f.active[conversationID] = active
+}
+
 func (f *fakeRuns) lastCreate() store.CreateRunInput {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.creates[len(f.creates)-1]
 }
+
+// neverDrainTick parks a sweeper in tests that do not drive merging, so a
+// queued batch does not spin in the background.
+var neverDrainTick = make(chan time.Time)
 
 func newTestRuntime(t *testing.T, runs *fakeRuns) (*Runtime, *conversation.MemoryStore) {
 	t.Helper()
@@ -150,6 +164,7 @@ func newTestRuntime(t *testing.T, runs *fakeRuns) (*Runtime, *conversation.Memor
 		Messages:       meta,
 		Assignee:       "alice",
 		DefaultAgentID: "agent-1",
+		drainTick:      neverDrainTick,
 	}
 	return rt, meta
 }
@@ -275,9 +290,9 @@ func (r *activeOnCreateRuns) CreateRun(in store.CreateRunInput) (*store.Run, err
 	if err != nil {
 		return nil, err
 	}
-	r.fakeRuns.mu.Lock()
-	r.fakeRuns.active[in.ConversationID] = true
-	r.fakeRuns.mu.Unlock()
+	r.mu.Lock()
+	r.active[in.ConversationID] = true
+	r.mu.Unlock()
 	return rec, nil
 }
 
@@ -306,24 +321,24 @@ func TestHandleInboundConcurrentOnlyOneRun(t *testing.T) {
 	if base.createCount() != 1 {
 		t.Fatalf("CreateRun calls=%d want 1", base.createCount())
 	}
-	busy := 0
+	queued := 0
 	for _, sent := range ch.texts() {
-		if sent.text == BusyReply {
-			busy++
+		if sent.text == QueuedReply {
+			queued++
 		}
 	}
-	if busy != 1 {
-		t.Fatalf("busy replies=%d want 1 (sent=%+v)", busy, ch.texts())
+	if queued != 1 {
+		t.Fatalf("queued acks=%d want 1 (sent=%+v)", queued, ch.texts())
 	}
 }
 
-func TestHandleInboundBusySendsFixedText(t *testing.T) {
+func TestHandleInboundBusyAttachmentQueues(t *testing.T) {
 	convID := "weixin:acc-1:peer-1"
 	runs := &fakeRuns{active: map[string]bool{convID: true}}
 	rt, _ := newTestRuntime(t, runs)
-	var startCalls int
+	var startCalls atomic.Int32
 	rt.AfterCreateRun = func(context.Context, *store.Run, []llm.ContentPart) error {
-		startCalls++
+		startCalls.Add(1)
 		return nil
 	}
 	ch := &fakeChannel{name: "fake"}
@@ -331,23 +346,47 @@ func TestHandleInboundBusySendsFixedText(t *testing.T) {
 	err := rt.HandleInbound(context.Background(), ch, Inbound{
 		PeerID: "peer-1",
 		Text:   "又一条",
+		Files:  []InboundFile{{Name: "a.txt", MIME: "text/plain", Data: []byte("x")}},
 		Extras: map[string]string{"account": "acc-1"},
 	})
 	if err != nil {
 		t.Fatalf("HandleInbound: %v", err)
 	}
-	if runs.createCount() != 0 {
-		t.Fatalf("CreateRun called %d times, want 0", runs.createCount())
+	if runs.createCount() != 0 || startCalls.Load() != 0 {
+		t.Fatalf("must not run while busy: creates=%d starts=%d", runs.createCount(), startCalls.Load())
 	}
-	if startCalls != 0 {
-		t.Fatalf("AfterCreateRun called %d times, want 0", startCalls)
+	if got := countSent(ch, QueuedReply); got != 1 {
+		t.Fatalf("queued acks=%d want 1 (sent=%+v)", got, ch.texts())
 	}
-	sent := ch.texts()
-	if len(sent) != 1 {
-		t.Fatalf("SendText calls = %d, want 1", len(sent))
+	rt.queueMu.Lock()
+	p := rt.pending[convID]
+	rt.queueMu.Unlock()
+	if p == nil || len(p.files) != 1 || string(p.files[0].Data) != "x" || p.files[0].Name != "a.txt" {
+		t.Fatalf("pending=%+v", p)
 	}
-	if sent[0].peerID != "peer-1" || sent[0].text != BusyReply {
-		t.Fatalf("SendText = %+v, want peer-1 / %q", sent[0], BusyReply)
+}
+
+func TestHandleInboundBusyAttachmentOverLimitSendsFixedText(t *testing.T) {
+	convID := "weixin:acc-1:peer-1"
+	runs := &fakeRuns{active: map[string]bool{convID: true}}
+	rt, _ := newTestRuntime(t, runs)
+	rt.maxPendingAttachmentBytes = 2
+	ch := &fakeChannel{name: "fake"}
+
+	err := rt.HandleInbound(context.Background(), ch, Inbound{
+		PeerID: "peer-1",
+		Text:   "又一条",
+		Files:  []InboundFile{{Name: "a.bin", MIME: "application/octet-stream", Data: []byte("123")}},
+		Extras: map[string]string{"account": "acc-1"},
+	})
+	if err != nil {
+		t.Fatalf("HandleInbound: %v", err)
+	}
+	if rt.hasQueued(convID) {
+		t.Fatal("over-limit attachments must not be queued")
+	}
+	if got := countSent(ch, BusyReply); got != 1 {
+		t.Fatalf("busy replies=%d want 1 (sent=%+v)", got, ch.texts())
 	}
 	if BusyReply != "请稍候，上一轮还在处理" {
 		t.Fatalf("BusyReply drifted: %q", BusyReply)

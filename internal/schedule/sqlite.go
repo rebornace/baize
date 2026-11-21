@@ -3,6 +3,7 @@ package schedule
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS conversation_schedules (
   status TEXT NOT NULL,
   next_run_at TEXT NOT NULL,
   running_run_id TEXT NOT NULL DEFAULT '',
+  claim_expires_at TEXT NOT NULL DEFAULT '',
   last_error TEXT NOT NULL DEFAULT '',
   revision INTEGER NOT NULL DEFAULT 0
 );`
@@ -36,7 +38,21 @@ func MigrateConversationSchedules(db *sql.DB) error {
 	if _, err := db.Exec(conversationSchedulesSchema); err != nil {
 		return fmt.Errorf("schedule: migrate conversation_schedules: %w", err)
 	}
+	// Existing rows predate the claim lease. SQLite has no IF NOT EXISTS for
+	// ADD COLUMN, so ignore the duplicate-column error.
+	if _, err := db.Exec(`ALTER TABLE conversation_schedules ADD COLUMN claim_expires_at TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!isDuplicateColumnErr(err) {
+		return fmt.Errorf("schedule: add claim_expires_at: %w", err)
+	}
 	return nil
+}
+
+func isDuplicateColumnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists")
 }
 
 // SQLStore persists schedules in SQLite or Postgres via placeholder rebinding.
@@ -81,15 +97,16 @@ func (s *SQLStore) Insert(it Item) (Item, error) {
 	res, err := s.db.Exec(s.q(`
 INSERT INTO conversation_schedules (
   id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
-  status, next_run_at, running_run_id, last_error, revision
+  status, next_run_at, running_run_id, claim_expires_at, last_error, revision
 )
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE ? <> ? OR (
   SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?
 ) < ?`),
 		out.ID, out.OwnerID, out.ConversationID, out.Instruction, out.Kind, out.Timezone,
 		formatScheduleTime(out.FireAt), out.TimeOfDay, out.Weekday,
-		out.Status, formatScheduleTime(out.NextRunAt), out.RunningRunID, out.LastError, out.Revision,
+		out.Status, formatScheduleTime(out.NextRunAt), out.RunningRunID, formatScheduleTime(out.ClaimExpiresAt),
+		out.LastError, out.Revision,
 		status, StatusActive, out.OwnerID, StatusActive, MaxActivePerOwner,
 	)
 	if err != nil {
@@ -109,7 +126,7 @@ func (s *SQLStore) ClaimDue(now time.Time) (Item, bool, error) {
 	nowS := formatScheduleTime(now.UTC())
 	row := s.db.QueryRow(s.q(`
 UPDATE conversation_schedules
-SET running_run_id = ?, revision = revision + 1
+SET running_run_id = ?, claim_expires_at = ?, revision = revision + 1
 WHERE id = (
   SELECT id FROM conversation_schedules
   WHERE status = ? AND running_run_id = '' AND next_run_at <= ?
@@ -117,8 +134,8 @@ WHERE id = (
   LIMIT 1
 ) AND running_run_id = ''
 RETURNING id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
-  status, next_run_at, running_run_id, last_error, revision`),
-		ClaimPending, StatusActive, nowS,
+  status, next_run_at, running_run_id, claim_expires_at, last_error, revision`),
+		ClaimPending, formatScheduleTime(now.UTC().Add(ClaimLease)), StatusActive, nowS,
 	)
 	it, err := scanScheduleRow(row)
 	if err == sql.ErrNoRows {
@@ -133,7 +150,7 @@ RETURNING id, owner_id, conversation_id, instruction, kind, timezone, fire_at, t
 func (s *SQLStore) List(ownerID string) ([]Item, error) {
 	rows, err := s.db.Query(s.q(`
 SELECT id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
-  status, next_run_at, running_run_id, last_error, revision
+  status, next_run_at, running_run_id, claim_expires_at, last_error, revision
 FROM conversation_schedules WHERE owner_id = ? ORDER BY id`),
 		ownerID,
 	)
@@ -217,17 +234,19 @@ SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?`),
 	return nil
 }
 
-func (s *SQLStore) ClearStalePending() error {
+func (s *SQLStore) ClearStalePending(now time.Time) error {
 	_, err := s.db.Exec(s.q(`
-UPDATE conversation_schedules SET running_run_id = '', revision = revision + 1
-WHERE running_run_id = ?`), ClaimPending)
+UPDATE conversation_schedules
+SET running_run_id = '', claim_expires_at = '', revision = revision + 1
+WHERE running_run_id = ? AND (claim_expires_at = '' OR claim_expires_at < ?)`),
+		ClaimPending, formatScheduleTime(now.UTC()))
 	return err
 }
 
 func (s *SQLStore) ListWithRunningRun() ([]Item, error) {
 	rows, err := s.db.Query(s.q(`
 SELECT id, owner_id, conversation_id, instruction, kind, timezone, fire_at, time_of_day, weekday,
-  status, next_run_at, running_run_id, last_error, revision
+  status, next_run_at, running_run_id, claim_expires_at, last_error, revision
 FROM conversation_schedules
 WHERE running_run_id <> '' AND running_run_id <> ?
 ORDER BY id`), ClaimPending)
@@ -248,7 +267,8 @@ ORDER BY id`), ClaimPending)
 
 func (s *SQLStore) ReleaseRunningRun(id string) error {
 	res, err := s.db.Exec(s.q(`
-UPDATE conversation_schedules SET running_run_id = '', revision = revision + 1 WHERE id = ?`), id)
+UPDATE conversation_schedules
+SET running_run_id = '', claim_expires_at = '', revision = revision + 1 WHERE id = ?`), id)
 	if err != nil {
 		return err
 	}
@@ -261,7 +281,8 @@ UPDATE conversation_schedules SET running_run_id = '', revision = revision + 1 W
 
 func (s *SQLStore) FailOpen(id, lastError string) error {
 	res, err := s.db.Exec(s.q(`
-UPDATE conversation_schedules SET running_run_id = '', last_error = ?, revision = revision + 1
+UPDATE conversation_schedules
+SET running_run_id = '', claim_expires_at = '', last_error = ?, revision = revision + 1
 WHERE id = ? AND running_run_id = ?`),
 		lastError, id, ClaimPending)
 	if err != nil {
@@ -277,7 +298,7 @@ WHERE id = ? AND running_run_id = ?`),
 func (s *SQLStore) CompleteOpen(id, runID, status string, nextRunAt time.Time) error {
 	res, err := s.db.Exec(s.q(`
 UPDATE conversation_schedules
-SET running_run_id = ?, status = ?, next_run_at = ?, last_error = '', revision = revision + 1
+SET running_run_id = ?, claim_expires_at = '', status = ?, next_run_at = ?, last_error = '', revision = revision + 1
 WHERE id = ? AND running_run_id = ?`),
 		runID, status, formatScheduleTime(nextRunAt.UTC()), id, ClaimPending)
 	if err != nil {
@@ -292,8 +313,9 @@ WHERE id = ? AND running_run_id = ?`),
 
 func (s *SQLStore) SetRunningRunID(id, runID string) error {
 	res, err := s.db.Exec(s.q(`
-UPDATE conversation_schedules SET running_run_id = ?, revision = revision + 1 WHERE id = ?`),
-		runID, id)
+UPDATE conversation_schedules SET running_run_id = ?, claim_expires_at = '', revision = revision + 1
+WHERE id = ? AND (running_run_id = '' OR running_run_id = ?)`),
+		runID, id, ClaimPending)
 	if err != nil {
 		return err
 	}
@@ -332,13 +354,15 @@ func (s *SQLStore) Delete(ownerID, id string) error {
 
 func scanScheduleRow(row *sql.Row) (Item, error) {
 	var (
-		it      Item
-		fireAt  string
-		nextRun string
+		it           Item
+		fireAt       string
+		nextRun      string
+		claimExpires string
 	)
 	err := row.Scan(
 		&it.ID, &it.OwnerID, &it.ConversationID, &it.Instruction, &it.Kind, &it.Timezone,
-		&fireAt, &it.TimeOfDay, &it.Weekday, &it.Status, &nextRun, &it.RunningRunID, &it.LastError, &it.Revision,
+		&fireAt, &it.TimeOfDay, &it.Weekday, &it.Status, &nextRun, &it.RunningRunID,
+		&claimExpires, &it.LastError, &it.Revision,
 	)
 	if err != nil {
 		return Item{}, err
@@ -348,6 +372,10 @@ func scanScheduleRow(row *sql.Row) (Item, error) {
 		return Item{}, err
 	}
 	it.NextRunAt, err = parseScheduleTime(nextRun)
+	if err != nil {
+		return Item{}, err
+	}
+	it.ClaimExpiresAt, err = parseScheduleTime(claimExpires)
 	if err != nil {
 		return Item{}, err
 	}
@@ -356,13 +384,15 @@ func scanScheduleRow(row *sql.Row) (Item, error) {
 
 func scanScheduleRows(rows *sql.Rows) (Item, error) {
 	var (
-		it      Item
-		fireAt  string
-		nextRun string
+		it           Item
+		fireAt       string
+		nextRun      string
+		claimExpires string
 	)
 	err := rows.Scan(
 		&it.ID, &it.OwnerID, &it.ConversationID, &it.Instruction, &it.Kind, &it.Timezone,
-		&fireAt, &it.TimeOfDay, &it.Weekday, &it.Status, &nextRun, &it.RunningRunID, &it.LastError, &it.Revision,
+		&fireAt, &it.TimeOfDay, &it.Weekday, &it.Status, &nextRun, &it.RunningRunID,
+		&claimExpires, &it.LastError, &it.Revision,
 	)
 	if err != nil {
 		return Item{}, err
@@ -372,6 +402,10 @@ func scanScheduleRows(rows *sql.Rows) (Item, error) {
 		return Item{}, err
 	}
 	it.NextRunAt, err = parseScheduleTime(nextRun)
+	if err != nil {
+		return Item{}, err
+	}
+	it.ClaimExpiresAt, err = parseScheduleTime(claimExpires)
 	if err != nil {
 		return Item{}, err
 	}

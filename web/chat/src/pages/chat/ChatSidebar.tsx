@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { Search } from 'lucide-react'
 import type { ConversationScope, ConversationSummary, Workspace } from '../../api'
 import { LanguageChip } from '../../components/LanguageChip'
 import { SidebarResizer } from '../../components/SidebarResizer'
-import { ThemeToggle } from '../../components/ui'
+import { Button, ThemeToggle } from '../../components/ui'
 import { conversationListLabel } from '../../conversationLabel'
 import { conversationUpdatedLabel } from '../../conversationUpdatedLabel'
 import { useLocale } from '../../locale/LocaleContext'
@@ -25,6 +26,10 @@ export type ChatSidebarProps = {
   workspaces: Workspace[]
   onSwitchWorkspace: (id: string) => void
   onCreateWorkspace: (name: string) => Promise<unknown>
+  pendingCount: number
+  onOpenPending: () => void
+  onOpenMessageSearch: () => void
+  onExportConversation: () => void
 }
 
 export function ChatSidebar({
@@ -42,6 +47,10 @@ export function ChatSidebar({
   workspaces,
   onSwitchWorkspace,
   onCreateWorkspace,
+  pendingCount,
+  onOpenPending,
+  onOpenMessageSearch,
+  onExportConversation,
 }: ChatSidebarProps) {
   const { locale } = useLocale()
 
@@ -59,6 +68,28 @@ export function ChatSidebar({
           {CHAT.newChat}
         </button>
         <FeatureSearchButton className="sidebar-search" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="sidebar-message-search"
+          onClick={onOpenMessageSearch}
+        >
+          <Search size={14} aria-hidden="true" />
+          {CHAT.messageSearchTitle}
+        </Button>
+        {pendingCount > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="sidebar-pending"
+            data-testid="sidebar-pending"
+            aria-label={CHAT.pendingCenterAria(pendingCount)}
+            onClick={onOpenPending}
+          >
+            <span className="sidebar-pending-dot" aria-hidden="true" />
+            {CHAT.pendingCenterTrigger(pendingCount)}
+          </Button>
+        )}
         <div className="workspace-picker">
           <label className="workspace-picker-label" htmlFor="workspace-select">
             {CHAT.workspaceLabel}
@@ -165,6 +196,13 @@ export function ChatSidebar({
           <LanguageChip />
         </div>
         <div className="sidebar-footer-links">
+          <button
+            type="button"
+            className="settings-link sidebar-export"
+            onClick={onExportConversation}
+          >
+            {CHAT.exportConversation}
+          </button>
           <Link
             to={role === 'admin' ? '/settings' : '/settings/identities'}
             className="settings-link"

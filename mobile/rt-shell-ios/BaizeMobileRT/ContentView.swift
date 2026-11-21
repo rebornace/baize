@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var reply = ""
     @State private var pendingCallId: String?
     @State private var busy = false
+    @State private var readonlyTools = "none"
+    @State private var didAutoRestore = false
 
     private let vault = CredentialStore()
 
@@ -29,6 +31,9 @@ struct ContentView: View {
                     Button("Save vault (Keychain)") { saveVault() }
                     Button("Fetch remote config") { fetchConfig() }
                         .disabled(busy || configURL.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Text("Tools: \(readonlyTools)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Chat") {
                     TextField("Message", text: $userInput, axis: .vertical)
@@ -61,6 +66,42 @@ struct ContentView: View {
         if !vault.apiBase().isEmpty && !vault.model().isEmpty {
             var err: NSError?
             _ = MobileagentConfigure(vault.apiBase(), vault.apiKey(), vault.model(), &err)
+        }
+        refreshReadonlyTools()
+        let savedConfig = configURL.trimmingCharacters(in: .whitespaces)
+        if !didAutoRestore && !savedConfig.isEmpty {
+            didAutoRestore = true
+            restoreRemoteConfig(savedConfig)
+        }
+    }
+
+    private func refreshReadonlyTools() {
+        let names = MobileagentRemoteToolNames()
+        readonlyTools = names.isEmpty ? "none" : names
+    }
+
+    private func restoreRemoteConfig(_ url: String) {
+        busy = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let raw = MobileagentFetchRemoteConfig(url)
+            DispatchQueue.main.async {
+                busy = false
+                if let data = raw.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   obj["status"] as? String == "done" {
+                    applyResult(raw)
+                    let names = MobileagentRemoteToolNames()
+                    reply = "Remote config restored. Tools: \(names.isEmpty ? "none" : names)"
+                    vault.save(
+                        apiBase: apiBase.trimmingCharacters(in: .whitespaces),
+                        apiKey: apiKey,
+                        model: model.trimmingCharacters(in: .whitespaces),
+                        configURL: url
+                    )
+                } else {
+                    refreshReadonlyTools()
+                }
+            }
         }
     }
 
@@ -148,6 +189,7 @@ struct ContentView: View {
     }
 
     private func applyResult(_ raw: String) {
+        refreshReadonlyTools()
         guard let data = raw.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let status = obj["status"] as? String

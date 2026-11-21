@@ -41,16 +41,24 @@ func (r *routeRec) RegisterRoute(p string, h http.Handler) { r.pattern = p }
 
 func bootChannel(t *testing.T, m map[string]string, runs channel.RunStore, hook func(*store.Run, []llm.ContentPart)) (*Channel, http.Handler) {
 	t.Helper()
+	return bootChannelPersist(t, m, runs, nil, hook)
+}
+
+func bootChannelPersist(t *testing.T, m map[string]string, runs channel.RunStore, persist store.Store, hook func(*store.Run, []llm.ContentPart)) (*Channel, http.Handler) {
+	t.Helper()
 	ch, err := openFromConfig("feishu", m)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Durable tests drive jobs directly; do not race the background worker.
+	ch.inboundWorkerDisabled = persist != nil
 	rec := &routeRec{}
 	rt, _, _, err := ch.Bootstrap(channel.BuildDeps{
 		Store:          runs,
 		Meta:           conversation.NewMemoryStore(),
 		DefaultAgentID: "ag-default",
 		Routes:         rec,
+		Persist:        persist,
 		ResolveModel: func(sig llm.TaskSignals) (string, bool, bool) {
 			if sig.HasImages {
 				return "mp_vision", true, true // image turns reach a vision model
@@ -251,6 +259,74 @@ func TestInboundIdempotencyKeyNotConsumedOnFailure(t *testing.T) {
 	}
 	if len(runs.created) != 1 {
 		t.Fatalf("retry after failure should create 1 run, got %v", runs.created)
+	}
+}
+
+func TestInboundDurableAckAndWorker(t *testing.T) {
+	runs := &fakeRuns{}
+	persist := store.NewMemory()
+	ch, handler := bootChannelPersist(t, baseCfg("http://x/o"), runs, persist, nil)
+	msg := InboundMessage{Event: "message", Peer: Peer{ID: "peer9"}, Text: "你好", IdempotencyKey: "k-1"}
+	body, ts, sig := signedBody(t, ch.cfg.Secret, msg)
+	rec := post(handler, body, ts, sig)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(runs.created) != 0 {
+		t.Fatal("handler must ack before creating the run")
+	}
+	jobs, err := persist.ListWebhookInboundJobsDue(time.Now().UTC(), 10)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs=%+v err=%v", jobs, err)
+	}
+	ch.processInboundJob(jobs[0])
+	if len(runs.created) != 1 {
+		t.Fatalf("worker runs=%v want 1", runs.created)
+	}
+	if want := "feishu:acc-1:peer9"; runs.created[0] != want {
+		t.Fatalf("convID=%q want %q", runs.created[0], want)
+	}
+	due, _ := persist.ListWebhookInboundJobsDue(time.Now().UTC(), 10)
+	if len(due) != 0 {
+		t.Fatalf("done job still due: %+v", due)
+	}
+
+	rec = post(handler, body, ts, sig)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("duplicate status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(runs.created) != 1 {
+		t.Fatalf("duplicate created another run: %v", runs.created)
+	}
+}
+
+func TestInboundDurableAttachmentFailureRetries(t *testing.T) {
+	runs := &fakeRuns{}
+	persist := store.NewMemory()
+	ch, handler := bootChannelPersist(t, baseCfg("http://x/o"), runs, persist, nil)
+	msg := InboundMessage{
+		Event: "message", Peer: Peer{ID: "p"}, Text: "x", IdempotencyKey: "k-retry",
+		Attachments: []Attachment{{URL: "http://127.0.0.1:1/x"}},
+	}
+	body, ts, sig := signedBody(t, ch.cfg.Secret, msg)
+	rec := post(handler, body, ts, sig)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	jobs, err := persist.ListWebhookInboundJobsDue(time.Now().UTC(), 10)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs=%+v err=%v", jobs, err)
+	}
+	ch.processInboundJob(jobs[0])
+	if len(runs.created) != 0 {
+		t.Fatal("failed attachment must not create a run")
+	}
+	due, err := persist.ListWebhookInboundJobsDue(time.Now().UTC().Add(time.Minute), 10)
+	if err != nil || len(due) != 1 {
+		t.Fatalf("retry jobs=%+v err=%v", due, err)
+	}
+	if due[0].Status != store.WebhookInboundPending || due[0].Attempt != 1 || due[0].LastError == "" {
+		t.Fatalf("job=%+v", due[0])
 	}
 }
 

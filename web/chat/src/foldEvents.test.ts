@@ -26,6 +26,15 @@ describe('foldEvents', () => {
     ])
   })
 
+  it('surfaces channel.outbound.dead as a system note', () => {
+    const blocks = foldEvents('run_dead', [
+      ev('channel.outbound.dead', { channel: 'weixin', error: 'webhook: outbound status 400' }),
+    ])
+    expect(blocks).toEqual([
+      { kind: 'system', text: 'weixin 出站失败：webhook: outbound status 400' },
+    ])
+  })
+
   it('marks waiting_human so ToolCard can show approve/reject', () => {
     const events: Event[] = [
       ev('llm.tool_call', { name: 'create_ticket', arguments: { title: 'VPN' } }),

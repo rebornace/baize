@@ -146,6 +146,13 @@ func TestPostRunAutoReloadAfterCatalogChange(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("first run status=%d body=%s", rr.Code, rr.Body.String())
 	}
+	var first struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&first); err != nil {
+		t.Fatal(err)
+	}
+	pollRunStatus(t, h, first.RunID, store.StatusSucceeded)
 	genBefore := cat.Generation()
 
 	// Simulate admin adding a skill: Reload bumps generation so the next run

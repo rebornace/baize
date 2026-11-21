@@ -34,7 +34,7 @@ func pageCopyFor(locale string) pageCopy {
 			langSwitchZH: "中文",
 			langSwitchEN: "English",
 			successTitle: "Signed in",
-			successBody:  "You can close this page. If a tool call was waiting, it will continue automatically.",
+			successBody:  "You can close this page. For a chat login, return to the chat and click “I've signed in, continue”; MCP / external tool logins continue automatically.",
 		}
 	}
 	return pageCopy{
@@ -47,7 +47,7 @@ func pageCopyFor(locale string) pageCopy {
 		langSwitchZH: "中文",
 		langSwitchEN: "English",
 		successTitle: "已登录",
-		successBody:  "可以关闭本页。若有工具调用正在等待，将自动继续。",
+		successBody:  "可以关闭本页。若是在对话中登录，请回到对话点「我已登录，继续」；由 MCP / 外部工具发起的登录会自动继续。",
 	}
 }
 

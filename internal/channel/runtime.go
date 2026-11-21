@@ -125,6 +125,17 @@ type Runtime struct {
 	tokenMu sync.Mutex
 	tokens  map[string]string // conversation_id -> context_token
 	accts   map[string]string // conversation_id -> account
+
+	// queueMu guards the busy-merge buffer (see queue.go). Messages that
+	// arrive while the conversation is busy are merged into one follow-up run.
+	queueMu  sync.Mutex
+	pending  map[string]*pendingInbound
+	claiming map[string]bool
+	sweeping bool
+	// drainTick is a test hook; nil means poll every queuePollInterval.
+	drainTick <-chan time.Time
+	// maxPendingAttachmentBytes is a test hook; 0 uses the package default.
+	maxPendingAttachmentBytes int
 }
 
 // SetRouting hot-updates the assignee and default agent id. Empty/blank
@@ -149,9 +160,16 @@ func (r *Runtime) routing() (assignee, agentID string) {
 	return r.Assignee, r.DefaultAgentID
 }
 
-// HandleInbound maps a peer message to a conversation, replies busy if needed,
-// otherwise EnsureMeta + CreateRun (and optional engine hook).
+// HandleInbound maps a peer message to a conversation, queues it for the
+// current turn if needed, otherwise EnsureMeta + CreateRun (and optional
+// engine hook).
 func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) error {
+	return r.handleInbound(ctx, ch, in, false)
+}
+
+// handleInbound is HandleInbound plus an internal fromDrain marker: the busy
+// sweeper uses it to start a merged batch without sending another ack.
+func (r *Runtime) handleInbound(ctx context.Context, ch Channel, in Inbound, fromDrain bool) error {
 	if r == nil {
 		return errors.New("channel: nil runtime")
 	}
@@ -183,10 +201,7 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return ErrNoAccount
 	}
 
-	src := strings.TrimSpace(r.Source)
-	if src == "" {
-		src = "weixin"
-	}
+	src := r.source()
 	convID := ConvID(src, account, peerID)
 	if err := r.Meta.EnsureMeta(conversation.Meta{
 		ID:          convID,
@@ -204,7 +219,12 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		return fmt.Errorf("channel: has active run: %w", err)
 	}
 	if busy {
-		return r.handleBusyInbound(ctx, ch, convID, peerID, in)
+		return r.handleBusyInbound(ctx, ch, convID, peerID, in, fromDrain)
+	}
+	// A merged batch is already waiting (or being started). Append this text
+	// instead of racing it with a separate run; order stays first-in-first-out.
+	if !fromDrain && len(in.Files) == 0 && strings.TrimSpace(in.Text) != "" && r.hasQueued(convID) {
+		return r.queueInbound(ch, convID, peerID, copyExtras(in.Extras), in.Text, nil, true)
 	}
 
 	agentID := strings.TrimSpace(defaultAgent)
@@ -258,7 +278,7 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 		ModelProfileID: runModelProfileID,
 	})
 	if errors.Is(err, store.ErrConversationBusy) {
-		return r.handleBusyInbound(ctx, ch, convID, peerID, in)
+		return r.handleBusyInbound(ctx, ch, convID, peerID, in, fromDrain)
 	}
 	if err != nil {
 		return fmt.Errorf("channel: create run: %w", err)
@@ -338,8 +358,13 @@ func (r *Runtime) HandleInbound(ctx context.Context, ch Channel, in Inbound) err
 	return nil
 }
 
-func (r *Runtime) handleBusyInbound(ctx context.Context, ch Channel, convID, peerID string, in Inbound) error {
+func (r *Runtime) handleBusyInbound(ctx context.Context, ch Channel, convID, peerID string, in Inbound, fromDrain bool) error {
 	extras := copyExtras(in.Extras)
+	if fromDrain {
+		// The sweeper lost a race with a new run; keep the batch queued
+		// without sending unsolicited HITL help or another ack.
+		return r.queueInbound(ch, convID, peerID, extras, in.Text, nil, true)
+	}
 	waiting, err := r.Runs.WaitingHumanRun(convID)
 	if err != nil {
 		return fmt.Errorf("channel: waiting human run: %w", err)
@@ -362,6 +387,15 @@ func (r *Runtime) handleBusyInbound(ctx context.Context, ch Channel, convID, pee
 			return fmt.Errorf("channel: send hitl help: %w", err)
 		}
 		return nil
+	}
+	text := strings.TrimSpace(in.Text)
+	if text != "" || len(in.Files) > 0 {
+		err := r.queueInbound(ch, convID, peerID, extras, text, in.Files, false)
+		if err == nil || !errors.Is(err, errQueueFull) {
+			return err
+		}
+		// Attachments exceeded the per-conversation queue budget: keep the
+		// visible fixed reply instead of silently dropping them.
 	}
 	if err := ch.SendText(ctx, peerID, BusyReply, extras); err != nil {
 		return fmt.Errorf("channel: send busy reply: %w", err)

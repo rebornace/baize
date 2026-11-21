@@ -20,10 +20,10 @@ func ChatOnce(userText string) (string, error) {
 // Send runs a user turn with tools until done or needs_approval. Returns JSON.
 func Send(userText string) string { return intma.Send(userText) }
 
-// Approve continues after a needs_approval pause (executes pending http_get).
+// Approve continues after a needs_approval pause (executes the pending call).
 func Approve(callID string) string { return intma.Approve(callID) }
 
-// Deny rejects a pending http_get without network I/O and continues.
+// Deny rejects a pending call without network I/O and continues.
 func Deny(callID string) string { return intma.Deny(callID) }
 
 // Reset clears in-memory history on the default session.
@@ -40,6 +40,31 @@ func ApplyRemoteConfigJSON(raw string) string { return intma.ApplyRemoteConfigJS
 
 // HasAPIKey reports whether an API key is held in memory.
 func HasAPIKey() bool { return intma.HasAPIKey() }
+
+// ConfigureReadOnlyAPI replaces the on-device GET-only OpenAPI connector.
+func ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {
+	return intma.ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec)
+}
+
+// ConfigureReadOnlyAPIs replaces the set with a JSON array of connectors:
+// [{"id":"tickets","base_url":"…","auth_header":"…","auth_value":"…","spec":"…",
+// "allow_writes":false}]. Writes are opt-in per connector and still require
+// approval before every call.
+func ConfigureReadOnlyAPIs(configsJSON string) error {
+	return intma.ConfigureReadOnlyAPIs(configsJSON)
+}
+
+// ClearReadOnlyAPI removes the connector tool set.
+func ClearReadOnlyAPI() { intma.ClearReadOnlyAPI() }
+
+// RemoteToolCount returns the number of configured connector tools.
+func RemoteToolCount() int { return intma.RemoteToolCount() }
+
+// RemoteWriteToolCount returns how many tools use POST/PUT/PATCH.
+func RemoteWriteToolCount() int { return intma.RemoteWriteToolCount() }
+
+// RemoteToolNames returns comma-separated connector tool names (empty if none).
+func RemoteToolNames() string { return intma.RemoteToolNames() }
 
 // Agent is a bindable session handle (optional; free functions use the default).
 type Agent struct {
@@ -64,10 +89,10 @@ func (a *Agent) ChatOnce(userText string) (string, error) {
 // Send with tools on this agent.
 func (a *Agent) Send(userText string) string { return a.inner.Send(userText) }
 
-// Approve pending http_get on this agent.
+// Approve the pending call on this agent.
 func (a *Agent) Approve(callID string) string { return a.inner.Approve(callID) }
 
-// Deny pending http_get on this agent.
+// Deny the pending call on this agent.
 func (a *Agent) Deny(callID string) string { return a.inner.Deny(callID) }
 
 // Reset clears this agent's history.
@@ -86,3 +111,25 @@ func (a *Agent) ApplyRemoteConfigJSON(raw string) string {
 
 // HasAPIKey on this agent.
 func (a *Agent) HasAPIKey() bool { return a.inner.HasAPIKey() }
+
+// ConfigureReadOnlyAPI on this agent.
+func (a *Agent) ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {
+	return a.inner.ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec)
+}
+
+// ConfigureReadOnlyAPIs on this agent (JSON array of connectors).
+func (a *Agent) ConfigureReadOnlyAPIs(configsJSON string) error {
+	return a.inner.ConfigureReadOnlyAPIs(configsJSON)
+}
+
+// ClearReadOnlyAPI on this agent.
+func (a *Agent) ClearReadOnlyAPI() { a.inner.ClearReadOnlyAPI() }
+
+// RemoteToolCount on this agent.
+func (a *Agent) RemoteToolCount() int { return a.inner.RemoteToolCount() }
+
+// RemoteWriteToolCount on this agent.
+func (a *Agent) RemoteWriteToolCount() int { return a.inner.RemoteWriteToolCount() }
+
+// RemoteToolNames on this agent.
+func (a *Agent) RemoteToolNames() string { return a.inner.RemoteToolNames() }

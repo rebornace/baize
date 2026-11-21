@@ -18,8 +18,10 @@ type Draft struct {
 	Instruction string
 	Timezone    string
 	FireAt      time.Time
-	TimeOfDay   string
-	Weekday     int
+	// InMinutes is an alternative to FireAt for once: minutes from now.
+	InMinutes int
+	TimeOfDay string
+	Weekday   int
 }
 
 // Validate checks draft fields and returns the next run instant in the draft timezone.
@@ -47,6 +49,9 @@ func Next(d Draft, now time.Time) (time.Time, error) {
 	}
 	switch d.Kind {
 	case "once":
+		if d.FireAt.IsZero() && d.InMinutes > 0 {
+			return now.Add(time.Duration(d.InMinutes) * time.Minute), nil
+		}
 		return d.FireAt, nil
 	case "daily":
 		hour, min, err := parseTimeOfDay(d.TimeOfDay)
@@ -91,8 +96,17 @@ func loadLocation(tz string) (*time.Location, error) {
 func validateKindFields(d Draft, now time.Time) error {
 	switch d.Kind {
 	case "once":
+		if d.InMinutes > 0 {
+			if !d.FireAt.IsZero() {
+				return errors.New("schedule: once accepts fire_at or in_minutes, not both")
+			}
+			if d.InMinutes > 43200 {
+				return errors.New("schedule: in_minutes must be between 1 and 43200")
+			}
+			return nil
+		}
 		if !d.FireAt.After(now) {
-			return errors.New("schedule: once fire_at must be after now")
+			return errors.New("schedule: once fire_at must be after now (or use in_minutes)")
 		}
 		return nil
 	case "daily", "weekly":

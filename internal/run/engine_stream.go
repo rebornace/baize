@@ -112,7 +112,12 @@ func (e *Engine) deliverHITLNotify(runID string, payload *store.HITLPayload) {
 		extras = e.OutboundExtras(runRec.ConversationID)
 	}
 	extras = channel.WithOutboundMeta(extras, channel.OutboundKindNotify, runID)
-	channel.DeliverUserText(context.Background(), e.Outbound, meta, channel.FormatHITLNotify(payload), extras)
+	approvalURL := ""
+	if e.HITLLinkURL != nil && payload != nil &&
+		(payload.Kind == "" || payload.Kind == store.HITLKindApproval) {
+		approvalURL = e.HITLLinkURL(runRec, payload)
+	}
+	channel.DeliverUserText(context.Background(), e.Outbound, meta, channel.FormatHITLNotify(payload, approvalURL), extras)
 }
 
 func (e *Engine) userTurnStillLinked(runRec *store.Run) bool {

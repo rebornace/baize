@@ -108,6 +108,20 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS webhook_inbound_jobs (
+  id TEXT PRIMARY KEY,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  last_error TEXT,
+  next_attempt_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_inbound_due ON webhook_inbound_jobs(status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS channel_outbox (
   id TEXT PRIMARY KEY,
   delivery_key TEXT NOT NULL UNIQUE,
@@ -130,6 +144,19 @@ CREATE TABLE IF NOT EXISTS channel_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_channel_outbox_pending ON channel_outbox(status, next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_channel_outbox_channel_status ON channel_outbox(channel, status);
+CREATE TABLE IF NOT EXISTS channel_pending (
+  conversation_id TEXT NOT NULL,
+  batch_id TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  account TEXT NOT NULL DEFAULT '',
+  peer_id TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  truncated INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, batch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_pending_source ON channel_pending(source, updated_at);
 CREATE TABLE IF NOT EXISTS mcp_export_identities (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -289,6 +316,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate model_profiles context_tokens: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE channel_pending ADD COLUMN IF NOT EXISTS attachments_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate channel_pending attachments: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS auto_tier TEXT NOT NULL DEFAULT 'standard'`); err != nil {
 		_ = db.Close()

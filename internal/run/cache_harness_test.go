@@ -83,7 +83,7 @@ func TestBuildMessagesKeepsStablePrefixAndLateClock(t *testing.T) {
 		}
 	}
 
-	var clockAt, memoryAt, historyAt int = -1, -1, -1
+	var clockAt, memoryAt, historyAt = -1, -1, -1
 	for i, m := range first {
 		if m.Role == "assistant" && m.Content == "旧回答" {
 			historyAt = i

@@ -29,9 +29,13 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Tools | `GET /v0/tools`、`PATCH /v0/tools/{name}` | 工具目录（含停用行） |
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
 | Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为当轮依赖闭包（Chat「查看运行绑定」） |
+| HITL approval link（公网） | `GET/POST /v0/hitl/approvals/{token}` | 渠道审批链接；GET 只读、POST 同意/拒绝，均用短时 HMAC token（`RoleNone`），最终走同一 `ContinueFromHITL` |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
+| Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | 跨会话消息搜索；`role` / `days` / `conversation_id` 可选；按会话 ACL 过滤，返回标题、片段与角色 |
+| Conversation export | `GET /v0/conversations/{id}/export` | Markdown 导出（ACL；不含 thinking / 内部媒体链接） |
+| Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`、`POST .../{id}/retry` | 失败的 webhook 入站查看与重试（管理员；不返回消息体） |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
 | Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval… |
@@ -46,6 +50,8 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 同一会话同一时刻只允许一轮活跃 Run（`queued` / `running` / `waiting_human`）。会话忙时 `POST /v0/runs` 返回 `409 conversation_busy`；`POST /v0/inbox/{channel_id}` 同样返回 409 并带 `Retry-After`，同一 `idempotency_key` 可在会话空闲后重试。并发守卫是进程内的，多副本行为见「架构与插件边界 → 已知限制」。
 
 Inbox 创建的会话归机器身份 `local-dev`，与 UI 会话隔离；带 `conversation_id` 指向人工会话仍会被拒绝。
+
+记忆列表 `GET /v0/settings/memory` 支持 `limit` / `offset` / `q`（key 或 text 子串，大小写不敏感）/ `source`（`explicit` / `auto` / `all`）；过滤在 owner 范围内、排序后分页。
 
 ## 匹配与决策（工具预筛 + 决策模型）
 

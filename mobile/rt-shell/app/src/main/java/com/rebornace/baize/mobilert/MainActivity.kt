@@ -36,6 +36,25 @@ class MainActivity : AppCompatActivity() {
         val hitlRow = findViewById<LinearLayout>(R.id.hitlRow)
         val approve = findViewById<Button>(R.id.approve)
         val deny = findViewById<Button>(R.id.deny)
+        val readonlyStatus = findViewById<TextView>(R.id.readonlyStatus)
+
+        fun refreshReadonlyStatus() {
+            val names = try {
+                Mobileagent.remoteToolNames()
+            } catch (_: Exception) {
+                ""
+            }
+            val writes = try {
+                Mobileagent.remoteWriteToolCount()
+            } catch (_: Exception) {
+                0
+            }
+            readonlyStatus.text = when {
+                names.isBlank() -> "Tools: none"
+                writes > 0 -> "Tools: $names ($writes write)"
+                else -> "Tools: $names"
+            }
+        }
 
         // Restore from vault into fields + Go memory.
         if (vault.apiBase().isNotEmpty()) apiBase.setText(vault.apiBase())
@@ -50,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         fun applyResult(raw: String) {
+            refreshReadonlyStatus()
             try {
                 val o = JSONObject(raw)
                 when (o.optString("status")) {
@@ -135,6 +155,36 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        fun restoreRemoteConfig(url: String) {
+            thread {
+                val raw = try {
+                    Mobileagent.fetchRemoteConfig(url)
+                } catch (_: Exception) {
+                    ""
+                }
+                val restored = raw.isNotEmpty() && try {
+                    JSONObject(raw).optString("status") == "done"
+                } catch (_: Exception) {
+                    false
+                }
+                runOnUiThread {
+                    if (!restored) {
+                        refreshReadonlyStatus()
+                        return@runOnUiThread
+                    }
+                    applyResult(raw)
+                    reply.text = "Remote config restored. Tools: " +
+                        (Mobileagent.remoteToolNames().ifBlank { "none" })
+                    vault.save(
+                        apiBase.text.toString().trim(),
+                        apiKey.text.toString(),
+                        model.text.toString().trim(),
+                        url,
+                    )
+                }
+            }
+        }
+
         send.setOnClickListener {
             send.isEnabled = false
             hitlRow.visibility = View.GONE
@@ -185,6 +235,13 @@ class MainActivity : AppCompatActivity() {
                     applyResult(raw)
                 }
             }
+        }
+
+        refreshReadonlyStatus()
+
+        val savedConfigUrl = vault.configURL()
+        if (savedInstanceState == null && savedConfigUrl.isNotEmpty()) {
+            restoreRemoteConfig(savedConfigUrl)
         }
     }
 }

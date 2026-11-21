@@ -4123,3 +4123,329 @@ a.model-chip-empty:hover {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* 待审批中心（跨会话） */
+.sidebar-message-search {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.sidebar-export {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.message-search-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.message-search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.message-search-filters select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-small-size);
+}
+
+.message-search-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-small-size);
+  cursor: pointer;
+}
+
+.message-search-results {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.message-search-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-small-size);
+}
+
+.message-search-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-search-hit:hover {
+  background: var(--surface-2);
+}
+
+.message-search-hit-title {
+  font-weight: 600;
+  font-size: var(--text-small-size);
+}
+
+.message-search-hit-snippet {
+  color: var(--text-muted);
+  font-size: var(--text-small-size);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.message-search-hit-meta {
+  color: var(--text-faint);
+  font-size: var(--text-meta-size);
+}
+
+.msg-row.msg-focus {
+  border-radius: var(--radius);
+  animation: msg-focus-flash 2.2s ease-out;
+}
+
+@keyframes msg-focus-flash {
+  0% {
+    background: var(--accent-soft);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  70% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+
+.sidebar-pending {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--warning);
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.sidebar-pending-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex: 0 0 auto;
+}
+
+.pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.pending-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.pending-item-body {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pending-item-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 96px;
+}
+
+.pending-comment {
+  margin-top: 4px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-small-size);
+}
+
+.pending-args {
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.pending-args summary {
+  cursor: pointer;
+}
+
+.pending-args pre {
+  margin: 6px 0 0;
+  padding: var(--space-2);
+  max-height: 180px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+
+.pending-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-meta-size);
+}
+
+.pending-login-hint {
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  text-align: right;
+}
+
+.pending-item-title {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pending-item-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+}
+
+.pending-kind {
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.pending-kind-login {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.pending-tag {
+  color: var(--text-faint);
+}
+
+.pending-tool {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pending-prompt {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-small-size);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pending-workflow {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-meta-size);
+}
+
+.pending-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.pending-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.pending-notify {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.pending-notify-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-small-size);
+  color: var(--text);
+}
+
+.pending-notify-hint,
+.pending-notify-error {
+  font-size: var(--text-meta-size);
+}
+
+.pending-notify-hint {
+  color: var(--text-muted);
+}
+
+.pending-notify-error {
+  color: var(--danger);
+}

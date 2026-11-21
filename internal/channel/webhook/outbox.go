@@ -186,6 +186,7 @@ func (c *Channel) deliverOutboxOne(ctx context.Context, entry store.ChannelOutbo
 		entry.Status = store.ChannelOutboxDead
 		entry.LastError = err.Error()
 		_ = st.UpdateChannelOutbox(entry)
+		c.appendOutboundDeadEvent(entry)
 		return
 	}
 	targetURL := entry.TargetURL
@@ -204,6 +205,7 @@ func (c *Channel) deliverOutboxOne(ctx context.Context, entry store.ChannelOutbo
 	if !runwebhook.Retryable(statusCode, postErr) || entry.Attempt >= entry.MaxAttempts {
 		entry.Status = store.ChannelOutboxDead
 		_ = st.UpdateChannelOutbox(entry)
+		c.appendOutboundDeadEvent(entry)
 		return
 	}
 	entry.NextRetryAt = time.Now().UTC().Add(runwebhook.Backoff(entry.Attempt))
@@ -252,6 +254,38 @@ func formatOutboundDeliveryError(statusCode int, err error) string {
 		return fmt.Sprintf("webhook: outbound status %d", statusCode)
 	}
 	return "webhook: outbound delivery failed"
+}
+
+// appendOutboundDeadEvent makes a permanently failed delivery visible in the
+// owning Run's timeline. Payload text is deliberately omitted; the settings page
+// still has the full outbox row and retry action.
+func (c *Channel) appendOutboundDeadEvent(entry store.ChannelOutboxEntry) {
+	if entry.RunID == "" {
+		return
+	}
+	st := c.storeRef()
+	if st == nil {
+		return
+	}
+	_ = st.AppendEvent(entry.RunID, store.Event{
+		Type:      "channel.outbound.dead",
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"channel":     entry.Channel,
+			"kind":        string(entry.Kind),
+			"attempts":    entry.Attempt,
+			"error":       truncateOutboundError(entry.LastError),
+			"delivery_id": entry.ID,
+		},
+	})
+}
+
+func truncateOutboundError(raw string) string {
+	const max = 200
+	if len(raw) <= max {
+		return raw
+	}
+	return raw[:max] + "…"
 }
 
 // putMediaBlob stores media bytes and returns the blob key.

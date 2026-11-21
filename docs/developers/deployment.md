@@ -9,6 +9,10 @@ Baize 是单个静态 Go 二进制。**消息渠道**通过旁路适配器进程
 | 适配器 → baize | `POST /v0/channels/{name}/inbound` |
 | baize → 适配器 | `/outbound`（发消息）、`/admin/*`（登录 / 状态 / start / stop / shutdown）、`GET /healthz` |
 
+Inbound 验签通过后立即返回 **202 Accepted**：原始消息先落库，附件下载/解析与建 Run 由后台 worker 重试；适配器无需等待附件。同一 `idempotency_key` 已接收时返回 **200 `duplicate`**。验签仍返回 401。
+
+处理失败（重试耗尽）的入站消息可在 **设置 → 收件通道 → 失败的入站消息** 查看并一键重试（管理员）；列表不展示原始消息体。
+
 每个主机只选一种模式：**Autostart** 或 **Standalone**。
 
 ## Autostart（桌面 / 演示 / 单机，含 Windows）

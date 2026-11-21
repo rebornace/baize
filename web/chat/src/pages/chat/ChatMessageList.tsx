@@ -240,6 +240,7 @@ export function ChatMessageList({
               key={messageRowKey(m, msgIndex, messages)}
               className={`msg-row ${bubbleClass}`}
               data-turn-anchor={isTurnAnchor ? '' : undefined}
+              data-message-id={m.id}
             >
               {runHistoryBlocks && (
                 <div className="msg-history-blocks" data-testid="history-blocks">

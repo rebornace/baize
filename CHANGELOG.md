@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.32.0 — 2026-11-21
+
+> 汇总 `v0.31.0` 之后的所有改动。本地开发切片编号仅保留在规格/账本中，不作为发布版本号。
+
+### Chat / WebUI
+
+- **全局消息搜索**：跨会话搜索聊天记录，FTS/ILIKE/Memory 三种实现，按会话 ACL 过滤；侧边栏「搜索消息」250ms 防抖。
+- **搜索筛选**：角色（你 / 助手 / 系统）、最近 7/30/90 天、仅当前会话；过滤在 store 的 `LIMIT` 之前生效。
+- **命中定位**：点击结果滚动到具体消息并高亮 2.2 秒；3 秒内找不到只打开会话，不报错。
+- **会话导出**：侧边栏「导出」下载 Markdown，含标题、时间与消息；不含 thinking 和内部媒体链接，附件不嵌入。
+- **待审批中心**：跨会话汇总 `waiting_human`，侧边栏计数、15 秒轮询、一键跳回。
+- **面板内审批**：直接同意/拒绝，展示工具参数，可选留言；拒绝二次确认，失败行内提示并刷新。
+- **新待办提醒**：新出现的等待项 toast + 标题 `(N)` 计数；首次加载静默。
+- **桌面通知**：待审批面板内可选开启系统通知；仅窗口隐藏且出现新待办时提醒，点击回到面板；无权限时静默降级。
+- **记忆设置页分页**：首屏 50 条、加载更多、跨页选择、刷新保留深度，并明确“只基于已加载项”。
+- **记忆后端搜索**：`GET /v0/settings/memory` 支持 `q` / `source`，三 store 过滤后分页；前端防抖并丢弃旧响应。
+- **浏览器收口修复**：托管登录成功页说明“回到对话点我已登录，继续”，避免误以为对话会自动恢复。
+- **搜索 FTS 修复**：SQLite FTS5 `MATCH` 改用表名，LIKE 回退成功后不再返回陈旧 FTS 错误。
+
+### 渠道 / HITL
+
+- **忙时文本合并**：会话有活跃 Run 时，后续文本进入待合并队列，上一轮结束后自动起一轮后续 Run；审批优先，4000 runes 上限。
+- **合并持久化**：`channel_pending` 保存批次，重启恢复；Run 创建成功后才删除，崩溃时 at-least-once。
+- **附件合并**：忙时文本与附件一起排队并持久化；每会话批次 10 MiB 上限，超限回退固定文案；旧表自动迁移。
+- **HITL 审批链接**：渠道审批提醒可附短时签名页 `GET/POST /v0/hitl/approvals/{token}`，手机打开即可同意/拒绝；绑定 run、等待起点与到期。
+- **Webhook 入站硬化**：验签后立即 202，原始消息落 `webhook_inbound_jobs`，附件/建 Run 交给可重试 worker；去重 key、重启恢复、HTTP 超时。
+- **死信可见与重试**：`GET /v0/settings/channels/inbound-jobs` 列出 dead 任务，设置页可一键重试；不回显原始消息体。
+- **日程 `in_minutes`**：`schedule_create` 的 `kind=once` 支持 1–43200 分钟相对时间，与 `fire_at` 互斥。
+- **A5 日程 claim 租约**：`ClaimDue` 写入 2 分钟 `claim_expires_at`，启动/每轮扫描只回收过期占位；旧表自动补列，`SetRunningRunID` 不覆盖其他 Run。
+- **A9 出站 dead 可见**：渠道永久失败写 `channel.outbound.dead` 到 Run 时间线，Chat 显示系统提示；只含 channel/kind/attempts/错误摘要，不含正文；设置页重试保留。
+
+### Mobile RT
+
+- **机上工具面 v0**：设备端解析 OpenAPI 3 GET，支持 path/query、operationId、summary/description 和单个认证头；远程工具先审批后执行。
+- **演示连接器**：`cmd/mobilebind/demo-connector` 单进程提供配置、spec、票据 API 与 `X-API-Key` 校验；空壳显示工具名。
+- **配置恢复**：空壳启动自动重拉已保存 config URL，失败静默保留本地 LLM 配置，防重复请求。
+- **多连接器**：`readonly_apis` 数组、`ConfigureReadOnlyAPIs`、全局唯一工具名、8 连接器 / 100 工具上限、独立 base/auth、整批原子替换。
+- **连接器写操作**：每个连接器可选 `allow_writes`，解析 POST/PUT/PATCH；JSON body 对象展开、`$ref`、数组/标量用 `body`；每次调用先审批，`method` / `write` 展示；写请求不跟随 3xx，body 上限 64 KiB。
+- **Android M3**：Play 上架工程（图标、启动、Manifest、Gradle Wrapper、签名模板、AAB 脚本、商店资料、校验脚本）；签名/提审仍需 Play Console 账号。
+
+### 评测 / 质量
+
+- **EV-PRES 实战**：`ticket-triage` 技能 5 案 × 2 轮真实 `deepseek-chat` 批跑；两臂 9/10，0 新过/新挂，candidate token +43.9%、时长 +24.3%；本语料不晋升该技能。证据在 [`docs/superpowers/notes/eval-artifacts/ev-pres-20261121-2041/`](docs/superpowers/notes/eval-artifacts/ev-pres-20261121-2041/)。
+- **Evidence-eval 修复**：读取 `tool.result.tool_call_id`（兼容旧 `id`）；PowerShell 5.1 用 `curl` + UTF-8 读取 mock 状态；修复 `$id:` 变量解析。
+- **质量收口**：`golangci-lint` / `go vet` 清零，修正审计与架构文档漂移，死信设置页真实浏览器走查。
+
+### 验证
+
+- `go test -p 1 ./...`、`go vet ./...`、`golangci-lint run ./...` 通过。
+- 前端 855 测试、`tsc`、`lint`、`build` 通过。
+- 真实浏览器走查：待审批、桌面通知、搜索筛选/定位、会话导出、死信页。
+- Android AAR 重建与 `assembleDebug` 通过；发布资源检查通过。
+- EV-PRES：`verify-score.ps1` 9 fixtures 全过；`test_summarize.py` 20 tests OK；`--fail-on-new-fail` 退出 0。
+- 发布准备记录见 [`docs/superpowers/notes/2026-11-21-release-prep-0.51.0.md`](docs/superpowers/notes/2026-11-21-release-prep-0.51.0.md)（需按 `v0.32.0` 重跑）。
+
 ## 0.31.0 — 2026-11-20
 
 EV-PRES 薄规格：给现有评测加一层保全感知的成对报告，先预注册，再报 Pass/Avg、新过/新挂、成本与机制归因。纯脚本与文档，不改 Runtime。

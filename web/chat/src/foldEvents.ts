@@ -482,6 +482,15 @@ export function foldEvents(runId: string, events: Event[]): ChatBlock[] {
         blocks.push({ kind: 'system', text: String(data?.error ?? '未知错误') })
         break
       }
+      case 'channel.outbound.dead': {
+        const channelName = String(data?.channel ?? '渠道')
+        const detail = String(data?.error ?? '')
+        blocks.push({
+          kind: 'system',
+          text: detail ? `${channelName} 出站失败：${detail}` : `${channelName} 出站失败`,
+        })
+        break
+      }
       case 'run.spawned': {
         const childRunId = String(data?.child_run_id ?? '')
         if (!childRunId) break

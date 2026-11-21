@@ -48,8 +48,18 @@ func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
 			offset = n
 		}
 	}
+	source := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("source")))
+	if source == "all" {
+		source = ""
+	}
+	if source != "" && source != memory.SourceExplicit && source != memory.SourceAuto {
+		writeError(w, http.StatusBadRequest, "invalid_request", "source must be explicit, auto, or all")
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+
 	owner := s.memoryOwnerID(r.Context())
-	items, err := s.Memory.List(owner, limit, offset)
+	items, err := s.Memory.ListFiltered(owner, query, source, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

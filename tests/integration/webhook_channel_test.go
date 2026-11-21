@@ -103,7 +103,7 @@ func TestWebhookChannelBidirectionalE2E(t *testing.T) {
 	}
 	raw, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("inbound status=%d body=%s", resp.StatusCode, raw)
 	}
 

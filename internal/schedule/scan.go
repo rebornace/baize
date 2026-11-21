@@ -45,6 +45,11 @@ func Scan(store Store, meta MetaReader, opener RunOpener, runStatus RunStatus, n
 		sl.scanLock()
 		defer sl.scanUnlock()
 	}
+	// Reclaim claims abandoned by a crashed replica. Healthy in-flight claims
+	// carry a future lease and are left alone, so this is safe every tick.
+	if err := store.ClearStalePending(now); err != nil {
+		return err
+	}
 	if err := reconcileRunningRuns(store, runStatus); err != nil {
 		return err
 	}

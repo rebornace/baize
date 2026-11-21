@@ -9,6 +9,10 @@ Baize is a single static Go binary. **Message channels** are extensible and conn
 | Adapter → baize | `POST /v0/channels/{name}/inbound` |
 | baize → adapter | `/outbound` (send messages), `/admin/*` (login / status / start / stop / shutdown), `GET /healthz` |
 
+After signature verification the inbound endpoint returns **202 Accepted** immediately: the raw message is persisted first, then a background worker resolves attachments / creates the Run with retries. Adapters no longer wait for attachment downloads. A repeated `idempotency_key` returns **200 `duplicate`**; invalid signatures still return 401.
+
+Messages that exhaust their retries appear under **Settings → Inbound → Failed inbound messages**, where an admin can inspect the error and retry. The list never exposes the raw message body.
+
 Pick one mode per host: **Autostart** or **Standalone**.
 
 ## Autostart (desktop / single host, including Windows)

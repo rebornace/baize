@@ -25,6 +25,7 @@ import {
 } from '../components/ui'
 import { INBOX, friendlyError, inboxSecretHint } from '../strings'
 import { formatKeyValueMap, parseKeyValueLines } from './connectorForms/lines'
+import { InboundDeadJobs } from './InboundDeadJobs'
 import { toggleSkillSelection } from './SkillsSettings'
 
 const CHANNEL_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/
@@ -484,6 +485,8 @@ export function InboxSettings() {
           </div>
         </form>
       )}
+
+      <InboundDeadJobs />
 
       <ConfirmDialog
         open={pendingRemoveIndex !== null}

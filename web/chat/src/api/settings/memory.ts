@@ -13,10 +13,14 @@ export interface MemoryEntry {
 export async function listMemory(opts?: {
   limit?: number
   offset?: number
+  q?: string
+  source?: 'explicit' | 'auto'
 }): Promise<MemoryEntry[]> {
   const qs = new URLSearchParams()
   if (opts?.limit != null) qs.set('limit', String(opts.limit))
   if (opts?.offset != null) qs.set('offset', String(opts.offset))
+  if (opts?.q) qs.set('q', opts.q)
+  if (opts?.source) qs.set('source', opts.source)
   const suffix = qs.toString() ? `?${qs}` : ''
   const res = await fetch(`/v0/settings/memory${suffix}`, { headers: authInit() })
   const body = await parseJSON<{ items: MemoryEntry[] }>(res)

@@ -122,6 +122,20 @@ CREATE TABLE IF NOT EXISTS webhook_outbox (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS webhook_inbound_jobs (
+  id TEXT PRIMARY KEY,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  last_error TEXT,
+  next_attempt_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_inbound_due ON webhook_inbound_jobs(status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS channel_outbox (
   id TEXT PRIMARY KEY,
   delivery_key TEXT NOT NULL UNIQUE,
@@ -144,6 +158,19 @@ CREATE TABLE IF NOT EXISTS channel_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_channel_outbox_pending ON channel_outbox(status, next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_channel_outbox_channel_status ON channel_outbox(channel, status);
+CREATE TABLE IF NOT EXISTS channel_pending (
+  conversation_id TEXT NOT NULL,
+  batch_id TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  account TEXT NOT NULL DEFAULT '',
+  peer_id TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  truncated INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, batch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_pending_source ON channel_pending(source, updated_at);
 CREATE TABLE IF NOT EXISTS mcp_export_identities (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -291,6 +318,10 @@ func OpenSQLite(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := migrateChannelPendingAttachments(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate channel_pending attachments: %w", err)
+	}
 	if err := migrateRunsColumns(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate runs columns: %w", err)
@@ -391,6 +422,14 @@ func migrateConnectorsColumns(db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func migrateChannelPendingAttachments(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE channel_pending ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'`)
+	if err == nil || isDuplicateColumnErr(err) {
+		return nil
+	}
+	return err
 }
 
 func migrateToolsColumns(db *sql.DB) error {

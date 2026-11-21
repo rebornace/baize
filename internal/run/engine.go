@@ -123,6 +123,10 @@ type Engine struct {
 	Outbound channel.Channel
 	// OutboundExtras optionally supplies per-conversation extras (e.g. context_token).
 	OutboundExtras func(conversationID string) map[string]string
+	// HITLLinkURL optionally returns a short-lived public approval URL for a
+	// waiting approval. It is called only for kind=approval; nil or an empty
+	// result leaves the channel notification unchanged.
+	HITLLinkURL func(runRec *store.Run, payload *store.HITLPayload) string
 	// ImagePartResolver rebuilds image parts for persisted image_refs on cold
 	// resume. nil (or ok=false) degrades that tool result to a text note.
 	ImagePartResolver func(conversationID, workspacePath string) (llm.ContentPart, bool)

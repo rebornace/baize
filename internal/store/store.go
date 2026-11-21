@@ -292,6 +292,29 @@ const (
 	ChannelOutboxKindMedia ChannelOutboxKind = "media"
 )
 
+// PendingAttachment is one file carried by a busy-merge batch. Bytes live in
+// the batch row so a restart can resume without a separate blob lifecycle.
+type PendingAttachment struct {
+	Name string `json:"name,omitempty"`
+	MIME string `json:"mime,omitempty"`
+	Data []byte `json:"data,omitempty"`
+}
+
+// ChannelPending is one busy-merge batch (channel runtime) persisted so a
+// restart can resume it. BatchID distinguishes a claimed batch from messages
+// appended while its follow-up run is starting.
+type ChannelPending struct {
+	ConversationID string
+	BatchID        string
+	Source         string
+	Account        string
+	PeerID         string
+	Text           string
+	Attachments    []PendingAttachment
+	Truncated      bool
+	UpdatedAt      time.Time
+}
+
 type ChannelOutboxEntry struct {
 	ID             string
 	DeliveryKey    string
@@ -665,12 +688,30 @@ type Store interface {
 	GetInboxThread(channelID, externalID string) (conversationID string, ok bool, err error)
 	PutInboxThread(channelID, externalID, conversationID string) error
 
+	// Durable webhook inbound jobs: the handler acks after persisting, and a
+	// worker resolves attachments / creates the run with retries.
+	PutWebhookInboundJobIfAbsent(job WebhookInboundJob) (created bool, id string, err error)
+	ListWebhookInboundJobsDue(now time.Time, limit int) ([]WebhookInboundJob, error)
+	// ListWebhookInboundJobs filters by channel ("" = all) and statuses
+	// (empty = all), newest first, capped by limit.
+	ListWebhookInboundJobs(channel string, statuses []WebhookInboundStatus, limit int) ([]WebhookInboundJob, error)
+	GetWebhookInboundJob(id string) (WebhookInboundJob, bool, error)
+	// ResetWebhookInboundJob re-queues a dead job (attempt 0, pending, due now).
+	ResetWebhookInboundJob(id string) error
+	UpdateWebhookInboundJob(job WebhookInboundJob) error
+	DeleteWebhookInboundJobsBefore(cutoff time.Time) error
+
 	PutWebhookOutboxIfAbsent(entry WebhookOutboxEntry) (created bool, id string, err error)
 	ListWebhookOutboxDue(now time.Time, limit int) ([]WebhookOutboxEntry, error)
 	ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([]WebhookOutboxEntry, error)
 	GetWebhookOutbox(id string) (WebhookOutboxEntry, error)
 	UpdateWebhookOutbox(entry WebhookOutboxEntry) error
 	ResetWebhookOutboxRetry(id string) error
+
+	// Busy-merge text batches survive restarts. List is ordered oldest first.
+	UpsertChannelPending(p ChannelPending) error
+	ListChannelPending(source string) ([]ChannelPending, error)
+	DeleteChannelPending(conversationID, batchID string) error
 
 	PutChannelOutboxIfAbsent(entry ChannelOutboxEntry) (created bool, id string, err error)
 	ListChannelOutboxDue(now time.Time, limit int) ([]ChannelOutboxEntry, error)

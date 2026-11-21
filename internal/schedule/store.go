@@ -13,6 +13,10 @@ import (
 const (
 	// ClaimPending is written to running_run_id while a due row is being opened.
 	ClaimPending = "pending"
+	// ClaimLease bounds how long a pending claim is honored. A crashed replica's
+	// claim can be reclaimed after this window; healthy claims are renewed by
+	// completing the open (which replaces pending with the run ID).
+	ClaimLease = 2 * time.Minute
 	// MaxActivePerOwner is the cap on active schedules per owner_id.
 	MaxActivePerOwner = 20
 )
@@ -40,6 +44,7 @@ type Item struct {
 	Status         string
 	NextRunAt      time.Time
 	RunningRunID   string
+	ClaimExpiresAt time.Time
 	LastError      string
 	Revision       int
 }
@@ -52,7 +57,9 @@ type Store interface {
 	Pause(ownerID, id string) error
 	Resume(ownerID, id string, next time.Time) error
 	Delete(ownerID, id string) error
-	ClearStalePending() error
+	// ClearStalePending releases pending claims whose lease expired before now.
+	// Legacy rows without an expiry are treated as stale.
+	ClearStalePending(now time.Time) error
 	ListWithRunningRun() ([]Item, error)
 	ReleaseRunningRun(id string) error
 	FailOpen(id, lastError string) error
@@ -128,6 +135,7 @@ func (s *MemoryStore) ClaimDue(now time.Time) (Item, bool, error) {
 		return Item{}, false, nil
 	}
 	pick.RunningRunID = ClaimPending
+	pick.ClaimExpiresAt = now.UTC().Add(ClaimLease)
 	pick.Revision++
 	s.byID[pick.ID] = pick
 	return pick, true, nil
@@ -188,15 +196,20 @@ func (s *MemoryStore) Resume(ownerID, id string, next time.Time) error {
 	return nil
 }
 
-func (s *MemoryStore) ClearStalePending() error {
+func (s *MemoryStore) ClearStalePending(now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, it := range s.byID {
-		if it.RunningRunID == ClaimPending {
-			it.RunningRunID = ""
-			it.Revision++
-			s.byID[id] = it
+		if it.RunningRunID != ClaimPending {
+			continue
 		}
+		if !it.ClaimExpiresAt.IsZero() && it.ClaimExpiresAt.After(now) {
+			continue
+		}
+		it.RunningRunID = ""
+		it.ClaimExpiresAt = time.Time{}
+		it.Revision++
+		s.byID[id] = it
 	}
 	return nil
 }
@@ -222,6 +235,7 @@ func (s *MemoryStore) ReleaseRunningRun(id string) error {
 		return fmt.Errorf("schedule: not found")
 	}
 	it.RunningRunID = ""
+	it.ClaimExpiresAt = time.Time{}
 	it.Revision++
 	s.byID[id] = it
 	return nil
@@ -238,6 +252,7 @@ func (s *MemoryStore) FailOpen(id, lastError string) error {
 		return nil
 	}
 	it.RunningRunID = ""
+	it.ClaimExpiresAt = time.Time{}
 	it.LastError = lastError
 	it.Revision++
 	s.byID[id] = it
@@ -255,6 +270,7 @@ func (s *MemoryStore) CompleteOpen(id, runID, status string, nextRunAt time.Time
 		return fmt.Errorf("schedule: complete open conflict")
 	}
 	it.RunningRunID = runID
+	it.ClaimExpiresAt = time.Time{}
 	it.Status = status
 	it.NextRunAt = nextRunAt.UTC()
 	it.LastError = ""
@@ -270,7 +286,11 @@ func (s *MemoryStore) SetRunningRunID(id, runID string) error {
 	if !ok {
 		return fmt.Errorf("schedule: not found")
 	}
+	if it.RunningRunID != "" && it.RunningRunID != ClaimPending {
+		return fmt.Errorf("schedule: set run conflict")
+	}
 	it.RunningRunID = runID
+	it.ClaimExpiresAt = time.Time{}
 	it.Revision++
 	s.byID[id] = it
 	return nil

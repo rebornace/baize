@@ -27,6 +27,10 @@ let json = MobileagentSend(userText)
 
 模拟器访问宿主机 mock：`http://127.0.0.1:18080/v1`（先 `go run ./cmd/mobilebind/mockllm`）。
 
+连接器演示（含一个 POST 写操作）：另开 `go run ./cmd/mobilebind/demo-connector -addr 127.0.0.1:18081`，Remote config URL 填 `http://127.0.0.1:18081/config.json`；点 Fetch remote config 后应显示 `Tools: list_tickets, create_ticket, get_ticket`。写调用会先弹审批卡（`POST /tickets …`）。之后启动 App 会自动重拉已保存的配置；失败静默保留本地 LLM 配置。
+
+> 仓库里的 XCFramework 是只读连接器 API 之前的构建；`ContentView` 已调用 `MobileagentRemoteToolNames()`，需先在 macOS 上重跑 `./scripts/build-mobileagent-ios.sh` 再编译（写操作 API 同样要重建后才能用）。
+
 ## M3 上架
 
 已备：AppIcon / AccentColor / LaunchBackground、`PrivacyInfo.xcprivacy`、iPhone-only 工程、`ExportOptions.plist`、归档脚本与商店资料。

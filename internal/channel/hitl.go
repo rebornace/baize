@@ -12,7 +12,8 @@ import (
 const HITLHelpReply = "当前有待审批操作。请回复「批准」或「拒绝」，也可在 /ui 处理。"
 
 // FormatHITLNotify builds the WeChat (or other channel) text for a pending approval.
-func FormatHITLNotify(p *store.HITLPayload) string {
+// approvalURL is optional; when empty the text is unchanged.
+func FormatHITLNotify(p *store.HITLPayload, approvalURL string) string {
 	if p == nil {
 		return "需要人工审批才能继续。请回复「批准」或「拒绝」。"
 	}
@@ -27,6 +28,10 @@ func FormatHITLNotify(p *store.HITLPayload) string {
 		fmt.Fprintf(&b, "说明：%s\n", prompt)
 	}
 	b.WriteString("\n请回复「批准」或「拒绝」。也可在 /ui 操作。")
+	if u := strings.TrimSpace(approvalURL); u != "" {
+		b.WriteString("\n\n打开链接审批：\n")
+		b.WriteString(u)
+	}
 	return b.String()
 }
 

@@ -257,35 +257,45 @@ func (s *SQLiteStore) Delete(ownerID, id string) error {
 }
 
 func (s *SQLiteStore) List(ownerID string, limit, offset int) ([]Entry, error) {
-	rows, err := s.db.Query(
-		`SELECT id, owner_id, key, text, source, created_at, updated_at
-		 FROM account_memory WHERE owner_id = ?
-		 ORDER BY updated_at DESC, id ASC`,
-		ownerID,
-	)
+	return s.ListFiltered(ownerID, "", "", limit, offset)
+}
+
+func (s *SQLiteStore) ListFiltered(ownerID, query, source string, limit, offset int) ([]Entry, error) {
+	where := []string{"owner_id = ?"}
+	args := []any{ownerID}
+	if q := strings.TrimSpace(query); q != "" {
+		pattern := "%" + escapeLike(q) + "%"
+		where = append(where, "(key LIKE ? ESCAPE '\\' OR text LIKE ? ESCAPE '\\')")
+		args = append(args, pattern, pattern)
+	}
+	if src := strings.TrimSpace(source); src != "" {
+		where = append(where, "source = ?")
+		args = append(args, src)
+	}
+	querySQL := `SELECT id, owner_id, key, text, source, created_at, updated_at
+		FROM account_memory WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY updated_at DESC, id ASC`
+	if limit > 0 {
+		querySQL += " LIMIT ? OFFSET ?"
+		args = append(args, limit, offset)
+	} else if offset > 0 {
+		querySQL += " LIMIT -1 OFFSET ?"
+		args = append(args, offset)
+	}
+	rows, err := s.db.Query(querySQL, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var all []Entry
+	var out []Entry
 	for rows.Next() {
 		e, err := scanEntry(rows)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, e)
+		out = append(out, e)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if offset > len(all) {
-		return nil, nil
-	}
-	all = all[offset:]
-	if limit > 0 && len(all) > limit {
-		all = all[:limit]
-	}
-	return all, nil
+	return out, rows.Err()
 }
 
 func (s *SQLiteStore) Search(ownerID, query string, topK int) ([]Entry, error) {

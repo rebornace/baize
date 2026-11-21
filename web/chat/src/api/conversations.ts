@@ -1,6 +1,54 @@
 import { authInit, parseJSON } from './http'
 import type { ChatMessage, IdentityView } from './types'
 
+export interface MessageSearchHit {
+  conversation_id: string
+  conversation_title?: string
+  message_id: string
+  role: string
+  snippet: string
+  created_at?: string
+}
+
+export interface MessageSearchOptions {
+  limit?: number
+  /** user / assistant / system_note; omit for all roles. */
+  role?: string
+  /** Restrict to the last N days (1..3650). */
+  days?: number
+  /** Restrict to one conversation (still ACL-checked by the server). */
+  conversationId?: string
+}
+
+export async function searchConversationMessages(
+  query: string,
+  opts: MessageSearchOptions = {},
+): Promise<MessageSearchHit[]> {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(opts.limit ?? 20),
+  })
+  if (opts.role) params.set('role', opts.role)
+  if (opts.days) params.set('days', String(opts.days))
+  if (opts.conversationId) params.set('conversation_id', opts.conversationId)
+  const res = await fetch(`/v0/conversations/search?${params.toString()}`, {
+    headers: authInit(),
+  })
+  const body = await parseJSON<{ hits?: MessageSearchHit[] }>(res)
+  return body.hits ?? []
+}
+
+export async function exportConversationMarkdown(conversationId: string): Promise<string> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/export`,
+    { headers: authInit() },
+  )
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  }
+  return res.text()
+}
+
 export async function createConversationHostedLogin(
   conversationId: string,
   connectorId: string,

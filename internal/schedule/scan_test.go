@@ -304,7 +304,8 @@ func TestClearStalePendingThenScanOpens(t *testing.T) {
 	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
-	if err := s.ClearStalePending(); err != nil {
+	later := now.Add(schedule.ClaimLease + time.Second)
+	if err := s.ClearStalePending(later); err != nil {
 		t.Fatal(err)
 	}
 	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
@@ -312,6 +313,63 @@ func TestClearStalePendingThenScanOpens(t *testing.T) {
 	}
 	if opener.callCount() != 1 {
 		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+}
+
+func TestSetRunningRunIDDoesNotOverwriteAnotherRun(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "owned run", now.Add(-time.Hour))
+	if err := s.SetRunningRunID(it.ID, "run_a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunningRunID(it.ID, "run_b"); err == nil {
+		t.Fatal("must not overwrite an existing run id")
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != "run_a" {
+		t.Fatalf("running_run_id=%q", got.RunningRunID)
+	}
+}
+
+func TestClaimLeaseProtectsFreshPending(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "fresh pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease / 2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("fresh claim must survive: %+v", got)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease + time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != "" || !got.ClaimExpiresAt.IsZero() {
+		t.Fatalf("expired claim must be released: %+v", got)
+	}
+}
+
+func TestSQLiteClaimLeaseProtectsFreshPending(t *testing.T) {
+	s := openSQLiteSchedule(t)
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "fresh pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease / 2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("fresh claim must survive: %+v", got)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease + time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != "" || !got.ClaimExpiresAt.IsZero() {
+		t.Fatalf("expired claim must be released: %+v", got)
 	}
 }
 

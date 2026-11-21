@@ -9,6 +9,10 @@ type Store interface {
 	Get(id string) (Entry, error)
 	Delete(ownerID, id string) error
 	List(ownerID string, limit, offset int) ([]Entry, error)
+	// ListFiltered returns owner entries matching an optional case-insensitive
+	// substring on key/text and an optional exact source, ordered by
+	// updated_at DESC, id ASC, then paginated.
+	ListFiltered(ownerID, query, source string, limit, offset int) ([]Entry, error)
 	Search(ownerID, query string, topK int) ([]Entry, error)
 	Forget(ownerID, key, text string) (int, error)
 }

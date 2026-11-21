@@ -31,6 +31,8 @@ func TestMinRoleTable(t *testing.T) {
 		{"POST", "/v0/runs/r1/resume", RoleOperator},
 		{"POST", "/v0/runs/r1/cancel", RoleOperator},
 		{"POST", "/v0/runs/r1/plugin-callbacks", RoleNone},
+		{"GET", "/v0/hitl/approvals/tok", RoleNone},
+		{"POST", "/v0/hitl/approvals/tok", RoleNone},
 		{"GET", "/v0/runs/r1", RoleOperator},
 		{"GET", "/v0/runs/r1/events", RoleOperator},
 		{"GET", "/v0/runs/r1/stream", RoleOperator},

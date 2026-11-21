@@ -29,9 +29,13 @@ This is not downstream business IAM or multi-tenant SSO.
 | Tools | `GET /v0/tools`, `PATCH /v0/tools/{name}` | Tool catalog (incl. disabled rows) |
 | Skills | `GET/POST /v0/skills`, `GET/DELETE /v0/skills/{id}` | Skill packs |
 | Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `GET .../binding` is the turn dependency closure (Chat “View run binding”) |
+| HITL approval link (public) | `GET/POST /v0/hitl/approvals/{token}` | Channel approval link; GET is read-only, POST approves/rejects, both use a short-lived HMAC token (`RoleNone`) and still go through `ContinueFromHITL` |
 | Inbox | `POST /v0/inbox/{channel_id}` | Signed webhook inbox ingress |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
 | Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |
+| Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | Cross-conversation message search; optional `role` / `days` / `conversation_id`; ACL-filtered, returns title, snippet and role |
+| Conversation export | `GET /v0/conversations/{id}/export` | Markdown export (ACL; no thinking / internal media links) |
+| Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`, `POST .../{id}/retry` | Inspect/retry failed webhook inbound jobs (admin; message body omitted) |
 | Workspaces | `GET/POST /v0/workspaces` | Web workspaces; logins shared within a workspace (Settings → Accounts) |
 | Artifacts / media | `GET /v0/artifacts/{id}`, `GET /v0/channels/media/...` | Artifacts and channel media |
 | Settings | `/v0/settings/*` | webhook, inbox, store, channels, runtime, credentials, models, memory, **mcp-export** (Expose capabilities), tool-retrieval… |
@@ -46,6 +50,8 @@ Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human
 A conversation allows one active Run at a time (`queued` / `running` / `waiting_human`). While busy, `POST /v0/runs` returns `409 conversation_busy`; `POST /v0/inbox/{channel_id}` returns 409 with `Retry-After`, and the same `idempotency_key` may be retried once the conversation is idle. The guard is process-local; see “Known limits” in Architecture for multi-replica behavior.
 
 Inbox-created conversations belong to the machine identity `local-dev` and are isolated from UI conversations; passing a `conversation_id` that points at a human conversation is still refused.
+
+The memory list `GET /v0/settings/memory` accepts `limit` / `offset` / `q` (case-insensitive key or text substring) / `source` (`explicit` / `auto` / `all`); filtering runs within the owner scope and paginates after ordering.
 
 ## Matching & decisions (tool prefilter + decision model)
 

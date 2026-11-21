@@ -19,6 +19,12 @@ type Store interface {
 	// (FTS5 on SQLite; substring on MemoryStore; ILIKE/tsquery on Postgres).
 	// topK caps results (default 8, max 20). Empty query returns nil.
 	Search(conversationID, query string, topK int) ([]Message, error)
+	// SearchAll searches messages across conversations (newest first).
+	// limit caps results (default 20, max 50). Empty query returns nil.
+	SearchAll(query string, limit int) ([]Message, error)
+	// SearchAllFiltered is SearchAll with optional conversation, role and time
+	// filters. Zero fields mean no restriction; empty query returns nil.
+	SearchAllFiltered(filter SearchFilter) ([]Message, error)
 	ListSummaries() []Summary
 	Clear(conversationID string)
 	TruncateFrom(conversationID, messageID string) (deleted int, err error)
@@ -35,6 +41,61 @@ type Store interface {
 	GetGoalStack(conversationID string) (GoalStack, bool)
 	UpsertGoalStack(s GoalStack) error
 	ClearGoalStack(conversationID string)
+}
+
+// SearchFilter narrows a cross-conversation message search.
+type SearchFilter struct {
+	Query          string
+	ConversationID string
+	Roles          []string
+	Since          time.Time // inclusive
+	Until          time.Time // exclusive
+	Limit          int
+}
+
+// normalized trims and deduplicates inputs and clamps the result limit.
+func (f SearchFilter) normalized() SearchFilter {
+	f.Query = strings.TrimSpace(f.Query)
+	f.ConversationID = strings.TrimSpace(f.ConversationID)
+	if len(f.Roles) > 0 {
+		seen := make(map[string]bool, len(f.Roles))
+		roles := make([]string, 0, len(f.Roles))
+		for _, role := range f.Roles {
+			role = strings.TrimSpace(role)
+			if role == "" || seen[role] {
+				continue
+			}
+			seen[role] = true
+			roles = append(roles, role)
+		}
+		f.Roles = roles
+	}
+	f.Limit = clampSearchAllLimit(f.Limit)
+	return f
+}
+
+// matches applies role and time filters; the query and conversation are
+// handled by each store's native search path.
+func (f SearchFilter) matches(m Message) bool {
+	if len(f.Roles) > 0 {
+		found := false
+		for _, role := range f.Roles {
+			if m.Role == role {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if !f.Since.IsZero() && m.CreatedAt.Before(f.Since) {
+		return false
+	}
+	if !f.Until.IsZero() && !m.CreatedAt.Before(f.Until) {
+		return false
+	}
+	return true
 }
 
 // MemoryStore is an in-memory Store implementation.
@@ -165,6 +226,41 @@ func (s *MemoryStore) Search(conversationID, query string, topK int) ([]Message,
 		if len(out) >= topK {
 			break
 		}
+	}
+	return out, nil
+}
+
+func (s *MemoryStore) SearchAll(query string, limit int) ([]Message, error) {
+	return s.SearchAllFiltered(SearchFilter{Query: query, Limit: limit})
+}
+
+func (s *MemoryStore) SearchAllFiltered(filter SearchFilter) ([]Message, error) {
+	filter = filter.normalized()
+	if filter.Query == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	var out []Message
+	for convID, msgs := range s.msgs {
+		if filter.ConversationID != "" && convID != filter.ConversationID {
+			continue
+		}
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if !strings.Contains(msgs[i].Content, filter.Query) || !filter.matches(msgs[i]) {
+				continue
+			}
+			out = append(out, msgs[i])
+		}
+	}
+	s.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID > out[j].ID
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if len(out) > filter.Limit {
+		out = out[:filter.Limit]
 	}
 	return out, nil
 }

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { goalEventCount } from '../goalEvents'
 import {
   createConversationHostedLogin,
+  exportConversationMarkdown,
   getGoal,
   getUIConfig,
   listModelProfiles,
+  listPendingApprovals,
   listSkills,
   listTools,
   patchGoalTip,
@@ -16,6 +18,7 @@ import {
   stopGoal,
   type GoalStackView,
   type ModelProfile,
+  type PendingApproval,
   type SkillSummary,
   type ToolInfo,
 } from '../api'
@@ -39,6 +42,9 @@ import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
 import { useLocale } from '../locale/LocaleContext'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
+import { conversationExportFilename, downloadTextFile } from '../conversationExport'
+import { desktopNotifyEnabled, showPendingNotification } from '../desktopNotify'
+import { freshPendingApprovals, pendingDocumentTitle } from '../pendingNotice'
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
 import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
 import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
@@ -52,6 +58,8 @@ import { goalCandidatesFromMessages } from './chat/goalCandidates'
 import { ChatMessageList, copyText } from './chat/ChatMessageList'
 import { ChatSidebar } from './chat/ChatSidebar'
 import { ChatComposerTrailing, ChatTopBar } from './chat/ChatTopBar'
+import { MessageSearch } from './chat/MessageSearch'
+import { PendingCenter } from './chat/PendingCenter'
 import { useChatRun } from './chat/useChatRun'
 import { useChatSession, type ChatLiveControls } from './chat/useChatSession'
 
@@ -81,6 +89,93 @@ export function ChatPage() {
     runId: string
     draft: SkillDraftResponse | null
   } | null>(null)
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
+  const [pendingCenterOpen, setPendingCenterOpen] = useState(false)
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false)
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null)
+  // null until the first successful list, so startup does not toast existing
+  // items. Later lists diff against this set to announce only new ones.
+  const knownPendingRef = useRef<Set<string> | null>(null)
+  const pendingCenterOpenRef = useRef(false)
+  pendingCenterOpenRef.current = pendingCenterOpen
+  const pendingRefreshInFlightRef = useRef(false)
+  const baseTitleRef = useRef('')
+
+  const refreshPendingApprovals = useCallback(async () => {
+    if (pendingRefreshInFlightRef.current) return
+    pendingRefreshInFlightRef.current = true
+    try {
+      const res = await listPendingApprovals()
+      const items = Array.isArray(res.pending) ? res.pending : []
+      const known = knownPendingRef.current
+      if (known !== null) {
+        const fresh = freshPendingApprovals(items, known)
+        if (fresh.length > 0 && !pendingCenterOpenRef.current) {
+          const first = fresh[0]
+          const detail =
+            fresh.length === 1
+              ? first.conversation_title || first.conversation_id
+              : CHAT.pendingNewToastDetail(fresh.length)
+          pushToast({ tone: 'info', title: CHAT.pendingNewToast, detail })
+          if (document.hidden && desktopNotifyEnabled()) {
+            showPendingNotification(CHAT.pendingNewToast, detail, () => setPendingCenterOpen(true))
+          }
+        }
+      }
+      knownPendingRef.current = new Set(items.map((p) => p.run_id))
+      setPendingApprovals(items)
+    } catch {
+      // Soft failure: keep the last good list; chat never depends on this.
+    } finally {
+      pendingRefreshInFlightRef.current = false
+    }
+  }, [pushToast])
+
+  useEffect(() => {
+    void refreshPendingApprovals()
+    const timer = window.setInterval(() => {
+      void refreshPendingApprovals()
+    }, 15_000)
+    window.addEventListener('focus', refreshPendingApprovals)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshPendingApprovals)
+    }
+  }, [refreshPendingApprovals])
+
+  // Keep the tab title useful when the window is in the background.
+  useEffect(() => {
+    if (!baseTitleRef.current) {
+      baseTitleRef.current = document.title.replace(/^\(\d+\)\s*/, '')
+    }
+    document.title = pendingDocumentTitle(baseTitleRef.current, pendingApprovals.length)
+  }, [pendingApprovals.length])
+
+  useEffect(
+    () => () => {
+      if (baseTitleRef.current) document.title = baseTitleRef.current
+    },
+    [],
+  )
+
+  const decidePending = useCallback(
+    async (runId: string, decision: 'approve' | 'reject', comment: string) => {
+      try {
+        await resumeRun(runId, decision, comment)
+      } catch (e) {
+        // Someone else may have handled it, or the wait expired; resync.
+        void refreshPendingApprovals()
+        throw e
+      }
+      setPendingApprovals((prev) => prev.filter((p) => p.run_id !== runId))
+      pushToast({
+        tone: 'success',
+        title: decision === 'approve' ? CHAT.pendingApproved : CHAT.pendingRejected,
+      })
+      void refreshPendingApprovals()
+    },
+    [pushToast, refreshPendingApprovals],
+  )
   const [skillDraftMarkdown, setSkillDraftMarkdown] = useState('')
   const [skillDraftEvalStub, setSkillDraftEvalStub] = useState(false)
   const [skillDraftBusy, setSkillDraftBusy] = useState(false)
@@ -113,6 +208,39 @@ export function ChatPage() {
     liveRef,
     agentId,
   })
+
+  const exportChat = useCallback(async () => {
+    try {
+      const text = await exportConversationMarkdown(session.conversationId)
+      downloadTextFile(conversationExportFilename(session.conversationId), text)
+      pushToast({ tone: 'success', title: CHAT.exportSuccess })
+    } catch {
+      pushToast({ tone: 'error', title: CHAT.exportFailed })
+    }
+  }, [pushToast, session.conversationId])
+
+  // Scroll to and flash a search hit once its conversation has rendered.
+  useEffect(() => {
+    if (!focusMessageId) return
+    let cancelled = false
+    const giveUp = window.setTimeout(() => setFocusMessageId(null), 3000)
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      const row = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-message-id]'),
+      ).find((el) => el.getAttribute('data-message-id') === focusMessageId)
+      if (!row) return
+      row.scrollIntoView({ block: 'center' })
+      row.classList.add('msg-focus')
+      window.setTimeout(() => row.classList.remove('msg-focus'), 2200)
+      setFocusMessageId(null)
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      window.clearTimeout(giveUp)
+    }
+  }, [focusMessageId, session.conversationId, session.messages])
 
   // Per-conversation thinking override (sessionStorage); '' = follow model default.
   const [thinkingLevel, setThinkingLevel] = useState(() =>
@@ -539,6 +667,10 @@ export function ChatPage() {
           void session.onSwitchWorkspace(id)
         }}
         onCreateWorkspace={session.onCreateWorkspace}
+        pendingCount={pendingApprovals.length}
+        onOpenPending={() => setPendingCenterOpen(true)}
+        onOpenMessageSearch={() => setMessageSearchOpen(true)}
+        onExportConversation={() => void exportChat()}
       />
 
       <main className="chat-main">
@@ -685,6 +817,30 @@ export function ChatPage() {
           />
         </div>
       </main>
+
+      <MessageSearch
+        open={messageSearchOpen}
+        conversationId={session.conversationId}
+        onClose={() => setMessageSearchOpen(false)}
+        onOpenConversation={(id, messageId) => {
+          session.onSelectConversation(id)
+          setFocusMessageId(messageId)
+          setMessageSearchOpen(false)
+          drawer.close()
+        }}
+      />
+
+      <PendingCenter
+        open={pendingCenterOpen}
+        items={pendingApprovals}
+        onClose={() => setPendingCenterOpen(false)}
+        onOpenConversation={(id) => {
+          session.onSelectConversation(id)
+          setPendingCenterOpen(false)
+          drawer.close()
+        }}
+        onDecide={decidePending}
+      />
 
       <SkillDraftModal
         open={skillDraftModal != null}

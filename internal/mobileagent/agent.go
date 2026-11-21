@@ -1,6 +1,7 @@
 // Package mobileagent is the MOBILE-RT thin on-device orchestration surface:
 // memory session, OpenAI-compatible chat, optional tool loop (get_time /
-// http_get) with foreground HITL for http_get. It does not import cmd/baize,
+// http_get / OpenAPI connectors, read-only by default with opt-in writes) and
+// foreground HITL for every network tool. It does not import cmd/baize,
 // channels, MCP, Postgres, or the full run Engine.
 //
 // Bind via the public package github.com/rebornace/baize/mobileagent (gomobile
@@ -37,14 +38,18 @@ type Agent struct {
 	client      *http.Client // LLM
 	fetchClient *http.Client // http_get
 	pending     *pendingCall
+	readOnly    *readonlyAPI
 	// fetchHits counts successful http_get network attempts (tests).
 	fetchHits int
+	// remoteHits counts successful readonly-connector GET attempts (tests).
+	remoteHits int
 }
 
 type pendingCall struct {
 	CallID   string
 	Name     string
 	ArgsJSON string
+	Remote   *remoteTool
 }
 
 // New returns an unconfigured Agent.
@@ -120,7 +125,7 @@ func (a *Agent) ChatOnce(userText string) (string, error) {
 		return "", fmt.Errorf("mobileagent: call Configure first")
 	}
 	history = append(history, chatMessage{Role: "user", Content: userText})
-	asst, err := postChat(context.Background(), client, base, key, model, history, false)
+	asst, err := postChat(context.Background(), client, base, key, model, history, nil)
 	if err != nil {
 		return "", err
 	}
@@ -161,7 +166,8 @@ func (a *Agent) Send(userText string) string {
 // Send on the default session.
 func Send(userText string) string { return defaultSession.Send(userText) }
 
-// Approve executes a pending http_get and continues the loop.
+// Approve executes the pending network tool (http_get or a connector call,
+// including writes) and continues.
 func (a *Agent) Approve(callID string) string {
 	callID = strings.TrimSpace(callID)
 	a.mu.Lock()
@@ -174,30 +180,39 @@ func (a *Agent) Approve(callID string) string {
 		a.mu.Unlock()
 		return errJSON("call_id mismatch")
 	}
-	name, argsJSON, id := p.Name, p.ArgsJSON, p.CallID
+	_, argsJSON, id, remote := p.Name, p.ArgsJSON, p.CallID, p.Remote
 	a.pending = nil
 	fetch := a.fetchClient
 	a.mu.Unlock()
 
-	content, err := a.execHTTPGet(fetch, argsJSON)
+	var content string
+	var err error
+	if remote != nil {
+		content, err = a.execRemoteTool(remote, argsJSON)
+	} else {
+		content, err = a.execHTTPGet(fetch, argsJSON)
+	}
 	if err != nil {
 		content = fmt.Sprintf(`{"error":%q}`, err.Error())
 	} else {
 		a.mu.Lock()
-		a.fetchHits++
+		if remote != nil {
+			a.remoteHits++
+		} else {
+			a.fetchHits++
+		}
 		a.mu.Unlock()
 	}
 	a.mu.Lock()
 	a.msgs = append(a.msgs, chatMessage{Role: "tool", ToolCallID: id, Content: content})
 	a.mu.Unlock()
-	_ = name
 	return a.continueLoop()
 }
 
 // Approve on the default session.
 func Approve(callID string) string { return defaultSession.Approve(callID) }
 
-// Deny rejects a pending http_get without network I/O and continues.
+// Deny rejects a pending network tool without network I/O and continues.
 func (a *Agent) Deny(callID string) string {
 	callID = strings.TrimSpace(callID)
 	a.mu.Lock()
@@ -241,14 +256,22 @@ func (a *Agent) FetchHits() int {
 	return a.fetchHits
 }
 
+// RemoteHits returns successful readonly-connector requests (tests).
+func (a *Agent) RemoteHits() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.remoteHits
+}
+
 func (a *Agent) continueLoop() string {
 	for round := 0; round < maxToolRounds; round++ {
 		a.mu.Lock()
 		base, key, model, client := a.baseURL, a.apiKey, a.model, a.client
 		history := append([]chatMessage(nil), a.msgs...)
+		tools := a.toolSpecsLocked()
 		a.mu.Unlock()
 
-		asst, err := postChat(context.Background(), client, base, key, model, history, true)
+		asst, err := postChat(context.Background(), client, base, key, model, history, tools)
 		if err != nil {
 			return errJSON(err.Error())
 		}
@@ -287,9 +310,15 @@ func (a *Agent) continueLoop() string {
 				a.mu.Lock()
 				a.pending = &pendingCall{CallID: id, Name: name, ArgsJSON: args}
 				a.mu.Unlock()
-				return needsApprovalJSON(id, name, args, summary)
+				return needsApprovalJSON(id, name, args, summary, http.MethodGet)
 			default:
 				a.mu.Lock()
+				remote := a.remoteToolLocked(name)
+				if remote != nil {
+					a.pending = &pendingCall{CallID: id, Name: name, ArgsJSON: args, Remote: remote}
+					a.mu.Unlock()
+					return needsApprovalJSON(id, name, args, remote.summary(args), remote.method())
+				}
 				a.msgs = append(a.msgs, chatMessage{
 					Role:       "tool",
 					ToolCallID: id,
@@ -403,7 +432,7 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
-func toolSpecs() []toolSpec {
+func builtinToolSpecs() []toolSpec {
 	var timeTool, httpTool toolSpec
 	timeTool.Type = "function"
 	timeTool.Function.Name = "get_time"
@@ -425,11 +454,20 @@ func toolSpecs() []toolSpec {
 	return []toolSpec{timeTool, httpTool}
 }
 
-func postChat(ctx context.Context, client *http.Client, baseURL, apiKey, model string, messages []chatMessage, withTools bool) (chatMessage, error) {
-	reqBody := chatRequest{Model: model, Messages: messages}
-	if withTools {
-		reqBody.Tools = toolSpecs()
+func (a *Agent) toolSpecsLocked() []toolSpec {
+	specs := builtinToolSpecs()
+	if a.readOnly == nil {
+		return specs
 	}
+	for _, tool := range a.readOnly.tools {
+		specs = append(specs, tool.spec())
+	}
+	return specs
+}
+
+func postChat(ctx context.Context, client *http.Client, baseURL, apiKey, model string, messages []chatMessage, tools []toolSpec) (chatMessage, error) {
+	reqBody := chatRequest{Model: model, Messages: messages}
+	reqBody.Tools = tools
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return chatMessage{}, err
@@ -479,14 +517,21 @@ func doneJSON(text string) string {
 	return string(b)
 }
 
-func needsApprovalJSON(callID, name, argsJSON, summary string) string {
-	b, _ := json.Marshal(map[string]any{
+func needsApprovalJSON(callID, name, argsJSON, summary, method string) string {
+	payload := map[string]any{
 		"status":    "needs_approval",
 		"call_id":   callID,
 		"name":      name,
 		"args_json": argsJSON,
 		"summary":   summary,
-	})
+	}
+	if method != "" {
+		payload["method"] = method
+		if method != http.MethodGet {
+			payload["write"] = true
+		}
+	}
+	b, _ := json.Marshal(payload)
 	return string(b)
 }
 
