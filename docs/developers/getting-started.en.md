@@ -6,7 +6,7 @@
 
 | Component | Version | Notes |
 |-----------|---------|--------|
-| Go | **1.25.0** | Matches [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) |
+| Go | **1.27.3** | Matches [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) |
 | Node.js | 22 | Only for `web/chat` CI / local checks |
 
 ## Go

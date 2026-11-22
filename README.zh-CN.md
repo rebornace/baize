@@ -96,7 +96,7 @@
 
 ## 快速开始
 
-需要 Go 1.25+、Node.js 20+（会构建网页操作台），以及兼容 OpenAI 接口的模型密钥。
+需要 Go 1.27+、Node.js 20+（会构建网页操作台），以及兼容 OpenAI 接口的模型密钥。
 
 ```bash
 cp .env.example .env        # 填写 BAIZE_API_KEY=sk-...

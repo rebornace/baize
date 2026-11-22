@@ -30,15 +30,22 @@ const (
 
 // Agent holds in-process conversation state and LLM config.
 type Agent struct {
-	mu          sync.Mutex
-	baseURL     string
-	apiKey      string
-	model       string
-	msgs        []chatMessage
-	client      *http.Client // LLM
-	fetchClient *http.Client // http_get
-	pending     *pendingCall
-	readOnly    *readonlyAPI
+	mu       sync.Mutex
+	baseURL  string
+	apiKey   string
+	model    string
+	msgs     []chatMessage
+	client   *http.Client // LLM
+	pending  *pendingCall
+	readOnly *readonlyAPI
+	// stream is the active asynchronous turn started by StartStream.
+	stream *streamState
+	// allowPrivateNetworks permits http_get / FetchRemoteConfig / spec_url to
+	// reach loopback, private and link-local addresses. Off by default.
+	allowPrivateNetworks bool
+	// httpClients caches the guarded clients per policy. [0] = public only,
+	// [1] = allow private. Guarded clients are immutable after creation.
+	httpClients [2]*http.Client
 	// fetchHits counts successful http_get network attempts (tests).
 	fetchHits int
 	// remoteHits counts successful readonly-connector GET attempts (tests).
@@ -55,8 +62,7 @@ type pendingCall struct {
 // New returns an unconfigured Agent.
 func New() *Agent {
 	return &Agent{
-		client:      &http.Client{Timeout: 120 * time.Second},
-		fetchClient: &http.Client{Timeout: httpGetTimeout, CheckRedirect: limitRedirects},
+		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -94,6 +100,50 @@ func (a *Agent) Configure(apiBase, apiKey, model string) error {
 // Configure configures the default session.
 func Configure(apiBase, apiKey, model string) error {
 	return defaultSession.Configure(apiBase, apiKey, model)
+}
+
+// SetAllowPrivateNetworks controls whether http_get, FetchRemoteConfig,
+// spec_url and connector calls may reach loopback, private, link-local and
+// reserved addresses. Off by default.
+func (a *Agent) SetAllowPrivateNetworks(allow bool) {
+	a.mu.Lock()
+	a.allowPrivateNetworks = allow
+	a.mu.Unlock()
+}
+
+// SetAllowPrivateNetworks on the default session.
+func SetAllowPrivateNetworks(allow bool) { defaultSession.SetAllowPrivateNetworks(allow) }
+
+// AllowPrivateNetworks reports the session network policy.
+func (a *Agent) AllowPrivateNetworks() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.allowPrivateNetworks
+}
+
+// AllowPrivateNetworks on the default session.
+func AllowPrivateNetworks() bool { return defaultSession.AllowPrivateNetworks() }
+
+// httpClientFor returns a cached guarded client. The client is immutable, so
+// sharing it across calls is safe.
+func (a *Agent) httpClientFor(allowPrivate bool) *http.Client {
+	idx := 0
+	if allowPrivate {
+		idx = 1
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.httpClients[idx] == nil {
+		a.httpClients[idx] = guardedHTTPClient(allowPrivate)
+	}
+	return a.httpClients[idx]
+}
+
+func (a *Agent) httpGetClient() *http.Client {
+	a.mu.Lock()
+	allow := a.allowPrivateNetworks
+	a.mu.Unlock()
+	return a.httpClientFor(allow)
 }
 
 // Reset clears messages and pending HITL without changing API config.
@@ -154,13 +204,17 @@ func (a *Agent) Send(userText string) string {
 		a.mu.Unlock()
 		return errJSON("pending approval; Approve or Deny first")
 	}
+	if a.stream != nil && a.stream.active() {
+		a.mu.Unlock()
+		return errJSON("stream in progress; PollStream or CancelStream first")
+	}
 	if a.baseURL == "" || a.model == "" {
 		a.mu.Unlock()
 		return errJSON("call Configure first")
 	}
 	a.msgs = append(a.msgs, chatMessage{Role: "user", Content: userText})
 	a.mu.Unlock()
-	return a.continueLoop()
+	return a.continueLoop(context.Background(), nil)
 }
 
 // Send on the default session.
@@ -182,7 +236,6 @@ func (a *Agent) Approve(callID string) string {
 	}
 	_, argsJSON, id, remote := p.Name, p.ArgsJSON, p.CallID, p.Remote
 	a.pending = nil
-	fetch := a.fetchClient
 	a.mu.Unlock()
 
 	var content string
@@ -190,7 +243,7 @@ func (a *Agent) Approve(callID string) string {
 	if remote != nil {
 		content, err = a.execRemoteTool(remote, argsJSON)
 	} else {
-		content, err = a.execHTTPGet(fetch, argsJSON)
+		content, err = a.execHTTPGet(a.httpGetClient(), argsJSON)
 	}
 	if err != nil {
 		content = fmt.Sprintf(`{"error":%q}`, err.Error())
@@ -206,7 +259,7 @@ func (a *Agent) Approve(callID string) string {
 	a.mu.Lock()
 	a.msgs = append(a.msgs, chatMessage{Role: "tool", ToolCallID: id, Content: content})
 	a.mu.Unlock()
-	return a.continueLoop()
+	return a.continueLoop(context.Background(), nil)
 }
 
 // Approve on the default session.
@@ -233,11 +286,47 @@ func (a *Agent) Deny(callID string) string {
 		Content:    `{"denied_by_user":true}`,
 	})
 	a.mu.Unlock()
-	return a.continueLoop()
+	return a.continueLoop(context.Background(), nil)
 }
 
 // Deny on the default session.
 func Deny(callID string) string { return defaultSession.Deny(callID) }
+
+// PendingApproval returns the current HITL pause, or {"status":"none"}.
+// Useful when switching between sessions: each Agent keeps its own pending
+// call, and the UI must restore the approval card for the selected one.
+func (a *Agent) PendingApproval() string {
+	a.mu.Lock()
+	p := a.pending
+	a.mu.Unlock()
+	if p == nil {
+		return `{"status":"none"}`
+	}
+	if p.Remote != nil {
+		return needsApprovalJSON(p.CallID, p.Name, p.ArgsJSON, p.Remote.summary(p.ArgsJSON), p.Remote.method())
+	}
+	return needsApprovalJSON(p.CallID, p.Name, p.ArgsJSON, summarizeHTTPGetArgs(p.ArgsJSON), http.MethodGet)
+}
+
+// PendingApproval on the default session.
+func PendingApproval() string { return defaultSession.PendingApproval() }
+
+// NewSession returns a new Agent with the same LLM config, network policy and
+// connector tools, but no messages, stream or pending approval.
+func (a *Agent) NewSession() *Agent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	b := New()
+	b.baseURL = a.baseURL
+	b.apiKey = a.apiKey
+	b.model = a.model
+	b.allowPrivateNetworks = a.allowPrivateNetworks
+	b.readOnly = a.readOnly
+	return b
+}
+
+// NewSession on the default session.
+func NewSession() *Agent { return defaultSession.NewSession() }
 
 // MessageCount returns stored message count.
 func (a *Agent) MessageCount() int {
@@ -263,7 +352,7 @@ func (a *Agent) RemoteHits() int {
 	return a.remoteHits
 }
 
-func (a *Agent) continueLoop() string {
+func (a *Agent) continueLoop(ctx context.Context, emit func(string)) string {
 	for round := 0; round < maxToolRounds; round++ {
 		a.mu.Lock()
 		base, key, model, client := a.baseURL, a.apiKey, a.model, a.client
@@ -271,7 +360,13 @@ func (a *Agent) continueLoop() string {
 		tools := a.toolSpecsLocked()
 		a.mu.Unlock()
 
-		asst, err := postChat(context.Background(), client, base, key, model, history, tools)
+		var asst chatMessage
+		var err error
+		if emit != nil {
+			asst, err = postChatStream(ctx, client, base, key, model, history, tools, emit)
+		} else {
+			asst, err = postChat(ctx, client, base, key, model, history, tools)
+		}
 		if err != nil {
 			return errJSON(err.Error())
 		}
@@ -357,7 +452,7 @@ func (a *Agent) execHTTPGet(client *http.Client, argsJSON string) (string, error
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", redactNetworkError(err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, httpGetMaxBytes+1))
@@ -412,6 +507,7 @@ type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	Tools    []toolSpec    `json:"tools,omitempty"`
+	Stream   bool          `json:"stream,omitempty"`
 }
 
 type toolSpec struct {
@@ -490,15 +586,19 @@ func postChat(ctx context.Context, client *http.Client, baseURL, apiKey, model s
 	if err != nil {
 		return chatMessage{}, err
 	}
+	return decodeChatResponse(raw, resp.StatusCode)
+}
+
+func decodeChatResponse(raw []byte, status int) (chatMessage, error) {
 	var parsed chatResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return chatMessage{}, fmt.Errorf("mobileagent: decode response (HTTP %d): %w", resp.StatusCode, err)
+		return chatMessage{}, fmt.Errorf("mobileagent: decode response (HTTP %d): %w", status, err)
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
 		return chatMessage{}, fmt.Errorf("mobileagent: llm error: %s", parsed.Error.Message)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return chatMessage{}, fmt.Errorf("mobileagent: llm HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
+	if status < 200 || status >= 300 {
+		return chatMessage{}, fmt.Errorf("mobileagent: llm HTTP %d: %s", status, truncate(string(raw), 200))
 	}
 	if len(parsed.Choices) == 0 {
 		return chatMessage{}, fmt.Errorf("mobileagent: empty choices")

@@ -12,9 +12,10 @@ import (
 )
 
 type demoConfig struct {
-	APIBase  string `json:"api_base"`
-	Model    string `json:"model"`
-	ReadOnly struct {
+	APIBase              string `json:"api_base"`
+	Model                string `json:"model"`
+	AllowPrivateNetworks bool   `json:"allow_private_networks"`
+	ReadOnly             struct {
 		BaseURL     string `json:"base_url"`
 		AuthHeader  string `json:"auth_header"`
 		AuthValue   string `json:"auth_value"`
@@ -60,6 +61,9 @@ func TestConfigReflectsRequestHost(t *testing.T) {
 	if !cfg.ReadOnly.AllowWrites {
 		t.Fatal("demo connector must opt into writes")
 	}
+	if !cfg.AllowPrivateNetworks {
+		t.Fatal("demo config must opt into private networks")
+	}
 }
 
 func TestConfigWithoutAuthAndWithLLMOverride(t *testing.T) {
@@ -78,6 +82,7 @@ func TestFetchRemoteConfigThroughSDK(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	a := intma.New()
+	a.SetAllowPrivateNetworks(true)
 	raw := a.FetchRemoteConfig(srv.URL + "/config.json")
 	var resp map[string]any
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {

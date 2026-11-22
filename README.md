@@ -96,7 +96,7 @@ All 390 abilities in the first turn measured about 85k input tokens; at cap 16, 
 
 ## Quick start
 
-Go 1.25+, Node.js 20+ (builds the web console), and an OpenAI-compatible API key.
+Go 1.27+, Node.js 20+ (builds the web console), and an OpenAI-compatible API key.
 
 ```bash
 cp .env.example .env        # set BAIZE_API_KEY=sk-...

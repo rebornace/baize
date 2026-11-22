@@ -2,10 +2,15 @@
 .cursor
 .superpowers
 .worktrees
+_p4b-capture
+_public_export
+_public_git
 data
+dist
 .env
 .env.*
 configs/default.local.yaml
+node_modules
 web/chat/node_modules
 *.exe
 *.test

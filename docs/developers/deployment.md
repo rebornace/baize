@@ -15,6 +15,49 @@ Inbound 验签通过后立即返回 **202 Accepted**：原始消息先落库，�
 
 每个主机只选一种模式：**Autostart** 或 **Standalone**。
 
+## Docker 镜像
+
+仓库 `Dockerfile` 为多阶段构建：Alpine 运行镜像、非 root 用户 `baize`、`/app/data` 数据卷、`HEALTHCHECK` 指向 `/healthz`。镜像同时包含 `baize` 与 `weixin-adapter`。
+
+```bash
+docker build -t baize:0.34.0 .
+docker run -d --name baize -p 8080:8080 \
+  -e BAIZE_API_KEY=sk-... \
+  -e BAIZE_ADMIN_TOKEN='<admin-token>' \
+  -v baize-data:/app/data \
+  baize:0.34.0
+```
+
+或使用 compose（`BAIZE_API_KEY` 必填）：
+
+```bash
+export BAIZE_API_KEY=sk-...
+export BAIZE_ADMIN_TOKEN='<admin-token>'       # 可选
+export BAIZE_SETTINGS_KEY='<32-byte-secret>'   # 需要持久化加密设置时必填
+docker compose up -d --build
+docker compose ps                              # STATUS 应为 healthy
+```
+
+说明：
+
+- 容器内用户为 `baize`（非 root）；`/app/data` 是唯一需要持久化的目录。
+- 健康检查每 30s 请求 `http://127.0.0.1:8080/healthz`，启动宽限 15s。
+- 未设置 `BAIZE_SETTINGS_KEY` 时，API key / 渠道 secret 等加密设置无法落库。
+- 容器内 `configs/docker-minimal.yaml` 默认 SQLite + `/app/data/baize.db`。
+
+多架构与供应链：
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t baize:0.34.0-multi \
+  --output type=oci,dest=baize-oci.tar \
+  --sbom=true --provenance=mode=min .
+```
+
+- OCI 归档包含 `linux/amd64` 与 `linux/arm64` manifest，以及 SPDX SBOM 与 SLSA provenance。
+- 发布前至少用 Trivy 或 Docker Scout 扫描一次；存在 CRITICAL 时不要发布。
+- `apk upgrade` 已包含在镜像构建中；基础镜像与 Go 工具链仍需随安全公告更新。
+
 ## Autostart（桌面 / 演示 / 单机，含 Windows）
 
 baize 拉起并托管适配器子进程：崩溃指数退避重启；关机时优雅结束子进程。`secret` 留空则自动生成并持久化共享 HMAC。`creds.json` 默认在 `adapter_creds_dir`（如 `./data/channels/weixin`）。

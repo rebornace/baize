@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.34.0 — 2026-11-22
+
+`0.34.0`：Mobile 私网边界 / 流式 / 多会话、Docker 多架构、Postgres 运维、待审批 SSE 与依赖安全。
+
+### Mobile RT
+
+- **私网边界（默认拒绝）**：`http_get`、`FetchRemoteConfig`、`spec_url` 与所有连接器调用默认拒绝回环、私网、链路本地、CGNAT、组播和保留地址。
+- **流式回复**：`StartStream` / `PollStream` / `CancelStream`；SSE 增量、非流式 JSON 回退、审批暂停即结束当前流、取消等待中的 LLM 请求；原 `Send` 行为与返回值不变。
+- **多会话**：`NewAgent()` / `NewSession()`；每个会话独立消息、流与待审批，`PendingApproval()` 用于切换时恢复审批卡片；`NewSession` 复制配置与连接器但不复制历史。
+- 校验发生在 DNS 解析后的实际拨号地址，重定向与 DNS rebinding 不能绕过；这些请求不使用环境 HTTP 代理。
+- 显式开启：`SetAllowPrivateNetworks(true)`（`Agent` 同名方法）或远程配置顶层 `"allow_private_networks": true`；不会被 `allow_writes` / `methods` 隐式打开。
+- 错误信息保持通用，不暴露内网地址是否存在。
+
+### WebUI
+
+- **待审批中心 SSE**：新增 `GET /v0/hitl/pending/stream`；服务端每 2s 推送变化快照，前端流式接收，断线自动重连并回退 15s 轮询；toast / 桌面通知逻辑复用原列表。
+
+### 部署
+- **Docker 镜像**：运行镜像使用非 root 用户 `baize`，`/app/data` 数据卷，`HEALTHCHECK` 指向 `/healthz`，`STOPSIGNAL SIGTERM`。
+- **多架构 / SBOM**：`buildx` 产出 `linux/amd64` + `linux/arm64` OCI，附 SPDX SBOM 与 SLSA provenance；`apk upgrade` 清掉 OS 层漏洞。
+- compose 增加 `restart: unless-stopped`、`no-new-privileges`、可选 `BAIZE_ADMIN_TOKEN` / `BAIZE_SETTINGS_KEY`。
+- `.dockerignore` 排除公开导出、发布目录、根 `node_modules` 等构建上下文。
+- **Postgres 启动检查**：迁移后核对关键表/列；缺表或缺列时启动即失败，给出“备份后手工迁移”的可操作错误，不再等到查询时才报 SQL 错。
+
+### 安全 / 依赖
+
+- **Go 1.27.3**：`go.mod` 升级到 `go 1.26.0` + `toolchain go1.27.3`；CI 与 Docker 构建镜像同步到 1.27.3。
+- **依赖升级**：kin-openapi 0.153、pgx 5.13、grpc 1.83.2、x/net 0.63、excelize 2.11.1、otel 1.47。
+- **镜像扫描**：Trivy `HIGH,CRITICAL` 为 **0**（OS 0 / baize 0 / weixin-adapter 0）。
+
+### 证据
+
+- 真实链路（公共 SDK + mock-ticket）：默认 `http_get`、连接器、远程配置均被拒；显式开启后 `http_get` 200、连接器写入成功。
+- 记录：[`docs/superpowers/notes/eval-artifacts/netguard-20261122/report.md`](docs/superpowers/notes/eval-artifacts/netguard-20261122/report.md)
+- Docker：镜像 24.8 MB，`healthy`，uid 100，容器内 Run `succeeded` 且导出正常；compose `Up (healthy)`。
+- 记录：[`docs/superpowers/notes/eval-artifacts/docker-image-20261122/report.md`](docs/superpowers/notes/eval-artifacts/docker-image-20261122/report.md)
+- Postgres：0.32 / 0.33 库升级后旧 Run 与导出正常；备份恢复计数一致；缺列库启动退出 1 且错误可读。
+- 记录：[`docs/superpowers/notes/eval-artifacts/pg-ops-20261122/report.md`](docs/superpowers/notes/eval-artifacts/pg-ops-20261122/report.md)
+- 流式：真实 `deepseek-chat` SSE 返回 3 个增量，最终文本与预期一致；单测覆盖非流式回退、审批暂停与取消。
+- 记录：[`docs/superpowers/notes/eval-artifacts/mobile-stream-20261122/report.md`](docs/superpowers/notes/eval-artifacts/mobile-stream-20261122/report.md)
+- 多会话：历史与 pending 隔离、clone 复制配置/工具；空壳 Spinner 切换 + New/Clear，Android 构建通过。
+- 记录：[`docs/superpowers/notes/eval-artifacts/mobile-sessions-20261122/report.md`](docs/superpowers/notes/eval-artifacts/mobile-sessions-20261122/report.md)
+- 待审批 SSE：真实 pinned workflow 从 `count=1` 推送到审批后 `count=0`；Go/前端解析测试通过。
+- 记录：[`docs/superpowers/notes/eval-artifacts/pending-sse-20261122/report.md`](docs/superpowers/notes/eval-artifacts/pending-sse-20261122/report.md)
+- 镜像验收：多架构 + SBOM/provenance 通过；依赖升级后 Trivy `HIGH,CRITICAL` 为 **0**。记录：[`docs/superpowers/notes/eval-artifacts/dep-sec-20261122/report.md`](docs/superpowers/notes/eval-artifacts/dep-sec-20261122/report.md)
+
 ## 0.33.0 — 2026-11-22
 
 会话导出 v1 与 EV-PRES hold-out 收口。

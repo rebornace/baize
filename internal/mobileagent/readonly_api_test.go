@@ -356,7 +356,7 @@ func TestRemoteToolExecutionUsesOwnConnector(t *testing.T) {
 			`{"id":"b","base_url":%q,"auth_header":"Authorization","auth_value":"Bearer kb","spec":%q}]`,
 		srvA.URL, specA, srvB.URL, specB,
 	)
-	a := New()
+	a := newTestAgent()
 	if err := a.ConfigureReadOnlyAPIs(configs); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestRemoteToolExecutionUsesOwnConnector(t *testing.T) {
 }
 
 func TestConfigureReadOnlyAPIsKeepsOldOnError(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	if err := a.ConfigureReadOnlyAPI("https://api.example.com", "", "", readonlySpecJSON); err != nil {
 		t.Fatal(err)
 	}
@@ -679,7 +679,7 @@ func TestWriteToolRequiresApprovalAndSendsJSON(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	configs := fmt.Sprintf(
 		`[{"id":"tickets","base_url":%q,"auth_header":"X-API-Key","auth_value":"write-key","spec":%q,"allow_writes":true}]`,
@@ -758,7 +758,7 @@ func TestWriteToolDenyDoesNotSend(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	configs := fmt.Sprintf(`[{"base_url":%q,"spec":%q,"allow_writes":true}]`, business.URL, writeSpecJSON)
 	if err := a.ConfigureReadOnlyAPIs(configs); err != nil {
@@ -792,7 +792,7 @@ func TestWriteToolDoesNotFollowRedirects(t *testing.T) {
 	}))
 	t.Cleanup(business.Close)
 
-	a := New()
+	a := newTestAgent()
 	configs := fmt.Sprintf(
 		`[{"base_url":%q,"spec":%q,"allow_writes":true}]`,
 		business.URL, writeSpecJSON,
@@ -877,7 +877,7 @@ func TestFormToolExecution(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := New()
+	a := newTestAgent()
 	configs := fmt.Sprintf(`[{"base_url":%q,"spec":%q,"methods":["POST"]}]`, srv.URL, formSpecJSON)
 	if err := a.ConfigureReadOnlyAPIs(configs); err != nil {
 		t.Fatal(err)
@@ -921,7 +921,7 @@ func TestMultipartToolExecution(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := New()
+	a := newTestAgent()
 	configs := fmt.Sprintf(`[{"base_url":%q,"spec":%q,"methods":["POST"]}]`, srv.URL, multipartSpecJSON)
 	if err := a.ConfigureReadOnlyAPIs(configs); err != nil {
 		t.Fatal(err)
@@ -1005,7 +1005,7 @@ func TestRemoteToolSpec(t *testing.T) {
 }
 
 func TestConfigureReadOnlyAPIInvalidKeepsOld(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	if err := a.ConfigureReadOnlyAPI("https://api.example.com", "", "", readonlySpecJSON); err != nil {
 		t.Fatal(err)
 	}
@@ -1025,7 +1025,7 @@ func TestConfigureReadOnlyAPIInvalidKeepsOld(t *testing.T) {
 }
 
 func TestRemoteToolNames(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	if got := a.RemoteToolNames(); got != "" {
 		t.Fatalf("empty names=%q", got)
 	}
@@ -1086,7 +1086,7 @@ func TestRemoteToolApproveWithQueryAndAuth(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	if err := a.ConfigureReadOnlyAPI(business.URL, "Authorization", "Bearer readonly", readonlySpecJSON); err != nil {
 		t.Fatal(err)
@@ -1152,7 +1152,7 @@ func TestRemoteToolDenyDoesNotFetch(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	_ = a.ConfigureReadOnlyAPI(business.URL, "", "", readonlySpecJSON)
 	raw := a.Send("list")
@@ -1176,7 +1176,7 @@ func TestRemoteToolPathParameter(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"T/1"}`))
 	}))
 	t.Cleanup(business.Close)
-	a := New()
+	a := newTestAgent()
 	if err := a.ConfigureReadOnlyAPI(business.URL, "", "", readonlySpecJSON); err != nil {
 		t.Fatal(err)
 	}

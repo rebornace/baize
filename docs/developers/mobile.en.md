@@ -109,6 +109,19 @@ Remote config may also carry an **OpenAPI connector**. GET is parsed by default;
 
 Use `"spec_url": "https://.../openapi.yaml"` instead of `spec` when fetching through `FetchRemoteConfig` (it downloads the spec). Every connector call, read or write, returns `needs_approval`; no request is sent until the user approves. Writes add these constraints:
 
+### Network boundary (default deny)
+
+`http_get`, `FetchRemoteConfig`, `spec_url` and every connector call reject loopback, private, link-local, CGNAT, multicast and reserved addresses by default. The check runs **after DNS resolution on the address actually dialed**, so DNS rebinding and redirects cannot escape it; environment HTTP proxies are not used for these calls.
+
+Enable it only for a trusted on-device or internal deployment:
+
+- code: `SetAllowPrivateNetworks(true)` (also available on `Agent`)
+- remote config: top-level `"allow_private_networks": true`
+
+The flag is session-wide, defaults to `false`, and is not implied by `allow_writes` or `methods`. To fetch a private config URL, set the flag before calling `FetchRemoteConfig`.
+
+Writes add these constraints:
+
 - **Method allowlist:** `methods` may contain `GET` / `POST` / `PUT` / `PATCH`; empty or absent falls back to `allow_writes`. DELETE is never supported.
 - **JSON:** `application/json` object schemas expand into tool parameters; array/scalar schemas use one `body` parameter carrying the complete JSON.
 - **Form:** `application/x-www-form-urlencoded` object schemas expand into fields; body cap 64 KiB.
@@ -178,11 +191,47 @@ val cont = mobileagent.Mobileagent.approve(callId)
 // parse cont the same way
 ```
 
+**Streaming replies:**
+
+```kotlin
+mobileagent.Mobileagent.startStream(userText)   // {"status":"streaming"}
+// Poll every 100–200ms; delta is new text, text is the accumulated stream
+val raw = mobileagent.Mobileagent.pollStream()
+// {"status":"streaming","delta":"…","text":"…"}
+// Final poll adds "result" (same JSON as Send) and "final":true
+mobileagent.Mobileagent.cancelStream()          // optional: stop the stream
+```
+
+- `status`: `streaming` / `cancelling` / `done` / `needs_approval` / `error` / `cancelled`.
+- Append `delta`, or replace the bubble with `text`; the final text matches `Send`.
+- Approval ends the stream: `status=needs_approval` and `result` carries `call_id` / `summary`. Call `Approve` / `Deny` as usual (the post-approval continuation is synchronous and not streamed).
+- Cancel aborts the waiting LLM request; a tool already running finishes its current timeout.
+- If the server ignores `stream` and returns plain JSON, the SDK emits one full `delta`; callers need no special case.
+- One stream per session; `Send` returns an error while a stream is active.
+
+**Multiple sessions:**
+
+```kotlin
+val a = mobileagent.Mobileagent.newAgent()   // fresh session; configure it
+val b = a.newSession()                       // copy model config + connectors, no history/pending
+a.send("A")
+b.send("B")                                  // histories stay independent
+a.pendingApproval()                          // {"status":"none"} or the current approval JSON
+```
+
+- Each `Agent` owns its messages, stream and pending approval. Restore the approval card with `pendingApproval()` when switching.
+- `newSession()` copies `api_base` / model / key / network policy / connector tools; it does not copy messages, streams or pending calls.
+- `reset()` clears only the current session's history and pending.
+- Keep one streaming session at a time; finish or cancel the stream before switching.
+- Package-level `Send` / `StartStream` still use the default session; multi-session UIs should hold `NewAgent()` instances.
+
 Other useful APIs:
 
 | API | Role |
 |-----|------|
 | `ChatOnce(text)` | One turn **without tools** (connectivity check) |
+| `StartStream(text)` / `PollStream()` / `CancelStream()` | Background streaming turn, poll deltas, cancel |
+| `PendingApproval()` / `NewSession()` | Current HITL JSON; clone config/tools into a new session |
 | `Reset()` | Clear in-memory history (keeps Configure) |
 | `MessageCount()` | Messages in the session |
 | `HasAPIKey()` | Whether a key is in memory |

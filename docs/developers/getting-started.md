@@ -6,7 +6,7 @@
 
 | 组件 | 版本 | 说明 |
 |------|------|------|
-| Go | **1.25.0** | 与 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) 一致 |
+| Go | **1.27.3** | 与 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) 一致 |
 | Node.js | 22 | 仅 `web/chat` 前端 CI / 本地校验需要 |
 
 ## Go

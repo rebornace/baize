@@ -1125,10 +1125,7 @@ func (a *Agent) execRemoteTool(tool *remoteTool, argsJSON string) (string, error
 	if tool.AuthHeader != "" {
 		req.Header.Set(tool.AuthHeader, tool.AuthValue)
 	}
-	client := a.fetchClient
-	if client == nil {
-		client = &http.Client{Timeout: httpGetTimeout, CheckRedirect: limitRedirects}
-	}
+	client := a.httpGetClient()
 	if tool.isWrite() {
 		// A redirected write could replay a body or leak the auth header to a
 		// different host; return the 3xx response instead of following it.
@@ -1140,7 +1137,7 @@ func (a *Agent) execRemoteTool(tool *remoteTool, argsJSON string) (string, error
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", redactNetworkError(err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, httpGetMaxBytes+1))

@@ -175,6 +175,9 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"api_base":     llmBase,
 		"model":        s.opts.model,
 		"readonly_api": readonly,
+		// The demo serves its connector from the emulator host (10.0.2.2 /
+		// localhost), so it explicitly opts into private networks.
+		"allow_private_networks": true,
 	})
 }
 

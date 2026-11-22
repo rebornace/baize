@@ -7,6 +7,7 @@ import {
   getUIConfig,
   listModelProfiles,
   listPendingApprovals,
+  streamPendingApprovals,
   listSkills,
   listTools,
   patchGoalTip,
@@ -109,12 +110,8 @@ export function ChatPage() {
   const pendingRefreshInFlightRef = useRef(false)
   const baseTitleRef = useRef('')
 
-  const refreshPendingApprovals = useCallback(async () => {
-    if (pendingRefreshInFlightRef.current) return
-    pendingRefreshInFlightRef.current = true
-    try {
-      const res = await listPendingApprovals()
-      const items = Array.isArray(res.pending) ? res.pending : []
+  const applyPendingApprovals = useCallback(
+    (items: PendingApproval[]) => {
       const known = knownPendingRef.current
       if (known !== null) {
         const fresh = freshPendingApprovals(items, known)
@@ -132,24 +129,59 @@ export function ChatPage() {
       }
       knownPendingRef.current = new Set(items.map((p) => p.run_id))
       setPendingApprovals(items)
+    },
+    [pushToast],
+  )
+
+  const refreshPendingApprovals = useCallback(async () => {
+    if (pendingRefreshInFlightRef.current) return
+    pendingRefreshInFlightRef.current = true
+    try {
+      const res = await listPendingApprovals()
+      applyPendingApprovals(Array.isArray(res.pending) ? res.pending : [])
     } catch {
       // Soft failure: keep the last good list; chat never depends on this.
     } finally {
       pendingRefreshInFlightRef.current = false
     }
-  }, [pushToast])
+  }, [applyPendingApprovals])
 
   useEffect(() => {
+    let stopped = false
+    let streamReady = false
+    let retry: number | undefined
+    const controller = new AbortController()
+
+    const apply = (res: { pending: PendingApproval[] }) => {
+      if (stopped) return
+      streamReady = true
+      applyPendingApprovals(Array.isArray(res.pending) ? res.pending : [])
+    }
+    const connect = () => {
+      void streamPendingApprovals(controller.signal, apply)
+        .catch(() => {
+          // Fall back to the interval below; retry the stream shortly.
+        })
+        .finally(() => {
+          streamReady = false
+          if (!stopped) retry = window.setTimeout(connect, 3_000)
+        })
+    }
+
     void refreshPendingApprovals()
-    const timer = window.setInterval(() => {
-      void refreshPendingApprovals()
+    connect()
+    const fallback = window.setInterval(() => {
+      if (!streamReady) void refreshPendingApprovals()
     }, 15_000)
     window.addEventListener('focus', refreshPendingApprovals)
     return () => {
-      window.clearInterval(timer)
+      stopped = true
+      controller.abort()
+      window.clearInterval(fallback)
+      if (retry) window.clearTimeout(retry)
       window.removeEventListener('focus', refreshPendingApprovals)
     }
-  }, [refreshPendingApprovals])
+  }, [applyPendingApprovals, refreshPendingApprovals])
 
   // Keep the tab title useful when the window is in the background.
   useEffect(() => {

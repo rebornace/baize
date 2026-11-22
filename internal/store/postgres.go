@@ -400,6 +400,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 			return nil, fmt.Errorf("migrate eval_cases calibration columns: %w", err)
 		}
 	}
+	if err := verifyPostgresSchema(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	s := &SQLStore{
 		db:         db,
 		dialect:    DialectPostgres,

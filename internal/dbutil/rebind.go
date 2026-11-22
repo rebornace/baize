@@ -1,7 +1,7 @@
 package dbutil
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -14,7 +14,8 @@ func RebindPostgres(query string) string {
 	n := 1
 	for _, r := range query {
 		if r == '?' {
-			b.WriteString(fmt.Sprintf("$%d", n))
+			b.WriteString("$")
+			b.WriteString(strconv.Itoa(n))
 			n++
 		} else {
 			b.WriteRune(r)

@@ -15,6 +15,49 @@ Messages that exhaust their retries appear under **Settings → Inbound → Fail
 
 Pick one mode per host: **Autostart** or **Standalone**.
 
+## Docker image
+
+The repository `Dockerfile` is a multi-stage build: Alpine runtime, non-root user `baize`, `/app/data` volume, and a `HEALTHCHECK` against `/healthz`. The image ships both `baize` and `weixin-adapter`.
+
+```bash
+docker build -t baize:0.34.0 .
+docker run -d --name baize -p 8080:8080 \
+  -e BAIZE_API_KEY=sk-... \
+  -e BAIZE_ADMIN_TOKEN='<admin-token>' \
+  -v baize-data:/app/data \
+  baize:0.34.0
+```
+
+Or use compose (`BAIZE_API_KEY` is required):
+
+```bash
+export BAIZE_API_KEY=sk-...
+export BAIZE_ADMIN_TOKEN='<admin-token>'       # optional
+export BAIZE_SETTINGS_KEY='<32-byte-secret>'   # required to persist encrypted settings
+docker compose up -d --build
+docker compose ps                              # STATUS should be healthy
+```
+
+Notes:
+
+- The container runs as `baize` (non-root); `/app/data` is the only directory that needs persistence.
+- The health check calls `http://127.0.0.1:8080/healthz` every 30s with a 15s startup grace period.
+- Without `BAIZE_SETTINGS_KEY`, encrypted settings such as API keys and channel secrets cannot be stored.
+- The bundled `configs/docker-minimal.yaml` uses SQLite at `/app/data/baize.db`.
+
+Multi-arch and supply chain:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t baize:0.34.0-multi \
+  --output type=oci,dest=baize-oci.tar \
+  --sbom=true --provenance=mode=min .
+```
+
+- The OCI archive contains `linux/amd64` and `linux/arm64` manifests plus SPDX SBOM and SLSA provenance.
+- Scan with Trivy or Docker Scout before shipping; do not publish with CRITICAL findings.
+- `apk upgrade` is part of the image build; base image and Go toolchain still need security updates.
+
 ## Autostart (desktop / single host, including Windows)
 
 baize launches and supervises the adapter subprocess: exponential backoff restart on crash; graceful shutdown of the child on exit. Leave `secret` empty to auto-generate and persist a shared HMAC. `creds.json` defaults under `adapter_creds_dir` (for example `./data/channels/weixin`).

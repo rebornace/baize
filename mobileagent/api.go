@@ -20,6 +20,21 @@ func ChatOnce(userText string) (string, error) {
 // Send runs a user turn with tools until done or needs_approval. Returns JSON.
 func Send(userText string) string { return intma.Send(userText) }
 
+// StartStream starts a background turn; consume deltas with PollStream.
+func StartStream(userText string) string { return intma.StartStream(userText) }
+
+// PollStream returns {"status","delta","text","result","final"} JSON.
+func PollStream() string { return intma.PollStream() }
+
+// CancelStream cancels the active stream after the current request ends.
+func CancelStream() string { return intma.CancelStream() }
+
+// PendingApproval returns the current HITL pause JSON, or {"status":"none"}.
+func PendingApproval() string { return intma.PendingApproval() }
+
+// NewSession returns a fresh Agent with the default session's config/tools.
+func NewSession() *Agent { return &Agent{inner: intma.NewSession()} }
+
 // Approve continues after a needs_approval pause (executes the pending call).
 func Approve(callID string) string { return intma.Approve(callID) }
 
@@ -41,6 +56,14 @@ func ApplyRemoteConfigJSON(raw string) string { return intma.ApplyRemoteConfigJS
 // HasAPIKey reports whether an API key is held in memory.
 func HasAPIKey() bool { return intma.HasAPIKey() }
 
+// SetAllowPrivateNetworks permits http_get, FetchRemoteConfig, spec_url and
+// connector calls to reach loopback/private/link-local addresses. Off by
+// default.
+func SetAllowPrivateNetworks(allow bool) { intma.SetAllowPrivateNetworks(allow) }
+
+// AllowPrivateNetworks reports the default session's network policy.
+func AllowPrivateNetworks() bool { return intma.AllowPrivateNetworks() }
+
 // ConfigureReadOnlyAPI replaces the on-device GET-only OpenAPI connector.
 func ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {
 	return intma.ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec)
@@ -50,7 +73,8 @@ func ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {
 // [{"id":"tickets","base_url":"…","auth_header":"…","auth_value":"…","spec":"…",
 // "allow_writes":false,"methods":["GET"]}]. Writes are opt-in per connector
 // (allow_writes or an explicit methods list) and still require approval before
-// every call. DELETE is unsupported.
+// every call. DELETE is unsupported. Loopback/private targets are blocked
+// unless SetAllowPrivateNetworks(true) was called first.
 func ConfigureReadOnlyAPIs(configsJSON string) error {
 	return intma.ConfigureReadOnlyAPIs(configsJSON)
 }
@@ -90,6 +114,21 @@ func (a *Agent) ChatOnce(userText string) (string, error) {
 // Send with tools on this agent.
 func (a *Agent) Send(userText string) string { return a.inner.Send(userText) }
 
+// StartStream starts a background turn on this agent.
+func (a *Agent) StartStream(userText string) string { return a.inner.StartStream(userText) }
+
+// PollStream reads incremental output from this agent's active stream.
+func (a *Agent) PollStream() string { return a.inner.PollStream() }
+
+// CancelStream stops this agent's active stream.
+func (a *Agent) CancelStream() string { return a.inner.CancelStream() }
+
+// PendingApproval returns this agent's HITL pause, or {"status":"none"}.
+func (a *Agent) PendingApproval() string { return a.inner.PendingApproval() }
+
+// NewSession clones this agent's config and tools without history or pending.
+func (a *Agent) NewSession() *Agent { return &Agent{inner: a.inner.NewSession()} }
+
 // Approve the pending call on this agent.
 func (a *Agent) Approve(callID string) string { return a.inner.Approve(callID) }
 
@@ -112,6 +151,12 @@ func (a *Agent) ApplyRemoteConfigJSON(raw string) string {
 
 // HasAPIKey on this agent.
 func (a *Agent) HasAPIKey() bool { return a.inner.HasAPIKey() }
+
+// SetAllowPrivateNetworks on this agent.
+func (a *Agent) SetAllowPrivateNetworks(allow bool) { a.inner.SetAllowPrivateNetworks(allow) }
+
+// AllowPrivateNetworks on this agent.
+func (a *Agent) AllowPrivateNetworks() bool { return a.inner.AllowPrivateNetworks() }
 
 // ConfigureReadOnlyAPI on this agent.
 func (a *Agent) ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {

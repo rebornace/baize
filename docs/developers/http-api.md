@@ -30,6 +30,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}` | 技能包 |
 | Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`GET .../binding` 为当轮依赖闭包（Chat「查看运行绑定」） |
 | HITL approval link（公网） | `GET/POST /v0/hitl/approvals/{token}` | 渠道审批链接；GET 只读、POST 同意/拒绝，均用短时 HMAC token（`RoleNone`），最终走同一 `ContinueFromHITL` |
+| Pending approvals | `GET /v0/hitl/pending`、`GET /v0/hitl/pending/stream`（SSE） | 跨会话 `waiting_human` 快照 / 推送（2s 服务端轮询，按会话 ACL 过滤）；SSE 断线时前端回退 15s 轮询 |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |

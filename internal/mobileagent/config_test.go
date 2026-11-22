@@ -11,7 +11,7 @@ import (
 )
 
 func TestApplyRemoteConfigJSON(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure("https://old.example/v1", "old-key", "old-model")
 	raw := a.ApplyRemoteConfigJSON(`{"api_base":"https://new.example/v1","model":"new-model"}`)
 	var resp map[string]any
@@ -36,7 +36,7 @@ func TestFetchRemoteConfig(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure("https://x/v1", "", "m")
 	raw := a.FetchRemoteConfig(srv.URL)
 	var resp map[string]any
@@ -50,7 +50,7 @@ func TestFetchRemoteConfig(t *testing.T) {
 }
 
 func TestApplyRemoteConfigReadonlyInline(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	if err := a.Configure("https://old.example/v1", "old-key", "old-model"); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestApplyRemoteConfigReadonlyInline(t *testing.T) {
 }
 
 func TestApplyRemoteConfigReadonlyAPIs(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	body, _ := json.Marshal(map[string]any{
 		"api_base": "https://new.example/v1",
 		"model":    "new-model",
@@ -109,7 +109,7 @@ func TestApplyRemoteConfigReadonlyAPIs(t *testing.T) {
 }
 
 func TestApplyRemoteConfigAllowWrites(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	body, _ := json.Marshal(map[string]any{
 		"api_base": "https://new.example/v1",
 		"model":    "new-model",
@@ -139,7 +139,7 @@ func TestApplyRemoteConfigAllowWrites(t *testing.T) {
 }
 
 func TestApplyRemoteConfigMethods(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	body, _ := json.Marshal(map[string]any{
 		"api_base": "https://new.example/v1",
 		"model":    "new-model",
@@ -166,7 +166,7 @@ func TestApplyRemoteConfigMethods(t *testing.T) {
 }
 
 func TestApplyRemoteConfigReadonlyAPIsMutualExclusion(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	body, _ := json.Marshal(map[string]any{
 		"api_base":     "https://new.example/v1",
 		"model":        "m",
@@ -182,7 +182,7 @@ func TestApplyRemoteConfigReadonlyAPIsMutualExclusion(t *testing.T) {
 }
 
 func TestApplyRemoteConfigReadonlyAPIsSpecURLRejected(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	body, _ := json.Marshal(map[string]any{
 		"api_base": "https://new.example/v1",
 		"model":    "m",
@@ -197,7 +197,7 @@ func TestApplyRemoteConfigReadonlyAPIsSpecURLRejected(t *testing.T) {
 }
 
 func TestApplyRemoteConfigReadonlySpecURLRejected(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	_ = a.ConfigureReadOnlyAPI("https://api.example.com", "", "", readonlySpecJSON)
 	body, _ := json.Marshal(map[string]any{
 		"api_base": "https://new.example/v1",
@@ -216,7 +216,7 @@ func TestApplyRemoteConfigReadonlySpecURLRejected(t *testing.T) {
 }
 
 func TestApplyRemoteConfigReadonlyMutualExclusion(t *testing.T) {
-	a := New()
+	a := newTestAgent()
 	body, _ := json.Marshal(map[string]any{
 		"readonly_api": map[string]any{
 			"base_url": "https://api.example.com",
@@ -250,7 +250,7 @@ func TestFetchRemoteConfigReadonlySpecURL(t *testing.T) {
 	}))
 	t.Cleanup(configSrv.Close)
 
-	a := New()
+	a := newTestAgent()
 	raw := a.FetchRemoteConfig(configSrv.URL)
 	var resp map[string]any
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
@@ -289,7 +289,7 @@ func TestFetchRemoteConfigReadonlyAPIsSpecURLs(t *testing.T) {
 	}))
 	t.Cleanup(configSrv.Close)
 
-	a := New()
+	a := newTestAgent()
 	raw := a.FetchRemoteConfig(configSrv.URL)
 	var resp map[string]any
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
@@ -311,7 +311,7 @@ func TestGoDoesNotPersistAPIKeyToDisk(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure("https://example/v1", "super-secret-key-xyz", "m")
 	_ = a.ApplyRemoteConfigJSON(`{"api_key":"another-secret-key-abc"}`)
 

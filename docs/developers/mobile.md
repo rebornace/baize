@@ -107,7 +107,20 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
 }
 ```
 
-也可用 `"spec_url": "https://.../openapi.yaml"` 代替 `spec`（`FetchRemoteConfig` 会代下载）。无论读写，每次连接器调用都先返回 `needs_approval`，用户同意后才发请求。写操作额外约束：
+也可用 `"spec_url": "https://.../openapi.yaml"` 代替 `spec`（`FetchRemoteConfig` 会代下载）。无论读写，每次连接器调用都先返回 `needs_approval`，用户同意后才发请求。
+
+### 网络边界（默认拒绝）
+
+`http_get`、`FetchRemoteConfig`、`spec_url` 与所有连接器调用默认拒绝回环、私网、链路本地、CGNAT、组播和保留地址。校验发生在 **DNS 解析之后、实际拨号地址上**，因此 DNS rebinding 和重定向都绕不过去；这些请求也不使用环境 HTTP 代理。
+
+仅在可信的机内/内网部署中开启：
+
+- 代码：`SetAllowPrivateNetworks(true)`（`Agent` 同名方法）
+- 远程配置：顶层 `"allow_private_networks": true`
+
+开关是会话级的，默认 `false`，不会被 `allow_writes` 或 `methods` 隐式打开。若配置 URL 本身在私网，需要先开启再调用 `FetchRemoteConfig`。
+
+写操作额外约束：
 
 - **方法白名单**：`methods` 可含 `GET` / `POST` / `PUT` / `PATCH`；空数组或不设时回退到 `allow_writes`。DELETE 始终不支持。
 - **JSON**：`application/json` 对象 schema 展开为工具参数；数组/标量 schema 用单个 `body` 参数传完整 JSON。
@@ -178,11 +191,47 @@ val cont = mobileagent.Mobileagent.approve(callId)
 // 再按同样方式解析 cont
 ```
 
+**流式回复：**
+
+```kotlin
+mobileagent.Mobileagent.startStream(userText)   // {"status":"streaming"}
+// 每 100–200ms 轮询；delta 是新增文本，text 是累计文本
+val raw = mobileagent.Mobileagent.pollStream()
+// {"status":"streaming","delta":"…","text":"…"}
+// 结束时带 "result"（与 Send 相同的 JSON）和 "final":true
+mobileagent.Mobileagent.cancelStream()          // 可选：停止当前流
+```
+
+- `status`：`streaming` / `cancelling` / `done` / `needs_approval` / `error` / `cancelled`。
+- 只追加 `delta`，或直接用 `text` 覆盖气泡；两者最终文本与 `Send` 一致。
+- 审批会结束当前流：`status=needs_approval`，`result` 里有 `call_id` / `summary`；之后照常 `Approve` / `Deny`（批准后的续跑是同步返回，不再流式）。
+- 取消只中断正在等待的 LLM 请求；已经在执行的工具会跑完当前超时。
+- 服务端不支持 SSE、直接返回 JSON 时，SDK 会回退为一次性 `delta`，调用方无需分支。
+- 同一会话同一时间只允许一个流；流未结束时 `Send` 会返回错误。
+
+**多会话：**
+
+```kotlin
+val a = mobileagent.Mobileagent.newAgent()   // 新会话，自行 Configure
+val b = a.newSession()                       // 复制 A 的模型配置与连接器，不带历史/待批
+a.send("A")
+b.send("B")                                  // 历史互不影响
+a.pendingApproval()                          // {"status":"none"} 或当前审批 JSON
+```
+
+- 每个 `Agent` 独立保存消息、流与待审批调用；切换会话时用 `pendingApproval()` 恢复审批卡片。
+- `newSession()` 复制 `api_base` / model / key / 网络策略 / 连接器工具，不复制消息、流或 pending。
+- `reset()` 只清空当前会话历史与 pending，不影响其他会话。
+- 同一时间只让一个会话处于流式；切换前先结束或取消当前流。
+- 包级 `Send` / `StartStream` 仍使用默认会话；多会话 UI 应持有 `NewAgent()` 实例。
+
 其它常用 API：
 
 | API | 作用 |
 |-----|------|
 | `ChatOnce(text)` | 单轮、**不走工具**（快速试连通） |
+| `StartStream(text)` / `PollStream()` / `CancelStream()` | 后台流式回合、拉取增量、取消 |
+| `PendingApproval()` / `NewSession()` | 当前待批 JSON；复制配置/工具的新会话 |
 | `Reset()` | 清空内存历史（保留已 Configure 的地址/模型） |
 | `MessageCount()` | 当前会话消息条数 |
 | `HasAPIKey()` | 内存里是否已有 key |

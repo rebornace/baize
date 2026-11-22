@@ -606,6 +606,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/runs", s.handlePostRun)
 	s.mux.HandleFunc("POST /v0/inbox/{channel_id}", s.handlePostInbox)
 	s.mux.HandleFunc("GET /v0/hitl/pending", s.handleListPendingApprovals)
+	s.mux.HandleFunc("GET /v0/hitl/pending/stream", s.handleStreamPendingApprovals)
 	s.mux.HandleFunc("GET /v0/hitl/approvals/{token}", s.handleGetHITLLink)
 	s.mux.HandleFunc("POST /v0/hitl/approvals/{token}", s.handlePostHITLLink)
 	s.mux.HandleFunc("POST /v0/runs/{id}/resume", s.handlePostResume)

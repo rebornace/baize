@@ -18,6 +18,10 @@ type remoteConfigJSON struct {
 	APIKey       string                    `json:"api_key"`
 	ReadOnlyAPI  *readOnlyAPIRemoteConfig  `json:"readonly_api"`
 	ReadOnlyAPIs []readOnlyAPIRemoteConfig `json:"readonly_apis"`
+	// AllowPrivateNetworks applies to every network tool of this session:
+	// http_get, FetchRemoteConfig/spec_url and connector calls. Pointer so an
+	// omitted field does not silently reset an existing policy.
+	AllowPrivateNetworks *bool `json:"allow_private_networks"`
 }
 
 type readOnlyAPIRemoteConfig struct {
@@ -108,6 +112,9 @@ func (a *Agent) ApplyRemoteConfigJSON(raw string) string {
 	if v := strings.TrimSpace(cfg.APIKey); v != "" {
 		a.apiKey = v
 	}
+	if cfg.AllowPrivateNetworks != nil {
+		a.allowPrivateNetworks = *cfg.AllowPrivateNetworks
+	}
 	if a.baseURL == "" || a.model == "" {
 		return errJSON("api_base and model must be set (via Configure or JSON)")
 	}
@@ -124,13 +131,14 @@ func (a *Agent) ApplyRemoteConfigJSON(raw string) string {
 		writes = writeToolCount(a.readOnly)
 	}
 	b, _ := json.Marshal(map[string]any{
-		"status":              "done",
-		"api_base":            a.baseURL,
-		"model":               a.model,
-		"has_key":             a.apiKey != "",
-		"readonly_tools":      count,
-		"readonly_connectors": connectors,
-		"write_tools":         writes,
+		"status":                 "done",
+		"api_base":               a.baseURL,
+		"model":                  a.model,
+		"has_key":                a.apiKey != "",
+		"readonly_tools":         count,
+		"readonly_connectors":    connectors,
+		"write_tools":            writes,
+		"allow_private_networks": a.allowPrivateNetworks,
 	})
 	return string(b)
 }
@@ -243,10 +251,7 @@ func (a *Agent) FetchRemoteConfig(rawURL string) string {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return errJSON("only http/https allowed")
 	}
-	client := a.fetchClient
-	if client == nil {
-		client = &http.Client{Timeout: httpGetTimeout}
-	}
+	client := a.httpGetClient()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -255,7 +260,7 @@ func (a *Agent) FetchRemoteConfig(rawURL string) string {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return errJSON(fmt.Sprintf("fetch: %v", err))
+		return errJSON("fetch: " + redactNetworkError(err).Error())
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
@@ -267,7 +272,7 @@ func (a *Agent) FetchRemoteConfig(rawURL string) string {
 	}
 	configBody, err := a.resolveReadOnlySpecURL(client, body)
 	if err != nil {
-		return errJSON(err.Error())
+		return errJSON(redactNetworkError(err).Error())
 	}
 	// Validate shape then return applied merge + raw echo.
 	applied := a.ApplyRemoteConfigJSON(string(configBody))

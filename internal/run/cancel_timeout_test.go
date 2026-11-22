@@ -2,6 +2,7 @@ package run_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -103,7 +104,10 @@ func TestCancelActiveRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, run.ErrWaitingHuman) {
+			t.Fatalf("execute after cancel: %v", err)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Execute did not return after Cancel")
 	}

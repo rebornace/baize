@@ -19,7 +19,7 @@ func TestChatOnceRoundTrip(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := New()
+	a := newTestAgent()
 	if err := a.Configure(srv.URL+"/v1", "k", "m"); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestSendGetTimeNoHITL(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(srv.URL, "k", "m")
 	raw := a.Send("what time?")
 	var resp map[string]any
@@ -105,7 +105,7 @@ func TestSendHTTPGetNeedsApprovalNoNetwork(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	raw := a.Send("fetch it")
 	var resp map[string]any
@@ -157,7 +157,7 @@ func TestApproveHTTPGetThenDone(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	raw := a.Send("go")
 	var pause map[string]any
@@ -225,7 +225,7 @@ func TestDenyHTTPGetNoNetwork(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 
-	a := New()
+	a := newTestAgent()
 	_ = a.Configure(llm.URL, "k", "m")
 	raw := a.Send("go")
 	var pause map[string]any
@@ -269,6 +269,8 @@ func TestPackageLevelSendApprove(t *testing.T) {
 	}))
 	t.Cleanup(llm.Close)
 	Reset()
+	SetAllowPrivateNetworks(true)
+	t.Cleanup(func() { SetAllowPrivateNetworks(false) })
 	_ = Configure(llm.URL, "k", "m")
 	raw := Send("x")
 	var pause map[string]any

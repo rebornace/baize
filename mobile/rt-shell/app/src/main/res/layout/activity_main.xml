@@ -53,6 +53,29 @@
             android:text="Fetch config" />
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Spinner
+            android:id="@+id/sessionSpinner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="2" />
+        <Button
+            android:id="@+id/newSession"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="New" />
+        <Button
+            android:id="@+id/clearSession"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Clear" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/readonlyStatus"
         android:layout_width="match_parent"
@@ -69,11 +92,24 @@
         android:hint="User message"
         android:text="你好 MOBILE-RT" />
 
-    <Button
-        android:id="@+id/send"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Send (tools + HITL)" />
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/send"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="2"
+            android:text="Send (stream + HITL)" />
+        <Button
+            android:id="@+id/stop"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="Stop" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/hitlRow"

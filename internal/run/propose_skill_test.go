@@ -243,7 +243,10 @@ func TestProposeSkillCancelledInstallsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrWaitingHuman) {
+			t.Fatalf("execute after cancel: %v", err)
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timeout")
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -186,7 +187,10 @@ func TestHTTPPluginHITLRequireApproval(t *testing.T) {
 			}
 			cancel()
 			select {
-			case <-errCh:
+			case err := <-errCh:
+				if err != nil && !errors.Is(err, context.Canceled) {
+					t.Logf("execute after cancel: %v", err)
+				}
 			case <-time.After(2 * time.Second):
 			}
 			return
