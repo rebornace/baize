@@ -52,9 +52,11 @@ Startup default model (may seed a model profile in the store on first run; after
 | `builtin_dir` / `builtin_dirs` | Built-in skill scan roots; when `builtin_dirs` is non-empty it takes precedence over `builtin_dir` |
 | `user_dir` | Default `./data/skills` |
 
+`SKILL.md` frontmatter may set `domain` (for example `ticket` or `crm`). A non-empty value marks a **domain-specific skill**: Settings shows a hint to prefer `@skill` for one run, and it should not be an account-wide `agent.skills` default. Cross-domain evaluation observed occasional tool-chain drift when a domain prompt was active everywhere.
+
 ### `agent`
 
-`id`, `system`, and default active `skills[]`. The sample defaults include built-in skill `baize-help` (product help; it cannot edit YAML or restart the process).
+`id`, `system`, and default active `skills[]`. The sample defaults include built-in skill `baize-help` (product help; it cannot edit YAML or restart the process). A domain skill in `skills[]` is pre-activated in every new chat; unless the whole account serves that domain, prefer per-run `@` activation.
 
 ### `connector`
 
@@ -189,6 +191,7 @@ channels:
     enabled: true         # in declarative mode, only true is wired
     config:               # opaque overrides (source, secret, outbound_url…)
       source: weixin
+      send_assistant_replies: "false"  # optional: mute final assistant replies; operator mirrors and approval notices still send
 ```
 
 **Omitting the entire `channels` section** uses legacy behavior: only auto-wire registry types that are **not** `DeclarativeOnly`. Types such as `webhook` (WeChat and similar) are DeclarativeOnly and must be explicitly `enabled: true` in this section.

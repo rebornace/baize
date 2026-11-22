@@ -46,6 +46,21 @@ jobs:
       - name: Test
         run: go test -count=1 ./...
 
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: EV-PRES summarizer tests
+        run: python scripts/ev-pres/test_summarize.py
+      - name: EV-PRES sample render
+        run: python scripts/ev-pres/summarize.py scripts/ev-pres/sample.jsonl > /tmp/ev-pres-sample.md
+      - name: Evidence-eval fixture scoring
+        shell: pwsh
+        run: ./scripts/evidence-eval/verify-score.ps1
+
   web:
     runs-on: ubuntu-latest
     defaults:

@@ -82,6 +82,9 @@ func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]scheduleItemJSON, 0, len(items))
 	for _, it := range items {
+		if it.Kind == schedule.KindFollowup {
+			continue
+		}
 		item := scheduleItemToJSON(it)
 		item.BlockedReason, item.BlockedSince = s.scheduleBlockedReason(it)
 		out = append(out, item)

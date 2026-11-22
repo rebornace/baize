@@ -50,6 +50,47 @@ steps:
       x: "{{a.result.ok}}"
 `
 
+func TestExecutePinnedWorkflowRunsBeforeLLM(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	var taCalls, tbCalls atomic.Int32
+	reg.Register("ta", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		taCalls.Add(1)
+		return map[string]any{"ok": true}, false, nil
+	})
+	reg.Register("tb", func(context.Context, map[string]any) (map[string]any, bool, error) {
+		tbCalls.Add(1)
+		return map[string]any{}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", workflowTwoStep)
+
+	llmMock := &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		t.Fatal("pinned workflow must run before the first LLM turn")
+		return llm.Message{}
+	}}
+	ag := agent.Def{ID: "a", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{Store: st, LLM: llmMock, Tools: reg, Skills: cat}
+	err = eng.ExecuteWithOpts(context.Background(), r.ID, ag, r.Input, RunOptions{Skills: []string{"demo"}})
+	if err != nil {
+		t.Fatalf("ExecuteWithOpts: %v", err)
+	}
+	if taCalls.Load() != 1 || tbCalls.Load() != 1 {
+		t.Fatalf("tool calls: ta=%d tb=%d want 1 each", taCalls.Load(), tbCalls.Load())
+	}
+	got, _ := st.GetRun(r.ID)
+	if got.Status != store.StatusSucceeded {
+		t.Fatalf("status=%s want succeeded", got.Status)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	if !containsType(eventTypes(evs), "workflow.started") {
+		t.Fatalf("missing workflow.started: %v", eventTypes(evs))
+	}
+}
+
 func TestExecuteWorkflowPipelineRunsToCompletion(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()

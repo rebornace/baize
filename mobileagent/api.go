@@ -48,8 +48,9 @@ func ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {
 
 // ConfigureReadOnlyAPIs replaces the set with a JSON array of connectors:
 // [{"id":"tickets","base_url":"…","auth_header":"…","auth_value":"…","spec":"…",
-// "allow_writes":false}]. Writes are opt-in per connector and still require
-// approval before every call.
+// "allow_writes":false,"methods":["GET"]}]. Writes are opt-in per connector
+// (allow_writes or an explicit methods list) and still require approval before
+// every call. DELETE is unsupported.
 func ConfigureReadOnlyAPIs(configsJSON string) error {
 	return intma.ConfigureReadOnlyAPIs(configsJSON)
 }

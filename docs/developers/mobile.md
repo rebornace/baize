@@ -90,7 +90,7 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
 - `FetchRemoteConfig(url)` → 返回 JSON 状态字符串  
 - 或 `ApplyRemoteConfigJSON(raw)`  
 
-远程配置也可以带一个 **OpenAPI 连接器**。默认只解析 GET；连接器设置 `"allow_writes": true` 后才解析 POST/PUT/PATCH（**DELETE 不支持**）：
+远程配置也可以带一个 **OpenAPI 连接器**。默认只解析 GET；设置 `"allow_writes": true` 或显式 `"methods": ["GET","POST"]` 才解析写方法（**DELETE 不支持**）。`methods` 非空时优先于 `allow_writes`：
 
 ```json
 {
@@ -102,18 +102,20 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
     "auth_header": "Authorization",
     "auth_value": "Bearer ...",
     "spec": "openapi: 3.0.3 ...",
-    "allow_writes": true
+    "methods": ["GET", "POST", "PUT"]
   }
 }
 ```
 
 也可用 `"spec_url": "https://.../openapi.yaml"` 代替 `spec`（`FetchRemoteConfig` 会代下载）。无论读写，每次连接器调用都先返回 `needs_approval`，用户同意后才发请求。写操作额外约束：
 
-- 只支持 `application/json` request body；对象 schema 展开为工具参数，数组 / 标量 schema 用单个 `body` 参数传完整 JSON。
-- 请求体上限 64 KiB；不跟随 3xx 重定向（直接返回状态，避免请求体或认证头被转到别处）。
-- path / query 参数照常支持；写工具与读工具共用全局唯一工具名。
+- **方法白名单**：`methods` 可含 `GET` / `POST` / `PUT` / `PATCH`；空数组或不设时回退到 `allow_writes`。DELETE 始终不支持。
+- **JSON**：`application/json` 对象 schema 展开为工具参数；数组/标量 schema 用单个 `body` 参数传完整 JSON。
+- **表单**：`application/x-www-form-urlencoded` 对象 schema 展开为字段；请求体上限 64 KiB。
+- **multipart**：`multipart/form-data` 对象 schema 展开为字段；`type: string, format: binary` 字段以 **base64** 字符串传入，可另传 `<字段名>_filename` 指定文件名。单文件上限 512 KiB，整个 multipart 上限 1 MiB。
+- 写请求不跟随 3xx 重定向；path / query 参数照常支持；写工具与读工具共用全局唯一工具名。
 
-需要多个连接器时用 `readonly_apis` 数组（与 `readonly_api` 互斥；每个连接器 `spec` / `spec_url` 二选一，并各自决定是否 `allow_writes`）：
+需要多个连接器时用 `readonly_apis` 数组（与 `readonly_api` 互斥；每个连接器 `spec` / `spec_url` 二选一，并各自决定 `allow_writes` 或 `methods`）：
 
 ```json
 "readonly_apis": [
@@ -123,7 +125,7 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
     "auth_header": "Authorization",
     "auth_value": "Bearer ...",
     "spec": "openapi: 3.0.3 ...",
-    "allow_writes": true
+    "methods": ["GET", "POST", "PATCH"]
   },
   {
     "id": "crm",
@@ -135,7 +137,7 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
 ]
 ```
 
-工具名必须在所有连接器与内置工具之间唯一；最多 8 个连接器、100 个工具。SDK 也可直接调用 `ConfigureReadOnlyAPIs(json)`（JSON 数组，字段同上）。单连接器 API `ConfigureReadOnlyAPI(...)` 始终只读；需要写操作时用 JSON 形式并设置 `allow_writes`。
+工具名必须在所有连接器与内置工具之间唯一；最多 8 个连接器、100 个工具。SDK 也可直接调用 `ConfigureReadOnlyAPIs(json)`（JSON 数组，字段同上）。单连接器 API `ConfigureReadOnlyAPI(...)` 始终只读；需要写操作时用 JSON 形式并设置 `allow_writes` 或 `methods`。
 
 当前仓库中的 Android AAR 已包含新 API；iOS XCFramework 需要在 macOS 上重跑 `./scripts/build-mobileagent-ios.sh` 后才包含。
 
@@ -185,7 +187,7 @@ val cont = mobileagent.Mobileagent.approve(callId)
 | `MessageCount()` | 当前会话消息条数 |
 | `HasAPIKey()` | 内存里是否已有 key |
 | `ConfigureReadOnlyAPI(base, authHeader, authValue, spec)` | 配置一个 GET-only OpenAPI 连接器；失败保留旧工具 |
-| `ConfigureReadOnlyAPIs(json)` | 用 JSON 数组一次配置多个连接器；`allow_writes` 可选；工具名全局唯一，最多 8 个连接器 |
+| `ConfigureReadOnlyAPIs(json)` | 用 JSON 数组一次配置多个连接器；`allow_writes` / `methods` 可选；工具名全局唯一，最多 8 个连接器 |
 | `ClearReadOnlyAPI()` | 清空连接器工具与待批远程调用 |
 | `RemoteToolCount()` | 当前连接器工具数 |
 | `RemoteWriteToolCount()` | 其中 POST/PUT/PATCH 写工具数 |
@@ -218,7 +220,7 @@ go run ./cmd/mobilebind/demo-connector -addr 127.0.0.1:18081
 | 安全存 key、远程配置拉取策略 | 内存里的会话与工具循环 |
 | 线程：网络调用勿堵主线程 | 返回 JSON，不碰 UI |
 
-当前工具面：`get_time`（直接执行）；`http_get`（先 `needs_approval`）；最多 8 个 OpenAPI 连接器（GET 默认解析，设置 `allow_writes` 后增加 POST/PUT/PATCH；每次调用都先 `needs_approval`，支持 path/query/JSON body 与每个连接器一个自定义认证头）。没有完整桌面连接器 / MCP / 渠道。
+当前工具面：`get_time`（直接执行）；`http_get`（先 `needs_approval`）；最多 8 个 OpenAPI 连接器（GET 默认解析，`allow_writes` 或 `methods` 增加 POST/PUT/PATCH；每次调用都先 `needs_approval`，支持 path/query、JSON/form/multipart body 与每个连接器一个自定义认证头）。没有完整桌面连接器 / MCP / 渠道。
 
 ### 4. iOS 上架（M3）
 

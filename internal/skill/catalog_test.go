@@ -457,6 +457,30 @@ func TestLoadRepoTicketTriage(t *testing.T) {
 	if !strings.Contains(p.Body, "list_tickets") {
 		t.Fatalf("body should mention list_tickets: %q", p.Body)
 	}
+	if p.Workflow != nil {
+		t.Fatal("ticket-triage must stay prompt-only; a fixed list→create workflow caused the EV-PRES regression")
+	}
+}
+
+func TestLoadRepoTicketCreate(t *testing.T) {
+	builtin := filepath.Join("..", "..", "examples", "skills")
+	cat, err := skill.LoadCatalog([]string{builtin}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("ticket-create")
+	if !ok {
+		t.Fatal("ticket-create not found in examples/skills")
+	}
+	if p.Workflow == nil || p.Workflow.Name != "ticket-create" || len(p.Workflow.Steps) != 2 {
+		t.Fatalf("ticket-create workflow=%+v", p.Workflow)
+	}
+	if p.Workflow.Steps[0].Tool != "list_tickets" || p.Workflow.Steps[1].Tool != "create_ticket" {
+		t.Fatalf("steps=%+v", p.Workflow.Steps)
+	}
+	if !p.Workflow.Steps[1].Approve {
+		t.Fatalf("create step must require approval: %+v", p.Workflow.Steps[1])
+	}
 }
 
 func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {

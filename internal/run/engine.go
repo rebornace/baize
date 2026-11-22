@@ -275,6 +275,14 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 			})
 		}
 	}
+	// An explicit run-level skill set (@mention / run.skills) is a pin: a
+	// workflow skill runs before the first LLM turn instead of waiting for the
+	// model to call activate_skill. Agent-default skills keep the old behavior.
+	if opts.Skills != nil {
+		if werr := e.maybeRunWorkflow(ctx, runID); !errors.Is(werr, errNoWorkflow) {
+			return werr
+		}
+	}
 	messages := e.buildMessagesForRun(runID, sys, runRec.ConversationID, input, opts.UserParts)
 	err = e.runLoop(ctx, runID, messages)
 	if errors.Is(err, context.Canceled) {

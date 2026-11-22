@@ -7,14 +7,15 @@ import (
 
 func TestParseConfig(t *testing.T) {
 	cfg, err := parseConfig("feishu", map[string]string{
-		"source":          "feishu",
-		"account":         "feishu-bot-1",
-		"secret":          "s3cr3t",
-		"outbound_secret": "out-s",
-		"outbound_url":    "http://adapter:8080/outbound",
-		"assignee":        "u-admin",
-		"agent_id":        "agent-x",
-		"allowlist":       "u1, u2 ,,u3",
+		"source":                 "feishu",
+		"account":                "feishu-bot-1",
+		"secret":                 "s3cr3t",
+		"outbound_secret":        "out-s",
+		"outbound_url":           "http://adapter:8080/outbound",
+		"assignee":               "u-admin",
+		"agent_id":               "agent-x",
+		"allowlist":              "u1, u2 ,,u3",
+		"send_assistant_replies": "false",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,6 +31,9 @@ func TestParseConfig(t *testing.T) {
 	}
 	if len(cfg.Allowlist) != 3 || cfg.Allowlist["u1"] == false || cfg.Allowlist["u3"] == false {
 		t.Fatalf("bad allowlist: %+v", cfg.Allowlist)
+	}
+	if !cfg.MuteAssistantReplies {
+		t.Fatal("send_assistant_replies=false should mute assistant replies")
 	}
 }
 

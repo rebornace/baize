@@ -52,9 +52,11 @@ HTTP 监听地址，默认 `:8080`。非空环境变量 `BAIZE_LISTEN` 在加载
 | `builtin_dir` / `builtin_dirs` | 内置技能扫描根；`builtin_dirs` 非空时优先于 `builtin_dir` |
 | `user_dir` | 默认 `./data/skills` |
 
+`SKILL.md` frontmatter 可选 `domain`（如 `ticket`、`crm`）。非空表示**域专用技能**：设置页会提示优先用 `@技能` 单轮激活，不建议放进 `agent.skills` 账号级默认；跨域评测曾观察到域专用提示偶尔带偏其他域的工具链。
+
 ### `agent`
 
-`id`、`system`、默认激活 `skills[]`。样板默认含内置技能 `baize-help`（产品说明，不能改 YAML / 重启进程）。
+`id`、`system`、默认激活 `skills[]`。样板默认含内置技能 `baize-help`（产品说明，不能改 YAML / 重启进程）。`skills[]` 里放域专用技能会让所有新对话都预激活它；除非整个账号只做该域，否则优先按需 `@` 激活。
 
 ### `connector`
 
@@ -189,6 +191,7 @@ channels:
     enabled: true         # 声明式模式下仅 true 才接线
     config:               # 不透明覆盖（source、secret、outbound_url…）
       source: weixin
+      send_assistant_replies: "false"  # 可选：不推送助手最终回复；运营镜像与审批通知仍发
 ```
 
 **省略整段 `channels`** 时走 legacy：只 auto-wire 注册表中**非** `DeclarativeOnly` 的类型。像 `webhook`（微信等）属 DeclarativeOnly，必须在本节显式 `enabled: true`。

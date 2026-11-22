@@ -13,7 +13,12 @@
 | 托管登录与 MCP 导出 | 对外登录；对外提供能力 | `/v0/auth/hosted/...`、MCP export、`identity_slots` |
 | 接口变更对照与出站告警 | 连接器保存提示；`events.webhook` | `catalog_diff`、`type=catalog.diff` |
 | 运行可追溯 | 聊天「查看运行绑定」 | `run.binding`、`contract_hash` / `catalog_revision` |
-| 定时任务 | 设置 → 日程 | schedule store + 到点新开 Run |
+| 技能与 workflow | 设置 → 技能；`@技能` / `run.skills` | `SKILL.md`（含 `domain`）、`workflow.yaml`、pinned 技能首轮前执行 |
+| 定时任务 | 设置 → 日程 | schedule store + 到点新开 Run；`followup_create` 隐藏一次性后续 |
+| 会话检索 / 导出 | 侧边栏搜索 / 导出 | ACL 搜索筛选；Markdown / JSON / HTML |
+| 跨会话待审批 | 侧边栏「待处理」；桌面通知 | `GET /v0/hitl/pending`、面板内审批 |
+| 机上工具面 | Android / iOS 空壳 | `mobileagent`；只读 / 写操作 / methods / form / multipart |
+| 保全评测 | `scripts/ev-pres`、CI `evals` | Pass/成本/新过新挂；跨域 hold-out |
 | 上下文卸出 | 超大工具结果 / 粘贴 → 工作区路径 | 会话 `offload/`、`read_file` |
 | 评测语料 | 设置 → 评测语料（Admin） | EvalCase、evidence 重打分 |
 | 运维可观测 | 设置 → 运行指标；运行参数 → 观测 | `GET /metrics`、OTLP、slog 热更新 |

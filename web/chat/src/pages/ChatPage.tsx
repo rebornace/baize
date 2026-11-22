@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { goalEventCount } from '../goalEvents'
 import {
   createConversationHostedLogin,
-  exportConversationMarkdown,
+  exportConversation,
   getGoal,
   getUIConfig,
   listModelProfiles,
@@ -16,6 +16,7 @@ import {
   resumeGoal,
   resumeRun,
   stopGoal,
+  type ConversationExportFormat,
   type GoalStackView,
   type ModelProfile,
   type PendingApproval,
@@ -42,7 +43,12 @@ import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
 import { useLocale } from '../locale/LocaleContext'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
-import { conversationExportFilename, downloadTextFile } from '../conversationExport'
+import {
+  conversationExportFilename,
+  conversationExportMime,
+  downloadTextFile,
+} from '../conversationExport'
+import { ConversationExportDialog } from './chat/ConversationExportDialog'
 import { desktopNotifyEnabled, showPendingNotification } from '../desktopNotify'
 import { freshPendingApprovals, pendingDocumentTitle } from '../pendingNotice'
 import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
@@ -92,6 +98,8 @@ export function ChatPage() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
   const [pendingCenterOpen, setPendingCenterOpen] = useState(false)
   const [messageSearchOpen, setMessageSearchOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null)
   // null until the first successful list, so startup does not toast existing
   // items. Later lists diff against this set to announce only new ones.
@@ -209,15 +217,29 @@ export function ChatPage() {
     agentId,
   })
 
-  const exportChat = useCallback(async () => {
-    try {
-      const text = await exportConversationMarkdown(session.conversationId)
-      downloadTextFile(conversationExportFilename(session.conversationId), text)
-      pushToast({ tone: 'success', title: CHAT.exportSuccess })
-    } catch {
-      pushToast({ tone: 'error', title: CHAT.exportFailed })
-    }
-  }, [pushToast, session.conversationId])
+  const exportChat = useCallback(
+    async (format: ConversationExportFormat, includeThinking: boolean) => {
+      setExporting(true)
+      try {
+        const text = await exportConversation(session.conversationId, {
+          format,
+          includeThinking,
+        })
+        downloadTextFile(
+          conversationExportFilename(session.conversationId, format),
+          text,
+          conversationExportMime(format),
+        )
+        pushToast({ tone: 'success', title: CHAT.exportSuccess })
+        setExportOpen(false)
+      } catch {
+        pushToast({ tone: 'error', title: CHAT.exportFailed })
+      } finally {
+        setExporting(false)
+      }
+    },
+    [pushToast, session.conversationId],
+  )
 
   // Scroll to and flash a search hit once its conversation has rendered.
   useEffect(() => {
@@ -670,7 +692,7 @@ export function ChatPage() {
         pendingCount={pendingApprovals.length}
         onOpenPending={() => setPendingCenterOpen(true)}
         onOpenMessageSearch={() => setMessageSearchOpen(true)}
-        onExportConversation={() => void exportChat()}
+        onExportConversation={() => setExportOpen(true)}
       />
 
       <main className="chat-main">
@@ -817,6 +839,13 @@ export function ChatPage() {
           />
         </div>
       </main>
+
+      <ConversationExportDialog
+        open={exportOpen}
+        busy={exporting}
+        onClose={() => setExportOpen(false)}
+        onExport={(format, includeThinking) => void exportChat(format, includeThinking)}
+      />
 
       <MessageSearch
         open={messageSearchOpen}

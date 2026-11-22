@@ -14,6 +14,7 @@ type Package struct {
 	Name               string
 	Description        string
 	DescriptionEN      string // optional English catalog blurb (SKILL.en.md)
+	Domain             string // optional domain tag (ticket, crm, ...); non-empty means domain-specific
 	Tools              []string
 	Body               string
 	BodyEN             string // optional English body (SKILL.en.md)
@@ -75,6 +76,7 @@ func (p *Package) ApplyEnglishOverlay(en Package) {
 type frontmatter struct {
 	Name               string   `yaml:"name"`
 	Description        string   `yaml:"description"`
+	Domain             string   `yaml:"domain"`
 	Tools              []string `yaml:"tools"`
 	Managed            bool     `yaml:"managed"`
 	ManagedKind        string   `yaml:"managed_kind"`
@@ -105,6 +107,7 @@ func ParseSKILLMD(raw []byte) (Package, error) {
 	return Package{
 		Name:               strings.TrimSpace(fm.Name),
 		Description:        strings.TrimSpace(fm.Description),
+		Domain:             strings.TrimSpace(fm.Domain),
 		Tools:              fm.Tools,
 		Body:               body,
 		Managed:            fm.Managed,

@@ -138,6 +138,33 @@ func TestApplyRemoteConfigAllowWrites(t *testing.T) {
 	}
 }
 
+func TestApplyRemoteConfigMethods(t *testing.T) {
+	a := New()
+	body, _ := json.Marshal(map[string]any{
+		"api_base": "https://new.example/v1",
+		"model":    "new-model",
+		"readonly_apis": []map[string]any{
+			{
+				"id":       "tickets",
+				"base_url": "https://tickets.example.com",
+				"spec":     writeSpecJSON,
+				"methods":  []string{"GET", "PATCH"},
+			},
+		},
+	})
+	raw := a.ApplyRemoteConfigJSON(string(body))
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "done" || resp["readonly_tools"] != float64(2) || resp["write_tools"] != float64(1) {
+		t.Fatalf("resp=%v", resp)
+	}
+	if names := a.RemoteToolNames(); names != "list_tickets, patch_ticket" {
+		t.Fatalf("names=%q", names)
+	}
+}
+
 func TestApplyRemoteConfigReadonlyAPIsMutualExclusion(t *testing.T) {
 	a := New()
 	body, _ := json.Marshal(map[string]any{

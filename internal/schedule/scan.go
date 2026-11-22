@@ -152,7 +152,7 @@ func processClaimed(store Store, meta MetaReader, opener RunOpener, now time.Tim
 		return errOpenRunFailed, nil
 	}
 	switch it.Kind {
-	case "once":
+	case "once", KindFollowup:
 		if err := store.CompleteOpen(it.ID, runID, StatusCompleted, it.NextRunAt); err != nil {
 			if setErr := store.SetRunningRunID(it.ID, runID); setErr != nil {
 				return "", setErr

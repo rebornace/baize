@@ -1,6 +1,8 @@
 package conversation
 
 import (
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -37,6 +39,58 @@ type Message struct {
 // multimodal parts / extraction on the originating turn).
 var mediaRefLine = regexp.MustCompile(
 	`(?m)^(?:!\[[^\]]*\]|\[file:[^\]]+\])\(/v0/channels/media/[^)\s]+\)\s*\r?\n?`)
+
+// mediaRefParts captures image alt / URL and file name / URL so exports can
+// list attachment names without exposing the internal media URL.
+var mediaRefParts = regexp.MustCompile(
+	`(?m)^!\[([^\]]*)\]\((/v0/channels/media/[^)\s]+)\)|^\[file:([^\]]+)\]\((/v0/channels/media/[^)\s]+)\)`)
+
+// MediaRef is the export-safe view of one chat attachment: a display name,
+// never the internal /v0/channels/media URL or bytes.
+type MediaRef struct {
+	Filename string `json:"filename"`
+}
+
+// MediaRefs returns unique attachment names referenced by a persisted message.
+func MediaRefs(content string) []MediaRef {
+	matches := mediaRefParts.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]MediaRef, 0, len(matches))
+	seen := map[string]bool{}
+	for _, m := range matches {
+		file := strings.TrimSpace(m[3])
+		rawURL := m[2]
+		if rawURL == "" {
+			rawURL = m[4]
+		}
+		if file == "" {
+			file = filenameFromMediaURL(rawURL)
+		}
+		if file == "" || seen[file] {
+			continue
+		}
+		seen[file] = true
+		out = append(out, MediaRef{Filename: file})
+	}
+	return out
+}
+
+func filenameFromMediaURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	base := path.Base(u.Path)
+	if unescaped, err := url.PathUnescape(base); err == nil {
+		base = unescaped
+	}
+	if base == "." || base == "/" {
+		return ""
+	}
+	return base
+}
 
 // StripMediaRefs removes UI-only attachment reference lines from a persisted
 // message's content, returning the model-facing text. The originating turn

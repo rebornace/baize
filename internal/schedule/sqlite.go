@@ -100,14 +100,15 @@ INSERT INTO conversation_schedules (
   status, next_run_at, running_run_id, claim_expires_at, last_error, revision
 )
 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-WHERE ? <> ? OR (
-  SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?
+WHERE ? <> ? OR ? = ? OR (
+  SELECT COUNT(*) FROM conversation_schedules
+  WHERE owner_id = ? AND status = ? AND kind <> ?
 ) < ?`),
 		out.ID, out.OwnerID, out.ConversationID, out.Instruction, out.Kind, out.Timezone,
 		formatScheduleTime(out.FireAt), out.TimeOfDay, out.Weekday,
 		out.Status, formatScheduleTime(out.NextRunAt), out.RunningRunID, formatScheduleTime(out.ClaimExpiresAt),
 		out.LastError, out.Revision,
-		status, StatusActive, out.OwnerID, StatusActive, MaxActivePerOwner,
+		status, StatusActive, out.Kind, KindFollowup, out.OwnerID, StatusActive, KindFollowup, MaxActivePerOwner,
 	)
 	if err != nil {
 		return Item{}, err
@@ -189,9 +190,10 @@ func (s *SQLStore) Resume(ownerID, id string, next time.Time) error {
 	res, err := s.db.Exec(s.q(`
 UPDATE conversation_schedules SET status = ?, next_run_at = ?, revision = revision + 1
 WHERE id = ? AND owner_id = ? AND status = ?
-AND (SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?) < ?`),
+AND (SELECT COUNT(*) FROM conversation_schedules
+     WHERE owner_id = ? AND status = ? AND kind <> ?) < ?`),
 		StatusActive, formatScheduleTime(next.UTC()), id, ownerID, StatusPaused,
-		ownerID, StatusActive, MaxActivePerOwner,
+		ownerID, StatusActive, KindFollowup, MaxActivePerOwner,
 	)
 	if err != nil {
 		return err
@@ -223,8 +225,9 @@ SELECT status FROM conversation_schedules WHERE id = ? AND owner_id = ?`),
 	}
 	var n int
 	if err := s.db.QueryRow(s.q(`
-SELECT COUNT(*) FROM conversation_schedules WHERE owner_id = ? AND status = ?`),
-		ownerID, StatusActive,
+SELECT COUNT(*) FROM conversation_schedules
+WHERE owner_id = ? AND status = ? AND kind <> ?`),
+		ownerID, StatusActive, KindFollowup,
 	).Scan(&n); err != nil {
 		return err
 	}

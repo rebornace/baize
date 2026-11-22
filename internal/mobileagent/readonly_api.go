@@ -3,23 +3,34 @@ package mobileagent
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	bodyKindJSON      = "json"
+	bodyKindForm      = "form"
+	bodyKindMultipart = "multipart"
+)
+
 type remoteToolParam struct {
 	Name        string
-	In          string
+	In          string // path, query, body, file or filename
 	Type        string
 	Description string
 	Required    bool
+	// FileField marks a "<field>_filename" companion for a multipart file.
+	FileField string
 }
 
 type remoteTool struct {
@@ -29,8 +40,10 @@ type remoteTool struct {
 	Path        string
 	Method      string // GET, POST, PUT or PATCH; empty means GET.
 	Params      []remoteToolParam
+	// BodyKind is json, form or multipart; empty means no request body.
+	BodyKind string
 	// WholeBody is set when the request body has no expandable object schema;
-	// the model then supplies the complete JSON body through the "body" arg.
+	// the model then supplies the complete body through the "body" arg.
 	WholeBody bool
 	// BodyRequired carries requestBody.required for expanded object schemas.
 	BodyRequired bool
@@ -52,15 +65,23 @@ type readOnlyConnectorConfig struct {
 	AuthValue  string `json:"auth_value"`
 	Spec       string `json:"spec"`
 	// AllowWrites opts this connector into POST/PUT/PATCH operations. It is
-	// false by default, so existing configs stay GET-only.
+	// false by default, so existing configs stay GET-only. Ignored when
+	// Methods is non-empty.
 	AllowWrites bool `json:"allow_writes"`
+	// Methods is an explicit method allowlist (GET/POST/PUT/PATCH). When set,
+	// it is authoritative and AllowWrites is ignored. DELETE stays unsupported.
+	Methods []string `json:"methods"`
 }
 
 const (
 	maxReadOnlyConnectors = 8
 	maxReadOnlyTools      = 100
-	// maxRemoteBodyBytes caps the JSON request body sent to a write endpoint.
+	// maxRemoteBodyBytes caps JSON / form-urlencoded request bodies.
 	maxRemoteBodyBytes = 64 << 10
+	// maxRemoteFileBytes caps one multipart file before base64 expansion.
+	maxRemoteFileBytes = 512 << 10
+	// maxRemoteMultipartBytes caps the encoded multipart body.
+	maxRemoteMultipartBytes = 1 << 20
 )
 
 // ConfigureReadOnlyAPI replaces the on-device read-only OpenAPI tool set.
@@ -77,11 +98,12 @@ func (a *Agent) ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string
 //
 //	[{"id":"tickets","base_url":"https://…","auth_header":"Authorization",
 //	  "auth_value":"Bearer …","spec":"openapi: 3.0.3 …",
-//	  "allow_writes": false}]
+//	  "allow_writes": false, "methods": ["GET"]}]
 //
-// GET is always parsed. POST/PUT/PATCH are parsed only when a connector sets
-// allow_writes; every call still pauses for foreground approval. Tool names
-// must be unique across all connectors and the built-ins.
+// GET is parsed by default. POST/PUT/PATCH need allow_writes or an explicit
+// methods list; every call still pauses for foreground approval. DELETE is
+// unsupported. Tool names must be unique across all connectors and the
+// built-ins.
 func (a *Agent) ConfigureReadOnlyAPIs(configsJSON string) error {
 	var cfgs []readOnlyConnectorConfig
 	if err := json.Unmarshal([]byte(strings.TrimSpace(configsJSON)), &cfgs); err != nil {
@@ -221,9 +243,39 @@ func parseReadOnlyAPIs(cfgs []readOnlyConnectorConfig) (*readonlyAPI, error) {
 	return &readonlyAPI{connectors: len(cfgs), tools: tools}, nil
 }
 
+// connectorMethods returns the canonical method allowlist. An explicit methods
+// list wins over allow_writes; otherwise writes stay opt-in.
+func connectorMethods(cfg readOnlyConnectorConfig) ([]string, error) {
+	if len(cfg.Methods) == 0 {
+		if cfg.AllowWrites {
+			return []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch}, nil
+		}
+		return []string{http.MethodGet}, nil
+	}
+	allowed := map[string]bool{}
+	for _, raw := range cfg.Methods {
+		switch method := strings.ToUpper(strings.TrimSpace(raw)); method {
+		case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch:
+			allowed[method] = true
+		default:
+			return nil, fmt.Errorf("readonly api: unsupported method %q (use GET, POST, PUT or PATCH)", raw)
+		}
+	}
+	var out []string
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch} {
+		if allowed[method] {
+			out = append(out, method)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("readonly api: methods must include at least one of GET, POST, PUT, PATCH")
+	}
+	return out, nil
+}
+
 // parseReadOnlyConnector extracts the supported tools of one connector. GET is
-// always parsed; POST/PUT/PATCH only when the connector sets allow_writes.
-// DELETE is deliberately unsupported. Name uniqueness is enforced by
+// parsed by default; POST/PUT/PATCH need allow_writes or an explicit methods
+// list. DELETE is deliberately unsupported. Name uniqueness is enforced by
 // parseReadOnlyAPIs across the whole set.
 func parseReadOnlyConnector(cfg readOnlyConnectorConfig) ([]remoteTool, error) {
 	authHeader := strings.TrimSpace(cfg.AuthHeader)
@@ -256,9 +308,9 @@ func parseReadOnlyConnector(cfg readOnlyConnectorConfig) ([]remoteTool, error) {
 	}
 	sort.Strings(keys)
 
-	methods := []string{"get"}
-	if cfg.AllowWrites {
-		methods = append(methods, "post", "put", "patch")
+	methods, err := connectorMethods(cfg)
+	if err != nil {
+		return nil, err
 	}
 	var tools []remoteTool
 	for _, path := range keys {
@@ -267,39 +319,39 @@ func parseReadOnlyConnector(cfg readOnlyConnectorConfig) ([]remoteTool, error) {
 			continue
 		}
 		for _, method := range methods {
-			op, ok := item[method].(map[string]any)
+			op, ok := item[strings.ToLower(method)].(map[string]any)
 			if !ok {
 				continue
 			}
 			name := mapString(op, "operationId")
 			if name == "" {
-				name = method + "_" + sanitizeToolName(path)
+				name = strings.ToLower(method) + "_" + sanitizeToolName(path)
 			}
 			name = sanitizeToolName(name)
 			if name == "" {
-				return nil, fmt.Errorf("readonly api: empty tool name for %s %s", strings.ToUpper(method), path)
+				return nil, fmt.Errorf("readonly api: empty tool name for %s %s", method, path)
 			}
 
 			params := collectReadOnlyParams(item, op)
-			wholeBody, bodyRequired := false, false
-			if method != "get" {
-				bodyParams, whole, required := collectRequestBodyParams(root, op)
-				merged, err := mergeToolParams(params, bodyParams)
+			body := requestBodySpec{}
+			if method != http.MethodGet {
+				body = collectRequestBodyParams(root, op)
+				merged, err := mergeToolParams(params, body.Params)
 				if err != nil {
-					return nil, fmt.Errorf("readonly api: %s %s: %w", strings.ToUpper(method), path, err)
+					return nil, fmt.Errorf("readonly api: %s %s: %w", method, path, err)
 				}
 				params = merged
-				wholeBody, bodyRequired = whole, required
 			}
 			tools = append(tools, remoteTool{
 				Name:         name,
-				Description:  readOnlyDescription(op, method, path),
+				Description:  readOnlyDescription(op, strings.ToLower(method), path),
 				BaseURL:      base,
 				Path:         path,
-				Method:       strings.ToUpper(method),
+				Method:       method,
 				Params:       params,
-				WholeBody:    wholeBody,
-				BodyRequired: bodyRequired,
+				BodyKind:     body.Kind,
+				WholeBody:    body.Whole,
+				BodyRequired: body.Required,
 				AuthHeader:   authHeader,
 				AuthValue:    authValue,
 			})
@@ -325,21 +377,42 @@ func mergeToolParams(base, extra []remoteToolParam) ([]remoteToolParam, error) {
 	return base, nil
 }
 
-// collectRequestBodyParams expands an application/json request body into body
-// params. When the schema is not an object with properties, the caller gets a
-// single "body" param plus whole=true and the raw JSON value is sent as-is.
-func collectRequestBodyParams(root, op map[string]any) ([]remoteToolParam, bool, bool) {
+type requestBodySpec struct {
+	Params   []remoteToolParam
+	Whole    bool
+	Required bool
+	Kind     string
+}
+
+// collectRequestBodyParams expands a JSON, form-urlencoded or multipart request
+// body. When the schema is not an object with properties, the caller gets a
+// single "body" param plus whole=true.
+func collectRequestBodyParams(root, op map[string]any) requestBodySpec {
 	rawBody, _ := op["requestBody"].(map[string]any)
 	rawBody = resolveLocalRef(root, rawBody)
 	if rawBody == nil {
-		return nil, false, false
+		return requestBodySpec{}
 	}
 	required, _ := rawBody["required"].(bool)
 	content, _ := rawBody["content"].(map[string]any)
-	media, _ := content["application/json"].(map[string]any)
+	kind := ""
+	var media map[string]any
+	for _, candidate := range []struct {
+		kind string
+		mime string
+	}{
+		{bodyKindJSON, "application/json"},
+		{bodyKindMultipart, "multipart/form-data"},
+		{bodyKindForm, "application/x-www-form-urlencoded"},
+	} {
+		if m, ok := content[candidate.mime].(map[string]any); ok {
+			kind, media = candidate.kind, m
+			break
+		}
+	}
 	if media == nil {
 		// Unsupported body media type: the tool is still callable without a body.
-		return nil, false, false
+		return requestBodySpec{}
 	}
 	schema, _ := media["schema"].(map[string]any)
 	schema = resolveLocalRef(root, schema)
@@ -364,28 +437,57 @@ func collectRequestBodyParams(root, op map[string]any) ([]remoteToolParam, bool,
 			if resolved := resolveLocalRef(root, prop); resolved != nil {
 				prop = resolved
 			}
+			desc := firstNonEmpty(mapString(prop, "description"), mapString(prop, "title"))
+			if kind == bodyKindMultipart && isBinarySchema(prop) {
+				params = append(params, remoteToolParam{
+					Name:        name,
+					In:          "file",
+					Type:        "string",
+					Description: firstNonEmpty(desc, "Base64-encoded file bytes"),
+					Required:    requiredNames[name],
+				})
+				params = append(params, remoteToolParam{
+					Name:        name + "_filename",
+					In:          "filename",
+					Type:        "string",
+					Description: "Optional filename for " + name,
+					FileField:   name,
+				})
+				continue
+			}
+			if kind == bodyKindForm && isBinarySchema(prop) {
+				desc = firstNonEmpty(desc, "Base64-encoded file bytes")
+			}
 			params = append(params, remoteToolParam{
 				Name:        name,
 				In:          "body",
 				Type:        schemaType(prop),
-				Description: firstNonEmpty(mapString(prop, "description"), mapString(prop, "title")),
+				Description: desc,
 				Required:    requiredNames[name],
 			})
 		}
-		return params, false, required
+		return requestBodySpec{Params: params, Required: required, Kind: kind}
 	}
 
 	typ := "object"
 	if schema != nil {
 		typ = schemaType(schema)
 	}
-	return []remoteToolParam{{
-		Name:        "body",
-		In:          "body",
-		Type:        typ,
-		Description: "Complete JSON request body",
-		Required:    required,
-	}}, true, required
+	return requestBodySpec{
+		Params: []remoteToolParam{{
+			Name:        "body",
+			In:          "body",
+			Type:        typ,
+			Description: "Complete request body",
+			Required:    required,
+		}},
+		Whole: true, Required: required, Kind: kind,
+	}
+}
+
+func isBinarySchema(schema map[string]any) bool {
+	return strings.EqualFold(mapString(schema, "type"), "string") &&
+		strings.EqualFold(mapString(schema, "format"), "binary")
 }
 
 // schemaProperties resolves object properties, including one level of $ref on
@@ -700,19 +802,71 @@ func (t remoteTool) summary(argsJSON string) string {
 		path += "?" + encoded
 	}
 	line := t.method() + " " + path
-	if body, err := t.bodyPayload(args, false); err == nil && len(body) > 0 {
-		line += " " + string(body)
+	if preview := t.bodyPreview(args); preview != "" {
+		line += " " + preview
 	}
-	return truncate(line, 200)
+	return truncate(line, 220)
 }
 
-// bodyPayload builds the JSON request body. requireAll enforces required body
-// fields (execution); summary generation passes false so partial arguments are
-// still previewable.
-func (t remoteTool) bodyPayload(args map[string]any, requireAll bool) ([]byte, error) {
-	if !t.isWrite() {
-		return nil, nil
+func (t remoteTool) bodyPreview(args map[string]any) string {
+	if t.BodyKind == "" {
+		return ""
 	}
+	if t.BodyKind == bodyKindMultipart {
+		parts := make([]string, 0, len(t.Params))
+		if t.WholeBody {
+			if raw, ok := args["body"].(map[string]any); ok {
+				for k, v := range raw {
+					parts = append(parts, k+"="+formValue(v))
+				}
+			}
+		} else {
+			for _, p := range t.Params {
+				value, ok := args[p.Name]
+				if !ok || value == nil {
+					continue
+				}
+				switch p.In {
+				case "body":
+					parts = append(parts, p.Name+"="+formValue(value))
+				case "file":
+					name := multipartFilename(args[p.Name+"_filename"], p.Name)
+					parts = append(parts, p.Name+"=@"+name)
+				}
+			}
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		sort.Strings(parts)
+		return "[multipart] " + strings.Join(parts, " ")
+	}
+	body, _, err := t.bodyPayload(args, false)
+	if err != nil || len(body) == 0 {
+		return ""
+	}
+	return string(body)
+}
+
+// bodyPayload builds the request body and its Content-Type. requireAll enforces
+// required fields at execution time; summary generation passes false so partial
+// arguments are still previewable.
+func (t remoteTool) bodyPayload(args map[string]any, requireAll bool) ([]byte, string, error) {
+	if !t.isWrite() || t.BodyKind == "" {
+		return nil, "", nil
+	}
+	switch t.BodyKind {
+	case bodyKindForm:
+		return t.formBody(args, requireAll)
+	case bodyKindMultipart:
+		return t.multipartBody(args, requireAll)
+	default:
+		body, err := t.jsonBody(args, requireAll)
+		return body, "application/json", err
+	}
+}
+
+func (t remoteTool) jsonBody(args map[string]any, requireAll bool) ([]byte, error) {
 	if t.WholeBody {
 		raw, ok := args["body"]
 		if !ok || raw == nil {
@@ -754,12 +908,176 @@ func (t remoteTool) bodyPayload(args map[string]any, requireAll bool) ([]byte, e
 	return checkRemoteBodySize(body)
 }
 
-func (t remoteTool) bodyPayloadJSON(argsJSON string, requireAll bool) ([]byte, error) {
+func (t remoteTool) formBody(args map[string]any, requireAll bool) ([]byte, string, error) {
+	values := url.Values{}
+	if t.WholeBody {
+		raw, ok := args["body"]
+		if !ok || raw == nil {
+			if requireAll && t.bodyParamRequired() {
+				return nil, "", fmt.Errorf("missing request body")
+			}
+			return nil, "", nil
+		}
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, "", fmt.Errorf("form body must be an object")
+		}
+		for k, v := range m {
+			values.Set(k, formValue(v))
+		}
+	} else {
+		for _, p := range t.Params {
+			if p.In != "body" {
+				continue
+			}
+			value, ok := args[p.Name]
+			if !ok || value == nil {
+				if requireAll && p.Required {
+					return nil, "", fmt.Errorf("missing body field %s", p.Name)
+				}
+				continue
+			}
+			values.Set(p.Name, formValue(value))
+		}
+	}
+	body := []byte(values.Encode())
+	if len(body) == 0 {
+		if requireAll && t.BodyRequired {
+			return body, "application/x-www-form-urlencoded", nil
+		}
+		return nil, "", nil
+	}
+	body, err := checkRemoteBodySize(body)
+	return body, "application/x-www-form-urlencoded", err
+}
+
+func (t remoteTool) multipartBody(args map[string]any, requireAll bool) ([]byte, string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	if t.WholeBody {
+		raw, ok := args["body"]
+		if !ok || raw == nil {
+			if requireAll && t.bodyParamRequired() {
+				return nil, "", fmt.Errorf("missing request body")
+			}
+		} else {
+			m, ok := raw.(map[string]any)
+			if !ok {
+				return nil, "", fmt.Errorf("multipart body must be an object")
+			}
+			for k, v := range m {
+				if err := w.WriteField(k, formValue(v)); err != nil {
+					return nil, "", err
+				}
+			}
+		}
+	} else {
+		for _, p := range t.Params {
+			if p.In != "body" {
+				continue
+			}
+			value, ok := args[p.Name]
+			if !ok || value == nil {
+				if requireAll && p.Required {
+					return nil, "", fmt.Errorf("missing body field %s", p.Name)
+				}
+				continue
+			}
+			if err := w.WriteField(p.Name, formValue(value)); err != nil {
+				return nil, "", err
+			}
+		}
+		for _, p := range t.Params {
+			if p.In != "file" {
+				continue
+			}
+			value, ok := args[p.Name]
+			if !ok || value == nil {
+				if requireAll && p.Required {
+					return nil, "", fmt.Errorf("missing file field %s", p.Name)
+				}
+				continue
+			}
+			data, err := decodeBase64File(value)
+			if err != nil {
+				return nil, "", fmt.Errorf("file field %s: %w", p.Name, err)
+			}
+			name := multipartFilename(args[p.Name+"_filename"], p.Name)
+			part, err := w.CreateFormFile(p.Name, name)
+			if err != nil {
+				return nil, "", err
+			}
+			if _, err := part.Write(data); err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	if buf.Len() > maxRemoteMultipartBytes {
+		return nil, "", fmt.Errorf("multipart body exceeds %d bytes", maxRemoteMultipartBytes)
+	}
+	return buf.Bytes(), w.FormDataContentType(), nil
+}
+
+func (t remoteTool) bodyPayloadJSON(argsJSON string, requireAll bool) ([]byte, string, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return nil, fmt.Errorf("invalid args: %w", err)
+		return nil, "", fmt.Errorf("invalid args: %w", err)
 	}
 	return t.bodyPayload(args, requireAll)
+}
+
+func formValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case float64, bool, int, int64:
+		return fmt.Sprint(v)
+	default:
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprint(v)
+		}
+		return string(raw)
+	}
+}
+
+func decodeBase64File(value any) ([]byte, error) {
+	raw := strings.TrimSpace(fmt.Sprint(value))
+	if idx := strings.Index(raw, ","); strings.HasPrefix(raw, "data:") && idx >= 0 {
+		raw = raw[idx+1:]
+	}
+	data, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		if data, err = base64.RawStdEncoding.DecodeString(raw); err != nil {
+			return nil, fmt.Errorf("invalid base64")
+		}
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty file")
+	}
+	if len(data) > maxRemoteFileBytes {
+		return nil, fmt.Errorf("file exceeds %d bytes", maxRemoteFileBytes)
+	}
+	return data, nil
+}
+
+func multipartFilename(raw any, fallback string) string {
+	name := ""
+	if raw != nil {
+		name = filepath.Base(strings.TrimSpace(fmt.Sprint(raw)))
+	}
+	if name == "" || name == "." || name == "/" || name == "\\" {
+		name = fallback
+	}
+	if name == "" {
+		name = "upload.bin"
+	}
+	return name
 }
 
 func (t remoteTool) bodyParamRequired() bool {
@@ -783,7 +1101,7 @@ func (a *Agent) execRemoteTool(tool *remoteTool, argsJSON string) (string, error
 	if err != nil {
 		return "", err
 	}
-	payload, err := tool.bodyPayloadJSON(argsJSON, true)
+	payload, contentType, err := tool.bodyPayloadJSON(argsJSON, true)
 	if err != nil {
 		return "", err
 	}
@@ -801,8 +1119,8 @@ func (a *Agent) execRemoteTool(tool *remoteTool, argsJSON string) (string, error
 	if err != nil {
 		return "", err
 	}
-	if len(payload) > 0 {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if tool.AuthHeader != "" {
 		req.Header.Set(tool.AuthHeader, tool.AuthValue)

@@ -43,6 +43,7 @@ describe('SkillsSettings humanized shell', () => {
           id: 'builtin-skill',
           name: '内置技能',
           description: '',
+          domain: 'ticket',
           tools: [],
           source: 'builtin',
         },
@@ -71,6 +72,7 @@ describe('SkillsSettings humanized shell', () => {
     expect(host.textContent).toContain(SKILLS.saveDefaults)
     expect(host.textContent).toContain(SKILLS.description)
     expect(host.textContent).toContain(SKILLS.selectionHint)
+    expect(host.textContent).toContain(SKILLS.domainHint('ticket'))
     // 2 skill toggles + 1 exclusive tool-binding toggle
     expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(3)
     expect(host.textContent).toContain(SKILLS.exclusiveBinding)

@@ -172,7 +172,14 @@ export const zhPack = {
   messageSearchTime90d: '近 90 天',
   messageSearchOnlyCurrent: '仅当前会话',
   exportConversation: '导出',
-  exportSuccess: '已导出 Markdown',
+  exportDialogTitle: '导出会话',
+  exportFormat: '格式',
+  exportIncludeThinking: '包含思考',
+  exportHint: '附件只列出文件名，不嵌入文件内容。',
+  exportDownload: '下载',
+  exportCancel: '取消',
+  exportBusy: '导出中…',
+  exportSuccess: '已导出',
   exportFailed: '导出失败，请重试。',
   // Composer
   send: '发送',
@@ -976,6 +983,8 @@ export const zhPack = {
   saveDefaults: '保存默认配置',
   selectionHint:
     '勾选 ≠ 限制助手只能用这些技能。未勾选仍可发现与激活；勾选过多（尤其是登录类）会挤占工具预筛名额。',
+  domainHint: (domain: string) =>
+    `域专用技能（${domain}）：建议在需要时用 @ 单轮激活，不要勾成账号默认。`,
   emptyTitle: '还没有技能',
   emptyDesc: '上传 .md 或 .zip 技能包后，即可在对话中选用。',
   confirmDeleteTitle: '删除这个技能？',

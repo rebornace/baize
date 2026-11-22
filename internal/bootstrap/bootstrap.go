@@ -335,6 +335,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	tm := schedule.CreateToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
 	reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
 	_ = reg.RegisterArgsPrecheck(schedule.CreateName, schedule.ValidateCreateArgs)
+	ftm := schedule.FollowupToolMeta(schedStore, scheduleMetaReader(metaStore), nil)
+	reg.RegisterSpecApproved(ftm.Spec, ftm.Invoker, true)
+	_ = reg.RegisterArgsPrecheck(schedule.FollowupName, schedule.ValidateFollowupArgs)
 	skillUsage, err := openSkillUsage(st, cfg)
 	if err != nil {
 		_ = closer.Close()

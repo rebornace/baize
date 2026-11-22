@@ -1,6 +1,29 @@
 package conversation
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestMediaRefs(t *testing.T) {
+	in := "看图\n![图片](/v0/channels/media/c1/abc.png)\n[file:行程.docx](/v0/channels/media/c1/uuid.docx)\n" +
+		"重复\n![again](/v0/channels/media/c1/abc.png)\n外部 [官网](https://example.com/a.pdf)"
+	refs := MediaRefs(in)
+	if len(refs) != 2 || refs[0].Filename != "abc.png" || refs[1].Filename != "行程.docx" {
+		t.Fatalf("refs=%+v", refs)
+	}
+	for _, ref := range refs {
+		if strings.Contains(ref.Filename, "/v0/channels/media/") {
+			t.Fatalf("must not expose internal URL: %+v", ref)
+		}
+	}
+	if got := MediaRefs("plain text"); got != nil {
+		t.Fatalf("plain text refs=%+v", got)
+	}
+	if got := MediaRefs("![x](/v0/channels/media/c1/a%20b.png)"); len(got) != 1 || got[0].Filename != "a b.png" {
+		t.Fatalf("escaped refs=%+v", got)
+	}
+}
 
 func TestStripMediaRefs(t *testing.T) {
 	cases := []struct {

@@ -16,7 +16,10 @@ type MetaReader interface {
 	GetMeta(conversationID string) (ownerID string, err error)
 }
 
-const CreateName = "schedule_create"
+const (
+	CreateName   = "schedule_create"
+	FollowupName = "followup_create"
+)
 
 // ToolMeta pairs the schedule_create spec with its invoker for registration.
 type ToolMeta struct {
@@ -139,6 +142,124 @@ func CreateInvoker(store Store, meta MetaReader, now func() time.Time) tool.Invo
 		}
 		return out, false, nil
 	}
+}
+
+// FollowupSpec is the LLM tool schema for a one-off follow-up. Follow-ups are
+// intentionally separate from Schedules: they are hidden from the settings list
+// and do not consume MaxActivePerOwner.
+func FollowupSpec() llm.ToolSpec {
+	return llm.ToolSpec{
+		Name:        FollowupName,
+		Description: "Schedule a one-off follow-up in this conversation. It runs once and is not shown in Schedules. Requires human approval before it is saved.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"instruction": map[string]any{
+					"type":        "string",
+					"description": "Instruction to run when the follow-up fires",
+				},
+				"fire_at": map[string]any{
+					"type":        "string",
+					"description": "RFC3339 instant strictly after now (or use in_minutes)",
+				},
+				"in_minutes": map[string]any{
+					"type":        "integer",
+					"description": "Alternative to fire_at, minutes from now (1–43200)",
+				},
+			},
+			"required": []string{"instruction"},
+		},
+	}
+}
+
+// FollowupToolMeta builds followup_create for RegisterSpecApproved(..., true).
+func FollowupToolMeta(store Store, meta MetaReader, now func() time.Time) ToolMeta {
+	if now == nil {
+		now = time.Now
+	}
+	return ToolMeta{
+		Spec:    FollowupSpec(),
+		Invoker: FollowupInvoker(store, meta, now),
+	}
+}
+
+// ValidateFollowupArgs checks arguments before HITL.
+func ValidateFollowupArgs(args map[string]any, now time.Time) error {
+	_, _, err := followupFromArgs(args, now)
+	return err
+}
+
+// FollowupInvoker inserts a one-off follow-up after HITL approval.
+func FollowupInvoker(store Store, meta MetaReader, now func() time.Time) tool.Invoker {
+	if now == nil {
+		now = time.Now
+	}
+	return func(ctx context.Context, args map[string]any) (map[string]any, bool, error) {
+		owner, errPayload, ok := ownerFromCtx(ctx, meta)
+		if !ok {
+			return errPayload, true, nil
+		}
+		conv := identity.ConversationIDFrom(ctx)
+		if conv == "" {
+			return map[string]any{"error": "followup requires a conversation context"}, true, nil
+		}
+		draft, fireAt, err := followupFromArgs(args, now())
+		if err != nil {
+			return map[string]any{"error": err.Error()}, true, nil
+		}
+		it, err := store.Insert(Item{
+			OwnerID:        owner,
+			ConversationID: conv,
+			Instruction:    draft.Instruction,
+			Kind:           KindFollowup,
+			FireAt:         fireAt,
+			Status:         StatusActive,
+			NextRunAt:      fireAt.UTC(),
+		})
+		if err != nil {
+			return map[string]any{"error": err.Error()}, true, nil
+		}
+		out := map[string]any{
+			"ok":          true,
+			"id":          it.ID,
+			"kind":        KindFollowup,
+			"next_run_at": it.NextRunAt.Format(time.RFC3339),
+			"status":      it.Status,
+		}
+		return out, false, nil
+	}
+}
+
+func followupFromArgs(args map[string]any, now time.Time) (Draft, time.Time, error) {
+	instruction, ok := stringArg(args, "instruction")
+	if !ok {
+		return Draft{}, time.Time{}, fmt.Errorf("followup: instruction required")
+	}
+	fireRaw, hasFire := stringArg(args, "fire_at")
+	minutes, hasMinutes := intArg(args, "in_minutes")
+	if hasFire && hasMinutes {
+		return Draft{}, time.Time{}, fmt.Errorf("followup: fire_at or in_minutes, not both")
+	}
+	var fireAt time.Time
+	switch {
+	case hasFire:
+		fire, err := parseFireAt(fireRaw)
+		if err != nil {
+			return Draft{}, time.Time{}, err
+		}
+		fireAt = fire
+	case hasMinutes:
+		if minutes < 1 || minutes > 43200 {
+			return Draft{}, time.Time{}, fmt.Errorf("followup: in_minutes must be between 1 and 43200")
+		}
+		fireAt = now.Add(time.Duration(minutes) * time.Minute)
+	default:
+		return Draft{}, time.Time{}, fmt.Errorf("followup: fire_at or in_minutes required")
+	}
+	if !fireAt.After(now) {
+		return Draft{}, time.Time{}, fmt.Errorf("followup: fire_at must be after now")
+	}
+	return Draft{Kind: KindFollowup, Instruction: instruction, FireAt: fireAt}, fireAt, nil
 }
 
 func draftFromArgs(args map[string]any) (Draft, error) {

@@ -38,9 +38,23 @@ export async function searchConversationMessages(
   return body.hits ?? []
 }
 
-export async function exportConversationMarkdown(conversationId: string): Promise<string> {
+export type ConversationExportFormat = 'markdown' | 'json' | 'html'
+
+export interface ConversationExportOptions {
+  format?: ConversationExportFormat
+  includeThinking?: boolean
+}
+
+export async function exportConversation(
+  conversationId: string,
+  opts: ConversationExportOptions = {},
+): Promise<string> {
+  const params = new URLSearchParams()
+  if (opts.format) params.set('format', opts.format)
+  if (opts.includeThinking) params.set('include_thinking', '1')
+  const query = params.toString()
   const res = await fetch(
-    `/v0/conversations/${encodeURIComponent(conversationId)}/export`,
+    `/v0/conversations/${encodeURIComponent(conversationId)}/export${query ? `?${query}` : ''}`,
     { headers: authInit() },
   )
   if (!res.ok) {

@@ -86,6 +86,10 @@ func (c *Channel) StartOutboxWorker(ctx context.Context) {
 	}
 }
 
+// AllowsAssistantReply reports whether final assistant replies may be sent to
+// this channel. Operator mirrors and approval notifications are unaffected.
+func (c *Channel) AllowsAssistantReply() bool { return !c.cfg.MuteAssistantReplies }
+
 func (c *Channel) signalOutboxWake() {
 	if c.outboxWake == nil {
 		return

@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.33.0 — 2026-11-22
+
+会话导出 v1 与 EV-PRES hold-out 收口。
+
+### 新增
+
+- **会话导出 v1**：`GET /v0/conversations/{id}/export` 支持 `format=markdown|json|html` 与 `include_thinking=1`；默认仍是 Markdown。
+- **UI**：侧边栏「导出」打开对话框，选择格式与是否包含思考；按格式下载 `.md` / `.json` / `.html`。
+- **附件清单**：从消息媒体引用提取文件名，按消息列出；不含内部媒体 URL、不嵌入附件字节。
+- **HTML**：单文件、内联 CSS、无脚本；内容/思考/文件名全部转义。
+- **兼容**：不带参数的行为与文件名保持 v0 不变。
+
+### Mobile RT v2.1
+
+- **方法白名单**：每连接器可选 `methods`（GET/POST/PUT/PATCH），非空时覆盖 `allow_writes`；DELETE 仍不支持。
+- **表单请求**：支持 `application/x-www-form-urlencoded` 对象 schema。
+- **multipart**：支持文本字段与 `format: binary` 文件字段；文件以 base64 传入，可配 `<字段>_filename`；单文件 512 KiB、整体 1 MiB。
+- **审批预览**：multipart summary 只显示字段与文件名，不回显 base64。
+
+### A5 / A9
+
+- **`followup_create`**：一次性后续任务，`in_minutes` / `fire_at` 二选一，需人工批准；不出现在设置页日程，也不占活跃日程上限。
+- **渠道发送策略**：`send_assistant_replies: "false"` 可静态静音助手最终回复；运营镜像与审批通知不受影响。
+- **显式 `ticket-create` 技能**：opt-in workflow（先 list、再 create，create 需审批），不加入默认 agent skills；强制激活验证可停在审批。
+- **非工单域 hold-out**：新增 `examples/mock-project` 与 7 条 project 用例 × 3 轮；baseline 21/21、candidate 20/21，发现 1 个间歇性 new fail（域专用技能作账号级默认会偶发带偏）。
+- **CI eval 门禁**：新增 `evals` job，跑 `test_summarize.py` 与 evidence-eval `verify-score.ps1`。
+- **pinned workflow 自动执行**：`@mention` / `run.skills` 显式指定的 workflow 技能在首轮 LLM 前执行；agent 默认技能保持原语义。
+- **技能 `domain` 元数据**：`SKILL.md` 可选 `domain`；`ticket-triage` / `ticket-create` 标记为 ticket。设置页提示域专用技能优先按需 `@` 激活，不建议作账号默认。
+
+### 证据
+
+- 4 条新 hold-out 用例 × 2 轮 = 8 对；模型 `deepseek-chat`。
+- baseline **8/8**，candidate **6/8**；**0 new pass / 2 new fail**。
+- 失败根因：技能 workflow 固定 `list → create`，只读请求也会尝试建单；写步骤 `approve: true` 使 Run 停在审批，后续链路中断。
+- 成本差异（token -0.1%、时长 -10.3%）来自失败提前结束，不是效率提升。
+- 决策：不晋升当前 `ticket-triage`；先拆纯提示版/条件 workflow。
+- 记录：[`docs/superpowers/notes/eval-artifacts/ev-pres-holdout-20261121-2130/report.md`](docs/superpowers/notes/eval-artifacts/ev-pres-holdout-20261121-2130/report.md)
+
+### 修复
+
+- **移除 `ticket-triage/workflow.yaml`**：去掉固定 `list → create`，改为纯提示技能；只读请求不再触发建单尝试，写操作只在用户明确要求时发生。
+- evidence-eval 将 workflow 的 `hitl.waiting` 合成为一次工具尝试，符合“waiting_human 算 consequential 尝试”的既有口径；避免只读请求的建单尝试被漏判。
+- 集成测试改用本地 workflow fixture，不再依赖示例技能；`catalog_test` 锁定 `ticket-triage` 必须保持 prompt-only。
+
+### 验证
+
+- 第三轮（同一 hold-out）：两臂 **8/8**，**0 new pass / 0 new fail**；token +0.6%，回归消失。
+- 记录：[`docs/superpowers/notes/eval-artifacts/ev-pres-holdout-r3-20261121-2145/report.md`](docs/superpowers/notes/eval-artifacts/ev-pres-holdout-r3-20261121-2145/report.md)
+- `verify-score.ps1`：9 fixtures / 0 failed；第二轮 `--fail-on-new-fail` 退出 1，第三轮退出 0。
+- **发布前真实环境回归**：Postgres 16 + mock-ticket。pinned workflow 审批通过/拒绝、Markdown/JSON/HTML 导出、进程重启后持久化、Mobile `methods` 白名单与审批后真实写入均通过。记录：[`docs/superpowers/notes/eval-artifacts/v0.33.0-pg-regress-20261122/report.md`](docs/superpowers/notes/eval-artifacts/v0.33.0-pg-regress-20261122/report.md)
+
 ## 0.32.0 — 2026-11-21
 
 > 汇总 `v0.31.0` 之后的所有改动。本地开发切片编号仅保留在规格/账本中，不作为发布版本号。
@@ -53,7 +104,7 @@
 - 真实浏览器走查：待审批、桌面通知、搜索筛选/定位、会话导出、死信页。
 - Android AAR 重建与 `assembleDebug` 通过；发布资源检查通过。
 - EV-PRES：`verify-score.ps1` 9 fixtures 全过；`test_summarize.py` 20 tests OK；`--fail-on-new-fail` 退出 0。
-- 发布准备记录见 [`docs/superpowers/notes/2026-11-21-release-prep-0.51.0.md`](docs/superpowers/notes/2026-11-21-release-prep-0.51.0.md)（需按 `v0.32.0` 重跑）。
+- 发布记录见 [`docs/superpowers/notes/2026-11-21-release-prep-0.51.0.md`](docs/superpowers/notes/2026-11-21-release-prep-0.51.0.md)。
 
 ## 0.31.0 — 2026-11-20
 

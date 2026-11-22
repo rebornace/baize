@@ -34,7 +34,7 @@ This is not downstream business IAM or multi-tenant SSO.
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
 | Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |
 | Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | Cross-conversation message search; optional `role` / `days` / `conversation_id`; ACL-filtered, returns title, snippet and role |
-| Conversation export | `GET /v0/conversations/{id}/export` | Markdown export (ACL; no thinking / internal media links) |
+| Conversation export | `GET /v0/conversations/{id}/export?format=markdown\|json\|html&include_thinking=1` | Three formats (ACL); thinking is opt-in; attachments list filenames only, no internal media links |
 | Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`, `POST .../{id}/retry` | Inspect/retry failed webhook inbound jobs (admin; message body omitted) |
 | Workspaces | `GET/POST /v0/workspaces` | Web workspaces; logins shared within a workspace (Settings → Accounts) |
 | Artifacts / media | `GET /v0/artifacts/{id}`, `GET /v0/channels/media/...` | Artifacts and channel media |

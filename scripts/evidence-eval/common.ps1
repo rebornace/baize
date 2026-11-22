@@ -34,12 +34,31 @@ function Get-ToolTimeline {
     } elseif ($ev.type -eq 'hitl.waiting') {
       $name = [string]$ev.data.tool_name
       # Mark the latest matching call without a result as waiting (consequential attempt).
+      $matched = $false
       for ($j = $timeline.Count - 1; $j -ge 0; $j--) {
         $t = $timeline[$j]
         if ($t.name -eq $name -and -not $t.has_result) {
           $t.hitl_waiting = $true
+          $matched = $true
           break
         }
+      }
+      # Workflow steps call tools without an llm.tool_call event. Treat the
+      # approval pause as the attempt so evidence-before-action scoring matches
+      # the documented "waiting_human counts as an attempt" rule.
+      if (-not $matched -and $name) {
+        $timeline += [pscustomobject]@{
+          order        = $order
+          call_id      = ('hitl_' + $i)
+          name         = $name
+          arguments    = $ev.data.arguments
+          has_result   = $false
+          is_error     = $false
+          result       = $null
+          event_index  = $i
+          hitl_waiting = $true
+        }
+        $order++
       }
     } elseif ($ev.type -eq 'tool.result') {
       # Runtime emits tool_call_id; older fixtures used id.

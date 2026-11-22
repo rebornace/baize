@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/controlplane"
 	"github.com/rebornace/baize/internal/schedule"
@@ -124,6 +125,30 @@ func TestSchedulesSettingsFlow(t *testing.T) {
 		if it.ID == created.ID {
 			t.Fatalf("bob must not see alice schedule %+v", it)
 		}
+	}
+}
+
+func TestSchedulesListHidesFollowups(t *testing.T) {
+	srv := schedulesSettingsServer(t)
+	if _, err := srv.Schedules.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "follow up",
+		Kind: schedule.KindFollowup, Status: schedule.StatusActive,
+		NextRunAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, withNamedOp(
+		httptest.NewRequest(http.MethodGet, "/v0/settings/schedules", nil), "alice-token"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body scheduleListResp
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 0 {
+		t.Fatalf("followups must be hidden: %+v", body.Items)
 	}
 }
 

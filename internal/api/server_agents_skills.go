@@ -68,6 +68,7 @@ type skillSummary struct {
 	Name          string   `json:"name"`
 	Description   string   `json:"description"`
 	DescriptionEN string   `json:"description_en,omitempty"`
+	Domain        string   `json:"domain,omitempty"`
 	Tools         []string `json:"tools"`
 	Source        string   `json:"source"`
 	EvalCaseCount int      `json:"eval_case_count"`
@@ -83,6 +84,7 @@ func skillSummaryFrom(p skill.Package) skillSummary {
 		Name:          p.Name,
 		Description:   p.Description,
 		DescriptionEN: p.DescriptionEN,
+		Domain:        p.Domain,
 		Tools:         tools,
 		Source:        p.Source,
 		EvalCaseCount: evalCaseCount(p),

@@ -27,6 +27,7 @@ var probeDeniedNames = map[string]bool{
 	skill.UnarchiveName:    true,
 	"propose_plugin":       true,
 	"schedule_create":      true,
+	"followup_create":      true,
 	ContextPinName:         true,
 	ContextDropName:        true,
 	ContextRewriteName:     true,

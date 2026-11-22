@@ -8,12 +8,12 @@ import (
 )
 
 func TestParseSKILLMD(t *testing.T) {
-	raw := "---\nname: ticket-triage\ndescription: 工单分诊\ntools:\n  - list_tickets\n  - create_ticket\n---\n\n# Body\n\nstep 1\n"
+	raw := "---\nname: ticket-triage\ndescription: 工单分诊\ndomain: ticket\ntools:\n  - list_tickets\n  - create_ticket\n---\n\n# Body\n\nstep 1\n"
 	pkg, err := skill.ParseSKILLMD([]byte(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pkg.Name != "ticket-triage" || pkg.Description != "工单分诊" {
+	if pkg.Name != "ticket-triage" || pkg.Description != "工单分诊" || pkg.Domain != "ticket" {
 		t.Fatalf("%+v", pkg)
 	}
 	if len(pkg.Tools) != 2 || pkg.Tools[0] != "list_tickets" {

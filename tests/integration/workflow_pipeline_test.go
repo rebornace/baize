@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,31 @@ import (
 	"github.com/rebornace/baize/internal/config"
 	"github.com/rebornace/baize/internal/store"
 )
+
+const workflowPipelineSkill = `---
+name: ticket-triage
+description: integration workflow fixture
+tools:
+  - list_tickets
+  - create_ticket
+---
+
+# Workflow fixture
+
+The workflow below is intentionally local to this test; the shipped
+ticket-triage example is prompt-only.
+`
+
+const workflowPipelineYAML = `name: ticket-triage
+steps:
+  - id: list
+    tool: list_tickets
+  - id: create
+    tool: create_ticket
+    approve: true
+    args:
+      title: "{{input.text}}"
+`
 
 func TestWorkflowPipelineEventsE2E(t *testing.T) {
 	cfg := workflowPipelineConfig(t)
@@ -70,7 +96,18 @@ func workflowPipelineConfig(t *testing.T) config.Config {
 	cfg.LLM.Provider = "mock"
 	cfg.Agent.ID = "ticket-agent"
 	cfg.Agent.System = "你是企业工单助手。"
-	cfg.Skills.BuiltinDir = filepath.Join("..", "..", "examples", "skills")
+	skillRoot := t.TempDir()
+	skillDir := filepath.Join(skillRoot, "ticket-triage")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(workflowPipelineSkill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "workflow.yaml"), []byte(workflowPipelineYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Skills.BuiltinDir = skillRoot
 	cfg.Skills.UserDir = t.TempDir()
 	cfg.Agent.Skills = []string{"ticket-triage"}
 	cfg.Connector.ID = "ticket-api"

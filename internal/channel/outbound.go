@@ -123,6 +123,9 @@ func DeliverAssistantReply(ctx context.Context, ch Channel, meta conversation.Me
 	if !ok {
 		return
 	}
+	if policy, ok := target.(interface{ AllowsAssistantReply() bool }); ok && !policy.AllowsAssistantReply() {
+		return
+	}
 	text = FormatAssistantOutbound(text)
 	if text == "" && len(media) == 0 {
 		return

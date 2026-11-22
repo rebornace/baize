@@ -21,13 +21,14 @@ type remoteConfigJSON struct {
 }
 
 type readOnlyAPIRemoteConfig struct {
-	ID          string `json:"id"`
-	BaseURL     string `json:"base_url"`
-	AuthHeader  string `json:"auth_header"`
-	AuthValue   string `json:"auth_value"`
-	Spec        string `json:"spec"`
-	SpecURL     string `json:"spec_url"`
-	AllowWrites bool   `json:"allow_writes"`
+	ID          string   `json:"id"`
+	BaseURL     string   `json:"base_url"`
+	AuthHeader  string   `json:"auth_header"`
+	AuthValue   string   `json:"auth_value"`
+	Spec        string   `json:"spec"`
+	SpecURL     string   `json:"spec_url"`
+	AllowWrites bool     `json:"allow_writes"`
+	Methods     []string `json:"methods"`
 }
 
 // connectorConfig converts one remote entry into the parser input, rejecting
@@ -51,6 +52,7 @@ func (c readOnlyAPIRemoteConfig) connectorConfig() (readOnlyConnectorConfig, err
 		AuthValue:   c.AuthValue,
 		Spec:        spec,
 		AllowWrites: c.AllowWrites,
+		Methods:     c.Methods,
 	}, nil
 }
 

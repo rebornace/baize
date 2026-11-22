@@ -30,6 +30,10 @@ const (
 	StatusCompleted = "completed"
 )
 
+// KindFollowup is a one-off follow-up that is not shown in the Schedules UI and
+// does not count toward MaxActivePerOwner.
+const KindFollowup = "followup"
+
 // Item is a persisted conversation schedule row.
 type Item struct {
 	ID             string
@@ -95,7 +99,7 @@ func (s *MemoryStore) Insert(it Item) (Item, error) {
 	if status == "" {
 		status = StatusActive
 	}
-	if status == StatusActive {
+	if status == StatusActive && it.Kind != KindFollowup {
 		if countActiveLocked(s.byID, it.OwnerID) >= MaxActivePerOwner {
 			return Item{}, ErrActiveCap
 		}
@@ -326,7 +330,7 @@ func (s *MemoryStore) Delete(ownerID, id string) error {
 func countActiveLocked(byID map[string]Item, ownerID string) int {
 	n := 0
 	for _, it := range byID {
-		if it.OwnerID == ownerID && it.Status == StatusActive {
+		if it.OwnerID == ownerID && it.Status == StatusActive && it.Kind != KindFollowup {
 			n++
 		}
 	}

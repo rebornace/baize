@@ -316,6 +316,37 @@ func TestClearStalePendingThenScanOpens(t *testing.T) {
 	}
 }
 
+func TestScanCompletesFollowupOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "follow up",
+		Kind: schedule.KindFollowup, Status: schedule.StatusActive,
+		NextRunAt: now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID == "" {
+		t.Fatalf("followup after scan=%+v", got)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("followup must run once, calls=%d", opener.callCount())
+	}
+}
+
 func TestSetRunningRunIDDoesNotOverwriteAnotherRun(t *testing.T) {
 	s := schedule.NewMemoryStore()
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)

@@ -334,6 +334,11 @@ export function SkillsSettings() {
                     <p className="settings-muted">{desc}</p>
                   ) : null}
                   {toolsLine ? <p className="settings-muted">{toolsLine}</p> : null}
+                  {s.domain ? (
+                    <p className="settings-muted settings-skill-domain-hint">
+                      {SKILLS.domainHint(s.domain)}
+                    </p>
+                  ) : null}
                   <p className="settings-muted">{skillEvalCountLabel(s.eval_case_count)}</p>
                 </div>
                 <div className="connector-card-actions model-profile-actions">

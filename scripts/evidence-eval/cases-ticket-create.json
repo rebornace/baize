@@ -1,0 +1,53 @@
+[
+  {
+    "id": "TC-V0-count-only",
+    "protocol": "V0",
+    "input": "只查询工单列表，统计当前有多少张 open 工单。不要新建或修改工单。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "forbid_tools": ["create_ticket", "update_ticket_status"],
+    "notes": "Explicit create skill must not activate for a read-only request."
+  },
+  {
+    "id": "TC-V1-explicit-create",
+    "protocol": "V1",
+    "input": "先 list_tickets 看现有工单，再创建标题为「显式建单」的工单。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket"],
+    "arg_contains": [
+      { "tool": "create_ticket", "substr": "显式建单" }
+    ],
+    "notes": "Explicit create request should list first, then create."
+  },
+  {
+    "id": "TC-V1-direct-create",
+    "protocol": "V1",
+    "input": "直接创建标题为「直接建单」的工单，不用先列清单。",
+    "required_reads": [],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket"],
+    "arg_contains": [
+      { "tool": "create_ticket", "substr": "直接建单" }
+    ],
+    "notes": "Create-only intent; the opt-in workflow may add a list step, which is allowed."
+  },
+  {
+    "id": "TC-V2-create-close",
+    "protocol": "V2",
+    "input": "先 list_tickets；创建标题为「显式链路」的工单；创建成功后把这张新工单的状态改成 closed。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket", "update_ticket_status"],
+    "chain": [
+      { "after": "create_ticket", "before": "update_ticket_status" }
+    ],
+    "arg_contains": [
+      { "tool": "create_ticket", "substr": "显式链路" }
+    ],
+    "expect_state": [
+      { "title_contains": "显式链路", "status": "closed" }
+    ],
+    "notes": "Multi-step guard: ticket-create is create-only; check whether the model wrongly activates it."
+  }
+]

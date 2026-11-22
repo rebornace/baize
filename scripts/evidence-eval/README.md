@@ -79,7 +79,7 @@ Fixture 旁挂状态文件：`<caseId>.<tag>.events.json` 对应 `<caseId>.<tag>
 | `ARG` | 缺少要求的参数子串 |
 | `STATE` | 缺快照或终态与 `expect_state` 不符 |
 
-`waiting_human` 算作一次 consequential **尝试**（证据链在审批前就应成立）。
+`waiting_human` 算作一次 consequential **尝试**（证据链在审批前就应成立）。工作流步骤的审批没有 `llm.tool_call` 事件；`Get-ToolTimeline` 会按 `hitl.waiting.tool_name` 合成一次工具尝试，避免把 workflow 的写尝试漏掉。
 
 在线批跑若需拉 mock 终态并写快照：`-CheckState`，且设置 `BAIZE_MOCK_TICKET_URL` 或 `-MockBaseUrl`（GET `{url}/tickets` → `out/runs/<id>.state.json`）。
 

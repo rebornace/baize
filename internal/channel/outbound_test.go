@@ -74,6 +74,29 @@ func TestDeliverAssistantReplyWeixinMetaSendsText(t *testing.T) {
 	}
 }
 
+type mutedFakeChannel struct{ *fakeChannel }
+
+func (m mutedFakeChannel) AllowsAssistantReply() bool { return false }
+
+func TestDeliverAssistantReplyRespectsMutePolicy(t *testing.T) {
+	base := &fakeChannel{name: "fake"}
+	ch := mutedFakeChannel{fakeChannel: base}
+	meta := conversation.Meta{
+		ID:          "weixin:acc:peer-1",
+		Source:      "weixin",
+		ChannelPeer: "peer-1",
+	}
+	DeliverAssistantReply(context.Background(), ch, meta, "assistant text", nil, nil)
+	if n := len(base.texts()); n != 0 {
+		t.Fatalf("muted assistant SendText calls = %d, want 0", n)
+	}
+	// Operator mirror is not affected by the assistant-reply policy.
+	DeliverUserText(context.Background(), ch, meta, "operator text", nil)
+	if n := len(base.texts()); n != 1 {
+		t.Fatalf("operator SendText calls = %d, want 1", n)
+	}
+}
+
 func TestDeliverAssistantReplyUIMetaSkips(t *testing.T) {
 	ch := &fakeChannel{name: "fake"}
 	meta := conversation.Meta{

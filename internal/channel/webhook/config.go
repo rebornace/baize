@@ -26,6 +26,9 @@ type instanceConfig struct {
 	// adapter child (its -baize inbound URL). Empty falls back to the
 	// BuildDeps.SelfBaseURL, then the loopback default http://127.0.0.1:8080.
 	AdapterBaizeURL string
+	// MuteAssistantReplies suppresses assistant final replies to this channel
+	// while still mirroring operator turns and approval notifications.
+	MuteAssistantReplies bool
 	// secretAuto is true when the HMAC secret was auto-generated (no explicit
 	// config secret). Bootstrap then persists/reuses a stable on-disk secret so
 	// an adapter orphaned by a previous baize run still verifies requests.
@@ -61,6 +64,13 @@ func parseConfig(name string, m map[string]string) (instanceConfig, error) {
 			return c, fmt.Errorf("webhook: invalid adapter_autostart %q: %w", v, err)
 		}
 		c.AdapterAutostart = b
+	}
+	if v := get("send_assistant_replies"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return c, fmt.Errorf("webhook: invalid send_assistant_replies %q: %w", v, err)
+		}
+		c.MuteAssistantReplies = !b
 	}
 	if raw := get("adapter_args"); raw != "" {
 		for _, a := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {

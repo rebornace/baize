@@ -6,6 +6,8 @@ export type SkillSummary = {
   description: string
   /** Optional English catalog blurb when the skill ships SKILL.en.md. */
   description_en?: string
+  /** Optional domain tag (ticket, crm, ...); non-empty means domain-specific. */
+  domain?: string
   tools: string[]
   source: 'builtin' | 'user' | 'managed'
   eval_case_count?: number

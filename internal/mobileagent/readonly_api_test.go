@@ -1,11 +1,13 @@
 package mobileagent
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -137,6 +139,68 @@ const writeSpecJSON = `{
     }
   }
 }`
+
+const formSpecJSON = `{
+  "openapi": "3.0.3",
+  "paths": {
+    "/tickets": {
+      "post": {
+        "operationId": "create_ticket_form",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": {"type": "string"},
+                  "priority": {"type": "string"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+const multipartSpecJSON = `{
+  "openapi": "3.0.3",
+  "paths": {
+    "/upload": {
+      "post": {
+        "operationId": "upload_file",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": {"type": "string", "format": "binary", "description": "PNG bytes"},
+                  "note": {"type": "string"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+func parseConnectorAPIs(t *testing.T, cfg readOnlyConnectorConfig) *readonlyAPI {
+	t.Helper()
+	cfg.BaseURL = "https://api.example.com"
+	api, err := parseReadOnlyAPIs([]readOnlyConnectorConfig{cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return api
+}
 
 func parseWriteAPI(spec string, allowWrites bool) (*readonlyAPI, error) {
 	return parseReadOnlyAPIs([]readOnlyConnectorConfig{{
@@ -423,14 +487,14 @@ func TestParseWriteToolRequestBodies(t *testing.T) {
 	if len(bulk.Params) != 1 || bulk.Params[0].Name != "body" || bulk.Params[0].Type != "array" || !bulk.Params[0].Required {
 		t.Fatalf("bulk params=%+v", bulk.Params)
 	}
-	body, err := bulk.bodyPayload(map[string]any{"body": []any{"a", "b"}}, true)
+	body, _, err := bulk.bodyPayload(map[string]any{"body": []any{"a", "b"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(body) != `["a","b"]` {
 		t.Fatalf("bulk body=%q", body)
 	}
-	if _, err := bulk.bodyPayload(map[string]any{}, true); err == nil ||
+	if _, _, err := bulk.bodyPayload(map[string]any{}, true); err == nil ||
 		!strings.Contains(err.Error(), "missing request body") {
 		t.Fatalf("missing body err=%v", err)
 	}
@@ -523,7 +587,7 @@ func TestWriteToolRequiredObjectBodySendsEmptyJSON(t *testing.T) {
 	if !tool.BodyRequired {
 		t.Fatal("required request body must be tracked")
 	}
-	body, err := tool.bodyPayload(map[string]any{}, true)
+	body, _, err := tool.bodyPayload(map[string]any{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,7 +830,7 @@ func TestWriteToolBodySizeLimit(t *testing.T) {
 		}
 	}
 	big := strings.Repeat("x", maxRemoteBodyBytes+1)
-	if _, err := create.bodyPayload(map[string]any{"title": big}, true); err == nil ||
+	if _, _, err := create.bodyPayload(map[string]any{"title": big}, true); err == nil ||
 		!strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("err=%v", err)
 	}
@@ -778,6 +842,120 @@ func toolNames(cfg *readonlyAPI) string {
 		names = append(names, tool.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+func TestConnectorMethodsAllowlist(t *testing.T) {
+	cfg := parseConnectorAPIs(t, readOnlyConnectorConfig{Spec: writeSpecJSON, Methods: []string{"GET", "PATCH"}})
+	if names := toolNames(cfg); names != "list_tickets, patch_ticket" {
+		t.Fatalf("names=%q", names)
+	}
+	if writes := writeToolCount(cfg); writes != 1 {
+		t.Fatalf("writes=%d", writes)
+	}
+	if _, err := parseReadOnlyAPIs([]readOnlyConnectorConfig{{
+		BaseURL: "https://api.example.com", Spec: writeSpecJSON, Methods: []string{"DELETE"},
+	}}); err == nil || !strings.Contains(err.Error(), "unsupported method") {
+		t.Fatalf("DELETE err=%v", err)
+	}
+	cfg = parseConnectorAPIs(t, readOnlyConnectorConfig{Spec: writeSpecJSON, Methods: []string{"post"}})
+	if names := toolNames(cfg); names != "bulk_create, create_ticket" {
+		t.Fatalf("POST-only names=%q", names)
+	}
+}
+
+func TestFormToolExecution(t *testing.T) {
+	var gotCT string
+	var gotForm url.Values
+	var method string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		gotCT = r.Header.Get("Content-Type")
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	a := New()
+	configs := fmt.Sprintf(`[{"base_url":%q,"spec":%q,"methods":["POST"]}]`, srv.URL, formSpecJSON)
+	if err := a.ConfigureReadOnlyAPIs(configs); err != nil {
+		t.Fatal(err)
+	}
+	tool := a.remoteToolLocked("create_ticket_form")
+	if tool == nil || tool.BodyKind != bodyKindForm {
+		t.Fatalf("tool=%+v", tool)
+	}
+	if _, err := a.execRemoteTool(tool, `{"title":"VPN 故障","priority":"high"}`); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || !strings.HasPrefix(gotCT, "application/x-www-form-urlencoded") {
+		t.Fatalf("method=%q content-type=%q", method, gotCT)
+	}
+	if gotForm.Get("title") != "VPN 故障" || gotForm.Get("priority") != "high" {
+		t.Fatalf("form=%v", gotForm)
+	}
+}
+
+func TestMultipartToolExecution(t *testing.T) {
+	var gotCT, gotNote, gotName string
+	var gotBytes []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		gotNote = r.FormValue("note")
+		file, hdr, err := r.FormFile("file")
+		if err != nil {
+			t.Errorf("FormFile: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		gotName = hdr.Filename
+		gotBytes, _ = io.ReadAll(file)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	a := New()
+	configs := fmt.Sprintf(`[{"base_url":%q,"spec":%q,"methods":["POST"]}]`, srv.URL, multipartSpecJSON)
+	if err := a.ConfigureReadOnlyAPIs(configs); err != nil {
+		t.Fatal(err)
+	}
+	tool := a.remoteToolLocked("upload_file")
+	if tool == nil || tool.BodyKind != bodyKindMultipart {
+		t.Fatalf("tool=%+v", tool)
+	}
+	args := fmt.Sprintf(`{"note":"hi","file":%q,"file_filename":"x.png"}`,
+		base64.StdEncoding.EncodeToString([]byte("png-bytes")))
+	if _, err := a.execRemoteTool(tool, args); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(gotCT, "multipart/form-data; boundary=") {
+		t.Fatalf("content-type=%q", gotCT)
+	}
+	if gotNote != "hi" || gotName != "x.png" || string(gotBytes) != "png-bytes" {
+		t.Fatalf("note=%q name=%q bytes=%q", gotNote, gotName, gotBytes)
+	}
+
+	if _, err := a.execRemoteTool(tool, `{"note":"missing"}`); err == nil ||
+		!strings.Contains(err.Error(), "missing file field file") {
+		t.Fatalf("missing file err=%v", err)
+	}
+}
+
+func TestMultipartFileSizeLimit(t *testing.T) {
+	cfg := parseConnectorAPIs(t, readOnlyConnectorConfig{Spec: multipartSpecJSON, Methods: []string{"POST"}})
+	tool := cfg.tools[0]
+	big := base64.StdEncoding.EncodeToString(make([]byte, maxRemoteFileBytes+1))
+	_, _, err := tool.bodyPayload(map[string]any{"file": big}, true)
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("err=%v", err)
+	}
 }
 
 func TestParseReadOnlyAPIRejectsBadConfig(t *testing.T) {

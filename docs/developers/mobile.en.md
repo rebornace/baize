@@ -90,7 +90,7 @@ Optional remote config (JSON with `api_base` / `model`, optional `api_key`):
 - `FetchRemoteConfig(url)` → JSON status string  
 - or `ApplyRemoteConfigJSON(raw)`  
 
-Remote config may also carry an **OpenAPI connector**. GET is always parsed; POST/PUT/PATCH are parsed only when the connector sets `"allow_writes": true` (**DELETE is unsupported**):
+Remote config may also carry an **OpenAPI connector**. GET is parsed by default; POST/PUT/PATCH need `"allow_writes": true` or an explicit `"methods": ["GET","POST"]` list (**DELETE is unsupported**). A non-empty `methods` list overrides `allow_writes`:
 
 ```json
 {
@@ -102,18 +102,20 @@ Remote config may also carry an **OpenAPI connector**. GET is always parsed; POS
     "auth_header": "Authorization",
     "auth_value": "Bearer ...",
     "spec": "openapi: 3.0.3 ...",
-    "allow_writes": true
+    "methods": ["GET", "POST", "PUT"]
   }
 }
 ```
 
 Use `"spec_url": "https://.../openapi.yaml"` instead of `spec` when fetching through `FetchRemoteConfig` (it downloads the spec). Every connector call, read or write, returns `needs_approval`; no request is sent until the user approves. Writes add these constraints:
 
-- Only `application/json` request bodies are supported. Object schemas expand into tool parameters; array/scalar schemas use one `body` parameter carrying the complete JSON.
-- Request bodies are capped at 64 KiB; 3xx redirects are not followed (the status is returned), so a body or auth header cannot be replayed elsewhere.
-- Path/query parameters work as usual; write tools share the same global tool-name namespace.
+- **Method allowlist:** `methods` may contain `GET` / `POST` / `PUT` / `PATCH`; empty or absent falls back to `allow_writes`. DELETE is never supported.
+- **JSON:** `application/json` object schemas expand into tool parameters; array/scalar schemas use one `body` parameter carrying the complete JSON.
+- **Form:** `application/x-www-form-urlencoded` object schemas expand into fields; body cap 64 KiB.
+- **Multipart:** `multipart/form-data` object schemas expand into fields; `type: string, format: binary` fields take a **base64** string, with an optional `<field>_filename` argument. One file is capped at 512 KiB and the whole multipart body at 1 MiB.
+- Write requests do not follow 3xx redirects; path/query parameters work as usual; write tools share the same global tool-name namespace.
 
-For multiple connectors use the `readonly_apis` array (mutually exclusive with `readonly_api`; each entry uses either `spec` or `spec_url` and decides its own `allow_writes`):
+For multiple connectors use the `readonly_apis` array (mutually exclusive with `readonly_api`; each entry uses either `spec` or `spec_url` and decides its own `allow_writes` / `methods`):
 
 ```json
 "readonly_apis": [
@@ -123,7 +125,7 @@ For multiple connectors use the `readonly_apis` array (mutually exclusive with `
     "auth_header": "Authorization",
     "auth_value": "Bearer ...",
     "spec": "openapi: 3.0.3 ...",
-    "allow_writes": true
+    "methods": ["GET", "POST", "PATCH"]
   },
   {
     "id": "crm",
@@ -135,7 +137,7 @@ For multiple connectors use the `readonly_apis` array (mutually exclusive with `
 ]
 ```
 
-Tool names must be unique across every connector and the built-ins; the limit is 8 connectors and 100 tools. The SDK also accepts `ConfigureReadOnlyAPIs(json)` (a JSON array with the same fields). The single-connector `ConfigureReadOnlyAPI(...)` stays GET-only; use the JSON form with `allow_writes` for writes.
+Tool names must be unique across every connector and the built-ins; the limit is 8 connectors and 100 tools. The SDK also accepts `ConfigureReadOnlyAPIs(json)` (a JSON array with the same fields). The single-connector `ConfigureReadOnlyAPI(...)` stays GET-only; use the JSON form with `allow_writes` or `methods` for writes.
 
 The Android AAR in this repo already includes the new APIs; the iOS XCFramework must be rebuilt with `./scripts/build-mobileagent-ios.sh` on macOS to pick them up.
 
@@ -185,7 +187,7 @@ Other useful APIs:
 | `MessageCount()` | Messages in the session |
 | `HasAPIKey()` | Whether a key is in memory |
 | `ConfigureReadOnlyAPI(base, authHeader, authValue, spec)` | Configure one GET-only OpenAPI connector; failure keeps the old tools |
-| `ConfigureReadOnlyAPIs(json)` | Configure several connectors from a JSON array; optional `allow_writes`; names unique, up to 8 connectors |
+| `ConfigureReadOnlyAPIs(json)` | Configure several connectors from a JSON array; optional `allow_writes` / `methods`; names unique, up to 8 connectors |
 | `ClearReadOnlyAPI()` | Remove connector tools and any pending remote call |
 | `RemoteToolCount()` | Current connector tool count |
 | `RemoteWriteToolCount()` | How many of them are POST/PUT/PATCH write tools |
@@ -218,7 +220,7 @@ On launch the shell re-fetches a saved Remote config URL once, so tools come bac
 | Secure key storage, remote-config policy | In-memory session and tool loop |
 | Off-main-thread network calls | Returns JSON; never touches UI |
 
-Tools today: `get_time` (runs immediately); `http_get` (pauses for approval); up to 8 OpenAPI connectors (GET by default, POST/PUT/PATCH with `allow_writes`; every call pauses for approval, path/query/JSON bodies and one custom auth header per connector). No full desktop connectors / MCP / channels.
+Tools today: `get_time` (runs immediately); `http_get` (pauses for approval); up to 8 OpenAPI connectors (GET by default, POST/PUT/PATCH with `allow_writes` or `methods`; every call pauses for approval, path/query and JSON/form/multipart bodies, one custom auth header per connector). No full desktop connectors / MCP / channels.
 
 ### 4. iOS App Store (M3)
 

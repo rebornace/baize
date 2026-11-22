@@ -96,6 +96,72 @@ func TestCreateInvokerResolvesInMinutes(t *testing.T) {
 	}
 }
 
+func TestValidateFollowupArgs(t *testing.T) {
+	now := fixedNow()
+	if err := schedule.ValidateFollowupArgs(map[string]any{
+		"instruction": "稍后回顾", "in_minutes": 30,
+	}, now); err != nil {
+		t.Fatalf("in_minutes should validate: %v", err)
+	}
+	if err := schedule.ValidateFollowupArgs(map[string]any{
+		"instruction": "x", "fire_at": now.Add(time.Hour).Format(time.RFC3339),
+	}, now); err != nil {
+		t.Fatalf("fire_at should validate: %v", err)
+	}
+	for _, args := range []map[string]any{
+		{"instruction": "x"},
+		{"instruction": "x", "in_minutes": 0},
+		{"instruction": "x", "in_minutes": 43201},
+		{"instruction": "x", "in_minutes": 30, "fire_at": now.Add(time.Hour).Format(time.RFC3339)},
+		{"instruction": "x", "fire_at": now.Add(-time.Minute).Format(time.RFC3339)},
+	} {
+		if err := schedule.ValidateFollowupArgs(args, now); err == nil {
+			t.Fatalf("followup args should be rejected: %v", args)
+		}
+	}
+}
+
+func TestFollowupInvokerBypassesActiveCap(t *testing.T) {
+	store := schedule.NewMemoryStore()
+	now := fixedNow()
+	for i := 0; i < schedule.MaxActivePerOwner; i++ {
+		if _, err := store.Insert(schedule.Item{
+			OwnerID: "alice", ConversationID: "conv1", Instruction: "daily",
+			Kind: "daily", Timezone: "UTC", TimeOfDay: "09:00",
+			Status: schedule.StatusActive, NextRunAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg := tool.NewRegistry()
+	tm := schedule.FollowupToolMeta(store, setupMeta(), fixedNow)
+	reg.RegisterSpecApproved(tm.Spec, tm.Invoker, true)
+	_ = reg.RegisterArgsPrecheck(schedule.FollowupName, schedule.ValidateFollowupArgs)
+
+	c, isErr, err := reg.Invoke(ctxAlice(), schedule.FollowupName, map[string]any{
+		"instruction": "稍后回顾", "in_minutes": 30,
+	})
+	if err != nil || isErr {
+		t.Fatalf("invoke err=%v isErr=%v c=%v", err, isErr, c)
+	}
+	items, err := store.List("alice")
+	if err != nil || len(items) != schedule.MaxActivePerOwner+1 {
+		t.Fatalf("items=%d err=%v", len(items), err)
+	}
+	found := false
+	for _, it := range items {
+		if it.Kind == schedule.KindFollowup {
+			found = true
+			if !it.NextRunAt.Equal(now.Add(30 * time.Minute)) {
+				t.Fatalf("followup next=%v", it.NextRunAt)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("followup row missing")
+	}
+}
+
 func TestCreateInvokerInsertsActiveRow(t *testing.T) {
 	store := schedule.NewMemoryStore()
 	meta := setupMeta()

@@ -34,7 +34,7 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
 | Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
 | Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | 跨会话消息搜索；`role` / `days` / `conversation_id` 可选；按会话 ACL 过滤，返回标题、片段与角色 |
-| Conversation export | `GET /v0/conversations/{id}/export` | Markdown 导出（ACL；不含 thinking / 内部媒体链接） |
+| Conversation export | `GET /v0/conversations/{id}/export?format=markdown\|json\|html&include_thinking=1` | 三格式导出（ACL）；thinking 显式开启；附件只列文件名，不含内部媒体链接 |
 | Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`、`POST .../{id}/retry` | 失败的 webhook 入站查看与重试（管理员；不返回消息体） |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
