@@ -1,6 +1,9 @@
 package evidence
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 )
@@ -11,23 +14,114 @@ type ArgContains struct {
 	Substr string `json:"substr"`
 }
 
-// ExpectTicket is one expected ticket field match in state scoring.
-type ExpectTicket struct {
-	ID            string `json:"id,omitempty"`
-	TitleContains string `json:"title_contains,omitempty"`
-	Status        string `json:"status,omitempty"`
+// ExpectRecord is one expected record field match in state scoring.
+// ID/title/status are common fields; Fields adds arbitrary field contains
+// checks for non-ticket resources.
+type ExpectRecord struct {
+	ID            string            `json:"id,omitempty"`
+	TitleContains string            `json:"title_contains,omitempty"`
+	Status        string            `json:"status,omitempty"`
+	Fields        map[string]string `json:"fields,omitempty"`
 }
 
-// StateTicket is one ticket in an injected state snapshot.
-type StateTicket struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+// StateRecord is one generic resource record in an injected state snapshot.
+// Fields keeps every raw field so callers can match arbitrary resources.
+type StateRecord struct {
+	ID     string         `json:"id,omitempty"`
+	Title  string         `json:"title,omitempty"`
+	Status string         `json:"status,omitempty"`
+	Fields map[string]any `json:"fields,omitempty"`
 }
 
-// StateSnapshot is the ticket state at scoring time (injected, not from cases.json).
+// StateSnapshot is the resource state at scoring time. The wire shape is
+// {"records":[...]}; legacy {"tickets":[...]} and bare arrays are accepted.
 type StateSnapshot struct {
-	Tickets []StateTicket `json:"tickets"`
+	Records []StateRecord `json:"records"`
+}
+
+// MarshalJSON emits flat records (id/title/status plus raw fields) so the
+// snapshot is stable across export/import.
+func (s StateSnapshot) MarshalJSON() ([]byte, error) {
+	rows := make([]map[string]any, 0, len(s.Records))
+	for _, r := range s.Records {
+		row := make(map[string]any, len(r.Fields)+3)
+		for k, v := range r.Fields {
+			row[k] = v
+		}
+		if r.ID != "" {
+			row["id"] = r.ID
+		}
+		if r.Title != "" {
+			row["title"] = r.Title
+		}
+		if r.Status != "" {
+			row["status"] = r.Status
+		}
+		rows = append(rows, row)
+	}
+	return json.Marshal(map[string]any{"records": rows})
+}
+
+// UnmarshalJSON accepts {"records":[...]}, {"items":[...]}, {"data":[...]},
+// legacy {"tickets":[...]} and a bare array. Each record's raw fields are
+// retained for arbitrary field matching; nested legacy "fields" is flattened.
+func (s *StateSnapshot) UnmarshalJSON(raw []byte) error {
+	raw = bytes.TrimSpace(raw)
+	var rows []map[string]any
+	if len(raw) > 0 && raw[0] == '[' {
+		if err := json.Unmarshal(raw, &rows); err != nil {
+			return err
+		}
+	} else {
+		var wrapper map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &wrapper); err != nil {
+			return err
+		}
+		found := false
+		for _, key := range []string{"records", "items", "data", "tickets"} {
+			if v, ok := wrapper[key]; ok {
+				if string(v) == "null" {
+					rows = []map[string]any{}
+					found = true
+					break
+				}
+				if err := json.Unmarshal(v, &rows); err != nil {
+					return err
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("state snapshot missing records array")
+		}
+	}
+	s.Records = make([]StateRecord, 0, len(rows))
+	for _, row := range rows {
+		rec := StateRecord{Fields: map[string]any{}}
+		if nested, ok := row["fields"].(map[string]any); ok {
+			for k, v := range nested {
+				rec.Fields[k] = v
+			}
+		}
+		for k, v := range row {
+			if k == "fields" {
+				continue
+			}
+			rec.Fields[k] = v
+		}
+		if v, ok := row["id"].(string); ok {
+			rec.ID = v
+		}
+		if v, ok := row["title"].(string); ok {
+			rec.Title = v
+		}
+		if v, ok := row["status"].(string); ok {
+			rec.Status = v
+		}
+		s.Records = append(s.Records, rec)
+	}
+	return nil
 }
 
 // Case holds expected evidence-eval scoring inputs (cases.json shape).
@@ -40,7 +134,7 @@ type Case struct {
 	Chain                  []ChainLink    `json:"chain,omitempty"`
 	ForbidTools            []string       `json:"forbid_tools,omitempty"`
 	ArgContains            []ArgContains  `json:"arg_contains,omitempty"`
-	ExpectState            []ExpectTicket `json:"expect_state,omitempty"`
+	ExpectState            []ExpectRecord `json:"expect_state,omitempty"`
 	StateSnapshot          *StateSnapshot `json:"-"`
 }
 
@@ -57,24 +151,47 @@ type Result struct {
 	Notes string
 }
 
-func ticketMatches(exp ExpectTicket, t StateTicket) bool {
-	if exp.ID != "" && t.ID != exp.ID {
+func recordMatches(exp ExpectRecord, r StateRecord) bool {
+	if exp.ID != "" && r.ID != exp.ID {
 		return false
 	}
-	if exp.Status != "" && t.Status != exp.Status {
+	if exp.Status != "" && r.Status != exp.Status {
 		return false
 	}
-	if exp.TitleContains != "" && !strings.Contains(t.Title, exp.TitleContains) {
+	if exp.TitleContains != "" && !strings.Contains(r.Title, exp.TitleContains) {
 		return false
+	}
+	for field, want := range exp.Fields {
+		got, ok := r.Fields[field]
+		if !ok {
+			return false
+		}
+		if !strings.Contains(valueString(got), want) {
+			return false
+		}
 	}
 	return true
 }
 
-func stateMatches(expect []ExpectTicket, snap StateSnapshot) bool {
+func valueString(v any) string {
+	switch n := v.(type) {
+	case string:
+		return n
+	case float64:
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(n)
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+}
+
+func stateMatches(expect []ExpectRecord, snap StateSnapshot) bool {
 	for _, exp := range expect {
 		found := false
-		for _, t := range snap.Tickets {
-			if ticketMatches(exp, t) {
+		for _, r := range snap.Records {
+			if recordMatches(exp, r) {
 				found = true
 				break
 			}

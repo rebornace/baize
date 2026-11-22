@@ -50,6 +50,43 @@ steps:
       x: "{{a.result.ok}}"
 `
 
+func TestExecutePinnedWorkflowUsesInputArgs(t *testing.T) {
+	st := store.NewMemory()
+	reg := tool.NewRegistry()
+	var got map[string]any
+	reg.Register("ta", func(_ context.Context, args map[string]any) (map[string]any, bool, error) {
+		got = args
+		return map[string]any{"ok": true}, false, nil
+	})
+	cat := loadWorkflowCatalog(t, "demo", `name: demo
+steps:
+  - id: a
+    tool: ta
+    args:
+      project_id: "{{input.project_id}}"
+      text: "{{input.text}}"
+`)
+	ag := agent.Def{ID: "a", System: "helper"}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: ag.ID, Input: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{Store: st, LLM: &captureLLM{onChat: func([]llm.Message, []llm.ToolSpec) llm.Message {
+		t.Fatal("workflow must not call the LLM")
+		return llm.Message{}
+	}}, Tools: reg, Skills: cat}
+	err = eng.ExecuteWithOpts(context.Background(), r.ID, ag, r.Input, RunOptions{
+		Skills:    []string{"demo"},
+		InputArgs: map[string]any{"project_id": "p-42"},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteWithOpts: %v", err)
+	}
+	if got["project_id"] != "p-42" || got["text"] != "hello" {
+		t.Fatalf("args=%+v", got)
+	}
+}
+
 func TestExecutePinnedWorkflowRunsBeforeLLM(t *testing.T) {
 	st := store.NewMemory()
 	reg := tool.NewRegistry()

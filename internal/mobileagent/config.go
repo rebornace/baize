@@ -18,10 +18,14 @@ type remoteConfigJSON struct {
 	APIKey       string                    `json:"api_key"`
 	ReadOnlyAPI  *readOnlyAPIRemoteConfig  `json:"readonly_api"`
 	ReadOnlyAPIs []readOnlyAPIRemoteConfig `json:"readonly_apis"`
-	// AllowPrivateNetworks applies to every network tool of this session:
-	// http_get, FetchRemoteConfig/spec_url and connector calls. Pointer so an
-	// omitted field does not silently reset an existing policy.
+	// AllowPrivateNetworks applies to http_get, FetchRemoteConfig/spec_url and
+	// connector calls. Pointer so an omitted field does not silently reset an
+	// existing policy.
 	AllowPrivateNetworks *bool `json:"allow_private_networks"`
+	// AllowedPrivateHosts / AllowedPrivateCIDRs narrow private access. They are
+	// ignored when AllowPrivateNetworks is true.
+	AllowedPrivateHosts []string `json:"allowed_private_hosts"`
+	AllowedPrivateCIDRs []string `json:"allowed_private_cidrs"`
 }
 
 type readOnlyAPIRemoteConfig struct {
@@ -115,6 +119,15 @@ func (a *Agent) ApplyRemoteConfigJSON(raw string) string {
 	if cfg.AllowPrivateNetworks != nil {
 		a.allowPrivateNetworks = *cfg.AllowPrivateNetworks
 	}
+	if len(cfg.AllowedPrivateHosts) > 0 || len(cfg.AllowedPrivateCIDRs) > 0 {
+		raw, _ := json.Marshal(netAllowlistJSON{Hosts: cfg.AllowedPrivateHosts, CIDRs: cfg.AllowedPrivateCIDRs})
+		allow, err := parseNetAllowlist(string(raw))
+		if err != nil {
+			return errJSON("allowed_private_*: " + err.Error())
+		}
+		a.allowlist = allow
+		a.httpClient = nil
+	}
 	if a.baseURL == "" || a.model == "" {
 		return errJSON("api_base and model must be set (via Configure or JSON)")
 	}
@@ -163,7 +176,7 @@ func (a *Agent) resolveReadOnlySpecURL(client *http.Client, body []byte) ([]byte
 		if !ok {
 			return body, nil
 		}
-		if err := resolveReadOnlySpecURLIn(client, raw); err != nil {
+		if err := a.resolveReadOnlySpecURLIn(client, raw); err != nil {
 			return nil, err
 		}
 	}
@@ -177,7 +190,7 @@ func (a *Agent) resolveReadOnlySpecURL(client *http.Client, body []byte) ([]byte
 			if !ok {
 				continue
 			}
-			if err := resolveReadOnlySpecURLIn(client, raw); err != nil {
+			if err := a.resolveReadOnlySpecURLIn(client, raw); err != nil {
 				return nil, fmt.Errorf("readonly_apis[%d]: %w", i, err)
 			}
 		}
@@ -185,7 +198,7 @@ func (a *Agent) resolveReadOnlySpecURL(client *http.Client, body []byte) ([]byte
 	return json.Marshal(doc)
 }
 
-func resolveReadOnlySpecURLIn(client *http.Client, raw map[string]any) error {
+func (a *Agent) resolveReadOnlySpecURLIn(client *http.Client, raw map[string]any) error {
 	spec := mapString(raw, "spec")
 	specURL := mapString(raw, "spec_url")
 	if spec != "" && specURL != "" {
@@ -194,7 +207,7 @@ func resolveReadOnlySpecURLIn(client *http.Client, raw map[string]any) error {
 	if specURL == "" {
 		return nil
 	}
-	fetched, err := fetchReadOnlySpec(client, specURL)
+	fetched, err := fetchReadOnlySpec(client, specURL, a.checkRequestHost)
 	if err != nil {
 		return err
 	}
@@ -203,7 +216,7 @@ func resolveReadOnlySpecURLIn(client *http.Client, raw map[string]any) error {
 	return nil
 }
 
-func fetchReadOnlySpec(client *http.Client, rawURL string) ([]byte, error) {
+func fetchReadOnlySpec(client *http.Client, rawURL string, check func(context.Context, string) error) ([]byte, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("readonly_api: spec_url must be absolute http(s)")
@@ -216,6 +229,11 @@ func fetchReadOnlySpec(client *http.Client, rawURL string) ([]byte, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), httpGetTimeout)
 	defer cancel()
+	if check != nil {
+		if err := check(ctx, u.Hostname()); err != nil {
+			return nil, redactNetworkError(err)
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
@@ -254,6 +272,9 @@ func (a *Agent) FetchRemoteConfig(rawURL string) string {
 	client := a.httpGetClient()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	if err := a.checkRequestHost(ctx, u.Hostname()); err != nil {
+		return errJSON("fetch: " + redactNetworkError(err).Error())
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return errJSON(err.Error())

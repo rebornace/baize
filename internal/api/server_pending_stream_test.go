@@ -13,6 +13,68 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
+func TestPendingStreamLimitAndStats(t *testing.T) {
+	srv, st := pendingTestServer(t)
+	srv.PendingStreamLimit = 1
+	seedWaitingRun(t, srv, st, "c-limit", "alice", "limit", &store.HITLPayload{
+		Kind:   store.HITLKindApproval,
+		Prompt: "wait",
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req1, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/v0/hitl/pending/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req1.Header.Set("Authorization", "Bearer adm-token")
+	resp1, err := http.DefaultClient.Do(req1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp1.Body.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if live, _, _ := srv.pendingStreamStats(); live == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if live, _, _ := srv.pendingStreamStats(); live != 1 {
+		t.Fatalf("live=%d want 1", live)
+	}
+
+	req2, err := http.NewRequest(http.MethodGet, ts.URL+"/v0/hitl/pending/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2.Header.Set("Authorization", "Bearer adm-token")
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("second stream status=%d want 429", resp2.StatusCode)
+	}
+	if _, dropped, _ := srv.pendingStreamStats(); dropped != 1 {
+		t.Fatalf("dropped=%d want 1", dropped)
+	}
+
+	cancel()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if live, _, _ := srv.pendingStreamStats(); live == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("stream slot was not released")
+}
+
 func TestPendingStreamInitialAndUpdate(t *testing.T) {
 	srv, st := pendingTestServer(t)
 	seedWaitingRun(t, srv, st, "c-stream", "alice", "stream test", &store.HITLPayload{

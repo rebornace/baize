@@ -22,27 +22,25 @@ func checkStateHTTPClient(client *http.Client) *http.Client {
 	return &http.Client{Timeout: checkStateHTTPTimeout}
 }
 
-func parseTicketsResponse(body []byte) (evidence.StateSnapshot, error) {
-	var tickets []evidence.StateTicket
-	if err := json.Unmarshal(body, &tickets); err == nil {
-		return evidence.StateSnapshot{Tickets: tickets}, nil
+// parseStateResponse accepts a bare array or {"records"|"items"|"data"|
+// "tickets":[...]}. Legacy ticket payloads remain readable.
+func parseStateResponse(body []byte) (evidence.StateSnapshot, error) {
+	var snap evidence.StateSnapshot
+	if err := json.Unmarshal(body, &snap); err != nil {
+		return evidence.StateSnapshot{}, fmt.Errorf("invalid state json: %w", err)
 	}
-	var wrapper struct {
-		Tickets []evidence.StateTicket `json:"tickets"`
+	if snap.Records == nil {
+		return evidence.StateSnapshot{}, errors.New("state response missing records array")
 	}
-	if err := json.Unmarshal(body, &wrapper); err != nil {
-		return evidence.StateSnapshot{}, fmt.Errorf("invalid tickets json: %w", err)
-	}
-	if wrapper.Tickets == nil {
-		return evidence.StateSnapshot{}, errors.New("tickets response missing tickets array")
-	}
-	return evidence.StateSnapshot{Tickets: wrapper.Tickets}, nil
+	return snap, nil
 }
 
-// CheckState fetches mock ticket state, scores in memory, and persists snapshot + score in one Upsert.
-func CheckState(st store.Store, caseID string, mockBaseURL string, client *http.Client) (store.EvalCase, evidence.Result, error) {
-	if strings.TrimSpace(mockBaseURL) == "" {
-		return store.EvalCase{}, evidence.Result{}, ErrMockBaseRequired
+// CheckState fetches a resource-state endpoint, scores in memory, and persists
+// the snapshot + score in one Upsert. stateURL is the full endpoint URL.
+func CheckState(st store.Store, caseID string, stateURL string, client *http.Client) (store.EvalCase, evidence.Result, error) {
+	stateURL = strings.TrimSpace(stateURL)
+	if stateURL == "" {
+		return store.EvalCase{}, evidence.Result{}, ErrStateURLRequired
 	}
 	c, err := st.GetEvalCase(caseID)
 	if errors.Is(err, store.ErrEvalCaseNotFound) {
@@ -52,8 +50,7 @@ func CheckState(st store.Store, caseID string, mockBaseURL string, client *http.
 		return store.EvalCase{}, evidence.Result{}, err
 	}
 
-	base := strings.TrimRight(strings.TrimSpace(mockBaseURL), "/")
-	req, err := http.NewRequest(http.MethodGet, base+"/tickets", nil)
+	req, err := http.NewRequest(http.MethodGet, stateURL, nil)
 	if err != nil {
 		return store.EvalCase{}, evidence.Result{}, err
 	}
@@ -67,10 +64,10 @@ func CheckState(st store.Store, caseID string, mockBaseURL string, client *http.
 		return store.EvalCase{}, evidence.Result{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return store.EvalCase{}, evidence.Result{}, fmt.Errorf("mock tickets http %d", resp.StatusCode)
+		return store.EvalCase{}, evidence.Result{}, fmt.Errorf("state endpoint http %d", resp.StatusCode)
 	}
 
-	snap, err := parseTicketsResponse(body)
+	snap, err := parseStateResponse(body)
 	if err != nil {
 		return store.EvalCase{}, evidence.Result{}, err
 	}

@@ -40,12 +40,14 @@ type Agent struct {
 	readOnly *readonlyAPI
 	// stream is the active asynchronous turn started by StartStream.
 	stream *streamState
-	// allowPrivateNetworks permits http_get / FetchRemoteConfig / spec_url to
-	// reach loopback, private and link-local addresses. Off by default.
+	// allowPrivateNetworks permits all private/loopback targets (demo / fully
+	// trusted internal deployments).
 	allowPrivateNetworks bool
-	// httpClients caches the guarded clients per policy. [0] = public only,
-	// [1] = allow private. Guarded clients are immutable after creation.
-	httpClients [2]*http.Client
+	// allowlist narrows private access to explicit CIDRs/IPs.
+	allowlist *netAllowlist
+	// httpClient caches the guarded client for the current policy; setters
+	// invalidate it.
+	httpClient *http.Client
 	// fetchHits counts successful http_get network attempts (tests).
 	fetchHits int
 	// remoteHits counts successful readonly-connector GET attempts (tests).
@@ -103,11 +105,12 @@ func Configure(apiBase, apiKey, model string) error {
 }
 
 // SetAllowPrivateNetworks controls whether http_get, FetchRemoteConfig,
-// spec_url and connector calls may reach loopback, private, link-local and
-// reserved addresses. Off by default.
+// spec_url and connector calls may reach every loopback/private address.
+// Off by default; prefer SetPrivateNetworkAllowlist for narrower access.
 func (a *Agent) SetAllowPrivateNetworks(allow bool) {
 	a.mu.Lock()
 	a.allowPrivateNetworks = allow
+	a.httpClient = nil
 	a.mu.Unlock()
 }
 
@@ -124,26 +127,45 @@ func (a *Agent) AllowPrivateNetworks() bool {
 // AllowPrivateNetworks on the default session.
 func AllowPrivateNetworks() bool { return defaultSession.AllowPrivateNetworks() }
 
-// httpClientFor returns a cached guarded client. The client is immutable, so
-// sharing it across calls is safe.
-func (a *Agent) httpClientFor(allowPrivate bool) *http.Client {
-	idx := 0
-	if allowPrivate {
-		idx = 1
+// SetPrivateNetworkAllowlist narrows private access to explicit CIDRs/IPs.
+// JSON: {"hosts":["crm.internal"],"cidrs":["10.20.0.0/16"]}. Hosts are optional
+// and only restrict DNS names resolving into the allowed ranges. An empty
+// string clears the allowlist. It does not disable the default deny.
+func (a *Agent) SetPrivateNetworkAllowlist(raw string) string {
+	allow, err := parseNetAllowlist(raw)
+	if err != nil {
+		return errJSON("invalid private allowlist: " + err.Error())
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.httpClients[idx] == nil {
-		a.httpClients[idx] = guardedHTTPClient(allowPrivate)
+	a.allowlist = allow
+	a.httpClient = nil
+	a.mu.Unlock()
+	b, _ := json.Marshal(map[string]any{"status": "done"})
+	return string(b)
+}
+
+// SetPrivateNetworkAllowlist on the default session.
+func SetPrivateNetworkAllowlist(raw string) string {
+	return defaultSession.SetPrivateNetworkAllowlist(raw)
+}
+
+func (a *Agent) checkRequestHost(ctx context.Context, host string) error {
+	a.mu.Lock()
+	allowAll, allow := a.allowPrivateNetworks, a.allowlist
+	a.mu.Unlock()
+	if allowAll {
+		return nil
 	}
-	return a.httpClients[idx]
+	return allow.checkHost(ctx, host)
 }
 
 func (a *Agent) httpGetClient() *http.Client {
 	a.mu.Lock()
-	allow := a.allowPrivateNetworks
-	a.mu.Unlock()
-	return a.httpClientFor(allow)
+	defer a.mu.Unlock()
+	if a.httpClient == nil {
+		a.httpClient = guardedHTTPClient(a.allowPrivateNetworks, a.allowlist)
+	}
+	return a.httpClient
 }
 
 // Reset clears messages and pending HITL without changing API config.
@@ -321,6 +343,7 @@ func (a *Agent) NewSession() *Agent {
 	b.apiKey = a.apiKey
 	b.model = a.model
 	b.allowPrivateNetworks = a.allowPrivateNetworks
+	b.allowlist = a.allowlist
 	b.readOnly = a.readOnly
 	return b
 }
@@ -446,6 +469,9 @@ func (a *Agent) execHTTPGet(client *http.Client, argsJSON string) (string, error
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), httpGetTimeout)
 	defer cancel()
+	if err := a.checkRequestHost(ctx, u.Hostname()); err != nil {
+		return "", redactNetworkError(err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return "", err

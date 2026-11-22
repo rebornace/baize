@@ -70,7 +70,7 @@ import { PendingCenter } from './chat/PendingCenter'
 import { useChatRun } from './chat/useChatRun'
 import { useChatSession, type ChatLiveControls } from './chat/useChatSession'
 
-const AGENT_FALLBACK = 'ticket-agent'
+const AGENT_FALLBACK = 'default-agent'
 
 export function ChatPage() {
   const { role, gateEnabled } = useGate()

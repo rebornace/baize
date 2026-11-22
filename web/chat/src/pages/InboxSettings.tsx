@@ -143,7 +143,7 @@ function channelTitle(row: ChannelFormRow, index: number): string {
 
 export function InboxSettings() {
   const [rows, setRows] = useState<ChannelFormRow[]>([])
-  const [defaultAgentId, setDefaultAgentId] = useState('ticket-agent')
+  const [defaultAgentId, setDefaultAgentId] = useState('default-agent')
   const [skillCatalog, setSkillCatalog] = useState<SkillSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [formError, setFormError] = useState<string | null>(null)

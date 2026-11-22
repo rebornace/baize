@@ -421,7 +421,7 @@ export function WeixinChannelSettings() {
               value={agentId}
               onChange={(e) => setAgentId(e.target.value)}
               disabled={uiBusy}
-              placeholder="ticket-agent"
+              placeholder="default-agent"
             />
           </label>
           <label className="settings-field">

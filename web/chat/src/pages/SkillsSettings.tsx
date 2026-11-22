@@ -65,7 +65,7 @@ export function SkillsSettings() {
   const { locale } = useLocale()
   const { toasts, push, dismiss } = useToast()
   const [skills, setSkills] = useState<SkillSummary[] | null>(null)
-  const [agentId, setAgentId] = useState('ticket-agent')
+  const [agentId, setAgentId] = useState('default-agent')
   const [system, setSystem] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exclusiveBinding, setExclusiveBinding] = useState(false)
@@ -80,12 +80,12 @@ export function SkillsSettings() {
 
   const load = useCallback(async () => {
     try {
-      let resolvedAgentId = 'ticket-agent'
+      let resolvedAgentId = 'default-agent'
       try {
         const cfg = await getUIConfig()
         if (cfg.agent_id?.trim()) resolvedAgentId = cfg.agent_id.trim()
       } catch {
-        /* fallback ticket-agent */
+        /* fallback default-agent */
       }
       setAgentId(resolvedAgentId)
 

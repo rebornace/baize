@@ -19,14 +19,15 @@ const (
 // these fields let a worker replay the run without reconstructing context, and
 // carry non-persisted multimodal parts on the live path.
 type Job struct {
-	RunID      string    `json:"run_id"`
-	Kind       JobKind   `json:"kind"`
-	AgentID    string    `json:"agent_id"`
-	Input      string    `json:"input"`
-	Skills     []string  `json:"skills,omitempty"`
-	UserParts  []Part    `json:"user_parts,omitempty"`
-	Locale     string    `json:"locale,omitempty"`
-	EnqueuedAt time.Time `json:"enqueued_at"`
+	RunID      string         `json:"run_id"`
+	Kind       JobKind        `json:"kind"`
+	AgentID    string         `json:"agent_id"`
+	Input      string         `json:"input"`
+	Skills     []string       `json:"skills,omitempty"`
+	UserParts  []Part         `json:"user_parts,omitempty"`
+	InputArgs  map[string]any `json:"input_args,omitempty"`
+	Locale     string         `json:"locale,omitempty"`
+	EnqueuedAt time.Time      `json:"enqueued_at"`
 	// HITL fields are set when Kind == KindHitlResume.
 	HITLApprove    bool   `json:"hitl_approve,omitempty"`
 	HITLComment    string `json:"hitl_comment,omitempty"`

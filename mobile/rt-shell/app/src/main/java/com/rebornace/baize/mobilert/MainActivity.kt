@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import mobileagent.Agent
 import mobileagent.Mobileagent
+import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.concurrent.thread
 
@@ -61,16 +62,60 @@ class MainActivity : AppCompatActivity() {
         if (vault.model().isNotEmpty()) model.setText(vault.model())
         if (vault.configURL().isNotEmpty()) configUrl.setText(vault.configURL())
 
-        val first = Mobileagent.newAgent()
-        agents.add(first)
-        sessionNames.add("Session 1")
-        sessionTexts.add("")
-        try {
-            if (vault.apiBase().isNotEmpty() && vault.model().isNotEmpty()) {
-                first.configure(vault.apiBase(), vault.apiKey(), vault.model())
+        var savedActive = 0
+        var restoredAny = false
+        val savedRaw = vault.sessions()
+        if (savedRaw.isNotBlank()) {
+            try {
+                val root = JSONObject(savedRaw)
+                savedActive = root.optInt("active", 0)
+                val arr = root.optJSONArray("sessions")
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val agent = Mobileagent.newAgent()
+                        try {
+                            if (vault.apiBase().isNotEmpty() && vault.model().isNotEmpty()) {
+                                agent.configure(vault.apiBase(), vault.apiKey(), vault.model())
+                            }
+                        } catch (_: Exception) {
+                        }
+                        val snap = o.optString("snapshot", "")
+                        if (snap.isNotBlank()) {
+                            val res = try {
+                                JSONObject(agent.importSession(snap))
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (res?.optString("status") != "done") continue
+                        }
+                        var text = o.optString("text", "")
+                        if (text.startsWith("HITL:")) {
+                            text = "Previous approval expired after restart."
+                        }
+                        agents.add(agent)
+                        sessionNames.add(o.optString("name", "Session ${agents.size}"))
+                        sessionTexts.add(text)
+                        restoredAny = true
+                    }
+                }
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {
         }
+        if (!restoredAny) {
+            val first = Mobileagent.newAgent()
+            try {
+                if (vault.apiBase().isNotEmpty() && vault.model().isNotEmpty()) {
+                    first.configure(vault.apiBase(), vault.apiKey(), vault.model())
+                }
+            } catch (_: Exception) {
+            }
+            agents.add(first)
+            sessionNames.add("Session 1")
+            sessionTexts.add("")
+            savedActive = 0
+        }
+        activeIndex = savedActive.coerceIn(0, agents.lastIndex)
 
         fun refreshReadonlyStatus() {
             val names = try {
@@ -106,6 +151,25 @@ class MainActivity : AppCompatActivity() {
             if (agents.isNotEmpty()) sessionTexts[activeIndex] = reply.text.toString()
         }
 
+        fun saveSessions() {
+            if (agents.isEmpty()) return
+            try {
+                val arr = JSONArray()
+                for (i in agents.indices) {
+                    val o = JSONObject()
+                    o.put("name", sessionNames[i])
+                    o.put("text", sessionTexts[i])
+                    o.put("snapshot", agents[i].exportSession())
+                    arr.put(o)
+                }
+                val root = JSONObject()
+                root.put("active", activeIndex)
+                root.put("sessions", arr)
+                vault.saveSessions(root.toString())
+            } catch (_: Exception) {
+            }
+        }
+
         fun showPending() {
             val raw = try {
                 activeAgent().pendingApproval()
@@ -128,6 +192,7 @@ class MainActivity : AppCompatActivity() {
                 hitlRow.visibility = View.GONE
                 send.isEnabled = !streaming
             }
+            saveSessions()
         }
 
         fun applyResult(raw: String) {
@@ -166,6 +231,7 @@ class MainActivity : AppCompatActivity() {
                 reply.text = raw
             }
             sessionTexts[activeIndex] = reply.text.toString()
+            saveSessions()
         }
 
         fun ensureConfigured() {
@@ -209,6 +275,7 @@ class MainActivity : AppCompatActivity() {
                             val text = o.optString("text")
                             reply.text = if (text.isNotEmpty()) "$text\n[cancelled]" else "Cancelled"
                             sessionTexts[activeIndex] = reply.text.toString()
+                            saveSessions()
                         } else {
                             val result = o.optString("result")
                             applyResult(if (result.isNotEmpty()) result else raw)
@@ -232,9 +299,11 @@ class MainActivity : AppCompatActivity() {
             reply.text = sessionTexts[index].ifEmpty { sessionNames[index] }
             showPending()
             refreshReadonlyStatus()
+            saveSessions()
         }
 
-        refreshSpinner(0)
+        reply.text = sessionTexts[activeIndex].ifEmpty { sessionNames[activeIndex] }
+        refreshSpinner(activeIndex)
         sessionSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: android.widget.AdapterView<*>?,
@@ -269,6 +338,7 @@ class MainActivity : AppCompatActivity() {
             reply.text = "New session"
             showPending()
             refreshReadonlyStatus()
+            saveSessions()
         }
 
         clearSession.setOnClickListener {
@@ -283,6 +353,7 @@ class MainActivity : AppCompatActivity() {
             send.isEnabled = true
             reply.text = "Session cleared"
             refreshReadonlyStatus()
+            saveSessions()
         }
 
         saveVault.setOnClickListener {
@@ -296,6 +367,7 @@ class MainActivity : AppCompatActivity() {
                 ensureConfigured()
                 reply.text = "Vault saved (EncryptedSharedPreferences). hasKey=${Mobileagent.hasAPIKey()}"
                 sessionTexts[activeIndex] = reply.text.toString()
+                saveSessions()
             } catch (e: Exception) {
                 reply.text = "vault/configure error: ${e.message}"
             }
@@ -350,6 +422,7 @@ class MainActivity : AppCompatActivity() {
                     reply.text = "Remote config restored. Tools: " +
                         (activeAgent().remoteToolNames().ifBlank { "none" })
                     sessionTexts[activeIndex] = reply.text.toString()
+                    saveSessions()
                     vault.save(
                         apiBase.text.toString().trim(),
                         apiKey.text.toString(),

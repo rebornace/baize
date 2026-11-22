@@ -159,6 +159,7 @@ func (s *Server) resolveJob(job middleware.Job, cur *store.Run) (agent.Def, stri
 	opts := run.RunOptions{
 		Skills:    job.Skills,
 		UserParts: partsFromMiddleware(job.UserParts),
+		InputArgs: job.InputArgs,
 		Locale:    job.Locale,
 	}
 	return def, input, opts, nil

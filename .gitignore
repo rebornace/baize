@@ -56,3 +56,7 @@ node_modules/
 __pycache__/
 *.pyc
 
+# cosign private keys never enter the repo; publish cosign.pub instead
+cosign.key
+*.cosign.key
+

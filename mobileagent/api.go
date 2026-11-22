@@ -35,6 +35,12 @@ func PendingApproval() string { return intma.PendingApproval() }
 // NewSession returns a fresh Agent with the default session's config/tools.
 func NewSession() *Agent { return &Agent{inner: intma.NewSession()} }
 
+// ExportSession returns a portable history snapshot (no keys, auth or pending).
+func ExportSession() string { return intma.ExportSession() }
+
+// ImportSession replaces history from ExportSession output.
+func ImportSession(raw string) string { return intma.ImportSession(raw) }
+
 // Approve continues after a needs_approval pause (executes the pending call).
 func Approve(callID string) string { return intma.Approve(callID) }
 
@@ -63,6 +69,12 @@ func SetAllowPrivateNetworks(allow bool) { intma.SetAllowPrivateNetworks(allow) 
 
 // AllowPrivateNetworks reports the default session's network policy.
 func AllowPrivateNetworks() bool { return intma.AllowPrivateNetworks() }
+
+// SetPrivateNetworkAllowlist narrows private access to CIDRs/IPs.
+// JSON: {"hosts":["crm.internal"],"cidrs":["10.20.0.0/16"]}.
+func SetPrivateNetworkAllowlist(raw string) string {
+	return intma.SetPrivateNetworkAllowlist(raw)
+}
 
 // ConfigureReadOnlyAPI replaces the on-device GET-only OpenAPI connector.
 func ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {
@@ -129,6 +141,12 @@ func (a *Agent) PendingApproval() string { return a.inner.PendingApproval() }
 // NewSession clones this agent's config and tools without history or pending.
 func (a *Agent) NewSession() *Agent { return &Agent{inner: a.inner.NewSession()} }
 
+// ExportSession snapshots this agent's history (no keys/auth/pending).
+func (a *Agent) ExportSession() string { return a.inner.ExportSession() }
+
+// ImportSession replaces this agent's history from ExportSession output.
+func (a *Agent) ImportSession(raw string) string { return a.inner.ImportSession(raw) }
+
 // Approve the pending call on this agent.
 func (a *Agent) Approve(callID string) string { return a.inner.Approve(callID) }
 
@@ -157,6 +175,11 @@ func (a *Agent) SetAllowPrivateNetworks(allow bool) { a.inner.SetAllowPrivateNet
 
 // AllowPrivateNetworks on this agent.
 func (a *Agent) AllowPrivateNetworks() bool { return a.inner.AllowPrivateNetworks() }
+
+// SetPrivateNetworkAllowlist on this agent (JSON hosts/cidrs).
+func (a *Agent) SetPrivateNetworkAllowlist(raw string) string {
+	return a.inner.SetPrivateNetworkAllowlist(raw)
+}
 
 // ConfigureReadOnlyAPI on this agent.
 func (a *Agent) ConfigureReadOnlyAPI(baseURL, authHeader, authValue, spec string) error {

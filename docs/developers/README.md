@@ -20,7 +20,7 @@
 | 机上工具面 | Android / iOS 空壳 | `mobileagent`；只读 / 写操作 / methods / form / multipart |
 | 保全评测 | `scripts/ev-pres`、CI `evals` | Pass/成本/新过新挂；跨域 hold-out |
 | 上下文卸出 | 超大工具结果 / 粘贴 → 工作区路径 | 会话 `offload/`、`read_file` |
-| 评测语料 | 设置 → 评测语料（Admin） | EvalCase、evidence 重打分 |
+| 评测语料 | 设置 → 评测语料（Admin） | EvalCase、evidence 重打分、通用状态接口（`records`） |
 | 运维可观测 | 设置 → 运行指标；运行参数 → 观测 | `GET /metrics`、OTLP、slog 热更新 |
 | 出站 mTLS | 连接器编辑器 → 出站 TLS / mTLS | `tls.cert_file` / `key_file` / `ca_file` |
 

@@ -395,7 +395,7 @@ describe('EvalSettings', () => {
     expect(evalApi.scoreEvalCase).toHaveBeenCalledWith('ec_rescore')
   })
 
-  it('renders check-state mock input and button on corpus row', async () => {
+  it('renders check-state endpoint input and button on corpus row', async () => {
     mockSummary()
     vi.spyOn(evalApi, 'listEvalCases').mockResolvedValue({
       items: [

@@ -225,3 +225,42 @@ func TestPartsRoundTripThroughJob(t *testing.T) {
 		t.Fatalf("roundtrip skills = %v", opts.Skills)
 	}
 }
+
+func TestInputArgsRoundTripThroughJob(t *testing.T) {
+	mw, err := middleware.Open(context.Background(), "memory", middleware.Options{WorkerConcurrency: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := newJobRunner()
+	srv, st := newJobTestServer(t, rr)
+	srv.Queue = mw.Queue
+	stop := mw.StartWorkers(context.Background(), srv)
+	defer stop()
+
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Dispatch(context.Background(), middleware.Job{
+		RunID:     r.ID,
+		Kind:      middleware.KindRun,
+		AgentID:   "a",
+		Input:     "hello",
+		InputArgs: map[string]any{"project_id": "p-42", "count": float64(3)},
+	})
+
+	select {
+	case <-rr.executed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("job with input_args was not executed")
+	}
+	var opts run.RunOptions
+	select {
+	case opts = <-rr.opts:
+	case <-time.After(time.Second):
+		t.Fatal("runner options were not captured")
+	}
+	if opts.InputArgs["project_id"] != "p-42" || opts.InputArgs["count"] != float64(3) {
+		t.Fatalf("input_args=%+v", opts.InputArgs)
+	}
+}

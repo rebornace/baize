@@ -15,7 +15,12 @@ export type SkillSummary = {
 
 export type SkillEvalChainLink = { after: string; before: string }
 export type SkillEvalArgContains = { tool: string; substr: string }
-export type SkillEvalExpectState = { id?: string; title_contains?: string; status?: string }
+export type SkillEvalExpectState = {
+  id?: string
+  title_contains?: string
+  status?: string
+  fields?: Record<string, string>
+}
 
 export type SkillEvalCase = {
   id: string

@@ -94,10 +94,32 @@ Protocol major version is in the path and `v0` header; unknown major → `400 pr
 | Mode | Behavior |
 |------|----------|
 | Default | Single-agent ReAct: pick tool → execute → write trail → finish |
-| Optional | Linear `workflow.yaml` inside a Skill (ordered steps + optional approval; no branch / loop) |
+| Optional | Linear `workflow.yaml` inside a Skill (ordered steps, optional `when` skip + approval; no loops) |
 | Optional | Group sub-task: `spawn_group_run` → child (one level) + parent waits (`waiting_child`) |
 | Skill | Config shape: `SKILL.md` (optional `SKILL.en.md`) + tools; `agent.skills` pre-activates new chats (sample includes `baize-help`) while unchecked skills stay reachable via `@`/`activate_skill`; `@id`/`/id` pins are stored on the user message as `pinned_skills` (visible in history); Composer completes `/reload`; catalog reload via `skills_reload`/`/reload` or auto dirty; optional `tool_binding: exclusive` |
 | Channel | Signed inbox; IM via out-of-process adapters + declarative `channels` (see [Deployment](./deployment.en.md)). **Production adapter: personal WeChat**; Feishu / DingTalk reference adapters under `examples/im-adapter-*` |
+
+### Optional workflow conditions
+
+A step may set `when`; a false result skips it and emits `workflow.step_skipped`:
+
+```yaml
+- id: close
+  tool: update_ticket_status
+  when:
+    path: lookup.result.status
+    op: eq
+    value: open
+  args:
+    id: "{{lookup.result.id}}"
+    status: closed
+```
+
+- Leaf: `path` + `op` (`eq` / `ne` / `contains` / `in` / `exists` / `not_exists` / `gt` / `gte` / `lt` / `lte`) + optional `value`.
+- Groups: `all` / `any` / `not`, nestable.
+- `path` reads `input` and earlier step results; a missing path is false (`exists` false, `not_exists` true).
+- Conditions are re-evaluated on resume; no loops or arbitrary scripts.
+- `POST /v0/runs` may pass `input_args` (≤64 keys / 64 KiB) into the workflow template alongside `input.text`; `text` cannot be overridden.
 
 ## Human approval
 

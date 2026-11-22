@@ -766,11 +766,12 @@ type EvalArgContains struct {
 	Substr string `json:"substr"`
 }
 
-// EvalExpectState is a ticket-shaped expectation for trajectory scoring.
+// EvalExpectState is a generic expectation for trajectory state scoring.
 type EvalExpectState struct {
-	ID            string `json:"id,omitempty"`
-	TitleContains string `json:"title_contains,omitempty"`
-	Status        string `json:"status,omitempty"`
+	ID            string            `json:"id,omitempty"`
+	TitleContains string            `json:"title_contains,omitempty"`
+	Status        string            `json:"status,omitempty"`
+	Fields        map[string]string `json:"fields,omitempty"`
 }
 
 // EvalCase is a persisted evidence-eval corpus row with a frozen events snapshot.
@@ -787,7 +788,7 @@ type EvalCase struct {
 	ForbidTools       []string
 	ArgContains       []EvalArgContains
 	ExpectState       []EvalExpectState
-	StateSnapshotJSON []byte // raw {"tickets":[...]}; optional
+	StateSnapshotJSON []byte // raw {"records":[...]}; optional; legacy tickets accepted
 	EventsJSON        []byte
 	RunStatusAtIngest string
 	LastScorePass     *bool

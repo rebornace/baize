@@ -1111,6 +1111,9 @@ func (a *Agent) execRemoteTool(tool *remoteTool, argsJSON string) (string, error
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), httpGetTimeout)
 	defer cancel()
+	if err := a.checkRequestHost(ctx, u.Hostname()); err != nil {
+		return "", redactNetworkError(err)
+	}
 	var reader io.Reader
 	if len(payload) > 0 {
 		reader = bytes.NewReader(payload)

@@ -522,10 +522,10 @@ export const enPack = {
     trajectoryExpect: 'expect_state',
     hasStateSnapshot: 'State snapshot stored',
     checkStateHint:
-      'Live state check: read-only ticket fetch against a mock service, writes snapshot and re-scores; does not change chats or clear human calibration.',
-    checkStateMockLabel: 'Mock service URL',
+      'Live state check: read-only request to the state endpoint you provide; scores returned records against expect_state and stores a snapshot. It does not write or depend on a specific domain.',
+    checkStateUrlLabel: 'State endpoint URL',
     checkStateButton: 'Check live state',
-    checkStateNeedUrl: 'Enter a mock service URL',
+    checkStateNeedUrl: 'Enter a state endpoint URL',
     toastCheckStatePass: 'Live check: pass',
     toastCheckStateFail: 'Live check: fail',
     digSkill: 'Create skill from chat',
@@ -1042,7 +1042,7 @@ export const enPack = {
     evalRunBusy: 'Running…',
     evalConfirmRunTitle: 'Run skill eval?',
     evalConfirmRunBody:
-      'This calls the model and consumes tokens; tools may have side effects (use a mock-ticket test environment when possible). Continue?',
+      'This calls the model and consumes tokens; tools may have side effects (use an isolated test environment when possible). Continue?',
     evalConfirmRunOk: 'Run',
     evalReadonlyBuiltin:
       'Built-in or managed eval is read-only here; you can run checks but cannot edit.',
@@ -1253,7 +1253,7 @@ export const enPack = {
     executionCallbackHint:
       'Optional. When set, tool calls POST here for an enterprise gateway to execute (leave empty in most cases). The gateway must invoke the real operation by tool name and arguments.',
     executionCallbackExample:
-      'POST {execution URL}\n{\n  "tool": "create_ticket",\n  "arguments": { "title": "..." },\n  "run_id": "run_...",\n  "...": "..."\n}',
+      'POST {execution URL}\n{\n  "tool": "create_record",\n  "arguments": { "name": "..." },\n  "run_id": "run_...",\n  "...": "..."\n}',
     tlsSection: 'Outbound TLS / mTLS',
     tlsHint:
       'Optional. Paths to PEM files on the Runtime host (not browser uploads). Client cert and key must be a pair; CA alone is allowed. Orthogonal to auth. Not used for stdio MCP. See configuration docs.',
@@ -1284,7 +1284,7 @@ export const enPack = {
     errBaseUrlRequired: 'Please enter a base URL',
     errBaseUrlHttp: 'Base URL must start with http:// or https://',
     errSpecRequired: 'Upload an API document or provide a document URL',
-    phId: 'ticket-api',
+    phId: 'my-api',
     phBaseUrlOpenapi: 'https://api.example.com',
     phBaseUrlPlugin: 'http://127.0.0.1:19090',
     phSpecUrl: 'http://localhost:8000/openapi.json',

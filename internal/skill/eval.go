@@ -50,11 +50,12 @@ type EvalArgContains struct {
 	Substr string `yaml:"substr" json:"substr"`
 }
 
-// EvalExpectState is a ticket-shaped expectation for trajectory scoring.
+// EvalExpectState is a generic expectation for trajectory state scoring.
 type EvalExpectState struct {
-	ID            string `yaml:"id,omitempty" json:"id,omitempty"`
-	TitleContains string `yaml:"title_contains,omitempty" json:"title_contains,omitempty"`
-	Status        string `yaml:"status,omitempty" json:"status,omitempty"`
+	ID            string            `yaml:"id,omitempty" json:"id,omitempty"`
+	TitleContains string            `yaml:"title_contains,omitempty" json:"title_contains,omitempty"`
+	Status        string            `yaml:"status,omitempty" json:"status,omitempty"`
+	Fields        map[string]string `yaml:"fields,omitempty" json:"fields,omitempty"`
 }
 
 func parseEvalBytes(raw []byte) (EvalDoc, error) {
@@ -125,12 +126,13 @@ func ToEvidenceCase(c EvalCase) evidence.Case {
 	for i, ac := range c.ArgContains {
 		argContains[i] = evidence.ArgContains{Tool: ac.Tool, Substr: ac.Substr}
 	}
-	expectState := make([]evidence.ExpectTicket, len(c.ExpectState))
+	expectState := make([]evidence.ExpectRecord, len(c.ExpectState))
 	for i, es := range c.ExpectState {
-		expectState[i] = evidence.ExpectTicket{
+		expectState[i] = evidence.ExpectRecord{
 			ID:            es.ID,
 			TitleContains: es.TitleContains,
 			Status:        es.Status,
+			Fields:        es.Fields,
 		}
 	}
 	return evidence.Case{

@@ -191,6 +191,10 @@ type RunOptions struct {
 	// trailing persisted user message (which carries only the display text)
 	// with this multimodal version so the LLM sees exactly one user turn.
 	UserParts []llm.ContentPart
+	// InputArgs is an optional structured payload for workflow templates.
+	// It is merged into the workflow tree under "input" (text is authoritative
+	// and cannot be overridden). It is not sent to the LLM by itself.
+	InputArgs map[string]any
 	// Locale selects localized skill bodies (e.g. "en", "zh-CN"). Empty uses
 	// the default SKILL.md body.
 	Locale string
@@ -252,7 +256,7 @@ func (e *Engine) ExecuteWithOpts(ctx context.Context, runID string, ag agent.Def
 		skills = ag.Skills
 	}
 	exclusive := strings.EqualFold(strings.TrimSpace(ag.ToolBinding), "exclusive")
-	e.beginRunSkillsOpts(runID, skills, ag.System, exclusive, opts.Locale, beginRunInput(input))
+	e.beginRunSkillsOpts(runID, skills, ag.System, exclusive, opts.Locale, beginRunInput(input, opts.InputArgs))
 	e.armContextProjection(runID, runRec)
 	e.maybeSeedGoal(runID, runRec.ConversationID, input)
 	sys := e.composeSystem(ag.System, runID)
@@ -655,7 +659,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		return err
 	}
 	if e.getRunSkillState(runID) == nil {
-		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(run.Input))
+		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(run.Input, nil))
 	}
 	evs, err := e.Store.ListEvents(runID)
 	if err != nil {
@@ -687,7 +691,7 @@ func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, 
 		return err
 	}
 	if e.getRunSkillState(runID) == nil {
-		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(run.Input))
+		e.beginRunSkills(runID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(run.Input, nil))
 	}
 	evs, err := e.Store.ListEvents(runID)
 	if err != nil {

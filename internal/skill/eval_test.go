@@ -109,7 +109,7 @@ func TestToEvidenceCase(t *testing.T) {
 		ArgContains: []evidence.ArgContains{
 			{Tool: "create_ticket", Substr: "urgent"},
 		},
-		ExpectState: []evidence.ExpectTicket{
+		ExpectState: []evidence.ExpectRecord{
 			{ID: "t1", TitleContains: "foo", Status: "open"},
 		},
 	}

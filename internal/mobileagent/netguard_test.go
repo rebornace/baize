@@ -153,3 +153,86 @@ func TestRemoteConfigPrivatePolicyMerges(t *testing.T) {
 		t.Fatalf("explicit disable not applied: %s", raw)
 	}
 }
+
+func TestPrivateAllowlistCIDR(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+
+	a := New()
+	got := a.SetPrivateNetworkAllowlist(`{"cidrs":["127.0.0.1/32"]}`)
+	if !strings.Contains(got, `"status":"done"`) {
+		t.Fatalf("allowlist=%s", got)
+	}
+	out, err := a.execHTTPGet(a.httpGetClient(), fmt.Sprintf(`{"url":%q}`, srv.URL))
+	if err != nil || !strings.Contains(out, "ok") {
+		t.Fatalf("allowlisted cidr out=%s err=%v", out, err)
+	}
+	// A different loopback address is outside the /32 and must be blocked by
+	// the dialer before any connection attempt.
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	_, err = a.execHTTPGet(a.httpGetClient(), fmt.Sprintf(`{"url":"http://127.0.0.2:%s/"}`, port))
+	if err == nil || !errors.Is(err, errBlockedNetwork) {
+		t.Fatalf("outside cidr err=%v", err)
+	}
+}
+
+func TestPrivateAllowlistHostRestriction(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+
+	a := New()
+	got := a.SetPrivateNetworkAllowlist(`{"hosts":["localhost"],"cidrs":["127.0.0.1/32"]}`)
+	if !strings.Contains(got, `"status":"done"`) {
+		t.Fatalf("allowlist=%s", got)
+	}
+	out, err := a.execHTTPGet(a.httpGetClient(), fmt.Sprintf(`{"url":"http://localhost:%s/"}`, port))
+	if err != nil || !strings.Contains(out, "ok") {
+		t.Fatalf("allowed host out=%s err=%v", out, err)
+	}
+
+	b := New()
+	if got := b.SetPrivateNetworkAllowlist(`{"hosts":["other.local"],"cidrs":["127.0.0.1/32"]}`); !strings.Contains(got, `"status":"done"`) {
+		t.Fatalf("allowlist=%s", got)
+	}
+	if _, err := b.execHTTPGet(b.httpGetClient(), fmt.Sprintf(`{"url":"http://localhost:%s/"}`, port)); !errors.Is(err, errBlockedNetwork) {
+		t.Fatalf("host not listed err=%v", err)
+	}
+	// IP literals are governed by the CIDR, not the host list.
+	if out, err := b.execHTTPGet(b.httpGetClient(), fmt.Sprintf(`{"url":%q}`, srv.URL)); err != nil || !strings.Contains(out, "ok") {
+		t.Fatalf("ip literal out=%s err=%v", out, err)
+	}
+}
+
+func TestPrivateAllowlistValidation(t *testing.T) {
+	a := New()
+	for _, raw := range []string{
+		`{"cidrs":["nope"]}`,
+		`{"hosts":["10.0.0.1"],"cidrs":["10.0.0.0/8"]}`,
+	} {
+		if got := a.SetPrivateNetworkAllowlist(raw); !strings.Contains(got, `"status":"error"`) {
+			t.Fatalf("%s => %s, want error", raw, got)
+		}
+	}
+}
+
+func TestRemoteConfigPrivateAllowlist(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+
+	a := New()
+	raw := a.ApplyRemoteConfigJSON(`{"api_base":"https://api.example.com","model":"m","allowed_private_cidrs":["127.0.0.1/32"]}`)
+	if !strings.Contains(raw, `"status":"done"`) {
+		t.Fatalf("config=%s", raw)
+	}
+	out, err := a.execHTTPGet(a.httpGetClient(), fmt.Sprintf(`{"url":%q}`, srv.URL))
+	if err != nil || !strings.Contains(out, "ok") {
+		t.Fatalf("config allowlist out=%s err=%v", out, err)
+	}
+}

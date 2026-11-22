@@ -20,7 +20,7 @@ Version detail lives in [CHANGELOG](../../CHANGELOG.md). These capabilities are 
 | On-device tools | Android / iOS shells | `mobileagent`; read/write, methods, form/multipart |
 | Preservation evals | `scripts/ev-pres`, CI `evals` | Pass/cost/new pass/new fail; cross-domain hold-out |
 | Context offload | Oversized tool results / pastes → workspace paths | conversation `offload/`, `read_file` |
-| Eval corpus | Settings → Eval corpus (Admin) | EvalCase, evidence re-score |
+| Eval corpus | Settings → Eval corpus (Admin) | EvalCase, evidence re-score, generic state endpoint (`records`) |
 | Ops observability | Settings → Runtime metrics; Runtime → Observability | `GET /metrics`, OTLP, slog hot-reload |
 | Outbound mTLS | Connector editor → Outbound TLS / mTLS | `tls.cert_file` / `key_file` / `ca_file` |
 

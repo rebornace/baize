@@ -106,6 +106,18 @@ func (w *Workflow) RunFrom(ctx context.Context, state State, h ExecHooks) (State
 
 	for i := state.NextStep; i < len(w.Steps); i++ {
 		s := w.Steps[i]
+		if s.When != nil {
+			ok, cerr := EvalCondition(s.When, tree)
+			if cerr != nil {
+				return state, fmt.Errorf("step %q condition: %w", s.ID, cerr)
+			}
+			if !ok {
+				if err := h.Emit("workflow.step_skipped", map[string]any{"step": s.ID, "tool": s.Tool}); err != nil {
+					return state, err
+				}
+				continue
+			}
+		}
 		args, rerr := TryRenderArgs(s.Args, tree)
 		if rerr != nil {
 			return state, fmt.Errorf("step %q: %w", s.ID, rerr)

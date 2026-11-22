@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.35.0 — 2026-11-22
+
+### Mobile RT
+
+- **会话快照 / 恢复**：SDK 新增 `ExportSession` / `ImportSession`；只含消息历史、条数与网络策略，不含 API key、connector auth、pending 或 stream。
+- 导出会截断未完成的 tool call，避免悬空 `tool_call_id`；恢复校验角色与 tool 配对，上限 4 MiB / 2000 条。
+- Android 空壳把每个会话快照存入 `EncryptedSharedPreferences`，启动时恢复会话列表、名称与文本；pending 明确失效。
+- **私网 allowlist**：新增 `SetPrivateNetworkAllowlist` 与远程配置 `allowed_private_hosts` / `allowed_private_cidrs`；CIDR 必需，hosts 可选，默认仍拒绝。拨号时校验 IP/CIDR，重定向逐跳校验。
+
+### WebUI
+
+- **待审批 SSE 限额**：每进程最多 100 路；超限返回 429 + `Retry-After`；慢客户端 5s 写超时断开；`GET /v0/hitl/pending` 返回 `stream_active` / `stream_dropped` / `stream_slow`。
+
+### 供应链
+
+- **cosign 签名**：`scripts/sign-release.ps1` 对 `SHA256SUMS.txt` 与 OCI 归档生成 `*.sigstore.json`；离线 `verify-blob` 通过；私钥不入库。
+- **许可证报告**：Go 依赖 + Alpine 包共 93 个；无 Go GPL/AGPL，复核项均来自基础镜像工具。
+
+### Workflow
+
+- **条件步骤**：`workflow.yaml` 步骤支持 `when`（`path` + `op` + `value`，或 `all` / `any` / `not`）；不满足时发 `workflow.step_skipped` 并继续。
+- 支持 `eq` / `ne` / `contains` / `in` / `exists` / `not_exists` / `gt` / `gte` / `lt` / `lte`；无循环、无任意脚本。
+- **结构化 workflow 输入**：`POST /v0/runs` 可带 `input_args`（≤64 键 / 64 KiB），与 `input.text` 一起进入模板；`text` 不可覆盖。该字段只用于 workflow，不直接进入模型对话。
+- **通用条件建/改示例**：`examples/skills/project-create` 用 `input_args.project_title` 创建项目，仅在 `target_status=archived` 时更新状态；展示条件步骤与结构化输入，不绑定工单域。
+- `ticket-resolve` 暂未包含：当前 workflow 输入只有 `input.text`，无法稳定取得 id/状态，硬做会误改数据。
+
+### 评测
+
+- **状态检查通用化**：`check-state` 接受完整 `state_url`；响应支持 `records` / `items` / `data` / 旧 `tickets` / 裸数组；`expect_state` 增加 `fields` 任意字段包含匹配。
+- 产品 UI 的默认 agent 回退、评测文案与示例 placeholder 去掉 ticket；ticket 只保留在示例、测试和 mock fixture。
+
+### 证据
+
+- 公共 SDK：快照 round-trip、继续对话、pending 截断；全量测试与 Android 构建通过。
+- 记录：[`docs/superpowers/notes/eval-artifacts/mobile-session-store-20261122/report.md`](docs/superpowers/notes/eval-artifacts/mobile-session-store-20261122/report.md)
+- 私网 allowlist：默认拒绝、CIDR 放行、host 限制、非法配置、远程配置五条路径通过；Android 构建通过。
+- 记录：[`docs/superpowers/notes/eval-artifacts/mobile-net-allowlist-20261122/report.md`](docs/superpowers/notes/eval-artifacts/mobile-net-allowlist-20261122/report.md)
+- 签名与许可证：`SHA256SUMS.txt` 与 OCI 归档 `Verified OK`；许可证报告 93 包、10 个复核项。
+- 记录：[`docs/superpowers/notes/eval-artifacts/supply-chain-sign-20261122/report.md`](docs/superpowers/notes/eval-artifacts/supply-chain-sign-20261122/report.md)
+- 条件 workflow：`cond-skip` 跳过 create 并 `succeeded`；`cond-run` 两步执行并建单；单测覆盖操作符与非法配置。
+- 记录：[`docs/superpowers/notes/eval-artifacts/workflow-conditional-20261122/report.md`](docs/superpowers/notes/eval-artifacts/workflow-conditional-20261122/report.md)
+- SSE 限额：限额 1 时第二条 429、`dropped=1`；取消后 active 回 0；正常快照不变。
+- 记录：[`docs/superpowers/notes/eval-artifacts/pending-sse-limits-20261122/report.md`](docs/superpowers/notes/eval-artifacts/pending-sse-limits-20261122/report.md)
+- 评测去 ticket 化：`records/items/data/tickets` 与裸数组均可解析，`fields` 匹配通过；全量 Go + 前端 862 tests。
+- 记录：[`docs/superpowers/notes/eval-artifacts/eval-generic-state-20261122/report.md`](docs/superpowers/notes/eval-artifacts/eval-generic-state-20261122/report.md)
+- 结构化 workflow 输入：真实 API 带 `input_args` 渲染到工具参数并建单；Job 透传与 64 键/64 KiB 限额通过。
+- 记录：[`docs/superpowers/notes/eval-artifacts/structured-workflow-input-20261122/report.md`](docs/superpowers/notes/eval-artifacts/structured-workflow-input-20261122/report.md)
+- 通用条件建/改示例：`project-create` 在 `archived` 时执行 create→update，`active` 时跳过 archive；两次 Run 均成功。
+- 记录：[`docs/superpowers/notes/eval-artifacts/project-conditional-example-20261122/report.md`](docs/superpowers/notes/eval-artifacts/project-conditional-example-20261122/report.md)
+
 ## 0.34.0 — 2026-11-22
 
 `0.34.0`：Mobile 私网边界 / 流式 / 多会话、Docker 多架构、Postgres 运维、待审批 SSE 与依赖安全。

@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/rebornace/baize/internal/agent"
@@ -13,12 +15,35 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
+const (
+	maxInputArgsBytes = 64 << 10
+	maxInputArgsKeys  = 64
+)
+
+func validateInputArgs(args map[string]any) error {
+	if len(args) == 0 {
+		return nil
+	}
+	if len(args) > maxInputArgsKeys {
+		return fmt.Errorf("input_args has too many keys (max %d)", maxInputArgsKeys)
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return fmt.Errorf("input_args must be JSON: %w", err)
+	}
+	if len(b) > maxInputArgsBytes {
+		return fmt.Errorf("input_args exceeds %d bytes", maxInputArgsBytes)
+	}
+	return nil
+}
+
 type startRunInput struct {
 	AgentID, Input, ConversationID, IdentityID string
 	Skills                                     []string
 	Webhook                                    *store.WebhookConfig
 	Passthrough                                map[string]string
 	UserParts                                  []llm.ContentPart
+	InputArgs                                  map[string]any
 	PreEvents                                  []store.Event
 	ModelProfileID                             string
 	ThinkingLevel                              string // empty = profile default
@@ -115,7 +140,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		Skills:      append([]string(nil), ag.Skills...),
 		ToolBinding: ag.ToolBinding,
 	}
-	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts, Locale: in.Locale}
+	runOpts := run.RunOptions{Skills: in.Skills, UserParts: in.UserParts, Locale: in.Locale, InputArgs: in.InputArgs}
 	_ = s.Store.AppendEvent(runRec.ID, store.Event{Type: run.EventRunStarted})
 	job := middleware.Job{
 		RunID:     runRec.ID,
@@ -124,6 +149,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 		Input:     in.Input,
 		Skills:    runOpts.Skills,
 		UserParts: PartsToMiddleware(runOpts.UserParts),
+		InputArgs: runOpts.InputArgs,
 		Locale:    runOpts.Locale,
 	}
 	s.Dispatch(ctx, job)

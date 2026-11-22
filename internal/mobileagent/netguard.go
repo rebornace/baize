@@ -1,9 +1,12 @@
 package mobileagent
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"syscall"
 	"time"
@@ -22,29 +25,128 @@ func redactNetworkError(err error) error {
 	return err
 }
 
+// netAllowlist narrows private access to explicit CIDRs/IPs. Host entries are
+// an optional extra restriction for DNS names resolving into those ranges.
+type netAllowlist struct {
+	hosts    map[string]bool
+	prefixes []netip.Prefix
+}
+
+type netAllowlistJSON struct {
+	Hosts []string `json:"hosts"`
+	CIDRs []string `json:"cidrs"`
+}
+
+func parseNetAllowlist(raw string) (*netAllowlist, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var cfg netAllowlistJSON
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil, err
+	}
+	out := &netAllowlist{hosts: map[string]bool{}}
+	for _, host := range cfg.Hosts {
+		h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+		if h == "" {
+			continue
+		}
+		if net.ParseIP(h) != nil {
+			return nil, errors.New("allowed hosts must be DNS names, not IP literals")
+		}
+		out.hosts[h] = true
+	}
+	for _, cidr := range cfg.CIDRs {
+		c := strings.TrimSpace(cidr)
+		if c == "" {
+			continue
+		}
+		if strings.Contains(c, "/") {
+			p, err := netip.ParsePrefix(c)
+			if err != nil {
+				return nil, err
+			}
+			out.prefixes = append(out.prefixes, p.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(c)
+		if err != nil {
+			return nil, err
+		}
+		out.prefixes = append(out.prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	if len(out.hosts) == 0 && len(out.prefixes) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func (n *netAllowlist) allowsIP(ip net.IP) bool {
+	if n == nil {
+		return false
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	for _, p := range n.prefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkHost enforces an optional hostname restriction. It only matters when
+// the name resolves to a private address; public destinations are unaffected.
+func (n *netAllowlist) checkHost(ctx context.Context, host string) error {
+	if n == nil || len(n.hosts) == 0 {
+		return nil
+	}
+	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	if h == "" || net.ParseIP(h) != nil {
+		return nil // IP literals are governed by CIDRs only.
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, h)
+	if err != nil || len(ips) == 0 {
+		return nil // let the dialer surface the network error
+	}
+	for _, ip := range ips {
+		if !isPublicIP(ip.IP) {
+			if !n.hosts[h] {
+				return errBlockedNetwork
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 // guardedHTTPClient returns a client that either allows any destination
-// (allowPrivate) or rejects loopback, private, link-local, CGNAT, multicast
-// and reserved addresses after DNS resolution.
-//
-// The check runs in net.Dialer.Control, i.e. on the address the socket is
-// actually about to connect to. That closes the DNS-rebinding window between
-// "resolve and validate" and "connect".
-func guardedHTTPClient(allowPrivate bool) *http.Client {
+// (allowAll) or only public targets plus private targets matching the
+// allowlist. The IP check runs in net.Dialer.Control on the actual dial
+// address, closing the DNS-rebinding window; redirects re-enter the transport.
+func guardedHTTPClient(allowAll bool, allow *netAllowlist) *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
-	if !allowPrivate {
+	if !allowAll {
 		dialer.Control = func(_, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {
 				return errBlockedNetwork
 			}
 			ip := net.ParseIP(strings.Trim(host, "[]"))
-			if ip == nil || !isPublicIP(ip) {
+			if ip == nil {
 				return errBlockedNetwork
 			}
-			return nil
+			if isPublicIP(ip) || allow.allowsIP(ip) {
+				return nil
+			}
+			return errBlockedNetwork
 		}
 	}
 	transport := &http.Transport{
@@ -57,10 +159,19 @@ func guardedHTTPClient(allowPrivate bool) *http.Client {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
+	checkRedirect := limitRedirects
+	if !allowAll && allow != nil {
+		checkRedirect = func(req *http.Request, via []*http.Request) error {
+			if err := allow.checkHost(req.Context(), req.URL.Hostname()); err != nil {
+				return err
+			}
+			return limitRedirects(req, via)
+		}
+	}
 	return &http.Client{
 		Timeout:       httpGetTimeout,
 		Transport:     transport,
-		CheckRedirect: limitRedirects,
+		CheckRedirect: checkRedirect,
 	}
 }
 

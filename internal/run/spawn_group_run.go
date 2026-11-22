@@ -795,7 +795,7 @@ func (e *Engine) ContinueFromChildReceipt(ctx context.Context, parentRunID strin
 		return err
 	}
 	if e.getRunSkillState(parentRunID) == nil {
-		e.beginRunSkills(parentRunID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(runRec.Input))
+		e.beginRunSkills(parentRunID, append([]string(nil), ag.Skills...), ag.System, beginRunInput(runRec.Input, nil))
 	}
 	sys := e.composeSystem(ag.System, parentRunID)
 	sys = e.appendSessionAuthHint(sys, runRec.ConversationID)

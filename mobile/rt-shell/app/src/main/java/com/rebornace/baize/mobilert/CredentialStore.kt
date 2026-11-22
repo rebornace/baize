@@ -32,6 +32,12 @@ class CredentialStore(context: Context) {
     fun model(): String = prefs.getString(KEY_MODEL, "") ?: ""
     fun configURL(): String = prefs.getString(KEY_CFG, "") ?: ""
 
+    fun saveSessions(json: String) {
+        prefs.edit().putString(KEY_SESSIONS, json).apply()
+    }
+
+    fun sessions(): String = prefs.getString(KEY_SESSIONS, "") ?: ""
+
     fun clearKey() {
         prefs.edit().remove(KEY_API).apply()
     }
@@ -41,5 +47,6 @@ class CredentialStore(context: Context) {
         private const val KEY_API = "api_key"
         private const val KEY_MODEL = "model"
         private const val KEY_CFG = "config_url"
+        private const val KEY_SESSIONS = "sessions_v1"
     }
 }

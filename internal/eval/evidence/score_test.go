@@ -132,12 +132,12 @@ func TestScoreArgContains(t *testing.T) {
 
 func TestScoreExpectState(t *testing.T) {
 	c := evidence.Case{Protocol: "V0", RequiredReads: []string{"list_tickets"}, Consequential: []string{"create_ticket"},
-		ExpectState: []evidence.ExpectTicket{{TitleContains: "链路", Status: "closed"}}}
+		ExpectState: []evidence.ExpectRecord{{TitleContains: "链路", Status: "closed"}}}
 	res := evidence.Score(c, nil, "")
 	if !contains(res.Codes, "STATE") {
 		t.Fatalf("%+v", res)
 	}
-	c.StateSnapshot = &evidence.StateSnapshot{Tickets: []evidence.StateTicket{{ID: "t1", Title: "链路评测", Status: "closed"}}}
+	c.StateSnapshot = &evidence.StateSnapshot{Records: []evidence.StateRecord{{ID: "t1", Title: "链路评测", Status: "closed"}}}
 	if !evidence.Score(c, []evidence.ToolCall{{Name: "list_tickets", HasResult: true}}, "").Pass {
 		t.Fatal()
 	}
@@ -156,5 +156,41 @@ func TestScoreRunStatusTimeout(t *testing.T) {
 	}
 	if !contains(res.Codes, "TIMEOUT") {
 		t.Fatalf("want TIMEOUT in %v", res.Codes)
+	}
+}
+
+func TestStateSnapshotAcceptsGenericAndLegacyShapes(t *testing.T) {
+	for _, raw := range []string{
+		`{"records":[{"id":"p1","name":"Alpha project","stage":"active"}]}`,
+		`{"items":[{"id":"p1","name":"Alpha project","stage":"active"}]}`,
+		`{"data":[{"id":"p1","name":"Alpha project","stage":"active"}]}`,
+		`{"tickets":[{"id":"p1","title":"Alpha project","status":"active"}]}`,
+		`[{"id":"p1","name":"Alpha project","stage":"active"}]`,
+	} {
+		var snap evidence.StateSnapshot
+		if err := json.Unmarshal([]byte(raw), &snap); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if len(snap.Records) != 1 {
+			t.Fatalf("%s: records=%d", raw, len(snap.Records))
+		}
+		if snap.Records[0].ID != "p1" {
+			t.Fatalf("%s: record=%+v", raw, snap.Records[0])
+		}
+	}
+}
+
+func TestScoreGenericRecordFields(t *testing.T) {
+	c := evidence.Case{
+		Protocol:    "V0",
+		ExpectState: []evidence.ExpectRecord{{Fields: map[string]string{"name": "Alpha", "stage": "active"}}},
+	}
+	var snap evidence.StateSnapshot
+	if err := json.Unmarshal([]byte(`{"records":[{"id":"p1","name":"Alpha project","stage":"active"}]}`), &snap); err != nil {
+		t.Fatal(err)
+	}
+	c.StateSnapshot = &snap
+	if res := evidence.Score(c, nil, ""); !res.Pass {
+		t.Fatalf("generic record should pass: %+v snapshot=%+v", res, snap)
 	}
 }

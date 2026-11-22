@@ -118,6 +118,17 @@ MobileagentConfigure("https://api.example.com/v1", apiKeyFromKeychain, "your-mod
 - 代码：`SetAllowPrivateNetworks(true)`（`Agent` 同名方法）
 - 远程配置：顶层 `"allow_private_networks": true`
 
+更窄的放行方式（推荐）：
+
+```json
+{
+  "allowed_private_hosts": ["crm.internal"],
+  "allowed_private_cidrs": ["10.20.0.0/16", "127.0.0.1/32"]
+}
+```
+
+或调用 `SetPrivateNetworkAllowlist(json)`。CIDR 是必需的；`hosts` 可选，只约束解析到这些私网段的 DNS 名。IP 字面量只按 CIDR 校验。空白名单不会关闭默认拒绝。
+
 开关是会话级的，默认 `false`，不会被 `allow_writes` 或 `methods` 隐式打开。若配置 URL 本身在私网，需要先开启再调用 `FetchRemoteConfig`。
 
 写操作额外约束：
@@ -225,6 +236,20 @@ a.pendingApproval()                          // {"status":"none"} 或当前审�
 - 同一时间只让一个会话处于流式；切换前先结束或取消当前流。
 - 包级 `Send` / `StartStream` 仍使用默认会话；多会话 UI 应持有 `NewAgent()` 实例。
 
+**会话持久化：**
+
+```kotlin
+val snap = agent.exportSession()                 // JSON 字符串
+val restored = mobileagent.Mobileagent.newAgent()
+restored.importSession(snap)                     // {"status":"done","message_count":N}
+```
+
+- 快照只含消息历史（含 tool call / tool result）、消息条数、网络策略；**不含 API key、connector auth、pending、stream**。
+- 空壳把每个会话的快照存进 `EncryptedSharedPreferences`，启动时恢复会话列表、名称与文本。
+- 结束中的 tool call 不会被恢复：导出会截断到最后一个完整回合，避免悬空 `tool_call_id`。
+- 进程重启后 pending 审批失效；空壳把旧的 `HITL:` 文本替换为“Previous approval expired after restart.”。
+- 单快照上限：4 MiB / 2000 条消息；恢复时校验角色与 tool 配对。
+
 其它常用 API：
 
 | API | 作用 |
@@ -232,6 +257,7 @@ a.pendingApproval()                          // {"status":"none"} 或当前审�
 | `ChatOnce(text)` | 单轮、**不走工具**（快速试连通） |
 | `StartStream(text)` / `PollStream()` / `CancelStream()` | 后台流式回合、拉取增量、取消 |
 | `PendingApproval()` / `NewSession()` | 当前待批 JSON；复制配置/工具的新会话 |
+| `ExportSession()` / `ImportSession(json)` | 会话历史快照与恢复（不含密钥/审批） |
 | `Reset()` | 清空内存历史（保留已 Configure 的地址/模型） |
 | `MessageCount()` | 当前会话消息条数 |
 | `HasAPIKey()` | 内存里是否已有 key |

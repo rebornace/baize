@@ -34,6 +34,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		WebhookHeaders map[string]string     `json:"webhook_headers"`
 		Skills         []string              `json:"skills"`
 		SkillsReload   bool                  `json:"skills_reload"`
+		InputArgs      map[string]any        `json:"input_args"`
 		Attachments    []attach.AttachmentIn `json:"attachments"`
 		ModelProfileID string                `json:"model_profile_id"`
 		ThinkingLevel  string                `json:"thinking_level"`
@@ -45,6 +46,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(body.AgentID) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "agent_id is required")
+		return
+	}
+	if err := validateInputArgs(body.InputArgs); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_input_args", err.Error())
 		return
 	}
 	lvl := strings.ToLower(strings.TrimSpace(body.ThinkingLevel))
@@ -351,6 +356,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		ConversationID: conv,
 		IdentityID:     identityID,
 		Skills:         runSkills,
+		InputArgs:      body.InputArgs,
 		Webhook:        webhookCfg,
 		Passthrough:    passthrough,
 		UserParts:      userParts,

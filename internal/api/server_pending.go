@@ -3,7 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,53 @@ import (
 
 // pendingApprovalsLimit bounds the cross-conversation list; oldest first.
 const pendingApprovalsLimit = 100
+
+// defaultPendingStreamLimit bounds concurrent SSE subscribers per process.
+const defaultPendingStreamLimit = 100
+
+// pendingStreamWriteTimeout drops a client that cannot accept a frame.
+const pendingStreamWriteTimeout = 5 * time.Second
+
+func (s *Server) acquirePendingStream() bool {
+	limit := s.PendingStreamLimit
+	if limit <= 0 {
+		limit = defaultPendingStreamLimit
+	}
+	s.pendingStreamOnce.Do(func() {
+		s.pendingStreamSlots = make(chan struct{}, limit)
+	})
+	select {
+	case s.pendingStreamSlots <- struct{}{}:
+		s.pendingStreamLive.Add(1)
+		return true
+	default:
+		s.pendingStreamDrop.Add(1)
+		return false
+	}
+}
+
+func (s *Server) releasePendingStream() {
+	select {
+	case <-s.pendingStreamSlots:
+	default:
+		return
+	}
+	s.pendingStreamLive.Add(-1)
+}
+
+func (s *Server) pendingStreamStats() (live, dropped, slow int64) {
+	return s.pendingStreamLive.Load(), s.pendingStreamDrop.Load(), s.pendingStreamSlow.Load()
+}
+
+func writePendingSSE(w http.ResponseWriter, rc *http.ResponseController, payload string) error {
+	if err := rc.SetWriteDeadline(time.Now().Add(pendingStreamWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	if _, err := io.WriteString(w, payload); err != nil {
+		return err
+	}
+	return rc.Flush()
+}
 
 type pendingApprovalJSON struct {
 	RunID             string         `json:"run_id"`
@@ -41,7 +89,11 @@ func (s *Server) handleListPendingApprovals(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pending": out, "count": len(out)})
+	live, dropped, slow := s.pendingStreamStats()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pending": out, "count": len(out),
+		"stream_active": live, "stream_dropped": dropped, "stream_slow": slow,
+	})
 }
 
 // pendingApprovals builds the cross-conversation list and applies the
@@ -96,8 +148,14 @@ func (s *Server) pendingApprovals(ctx context.Context) ([]pendingApprovalJSON, e
 // over SSE. It still polls the store (2s) rather than adding a pub/sub layer,
 // but removes the 15s client polling lag and keeps one connection per UI.
 func (s *Server) handleStreamPendingApprovals(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	if !s.acquirePendingStream() {
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusTooManyRequests, "too_many_streams", "too many pending-approval streams")
+		return
+	}
+	defer s.releasePendingStream()
+
+	if _, ok := w.(http.Flusher); !ok {
 		writeError(w, http.StatusInternalServerError, "streaming_unsupported", "response writer does not support streaming")
 		return
 	}
@@ -106,11 +164,10 @@ func (s *Server) handleStreamPendingApprovals(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeSnapshot := func(items []pendingApprovalJSON) string {
+	rc := http.NewResponseController(w)
+	writeSnapshot := func(items []pendingApprovalJSON) (string, error) {
 		b, _ := json.Marshal(map[string]any{"pending": items, "count": len(items)})
-		fmt.Fprintf(w, "event: pending\ndata: %s\n\n", b)
-		flusher.Flush()
-		return string(b)
+		return string(b), writePendingSSE(w, rc, "event: pending\ndata: "+string(b)+"\n\n")
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -118,8 +175,15 @@ func (s *Server) handleStreamPendingApprovals(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "retry: 3000\n\n")
-	last := writeSnapshot(items)
+	if err := writePendingSSE(w, rc, "retry: 3000\n\n"); err != nil {
+		s.pendingStreamSlow.Add(1)
+		return
+	}
+	last, err := writeSnapshot(items)
+	if err != nil {
+		s.pendingStreamSlow.Add(1)
+		return
+	}
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -139,10 +203,16 @@ func (s *Server) handleStreamPendingApprovals(w http.ResponseWriter, r *http.Req
 			if string(b) == last {
 				continue
 			}
-			last = writeSnapshot(items)
+			last, err = writeSnapshot(items)
+			if err != nil {
+				s.pendingStreamSlow.Add(1)
+				return
+			}
 		case <-heartbeat.C:
-			fmt.Fprint(w, ": ping\n\n")
-			flusher.Flush()
+			if err := writePendingSSE(w, rc, ": ping\n\n"); err != nil {
+				s.pendingStreamSlow.Add(1)
+				return
+			}
 		}
 	}
 }

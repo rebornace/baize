@@ -118,7 +118,18 @@ Enable it only for a trusted on-device or internal deployment:
 - code: `SetAllowPrivateNetworks(true)` (also available on `Agent`)
 - remote config: top-level `"allow_private_networks": true`
 
-The flag is session-wide, defaults to `false`, and is not implied by `allow_writes` or `methods`. To fetch a private config URL, set the flag before calling `FetchRemoteConfig`.
+Prefer a narrower allowlist:
+
+```json
+{
+  "allowed_private_hosts": ["crm.internal"],
+  "allowed_private_cidrs": ["10.20.0.0/16", "127.0.0.1/32"]
+}
+```
+
+or call `SetPrivateNetworkAllowlist(json)`. CIDRs are required; `hosts` is optional and only restricts DNS names resolving into those ranges. IP literals are checked against CIDRs only. An empty allowlist does not disable the default deny.
+
+The flag is session-wide, defaults to `false`, and is not implied by `allow_writes` or `methods`. To fetch a private config URL, opt in before calling `FetchRemoteConfig`.
 
 Writes add these constraints:
 
@@ -225,6 +236,20 @@ a.pendingApproval()                          // {"status":"none"} or the current
 - Keep one streaming session at a time; finish or cancel the stream before switching.
 - Package-level `Send` / `StartStream` still use the default session; multi-session UIs should hold `NewAgent()` instances.
 
+**Session persistence:**
+
+```kotlin
+val snap = agent.exportSession()                 // JSON string
+val restored = mobileagent.Mobileagent.newAgent()
+restored.importSession(snap)                     // {"status":"done","message_count":N}
+```
+
+- The snapshot contains message history (including tool calls/results), count and network policy; **no API key, connector auth, pending approval or stream**.
+- The shell stores one snapshot per session in `EncryptedSharedPreferences` and restores names/texts on launch.
+- Incomplete tool calls are not restored: export truncates at the last complete turn to avoid a dangling `tool_call_id`.
+- Pending approvals do not survive process restart; the shell replaces old `HITL:` text with “Previous approval expired after restart.”.
+- Limits: 4 MiB / 2000 messages; import validates roles and tool pairing.
+
 Other useful APIs:
 
 | API | Role |
@@ -232,6 +257,7 @@ Other useful APIs:
 | `ChatOnce(text)` | One turn **without tools** (connectivity check) |
 | `StartStream(text)` / `PollStream()` / `CancelStream()` | Background streaming turn, poll deltas, cancel |
 | `PendingApproval()` / `NewSession()` | Current HITL JSON; clone config/tools into a new session |
+| `ExportSession()` / `ImportSession(json)` | History snapshot/restore (no keys or approvals) |
 | `Reset()` | Clear in-memory history (keeps Configure) |
 | `MessageCount()` | Messages in the session |
 | `HasAPIKey()` | Whether a key is in memory |

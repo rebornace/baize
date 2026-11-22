@@ -58,6 +58,18 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 - Scan with Trivy or Docker Scout before shipping; do not publish with CRITICAL findings.
 - `apk upgrade` is part of the image build; base image and Go toolchain still need security updates.
 
+### Signing release artifacts (optional)
+
+Publishers can sign `SHA256SUMS.txt` and the OCI archive with a local cosign key. The private key stays offline; publish only `cosign.pub` and the `*.sigstore.json` bundles:
+
+```bash
+cosign verify-blob --key cosign.pub \
+  --bundle SHA256SUMS.txt.sigstore.json \
+  --offline SHA256SUMS.txt
+```
+
+Script: `scripts/sign-release.ps1 -Key <cosign.key> -ArtifactsDir <release-dir> -OciArchive <oci.tar>`. Signatures are uploaded to the Rekor transparency log by default; verification uses the matching bundle.
+
 ## Autostart (desktop / single host, including Windows)
 
 baize launches and supervises the adapter subprocess: exponential backoff restart on crash; graceful shutdown of the child on exit. Leave `secret` empty to auto-generate and persist a shared HMAC. `creds.json` defaults under `adapter_creds_dir` (for example `./data/channels/weixin`).

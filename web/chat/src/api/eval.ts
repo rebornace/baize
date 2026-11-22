@@ -24,9 +24,12 @@ export interface EvalExpectState {
   id?: string
   title_contains?: string
   status?: string
+  fields?: Record<string, string>
 }
 
 export interface EvalStateSnapshot {
+  records?: { id?: string; title?: string; status?: string; fields?: Record<string, unknown> }[]
+  /** Legacy shape; still accepted by the API. */
   tickets?: { id?: string; title?: string; status?: string }[]
 }
 
@@ -198,13 +201,13 @@ export async function scoreEvalCase(id: string): Promise<EvalScoreResult> {
   return parseJSON(res)
 }
 
-export async function checkEvalCaseState(id: string, mockBaseUrl: string): Promise<EvalCase> {
+export async function checkEvalCaseState(id: string, stateUrl: string): Promise<EvalCase> {
   const res = await fetch(
     `/v0/settings/eval/cases/${encodeURIComponent(id)}/check-state`,
     {
       method: 'POST',
       headers: authInit({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ mock_base_url: mockBaseUrl }),
+      body: JSON.stringify({ state_url: stateUrl }),
     },
   )
   return parseJSON(res)

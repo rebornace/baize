@@ -261,12 +261,13 @@ func evidenceCaseFromStore(c store.EvalCase) evidence.Case {
 	for _, ac := range c.ArgContains {
 		argContains = append(argContains, evidence.ArgContains{Tool: ac.Tool, Substr: ac.Substr})
 	}
-	expectState := make([]evidence.ExpectTicket, 0, len(c.ExpectState))
+	expectState := make([]evidence.ExpectRecord, 0, len(c.ExpectState))
 	for _, es := range c.ExpectState {
-		expectState = append(expectState, evidence.ExpectTicket{
+		expectState = append(expectState, evidence.ExpectRecord{
 			ID:            es.ID,
 			TitleContains: es.TitleContains,
 			Status:        es.Status,
+			Fields:        es.Fields,
 		})
 	}
 	out := evidence.Case{

@@ -164,7 +164,7 @@ func writeEvalErr(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "not_calibratable", err.Error())
 	case errors.Is(err, eval.ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, "note_too_long", err.Error())
-	case errors.Is(err, eval.ErrMockBaseRequired), errors.Is(err, eval.ErrInvalidSample):
+	case errors.Is(err, eval.ErrStateURLRequired), errors.Is(err, eval.ErrInvalidSample):
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -523,13 +523,19 @@ func (s *Server) handlePostEvalCaseScore(w http.ResponseWriter, r *http.Request)
 func (s *Server) handlePostEvalCaseCheckState(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	var body struct {
+		StateURL    string `json:"state_url"`
 		MockBaseURL string `json:"mock_base_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
-	c, _, err := eval.CheckState(s.Store, id, body.MockBaseURL, nil)
+	stateURL := strings.TrimSpace(body.StateURL)
+	if stateURL == "" && strings.TrimSpace(body.MockBaseURL) != "" {
+		// Legacy clients sent a base URL; keep the old ticket endpoint.
+		stateURL = strings.TrimRight(strings.TrimSpace(body.MockBaseURL), "/") + "/tickets"
+	}
+	c, _, err := eval.CheckState(s.Store, id, stateURL, nil)
 	if err != nil {
 		writeEvalErr(w, err)
 		return

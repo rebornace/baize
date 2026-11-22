@@ -94,10 +94,32 @@ Connector 的 `execution_callback_url`：Runtime POST 工具名、参数、`run_
 | 模式 | 行为 |
 |------|------|
 | 默认 | 单 Agent ReAct：选 Tool → 执行 → 写轨迹 → 结束 |
-| 可选 | Skill 包内线性 `workflow.yaml`（顺序步骤 + 可选 HITL；无 branch / 循环） |
+| 可选 | Skill 包内线性 `workflow.yaml`（顺序步骤 + 可选 `when` 跳过 + 可选 HITL；无循环） |
 | 可选 | 分组子任务：`spawn_group_run` → 子任务（仅一层）+ 父任务等待回执（`waiting_child`） |
 | Skill | 配置形态：`SKILL.md`（可选 `SKILL.en.md`）+ tools；`agent.skills` 为新对话预激活（样板含 `baize-help`），未入默认仍可 `@`/`activate_skill`；`@id`/`/id` pin 写入用户消息 `pinned_skills`（历史可见）；Composer 可补全 `/reload`；`skills_reload`/`/reload` 或会话自动 dirty；可选 `tool_binding: exclusive` |
 | Channel | 带签名的来信入口；即时消息等为进程外适配器 + 声明式 `channels`（见 [部署](./deployment.md)）。**正式适配器：个人微信**；飞书 / 钉钉见 `examples/im-adapter-*` 参考实现 |
+
+### workflow.yaml 条件（可选）
+
+每个步骤可加 `when`，条件不满足时跳过并发出 `workflow.step_skipped`：
+
+```yaml
+- id: close
+  tool: update_ticket_status
+  when:
+    path: lookup.result.status
+    op: eq
+    value: open
+  args:
+    id: "{{lookup.result.id}}"
+    status: closed
+```
+
+- 叶子：`path` + `op`（`eq` / `ne` / `contains` / `in` / `exists` / `not_exists` / `gt` / `gte` / `lt` / `lte`）+ 可选 `value`。
+- 组合：`all` / `any` / `not`，可嵌套。
+- `path` 读取 `input` 与前序步骤结果；缺失路径按 false 处理（`exists` 为 false，`not_exists` 为 true）。
+- 条件在恢复时重新求值；不支持循环或任意脚本。
+- Run 可通过 `POST /v0/runs` 的 `input_args` 注入结构化字段（≤64 键 / 64 KiB）；它与 `input.text` 一起进入 workflow 模板，`text` 不可被覆盖。
 
 ## HITL
 

@@ -15,8 +15,10 @@ var (
 	ErrNotCalibratable = errors.New("eval case not calibratable")
 	// ErrNoteTooLong is returned when human_note exceeds the rune limit after trim.
 	ErrNoteTooLong = errors.New("human note too long")
-	// ErrMockBaseRequired is returned when check-state is called without a mock base URL.
-	ErrMockBaseRequired = errors.New("mock base url required")
+	// ErrStateURLRequired is returned when check-state is called without a state endpoint.
+	ErrStateURLRequired = errors.New("state url required")
+	// ErrMockBaseRequired is kept for older callers; use ErrStateURLRequired.
+	ErrMockBaseRequired = ErrStateURLRequired
 	// ErrInvalidSample is returned when sample mode/template is invalid.
 	ErrInvalidSample = errors.New("invalid sample request")
 )

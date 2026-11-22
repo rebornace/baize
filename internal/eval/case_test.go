@@ -265,9 +265,9 @@ func TestExportIncludesTrajectoryFields(t *testing.T) {
 			ForbidTools   []string                `json:"forbid_tools"`
 			ExpectState   []store.EvalExpectState `json:"expect_state"`
 			StateSnapshot *struct {
-				Tickets []struct {
+				Records []struct {
 					ID string `json:"id"`
-				} `json:"tickets"`
+				} `json:"records"`
 			} `json:"state_snapshot"`
 		} `json:"case"`
 	}
@@ -277,7 +277,7 @@ func TestExportIncludesTrajectoryFields(t *testing.T) {
 	if len(doc.Case.ForbidTools) != 1 || len(doc.Case.ExpectState) != 1 {
 		t.Fatalf("export case: %+v", doc.Case)
 	}
-	if doc.Case.StateSnapshot == nil || len(doc.Case.StateSnapshot.Tickets) != 1 {
+	if doc.Case.StateSnapshot == nil || len(doc.Case.StateSnapshot.Records) != 1 {
 		t.Fatalf("export snapshot: %+v", doc.Case.StateSnapshot)
 	}
 }

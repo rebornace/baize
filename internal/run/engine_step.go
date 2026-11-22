@@ -12,8 +12,15 @@ import (
 
 var errNoWorkflow = errors.New("run has no workflow")
 
-func beginRunInput(input string) map[string]any {
-	return map[string]any{"text": input}
+func beginRunInput(input string, args map[string]any) map[string]any {
+	out := map[string]any{"text": input}
+	for k, v := range args {
+		if k == "" || k == "text" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // maybeRunWorkflow switches a run into pipeline mode when the just-activated

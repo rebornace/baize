@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,12 +49,12 @@ func confirmedListOnlyCase(t *testing.T, st store.Store) store.EvalCase {
 	return c
 }
 
-func TestCheckStateRequiresMockBase(t *testing.T) {
+func TestCheckStateRequiresStateURL(t *testing.T) {
 	st := store.NewMemory()
 	c := confirmedListOnlyCase(t, st)
 	_, _, err := eval.CheckState(st, c.ID, "  ", nil)
-	if err != eval.ErrMockBaseRequired {
-		t.Fatalf("want ErrMockBaseRequired, got %v", err)
+	if err != eval.ErrStateURLRequired {
+		t.Fatalf("want ErrStateURLRequired, got %v", err)
 	}
 }
 
@@ -73,7 +74,7 @@ func TestCheckStateAtomicSingleUpsertPersistsSnapshotAndScore(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/tickets" {
+		if r.URL.Path != "/resource" {
 			t.Fatalf("path=%s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -91,7 +92,7 @@ func TestCheckStateAtomicSingleUpsertPersistsSnapshotAndScore(t *testing.T) {
 	}
 	beforeUpserts := track.upsertCalls
 
-	got, res, err := eval.CheckState(st, c.ID, srv.URL, srv.Client())
+	got, res, err := eval.CheckState(st, c.ID, srv.URL+"/resource", srv.Client())
 	if err != nil || !res.Pass {
 		t.Fatalf("check-state: err=%v res=%+v", err, res)
 	}
@@ -151,5 +152,32 @@ func TestCheckStateBadResponseDoesNotPersist(t *testing.T) {
 	}
 	if len(got.StateSnapshotJSON) != 0 {
 		t.Fatalf("snapshot must not be written: %q", got.StateSnapshotJSON)
+	}
+}
+
+func TestCheckStateGenericRecordsAndFields(t *testing.T) {
+	st := store.NewMemory()
+	c := confirmedListOnlyCase(t, st)
+	c, err := eval.PatchCase(st, c.ID, eval.PatchInput{
+		SetExpectState: true,
+		ExpectState: []store.EvalExpectState{
+			{Fields: map[string]string{"name": "Alpha", "stage": "active"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"records":[{"id":"p1","name":"Alpha project","stage":"active"}]}`))
+	}))
+	defer srv.Close()
+
+	got, res, err := eval.CheckState(st, c.ID, srv.URL, srv.Client())
+	if err != nil || !res.Pass {
+		t.Fatalf("generic state: err=%v res=%+v expect=%+v snapshot=%s", err, res, c.ExpectState, got.StateSnapshotJSON)
+	}
+	if len(got.StateSnapshotJSON) == 0 || !strings.Contains(string(got.StateSnapshotJSON), `"records"`) {
+		t.Fatalf("snapshot=%s", got.StateSnapshotJSON)
 	}
 }

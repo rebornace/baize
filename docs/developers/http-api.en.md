@@ -28,9 +28,9 @@ This is not downstream business IAM or multi-tenant SSO.
 | MCP OAuth | `POST .../mcp/oauth/start`, etc. | MCP connector OAuth |
 | Tools | `GET /v0/tools`, `PATCH /v0/tools/{name}` | Tool catalog (incl. disabled rows) |
 | Skills | `GET/POST /v0/skills`, `GET/DELETE /v0/skills/{id}` | Skill packs |
-| Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `GET .../binding` is the turn dependency closure (Chat “View run binding”) |
+| Runs | `POST /v0/runs`, `GET /v0/runs/{id}`, `.../events`, `.../stream` (SSE), `.../resume`, `.../cancel`, `.../binding`, `.../plugin-callbacks` | Execution and trail; `POST` accepts `skills` / `input_args` (structured workflow input, ≤64 keys / 64 KiB); `GET .../binding` is the turn dependency closure (Chat “View run binding”) |
 | HITL approval link (public) | `GET/POST /v0/hitl/approvals/{token}` | Channel approval link; GET is read-only, POST approves/rejects, both use a short-lived HMAC token (`RoleNone`) and still go through `ContinueFromHITL` |
-| Pending approvals | `GET /v0/hitl/pending`, `GET /v0/hitl/pending/stream` (SSE) | Cross-conversation `waiting_human` snapshot/push (2s server poll, conversation ACL filtered); the UI falls back to 15s polling when SSE disconnects |
+| Pending approvals | `GET /v0/hitl/pending`, `GET /v0/hitl/pending/stream` (SSE) | Cross-conversation `waiting_human` snapshot/push (2s server poll, conversation ACL filtered); the UI falls back to 15s polling when SSE disconnects; max 100 streams per process, 429 over limit, 5s write timeout for slow clients |
 | Inbox | `POST /v0/inbox/{channel_id}` | Signed webhook inbox ingress |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
 | Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |

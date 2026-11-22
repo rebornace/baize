@@ -483,6 +483,31 @@ func TestLoadRepoTicketCreate(t *testing.T) {
 	}
 }
 
+func TestLoadRepoProjectCreateExample(t *testing.T) {
+	builtin := filepath.Join("..", "..", "examples", "skills")
+	cat, err := skill.LoadCatalog([]string{builtin}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("project-create")
+	if !ok {
+		t.Fatal("project-create not found in examples/skills")
+	}
+	if p.Domain != "project" {
+		t.Fatalf("domain=%q want project", p.Domain)
+	}
+	if p.Workflow == nil || len(p.Workflow.Steps) != 3 {
+		t.Fatalf("project-create workflow=%+v", p.Workflow)
+	}
+	steps := p.Workflow.Steps
+	if steps[0].Tool != "list_projects" || steps[1].Tool != "create_project" || steps[2].Tool != "update_project_status" {
+		t.Fatalf("steps=%+v", steps)
+	}
+	if steps[2].When == nil || steps[2].When.Path != "input.target_status" || steps[2].When.Value != "archived" {
+		t.Fatalf("archive condition=%+v", steps[2].When)
+	}
+}
+
 func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
 	core := filepath.Join("..", "..", "skills")
 	demo := filepath.Join("..", "..", "examples", "skills")

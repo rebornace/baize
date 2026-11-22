@@ -526,10 +526,10 @@ export const zhPack = {
     trajectoryArg: 'arg_contains',
     trajectoryExpect: 'expect_state',
     hasStateSnapshot: '已有终态快照',
-    checkStateHint: '活查终态：对模拟服务只读拉取票据状态，写入快照并重打分；不改对话记录、不清人工标定。',
-    checkStateMockLabel: '模拟服务地址',
+    checkStateHint: '检查状态只会读取你填写的状态接口，按 expect_state 对返回记录评分并保存快照；不会写入，也不依赖具体业务域。',
+    checkStateUrlLabel: '状态接口 URL',
     checkStateButton: '活查终态',
-    checkStateNeedUrl: '请填写模拟服务地址',
+    checkStateNeedUrl: '请填写状态接口 URL',
     toastCheckStatePass: '活查：通过',
     toastCheckStateFail: '活查：未通过',
     digSkill: '从对话生成技能',
@@ -1034,7 +1034,7 @@ export const zhPack = {
   evalRunBusy: '运行中…',
   evalConfirmRunTitle: '运行技能评测？',
   evalConfirmRunBody:
-    '将调用模型并消耗 token；工具可能产生副作用（建议在 mock-ticket 等测试环境执行）。确认继续？',
+    '将调用模型并消耗 token；工具可能产生副作用（建议在 隔离测试环境执行）。确认继续？',
   evalConfirmRunOk: '开始运行',
   evalReadonlyBuiltin: '内置或托管技能的评测为只读；可运行验证，但不能在此修改。',
   evalResultPass: (codes: string) => `通过（${codes}）`,
@@ -1234,7 +1234,7 @@ export const zhPack = {
   executionCallbackHint:
     '选填。填写后，本连接下的工具调用会改为向该地址 POST，由企业网关代为执行（多数场景留空）。网关需按工具名与参数完成真实调用。',
   executionCallbackExample:
-    'POST {统一执行地址}\n{\n  "tool": "create_ticket",\n  "arguments": { "title": "..." },\n  "run_id": "run_...",\n  "...": "..."\n}',
+    'POST {统一执行地址}\n{\n  "tool": "create_record",\n  "arguments": { "name": "..." },\n  "run_id": "run_...",\n  "...": "..."\n}',
   tlsSection: '出站 TLS / mTLS',
   tlsHint:
     '选填。填写 Runtime 所在机器上的 PEM 文件路径（不是浏览器本机上传）。证书与私钥须成对；也可只填 CA。与登录鉴权（auth）正交。stdio MCP 不适用。详见开发者文档 configuration。',
@@ -1264,7 +1264,7 @@ export const zhPack = {
   errBaseUrlRequired: '请填写服务地址',
   errBaseUrlHttp: '服务地址需以 http:// 或 https:// 开头',
   errSpecRequired: '请上传接口文档或填写文档链接',
-  phId: 'ticket-api',
+  phId: 'my-api',
   phBaseUrlOpenapi: 'https://api.example.com',
   phBaseUrlPlugin: 'http://127.0.0.1:19090',
   phSpecUrl: 'http://localhost:8000/openapi.json',

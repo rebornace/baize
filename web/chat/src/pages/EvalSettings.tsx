@@ -177,7 +177,7 @@ export function EvalSettings() {
   )
   const [calibrationSummary, setCalibrationSummary] = useState<EvalCalibrationSummary | null>(null)
   const [calibrationNotes, setCalibrationNotes] = useState<Record<string, string>>({})
-  const [mockBaseUrls, setMockBaseUrls] = useState<Record<string, string>>({})
+  const [stateUrls, setStateUrls] = useState<Record<string, string>>({})
   const [skillDraftModal, setSkillDraftModal] = useState<{
     runId: string
     draft: SkillDraftResponse | null
@@ -481,14 +481,14 @@ export function EvalSettings() {
   }
 
   const runCheckState = async (c: EvalCase) => {
-    const mockBaseUrl = (mockBaseUrls[c.id] ?? '').trim()
-    if (!mockBaseUrl) {
+    const stateUrl = (stateUrls[c.id] ?? '').trim()
+    if (!stateUrl) {
       push({ tone: 'error', title: EVAL.checkStateNeedUrl })
       return
     }
     setBusy(true)
     try {
-      const updated = await checkEvalCaseState(c.id, mockBaseUrl)
+      const updated = await checkEvalCaseState(c.id, stateUrl)
       setCases(
         (prev) =>
           prev?.map((row) =>
@@ -824,14 +824,14 @@ export function EvalSettings() {
                     ) : null}
                     {c.status === 'confirmed' ? (
                       <div className="settings-eval-check" data-testid={`eval-check-state-${c.id}`}>
-                        <Field label={EVAL.checkStateMockLabel}>
+                        <Field label={EVAL.checkStateUrlLabel}>
                           <Input
-                            value={mockBaseUrls[c.id] ?? ''}
+                            value={stateUrls[c.id] ?? ''}
                             onChange={(e) =>
-                              setMockBaseUrls((prev) => ({ ...prev, [c.id]: e.target.value }))
+                              setStateUrls((prev) => ({ ...prev, [c.id]: e.target.value }))
                             }
                             disabled={busy}
-                            placeholder="http://127.0.0.1:8080"
+                            placeholder="http://127.0.0.1:18080/records"
                             data-testid={`eval-check-state-url-${c.id}`}
                           />
                         </Field>

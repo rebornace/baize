@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rebornace/baize/internal/agent"
@@ -222,6 +223,15 @@ type Server struct {
 
 	// MetricsHandler serves GET /metrics (Prometheus). nil = route not registered.
 	MetricsHandler http.Handler
+
+	// PendingStreamLimit caps concurrent /v0/hitl/pending/stream connections.
+	// <=0 uses defaultPendingStreamLimit.
+	PendingStreamLimit int
+	pendingStreamOnce  sync.Once
+	pendingStreamSlots chan struct{}
+	pendingStreamLive  atomic.Int64
+	pendingStreamDrop  atomic.Int64
+	pendingStreamSlow  atomic.Int64
 
 	// OAuthSessions holds in-flight MCP OAuth PKCE state (single-process).
 	OAuthSessions *mcpoauth.SessionStore

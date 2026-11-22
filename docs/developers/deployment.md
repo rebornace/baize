@@ -58,6 +58,18 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 - 发布前至少用 Trivy 或 Docker Scout 扫描一次；存在 CRITICAL 时不要发布。
 - `apk upgrade` 已包含在镜像构建中；基础镜像与 Go 工具链仍需随安全公告更新。
 
+### 发布产物签名（可选）
+
+发布方可用 cosign 对 `SHA256SUMS.txt` 与 OCI 归档做离线密钥签名；私钥不入库，只发布 `cosign.pub` 与 `*.sigstore.json`：
+
+```bash
+cosign verify-blob --key cosign.pub \
+  --bundle SHA256SUMS.txt.sigstore.json \
+  --offline SHA256SUMS.txt
+```
+
+仓库脚本：`scripts/sign-release.ps1 -Key <cosign.key> -ArtifactsDir <release-dir> -OciArchive <oci.tar>`。签名默认写入 Rekor 透明日志；校验需要对应 bundle。
+
 ## Autostart（桌面 / 演示 / 单机，含 Windows）
 
 baize 拉起并托管适配器子进程：崩溃指数退避重启；关机时优雅结束子进程。`secret` 留空则自动生成并持久化共享 HMAC。`creds.json` 默认在 `adapter_creds_dir`（如 `./data/channels/weixin`）。
