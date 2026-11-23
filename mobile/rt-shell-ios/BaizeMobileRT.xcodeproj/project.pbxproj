@@ -1,0 +1,272 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		825BCE863F3045B6A99D4075 /* BaizeMobileRTApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D9453B7167D411FAD58883D /* BaizeMobileRTApp.swift */; };
+		1014B556FD9B4C93A7095218 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737CA24C35FE488E86EF5D0E /* ContentView.swift */; };
+		5CAC78EF4F84435FA7AA1689 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583123BC70A14B3D9F067134 /* CredentialStore.swift */; };
+		9DDF5752871A4DC7B492E136 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A491021EF1FC477C888EAD78 /* Info.plist */; };
+		1BB204B7A55F4F08BFB7358C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C1C5D44AA5E149B19910AC5C /* Assets.xcassets */; };
+		7EFFD6F5C07C452CB436BCC8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AC6108B1D30F402BB657B030 /* PrivacyInfo.xcprivacy */; };
+		0A22697288B64B97A1994415 /* Mobileagent.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3A2E8BF8D88E4E58B6CE5F54 /* Mobileagent.xcframework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		8ECB486ACE8741C8A8A38C11 /* BaizeMobileRT.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaizeMobileRT.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D9453B7167D411FAD58883D /* BaizeMobileRTApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaizeMobileRTApp.swift; sourceTree = "<group>"; };
+		737CA24C35FE488E86EF5D0E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		583123BC70A14B3D9F067134 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
+		A491021EF1FC477C888EAD78 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		773EBDE91A474F859EE954C4 /* Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Bridging-Header.h"; sourceTree = "<group>"; };
+		C1C5D44AA5E149B19910AC5C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AC6108B1D30F402BB657B030 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		3A2E8BF8D88E4E58B6CE5F54 /* Mobileagent.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Mobileagent.xcframework; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8C97438274CC4273B8B8B13B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A22697288B64B97A1994415 /* Mobileagent.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		55D470B3B1B24A60AF8F73A3 = {
+			isa = PBXGroup;
+			children = (
+				B91EC7059E77491B8ABE7A0C /* BaizeMobileRT */,
+				F82D13BF25FD4496A63CA3B6 /* Frameworks */,
+				8636B4A2684A46AF9DC42A92 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B91EC7059E77491B8ABE7A0C /* BaizeMobileRT */ = {
+			isa = PBXGroup;
+			children = (
+				7D9453B7167D411FAD58883D /* BaizeMobileRTApp.swift */,
+				737CA24C35FE488E86EF5D0E /* ContentView.swift */,
+				583123BC70A14B3D9F067134 /* CredentialStore.swift */,
+				773EBDE91A474F859EE954C4 /* Bridging-Header.h */,
+				A491021EF1FC477C888EAD78 /* Info.plist */,
+				C1C5D44AA5E149B19910AC5C /* Assets.xcassets */,
+				AC6108B1D30F402BB657B030 /* PrivacyInfo.xcprivacy */,
+			);
+			path = BaizeMobileRT;
+			sourceTree = "<group>";
+		};
+		F82D13BF25FD4496A63CA3B6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3A2E8BF8D88E4E58B6CE5F54 /* Mobileagent.xcframework */,
+			);
+			path = Frameworks;
+			sourceTree = "<group>";
+		};
+		8636B4A2684A46AF9DC42A92 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8ECB486ACE8741C8A8A38C11 /* BaizeMobileRT.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		ACA4F7D240EB4E938594FD2D /* BaizeMobileRT */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 681BC7147F764681944B68B4 /* Build configuration list for PBXNativeTarget "BaizeMobileRT" */;
+			buildPhases = (
+				7E924706007F4C9C9E79B328 /* Sources */,
+				8C97438274CC4273B8B8B13B /* Frameworks */,
+				5CBEA1801B424797AB572EA6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BaizeMobileRT;
+			productName = BaizeMobileRT;
+			productReference = 8ECB486ACE8741C8A8A38C11 /* BaizeMobileRT.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1844C95DDBAF4B7DB16750F5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = 3618680B6BF14C52AFB615C9 /* Build configuration list for PBXProject "BaizeMobileRT" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 55D470B3B1B24A60AF8F73A3;
+			productRefGroup = 8636B4A2684A46AF9DC42A92 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				ACA4F7D240EB4E938594FD2D /* BaizeMobileRT */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5CBEA1801B424797AB572EA6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1BB204B7A55F4F08BFB7358C /* Assets.xcassets in Resources */,
+				7EFFD6F5C07C452CB436BCC8 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7E924706007F4C9C9E79B328 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				825BCE863F3045B6A99D4075 /* BaizeMobileRTApp.swift in Sources */,
+				1014B556FD9B4C93A7095218 /* ContentView.swift in Sources */,
+				5CAC78EF4F84435FA7AA1689 /* CredentialStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		50A74DC5A6A448CCA42BDB95 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		5AF5BFBB83EF4761BE09417F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		28C4E60C1B6A401F9598B3E9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BaizeMobileRT/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rebornace.baize.mobilert;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "BaizeMobileRT/Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Debug;
+		};
+		E38874E98D184B2B9B3F89E1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BaizeMobileRT/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rebornace.baize.mobilert;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "BaizeMobileRT/Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3618680B6BF14C52AFB615C9 /* Build configuration list for PBXProject "BaizeMobileRT" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				50A74DC5A6A448CCA42BDB95 /* Debug */,
+				5AF5BFBB83EF4761BE09417F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		681BC7147F764681944B68B4 /* Build configuration list for PBXNativeTarget "BaizeMobileRT" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				28C4E60C1B6A401F9598B3E9 /* Debug */,
+				E38874E98D184B2B9B3F89E1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1844C95DDBAF4B7DB16750F5 /* Project object */;
+}

@@ -1,0 +1,7 @@
+[
+  {"type": "run.started", "data": {}},
+  {"type": "llm.tool_call", "data": {"id": "c1", "name": "list_tickets", "arguments": {}}},
+  {"type": "tool.result", "data": {"id": "c1", "name": "list_tickets", "is_error": false, "content": {"tickets": []}}},
+  {"type": "llm.tool_call", "data": {"id": "c2", "name": "create_ticket", "arguments": {"title": "oops"}}},
+  {"type": "hitl.waiting", "data": {"tool_name": "create_ticket", "arguments": {"title": "oops"}}}
+]

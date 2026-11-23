@@ -1,0 +1,464 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+// postgresMigrationLockID serializes schema migrations across replicas.
+const postgresMigrationLockID int64 = 2026112301
+
+func lockPostgresMigrations(dsn string) (func(), error) {
+	lockDB, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	conn, err := lockDB.Conn(ctx)
+	if err != nil {
+		_ = lockDB.Close()
+		return nil, err
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, postgresMigrationLockID); err != nil {
+		_ = conn.Close()
+		_ = lockDB.Close()
+		return nil, fmt.Errorf("postgres migration lock: %w", err)
+	}
+	return func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, postgresMigrationLockID)
+		_ = conn.Close()
+		_ = lockDB.Close()
+	}, nil
+}
+
+const postgresSchema = `
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY, agent_id TEXT, input TEXT, status TEXT,
+  output TEXT, error TEXT, created_at TEXT, hitl_json TEXT,
+  conversation_id TEXT, identity_id TEXT,
+  passthrough_json TEXT, webhook_json TEXT, model_profile_id TEXT,
+  lease_until TIMESTAMPTZ,
+  origin TEXT
+);
+CREATE TABLE IF NOT EXISTS events (
+  id BIGSERIAL PRIMARY KEY,
+  run_id TEXT, type TEXT, timestamp TEXT, data_json TEXT
+);
+CREATE TABLE IF NOT EXISTS connectors (
+  id TEXT PRIMARY KEY,
+  type TEXT,
+  spec TEXT,
+  base_url TEXT,
+  require_approval_json TEXT,
+  require_login_json TEXT,
+  auth_json TEXT,
+  mcp_json TEXT,
+  execution_callback_url TEXT,
+  import_format TEXT,
+  catalog_revision BIGINT NOT NULL DEFAULT 0,
+  tls_json TEXT
+);
+CREATE TABLE IF NOT EXISTS connector_catalog_revisions (
+  connector_id TEXT NOT NULL,
+  revision BIGINT NOT NULL,
+  at TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  tool_hashes_json TEXT,
+  PRIMARY KEY (connector_id, revision)
+);
+CREATE TABLE IF NOT EXISTS mcp_export_invocations (
+  id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  connector_id TEXT,
+  contract_hash TEXT,
+  catalog_revision BIGINT NOT NULL DEFAULT 0,
+  is_error INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_invocations_at ON mcp_export_invocations(at);
+CREATE TABLE IF NOT EXISTS tools (
+  name TEXT PRIMARY KEY,
+  connector_id TEXT,
+  source TEXT,
+  enabled INTEGER,
+  title TEXT,
+  description TEXT,
+  description_custom INTEGER,
+  method TEXT,
+  path TEXT,
+  input_schema_json TEXT,
+  require_login INTEGER,
+  require_approval INTEGER,
+  operation_id TEXT,
+  export_mode TEXT,
+  annotations_json TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inbox_deliveries (
+  channel_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  delivery_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  body_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(channel_id, idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS inbox_threads (
+  channel_id TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  UNIQUE(channel_id, external_id)
+);
+CREATE TABLE IF NOT EXISTS webhook_outbox (
+  id TEXT PRIMARY KEY,
+  delivery_key TEXT NOT NULL UNIQUE,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  event_index INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  headers_json TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  status TEXT NOT NULL,
+  last_error TEXT,
+  next_retry_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_outbox_pending ON webhook_outbox(status, next_retry_at);
+CREATE TABLE IF NOT EXISTS webhook_inbound_jobs (
+  id TEXT PRIMARY KEY,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  last_error TEXT,
+  next_attempt_at TEXT NOT NULL,
+  claimed_by TEXT NOT NULL DEFAULT '',
+  claim_expires_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_inbound_due ON webhook_inbound_jobs(status, next_attempt_at);
+CREATE TABLE IF NOT EXISTS channel_outbox (
+  id TEXT PRIMARY KEY,
+  delivery_key TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  peer_id TEXT,
+  conversation_id TEXT,
+  account TEXT,
+  run_id TEXT,
+  payload_json TEXT NOT NULL,
+  blob_keys_json TEXT,
+  target_url TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  status TEXT NOT NULL,
+  last_error TEXT,
+  next_retry_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_channel_outbox_pending ON channel_outbox(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_channel_outbox_channel_status ON channel_outbox(channel, status);
+CREATE TABLE IF NOT EXISTS channel_pending (
+  conversation_id TEXT NOT NULL,
+  batch_id TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  account TEXT NOT NULL DEFAULT '',
+  peer_id TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  truncated INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, batch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_pending_source ON channel_pending(source, updated_at);
+CREATE TABLE IF NOT EXISTS mcp_export_identities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scheme TEXT,
+  headers_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_export_keys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  identity_id TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+  identity_slots_json TEXT NOT NULL DEFAULT '[]',
+  revoked_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_export_keys_identity ON mcp_export_keys(identity_id);
+CREATE TABLE IF NOT EXISTS model_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  provider TEXT,
+  base_url TEXT,
+  model TEXT,
+  api_key TEXT,
+  api_key_env TEXT,
+  disable_thinking BOOLEAN,
+  thinking_level TEXT NOT NULL DEFAULT 'medium',
+  thinking_dialect TEXT NOT NULL DEFAULT 'auto',
+  supports_vision BOOLEAN,
+  context_tokens INTEGER NOT NULL DEFAULT 128000,
+  auto_tier TEXT NOT NULL DEFAULT 'standard',
+  fallback_profile_ids TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT,
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS eval_cases (
+  id TEXT PRIMARY KEY,
+  source_run_id TEXT,
+  status TEXT NOT NULL,
+  protocol TEXT,
+  input TEXT,
+  required_reads_json TEXT,
+  consequential_json TEXT,
+  expect_conseq_any_json TEXT,
+  chain_json TEXT,
+  forbid_tools_json TEXT,
+  arg_contains_json TEXT,
+  expect_state_json TEXT,
+  state_snapshot_json TEXT,
+  events_json TEXT NOT NULL,
+  run_status_at_ingest TEXT,
+  last_score_pass INTEGER,
+  last_score_codes_json TEXT,
+  last_score_notes TEXT,
+  last_scored_at TEXT,
+  human_agree INTEGER,
+  human_note TEXT,
+  calibrated_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_eval_cases_source ON eval_cases(source_run_id);
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  thinking TEXT,
+  thinking_redacted BOOLEAN NOT NULL DEFAULT false,
+  run_id TEXT,
+  created_at TEXT NOT NULL,
+  pinned_skills TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+CREATE TABLE IF NOT EXISTS conversation_meta (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  title TEXT,
+  channel_peer TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS identities (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  label TEXT,
+  scheme TEXT,
+  subject TEXT,
+  source TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  headers_json TEXT,
+  claims_json TEXT,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_identities_conv ON identities(conversation_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_identities_conv_scheme_subject
+  ON identities(conversation_id, scheme, subject);
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+`
+
+func init() {
+	RegisterDriver("postgres", func(opts OpenOptions) (Store, error) {
+		return OpenPostgres(opts.DSN)
+	})
+}
+
+// OpenPostgres opens a PostgreSQL-backed store at dsn.
+func OpenPostgres(dsn string) (*SQLStore, error) {
+	if dsn == "" {
+		return nil, fmt.Errorf("postgres dsn is required")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("postgres ping: %w", err)
+	}
+	unlock, err := lockPostgresMigrations(dsn)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	defer unlock()
+	if _, err := db.Exec(postgresSchema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate postgres schema: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_profile_id TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs model_profile_id: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs lease_until: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS thinking_level TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate runs thinking_level: %w", err)
+	}
+	for _, q := range []string{
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id TEXT`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS group_id TEXT`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS spawn_mode TEXT`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS origin TEXT`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate runs scoped child columns: %w", err)
+		}
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles context_tokens: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE channel_pending ADD COLUMN IF NOT EXISTS attachments_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate channel_pending attachments: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE webhook_inbound_jobs ADD COLUMN IF NOT EXISTS claimed_by TEXT NOT NULL DEFAULT ''`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate webhook inbound claimed_by: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE webhook_inbound_jobs ADD COLUMN IF NOT EXISTS claim_expires_at TEXT NOT NULL DEFAULT ''`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate webhook inbound claim_expires_at: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS auto_tier TEXT NOT NULL DEFAULT 'standard'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles auto_tier: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS thinking_level TEXT NOT NULL DEFAULT 'medium'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles thinking_level: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS thinking_dialect TEXT NOT NULL DEFAULT 'auto'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles thinking_dialect: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS fallback_profile_ids TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles fallback_profile_ids: %w", err)
+	}
+	// Backfill: legacy disable_thinking=true → off; ALTER DEFAULT already set medium/auto.
+	if _, err := db.Exec(`UPDATE model_profiles SET thinking_level='off' WHERE disable_thinking=true`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("backfill model_profiles thinking_level: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS thinking TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate messages thinking: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS thinking_redacted BOOLEAN NOT NULL DEFAULT false`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate messages thinking_redacted: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS pinned_skills TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate messages pinned_skills: %w", err)
+	}
+	if err := migrateToolsColumns(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tools columns: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE tools ADD COLUMN IF NOT EXISTS annotations_json TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate tools annotations_json: %w", err)
+	}
+	if err := migrateMCPExportKeys(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export keys: %w", err)
+	}
+	if err := migrateMCPExportAllowlistColumn(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export allowlist: %w", err)
+	}
+	if err := migrateMCPExportIdentitySlotsColumn(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate mcp export identity slots: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE connectors ADD COLUMN IF NOT EXISTS catalog_revision BIGINT NOT NULL DEFAULT 0`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate connectors catalog_revision: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE connectors ADD COLUMN IF NOT EXISTS tls_json TEXT`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate connectors tls_json: %w", err)
+	}
+	if err := migrateEvalCasesTable(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate eval_cases: %w", err)
+	}
+	for _, q := range []string{
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS human_agree INTEGER`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS human_note TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS calibrated_at TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS forbid_tools_json TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS arg_contains_json TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS expect_state_json TEXT`,
+		`ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS state_snapshot_json TEXT`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate eval_cases calibration columns: %w", err)
+		}
+	}
+	if err := verifyPostgresSchema(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	s := &SQLStore{
+		db:         db,
+		dialect:    DialectPostgres,
+		agents:     map[string]Agent{},
+		connectors: map[string]Connector{},
+		tools:      map[string]Tool{},
+	}
+	if err := s.loadConnectorsAndTools(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("load connectors and tools: %w", err)
+	}
+	return s, nil
+}

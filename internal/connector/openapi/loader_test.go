@@ -1,0 +1,811 @@
+package openapi_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	mockticket "github.com/rebornace/baize/examples/mock-ticket"
+	"github.com/rebornace/baize/internal/connector/openapi"
+	"github.com/rebornace/baize/internal/tool"
+)
+
+func TestLoadToolsFromBytesMinimalJSON(t *testing.T) {
+	spec := []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "minimal", "version": "1.0.0"},
+  "paths": {
+    "/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) < 1 {
+		t.Fatalf("expected >=1 route, got %d", len(tools))
+	}
+	route := findRoute(t, tools, "ping")
+	if route.Method != http.MethodGet || route.Path != "/ping" {
+		t.Fatalf("route=%+v", route)
+	}
+
+	path := writeTempSpec(t, `openapi: "3.0.3"
+info:
+  title: minimal
+  version: "1.0.0"
+paths:
+  /ping:
+    get:
+      operationId: ping
+      responses:
+        "200": { description: ok }
+`)
+	fromFile, err := openapi.LoadTools(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromFile) != len(tools) {
+		t.Fatalf("LoadTools count=%d, LoadToolsFromBytes count=%d", len(fromFile), len(tools))
+	}
+	fileRoute := findRoute(t, fromFile, "ping")
+	if fileRoute.Method != route.Method || fileRoute.Path != route.Path || fileRoute.Name != route.Name {
+		t.Fatalf("file=%+v bytes=%+v", fileRoute, route)
+	}
+}
+
+func TestLoadToolsSecurityFromGlobal(t *testing.T) {
+	spec := `openapi: "3.0.3"
+info:
+  title: security fixture
+  version: "1.0.0"
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+security:
+  - bearer: []
+paths:
+  /me:
+    get:
+      operationId: getMe
+      responses:
+        "200": { description: ok }
+`
+	path := writeTempSpec(t, spec)
+	tools, err := openapi.LoadTools(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := findRoute(t, tools, "getMe")
+	if len(route.Security) != 1 || route.Security[0] != "bearer" {
+		t.Fatalf("Security=%v, want [bearer]", route.Security)
+	}
+}
+
+func TestLoadToolsOperationSecurityOverridesGlobal(t *testing.T) {
+	spec := `openapi: "3.0.3"
+info:
+  title: security override fixture
+  version: "1.0.0"
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+security:
+  - bearer: []
+paths:
+  /public:
+    get:
+      operationId: getPublic
+      security: []
+      responses:
+        "200": { description: ok }
+  /admin:
+    get:
+      operationId: getAdmin
+      security:
+        - apiKey: []
+      responses:
+        "200": { description: ok }
+`
+	path := writeTempSpec(t, spec)
+	tools, err := openapi.LoadTools(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := findRoute(t, tools, "getPublic")
+	if len(pub.Security) != 0 {
+		t.Fatalf("getPublic Security=%v, want empty (overrides global)", pub.Security)
+	}
+	admin := findRoute(t, tools, "getAdmin")
+	if len(admin.Security) != 1 || admin.Security[0] != "apiKey" {
+		t.Fatalf("getAdmin Security=%v, want [apiKey]", admin.Security)
+	}
+}
+
+func TestInvokerInvokeWithHeadersOverlays(t *testing.T) {
+	var sawAuth string
+	var sawUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		sawUA = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "getMe",
+			Method: http.MethodGet,
+			Path:   "/me",
+		}},
+		Headers: map[string]string{"Authorization": "Bearer ENV"},
+	}
+	res, err := inv.InvokeWithHeaders(context.Background(), "getMe", nil, map[string]string{
+		"Authorization": "Bearer CAPTURED",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error: %+v", res)
+	}
+	if sawAuth != "Bearer CAPTURED" {
+		t.Fatalf("Authorization=%q, want Bearer CAPTURED", sawAuth)
+	}
+	if sawUA != "baize-openapi/1.0" {
+		t.Fatalf("User-Agent=%q, want baize-openapi/1.0 (not Go default)", sawUA)
+	}
+	// Overlay must not mutate inv.Headers.
+	if inv.Headers["Authorization"] != "Bearer ENV" {
+		t.Fatalf("inv.Headers mutated: %v", inv.Headers)
+	}
+}
+
+func TestInvokerUserAgentOverlayWins(t *testing.T) {
+	var sawUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawUA = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "ping",
+			Method: http.MethodGet,
+			Path:   "/",
+		}},
+	}
+	if _, err := inv.InvokeWithHeaders(context.Background(), "ping", nil, map[string]string{
+		"User-Agent": "custom-ua/2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if sawUA != "custom-ua/2" {
+		t.Fatalf("User-Agent=%q, want custom-ua/2", sawUA)
+	}
+}
+
+func writeTempSpec(t *testing.T, yaml string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func findRoute(t *testing.T, tools []openapi.ToolRoute, name string) openapi.ToolRoute {
+	t.Helper()
+	for _, tl := range tools {
+		if tl.Name == name {
+			return tl
+		}
+	}
+	t.Fatalf("tool %q not found", name)
+	return openapi.ToolRoute{}
+}
+
+func TestLoadToolsFromSpec(t *testing.T) {
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tl := range tools {
+		names[tl.Name] = true
+	}
+	if !names["create_ticket"] || !names["list_tickets"] {
+		t.Fatalf("tools=%v", names)
+	}
+	var create openapi.ToolRoute
+	for _, tl := range tools {
+		if tl.Name == "create_ticket" {
+			create = tl
+		}
+	}
+	if create.Method != http.MethodPost || create.Path != "/tickets" {
+		t.Fatalf("route=%+v", create)
+	}
+	if create.InputSchema == nil {
+		t.Fatal("create_ticket InputSchema is nil")
+	}
+	props, _ := create.InputSchema["properties"].(map[string]any)
+	if props == nil {
+		t.Fatalf("properties missing: %+v", create.InputSchema)
+		return
+	}
+	title, _ := props["title"].(map[string]any)
+	if title == nil || title["type"] != "string" {
+		t.Fatalf("title schema=%v", title)
+	}
+	if _, ok := props["priority"]; !ok {
+		t.Fatalf("priority missing: %+v", props)
+	}
+}
+
+func TestLoadToolsOperationID(t *testing.T) {
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var create openapi.ToolRoute
+	found := false
+	for _, tl := range tools {
+		if tl.Name == "create_ticket" {
+			create = tl
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("create_ticket not found")
+	}
+	if create.OperationID != "create_ticket" {
+		t.Fatalf("OperationID=%q, want create_ticket", create.OperationID)
+	}
+	if create.Method != http.MethodPost {
+		t.Fatalf("Method=%q, want POST", create.Method)
+	}
+}
+
+func TestLoadToolsFormBody(t *testing.T) {
+	spec := []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "form", "version": "1.0.0"},
+  "paths": {
+    "/copy": {
+      "post": {
+        "operationId": "copy_questionnaire",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": {"type": "integer"},
+                  "team": {"type": "integer"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route openapi.ToolRoute
+	for _, tr := range tools {
+		if tr.Name == "copy_questionnaire" {
+			route = tr
+		}
+	}
+	if route.Name == "" {
+		t.Fatalf("tool missing: %+v", tools)
+	}
+	if route.BodyKind != "form" {
+		t.Fatalf("BodyKind=%q want form", route.BodyKind)
+	}
+	props, _ := route.InputSchema["properties"].(map[string]any)
+	if props == nil || props["id"] == nil || props["team"] == nil {
+		t.Fatalf("schema=%+v", route.InputSchema)
+	}
+}
+
+func TestInvokerFormBody(t *testing.T) {
+	var gotType, gotID, gotTeam string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+		gotID = r.PostFormValue("id")
+		gotTeam = r.PostFormValue("team")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	tools := []openapi.ToolRoute{{
+		Name:     "copy_questionnaire",
+		Method:   http.MethodPost,
+		Path:     "/copy",
+		BodyKind: "form",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":   map[string]any{"type": "integer"},
+				"team": map[string]any{"type": "integer"},
+			},
+		},
+	}}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+	if _, err := inv.Invoke(context.Background(), "copy_questionnaire", map[string]any{
+		"id": 11, "team": 11,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotType != "application/x-www-form-urlencoded" {
+		t.Fatalf("content-type=%q", gotType)
+	}
+	if gotID != "11" || gotTeam != "11" {
+		t.Fatalf("id=%q team=%q", gotID, gotTeam)
+	}
+}
+
+func TestLoadToolsQueryParams(t *testing.T) {
+	spec := []byte(`{
+  "openapi": "3.0.3",
+  "info": {"title": "query", "version": "1.0.0"},
+  "paths": {
+    "/detail": {
+      "get": {
+        "operationId": "get_detail",
+        "parameters": [
+          {"name": "id", "in": "query", "required": true, "schema": {"type": "integer"}},
+          {"name": "verbose", "in": "query", "schema": {"type": "boolean"}}
+        ],
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route openapi.ToolRoute
+	for _, tr := range tools {
+		if tr.Name == "get_detail" {
+			route = tr
+		}
+	}
+	if route.Name == "" {
+		t.Fatalf("tool missing: %+v", tools)
+	}
+	if len(route.QueryParams) != 2 || route.QueryParams[0] != "id" {
+		t.Fatalf("QueryParams=%v", route.QueryParams)
+	}
+	props, _ := route.InputSchema["properties"].(map[string]any)
+	if props == nil || props["id"] == nil || props["verbose"] == nil {
+		t.Fatalf("schema=%+v", route.InputSchema)
+	}
+	req, _ := route.InputSchema["required"].([]any)
+	if len(req) != 1 || req[0] != "id" {
+		t.Fatalf("required=%v", route.InputSchema["required"])
+	}
+}
+
+func TestInvokerQueryParams(t *testing.T) {
+	var gotID, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotID = r.URL.Query().Get("id")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	tools := []openapi.ToolRoute{{
+		Name:        "get_detail",
+		Method:      http.MethodGet,
+		Path:        "/detail",
+		QueryParams: []string{"id"},
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"id": map[string]any{"type": "integer"}},
+			"required":   []any{"id"},
+		},
+	}}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+	if _, err := inv.Invoke(context.Background(), "get_detail", map[string]any{"id": 11}); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodGet || gotID != "11" {
+		t.Fatalf("method=%q id=%q", gotMethod, gotID)
+	}
+}
+
+func TestInvokerCreateTicket(t *testing.T) {
+	srv := httptest.NewServer(mockticket.NewHandler())
+	t.Cleanup(srv.Close)
+
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+	res, err := inv.Invoke(context.Background(), "create_ticket", map[string]any{
+		"title":    "VPN 挂了",
+		"priority": "high",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error result: %+v", res)
+	}
+	if res.Content["id"] == nil || res.Content["title"] != "VPN 挂了" {
+		t.Fatalf("content=%v", res.Content)
+	}
+}
+
+func TestInvokerNon2xxIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "create_ticket",
+			Method: http.MethodPost,
+			Path:   "/tickets",
+		}},
+	}
+	res, err := inv.Invoke(context.Background(), "create_ticket", map[string]any{"title": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected IsError, got %+v", res)
+	}
+}
+
+func TestInvokerBusiness401IsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":401,"message":"Unauthorized"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "get_summary",
+			Method: http.MethodGet,
+			Path:   "/dashboard",
+		}},
+	}
+	res, err := inv.Invoke(context.Background(), "get_summary", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected business 401 IsError, got %+v", res)
+	}
+}
+
+func TestInvokerCustomBodyCodeIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":"AUTH_REQUIRED","message":"need login"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "get_summary",
+			Method: http.MethodGet,
+			Path:   "/dashboard",
+		}},
+		LoginSignals: tool.LoginSignals{BodyCodes: []string{"AUTH_REQUIRED"}},
+	}
+	res, err := inv.Invoke(context.Background(), "get_summary", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected custom body code IsError, got %+v", res)
+	}
+}
+
+func TestLoadToolsPathParamOps(t *testing.T) {
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]openapi.ToolRoute{}
+	for _, tl := range tools {
+		names[tl.Name] = tl
+	}
+	get, ok := names["get_ticket"]
+	if !ok {
+		t.Fatal("get_ticket missing")
+	}
+	if get.Method != http.MethodGet || get.Path != "/tickets/{id}" {
+		t.Fatalf("get_ticket=%+v", get)
+	}
+	assertSchemaHasRequiredProp(t, get.InputSchema, "id", "string")
+	if _, ok := get.InputSchema["properties"].(map[string]any)["status"]; ok {
+		t.Fatalf("get_ticket should not have status: %+v", get.InputSchema)
+	}
+
+	patch, ok := names["update_ticket_status"]
+	if !ok {
+		t.Fatal("update_ticket_status missing")
+	}
+	if patch.Method != http.MethodPatch || patch.Path != "/tickets/{id}" {
+		t.Fatalf("update_ticket_status=%+v", patch)
+	}
+	assertSchemaHasRequiredProp(t, patch.InputSchema, "id", "string")
+	assertSchemaHasRequiredProp(t, patch.InputSchema, "status", "string")
+}
+
+func assertSchemaHasRequiredProp(t *testing.T, schema map[string]any, name, typ string) {
+	t.Helper()
+	if schema == nil {
+		t.Fatalf("schema nil, want prop %q", name)
+		return
+	}
+	props, _ := schema["properties"].(map[string]any)
+	prop, _ := props[name].(map[string]any)
+	if prop == nil || prop["type"] != typ {
+		t.Fatalf("prop %q=%v, want type %q in %+v", name, prop, typ, schema)
+	}
+	req, _ := schema["required"].([]any)
+	found := false
+	for _, r := range req {
+		if r == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("required missing %q: %+v", name, schema)
+	}
+}
+
+func TestInvokerGetTicketByID(t *testing.T) {
+	srv := httptest.NewServer(mockticket.NewHandler())
+	t.Cleanup(srv.Close)
+
+	tools, err := openapi.LoadTools("../../../examples/mock-ticket/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := &openapi.Invoker{BaseURL: srv.URL, Tools: tools}
+
+	created, err := inv.Invoke(context.Background(), "create_ticket", map[string]any{
+		"title": "path param get",
+	})
+	if err != nil || created.IsError {
+		t.Fatalf("create: err=%v res=%+v", err, created)
+	}
+	id, _ := created.Content["id"].(string)
+	if id == "" {
+		t.Fatalf("missing id: %v", created.Content)
+	}
+
+	got, err := inv.Invoke(context.Background(), "get_ticket", map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.IsError {
+		t.Fatalf("get IsError: %+v", got)
+	}
+	if got.Content["id"] != id {
+		t.Fatalf("content=%v", got.Content)
+	}
+}
+
+func TestLoadToolsResponseObjectFields(t *testing.T) {
+	spec := []byte(`openapi: "3.0.3"
+info: {title: t, version: "1"}
+paths:
+  /users/{id}:
+    get:
+      operationId: getUser
+      summary: 查询用户
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                description: 用户查询结果
+                properties:
+                  code: {type: integer, description: 状态码}
+                  data:
+                    description: 用户
+                    allOf:
+                      - $ref: "#/components/schemas/User"
+                  status:
+                    type: string
+                    enum: [open, closed]
+                    description: 状态
+                  meta:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        k: {type: string, description: 键}
+  /items:
+    get:
+      operationId: listItems
+      summary: 列表示例
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  id: 7
+                  name: ada
+                  profile:
+                    city: hz
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id: {type: string, description: 用户编号}
+        name: {type: string}
+        tags:
+          type: array
+          items:
+            type: object
+            properties:
+              label: {type: string, description: 标签}
+`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := findRoute(t, tools, "getUser")
+	for _, want := range []string{
+		"查询用户",
+		"返回字段：",
+		"说明：用户查询结果",
+		"code: integer，状态码",
+		"data: object，用户",
+		"data.id: string，用户编号",
+		"data.name: string",
+		"data.tags: array<object>",
+		"data.tags[].label: string，标签",
+		"status: string，可选 open、closed，状态",
+		"meta: object",
+		"meta.*: object",
+		"meta.*.k: string，键",
+	} {
+		if !strings.Contains(user.Description, want) {
+			t.Fatalf("getUser description missing %q:\n%s", want, user.Description)
+		}
+	}
+
+	items := findRoute(t, tools, "listItems")
+	for _, want := range []string{
+		"返回字段：",
+		"（按文档示例）",
+		"id: integer",
+		"name: string",
+		"profile: object",
+		"profile.city: string",
+	} {
+		if !strings.Contains(items.Description, want) {
+			t.Fatalf("listItems description missing %q:\n%s", want, items.Description)
+		}
+	}
+}
+
+func TestLoadToolsResponseWithoutSchemaUnchanged(t *testing.T) {
+	spec := []byte(`openapi: "3.0.3"
+info: {title: t, version: "1"}
+paths:
+  /ping:
+    get:
+      operationId: ping
+      summary: 健康检查
+      responses:
+        "200": {description: ok}
+`)
+	tools, err := openapi.LoadToolsFromBytes(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := findRoute(t, tools, "ping")
+	if route.Description != "健康检查" {
+		t.Fatalf("description=%q", route.Description)
+	}
+}
+
+func TestInvokerPatchTicketStatus(t *testing.T) {
+	var sawPath string
+	var sawBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		if r.Method == http.MethodPatch {
+			_ = json.NewDecoder(r.Body).Decode(&sawBody)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"ticket_1","status":"closed"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	inv := &openapi.Invoker{
+		BaseURL: srv.URL,
+		Tools: []openapi.ToolRoute{{
+			Name:   "update_ticket_status",
+			Method: http.MethodPatch,
+			Path:   "/tickets/{id}",
+		}},
+	}
+	res, err := inv.Invoke(context.Background(), "update_ticket_status", map[string]any{
+		"id":     "ticket_1",
+		"status": "closed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error: %+v", res)
+	}
+	if sawPath != "/tickets/ticket_1" {
+		t.Fatalf("path=%q, want /tickets/ticket_1", sawPath)
+	}
+	if _, hasID := sawBody["id"]; hasID {
+		t.Fatalf("path param id must not be in body: %v", sawBody)
+	}
+	if sawBody["status"] != "closed" {
+		t.Fatalf("body=%v", sawBody)
+	}
+}

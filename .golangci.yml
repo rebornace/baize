@@ -1,0 +1,22 @@
+# F-C1：稳妥默认规则集；全仓必须通过（与 CI 全量 golangci 一致）。
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    govet:
+      enable-all: false
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling

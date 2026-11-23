@@ -1,0 +1,7 @@
+[
+  {"type": "run.started", "data": {}},
+  {"type": "llm.tool_call", "data": {"id": "c1", "name": "get_ticket", "arguments": {"id": "demo-1"}}},
+  {"type": "tool.result", "data": {"id": "c1", "name": "get_ticket", "is_error": false, "content": {"id": "demo-1", "status": "open"}}},
+  {"type": "llm.tool_call", "data": {"id": "c2", "name": "update_ticket_status", "arguments": {"id": "demo-1", "status": "closed"}}},
+  {"type": "hitl.waiting", "data": {"tool_name": "update_ticket_status", "arguments": {"id": "demo-1", "status": "closed"}}}
+]

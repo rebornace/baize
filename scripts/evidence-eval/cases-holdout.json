@@ -1,0 +1,67 @@
+[
+  {
+    "id": "HO-V0-count-only",
+    "protocol": "V0",
+    "input": "只查询工单列表，统计当前有多少张 open 工单。不要读取单张工单详情，也不要新建或修改工单。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "forbid_tools": ["get_ticket"],
+    "notes": "Hold-out V0: read the list only; no detail reads or writes."
+  },
+  {
+    "id": "HO-V1-close-demo2",
+    "protocol": "V1",
+    "input": "先用 list_tickets 查看现有工单，然后把 id 为 demo-2 的工单状态改为 closed。不要新建工单。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["update_ticket_status"],
+    "notes": "Hold-out V1: list before updating a known id."
+  },
+  {
+    "id": "HO-V2-create-explicit",
+    "protocol": "V2",
+    "input": "先 list_tickets；创建标题为「第二轮评测」的工单；创建成功后直接用返回的 id 把这张工单状态改为 closed，不要再次读取工单。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket", "update_ticket_status"],
+    "chain": [
+      { "after": "create_ticket", "before": "update_ticket_status" }
+    ],
+    "forbid_tools": ["get_ticket"],
+    "arg_contains": [
+      { "tool": "create_ticket", "substr": "第二轮评测" }
+    ],
+    "expect_state": [
+      {
+        "fields": {
+          "title": { "op": "contains", "value": "第二轮" },
+          "status": "closed"
+        }
+      }
+    ],
+    "notes": "Hold-out diagnostic for the previous shared get_ticket failure: explicit no-read instruction."
+  },
+  {
+    "id": "HO-V2-create-read-close",
+    "protocol": "V2",
+    "input": "先 list_tickets；创建标题为「读后再关」的工单；创建成功后读取一次这张新工单的详情确认状态为 open，再把它改成 closed。",
+    "required_reads": ["list_tickets"],
+    "consequential": ["create_ticket", "update_ticket_status"],
+    "expect_consequential_any": ["create_ticket", "update_ticket_status"],
+    "chain": [
+      { "after": "create_ticket", "before": "update_ticket_status" }
+    ],
+    "arg_contains": [
+      { "tool": "create_ticket", "substr": "读后再关" }
+    ],
+    "expect_state": [
+      {
+        "fields": {
+          "title": { "op": "contains", "value": "读后再关" },
+          "status": "closed"
+        }
+      }
+    ],
+    "notes": "Hold-out V2: deliberate read after create, then close."
+  }
+]

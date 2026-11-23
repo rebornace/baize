@@ -1,0 +1,294 @@
+package openapi
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/rebornace/baize/internal/tool"
+)
+
+var pathParamPattern = regexp.MustCompile(`\{([^}]+)\}`)
+
+// defaultHTTPClient bounds OpenAPI tool calls when Invoker.HTTPClient is nil.
+// Engine also applies a per-invoke context timeout; this is a backstop.
+var defaultHTTPClient = &http.Client{Timeout: 60 * time.Second}
+
+// InvokeResult is the normalized result of an HTTP tool call.
+type InvokeResult struct {
+	Content map[string]any
+	IsError bool
+}
+
+// Invoker executes loaded ToolRoutes against a base URL.
+type Invoker struct {
+	BaseURL    string
+	Tools      []ToolRoute
+	Headers    map[string]string
+	HTTPClient *http.Client
+	// LoginSignals recognizes HTTP 200 business auth failures for this connector.
+	// Empty uses built-in 401/403 heuristics.
+	LoginSignals tool.LoginSignals
+}
+
+// Invoke looks up toolName and performs the corresponding HTTP request.
+// Non-2xx responses return InvokeResult{IsError: true} without error.
+func (inv *Invoker) Invoke(ctx context.Context, toolName string, args map[string]any) (InvokeResult, error) {
+	return inv.invoke(ctx, toolName, args, nil)
+}
+
+// InvokeWithHeaders is like Invoke but merges overlay headers over inv.Headers
+// for this call only (same key overlays; inv.Headers is not mutated).
+func (inv *Invoker) InvokeWithHeaders(ctx context.Context, toolName string, args map[string]any, overlay map[string]string) (InvokeResult, error) {
+	return inv.invoke(ctx, toolName, args, overlay)
+}
+
+func (inv *Invoker) invoke(ctx context.Context, toolName string, args map[string]any, overlay map[string]string) (InvokeResult, error) {
+	route, ok := inv.find(toolName)
+	if !ok {
+		return InvokeResult{}, fmt.Errorf("unknown tool: %s", toolName)
+	}
+
+	path, pathKeys, err := expandPath(route.Path, args)
+	if err != nil {
+		return InvokeResult{}, err
+	}
+	url := strings.TrimRight(inv.BaseURL, "/") + path
+	if len(route.QueryParams) > 0 {
+		url = appendQuery(url, route.QueryParams, args)
+	}
+
+	var body io.Reader
+	if route.Method == http.MethodPost || route.Method == http.MethodPut || route.Method == http.MethodPatch {
+		skip := map[string]bool{}
+		for k := range pathKeys {
+			skip[k] = true
+		}
+		for _, k := range route.QueryParams {
+			skip[k] = true
+		}
+		bodyArgs := omitKeys(args, skip)
+		payload, err := marshalRequestBody(route.BodyKind, bodyArgs)
+		if err != nil {
+			return InvokeResult{}, fmt.Errorf("marshal args: %w", err)
+		}
+		body = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, route.Method, url, body)
+	if err != nil {
+		return InvokeResult{}, fmt.Errorf("build request: %w", err)
+	}
+	if body != nil {
+		contentType := "application/json"
+		if route.BodyKind == "form" {
+			contentType = "application/x-www-form-urlencoded"
+		}
+		req.Header.Set("Content-Type", contentType)
+	}
+	// Go's default User-Agent ("Go-http-client/1.1") is blocked by some edge WAFs
+	// (e.g. Alibaba ESA http_custom). Set a stable product UA unless the caller
+	// already supplied one via Headers/overlay.
+	req.Header.Set("User-Agent", "baize-openapi/1.0")
+	for k, v := range mergeHeaders(inv.Headers, overlay) {
+		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
+	}
+
+	client := inv.HTTPClient
+	if client == nil {
+		client = defaultHTTPClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return InvokeResult{}, fmt.Errorf("http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return InvokeResult{}, fmt.Errorf("read body: %w", err)
+	}
+
+	content := decodeBody(raw)
+	if cookies := resp.Header.Values("Set-Cookie"); len(cookies) > 0 {
+		if content == nil {
+			content = map[string]any{}
+		}
+		content["_set_cookie"] = append([]string(nil), cookies...)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if content == nil {
+			content = map[string]any{}
+		}
+		content["http_status"] = resp.StatusCode
+		return InvokeResult{Content: content, IsError: true}, nil
+	}
+	// Some gateways return HTTP 200 with a business auth failure body.
+	if tool.MatchAuthFailure(content, inv.LoginSignals) {
+		return InvokeResult{Content: content, IsError: true}, nil
+	}
+	return InvokeResult{Content: content, IsError: false}, nil
+}
+
+// LooksLikeAuthFailure reports HTTP/business auth failures (401/403 and common messages).
+func LooksLikeAuthFailure(content map[string]any) bool {
+	return tool.LooksLikeAuthFailure(content)
+}
+
+func mergeHeaders(base, overlay map[string]string) map[string]string {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
+}
+
+func expandPath(tmpl string, args map[string]any) (string, map[string]bool, error) {
+	keys := map[string]bool{}
+	var missing []string
+	path := pathParamPattern.ReplaceAllStringFunc(tmpl, func(m string) string {
+		name := m[1 : len(m)-1]
+		keys[name] = true
+		v, ok := args[name]
+		if !ok || v == nil {
+			missing = append(missing, name)
+			return m
+		}
+		return fmt.Sprint(v)
+	})
+	if len(missing) > 0 {
+		return "", nil, fmt.Errorf("missing path param: %s", strings.Join(missing, ", "))
+	}
+	return path, keys, nil
+}
+
+// appendQuery adds named args to the URL as query parameters. Slice values are
+// repeated under the same key; nil/absent values are skipped.
+func appendQuery(rawURL string, names []string, args map[string]any) string {
+	q := url.Values{}
+	for _, name := range names {
+		v, ok := args[name]
+		if !ok || v == nil {
+			continue
+		}
+		switch vv := v.(type) {
+		case []any:
+			for _, item := range vv {
+				q.Add(name, fmt.Sprint(item))
+			}
+		case map[string]any, []map[string]any:
+			b, err := json.Marshal(vv)
+			if err != nil {
+				continue
+			}
+			q.Set(name, string(b))
+		default:
+			q.Set(name, fmt.Sprint(vv))
+		}
+	}
+	if len(q) == 0 {
+		return rawURL
+	}
+	sep := "?"
+	if strings.Contains(rawURL, "?") {
+		sep = "&"
+	}
+	return rawURL + sep + q.Encode()
+}
+
+func omitKeys(args map[string]any, keys map[string]bool) map[string]any {
+	if len(keys) == 0 {
+		return args
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		if keys[k] {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func marshalRequestBody(bodyKind string, args map[string]any) ([]byte, error) {
+	switch bodyKind {
+	case "array":
+		items, ok := args[bodyArrayKey]
+		if !ok {
+			return nil, fmt.Errorf("missing body array field %q", bodyArrayKey)
+		}
+		return json.Marshal(items)
+	case "value":
+		v, ok := args["value"]
+		if !ok {
+			return nil, fmt.Errorf("missing body field %q", "value")
+		}
+		return json.Marshal(v)
+	case "form":
+		values := url.Values{}
+		for k, v := range args {
+			switch vv := v.(type) {
+			case nil:
+				continue
+			case string:
+				values.Set(k, vv)
+			case []any:
+				for _, item := range vv {
+					values.Add(k, fmt.Sprint(item))
+				}
+			case map[string]any, []map[string]any:
+				b, err := json.Marshal(vv)
+				if err != nil {
+					return nil, err
+				}
+				values.Set(k, string(b))
+			default:
+				values.Set(k, fmt.Sprint(vv))
+			}
+		}
+		return []byte(values.Encode()), nil
+	default:
+		return json.Marshal(args)
+	}
+}
+
+func (inv *Invoker) find(name string) (ToolRoute, bool) {
+	for _, t := range inv.Tools {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return ToolRoute{}, false
+}
+
+func decodeBody(raw []byte) map[string]any {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return map[string]any{}
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(trimmed, &asMap); err == nil {
+		return asMap
+	}
+	var asAny any
+	if err := json.Unmarshal(trimmed, &asAny); err == nil {
+		return map[string]any{"data": asAny}
+	}
+	return map[string]any{"raw": string(raw)}
+}

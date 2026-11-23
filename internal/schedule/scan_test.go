@@ -1,0 +1,738 @@
+package schedule_test
+
+import (
+	"errors"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/rebornace/baize/internal/schedule"
+	"github.com/rebornace/baize/internal/store"
+)
+
+type openCall struct {
+	ConversationID string
+	Instruction    string
+	OwnerID        string
+}
+
+type fakeOpener struct {
+	mu    sync.Mutex
+	calls []openCall
+	err   error
+	runID string
+}
+
+func (f *fakeOpener) Open(conversationID, instruction, ownerID string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, openCall{conversationID, instruction, ownerID})
+	if f.err != nil {
+		return "", f.err
+	}
+	rid := f.runID
+	if rid == "" {
+		rid = "run_1"
+	}
+	return rid, nil
+}
+
+func (f *fakeOpener) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
+type fakeMeta struct {
+	owners map[string]string
+	err    error
+}
+
+func (m *fakeMeta) GetMeta(conversationID string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	if o, ok := m.owners[conversationID]; ok {
+		return o, nil
+	}
+	return "alice", nil
+}
+
+func nonTerminalRunStatus(string) (string, bool, error) {
+	return "", false, nil
+}
+
+func insertDaily(t *testing.T, s schedule.Store, owner, conv, instr string, next time.Time) schedule.Item {
+	t.Helper()
+	it, err := s.Insert(schedule.Item{
+		OwnerID: owner, ConversationID: conv, Instruction: instr,
+		Kind: "daily", Timezone: "UTC", TimeOfDay: "09:00",
+		Status: schedule.StatusActive, NextRunAt: next,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return it
+}
+
+func rowByID(t *testing.T, s schedule.Store, owner, id string) schedule.Item {
+	t.Helper()
+	list, err := s.List(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range list {
+		if it.ID == id {
+			return it
+		}
+	}
+	t.Fatalf("row %q not found", id)
+	return schedule.Item{}
+}
+
+func TestScanFiresOnceThenCompletes(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	fire := now.Add(-time.Hour)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "do once",
+		Kind: "once", Timezone: "UTC", FireAt: fire, NextRunAt: fire,
+		Status: schedule.StatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+	c := opener.calls[0]
+	if c.ConversationID != "c1" || c.Instruction != "do once" || c.OwnerID != "alice" {
+		t.Fatalf("Open args: %+v", c)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID != "run_1" {
+		t.Fatalf("after scan: %+v", got)
+	}
+}
+
+func TestScanMissedPeriodsFireOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	threeDaysAgo := now.AddDate(0, 0, -3)
+	it := insertDaily(t, s, "alice", "c1", "daily task", threeDaysAgo)
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if !got.NextRunAt.After(now) {
+		t.Fatalf("next_run_at=%v want after %v", got.NextRunAt, now)
+	}
+	if got.RunningRunID != "run_1" {
+		t.Fatalf("running_run_id=%q", got.RunningRunID)
+	}
+}
+
+func TestScanSkipsInFlight(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Hour)
+	it := insertDaily(t, s, "alice", "c1", "in flight", due)
+	if err := s.SetRunningRunID(it.ID, "run_in_flight"); err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 0 {
+		t.Fatalf("Open should not run, calls=%d", opener.callCount())
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if !got.NextRunAt.After(now) {
+		t.Fatalf("next_run_at=%v want after now", got.NextRunAt)
+	}
+	if got.RunningRunID != "run_in_flight" {
+		t.Fatalf("running_run_id=%q", got.RunningRunID)
+	}
+}
+
+func TestScanPausedDoesNotFire(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	if _, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "paused",
+		Kind: "daily", Timezone: "UTC", TimeOfDay: "09:00",
+		Status: schedule.StatusPaused, NextRunAt: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 0 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+}
+
+func TestScanOwnerMismatchDoesNotComplete(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "bob"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "secret instruction xyz", now.Add(-time.Minute))
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 0 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RunningRunID != "" {
+		t.Fatalf("row: %+v", got)
+	}
+	if got.LastError == "" {
+		t.Fatal("expected last_error")
+	}
+	if contains(got.LastError, "secret instruction") {
+		t.Fatalf("last_error must not contain instruction: %q", got.LastError)
+	}
+}
+
+func TestScanOpenFailureKeepsDue(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{err: errors.New("boom")}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	it := insertDaily(t, s, "alice", "c1", "retry me please", due)
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RunningRunID != "" {
+		t.Fatalf("row: %+v", got)
+	}
+	if !got.NextRunAt.Equal(due) {
+		t.Fatalf("next_run_at changed: %v", got.NextRunAt)
+	}
+	if got.LastError == "" || contains(got.LastError, "retry me") {
+		t.Fatalf("last_error=%q", got.LastError)
+	}
+}
+
+func TestScanBusySkipsWithoutError(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{err: store.ErrConversationBusy}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	it := insertDaily(t, s, "alice", "c1", "wait for idle", due)
+
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatalf("busy tick must not fail the scan: %v", err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RunningRunID != "" {
+		t.Fatalf("row after busy: %+v", got)
+	}
+	if got.LastError != "" {
+		t.Fatalf("busy must not record last_error: %q", got.LastError)
+	}
+	const retry = 15 * time.Second
+	if got.NextRunAt.Before(now.Add(retry)) {
+		t.Fatalf("next_run_at must be pushed to the retry window: %v", got.NextRunAt)
+	}
+
+	opener.mu.Lock()
+	opener.err = nil
+	opener.mu.Unlock()
+	later := now.Add(2 * retry)
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, later); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID == "" {
+		t.Fatalf("expected a run after the conversation freed up: %+v", got)
+	}
+}
+
+func TestScanLeavesForeignPendingAlone(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "held pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("pending=%q", got.RunningRunID)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 0 {
+		t.Fatalf("Open calls=%d want 0 while pending held", opener.callCount())
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("running_run_id=%q want pending", got.RunningRunID)
+	}
+}
+
+func TestClearStalePendingThenScanOpens(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	insertDaily(t, s, "alice", "c1", "stale pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	later := now.Add(schedule.ClaimLease + time.Second)
+	if err := s.ClearStalePending(later); err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+}
+
+func TestScanCompletesFollowupOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "follow up",
+		Kind: schedule.KindFollowup, Status: schedule.StatusActive,
+		NextRunAt: now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d", opener.callCount())
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID == "" {
+		t.Fatalf("followup after scan=%+v", got)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("followup must run once, calls=%d", opener.callCount())
+	}
+}
+
+func TestSetRunningRunIDDoesNotOverwriteAnotherRun(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "owned run", now.Add(-time.Hour))
+	if err := s.SetRunningRunID(it.ID, "run_a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunningRunID(it.ID, "run_b"); err == nil {
+		t.Fatal("must not overwrite an existing run id")
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != "run_a" {
+		t.Fatalf("running_run_id=%q", got.RunningRunID)
+	}
+}
+
+func TestClaimLeaseProtectsFreshPending(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "fresh pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease / 2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("fresh claim must survive: %+v", got)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease + time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != "" || !got.ClaimExpiresAt.IsZero() {
+		t.Fatalf("expired claim must be released: %+v", got)
+	}
+}
+
+func TestSQLiteClaimLeaseProtectsFreshPending(t *testing.T) {
+	s := openSQLiteSchedule(t)
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "fresh pending", now.Add(-time.Hour))
+	if _, ok, err := s.ClaimDue(now); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease / 2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != schedule.ClaimPending {
+		t.Fatalf("fresh claim must survive: %+v", got)
+	}
+	if err := s.ClearStalePending(now.Add(schedule.ClaimLease + time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowByID(t, s, "alice", it.ID); got.RunningRunID != "" || !got.ClaimExpiresAt.IsZero() {
+		t.Fatalf("expired claim must be released: %+v", got)
+	}
+}
+
+func TestFailOpenDoesNotClearNonPendingRunID(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "in flight", now.Add(-time.Hour))
+	if err := s.SetRunningRunID(it.ID, "run_in_flight"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FailOpen(it.ID, "should not apply"); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != "run_in_flight" {
+		t.Fatalf("running_run_id=%q want run_in_flight", got.RunningRunID)
+	}
+	if got.LastError != "" {
+		t.Fatalf("last_error=%q want empty", got.LastError)
+	}
+}
+
+func TestScanClearsTerminalRunningRun(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "done run", now.Add(24*time.Hour))
+	if err := s.SetRunningRunID(it.ID, "run_old"); err != nil {
+		t.Fatal(err)
+	}
+	terminal := func(runID string) (string, bool, error) {
+		return "succeeded", runID == "run_old", nil
+	}
+	if err := schedule.Scan(s, meta, opener, terminal, now); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != "" {
+		t.Fatalf("running_run_id=%q want empty", got.RunningRunID)
+	}
+}
+
+func TestScanClearsTerminalRunOnCompletedOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	fire := now.Add(-time.Hour)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "once terminal",
+		Kind: "once", Timezone: "UTC", FireAt: fire, NextRunAt: fire,
+		Status: schedule.StatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID != "run_1" {
+		t.Fatalf("after first scan: %+v", got)
+	}
+	terminal := func(runID string) (string, bool, error) {
+		return "succeeded", runID == "run_1", nil
+	}
+	if err := schedule.Scan(s, meta, opener, terminal, now); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID != "" {
+		t.Fatalf("after terminal scan: %+v", got)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d want 1", opener.callCount())
+	}
+}
+
+type failCompleteOnceStore struct {
+	schedule.Store
+	failFirst bool
+}
+
+func (f *failCompleteOnceStore) CompleteOpen(id, runID, status string, nextRunAt time.Time) error {
+	if f.failFirst {
+		f.failFirst = false
+		return errors.New("persist failed")
+	}
+	return f.Store.CompleteOpen(id, runID, status, nextRunAt)
+}
+
+func TestScanOpenSuccessCompleteOpenFailureDoesNotReopen(t *testing.T) {
+	base := schedule.NewMemoryStore()
+	s := &failCompleteOnceStore{Store: base, failFirst: true}
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it := insertDaily(t, base, "alice", "c1", "persist", now.Add(-time.Minute))
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err == nil {
+		t.Fatal("expected CompleteOpen error")
+	}
+	got := rowByID(t, base, "alice", it.ID)
+	if got.RunningRunID != "run_1" {
+		t.Fatalf("running_run_id=%q want run_1 after failed persist", got.RunningRunID)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d after first scan", opener.callCount())
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d want still 1", opener.callCount())
+	}
+}
+
+func TestScanConcurrentClaimOpenOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	insertDaily(t, s, "alice", "c1", "race", now.Add(-time.Hour))
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = schedule.Scan(s, meta, opener, nonTerminalRunStatus, now)
+		}()
+	}
+	wg.Wait()
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d want 1", opener.callCount())
+	}
+}
+
+func TestScanConcurrentFullOpenOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	insertDaily(t, s, "alice", "c1", "race2", now.Add(-time.Hour))
+	var wg sync.WaitGroup
+	var scans atomic.Int32
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			scans.Add(1)
+			_ = schedule.Scan(s, meta, opener, nonTerminalRunStatus, now)
+		}()
+	}
+	wg.Wait()
+	if opener.callCount() != 1 {
+		t.Fatalf("Open calls=%d want 1", opener.callCount())
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(sub) > 0 && len(s) >= len(sub) && searchSub(s, sub)
+}
+
+func searchSub(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func TestScanRetriesFailedOnce(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "once retry",
+		Kind: "once", Timezone: "UTC", FireAt: now.Add(-time.Minute), NextRunAt: now.Add(-time.Minute),
+		Status: schedule.StatusActive, MaxRetries: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != "run_1" {
+		t.Fatalf("after open: %+v", got)
+	}
+
+	failed1 := func(runID string) (string, bool, error) {
+		return "failed", runID == "run_1", nil
+	}
+	opener.runID = "run_2"
+	retryAt := now.Add(2 * time.Minute)
+	if err := schedule.Scan(s, meta, opener, failed1, retryAt); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RunningRunID != "" || got.RetryCount != 1 {
+		t.Fatalf("after retry schedule: %+v", got)
+	}
+	if !got.NextRunAt.Equal(retryAt.Add(time.Minute)) {
+		t.Fatalf("next_run_at=%s want %s", got.NextRunAt, retryAt.Add(time.Minute))
+	}
+
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, got.NextRunAt); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.RunningRunID != "run_2" {
+		t.Fatalf("after retry open: %+v", got)
+	}
+
+	failed2 := func(runID string) (string, bool, error) {
+		return "failed", runID == "run_2", nil
+	}
+	if err := schedule.Scan(s, meta, opener, failed2, got.NextRunAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusCompleted || got.RunningRunID != "" || got.RetryCount != 0 {
+		t.Fatalf("after exhausted: %+v", got)
+	}
+	if !strings.Contains(got.LastError, "retries exhausted") {
+		t.Fatalf("last_error=%q", got.LastError)
+	}
+	if opener.callCount() != 2 {
+		t.Fatalf("Open calls=%d want 2", opener.callCount())
+	}
+}
+
+func TestScanRetriesFailedDailyRestoresCadence(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "daily retry",
+		Kind: "daily", Timezone: "UTC", TimeOfDay: "09:00", NextRunAt: now,
+		Status: schedule.StatusActive, MaxRetries: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	failed := func(runID string) (string, bool, error) {
+		return "failed", runID == "run_1", nil
+	}
+	opener.runID = "run_2"
+	retryAt := now.Add(2 * time.Minute)
+	if err := schedule.Scan(s, meta, opener, failed, retryAt); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RetryCount != 1 {
+		t.Fatalf("after retry schedule: %+v", got)
+	}
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, got.NextRunAt); err != nil {
+		t.Fatal(err)
+	}
+	succeeded := func(runID string) (string, bool, error) {
+		return "succeeded", runID == "run_2", nil
+	}
+	doneAt := got.NextRunAt.Add(time.Minute)
+	if err := schedule.Scan(s, meta, opener, succeeded, doneAt); err != nil {
+		t.Fatal(err)
+	}
+	got = rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusActive || got.RetryCount != 0 || got.LastError != "" {
+		t.Fatalf("after success: %+v", got)
+	}
+	want, _ := schedule.Next(schedule.Draft{Kind: "daily", Timezone: "UTC", TimeOfDay: "09:00"}, doneAt)
+	if !got.NextRunAt.Equal(want) {
+		t.Fatalf("next_run_at=%s want %s", got.NextRunAt, want)
+	}
+}
+
+func TestScheduleRetryIsConditionalOnRunID(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	it, err := s.Insert(schedule.Item{
+		OwnerID: "alice", ConversationID: "c1", Instruction: "x",
+		Kind: "once", Timezone: "UTC", FireAt: now, NextRunAt: now,
+		Status: schedule.StatusActive, MaxRetries: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunningRunID(it.ID, "run_1"); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := s.ScheduleRetry(it.ID, "run_1", 1, now.Add(time.Minute), "failed")
+	if err != nil || !ok {
+		t.Fatalf("first retry ok=%v err=%v", ok, err)
+	}
+	ok, err = s.ScheduleRetry(it.ID, "run_1", 2, now.Add(2*time.Minute), "failed")
+	if err != nil || ok {
+		t.Fatalf("second retry ok=%v err=%v want false", ok, err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.RetryCount != 1 || got.RunningRunID != "" {
+		t.Fatalf("row=%+v", got)
+	}
+}
+
+func TestScanKeepsPausedWhenInFlightRunEnds(t *testing.T) {
+	s := schedule.NewMemoryStore()
+	meta := &fakeMeta{owners: map[string]string{"c1": "alice"}}
+	opener := &fakeOpener{}
+	now := time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)
+	it := insertDaily(t, s, "alice", "c1", "pause me", now)
+	if err := schedule.Scan(s, meta, opener, nonTerminalRunStatus, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Pause("alice", it.ID); err != nil {
+		t.Fatal(err)
+	}
+	terminal := func(runID string) (string, bool, error) {
+		return "succeeded", runID == "run_1", nil
+	}
+	if err := schedule.Scan(s, meta, opener, terminal, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	got := rowByID(t, s, "alice", it.ID)
+	if got.Status != schedule.StatusPaused || got.RunningRunID != "" {
+		t.Fatalf("row=%+v want paused with running cleared", got)
+	}
+}

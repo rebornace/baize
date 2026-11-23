@@ -1,0 +1,867 @@
+package store
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/rebornace/baize/internal/eval/expect"
+)
+
+type Status string
+
+const (
+	StatusQueued       Status = "queued"
+	StatusRunning      Status = "running"
+	StatusSucceeded    Status = "succeeded"
+	StatusFailed       Status = "failed"
+	StatusWaitingHuman Status = "waiting_human"
+	StatusCancelled    Status = "cancelled"
+	// StatusRejected is the terminal state for a run a human declined at an
+	// approval gate. Unlike failed, it is an intentional user decision rather
+	// than an error.
+	StatusRejected Status = "rejected"
+)
+
+// Agent tool_binding values. Empty / "floor" keeps all enabled tools visible
+// (skill tools: are a DP-2a floor). "exclusive" exposes only tools listed on
+// currently activated skills (plus activate_skill).
+const (
+	ToolBindingFloor     = "floor"
+	ToolBindingExclusive = "exclusive"
+)
+
+type Agent struct {
+	ID          string   `json:"id"`
+	System      string   `json:"system"`
+	Skills      []string `json:"skills,omitempty"`
+	ToolBinding string   `json:"tool_binding,omitempty"`
+}
+
+func cloneAgent(a Agent) Agent {
+	if a.Skills != nil {
+		a.Skills = append([]string(nil), a.Skills...)
+	}
+	return a
+}
+
+// ConnectorTLS holds filesystem paths for outbound mTLS (client cert + optional CA).
+type ConnectorTLS struct {
+	CertFile string `json:"cert_file,omitempty"`
+	KeyFile  string `json:"key_file,omitempty"`
+	CAFile   string `json:"ca_file,omitempty"`
+}
+
+func connectorTLSConfigured(t ConnectorTLS) bool {
+	return t.CertFile != "" || t.KeyFile != "" || t.CAFile != ""
+}
+
+type Connector struct {
+	ID                   string        `json:"id"`
+	Type                 string        `json:"type"` // openapi, http, mcp
+	Spec                 string        `json:"spec"`
+	ImportFormat         string        `json:"import_format_detected,omitempty"`
+	BaseURL              string        `json:"base_url"`
+	ExecutionCallbackURL string        `json:"execution_callback_url,omitempty"`
+	RequireApproval      []string      `json:"require_approval,omitempty"`
+	RequireLogin         []string      `json:"require_login,omitempty"`
+	Auth                 ConnectorAuth `json:"auth,omitempty"`
+	MCP                  MCPConfig     `json:"mcp,omitempty"`
+	TLS                  ConnectorTLS  `json:"tls,omitempty"`
+	// CatalogRevision increments when a connector Apply produces a non-empty
+	// CatalogDiff (tool add/remove/change). Zero means never revised.
+	CatalogRevision int64 `json:"catalog_revision,omitempty"`
+}
+
+// ConnectorCatalogRevision is an append-only record of a catalog change.
+type ConnectorCatalogRevision struct {
+	ConnectorID string            `json:"connector_id"`
+	Revision    int64             `json:"revision"`
+	At          time.Time         `json:"at"`
+	DiffJSON    json.RawMessage   `json:"diff"` // CatalogDiff JSON
+	ToolHashes  map[string]string `json:"tool_hashes,omitempty"`
+}
+
+// MCPExportInvocation audits one MCP export tools/call (no Chat Run).
+type MCPExportInvocation struct {
+	ID              string    `json:"id"`
+	At              time.Time `json:"at"`
+	KeyID           string    `json:"key_id"`
+	IdentityID      string    `json:"identity_id"`
+	ToolName        string    `json:"tool_name"`
+	ConnectorID     string    `json:"connector_id,omitempty"`
+	ContractHash    string    `json:"contract_hash,omitempty"`
+	CatalogRevision int64     `json:"catalog_revision,omitempty"`
+	IsError         bool      `json:"is_error"`
+}
+
+type MCPConfig struct {
+	Transport        string            `json:"transport"`
+	Command          string            `json:"command,omitempty"`
+	Args             []string          `json:"args,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	URL              string            `json:"url,omitempty"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	ExportDBReadonly bool              `json:"export_db_readonly,omitempty"`
+	OAuth            *MCPOAuthConfig   `json:"oauth,omitempty"`
+}
+
+// MCPOAuthConfig holds OAuth settings and sealed tokens on an MCP connector.
+type MCPOAuthConfig struct {
+	Status                string `json:"status,omitempty"`
+	ClientID              string `json:"client_id,omitempty"`
+	ClientSecretSealed    string `json:"client_secret,omitempty"`
+	TokenBundleSealed     string `json:"token_bundle,omitempty"`
+	AuthorizationEndpoint string `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint         string `json:"token_endpoint,omitempty"`
+	RegistrationEndpoint  string `json:"registration_endpoint,omitempty"`
+	ResourceMetadataURL   string `json:"resource_metadata_url,omitempty"`
+}
+
+// Tool source constants describing how a tool row entered the catalog.
+const (
+	ToolSourceSpec   = "spec"
+	ToolSourceExtra  = "extra"
+	ToolSourcePlugin = "plugin"
+	ToolSourceMCP    = "mcp"
+)
+
+// Tool is a single row in the connector tool catalog.
+type Tool struct {
+	ConnectorID       string         `json:"connector_id"`
+	Name              string         `json:"name"`
+	Source            string         `json:"source"`
+	Enabled           bool           `json:"enabled"`
+	Title             string         `json:"title,omitempty"`
+	Description       string         `json:"description,omitempty"`
+	DescriptionCustom bool           `json:"description_custom"`
+	Method            string         `json:"method,omitempty"`
+	Path              string         `json:"path,omitempty"`
+	InputSchema       map[string]any `json:"input_schema,omitempty"`
+	RequireLogin      bool           `json:"require_login"`
+	RequireApproval   bool           `json:"require_approval"`
+	OperationID       string         `json:"operation_id,omitempty"`
+	Export            string         `json:"export,omitempty"`
+	ReadOnlyHint      *bool          `json:"read_only_hint,omitempty"`
+	DestructiveHint   *bool          `json:"destructive_hint,omitempty"`
+}
+
+// ConnectorAuth stores the connector auth configuration shape (mode + references),
+// not resolved secrets. Mirrors internal/authcred.Config / internal/config Auth.
+type ConnectorAuth struct {
+	Mode         string            `json:"mode,omitempty"`
+	Static       StaticAuth        `json:"static,omitempty"`
+	Passthrough  PassThruAuth      `json:"passthrough,omitempty"`
+	VaultRef     VaultRefAuth      `json:"vault_ref,omitempty"`
+	Capture      CaptureAuth       `json:"capture,omitempty"`
+	LoginSignals LoginSignalsAuth  `json:"login_signals,omitempty"`
+	HostedLogin  HostedLoginConfig `json:"hosted_login,omitempty"`
+}
+
+type CaptureAuth struct {
+	ToolNameGlob   string   `json:"tool_name_glob,omitempty"`
+	TokenJSONPaths []string `json:"token_json_paths,omitempty"`
+	LabelJSONPaths []string `json:"label_json_paths,omitempty"`
+	HeaderTemplate string   `json:"header_template,omitempty"`
+	DefaultScheme  string   `json:"default_scheme,omitempty"`
+}
+
+// LoginSignalsAuth configures how tool errors are recognized as auth failures
+// for a connector (remap to login_required). Empty means built-in 401/403 heuristics.
+type LoginSignalsAuth struct {
+	HTTPStatuses           []int    `json:"http_statuses,omitempty" yaml:"http_statuses,omitempty"`
+	HTTPStatusesNeedSignal []int    `json:"http_statuses_need_signal,omitempty" yaml:"http_statuses_need_signal,omitempty"`
+	BodyCodePath           string   `json:"body_code_path,omitempty" yaml:"body_code_path,omitempty"`
+	BodyCodes              []string `json:"body_codes,omitempty" yaml:"body_codes,omitempty"`
+	MessageContains        []string `json:"message_contains,omitempty" yaml:"message_contains,omitempty"`
+}
+
+type StaticAuth struct {
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+type PassThruAuth struct {
+	Headers []string `json:"headers,omitempty"`
+}
+
+type VaultRefAuth struct {
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+type Event struct {
+	Type      string         `json:"type"`
+	Timestamp time.Time      `json:"timestamp"`
+	Data      map[string]any `json:"data,omitempty"`
+}
+
+// WebhookConfig is per-run webhook delivery overrides. Stored in webhook_json;
+// never echoed on GET /v0/runs/{id} (json:"-").
+type WebhookConfig struct {
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// SettingKeyEventsWebhook is the settings KV key for global events webhook config.
+const SettingKeyEventsWebhook = "events_webhook"
+
+// SettingKeyInboxChannels is the settings KV key for inbox channel configuration.
+const SettingKeyInboxChannels = "inbox_channels"
+
+// SettingKeyRuntimeSettings is the settings KV key for hot-reloadable runtime
+// settings (engine knobs + control-plane credential overrides).
+const SettingKeyRuntimeSettings = "runtime_settings"
+
+// SettingKeyToolRetrieval persists optional dense Tool-RAG embed preference
+// (Ollama-backed embedding enablement from the settings UI).
+const SettingKeyToolRetrieval = "tool_retrieval"
+
+// SettingKeySystemOneEnable persists optional System One decision-service
+// one-click enablement (local Ollama tev1 or API) from the settings UI.
+const SettingKeySystemOneEnable = "systemone_enable"
+
+// SettingKeyMCPExportAllowlistMigrated marks one-shot backfill of MCP export
+// key allowlists from legacy guard-only export rules.
+const SettingKeyMCPExportAllowlistMigrated = "mcp_export_allowlist_migrated"
+
+// SettingKeyConnectorGroups persists operator-edited connector groups (KV
+// overlay over YAML baseline). Empty / missing → use YAML.
+const SettingKeyConnectorGroups = "connector_groups"
+
+// WebhookOutboxMaxAttempts is the fixed retry cap for outbound webhook deliveries.
+const WebhookOutboxMaxAttempts = 5
+
+// WebhookOutboxStatus is the lifecycle state of an outbound webhook delivery row.
+type WebhookOutboxStatus string
+
+const (
+	WebhookOutboxPending   WebhookOutboxStatus = "pending"
+	WebhookOutboxDelivered WebhookOutboxStatus = "delivered"
+	WebhookOutboxDead      WebhookOutboxStatus = "dead"
+)
+
+// WebhookOutboxKind distinguishes event payloads from terminal run.ended posts.
+type WebhookOutboxKind string
+
+const (
+	WebhookOutboxKindEvent       WebhookOutboxKind = "event"
+	WebhookOutboxKindEnded       WebhookOutboxKind = "ended"
+	WebhookOutboxKindCatalogDiff WebhookOutboxKind = "catalog_diff"
+)
+
+// WebhookOutboxEntry is a durable outbound webhook delivery attempt.
+type WebhookOutboxEntry struct {
+	ID          string
+	DeliveryKey string
+	RunID       string
+	Kind        WebhookOutboxKind
+	EventIndex  int
+	PayloadJSON []byte
+	TargetURL   string
+	HeadersJSON []byte
+	Attempt     int
+	MaxAttempts int
+	Status      WebhookOutboxStatus
+	LastError   string
+	NextRetryAt time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ErrWebhookOutboxNotFound is returned when a webhook outbox row is missing.
+var ErrWebhookOutboxNotFound = errors.New("webhook outbox entry not found")
+
+// WebhookOutboxDeliveryKey builds the deduplication key for a logical delivery.
+func WebhookOutboxDeliveryKey(runID string, kind WebhookOutboxKind, eventIndex int) string {
+	return fmt.Sprintf("%s:%s:%d", runID, kind, eventIndex)
+}
+
+const ChannelOutboxMaxAttempts = 5
+
+type ChannelOutboxStatus string
+
+const (
+	ChannelOutboxPending   ChannelOutboxStatus = "pending"
+	ChannelOutboxDelivered ChannelOutboxStatus = "delivered"
+	ChannelOutboxDead      ChannelOutboxStatus = "dead"
+)
+
+type ChannelOutboxKind string
+
+const (
+	ChannelOutboxKindText  ChannelOutboxKind = "text"
+	ChannelOutboxKindMedia ChannelOutboxKind = "media"
+)
+
+// PendingAttachment is one file carried by a busy-merge batch. Bytes live in
+// the batch row so a restart can resume without a separate blob lifecycle.
+type PendingAttachment struct {
+	Name string `json:"name,omitempty"`
+	MIME string `json:"mime,omitempty"`
+	Data []byte `json:"data,omitempty"`
+}
+
+// ChannelPending is one busy-merge batch (channel runtime) persisted so a
+// restart can resume it. BatchID distinguishes a claimed batch from messages
+// appended while its follow-up run is starting.
+type ChannelPending struct {
+	ConversationID string
+	BatchID        string
+	Source         string
+	Account        string
+	PeerID         string
+	Text           string
+	Attachments    []PendingAttachment
+	Truncated      bool
+	UpdatedAt      time.Time
+}
+
+type ChannelOutboxEntry struct {
+	ID             string
+	DeliveryKey    string
+	Channel        string
+	Kind           ChannelOutboxKind
+	PeerID         string
+	ConversationID string
+	Account        string
+	RunID          string
+	PayloadJSON    []byte
+	BlobKeysJSON   []byte
+	TargetURL      string
+	Attempt        int
+	MaxAttempts    int
+	Status         ChannelOutboxStatus
+	LastError      string
+	NextRetryAt    time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+var ErrChannelOutboxNotFound = errors.New("channel outbox entry not found")
+
+// ChannelOutboxDeliveryKey builds a unique outbox idempotency key.
+// uniqueID must be unique per outbound call (typically a UUID). It must not be a
+// process-local monotonic sequence: those reset on restart and collide with
+// delivered history under PutChannelOutboxIfAbsent (pending|delivered active).
+func ChannelOutboxDeliveryKey(channel, conversationID string, kind ChannelOutboxKind, runID, uniqueID string) string {
+	if runID == "" {
+		runID = "_"
+	}
+	return fmt.Sprintf("%s:%s:%s:%s:%s", channel, conversationID, kind, runID, uniqueID)
+}
+
+// InboxDeliveryTTL is the idempotency retention window. GetInboxDelivery treats
+// rows older than this as misses; PutInboxDelivery may overwrite expired rows.
+const InboxDeliveryTTL = 24 * time.Hour
+
+// ErrInboxDeliveryExists is returned by PutInboxDelivery when a fresh row
+// already occupies the (channel_id, idempotency_key) slot.
+var ErrInboxDeliveryExists = errors.New("inbox delivery already exists")
+
+// ErrConversationBusy is returned when a conversation already has an active
+// Run (queued / running / waiting_human). Callers should treat it as a
+// retryable "busy" state, not as a failed run.
+var ErrConversationBusy = errors.New("conversation busy")
+
+// ErrNoPriorConversationRun is returned when a conversation has no persisted runs.
+var ErrNoPriorConversationRun = errors.New("no prior run for conversation")
+
+// ErrMCPExportIdentityNotFound is returned when an MCP export identity row is missing.
+var ErrMCPExportIdentityNotFound = errors.New("mcp export identity not found")
+
+// ErrMCPExportKeyNotFound is returned when an MCP export key row is missing.
+var ErrMCPExportKeyNotFound = errors.New("mcp export key not found")
+
+// ErrMCPExportKeyHashExists is returned when InsertMCPExportKey hits a duplicate key_hash.
+var ErrMCPExportKeyHashExists = errors.New("mcp export key hash already exists")
+
+// InboxDelivery records an accepted inbound webhook delivery for idempotency.
+type InboxDelivery struct {
+	ChannelID, IdempotencyKey, DeliveryID, RunID, BodyHash string
+	CreatedAt                                              time.Time
+}
+
+// InboxDeliveryFresh reports whether d is within InboxDeliveryTTL of now.
+func InboxDeliveryFresh(d InboxDelivery, now time.Time) bool {
+	if d.CreatedAt.IsZero() {
+		return false
+	}
+	return now.Sub(d.CreatedAt) < InboxDeliveryTTL
+}
+
+type Run struct {
+	ID             string    `json:"id"`
+	AgentID        string    `json:"agent_id"`
+	Input          string    `json:"input"`
+	Status         Status    `json:"status"`
+	Output         string    `json:"output,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	ConversationID string    `json:"conversation_id,omitempty"`
+	IdentityID     string    `json:"identity_id,omitempty"`
+	ModelProfileID string    `json:"model_profile_id,omitempty"`
+	// ThinkingLevel is an optional per-run override (off|low|medium|high).
+	// Empty means use the model profile default.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
+	// PassthroughHeaders carries per-run passthrough auth headers. They are
+	// never serialized to JSON (json:"-") so they cannot leak via GET /runs/{id}
+	// or events. SQLite persists them in a dedicated passthrough_json column.
+	PassthroughHeaders map[string]string `json:"-"`
+	// WebhookConfig carries per-run webhook URL/header overrides for outbound
+	// event delivery. Never serialized to JSON (json:"-").
+	WebhookConfig *WebhookConfig `json:"-"`
+	// LeaseUntil is the worker lease deadline for an in-flight run. nil = no
+	// lease. Never serialized to JSON (json:"-"). Used by queue reconciliation.
+	LeaseUntil *time.Time `json:"-"`
+	// ParentRunID links a depth-1 group-scoped child to its parent (L2).
+	ParentRunID string `json:"parent_run_id,omitempty"`
+	// Depth is 0 for normal runs and 1 for group-scoped children.
+	Depth int `json:"depth,omitempty"`
+	// GroupID is the connector group for a scoped child run.
+	GroupID string `json:"group_id,omitempty"`
+	// SpawnMode is readonly|readwrite for scoped children.
+	SpawnMode string `json:"spawn_mode,omitempty"`
+	// Origin marks who opened the run: manual (default) or scheduled.
+	Origin string `json:"origin,omitempty"`
+}
+
+// reconcileGrace is how long a queued/running run may go without a lease
+// before crash reconciliation considers it orphaned. New runs are not
+// reconciled until their created_at is older than this window.
+const reconcileGrace = 30 * time.Second
+
+// CreateRunInput is the input for creating a new run.
+type CreateRunInput struct {
+	AgentID            string
+	Input              string
+	ConversationID     string
+	IdentityID         string
+	ModelProfileID     string
+	ThinkingLevel      string // empty = profile default
+	PassthroughHeaders map[string]string
+	WebhookConfig      *WebhookConfig
+	ParentRunID        string
+	Depth              int
+	GroupID            string
+	SpawnMode          string
+	Origin             string
+}
+
+// HITL kinds. Empty / "approval" = tool approval; "login" = wait for browser login or skip.
+const (
+	HITLKindApproval     = "approval"
+	HITLKindLogin        = "login"
+	HITLKindWaitingChild = "waiting_child" // parent paused until child receipt
+)
+
+// Spawn modes for group-scoped child runs.
+const (
+	SpawnModeReadonly  = "readonly"
+	SpawnModeReadwrite = "readwrite"
+)
+
+// Run origins.
+const (
+	RunOriginManual    = "manual"
+	RunOriginScheduled = "scheduled"
+)
+
+type HITLPayload struct {
+	Prompt      string         `json:"prompt"`
+	ToolName    string         `json:"tool_name"`
+	Arguments   map[string]any `json:"arguments"`
+	Kind        string         `json:"kind,omitempty"`         // approval (default) | login | waiting_child
+	ConnectorID string         `json:"connector_id,omitempty"` // login waits: which system
+	ChildRunID  string         `json:"child_run_id,omitempty"` // waiting_child: scoped child
+	ToolCallID  string         `json:"tool_call_id,omitempty"` // waiting_child: spawn tool_call id
+	// WaitingSince is when this wait began. Older rows omit it; callers fall
+	// back to the latest hitl.waiting event timestamp.
+	WaitingSince time.Time `json:"waiting_since,omitempty"`
+	// Workflow carries the resumable workflow state while a step waits for
+	// approval or login. Older rows predate it and are not resumable.
+	Workflow *WorkflowState `json:"workflow,omitempty"`
+}
+
+// WorkflowState is persisted inside HITLPayload while a workflow step waits
+// for approval or login. Tree is the rendered input plus completed step results.
+// RemainingMS carries the active workflow budget at pause time; nil means the
+// workflow had no total timeout (or the row predates the field).
+type WorkflowState struct {
+	Skill       string         `json:"skill"`
+	StepIndex   int            `json:"step_index"`
+	StepID      string         `json:"step_id,omitempty"`
+	Tree        map[string]any `json:"tree,omitempty"`
+	RemainingMS *int64         `json:"remaining_ms,omitempty"`
+}
+
+// HITLCommentSkipLogin is sent with reject to skip login for the connector and continue.
+const HITLCommentSkipLogin = "skip_login"
+
+// HITLCommentSkipStep skips only the current login pause (and that tool for this run),
+// keeping other tools on the same connector available.
+const HITLCommentSkipStep = "skip_step"
+
+// HITLCommentAbortLogin ends the run without continuing ReAct.
+const HITLCommentAbortLogin = "abort_login"
+
+// MCPExportIdentity is a persisted auth profile for MCP export callers.
+type MCPExportIdentity struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Scheme    string            `json:"scheme,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// DefaultContextTokens is the canonical context window applied when a profile
+// leaves context_tokens unset or non-positive (spec §6.1: never store 0).
+const DefaultContextTokens = 128000
+
+// Auto-routing capability tiers for ModelProfile.AutoTier.
+const (
+	AutoTierLight    = "light"    // fast / cheap, simple chat
+	AutoTierStandard = "standard" // default general-purpose tier
+	AutoTierPower    = "power"    // strong reasoning / hard multi-step tasks
+)
+
+// NormalizeAutoTier maps any raw tier string to one of the canonical tiers,
+// defaulting unknown/empty values to AutoTierStandard.
+func NormalizeAutoTier(t string) string {
+	switch t {
+	case AutoTierLight, AutoTierPower:
+		return t
+	default:
+		return AutoTierStandard
+	}
+}
+
+// Thinking level / dialect string values for ModelProfile (mirrored from llm;
+// store must not import llm to avoid a cycle).
+const (
+	ThinkingOff    = "off"
+	ThinkingLow    = "low"
+	ThinkingMedium = "medium"
+	ThinkingHigh   = "high"
+
+	ThinkingDialectAuto     = "auto"
+	ThinkingDialectOpenAI   = "openai"
+	ThinkingDialectDeepSeek = "deepseek"
+	ThinkingDialectQwen     = "qwen"
+	ThinkingDialectOmit     = "omit"
+)
+
+// SyncProfileThinking normalizes ThinkingLevel / ThinkingDialect and keeps
+// DisableThinking in sync for legacy clients. Call at the start of every Upsert.
+func SyncProfileThinking(p *ModelProfile) {
+	level := strings.ToLower(strings.TrimSpace(p.ThinkingLevel))
+	switch level {
+	case ThinkingOff, ThinkingLow, ThinkingMedium, ThinkingHigh:
+		p.ThinkingLevel = level
+		p.DisableThinking = level == ThinkingOff
+	default:
+		if p.DisableThinking {
+			p.ThinkingLevel = ThinkingOff
+		} else {
+			p.ThinkingLevel = ThinkingMedium
+		}
+	}
+
+	dialect := strings.ToLower(strings.TrimSpace(p.ThinkingDialect))
+	switch dialect {
+	case ThinkingDialectAuto, ThinkingDialectOpenAI, ThinkingDialectDeepSeek, ThinkingDialectQwen, ThinkingDialectOmit:
+		p.ThinkingDialect = dialect
+	default:
+		p.ThinkingDialect = ThinkingDialectAuto
+	}
+}
+
+// ModelProfile is a named, selectable LLM configuration. APIKey is stored in
+// plaintext locally (same trust tier as a Postgres DSN password) and is never
+// returned verbatim by the API (see RedactAPIKey).
+type ModelProfile struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Provider        string `json:"provider"`
+	BaseURL         string `json:"base_url"`
+	Model           string `json:"model"`
+	APIKey          string `json:"api_key,omitempty"`
+	APIKeyEnv       string `json:"api_key_env,omitempty"`
+	DisableThinking bool   `json:"disable_thinking"`
+	ThinkingLevel   string `json:"thinking_level"`
+	ThinkingDialect string `json:"thinking_dialect"`
+	SupportsVision  bool   `json:"supports_vision"`
+	ContextTokens   int    `json:"context_tokens"`
+	// AutoTier classifies the model for task-aware Auto routing:
+	// "light" (fast/cheap), "standard" (default), "power" (strong reasoning).
+	// Empty/unknown values normalize to "standard".
+	AutoTier string `json:"auto_tier"`
+	// FallbackProfileIDs is an ordered list of other profile ids tried when
+	// this profile's LLM call fails after retries are exhausted.
+	FallbackProfileIDs []string  `json:"fallback_profile_ids,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// MCPExportIdentitySlot binds one export identity to a connector (and optional role).
+// Empty ConnectorID is the legacy/default slot used when no connector-specific
+// slot matches.
+type MCPExportIdentitySlot struct {
+	ConnectorID string `json:"connector_id,omitempty"`
+	Role        string `json:"role,omitempty"`
+	IdentityID  string `json:"identity_id"`
+}
+
+// MCPExportKey is a hashed API key bound to one or more MCP export identities.
+// IdentityID remains the default/legacy binding; IdentitySlots holds per-connector
+// (and optional role) overrides. Empty IdentitySlots are normalized from IdentityID.
+type MCPExportKey struct {
+	ID            string                  `json:"id"`
+	Name          string                  `json:"name"`
+	IdentityID    string                  `json:"identity_id"`
+	IdentitySlots []MCPExportIdentitySlot `json:"identity_slots,omitempty"`
+	KeyHash       string                  `json:"-"`
+	Prefix        string                  `json:"prefix"`
+	AllowedTools  []string                `json:"allowed_tools"`
+	RevokedAt     *time.Time              `json:"revoked_at,omitempty"`
+	CreatedAt     time.Time               `json:"created_at"`
+}
+
+// Store persists agents, connectors, runs, events, and HITL payloads.
+type Store interface {
+	UpsertAgent(Agent)
+	GetAgent(id string) (Agent, error)
+	ListAgents() []Agent
+	UpsertConnector(Connector)
+	GetConnector(id string) (Connector, error)
+	DeleteConnector(id string) error
+	CreateRun(in CreateRunInput) (*Run, error)
+	// CreateRunIfConversationIdle atomically rejects a new run while the
+	// conversation has an active one. Postgres serializes replicas with an
+	// advisory transaction lock so the idle check and insert are atomic.
+	CreateRunIfConversationIdle(in CreateRunInput) (*Run, error)
+	GetRun(id string) (*Run, error)
+	// ListChildRuns returns depth-1 children of parentRunID (newest last).
+	ListChildRuns(parentRunID string) ([]*Run, error)
+	UpdateRun(id string, status Status, output, errMsg string) error
+	// LeaseRun atomically acquires a worker lease for a queued/running/waiting_human
+	// run whose lease is absent or expired. Returns acquired=false when another
+	// worker holds a live lease or the run is terminal.
+	LeaseRun(id string, ttl time.Duration) (acquired bool, err error)
+	// HeartbeatRun extends the lease of a run the caller is executing.
+	HeartbeatRun(id string, ttl time.Duration) (ok bool, err error)
+	// ClearRunLease releases the lease after a run reaches a terminal state.
+	ClearRunLease(id string) error
+	// ListRunsForReconcile returns queued/running runs whose lease is expired or
+	// whose lease was never set past the startup grace window (oldest first).
+	ListRunsForReconcile(limit int) ([]*Run, error)
+	AppendEvent(runID string, ev Event) error
+	// UpsertStreamingDelta replaces the latest llm.content.delta / llm.thinking.delta
+	// for the same turn, or appends when none exists. Returns the 0-based event index
+	// (for SSE). Keeps streaming UX without stacking one cumulative snapshot per tick.
+	UpsertStreamingDelta(runID string, ev Event) (index int, err error)
+	ListEvents(runID string) ([]Event, error)
+	SetHITL(runID string, payload *HITLPayload) error
+	GetHITL(runID string) (*HITLPayload, error)
+	// BeginHITLResume atomically moves waiting_human -> running so only one
+	// replica processes an approval/rejection. False means another decision or
+	// expiry already won.
+	BeginHITLResume(runID string) (bool, error)
+	// ReleaseHITLResume puts a run back to waiting_human when decision
+	// processing failed before settling it.
+	ReleaseHITLResume(runID string) error
+	// ExpireRunIfWaiting atomically moves waiting_human -> cancelled.
+	ExpireRunIfWaiting(runID, reason string) (bool, error)
+	SetPassthroughHeaders(runID string, headers map[string]string) error
+
+	HasActiveRun(conversationID string) (bool, error)
+	// ListRunsByConversationSince returns runs with ConversationID == id and
+	// CreatedAt >= since, ascending by CreatedAt, capped by limit (limit<=0 → 50).
+	ListRunsByConversationSince(conversationID string, since time.Time, limit int) ([]*Run, error)
+	// LatestConversationRun returns the newest run for the conversation by created_at.
+	LatestConversationRun(conversationID string) (*Run, error)
+	// WaitingHumanRun returns the newest waiting_human run for the conversation,
+	// or (nil, nil) when none.
+	WaitingHumanRun(conversationID string) (*Run, error)
+	// ListWaitingHumanRuns returns waiting_human runs oldest first, capped by
+	// limit (limit<=0 → 500). Used by HITL expiry and startup reconciliation.
+	ListWaitingHumanRuns(limit int) ([]*Run, error)
+
+	ListConnectors() []Connector
+	ListTools() []Tool
+	ListToolsByConnector(id string) []Tool
+	GetTool(name string) (Tool, error)
+	UpsertTool(Tool)
+	DeleteTool(name string) error
+	ReplaceConnectorTools(connectorID string, tools []Tool)
+
+	GetSetting(key string) (jsonRaw []byte, ok bool, err error)
+	UpsertSetting(key string, jsonRaw []byte) error
+
+	GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error)
+	PutInboxDelivery(d InboxDelivery) error
+	UpdateInboxDelivery(channelID, idempotencyKey, runID string) error
+	DeleteInboxDelivery(channelID, idempotencyKey string) error
+	GetInboxThread(channelID, externalID string) (conversationID string, ok bool, err error)
+	PutInboxThread(channelID, externalID, conversationID string) error
+
+	// Durable webhook inbound jobs: the handler acks after persisting, and a
+	// worker resolves attachments / creates the run with retries.
+	PutWebhookInboundJobIfAbsent(job WebhookInboundJob) (created bool, id string, err error)
+	// ClaimWebhookInboundJob atomically leases one due pending job to workerID.
+	// An expired lease can be reclaimed by another replica after a crash.
+	ClaimWebhookInboundJob(now time.Time, workerID string, lease time.Duration) (WebhookInboundJob, bool, error)
+	ListWebhookInboundJobsDue(now time.Time, limit int) ([]WebhookInboundJob, error)
+	// ListWebhookInboundJobs filters by channel ("" = all) and statuses
+	// (empty = all), newest first, capped by limit.
+	ListWebhookInboundJobs(channel string, statuses []WebhookInboundStatus, limit int) ([]WebhookInboundJob, error)
+	GetWebhookInboundJob(id string) (WebhookInboundJob, bool, error)
+	// ResetWebhookInboundJob re-queues a dead job (attempt 0, pending, due now).
+	ResetWebhookInboundJob(id string) error
+	UpdateWebhookInboundJob(job WebhookInboundJob) error
+	DeleteWebhookInboundJobsBefore(cutoff time.Time) error
+
+	PutWebhookOutboxIfAbsent(entry WebhookOutboxEntry) (created bool, id string, err error)
+	ListWebhookOutboxDue(now time.Time, limit int) ([]WebhookOutboxEntry, error)
+	ListWebhookOutbox(statuses []WebhookOutboxStatus, limit int) ([]WebhookOutboxEntry, error)
+	GetWebhookOutbox(id string) (WebhookOutboxEntry, error)
+	UpdateWebhookOutbox(entry WebhookOutboxEntry) error
+	ResetWebhookOutboxRetry(id string) error
+
+	// Busy-merge text batches survive restarts. List is ordered oldest first.
+	UpsertChannelPending(p ChannelPending) error
+	ListChannelPending(source string) ([]ChannelPending, error)
+	DeleteChannelPending(conversationID, batchID string) error
+
+	PutChannelOutboxIfAbsent(entry ChannelOutboxEntry) (created bool, id string, err error)
+	ListChannelOutboxDue(now time.Time, limit int) ([]ChannelOutboxEntry, error)
+	ListChannelOutbox(channel string, statuses []ChannelOutboxStatus, limit int) ([]ChannelOutboxEntry, error)
+	GetChannelOutbox(id string) (ChannelOutboxEntry, error)
+	UpdateChannelOutbox(entry ChannelOutboxEntry) error
+	ResetChannelOutboxRetry(id string) error
+
+	UpsertMCPExportIdentity(MCPExportIdentity) error
+	GetMCPExportIdentity(id string) (MCPExportIdentity, error)
+	ListMCPExportIdentities() ([]MCPExportIdentity, error)
+	DeleteMCPExportIdentity(id string) error
+	InsertMCPExportKey(MCPExportKey) error
+	UpdateMCPExportKey(MCPExportKey) error
+	GetMCPExportKey(id string) (MCPExportKey, error)
+	ListMCPExportKeys(identityID string) ([]MCPExportKey, error)
+	RevokeMCPExportKey(id string) error
+	LookupMCPExportKeyByHash(hash string) (*MCPExportKey, error)
+
+	UpsertModelProfile(p ModelProfile) (ModelProfile, error)
+	GetModelProfile(id string) (ModelProfile, error)
+	ListModelProfiles() ([]ModelProfile, error)
+	DeleteModelProfile(id string) error
+
+	PutCatalogRevision(r ConnectorCatalogRevision) error
+	ListCatalogRevisions(connectorID string, limit int) ([]ConnectorCatalogRevision, error)
+
+	PutMCPExportInvocation(inv MCPExportInvocation) error
+	ListMCPExportInvocations(limit int) ([]MCPExportInvocation, error)
+
+	// ListRunsCreatedBetween returns runs with created_at in [from, to], optionally
+	// filtered by status (empty status = no filter), newest first. limit≤0 → 100; cap 500.
+	ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error)
+	UpsertEvalCase(c EvalCase) error
+	GetEvalCase(id string) (EvalCase, error)
+	ListEvalCases(limit int) ([]EvalCase, error)
+	DeleteEvalCase(id string) error
+	FindEvalCaseBySourceRun(runID string) (EvalCase, bool, error)
+}
+
+// EvalCaseStatus is draft (incomplete expectations) or confirmed (ready to score).
+type EvalCaseStatus string
+
+const (
+	EvalCaseDraft     EvalCaseStatus = "draft"
+	EvalCaseConfirmed EvalCaseStatus = "confirmed"
+)
+
+// EvalArgContains requires a tool call whose args contain a substring.
+type EvalArgContains struct {
+	Tool   string `json:"tool"`
+	Substr string `json:"substr"`
+}
+
+// EvalExpectState is a generic expectation for trajectory state scoring.
+// Fields maps a dot path (array segments are numeric indexes) to an op/value
+// match; a bare scalar is exact equality.
+type EvalExpectState struct {
+	Fields map[string]expect.Field `json:"fields"`
+}
+
+// EvalCase is a persisted evidence-eval corpus row with a frozen events snapshot.
+type EvalCase struct {
+	ID                string
+	SourceRunID       string
+	Status            EvalCaseStatus
+	Protocol          string
+	Input             string
+	RequiredReads     []string
+	Consequential     []string
+	ExpectConseqAny   []string
+	Chain             []EvalChainLink
+	ForbidTools       []string
+	ArgContains       []EvalArgContains
+	ExpectState       []EvalExpectState
+	StateSnapshotJSON []byte // raw {"records":[...]}; optional; legacy tickets accepted
+	EventsJSON        []byte
+	RunStatusAtIngest string
+	LastScorePass     *bool
+	LastScoreCodes    []string
+	LastScoreNotes    string
+	LastScoredAt      *time.Time
+	HumanAgree        *bool
+	HumanNote         string
+	CalibratedAt      *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// EvalChainLink is an ordered tool constraint for evidence scoring.
+type EvalChainLink struct {
+	After  string `json:"after"`
+	Before string `json:"before"`
+}
+
+// ErrEvalCaseNotFound is returned when an eval case row is missing.
+var ErrEvalCaseNotFound = errors.New("eval case not found")
+
+const evalListDefaultLimit = 100
+const evalListMaxLimit = 500
+
+const conversationRunsDefaultLimit = 50
+
+const waitingRunsDefaultLimit = 500
+const waitingRunsMaxLimit = 1000
+
+func normalizeWaitingRunsLimit(limit int) int {
+	if limit <= 0 {
+		return waitingRunsDefaultLimit
+	}
+	if limit > waitingRunsMaxLimit {
+		return waitingRunsMaxLimit
+	}
+	return limit
+}
+
+func normalizeConversationRunsLimit(limit int) int {
+	if limit <= 0 {
+		return conversationRunsDefaultLimit
+	}
+	return limit
+}
+
+func normalizeEvalListLimit(limit int) int {
+	if limit <= 0 {
+		return evalListDefaultLimit
+	}
+	if limit > evalListMaxLimit {
+		return evalListMaxLimit
+	}
+	return limit
+}

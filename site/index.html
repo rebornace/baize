@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>白泽 Baize — 团队 AI 助手</title>
+  <meta name="description" content="白泽：挂在现有业务旁边的团队 AI 助手。读接口文档、调用已有系统、重要写操作可先审批。手机可遥控操作台或自绘界面。">
+  <meta property="og:title" content="白泽 Baize">
+  <meta property="og:description" content="挂在现有业务旁边：聊天、调系统、重要操作等人确认。">
+  <meta property="og:image" content="assets/baize-banner.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,420;12..96,550;12..96,600;12..96,650&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-media" aria-hidden="true">
+      <img src="assets/baize-banner.jpg" alt="" width="1920" height="1080">
+    </div>
+    <div class="wrap top">
+      <nav class="lang" aria-label="语言">
+        <a href="./" aria-current="page">中文</a>
+        <a href="en/">English</a>
+      </nav>
+    </div>
+    <div class="wrap hero-copy">
+      <h1 class="brand">白泽<span>Baize</span></h1>
+      <p class="lede">挂在现有业务旁边的团队 AI 助手：聊天、调系统，重要写操作可先让人确认。</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">下载安装包</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section wrap" id="capabilities">
+      <h2>业务代码通常不用改</h2>
+      <p class="support">有接口文档就能让助手调用已有系统。过程在网页操作台可见，写操作可停住等人批准。</p>
+      <ul class="feature-list">
+        <li>
+          <h3>接口文档变成可调用能力</h3>
+          <p>导入常见接口文档后，助手按接口办事；文档不全时可用小服务或回调你们自己的地址。</p>
+        </li>
+        <li>
+          <h3>建单、改状态可先审批</h3>
+          <p>敏感写操作在操作台卡片上批准或驳回后再执行，过程可追溯。</p>
+        </li>
+        <li>
+          <h3>操作台、来信、消息共用一套流程</h3>
+          <p>审批、记忆和对外回复共用。正式支持个人微信；飞书、钉钉有示例。</p>
+        </li>
+        <li>
+          <h3>对方要登录也能接</h3>
+          <p>浏览器完成登录，密码不经大模型。已接能力可提供给 Cursor 等客户端；过期打开返回的登录链接。</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section wrap phone" id="mobile">
+      <h2>手机也能用</h2>
+      <p class="support">两条路互不替代：遥控完整操作台，或把精简对话引擎编进你自己的 App。</p>
+      <table class="path-table">
+        <tbody>
+          <tr>
+            <th scope="row">遥控远端操作台</th>
+            <td>浏览器打开可达的 <code>/ui/</code>，或用仓库 Capacitor 壳包一层。</td>
+          </tr>
+          <tr>
+            <th scope="row">自绘界面 + 机上 SDK</th>
+            <td>Go 编译的 <code>mobileagent</code>（AAR / XCFramework）；你负责 Kotlin / Swift 界面。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="support support-tight">
+        <a href="https://github.com/rebornace/baize/blob/main/docs/developers/mobile.md">移动端指南</a>
+      </p>
+    </section>
+
+    <section class="section wrap" id="upgrades">
+      <h2>系统多、对话长时</h2>
+      <p class="support">先收窄本轮能力，业务域可分组；接口变更可对照，当轮用了什么可查。</p>
+      <ul class="feature-list">
+        <li>
+          <h3>先判断再交给主模型</h3>
+          <p>打开匹配与决策、智能提速后，先缩短本轮能力列表；失败则退回全量。</p>
+        </li>
+        <li>
+          <h3>按业务域分组</h3>
+          <p>财务、交易等可分组。审批需要互不影响时，可另开子任务。</p>
+        </li>
+        <li>
+          <h3>对照变更，查看当轮绑定</h3>
+          <p>重新导入后看改了什么；对话旁可打开当时用的模型与能力。</p>
+        </li>
+        <li>
+          <h3>摘要、日程与评测</h3>
+          <p>长对话自动摘要；可设每日或每周指令；管理员可把失败对话收进评测库。</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="start wrap" id="start">
+      <h2>开始使用</h2>
+      <p class="support">从 Releases 下载对应平台安装包，填密钥后启动。不必先装 Go。</p>
+      <pre><code>cp .env.example .env
+# 填写模型密钥与设置加密密钥
+./baize serve
+# 打开 http://127.0.0.1:8080/ui</code></pre>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.zh-CN.md">中文介绍</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize/tree/main/docs/developers">开发者文档</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <span>MIT License · 白泽 Baize</span>
+    <span>
+      <a href="https://github.com/rebornace/baize">源码</a>
+      ·
+      <a href="https://github.com/rebornace/baize/releases">Releases</a>
+    </span>
+    <a
+      class="ph-badge"
+      href="https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <img
+        alt="baize on Product Hunt"
+        width="200"
+        height="43"
+        src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=neutral&t=1789790934744"
+      >
+    </a>
+  </footer>
+</body>
+</html>

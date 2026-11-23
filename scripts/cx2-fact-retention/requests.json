@@ -1,0 +1,149 @@
+[
+  {
+    "id": "secret_tail_bulky",
+    "bulky": true,
+    "facts": [
+      { "key": "ticket_id", "expect": "TCK-CX2-7F3A" }
+    ],
+    "plant_turns": [
+      "接下来会粘贴一份很大的附件正文。工单号只出现在正文末尾 SECRET_ID= 一行；预览看不到。请在需要时用工作区文件回读后再回答。"
+    ],
+    "bulky_fact_key": "ticket_id",
+    "filler_turns": [
+      "粘贴已发送。请只简短确认收到，不要复述正文。",
+      "继续：回复「收到」即可。",
+      "再确认在线，简短回复。"
+    ],
+    "compact_nudge": "请简短确认会话仍在，不要总结长文。",
+    "questions": [
+      { "ask": "本会话的工单号是什么？只回答编号（可回读卸出文件）。", "expect_key": "ticket_id" }
+    ]
+  },
+  {
+    "id": "contract_tail_bulky",
+    "bulky": true,
+    "facts": [
+      { "key": "contract_id", "expect": "CTR-CX2-9B1E" },
+      { "key": "legal_owner", "expect": "周敏" }
+    ],
+    "plant_turns": [
+      "大段合同正文即将粘贴。合同编号与法务对接人姓名只写在粘贴末尾的 SECRET_* 行；预览看不到。需要时请回读工作区文件。",
+      "请记住：答案只能从卸出文件或压缩后仍可回读的细节中取，不要臆造。"
+    ],
+    "bulky_fact_key": "contract_id",
+    "filler_turns": [
+      "粘贴完成后请只回复「粘贴已读」。",
+      "继续推高上下文，回复「继续」即可。",
+      "简短确认在线。"
+    ],
+    "compact_nudge": "压缩后请仍保持在线，不要复述整份合同。",
+    "questions": [
+      { "ask": "合同归档编号是什么？只回答编号（可回读卸出文件）。", "expect_key": "contract_id" },
+      { "ask": "法务对接人姓名是什么？只回答姓名（可回读卸出文件）。", "expect_key": "legal_owner" }
+    ]
+  },
+  {
+    "id": "order_shipment_facts",
+    "bulky": false,
+    "facts": [
+      { "key": "order_id", "expect": "ORD-CX2-5521" },
+      { "key": "ship_to", "expect": "上海市浦东新区张江路 88 号" },
+      { "key": "priority", "expect": "P1-加急" },
+      { "key": "carrier", "expect": "顺丰特快" }
+    ],
+    "plant_turns": [
+      "订单 ORD-CX2-5521，收货地址：上海市浦东新区张江路 88 号。",
+      "配送优先级 P1-加急，承运商顺丰特快。请全部记住。"
+    ],
+    "filler_turns": [
+      "请简短确认四条信息都已记录。",
+      "再一轮：无需重复订单细节，回复「OK」。",
+      "填充轮结束，回复「就绪」。"
+    ],
+    "compact_nudge": "请确认仍在跟进该订单，不要展开复述地址。",
+    "questions": [
+      { "ask": "订单号是什么？只回答编号。", "expect_key": "order_id" },
+      { "ask": "收货地址完整是什么？只回答地址。", "expect_key": "ship_to" },
+      { "ask": "配送优先级代码是什么？", "expect_key": "priority" },
+      { "ask": "承运商名称是什么？", "expect_key": "carrier" }
+    ]
+  },
+  {
+    "id": "approval_decision",
+    "bulky": false,
+    "facts": [
+      { "key": "change_id", "expect": "CHG-CX2-0042" },
+      { "key": "approver", "expect": "王总监" },
+      { "key": "decision", "expect": "批准-带窗口" },
+      { "key": "window_start", "expect": "2026-10-22T02:00+08:00" }
+    ],
+    "plant_turns": [
+      "变更 CHG-CX2-0042 已由王总监审批，结论：批准-带窗口。",
+      "变更窗口开始时间：2026-10-22T02:00+08:00。请记住四项。"
+    ],
+    "filler_turns": [
+      "请确认审批四要素已记下，简短回复。",
+      "继续填充，回复「收到」即可。",
+      "最后一轮填充确认。"
+    ],
+    "compact_nudge": "会话压缩后请保持在线，不要重写审批邮件全文。",
+    "questions": [
+      { "ask": "变更单号是什么？只回答编号。", "expect_key": "change_id" },
+      { "ask": "审批人是谁？", "expect_key": "approver" },
+      { "ask": "审批结论原文是什么？", "expect_key": "decision" },
+      { "ask": "变更窗口开始时间（含时区）是什么？", "expect_key": "window_start" }
+    ]
+  },
+  {
+    "id": "ops_forbidden_guard",
+    "bulky": false,
+    "facts": [
+      { "key": "env_name", "expect": "prod-cn-east" },
+      { "key": "forbidden_cmd", "expect": "DROP DATABASE baize_prod" },
+      { "key": "rollback_pin", "expect": "RB-PIN-7731" },
+      { "key": "escalation_slack", "expect": "#incident-warroom" }
+    ],
+    "plant_turns": [
+      "环境 prod-cn-east：严禁执行 DROP DATABASE baize_prod。",
+      "应急回滚 PIN 为 RB-PIN-7731；升级频道 #incident-warroom。四项均需保留。"
+    ],
+    "filler_turns": [
+      "确认禁令与 PIN 已记录，简短回复。",
+      "填充轮：回复「明白」。",
+      "再确认一次在线即可。"
+    ],
+    "compact_nudge": "压缩后请勿复述完整禁令清单，简短确认仍在即可。",
+    "questions": [
+      { "ask": "目标环境名称是什么？", "expect_key": "env_name" },
+      { "ask": "明确禁止执行的命令是什么？只回答命令原文。", "expect_key": "forbidden_cmd" },
+      { "ask": "应急回滚 PIN 是什么？", "expect_key": "rollback_pin" },
+      { "ask": "升级 Slack 频道是什么？", "expect_key": "escalation_slack" }
+    ]
+  },
+  {
+    "id": "incident_handoff",
+    "bulky": false,
+    "facts": [
+      { "key": "incident_id", "expect": "INC-CX2-3310" },
+      { "key": "severity", "expect": "SEV-2" },
+      { "key": "oncall", "expect": "SRE-刘洋" },
+      { "key": "runbook_step", "expect": "步骤 7：切流量至备用集群" }
+    ],
+    "plant_turns": [
+      "事件 INC-CX2-3310，等级 SEV-2，当前 Oncall：SRE-刘洋。",
+      "Runbook 当前步骤：步骤 7：切流量至备用集群。请全部记住。"
+    ],
+    "filler_turns": [
+      "请确认事件四要素，简短回复「已交接」。",
+      "继续填充上下文，回复「继续」。",
+      "填充结束，回复「在线」。"
+    ],
+    "compact_nudge": "压缩后保持值班状态，不要重读整份 runbook。",
+    "questions": [
+      { "ask": "事件编号是什么？只回答编号。", "expect_key": "incident_id" },
+      { "ask": "严重等级是什么？", "expect_key": "severity" },
+      { "ask": "当前 Oncall 是谁？", "expect_key": "oncall" },
+      { "ask": "Runbook 当前步骤原文是什么？", "expect_key": "runbook_step" }
+    ]
+  }
+]

@@ -1,0 +1,453 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Sparkles } from 'lucide-react'
+import {
+  deleteSkill,
+  getAgent,
+  getUIConfig,
+  listSkills,
+  putAgent,
+  uploadSkill,
+  type SkillSummary,
+} from '../api'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  PageHeader,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
+import { useGate } from '../gateContext'
+import { useLocale } from '../locale/LocaleContext'
+import { SKILLS, skillErrorText } from '../strings'
+import {
+  skillDisplayName,
+  skillLocalizedDescription,
+  skillShowSecondaryDescription,
+  skillSourceLabel,
+  skillToolsCountLabel,
+} from './skills/skillDisplay'
+import { SkillEvalPanel, skillEvalCountLabel } from './skills/SkillEvalPanel'
+import { SkillWorkflowEditor } from './skills/SkillWorkflowEditor'
+
+export function toggleSkillSelection(prev: Set<string>, id: string, checked: boolean): Set<string> {
+  const next = new Set(prev)
+  if (checked) next.add(id)
+  else next.delete(id)
+  return next
+}
+
+/** Preserve previous Agent.skills order for still-checked ids, then append new picks in catalog order. */
+export function mergeSkillSelection(
+  previous: string[],
+  selected: Set<string>,
+  catalogOrder: string[],
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of previous) {
+    if (!selected.has(id) || seen.has(id)) continue
+    out.push(id)
+    seen.add(id)
+  }
+  for (const id of catalogOrder) {
+    if (!selected.has(id) || seen.has(id)) continue
+    out.push(id)
+    seen.add(id)
+  }
+  return out
+}
+
+export function SkillsSettings() {
+  const { role } = useGate()
+  const readOnly = role !== 'admin'
+  const { locale } = useLocale()
+  const { toasts, push, dismiss } = useToast()
+  const [skills, setSkills] = useState<SkillSummary[] | null>(null)
+  const [agentId, setAgentId] = useState('default-agent')
+  const [system, setSystem] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [exclusiveBinding, setExclusiveBinding] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<SkillSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [expandedEvalSkillId, setExpandedEvalSkillId] = useState<string | null>(null)
+  const [expandedWorkflowSkillId, setExpandedWorkflowSkillId] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const load = useCallback(async () => {
+    try {
+      let resolvedAgentId = 'default-agent'
+      try {
+        const cfg = await getUIConfig()
+        if (cfg.agent_id?.trim()) resolvedAgentId = cfg.agent_id.trim()
+      } catch {
+        /* fallback default-agent */
+      }
+      setAgentId(resolvedAgentId)
+
+      // Skill list is the read-only core payload; its success must not depend on getAgent.
+      const { skills: list } = await listSkills(locale)
+      setSkills(list ?? [])
+      setLoadError(null)
+
+      // Agent config (system prompt + saved selection) is admin-only (GET /v0/agents/{id}
+      // returns 403 for operators). Skip it entirely on the read-only path; operators see
+      // title + source only (no checkbox / default badge — no getAgent data). For admins,
+      // a failure here is non-fatal: the list is already rendered and selection stays empty.
+      if (readOnly) return
+      try {
+        const agent = await getAgent(resolvedAgentId)
+        setSystem(agent.system ?? '')
+        setSelected(new Set(agent.skills ?? []))
+        setExclusiveBinding(agent.tool_binding === 'exclusive')
+      } catch {
+        /* non-fatal: skill list remains visible without saved selection/system */
+      }
+    } catch (err) {
+      setSkills(null)
+      const f = skillErrorText(err)
+      setLoadError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    }
+  }, [locale, readOnly, push])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const refreshList = async () => {
+    const { skills: list } = await listSkills(locale)
+    setSkills(list ?? [])
+  }
+
+  const onUpload = async (file: File | undefined) => {
+    if (!file) return
+    setUploading(true)
+    try {
+      await uploadSkill(file)
+      await refreshList()
+      push({ tone: 'success', title: SKILLS.toastUploaded, detail: file.name })
+    } catch (err) {
+      const f = skillErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const beginDelete = (s: SkillSummary) => {
+    setDeleteError(null)
+    setPendingDelete(s)
+  }
+
+  const cancelDelete = () => {
+    if (deleting) return
+    setPendingDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteSkill(pendingDelete.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(pendingDelete.id)
+        return next
+      })
+      push({ tone: 'success', title: SKILLS.toastDeleted, detail: skillDisplayName(pendingDelete) })
+      setPendingDelete(null)
+      await refreshList()
+    } catch (err) {
+      const f = skillErrorText(err)
+      setDeleteError(f.detail ? `${f.title} ${f.detail}` : f.title)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const onSave = async () => {
+    if (skills == null) return
+    const blocked = skills.filter((s) => selected.has(s.id) && (s.missing_tools?.length ?? 0) > 0)
+    if (blocked.length > 0) {
+      push({
+        tone: 'error',
+        title: SKILLS.domainMissingTools(blocked.flatMap((s) => s.missing_tools ?? []).join(', ')),
+        detail: blocked.map((s) => s.id).join(', '),
+      })
+      return
+    }
+    setSaving(true)
+    try {
+      const agent = await getAgent(agentId)
+      const catalogOrder = skills.map((s) => s.id)
+      const skillsIds = mergeSkillSelection(agent.skills ?? [], selected, catalogOrder)
+      const res = await putAgent(agentId, {
+        system: agent.system ?? system,
+        skills: skillsIds,
+        tool_binding: exclusiveBinding ? 'exclusive' : '',
+      })
+      setSystem(agent.system ?? system)
+      if (res.warnings?.length) {
+        const detail = res.warnings
+          .map((w) => {
+            if (w.startsWith('domain_skill_default:')) return SKILLS.domainDefaultWarning
+            if (w.startsWith('requires_input:')) {
+              const parts = w.split(':')
+              return SKILLS.domainRequiresInput(parts.slice(2).join(','))
+            }
+            return w
+          })
+          .join('; ')
+        push({ tone: 'info', title: SKILLS.domainSaveWarnings, detail })
+      } else {
+        push({ tone: 'success', title: SKILLS.toastSaved })
+      }
+    } catch (err) {
+      const f = skillErrorText(err)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const loadFailed = skills === null && loadError !== null
+  const busy = uploading || saving || deleting
+  const showEmpty = skills !== null && skills.length === 0 && !loadFailed
+
+  const headerActions =
+    readOnly || showEmpty || skills === null ? undefined : (
+      <div className="settings-toolbar">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".md,.zip"
+          hidden
+          disabled={busy}
+          aria-label={SKILLS.upload}
+          onChange={(e) => {
+            void onUpload(e.target.files?.[0])
+          }}
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          {SKILLS.upload}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            void onSave()
+          }}
+        >
+          {saving ? '保存中…' : SKILLS.saveDefaults}
+        </Button>
+      </div>
+    )
+
+  return (
+    <div className="settings-panel settings-skills">
+      <PageHeader title={SKILLS.title} description={SKILLS.description} actions={headerActions} />
+      <ToastRegion toasts={toasts} onDismiss={dismiss} />
+
+      {loadFailed && <p className="settings-error">{loadError}</p>}
+      {skills === null && !loadFailed && <p className="settings-muted">{SKILLS.loading}</p>}
+
+      {showEmpty && (
+        <EmptyState
+          icon={<Sparkles size={28} aria-hidden="true" />}
+          title={SKILLS.emptyTitle}
+          description={SKILLS.emptyDesc}
+          action={
+            readOnly ? undefined : (
+              <>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".md,.zip"
+                  disabled={busy}
+                  aria-label={SKILLS.upload}
+                  hidden
+                  onChange={(e) => {
+                    void onUpload(e.target.files?.[0])
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {SKILLS.upload}
+                </Button>
+              </>
+            )
+          }
+        />
+      )}
+
+      {!readOnly && skills !== null && (
+        <label className="settings-login-toggle settings-skill-exclusive">
+          <input
+            type="checkbox"
+            checked={exclusiveBinding}
+            disabled={busy}
+            onChange={(e) => setExclusiveBinding(e.target.checked)}
+          />
+          <span>
+            <span className="settings-tool-title">{SKILLS.exclusiveBinding}</span>
+            <span className="settings-muted">{SKILLS.exclusiveBindingHint}</span>
+          </span>
+        </label>
+      )}
+
+      {skills !== null && skills.length > 0 && (
+        <p className="settings-muted settings-skill-selection-hint">{SKILLS.selectionHint}</p>
+      )}
+
+      {skills !== null && skills.length > 0 && (
+        <div className="connector-list settings-skills-list">
+          {skills.map((s) => {
+            const title = skillDisplayName(s, locale)
+            const desc = skillLocalizedDescription(s, locale)
+            const showId = title !== s.id
+            const toolsLine = skillToolsCountLabel(s.tools?.length ?? 0)
+            const evalExpanded = expandedEvalSkillId === s.id
+            const workflowExpanded = expandedWorkflowSkillId === s.id
+            const missingTools = s.missing_tools ?? []
+            const titleNode = readOnly ? (
+              title
+            ) : (
+              <label className="settings-skill-check-title">
+                <input
+                  type="checkbox"
+                  checked={selected.has(s.id)}
+                  disabled={busy || missingTools.length > 0}
+                  onChange={(e) => {
+                    setSelected((prev) => toggleSkillSelection(prev, s.id, e.target.checked))
+                  }}
+                />
+                <span>{title}</span>
+              </label>
+            )
+            return (
+              <Card
+                key={s.id}
+                className="connector-card skill-profile-card"
+                title={titleNode}
+                trailing={
+                  <Badge tone={s.source === 'builtin' ? 'info' : 'neutral'}>
+                    {skillSourceLabel(s.source)}
+                  </Badge>
+                }
+              >
+                <div className="skill-profile-meta">
+                  {showId ? <p className="settings-tool-sub">{s.id}</p> : null}
+                  {skillShowSecondaryDescription(s, locale) ? (
+                    <p className="settings-muted">{desc}</p>
+                  ) : null}
+                  {toolsLine ? <p className="settings-muted">{toolsLine}</p> : null}
+                  {s.domain ? (
+                    <p className="settings-muted settings-skill-domain-hint">
+                      {SKILLS.domainHint(s.domain)}
+                    </p>
+                  ) : null}
+                  {s.requires_tools?.length ? (
+                    <p className="settings-muted">{SKILLS.domainRequiresTools(s.requires_tools.join(', '))}</p>
+                  ) : null}
+                  {missingTools.length ? (
+                    <p className="settings-error">{SKILLS.domainMissingTools(missingTools.join(', '))}</p>
+                  ) : null}
+                  {s.requires_input?.length ? (
+                    <p className="settings-muted">{SKILLS.domainRequiresInput(s.requires_input.join(', '))}</p>
+                  ) : null}
+                  <p className="settings-muted">{skillEvalCountLabel(s.eval_case_count)}</p>
+                </div>
+                <div className="connector-card-actions model-profile-actions">
+                  {!readOnly && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      aria-expanded={workflowExpanded}
+                      onClick={() =>
+                        setExpandedWorkflowSkillId((prev) => (prev === s.id ? null : s.id))
+                      }
+                    >
+                      {workflowExpanded ? SKILLS.workflowClose : SKILLS.workflowOpen}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    aria-expanded={evalExpanded}
+                    onClick={() =>
+                      setExpandedEvalSkillId((prev) => (prev === s.id ? null : s.id))
+                    }
+                  >
+                    {evalExpanded ? SKILLS.evalClose : SKILLS.evalOpen}
+                  </Button>
+                  {s.source === 'user' && !readOnly && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={() => beginDelete(s)}
+                    >
+                      {SKILLS.confirmDeleteOk}
+                    </Button>
+                  )}
+                </div>
+                {evalExpanded && (
+                  <SkillEvalPanel
+                    skill={s}
+                    agentId={agentId}
+                    role={readOnly ? 'operator' : 'admin'}
+                    onEvalMutated={() => void refreshList()}
+                  />
+                )}
+                {workflowExpanded && (
+                  <SkillWorkflowEditor
+                    skill={s}
+                    readOnly={readOnly}
+                    onChanged={() => void refreshList()}
+                    onClose={() => setExpandedWorkflowSkillId(null)}
+                  />
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {!readOnly && (
+        <ConfirmDialog
+          open={!!pendingDelete}
+          danger
+          title={SKILLS.confirmDeleteTitle}
+          body={SKILLS.confirmDeleteBody}
+          confirmText={SKILLS.confirmDeleteOk}
+          busy={deleting}
+          error={deleteError}
+          onCancel={cancelDelete}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
+    </div>
+  )
+}

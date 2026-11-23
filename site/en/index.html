@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baize — team AI assistant</title>
+  <meta name="description" content="Baize runs beside your stack: read API docs, call existing systems, pause for approval on important writes. Remote the console on phone, or embed a trimmed on-device SDK.">
+  <meta property="og:title" content="Baize">
+  <meta property="og:description" content="A team AI assistant beside your services: chat, call systems, confirm writes when needed.">
+  <meta property="og:image" content="../assets/baize-banner.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,420;12..96,550;12..96,600;12..96,650&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-media" aria-hidden="true">
+      <img src="../assets/baize-banner.jpg" alt="" width="1920" height="1080">
+    </div>
+    <div class="wrap top">
+      <nav class="lang" aria-label="Language">
+        <a href="../">中文</a>
+        <a href="./" aria-current="page">English</a>
+      </nav>
+    </div>
+    <div class="wrap hero-copy">
+      <h1 class="brand">Baize<span>白泽</span></h1>
+      <p class="lede">A team AI assistant beside your stack: chat, call your systems, pause for approval when a write matters.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/releases">Download</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section wrap" id="capabilities">
+      <h2>You usually don’t rewrite the business service</h2>
+      <p class="support">With an API document, the assistant calls systems you already run. Steps show in the web console; writes can wait for approve or reject.</p>
+      <ul class="feature-list">
+        <li>
+          <h3>API docs become callable abilities</h3>
+          <p>Import common API documents and the assistant invokes those operations. Incomplete docs can use a small companion service or a callback to your URL.</p>
+        </li>
+        <li>
+          <h3>Creates and status changes can wait</h3>
+          <p>Sensitive writes pause on a console card until a teammate approves or rejects, with a trail.</p>
+        </li>
+        <li>
+          <h3>Console, inbox, and messaging share one path</h3>
+          <p>Approvals, memory, and outbound replies are shared. Personal WeChat ships; Feishu and DingTalk examples are included.</p>
+        </li>
+        <li>
+          <h3>Downstream login</h3>
+          <p>Sign in in a browser; passwords never hit the model. Export wired abilities to clients like Cursor; when login expires, open the returned link.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section wrap phone" id="mobile">
+      <h2>Works on phone</h2>
+      <p class="support">Two paths, not substitutes: remote the full console, or embed trimmed orchestration in your own app.</p>
+      <table class="path-table">
+        <tbody>
+          <tr>
+            <th scope="row">Remote console</th>
+            <td>Open reachable <code>/ui/</code> in a browser, or wrap it with the Capacitor shell in the repo.</td>
+          </tr>
+          <tr>
+            <th scope="row">Your UI + on-device SDK</th>
+            <td>Go-built <code>mobileagent</code> (AAR / XCFramework); you draw the Kotlin / Swift interface.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="support support-tight">
+        <a href="https://github.com/rebornace/baize/blob/main/docs/developers/mobile.en.md">Mobile guide</a>
+      </p>
+    </section>
+
+    <section class="section wrap" id="upgrades">
+      <h2>Many systems and long chats</h2>
+      <p class="support">Narrow what this turn needs, group domains, compare API re-imports, and inspect what a turn used.</p>
+      <ul class="feature-list">
+        <li>
+          <h3>Judge first, then the main model</h3>
+          <p>With Matching &amp; decisions and Smart speed-up, send a shorter ability list first; on failure use the full list.</p>
+        </li>
+        <li>
+          <h3>Group by business domain</h3>
+          <p>Group finance, commerce, and similar systems. Start a sub-task when approvals must not collide.</p>
+        </li>
+        <li>
+          <h3>Compare API changes; open a turn’s binding</h3>
+          <p>After re-import, see what changed. Beside each chat turn, open which model and abilities were used.</p>
+        </li>
+        <li>
+          <h3>Summaries, schedules, eval</h3>
+          <p>Long threads get summaries; set daily or weekly instructions; admins can collect failed chats for review.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="start wrap" id="start">
+      <h2>Get started</h2>
+      <p class="support">Download a release for your platform, set secrets, and start. No Go toolchain required.</p>
+      <pre><code>cp .env.example .env
+# set model key and settings key
+./baize serve
+# open http://127.0.0.1:8080/ui</code></pre>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/rebornace/baize/blob/main/README.md">README</a>
+        <a class="btn btn-ghost" href="https://github.com/rebornace/baize/tree/main/docs/developers">Developer docs</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <span>MIT License · Baize</span>
+    <span>
+      <a href="https://github.com/rebornace/baize">Source</a>
+      ·
+      <a href="https://github.com/rebornace/baize/releases">Releases</a>
+    </span>
+    <a
+      class="ph-badge"
+      href="https://www.producthunt.com/products/baize?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-baize"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <img
+        alt="baize on Product Hunt"
+        width="200"
+        height="43"
+        src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1255168&theme=neutral&t=1789790934744"
+      >
+    </a>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,362 @@
+package mcpexport
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rebornace/baize/internal/hostedlogin"
+	"github.com/rebornace/baize/internal/identity"
+	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/tool"
+)
+
+type ctxKey int
+
+const ctxKeyExportAuth ctxKey = 1
+
+type exportAuth struct {
+	Key      store.MCPExportKey
+	Identity store.MCPExportIdentity
+}
+
+// ServerDeps wires store, tool registry, and identity store into the export HTTP facade.
+type ServerDeps struct {
+	Store          store.Store
+	Registry       *tool.Registry
+	Identities     identity.Store
+	HostedSessions hostedlogin.Sessions
+	HostedWaiter   hostedlogin.Waiter
+	PublicBaseURL  string
+	Enabled        bool
+	// TraceToolCall optionally records export tool completions (no secrets).
+	TraceToolCall func(toolName, exportKeyID, identityID, contractHash string, catalogRevision int64, isError bool)
+	// MetricsToolCall optionally records export invocations (connector_id + result).
+	MetricsToolCall func(connectorID string, isError bool)
+}
+
+// NewHTTPHandler returns a Streamable HTTP MCP handler with Bearer key auth.
+// When Enabled is false, every request returns 503. Missing/invalid/revoked keys return 401.
+func NewHTTPHandler(deps ServerDeps) http.Handler {
+	stream := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		return buildExportServer(r.Context(), deps)
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !deps.Enabled {
+			http.Error(w, "mcp export disabled", http.StatusServiceUnavailable)
+			return
+		}
+		auth, err := authenticateExport(r, deps.Store)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxKeyExportAuth, auth)
+		stream.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func authenticateExport(r *http.Request, st store.Store) (exportAuth, error) {
+	raw := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(raw, prefix) {
+		return exportAuth{}, errors.New("missing bearer token")
+	}
+	plaintext := strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+	if plaintext == "" {
+		return exportAuth{}, errors.New("empty bearer token")
+	}
+	key, err := st.LookupMCPExportKeyByHash(HashKey(plaintext))
+	if err != nil || key == nil {
+		return exportAuth{}, errors.New("unknown or revoked key")
+	}
+	identity, err := st.GetMCPExportIdentity(key.IdentityID)
+	if err != nil {
+		return exportAuth{}, err
+	}
+	return exportAuth{Key: *key, Identity: identity}, nil
+}
+
+func exportAuthFrom(ctx context.Context) (exportAuth, bool) {
+	v, ok := ctx.Value(ctxKeyExportAuth).(exportAuth)
+	return v, ok
+}
+
+func buildExportServer(ctx context.Context, deps ServerDeps) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "baize-mcp-export", Version: "v0"}, &mcp.ServerOptions{
+		Instructions: ExportServerInstructions(),
+	})
+	auth, ok := exportAuthFrom(ctx)
+	if !ok {
+		return server
+	}
+
+	server.AddReceivingMiddleware(exportListFilterMiddleware(deps, auth))
+
+	registerExportWorkflowPrompt(server)
+
+	for _, t := range deps.Store.ListTools() {
+		toolRow := t
+		opts := policyOptsFor(deps.Store, toolRow.ConnectorID)
+		if !AllowExportToolGuards(toolRow, opts) {
+			continue
+		}
+		schema := toolRow.InputSchema
+		if schema == nil {
+			schema = map[string]any{"type": "object"}
+		}
+		desc := toolRow.Description
+		if desc == "" {
+			desc = toolRow.Title
+		}
+		name := toolRow.Name
+		server.AddTool(&mcp.Tool{
+			Name:        name,
+			Description: desc,
+			InputSchema: schema,
+		}, func(callCtx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return invokeExportTool(callCtx, deps, auth, toolRow, req)
+		})
+	}
+	return server
+}
+
+func registerExportWorkflowPrompt(server *mcp.Server) {
+	body := ExportWorkflowSkillMarkdown()
+	server.AddPrompt(&mcp.Prompt{
+		Name:        "baize_export_workflow",
+		Title:       "Baize export workflow",
+		Description: "How to use Baize MCP export tools safely (approval, auth, errors).",
+	}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		return &mcp.GetPromptResult{
+			Messages: []*mcp.PromptMessage{{
+				Role: "user",
+				Content: &mcp.TextContent{
+					Text: body,
+				},
+			}},
+		}, nil
+	})
+}
+
+func policyOptsFor(st store.Store, connectorID string) PolicyOpts {
+	if connectorID == "" {
+		return PolicyOpts{}
+	}
+	c, err := st.GetConnector(connectorID)
+	if err != nil {
+		return PolicyOpts{}
+	}
+	return PolicyOpts{DBReadonlyConnector: c.MCP.ExportDBReadonly}
+}
+
+func invokeExportTool(
+	ctx context.Context,
+	deps ServerDeps,
+	auth exportAuth,
+	toolRow store.Tool,
+	req *mcp.CallToolRequest,
+) (*mcp.CallToolResult, error) {
+	name := toolRow.Name
+	opts := policyOptsFor(deps.Store, toolRow.ConnectorID)
+	key, err := deps.Store.GetMCPExportKey(auth.Key.ID)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "tool not exported"}},
+			IsError: true,
+		}, nil
+	}
+	if !AllowExportForKey(toolRow, opts, key) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "tool not exported"}},
+			IsError: true,
+		}, nil
+	}
+
+	if NeedsExportApproval(toolRow, ApprovalOpts{WriteHeuristicElicit: true}) {
+		gateRes, stop, err := gateExportApproval(ctx, req, name)
+		if err != nil {
+			return nil, err
+		}
+		if stop {
+			return gateRes, nil
+		}
+	}
+
+	args := map[string]any{}
+	if len(req.Params.Arguments) > 0 {
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "invalid arguments"}},
+				IsError: true,
+			}, nil
+		}
+	}
+
+	role := exportRoleForTool(deps.Store, toolRow.ConnectorID, name)
+	exportID, err := resolveExportIdentity(deps.Store, key, toolRow.ConnectorID, role)
+	if err != nil {
+		return authExpiredForCall(ctx, deps, auth, toolRow, req, name, args)
+	}
+	callAuth := auth
+	callAuth.Identity = exportID
+	// Empty export credentials: do not hit the downstream API — open hosted reauth
+	// (most connector tools are not marked require_login, so Invoke would just 401).
+	if !exportIdentityHasCredentials(exportID) {
+		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
+	}
+	invokeCtx, err := InvokeContext(ctx, deps.Identities, exportID)
+	if err != nil {
+		return nil, err
+	}
+	hash, rev := exportContractMeta(deps, toolRow)
+	content, isError, err := deps.Registry.Invoke(invokeCtx, name, args)
+	if err != nil {
+		if IsAuthFailure(nil, false, err) {
+			return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
+		}
+		auditExportTool(deps, key.ID, exportID.ID, toolRow, hash, rev, true)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			IsError: true,
+		}, nil
+	}
+	if isError && IsAuthFailure(content, isError, err) {
+		return authExpiredForCall(ctx, deps, callAuth, toolRow, req, name, args)
+	}
+	auditExportTool(deps, key.ID, exportID.ID, toolRow, hash, rev, isError)
+	text, _ := json.Marshal(content)
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
+		StructuredContent: content,
+		IsError:           isError,
+	}, nil
+}
+
+func exportContractMeta(deps ServerDeps, toolRow store.Tool) (hash string, rev int64) {
+	hash = store.ContractHash(toolRow)
+	if toolRow.ConnectorID != "" && deps.Store != nil {
+		if c, err := deps.Store.GetConnector(toolRow.ConnectorID); err == nil {
+			rev = c.CatalogRevision
+		}
+	}
+	return hash, rev
+}
+
+func auditExportTool(deps ServerDeps, exportKeyID, identityID string, toolRow store.Tool, hash string, rev int64, isError bool) {
+	if deps.Store != nil {
+		_ = deps.Store.PutMCPExportInvocation(store.MCPExportInvocation{
+			KeyID:           exportKeyID,
+			IdentityID:      identityID,
+			ToolName:        toolRow.Name,
+			ConnectorID:     toolRow.ConnectorID,
+			ContractHash:    hash,
+			CatalogRevision: rev,
+			IsError:         isError,
+		})
+	}
+	if deps.TraceToolCall != nil {
+		deps.TraceToolCall(toolRow.Name, exportKeyID, identityID, hash, rev, isError)
+	}
+	if deps.MetricsToolCall != nil {
+		deps.MetricsToolCall(toolRow.ConnectorID, isError)
+	}
+}
+
+func exportListFilterMiddleware(deps ServerDeps, auth exportAuth) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if err != nil {
+				return res, err
+			}
+			lr, ok := res.(*mcp.ListToolsResult)
+			if !ok {
+				return res, err
+			}
+			key, err := deps.Store.GetMCPExportKey(auth.Key.ID)
+			if err != nil {
+				lr.Tools = nil
+				return lr, nil
+			}
+			filtered := lr.Tools[:0]
+			for _, tl := range lr.Tools {
+				toolRow, err := deps.Store.GetTool(tl.Name)
+				if err != nil {
+					continue
+				}
+				opts := policyOptsFor(deps.Store, toolRow.ConnectorID)
+				if AllowExportForKey(toolRow, opts, key) {
+					filtered = append(filtered, tl)
+				}
+			}
+			lr.Tools = filtered
+			return lr, nil
+		}
+	}
+}
+
+func exportIdentityHasCredentials(id store.MCPExportIdentity) bool {
+	for _, v := range id.Headers {
+		if strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func authExpiredForCall(ctx context.Context, deps ServerDeps, auth exportAuth, toolRow store.Tool, req *mcp.CallToolRequest, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
+	hostedURL, sessionID, ok := hostedReauthURL(deps, auth, toolRow)
+	if !ok {
+		return authExpiredResult(auth.Identity.Name, ""), nil
+	}
+
+	var ss *mcp.ServerSession
+	if req != nil {
+		ss, _ = req.GetSession().(*mcp.ServerSession)
+	}
+
+	// Clients that advertise URL elicitation get -32042 and open the browser
+	// themselves; the next tools/call retries after login.
+	if ss != nil && clientSupportsURLElicitation(ss) {
+		return nil, urlElicitationRequired(hostedURL, sessionID, auth.Identity.Name)
+	}
+
+	// Clients with form/URL elicitation (but not the -32042 shortcut): push the
+	// URL via Elicit and wait for hosted submit, then replay the tool.
+	if ss != nil && clientSupportsElicitation(ss) && deps.HostedWaiter != nil && deps.Registry != nil {
+		maybeElicitHostedLoginURL(ctx, req, hostedURL, sessionID, auth.Identity.Name)
+		if err := deps.HostedWaiter.Await(ctx, sessionID); err == nil {
+			exportID, err := resolveExportIdentity(deps.Store, auth.Key, toolRow.ConnectorID, "")
+			if err == nil {
+				invokeCtx, ierr := InvokeContext(ctx, deps.Identities, exportID)
+				if ierr == nil {
+					content, isError, invErr := deps.Registry.Invoke(invokeCtx, toolName, args)
+					if invErr != nil {
+						return &mcp.CallToolResult{
+							Content: []mcp.Content{&mcp.TextContent{Text: invErr.Error()}},
+							IsError: true,
+						}, nil
+					}
+					if !isError || !IsAuthFailure(content, isError, invErr) {
+						text, _ := json.Marshal(content)
+						return &mcp.CallToolResult{
+							Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
+							StructuredContent: content,
+							IsError:           isError,
+						}, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Doubao and other agents without elicitation: return the URL immediately.
+	// Blocking on Await here hid the link until timeout, so the agent never
+	// "naturally" opened hosted login.
+	return authExpiredResult(auth.Identity.Name, hostedURL), nil
+}
