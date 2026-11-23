@@ -1,0 +1,93 @@
+import { useEffect, useState } from 'react'
+import { Button, Input } from '../../components/ui'
+import { MODELS } from '../../strings'
+import {
+  getCostSummary,
+  putCostBudget,
+  type CostSummary,
+} from '../../api/settings/models'
+
+export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
+  const [summary, setSummary] = useState<CostSummary | null>(null)
+  const [budget, setBudget] = useState('0')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = async () => {
+    try {
+      const body = await getCostSummary(7)
+      setSummary(body)
+      setBudget(String(body.budget_usd_per_day))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  const save = async () => {
+    const n = Number.parseFloat(budget)
+    if (!Number.isFinite(n) || n < 0) {
+      setError(MODELS.errInvalidRequest)
+      return
+    }
+    setBusy(true)
+    try {
+      await putCostBudget(n)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="settings-model-prices" data-testid="cost-summary">
+      <h2 className="settings-subheading">{MODELS.costTitle}</h2>
+      <p className="settings-muted">{MODELS.costHint}</p>
+      {error ? <p className="settings-error">{error}</p> : null}
+      {summary ? (
+        <>
+          <p>
+            {MODELS.costToday(summary.today_total_usd, summary.currency)}
+            {summary.over_budget ? (
+              <span className="settings-error"> · {MODELS.costOverBudget}</span>
+            ) : null}
+          </p>
+          {summary.days.some((d) => d.runs > 0) ? (
+            <ul className="settings-muted">
+              {summary.days.map((d) => (
+                <li key={d.date}>
+                  {d.date} · {summary.currency} {d.total_usd.toFixed(6)} · {d.runs}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="settings-muted">{MODELS.costNoData}</p>
+          )}
+          {!readOnly ? (
+            <div className="settings-form-actions">
+              <label className="settings-muted">
+                {MODELS.costBudgetLabel}
+                <Input
+                  type="number"
+                  min={0}
+                  value={budget}
+                  disabled={busy}
+                  onChange={(e) => setBudget(e.target.value)}
+                />
+              </label>
+              <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void save()}>
+                {MODELS.costSaveBudget}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  )
+}

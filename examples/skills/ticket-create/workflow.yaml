@@ -1,0 +1,11 @@
+# Explicit create workflow: list first, then create with approval.
+# Only activate this skill when the user explicitly asks to create a ticket.
+name: ticket-create
+steps:
+  - id: list
+    tool: list_tickets
+  - id: create
+    tool: create_ticket
+    approve: true
+    args:
+      title: "{{input.text}}"

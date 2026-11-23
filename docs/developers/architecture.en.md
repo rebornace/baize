@@ -1,0 +1,157 @@
+[中文](./architecture.md) | **English**
+
+# Architecture and plugin boundaries
+
+Baize is a standalone **Agent Runtime** (sidecar / gateway): it turns LLM, tools, legacy HTTP APIs, and human checkpoints into auditable `Run`s. Integrate over REST / HTTP; there is no official language SDK (call the control-plane HTTP directly).
+
+**Product narrative (why sidecar)** lives in the root [README product advantages](../../README.md#product-advantages) and the site “What major upgrades added” section; this page covers boundaries and implementation hooks. Capability index: [Developer docs home](./README.en.md).
+
+| Does | Does not |
+|------|----------|
+| OpenAPI → tools, HTTP plugins / MCP connectors, execution callbacks, human approval, optional linear workflows; connector groups and one-level group sub-tasks; optional Capacitor **console shell** and on-device trimmed orchestration (`mobileagent` — see [Mobile](./mobile.en.md)) | Shipping full `baize serve` (HTTP/SSE/connector farm) inside a phone; official desktop app; official TS/Python SDK; heavy canvas / nested sub-task trees; lock-in to one cloud or agent framework |
+| SQLite by default; optional Postgres / Redis / S3; connector re-import returns a catalog change diff; **run.binding** turn binding; optional OTLP (off by default; Settings hot-reload); **Admin-authenticated** Prometheus **`GET /metrics`** (on by default) plus Settings → Runtime metrics / **`GET /v0/settings/logs`** (in-memory recent logs); structured slog (`log_format` / `BAIZE_LOG_FORMAT`, hot-reloadable); connector outbound mTLS (file paths: OpenAPI / HTTP plugins / MCP HTTP; Settings-editable) | Require OTel/APM; durable in-process metrics/log DB; per-tenant cgroup/egress sandbox; full IdP OBO; server-enforced peer mTLS; client-side tool schema version pin; bit-identical reproducibility |
+
+**Five abstractions:** `Runtime` · `Agent` · `Tool` · `Connector` · `Run`  
+Skill / Memory / Channel / linear workflow are configuration or plugin shapes — not a sixth abstraction.
+
+## Logical architecture
+
+```
+Enterprise / integrator
+  REST control plane · SSE / Webhook events · Chat UI
+          │
+          ▼
+    Baize Runtime (Go)
+  Agent · LLM (OpenAI-compatible / in-store model profiles)
+  Tool catalog · Run engine (default ReAct · optional linear workflow) · human approval
+  Connector clients
+     │           │            │
+     ▼           ▼            ▼
+ OpenAPI        HTTP plugin v0   MCP bridge
+ legacy REST    sidecar          MCP server
+```
+
+- **MCP bridge (client):** `PUT /v0/connectors/{id}` with `type: mcp`; `tools/list` → catalog `source=mcp`; `tools/call` inside a Run.
+- **Catalog change diff:** After a successful connector re-import (OpenAPI / plugin / MCP), `PUT /v0/connectors/{id}` returns `catalog_diff` (added / removed / method·path·schema changes); Settings shows a short toast summary. When the diff is **non-empty** and `events.webhook` is configured, an async POST with `type=catalog.diff` uses the same URL / retry / dead-letter path (empty diff or no URL → skip; fail-open). The live catalog is source of truth — no client version pinning.
+- **Run binding:** Before the first main-model call, each Chat Run appends `run.binding` (model endpoint/profile, knobs, memory injection, narrowed tool contract fingerprints, connector `catalog_revision`); append failure fails the Run. Tool events carry `contract_hash` / `catalog_revision` for before/after fix comparison. See `GET /v0/runs/{id}/binding`, the Chat “View run binding” read-only modal, and `GET /v0/connectors/{id}/catalog-revisions`.
+- **Optional observability:** When `runtime.otel_otlp_endpoint` is set, the Runtime subscribes to the event bus and exports Run / `tool.result` (and MCP export calls) as OTLP spans; Chat `tool.result` spans include `baize.contract_hash` / `baize.catalog_revision` when present on event Data. Empty endpoint keeps the zero-cost path. Events may carry non-secret audit fields (e.g. `connector_id`); never tokens or passwords. Catalog-change alerting uses `events.webhook` — OTel is not required. **In-process**, Admin also has `GET /metrics` and a recent-log ring (Settings → Runtime metrics); neither survives process restart. `log_format` / OTel endpoints are hot-reloadable under Settings → Runtime → **Observability** (KV override, no YAML rewrite).
+- **Connector outbound mTLS:** OpenAPI / HTTP plugin / **MCP HTTP** connectors may set `tls` (`cert_file` / `key_file` / optional `ca_file`, local file paths) for tool invoke (and MCP HTTP discover) client certificates. Orthogonal to `auth.mode`. Store keeps paths only. The connector editor “Outbound TLS / mTLS” field fills those paths. **stdio** MCP does not use TLS.
+- **MCP export:** Runtime acts as an MCP server (`/v0/mcp/export`) and exposes a read-only subset of the tool catalog to MCP-capable Agent clients such as Cursor, Claude Desktop, or Doubao. Opposite direction from the bridge; does not go through Baize’s own chat model. Export Keys support **`identity_slots`** (bind identities per connector / optional role) — the permission boundary is the **downstream business account**, not end-user IdP OBO. On downstream auth failure, prefer URL elicitation; clients without elicitation get an immediate tool error with a public hosted login URL (`hosted_login_url`) — never paste passwords into the agent chat. `auth.mode: passthrough` only forwards whitelisted Chat Run headers downstream; also not OBO.
+- **Storage:** SQLite by default; `postgres` / `memory` supported. Blob: `file` / `s3` / `memory`.
+- **Control-plane auth:** optional operator / admin tokens; see [HTTP API](./http-api.en.md) and [Configuration](./configuration.en.md).
+
+## Plugin protocol v0 (HTTP + JSON)
+
+Sidecars talk to the Runtime over **same-network HTTP**. The built-in OpenAPI connector does not use this protocol. MCP maps to internal tools and does not replace this protocol.
+
+### Conventions
+
+- Base URL is declared when registering the connector.
+- Headers: `Authorization` (passthrough or injected), `X-Baize-Run-Id`, `X-Baize-Tenant-Id` (optional), `X-Baize-Protocol: v0`.
+- Error body: `{ "error": { "code", "message", "retryable" } }`.
+
+### Sidecar must implement
+
+```http
+GET  /healthz                     → 200 { "status": "ok" }
+GET  /v0/tools                    → { "tools": [ ToolDesc, ... ] }
+POST /v0/tools/{tool_name}/invoke → ToolResult
+```
+
+Invoke includes `arguments` and `context` (`run_id`, `agent_id`, `tenant_id`, optional `callback_urls`). When `runtime.public_base_url` (and HMAC) is set and `run_id` is present, the Runtime injects short-lived signed `callback_urls.event`; the sidecar may POST Run events (`plugin.callback`). No injection if `public_base_url` is empty.
+
+### Enterprise execution callback
+
+Connector `execution_callback_url`: Runtime POSTs tool name, arguments, `run_id`, `idempotency_key`, and optional `callback_urls`. The enterprise side does not need to implement `/v0/tools` discovery.
+
+### Built-in OpenAPI connector
+
+1. Import OpenAPI 3.x → each operation → one Tool (name prefers `operationId`).
+2. Credential priority (summary): forced `identity_id` → unexpired conversation Identity → connector default headers **only when** there is no `conversation_id` → empty. With a conversation, `require_login` tools without credentials do not call downstream HTTP. Full secrets never appear in events / GET run.
+3. **Hosted login page** (`/v0/auth/hosted/...`): renders forms / OAuth from connector `hosted_login.methods`; submit invokes the login tool and capture. Target may be an MCP-export identity slot or the Chat workspace account pool (`conversation_id` + `workspace_id`). Credentials never go through the LLM. Configure methods and the public base URL under Settings → External login.
+4. Logic the spec cannot cover → sidecar or execution callback.
+
+Protocol major version is in the path and `v0` header; unknown major → `400 protocol_unsupported`.
+
+## Tool catalog and Registry
+
+- Catalog rows live in the store (`source`: `spec` / `plugin` / `mcp` / `extra`). `spec`/`plugin`/`mcp` can be disabled but not deleted; `extra` can be deleted.
+- Registry mounts **only** `enabled=true` rows; the engine and approval path read the Registry; `GET /v0/tools` reads the catalog (disabled rows visible).
+- Agents are **not** bound to a connector subset: by default each Run gives the model all enabled tools (tool names unique across connectors). When tool narrowing is on and the tool count exceeds the threshold, a tool prefilter (standard matching: BM25 by default; optional enhanced matching: BM25 + embedding hybrid via Settings → Matching & decisions and `internal/toolindex`) plus the decision layer first narrow the set, and only the candidate subset is sent to the main model (master switch, sub-features, and TopK live under Runtime → Smart speed-up; a decision backend must be configured before those toggles save main-model tokens). Skill `tools:` is a **floor** unless the agent sets `tool_binding: exclusive`: declared tools are preserved through narrowing; undeclared enabled connector tools remain candidates and are not hidden by the skill list alone. Exclusive mode exposes only tools on currently activated skills (plus `activate_skill`). Each user message is a new Run with fresh narrowing; once the conversation has session credentials, login-establish tools (and managed `connector_login` skill tool floors) are not force-injected into Top-K so a successful login stops crowding later turns. The system prompt includes the current wall-clock time so the model can interpret timestamps in tool results.
+- **Tool matching (enhanced):** `internal/toolretrieval` manages one-click local Ollama install / model pull / paths and cleanup, or an OpenAI-compatible embedding API; see [HTTP API](./http-api.en.md) (`/v0/settings/tool-retrieval*`). On CN Windows, the installer prefers [ModelScope `Lixiang/ollama-release`](https://www.modelscope.cn/models/Lixiang/ollama-release/files) (resolves `OllamaSetup.exe` from the latest stable tag), then ghproxy / official; size-mismatched stale mirrors are skipped. When disabled or probing fails, standard matching remains the fallback path.
+- **Decision model:** one-click under Settings → Matching & decisions; `internal/systemoneenable` manages local Ollama pull of default model `tev1` (Ollama ≥0.35) or a compatible API; writes `decide_systemone_*`; HTTP prefix `/v0/settings/systemone*`. Judgment order: decision model → optional standby `decide_profile_id` (empty never bills the main model) → rules.
+- **Workspaces:** Web chats carry `workspace_id` (default `default`). Captured logins are shared inside a workspace (Settings → Accounts); other workspaces, channel sessions (`source:account:peer`), and MCP-export identities (Settings → Expose capabilities) stay isolated. v1 does not move existing chats between workspaces.
+- **Connector groups:** named sets of `connector.id` via YAML or Settings → Matching & decisions → Connector groups. When narrowing, selecting or forcing any member keeps other connectors in the group eligible (`groups_expanded` on events). Does **not** spawn child tasks by itself. Sticky narrow clears after a tool-result error so the session does not stick to the wrong system.
+- **Group sub-tasks (opt-in):** with “allow group sub-tasks” on, the model may call `spawn_group_run` (one level only): child tool surface ⊆ that group’s connectors, own `run.binding` and approvals; parent enters `waiting_child` until a receipt. No nested sub-tasks. The parent chat shows a “Subagent” card with goal, status, receipt summary/facts, expandable child events and binding, approve/reject while the child waits, and a stop action. Expanded non-terminal cards refresh every 3 seconds and fall back to the child run status when a parent event is missed. Child answers may end with `RECEIPT_JSON` to populate `summary` / `facts`. `spawn_group_run` accepts optional `async`: the parent returns immediately and keeps talking; the child writes a receipt and a conversation note on completion without waking the parent. Sync remains the default. A child Run receives only its brief, never the parent's conversation history, active goal or memory. An async terminal card offers “Continue”, which prefills the composer with the receipt; it is disabled while a run is active or waiting for a human. If the parent run already ended, a history async card reads the parent receipt on mount/expand to fill summary and facts. Connector-group settings offer “auto-continue when an async subagent finishes” (default off): only when the parent run is terminal and the conversation is idle; running/waiting parents are never interrupted, and auto-wake is single-level. Sub-tasks cannot start inside a workflow step.
+- **Context offload:** oversized tool results or user pastes can land in conversation workspace `offload/`; the model sees preview + path and may `read_file` chunks. Event/bubble storage may still keep full text per policy.
+- **Model-facing projection** (Runtime “keep important facts in long chats”, default off): edits only the projection fed to the model (pin / summary / drop bulky tool results); it does **not** rewrite `conversation.Messages`. Fail-open to the Compactor. Does not promise lower cloud API tokens.
+- **Prefix cache:** the system prompt and history stay stable; the current time, memory block, and active goal are injected after history and before the current user turn, so a new run does not invalidate the prefix. Switching model / reasoning effort mid-conversation can still lose the cache; start a new conversation for long sessions. Offload previews declare how much was truncated.
+- **Rolling summary (Compactor):** when over budget, older turns become a structured checkpoint (goal, progress, decisions, facts to keep). Raw messages stay; the prompt must not encode a global “do this before exploring” policy.
+- **Schedules:** after human approval, save one-shot / daily / weekly instructions; at fire time start a new Run on the same conversation; write tools still HITL. Per-account isolation in Settings → Schedules. A schedule skips its tick while the previous Run is not terminal; if that Run is waiting for approval it keeps skipping, and Settings → Schedules shows “Paused · awaiting approval” with a shortcut back to the conversation. WebUI conversations get a cross-conversation pending panel, an in-app reminder, and opt-in OS notifications (browser permission required). Scheduled Runs carry `origin=scheduled`; the model can reply `NO_UPDATE` to finish silently (WebUI note, no channel delivery). `followup_create` schedules a one-off follow-up hidden from Settings → Schedules and does not count toward the active-schedule cap. Channel instances may set `send_assistant_replies: "false"` to mute final assistant replies while keeping operator mirrors and approval notices.
+
+## Agent run shapes
+
+| Mode | Behavior |
+|------|----------|
+| Default | Single-agent ReAct: pick tool → execute → write trail → finish |
+| Optional | Linear `workflow.yaml` inside a Skill (ordered steps, optional `when` skip + approval; no loops) |
+| Optional | Group sub-task: `spawn_group_run` → child (one level) + parent waits (`waiting_child`) |
+| Skill | Config shape: `SKILL.md` (optional `SKILL.en.md`) + tools; `agent.skills` pre-activates new chats (sample includes `baize-help`) while unchecked skills stay reachable via `@`/`activate_skill`; `@id`/`/id` pins are stored on the user message as `pinned_skills` (visible in history); Composer completes `/reload`; catalog reload via `skills_reload`/`/reload` or auto dirty; optional `tool_binding: exclusive` |
+| Channel | Signed inbox; IM via out-of-process adapters + declarative `channels` (see [Deployment](./deployment.en.md)). **Production adapter: personal WeChat**; Feishu / DingTalk reference adapters under `examples/im-adapter-*` |
+
+### Optional workflow conditions
+
+A step may set `when`; a false result skips it and emits `workflow.step_skipped`:
+
+```yaml
+- id: close
+  tool: update_ticket_status
+  when:
+    path: lookup.result.status
+    op: eq
+    value: open
+  args:
+    id: "{{lookup.result.id}}"
+    status: closed
+```
+
+- Leaf: `path` + `op` (`eq` / `ne` / `contains` / `in` / `exists` / `not_exists` / `gt` / `gte` / `lt` / `lte`) + optional `value`.
+- Groups: `all` / `any` / `not`, nestable.
+- `path` reads `input` and earlier step results; a missing path is false (`exists` false, `not_exists` true).
+- Conditions are re-evaluated on resume; no loops or arbitrary scripts.
+- `POST /v0/runs` may pass `input_args` (≤64 keys / 64 KiB) into the workflow template alongside `input.text`; `text` cannot be overridden.
+- On completion the engine emits `workflow.completed` with per-step status and allowlisted result fields (`id` / `title` / `name` / `status`), and uses a readable summary as the Run output; failed workflows mark the blocking step and keep later steps `not run`.
+
+## Human approval
+
+Writes can set `require_approval`: Run enters `waiting_human`; ops / API `POST /v0/runs/{id}/resume` continues. Chat UI (`/ui`) is the operator entry. Channel approval notifications may also include a short-lived signed link (`GET/POST /v0/hitl/approvals/{token}`): GET is read-only and shows the tool and prompt; POST approves or rejects, and still goes through the same `ContinueFromHITL` path. Approval / login waits expire after 24 hours by default (`hitl.approval_ttl_sec`, `0` disables); an expired Run becomes `cancelled` and releases the conversation. Approval cards and schedule rows show the elapsed wait. While a workflow step waits, the workflow card marks it “Awaiting approval” or “Awaiting login”, and the approval card notes that it can resume after a restart. Logins and a tool's own approval gate inside a workflow step persist the step position and resume at the same step. If the process exits mid-step, the re-enqueued run fails with a check-the-side-effect note instead of replaying a write that may already have happened.
+
+When downstream login is required (`login_required`), chat can pause with a hosted-login entry: open the browser hosted page, skip that connector for this turn, or end the turn. For MCP export, see auth-failure → elicitation / `hosted_login_url` above.
+
+## Write honesty
+
+If a succeeded Run made no `llm.tool_call` at all but its final reply claims a completed write (“created / copied / updated / deleted”), the engine appends a `run.unverified_write` event and the system note “This turn called no tools, but the reply claims a write completed. Please verify.” The Run stays `succeeded`; the assistant text and `output` are unchanged. Any tool call suppresses the check (v1 boundary).
+
+## Scheduled origin and silence
+
+Runs opened by a schedule persist `origin=scheduled`; the system prompt asks the model to reply with only `NO_UPDATE` when nothing new happened. If the trimmed final reply (ignoring trailing punctuation) equals `NO_UPDATE`:
+
+- the Run stays `succeeded` with an empty `output` and a `run.silent` event;
+- no assistant message, no channel delivery, no memory extraction;
+- the WebUI adds the system note “Scheduled check: nothing new.”
+
+A manual Run's `NO_UPDATE` is a normal reply. `waiting_child`, failed and cancelled runs are unaffected.
+
+## Feature search
+
+The WebUI sidebars expose “Search features” / `Ctrl/Cmd+K` / `/`. Settings pages are indexed from `settingsNav` and navigate directly; chat actions (run binding, regenerate, approve/login, etc.) show a location hint without executing anything.
+
+## Known limits
+
+- **Workflow step approvals no longer hold a worker slot:** an `approve: true` step persists skill, next step, and result tree in the HITL payload, moves the Run to `waiting_human`, and releases the worker. Approval or restart resumes from the paused step. Old waits without state still fail at startup with a re-run message. If the process crashes after an approved step starts but before its result is persisted, that step may run again (at-least-once).
+- **HITL decisions are mutually exclusive across replicas:** `hitlMu` still serializes expiry and approval inside one process; in addition, `BeginHITLResume` / `ExpireRunIfWaiting` CAS the run from `waiting_human` to `running` or `cancelled`, so only one replicas wins and a late decision gets `hitl already settled`. A failed decision leaves the wait resumable by reverting to `waiting_human`.
+- **Multi-replica schedule claim lease:** every replica runs the 15-second schedule scan; `ClaimDue` writes a 2-minute `claim_expires_at`, and startup/scan cleanup only releases expired placeholders, so a healthy claim is not clobbered. The claim is renewed every minute while `Open` runs, so even a slow open is not reclaimed; after a crash another replica retries once the lease expires. Single-replica deployments are unaffected.
+- **Auto-extraction does not overwrite same-key entries:** it skips an existing `key` and does not rewrite it. To correct or update, use explicit memory (`remember_fact` with `supersedes`) or edit the entry in Settings → Memory. The settings page groups by key, flags “multiple with same key” and character-bigram near-duplicates; bulk cleanup deletes only, never auto-merges.
+- **Run creation is serialized across replicas:** the UI, inbox, channels and schedules still share one in-process conversation lock; in addition, `CreateRunIfConversationIdle` wraps the active-run check and insert in a Postgres `pg_advisory_xact_lock(hashtext(conversation_id))`, so when multiple replicas race only one opens the Run and the others get `conversation_busy`. SQLite and in-memory stores use a process mutex. Channel pending batches and caller retries remain process-local or at-least-once.
+- **Channel busy-merge is persisted (at-least-once):** while a Run is active, messages merge into one follow-up Run (about a 2-second sweep, 4000 runes of text per conversation). Queued text and attachments go to `channel_pending` and resume after a restart. Attachments are capped at 10 MiB per conversation batch; over the cap they get the fixed busy reply. If the process crashes after a Run is created but before its batch row is deleted, the batch may run once more after restart.
+- **Webhook inbound uses a leased claim:** after signature verification the endpoint returns 202 and persists the raw message; each replica's worker claims one job with `ClaimWebhookInboundJob` (3-minute lease) and a crashed worker's job is reclaimed after expiry. Done/retry/dead updates are conditional on the claim owner, preventing duplicate processing; the same `idempotency_key` is still remembered for 10 minutes. Single-replica behaviour is unchanged.

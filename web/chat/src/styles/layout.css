@@ -1,0 +1,123 @@
+/* 移动端：≤768；平板：769–1024；桌面：>1024 */
+.app-drawer-scrim {
+  display: none;
+}
+
+/* 桌面侧栏：统一宽度（可用右缘手柄拖拽），relative 作为手柄定位上下文 */
+.chat-sidebar,
+.settings-nav {
+  position: relative;
+  width: var(--sidebar-width, 240px);
+}
+
+/* 侧栏右缘拖拽手柄 */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+}
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background var(--t-fast, 120ms);
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after {
+  background: var(--accent);
+}
+.sidebar-resizer:focus-visible {
+  outline: none;
+}
+/* 拖拽进行中：全局禁用文本选择并保持列宽光标 */
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.sidebar-resizing .sidebar-resizer::after {
+  background: var(--accent);
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --chat-max: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-with-drawer .chat-sidebar,
+  .app-with-drawer .settings-nav {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(82vw, 320px);
+    z-index: var(--z-drawer);
+    transform: translateX(-100%);
+    transition: transform var(--t);
+    box-shadow: var(--shadow-3);
+  }
+  .sidebar-resizer {
+    display: none;
+  }
+  .app-with-drawer.drawer-open .chat-sidebar,
+  .app-with-drawer.drawer-open .settings-nav {
+    transform: translateX(0);
+  }
+  .app-with-drawer.drawer-open .app-drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-drawer) - 1);
+    background: var(--overlay-scrim);
+    border: none;
+  }
+}
+
+.app-menu-btn {
+  display: none;
+}
+.app-mobile-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .app-mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .chat-main,
+  .settings-main {
+    min-width: 0;
+  }
+  .messages-inner {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        try {
+          var stored = (localStorage.getItem('baize.theme') || '').trim();
+          var dark = false;
+          if (stored === 'dark') {
+            dark = true;
+          } else if (stored === 'system') {
+            dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          }
+          // empty / light / unknown → light (promo default)
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+    <title>Baize Chat</title>
+    <script type="module" crossorigin src="/ui/assets/index-yTyZepO2.js"></script>
+    <link rel="stylesheet" crossorigin href="/ui/assets/index-Gx06jW4g.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>

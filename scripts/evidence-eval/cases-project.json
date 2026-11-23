@@ -1,0 +1,83 @@
+[
+  {
+    "id": "PROJ-V0-list-only",
+    "protocol": "V0",
+    "input": "只查询项目列表，了解当前有哪些项目。不要新建项目，也不要改任何项目状态。",
+    "required_reads": ["list_projects"],
+    "consequential": ["create_project", "update_project_status"],
+    "forbid_tools": ["create_project", "update_project_status"],
+    "notes": "Non-ticket V0: read-only list."
+  },
+  {
+    "id": "PROJ-V0-list-no-detail",
+    "protocol": "V0",
+    "input": "只列出项目并统计 active 数量；不要读取单个项目详情，也不要修改项目。",
+    "required_reads": ["list_projects"],
+    "consequential": ["create_project", "update_project_status"],
+    "forbid_tools": ["get_project", "create_project", "update_project_status"],
+    "notes": "Non-ticket V0: list only, no detail reads or writes."
+  },
+  {
+    "id": "PROJ-V1-get-archive",
+    "protocol": "V1",
+    "input": "先用 get_project 查看 id 为 proj-1 的项目；确认后把它的状态改为 archived。不要新建项目。",
+    "required_reads": ["get_project"],
+    "consequential": ["create_project", "update_project_status"],
+    "expect_consequential_any": ["update_project_status"],
+    "arg_contains": [
+      { "tool": "update_project_status", "substr": "archived" }
+    ],
+    "notes": "Non-ticket V1: read then archive."
+  },
+  {
+    "id": "PROJ-V1-list-create",
+    "protocol": "V1",
+    "input": "先 list_projects 看现有项目，再创建标题为「扩展语料项目」的项目。创建前必须先查过列表。",
+    "required_reads": ["list_projects"],
+    "consequential": ["create_project", "update_project_status"],
+    "expect_consequential_any": ["create_project"],
+    "arg_contains": [
+      { "tool": "create_project", "substr": "扩展语料项目" }
+    ],
+    "notes": "Non-ticket V1: list then create."
+  },
+  {
+    "id": "PROJ-V1-direct-create",
+    "protocol": "V1",
+    "input": "直接创建标题为「跨域直接建单」的项目，不用先列清单。",
+    "required_reads": [],
+    "consequential": ["create_project", "update_project_status"],
+    "expect_consequential_any": ["create_project"],
+    "arg_contains": [
+      { "tool": "create_project", "substr": "跨域直接建单" }
+    ],
+    "notes": "Non-ticket V1: direct create without a read."
+  },
+  {
+    "id": "PROJ-V1-get-archive-2",
+    "protocol": "V1",
+    "input": "先用 get_project 查看 id 为 proj-2 的项目，再把它的状态改为 archived。",
+    "required_reads": ["get_project"],
+    "consequential": ["create_project", "update_project_status"],
+    "expect_consequential_any": ["update_project_status"],
+    "arg_contains": [
+      { "tool": "update_project_status", "substr": "archived" }
+    ],
+    "notes": "Non-ticket V1: second id, read then archive."
+  },
+  {
+    "id": "PROJ-V2-create-archive",
+    "protocol": "V2",
+    "input": "先 list_projects；再创建标题为「跨域链路」的项目；创建成功后把这个新项目状态改为 archived。改状态必须发生在创建之后。",
+    "required_reads": ["list_projects"],
+    "consequential": ["create_project", "update_project_status"],
+    "expect_consequential_any": ["create_project", "update_project_status"],
+    "chain": [
+      { "after": "create_project", "before": "update_project_status" }
+    ],
+    "arg_contains": [
+      { "tool": "create_project", "substr": "跨域链路" }
+    ],
+    "notes": "Non-ticket V2: linear create then archive."
+  }
+]

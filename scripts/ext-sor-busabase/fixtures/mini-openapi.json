@@ -1,0 +1,18 @@
+{
+  "openapi": "3.0.0",
+  "info": { "title": "mini", "version": "1.0.0" },
+  "paths": {
+    "/a": {
+      "get": { "operationId": "getA", "responses": { "200": { "description": "ok" } } },
+      "post": { "operationId": "postA", "responses": { "201": { "description": "created" } } }
+    },
+    "/b": {
+      "summary": "List B",
+      "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }],
+      "get": { "operationId": "getB", "responses": { "200": { "description": "ok" } } }
+    },
+    "/write-only": {
+      "post": { "operationId": "postOnly", "responses": { "201": { "description": "created" } } }
+    }
+  }
+}

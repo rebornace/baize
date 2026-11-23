@@ -1,0 +1,92 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import type { ChatBlock } from '../foldEvents'
+import { WorkflowCard } from './WorkflowCard'
+
+const wf = (
+  steps: Array<{
+    id: string
+    status: 'pending' | 'waiting' | 'running' | 'done' | 'skipped' | 'failed'
+    tool?: string
+    detail?: string
+    waitingKind?: 'approval' | 'login'
+  }>,
+) =>
+  ({
+    kind: 'workflow',
+    skill: 's',
+    runId: 'r',
+    steps,
+  }) as Extract<ChatBlock, { kind: 'workflow' }>
+
+describe('WorkflowCard', () => {
+  it('expanded view shows step ids, tools, details, and skipped state', () => {
+    const html = renderToStaticMarkup(
+      <WorkflowCard
+        initialExpanded
+        block={wf([
+          { id: 'create', status: 'done', tool: 'create_project', detail: 'Gamma' },
+          { id: 'archive', status: 'skipped', tool: 'update_project_status' },
+        ])}
+      />,
+    )
+    expect(html).toContain('create')
+    expect(html).toContain('create_project')
+    expect(html).toContain('Gamma')
+    expect(html).toContain('archive')
+    expect(html).toContain('update_project_status')
+    expect(html).toContain('已跳过')
+  })
+
+  it('collapsed by default: shows progress and focus step, not the full list', () => {
+    const html = renderToStaticMarkup(
+      <WorkflowCard
+        block={wf([
+          { id: 'a', status: 'done' },
+          { id: 'b', status: 'running' },
+          { id: 'c', status: 'pending' },
+        ])}
+      />,
+    )
+    expect(html).toContain('第 2 / 共 3 步')
+    expect(html).toContain('步骤 2')
+    expect(html).toContain('展开步骤')
+    expect(html).not.toContain('步骤 1')
+    expect(html).not.toContain('步骤 3')
+  })
+
+  it('shows the waiting step and focuses it', () => {
+    const html = renderToStaticMarkup(
+      <WorkflowCard
+        block={wf([
+          { id: 'a', status: 'done' },
+          { id: 'b', status: 'waiting' },
+          { id: 'c', status: 'pending' },
+        ])}
+      />,
+    )
+    expect(html).toContain('第 2 / 共 3 步')
+    expect(html).toContain('等待审批')
+  })
+
+  it('shows a login wait separately from an approval wait', () => {
+    const html = renderToStaticMarkup(
+      <WorkflowCard
+        block={wf([
+          { id: 'a', status: 'done' },
+          { id: 'b', status: 'waiting', waitingKind: 'login' },
+        ])}
+      />,
+    )
+    expect(html).toContain('第 2 / 共 2 步')
+    expect(html).toContain('等待登录')
+    expect(html).not.toContain('等待审批')
+  })
+
+  it('空 steps 时显示「工作流准备中」而非矛盾的第 1/共 0 步', () => {
+    const html = renderToStaticMarkup(<WorkflowCard block={wf([])} />)
+    expect(html).toContain('工作流准备中')
+    expect(html).not.toContain('共 0 步')
+    expect(html).not.toContain('第 1')
+  })
+})

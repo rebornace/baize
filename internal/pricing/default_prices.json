@@ -1,0 +1,10 @@
+{
+  "currency": "USD",
+  "source": "示例价格，请按供应商价目更新",
+  "entries": [
+    { "model": "gpt-4o", "input_per_mtok": 2.5, "output_per_mtok": 10, "cached_input_per_mtok": 1.25 },
+    { "model": "gpt-4o-mini", "input_per_mtok": 0.15, "output_per_mtok": 0.6, "cached_input_per_mtok": 0.075 },
+    { "model": "claude-3-5-sonnet", "input_per_mtok": 3, "output_per_mtok": 15, "cached_input_per_mtok": 0.3 },
+    { "model": "deepseek-chat", "input_per_mtok": 0.27, "output_per_mtok": 1.1, "cached_input_per_mtok": 0.07 }
+  ]
+}

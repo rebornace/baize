@@ -1,0 +1,782 @@
+package skill
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/rebornace/baize/internal/blob"
+	"github.com/rebornace/baize/internal/workflow"
+)
+
+const (
+	SourceBuiltin = "builtin"
+	SourceUser    = "user"
+	SourceManaged = "managed"
+)
+
+var (
+	ErrNotFound = errors.New("skill not found")
+	ErrBuiltin  = errors.New("cannot delete builtin skill")
+	ErrManaged  = errors.New("cannot delete managed skill")
+)
+
+type Catalog struct {
+	mu          sync.RWMutex
+	byID        map[string]Package
+	builtinDirs []string
+	userDir     string // retained for API paths; user packages live in Blobs
+	Blobs       blob.Store
+	// Usage optionally records install/activate timestamps for the curator.
+	Usage UsageStore
+	// generation increments on every successful Reload (including the initial
+	// LoadCatalog Reload). Callers use it to detect catalog changes across runs.
+	generation uint64
+}
+
+func LoadCatalog(builtinDirs []string, userDir string, blobs blob.Store) (*Catalog, error) {
+	c := &Catalog{
+		byID:        make(map[string]Package),
+		builtinDirs: append([]string(nil), builtinDirs...),
+		userDir:     userDir,
+		Blobs:       blobs,
+	}
+	if err := c.Reload(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *Catalog) Get(id string) (Package, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	p, ok := c.byID[id]
+	return p, ok
+}
+
+func (c *Catalog) List() []Package {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	ids := make([]string, 0, len(c.byID))
+	for id := range c.byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Package, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, c.byID[id])
+	}
+	return out
+}
+
+func (c *Catalog) UserDir() string {
+	if c == nil {
+		return ""
+	}
+	return c.userDir
+}
+
+// Generation returns the monotonic catalog generation (0 before any successful
+// Reload; LoadCatalog performs an initial Reload so a live catalog starts at 1).
+func (c *Catalog) Generation() uint64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.generation
+}
+
+func (c *Catalog) Reload() error {
+	byID := make(map[string]Package)
+	for _, dir := range c.builtinDirs {
+		if err := scanDir(dir, SourceBuiltin, byID); err != nil {
+			return err
+		}
+	}
+	if err := c.loadUserFromBlobs(byID); err != nil {
+		return err
+	}
+	if err := c.loadManagedFromBlobs(byID); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.byID = byID
+	c.generation++
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *Catalog) loadUserFromBlobs(byID map[string]Package) error {
+	return c.loadSkillsFromBlobs(blob.PrefixSkillsUser, SourceUser, byID)
+}
+
+func (c *Catalog) loadManagedFromBlobs(byID map[string]Package) error {
+	return c.loadSkillsFromBlobs(blob.PrefixSkillsManaged, SourceManaged, byID)
+}
+
+func (c *Catalog) loadSkillsFromBlobs(prefix, source string, byID map[string]Package) error {
+	if c.Blobs == nil {
+		return nil
+	}
+	ctx := context.Background()
+	entries, err := c.Blobs.List(ctx, prefix)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		id, ok := skillIDFromBlobKey(prefix, e.Key)
+		if !ok {
+			continue
+		}
+		raw, err := c.Blobs.Get(ctx, e.Key)
+		if err != nil {
+			return fmt.Errorf("skill blob %s: %w", e.Key, err)
+		}
+		pkg, err := ParseSKILLMD(raw)
+		if err != nil {
+			return fmt.Errorf("%s: %w", e.Key, err)
+		}
+		if pkg.Name != id {
+			log.Printf("skill: warning: %s name=%q != id=%q", e.Key, pkg.Name, id)
+		}
+		pkg.ID = id
+		pkg.Source = source
+		enKey := blob.SkillObjectKey(source, id, "SKILL.en.md")
+		if enRaw, enErr := c.Blobs.Get(ctx, enKey); enErr == nil {
+			en, perr := ParseSKILLMD(enRaw)
+			if perr != nil {
+				return fmt.Errorf("%s: %w", enKey, perr)
+			}
+			pkg.ApplyEnglishOverlay(en)
+		} else if !errors.Is(enErr, blob.ErrNotFound) {
+			return fmt.Errorf("%s: %w", enKey, enErr)
+		}
+		wfKey := blob.SkillObjectKey(source, id, "workflow.yaml")
+		wfRaw, wfErr := c.Blobs.Get(ctx, wfKey)
+		if wfErr == nil {
+			wf, perr := workflow.Parse(wfRaw)
+			if perr != nil {
+				return fmt.Errorf("%s: %w", wfKey, perr)
+			}
+			if wf.Name != pkg.ID {
+				log.Printf("skill: warning: %s workflow name=%q != id=%q", wfKey, wf.Name, pkg.ID)
+			}
+			pkg.Workflow = wf
+		} else if !errors.Is(wfErr, blob.ErrNotFound) {
+			return fmt.Errorf("%s: %w", wfKey, wfErr)
+		}
+		if err := loadEvalBlob(ctx, c.Blobs, source, id, &pkg); err != nil {
+			return err
+		}
+		byID[id] = pkg
+	}
+	return nil
+}
+
+// skillIDFromBlobKey extracts id from skills/<source>/<id>/SKILL.md.
+func skillIDFromBlobKey(prefix, key string) (string, bool) {
+	rest, ok := strings.CutPrefix(key, prefix)
+	if !ok {
+		return "", false
+	}
+	id, suffix, ok := strings.Cut(rest, "/")
+	if !ok || id == "" || suffix != "SKILL.md" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
+}
+
+func scanDir(dir, source string, byID map[string]Package) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		skillPath := filepath.Join(dir, id, "SKILL.md")
+		raw, err := os.ReadFile(skillPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		pkg, err := ParseSKILLMD(raw)
+		if err != nil {
+			return fmt.Errorf("%s: %w", skillPath, err)
+		}
+		if pkg.Name != id {
+			log.Printf("skill: warning: %s name=%q != id=%q", skillPath, pkg.Name, id)
+		}
+		pkg.ID = id
+		pkg.Source = source
+		pkg.Dir = filepath.Join(dir, id)
+		if err := loadEnglishOverlayFile(&pkg, filepath.Join(pkg.Dir, "SKILL.en.md")); err != nil {
+			return err
+		}
+		wfPath := filepath.Join(pkg.Dir, "workflow.yaml")
+		wfRaw, wfErr := os.ReadFile(wfPath)
+		if wfErr == nil {
+			wf, perr := workflow.Parse(wfRaw)
+			if perr != nil {
+				return fmt.Errorf("%s: %w", wfPath, perr)
+			}
+			if wf.Name != pkg.ID {
+				log.Printf("skill: warning: %s workflow name=%q != id=%q", pkg.Dir, wf.Name, pkg.ID)
+			}
+			pkg.Workflow = wf
+		} else if !os.IsNotExist(wfErr) {
+			return fmt.Errorf("%s: %w", wfPath, wfErr)
+		}
+		if err := loadEvalFile(&pkg, filepath.Join(pkg.Dir, "EVAL.yaml")); err != nil {
+			return err
+		}
+		byID[id] = pkg
+	}
+	return nil
+}
+
+func loadEvalFile(pkg *Package, path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	attachEvalYAML(pkg, path, raw)
+	return nil
+}
+
+func loadEvalBlob(ctx context.Context, store blob.Store, source, id string, pkg *Package) error {
+	key := blob.SkillObjectKey(source, id, "EVAL.yaml")
+	raw, err := store.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, blob.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	attachEvalYAML(pkg, key, raw)
+	return nil
+}
+
+func attachEvalYAML(pkg *Package, loc string, raw []byte) {
+	doc, err := ParseEvalYAML(raw)
+	if err != nil {
+		log.Printf("skill: warning: %s: invalid EVAL.yaml: %v", loc, err)
+		return
+	}
+	pkg.Eval = &doc
+}
+
+// WorkflowYAML returns the raw workflow.yaml when present. Builtin workflows
+// are read from disk; user/managed workflows come from blobs.
+func (c *Catalog) WorkflowYAML(id string) (string, bool) {
+	p, ok := c.Get(id)
+	if !ok || p.Workflow == nil {
+		return "", false
+	}
+	switch p.Source {
+	case SourceBuiltin:
+		if p.Dir == "" {
+			return "", true
+		}
+		raw, err := os.ReadFile(filepath.Join(p.Dir, "workflow.yaml"))
+		if err == nil {
+			return string(raw), true
+		}
+	case SourceUser, SourceManaged:
+		if c.Blobs != nil {
+			key := blob.SkillObjectKey(p.Source, id, "workflow.yaml")
+			raw, err := c.Blobs.Get(context.Background(), key)
+			if err == nil {
+				return string(raw), true
+			}
+		}
+	}
+	raw, err := workflow.Marshal(p.Workflow)
+	if err != nil {
+		return "", true
+	}
+	return string(raw), true
+}
+
+// PutWorkflowRaw stores workflow.yaml bytes for a user skill after parsing.
+func (c *Catalog) PutWorkflowRaw(id, raw string) (Package, error) {
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return Package{}, ErrNotFound
+	}
+	if p.Source != SourceUser {
+		return Package{}, fmt.Errorf("skill %q is read-only", id)
+	}
+	wf, err := workflow.Parse([]byte(raw))
+	if err != nil {
+		return Package{}, err
+	}
+	if wf.Name != id {
+		return Package{}, fmt.Errorf("workflow name %q must match skill id %q", wf.Name, id)
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "workflow.yaml")
+	if err := c.Blobs.Put(context.Background(), key, []byte(raw), "application/x-yaml"); err != nil {
+		return Package{}, err
+	}
+	if err := c.Reload(); err != nil {
+		return Package{}, err
+	}
+	updated, ok := c.Get(id)
+	if !ok {
+		return Package{}, fmt.Errorf("skill %q not found after reload", id)
+	}
+	return updated, nil
+}
+
+// CloneBuiltinToUser copies a builtin skill (SKILL.md, optional EN/EVAL/workflow)
+// into the user namespace under the same id, making it editable. It is an
+// explicit override; callers should confirm with the operator first.
+func (c *Catalog) CloneBuiltinToUser(id string) (Package, error) {
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return Package{}, ErrNotFound
+	}
+	if p.Source != SourceBuiltin {
+		return Package{}, fmt.Errorf("skill %q is not builtin", id)
+	}
+	if p.Dir == "" {
+		return Package{}, fmt.Errorf("builtin skill %q has no directory", id)
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "SKILL.md")
+	if _, err := c.Blobs.Get(context.Background(), key); err == nil {
+		return Package{}, fmt.Errorf("user override for %q already exists", id)
+	} else if !errors.Is(err, blob.ErrNotFound) {
+		return Package{}, err
+	}
+	files := []string{"SKILL.md", "SKILL.en.md", "EVAL.yaml", "workflow.yaml"}
+	ctx := context.Background()
+	for _, name := range files {
+		raw, err := os.ReadFile(filepath.Join(p.Dir, name))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return Package{}, err
+		}
+		contentType := "text/markdown"
+		if name == "EVAL.yaml" || name == "workflow.yaml" {
+			contentType = "application/x-yaml"
+		}
+		if err := c.Blobs.Put(ctx, blob.SkillObjectKey(SourceUser, id, name), raw, contentType); err != nil {
+			return Package{}, err
+		}
+	}
+	if err := c.Reload(); err != nil {
+		return Package{}, err
+	}
+	updated, ok := c.Get(id)
+	if !ok {
+		return Package{}, fmt.Errorf("skill %q not found after clone", id)
+	}
+	return updated, nil
+}
+
+// PutWorkflow validates and stores workflow.yaml for a user skill, then reloads
+// the catalog. Builtin/managed skills are read-only.
+func (c *Catalog) PutWorkflow(id string, wf *workflow.Workflow) (Package, error) {
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return Package{}, ErrNotFound
+	}
+	if p.Source != SourceUser {
+		return Package{}, fmt.Errorf("skill %q is read-only", id)
+	}
+	if wf == nil {
+		return Package{}, fmt.Errorf("workflow is required")
+	}
+	wf.Name = id
+	if err := wf.Validate(); err != nil {
+		return Package{}, err
+	}
+	if err := workflow.ValidateReferences(wf); err != nil {
+		return Package{}, err
+	}
+	raw, err := workflow.Marshal(wf)
+	if err != nil {
+		return Package{}, err
+	}
+	if _, err := workflow.Parse(raw); err != nil {
+		return Package{}, err
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "workflow.yaml")
+	if err := c.Blobs.Put(context.Background(), key, raw, "application/x-yaml"); err != nil {
+		return Package{}, err
+	}
+	if err := c.Reload(); err != nil {
+		return Package{}, err
+	}
+	updated, ok := c.Get(id)
+	if !ok {
+		return Package{}, fmt.Errorf("skill %q not found after reload", id)
+	}
+	return updated, nil
+}
+
+// DeleteWorkflow removes workflow.yaml from a user skill.
+func (c *Catalog) DeleteWorkflow(id string) error {
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return ErrNotFound
+	}
+	if p.Source != SourceUser {
+		return fmt.Errorf("skill %q is read-only", id)
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "workflow.yaml")
+	if err := c.Blobs.Delete(context.Background(), key); err != nil && !errors.Is(err, blob.ErrNotFound) {
+		return err
+	}
+	return c.Reload()
+}
+
+func (c *Catalog) GetEval(id string) (EvalDoc, bool) {
+	p, ok := c.Get(id)
+	if !ok || p.Eval == nil {
+		return EvalDoc{}, false
+	}
+	return *p.Eval, true
+}
+
+func (c *Catalog) PutEval(id string, doc EvalDoc) error {
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	switch p.Source {
+	case SourceManaged:
+		return fmt.Errorf("%w: %q", ErrManaged, id)
+	case SourceUser:
+	default:
+		return fmt.Errorf("%w: %q", ErrBuiltin, id)
+	}
+	if err := ValidateEvalDoc(&doc); err != nil {
+		return err
+	}
+	raw, err := MarshalEvalYAML(doc)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	if err := c.Blobs.Put(ctx, key, raw, "application/x-yaml"); err != nil {
+		return err
+	}
+	return c.Reload()
+}
+
+func (c *Catalog) DeleteEval(id string) error {
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	switch p.Source {
+	case SourceManaged:
+		return fmt.Errorf("%w: %q", ErrManaged, id)
+	case SourceUser:
+	default:
+		return fmt.Errorf("%w: %q", ErrBuiltin, id)
+	}
+	ctx := context.Background()
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	if err := c.Blobs.Delete(ctx, key); err != nil {
+		return err
+	}
+	return c.Reload()
+}
+
+func (c *Catalog) readUserEvalBytes(ctx context.Context, id string) ([]byte, error) {
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	raw, err := c.Blobs.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, blob.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *Catalog) restoreUserEvalIfMissing(ctx context.Context, id string, saved []byte) error {
+	if len(saved) == 0 {
+		return nil
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "EVAL.yaml")
+	if _, err := c.Blobs.Get(ctx, key); err == nil {
+		return nil
+	} else if !errors.Is(err, blob.ErrNotFound) {
+		return err
+	}
+	return c.Blobs.Put(ctx, key, saved, "application/x-yaml")
+}
+
+func loadEnglishOverlayFile(pkg *Package, path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	en, err := ParseSKILLMD(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	pkg.ApplyEnglishOverlay(en)
+	return nil
+}
+
+func (c *Catalog) InstallMD(filename string, raw []byte) (Package, error) {
+	_ = filename
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
+	pkg, err := ParseSKILLMD(raw)
+	if err != nil {
+		return Package{}, err
+	}
+	id := pkg.Name
+	if err := validateSkillID(id); err != nil {
+		return Package{}, err
+	}
+	ctx := context.Background()
+	savedEval, err := c.readUserEvalBytes(ctx, id)
+	if err != nil {
+		return Package{}, err
+	}
+	prefix := blob.PrefixSkillsUser + id + "/"
+	if err := blob.DeletePrefix(ctx, c.Blobs, prefix); err != nil {
+		return Package{}, err
+	}
+	key := blob.SkillObjectKey(SourceUser, id, "SKILL.md")
+	if err := c.Blobs.Put(ctx, key, raw, "text/markdown"); err != nil {
+		return Package{}, err
+	}
+	if err := c.restoreUserEvalIfMissing(ctx, id, savedEval); err != nil {
+		return Package{}, err
+	}
+	if err := c.Reload(); err != nil {
+		return Package{}, err
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return Package{}, fmt.Errorf("installed skill %q not found after reload", id)
+	}
+	if c.Usage != nil {
+		_ = c.Usage.EnsureInstalled(id, time.Now().UTC())
+	}
+	return p, nil
+}
+
+func (c *Catalog) InstallZip(raw []byte) (Package, error) {
+	if c.Blobs == nil {
+		return Package{}, fmt.Errorf("blob store not configured")
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return Package{}, err
+	}
+	for _, f := range zr.File {
+		if !filepath.IsLocal(f.Name) {
+			return Package{}, fmt.Errorf("invalid zip entry: %s", f.Name)
+		}
+	}
+
+	tmpDir, err := os.MkdirTemp("", "skill-zip-*")
+	if err != nil {
+		return Package{}, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	for _, f := range zr.File {
+		dest := filepath.Join(tmpDir, filepath.FromSlash(f.Name))
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(dest, 0o755); err != nil {
+				return Package{}, err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return Package{}, err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return Package{}, err
+		}
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, f.Mode())
+		if err != nil {
+			rc.Close()
+			return Package{}, err
+		}
+		_, copyErr := io.Copy(out, rc)
+		closeErr := out.Close()
+		rc.Close()
+		if copyErr != nil {
+			return Package{}, copyErr
+		}
+		if closeErr != nil {
+			return Package{}, closeErr
+		}
+	}
+
+	skillPath, err := findSkillMD(tmpDir)
+	if err != nil {
+		return Package{}, err
+	}
+	skillRaw, err := os.ReadFile(skillPath)
+	if err != nil {
+		return Package{}, err
+	}
+	pkg, err := ParseSKILLMD(skillRaw)
+	if err != nil {
+		return Package{}, err
+	}
+	id := pkg.Name
+	if err := validateSkillID(id); err != nil {
+		return Package{}, err
+	}
+
+	pkgRoot := filepath.Dir(skillPath)
+	ctx := context.Background()
+	savedEval, err := c.readUserEvalBytes(ctx, id)
+	if err != nil {
+		return Package{}, err
+	}
+	prefix := blob.PrefixSkillsUser + id + "/"
+	if err := blob.DeletePrefix(ctx, c.Blobs, prefix); err != nil {
+		return Package{}, err
+	}
+	err = filepath.WalkDir(pkgRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(pkgRoot, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		key := blob.SkillObjectKey(SourceUser, id, filepath.ToSlash(rel))
+		ct := "application/octet-stream"
+		if strings.EqualFold(filepath.Base(rel), "SKILL.md") {
+			ct = "text/markdown"
+		}
+		return c.Blobs.Put(ctx, key, data, ct)
+	})
+	if err != nil {
+		return Package{}, err
+	}
+	if err := c.restoreUserEvalIfMissing(ctx, id, savedEval); err != nil {
+		return Package{}, err
+	}
+	if err := c.Reload(); err != nil {
+		return Package{}, err
+	}
+	p, ok := c.Get(id)
+	if !ok {
+		return Package{}, fmt.Errorf("installed skill %q not found after reload", id)
+	}
+	if c.Usage != nil {
+		_ = c.Usage.EnsureInstalled(id, time.Now().UTC())
+	}
+	return p, nil
+}
+
+func findSkillMD(root string) (string, error) {
+	direct := filepath.Join(root, "SKILL.md")
+	if _, err := os.Stat(direct); err == nil {
+		return direct, nil
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
+	}
+	var subdirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			subdirs = append(subdirs, e.Name())
+		}
+	}
+	if len(subdirs) == 1 {
+		p := filepath.Join(root, subdirs[0], "SKILL.md")
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("SKILL.md not found")
+}
+
+func validateSkillID(id string) error {
+	if !filepath.IsLocal(id) {
+		return fmt.Errorf("invalid skill id: %q", id)
+	}
+	return nil
+}
+
+func (c *Catalog) DeleteUser(id string) error {
+	p, ok := c.Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	if p.Source == SourceManaged {
+		return fmt.Errorf("%w: %q", ErrManaged, id)
+	}
+	if p.Source != SourceUser {
+		return fmt.Errorf("%w: %q", ErrBuiltin, id)
+	}
+	if c.Blobs == nil {
+		return fmt.Errorf("blob store not configured")
+	}
+	if err := blob.DeletePrefix(context.Background(), c.Blobs, blob.PrefixSkillsUser+id+"/"); err != nil {
+		return err
+	}
+	return c.Reload()
+}

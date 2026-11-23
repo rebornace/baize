@@ -1,0 +1,216 @@
+[中文](./configuration.md) | **English**
+
+# Configuration: YAML, environment variables, and CLI
+
+Authoritative shapes live in `internal/config/config.go`; the tables below summarize commonly used keys. Samples are under `configs/` (`config.yaml`, `config.local.yaml.example`, `docker-*.yaml`, and so on).
+
+The entrypoint calls `LoadDotEnv(".env")`: process environment variables that already exist are **not** overwritten by `.env`.
+
+## CLI
+
+| Command | Role |
+|------|------|
+| `baize serve` | Start Runtime with the default `configs/config.yaml`; must pass `Validate` (including API Key) |
+| `baize serve -config <path>` | Start with an explicit single config file (e.g. `configs/config.local.yaml` locally) |
+| `baize reset-credentials -config <path>` | Clear control-plane hot-update credentials in the store; fall back to YAML break-glass |
+
+Sidecar process: `weixin-adapter` (see [Deployment](./deployment.md), [English](./deployment.en.md)).
+
+## Top-level YAML keys
+
+### `listen`
+
+HTTP listen address; default `:8080`. A non-empty `BAIZE_LISTEN` environment variable overrides this field after load (changing the port requires a process restart).
+
+### `store`
+
+| Field | Meaning |
+|------|------|
+| `driver` | Registered drivers such as `sqlite` / `postgres` / `memory` |
+| `sqlite_path` | SQLite path; when `driver: sqlite` and empty, defaults to `./data/baize.db` |
+| `dsn` | Connection string for Postgres and similar |
+
+### `ui`
+
+`enabled`: whether to mount the static Chat UI.
+
+### `llm`
+
+Startup default model (may seed a model profile in the store on first run; afterward the store / settings win):
+
+| Field | Default / notes |
+|------|-------------|
+| `provider` / `base_url` / `model` | Provider and model |
+| `api_key_env` | Default `BAIZE_API_KEY` |
+| `disable_thinking` / `thinking_level` / `thinking_dialect` | Thinking-chain related |
+| `supports_vision` | Default `false`; enable for vision models |
+
+### `skills`
+
+| Field | Notes |
+|------|------|
+| `builtin_dir` / `builtin_dirs` | Built-in skill scan roots; when `builtin_dirs` is non-empty it takes precedence over `builtin_dir` |
+| `user_dir` | Default `./data/skills` |
+
+`SKILL.md` frontmatter may set `domain` (for example `ticket` or `crm`). A non-empty value marks a **domain-specific skill**: Settings shows a hint to prefer `@skill` for one run, and it should not be an account-wide `agent.skills` default. Cross-domain evaluation observed occasional tool-chain drift when a domain prompt was active everywhere.
+
+Optional `requires_tools` / `requires_input` enable startup guards: a skill with missing tools cannot be saved as a default and `activate_skill` rejects it; a workflow checks `input_args` for required keys before its first step. `workflow.yaml` is editable in Settings → Skills → Workflow (user skills only); saving validates tools and template references.
+
+### `agent`
+
+`id`, `system`, and default active `skills[]`. The sample defaults include built-in skill `baize-help` (product help; it cannot edit YAML or restart the process). A domain skill in `skills[]` is pre-activated in every new chat; unless the whole account serves that domain, prefer per-run `@` activation.
+
+### `connector`
+
+Sample default connector: `id`, `type` (default `openapi`), `spec`, `base_url`, `execution_callback_url`, `require_approval` / `require_approval_mutating`, `require_login`, plus `auth` (`mode`, `static` / `passthrough` / `vault_ref` / `capture`).
+
+OpenAPI import supports path and query parameters; request bodies may be `application/json` or `application/x-www-form-urlencoded` (backends such as Django/DRF that read `request.POST`). `auth.static.headers` also acts as the fallback credential for conversation-bound calls; a captured or hosted-login identity still wins.
+
+Optional **`tls`** (outbound mTLS, local file paths):
+
+| Field | Meaning |
+|-------|---------|
+| `cert_file` | Client certificate PEM path |
+| `key_file` | Client private key PEM path |
+| `ca_file` | Optional CA PEM path appended to the system RootCAs |
+
+`cert_file` and `key_file` must be a **pair** (only one set → Apply / PUT error). `ca_file` alone is valid (custom trust anchors only). All empty means no TLS config. Store keeps **path strings only** — never PEM bodies. Applies to **OpenAPI**, **HTTP plugin**, and **MCP HTTP** (discover + `tools/call`); orthogonal to `auth.mode`. **stdio** MCP does not use TLS.
+
+**Configurable in Settings**: connector editor (Business systems / External tools / Plugins) advanced section “Outbound TLS / mTLS” — enter **Runtime host paths** (not browser-uploaded PEMs). Omitting the `tls` field keeps the server value; clearing all three and saving clears the config.
+
+### `connector_groups`
+
+Optional. Named connector sets so tool narrowing keeps other same-domain connectors eligible. See commented sample in `configs/config.yaml`:
+
+```yaml
+connector_groups:
+  - id: finance
+    connectors: [expense, invoice]
+```
+
+Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings → Matching & decisions → Connector groups (KV) without a YAML restart. “Allow group sub-tasks” must be on before `spawn_group_run`; boundaries in [Architecture](./architecture.en.md).
+
+### `run`
+
+| Field | Default |
+|------|------|
+| `max_steps` | 16 |
+| `tool_timeout_sec` | 60 (per tool call) |
+| `lase_gate` | `false`; when on, `spawn_group_run` must include `lase.confidence` / `evidence_conflict` / `reason` |
+| `lase_confidence_threshold` | `0.8`; high confidence with no evidence conflict is handled by the leader directly |
+
+> The decision layer (`internal/decide`) behaviors — memory pre-extraction judgment, tool-candidate narrowing, tool-choice enum constraint, bulky tool-result pruning, Auto-tier fallback — are **not YAML keys**. They are in-store hot-reloadable settings under Runtime → Smart speed-up (master `decide_enabled` plus per-feature toggles, all off by default) via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline. Under Memory & compaction, “keep important facts in long chats” (`context_projection_enabled`, default off) is a model-facing projection only; saved messages are not rewritten.
+>
+> **Matching & decisions** (tool prefilter + decision model) lives on its own settings page: enhanced matching via `/v0/settings/tool-retrieval*`; the decision model via `/v0/settings/systemone*` (local Ollama ≥0.35 pulls default model `tev1`, or an API). Enablement writes `decide_systemone_*` knobs; `decide_profile_id` is only a **standby model** when the decision model is unavailable (empty never bills the main model). Not in YAML.
+
+
+### `hitl`
+
+| Field | Default / notes |
+|------|-----------------|
+| `approval_ttl_sec` | 86400 (24 hours). Approval / login waits longer than this are cancelled and release the conversation; explicit `0` disables |
+
+Workflow step approvals still hold a worker until decided or expired; a workflow approval that cannot cold-resume after a restart fails immediately with a re-run message. Wait duration is visible on chat approval cards and schedule rows.
+
+Channel approval notifications may include a short-lived signed link (`/v0/hitl/approvals/...`). The link lifetime follows the wait: 24h by default, or 24h when `approval_ttl_sec: 0`. Only `kind=approval` gets a link; login waits still use `/ui` or the hosted browser login.
+
+### `conversation`
+
+| Field | Default / notes |
+|------|-------------|
+| `max_messages` | 40 |
+| `persist_identities` | `*bool`; omitted means persist by default |
+| `compact_enabled` | omitted defaults to `true` |
+| `compact_threshold` | 0.8 (falls back when out of range) |
+| `compact_reserve_output` | 8000 |
+| `compact_recent_messages` | 8 |
+
+### `middleware`
+
+Queue: `driver` defaults to `memory`, or `redis` (`addr` / `db` / `username` / `password_env` / `stream` / `consumer_group` / `events_channel`). Also `worker_concurrency`, `lease_ttl_sec`, `reconcile_interval_sec`.
+
+### `storage`
+
+Blob: `driver` is `file` / `s3` / `memory` (empty → bootstrap defaults to memory). `file.root_dir`; `s3.*` (`endpoint`, `region`, `bucket`, `prefix` default `baize`, `access_key_env` / `secret_key_env` default `S3_ACCESS_KEY` / `S3_SECRET_KEY`, `use_ssl`, `path_style`, `auto_create_bucket`).
+
+### `control_plane`
+
+| Field | Notes |
+|------|------|
+| `operator_token` / `admin_token` | Empty = unset; supports `env:VAR`, `file:/path`, or plaintext |
+| `operators[]` | Named operators `{ id, token }` |
+
+All gates empty means development mode (no multi-operator isolation). This is not downstream business IAM.
+
+### `events.webhook`
+
+Outbound events: `url`, `headers` (same global URL, retry, and dead-letter outbox as Run events).
+
+| Payload `type` | When |
+|----------------|------|
+| Run trace events | Chat Run lifecycle (existing) |
+| `catalog.diff` | After connector `PUT` / Apply **persists successfully** and `catalog_diff` is **non-empty** |
+
+`catalog.diff` JSON includes `type`, `at` (RFC3339 UTC), `connector_id`, `catalog_revision`, and `diff` (added / removed / changed); **never** tokens, passwords, or full schema bodies. Empty URL → skip silently; enqueue or POST failure → **fail-open** (Apply/PUT still succeeds). A separate `catalog_diff_webhook_url` and Inbox/email alerting are **out of scope** for this version. Connector outbound mTLS is under `connector.tls` above.
+
+**Settings copy**: Settings → Webhook notes that the same `events.webhook` also receives `type=catalog.diff`; delivery model unchanged.
+
+### `runtime`
+
+- `public_base_url`: publicly reachable Runtime base URL (no trailing slash). Used to inject sidecar `callback_urls`, to mint **hosted login** / MCP re-auth links (`/v0/auth/hosted/...`), and to mint **channel HITL approval links** (`/v0/hitl/approvals/...`). Empty → no callback injection and no externally clickable hosted-login or approval links. Cloud agents / browsers must be able to open this address (do not use loopback-only `127.0.0.1` for public scenarios). Can also be set under Runtime settings or the External login wizard.
+- `callback_hmac_secret`, `callback_token_ttl_sec` (default 3600): sidecar callback signing; approval links reuse `callback_hmac_secret` with a domain-separated HMAC. To keep issued approval links valid across a process restart, set this secret explicitly; when empty, startup uses an ephemeral secret and old links stop working after restart.
+- `otel_otlp_endpoint`: optional OTLP HTTP traces endpoint (e.g. `http://localhost:4318`). **Empty = off** — no dial, default path unchanged. When set, Run lifecycle and `tool.result` (plus MCP export calls) are exported as spans; Chat `tool.result` spans add `baize.contract_hash` and `baize.catalog_revision` when present on event Data; export failures are fail-open.
+- `otel_service_name`: OTel `service.name`, default `baize` (only when endpoint is set).
+- `log_format`: `text` (default) or `json`; override with env **`BAIZE_LOG_FORMAT`** (invalid values fall back to `text`). Initializes `slog` to stderr at startup and tees into an in-process ring (~last 500 lines) for Settings and `GET /v0/settings/logs`. **No log database**; cleared on restart. Durable capture depends on how you redirect process stderr (systemd / Docker / etc.).
+- **Hot-reload**: `GET/PATCH /v0/settings/runtime` reads/writes effective `log_format` / `otel_otlp_endpoint` / `otel_service_name` (Settings → Runtime → **Observability**). PATCH stores a runtime KV override and applies immediately (swap slog Handler / hot-swap OTLP exporter); **does not rewrite YAML**. Empty endpoint forces OTel off. `observability_reset: true` clears overrides and restores YAML (plus the startup baseline seeded by `BAIZE_LOG_FORMAT`). `BAIZE_LOG_FORMAT` only affects the startup baseline; it is not itself hot-edited.
+- **Prometheus scrape**: root **`GET /metrics`** is always mounted (no off switch); requires **Admin Bearer** (`Authorization: Bearer <admin_token>`). Operator tokens get `403`. Counters are in-process and reset on restart; scrape with an external Prometheus for long-term retention.
+- **Admin UI**: Settings → **Runtime metrics** (admin only) shows metrics text and recent logs same-origin—no separate terminal required; page header links to Runtime observability notes.
+
+### Identity model (passthrough / export identity ≠ IdP OBO)
+
+| Mechanism | Meaning | Not |
+|-----------|---------|-----|
+| `auth.mode: passthrough` | That Chat Run forwards whitelisted request headers (often `Authorization`) to downstream HTTP | End-user IdP on-behalf-of / token exchange |
+| Export identity / `identity_slots` | Downstream **business account** credentials bound to an MCP export Key (Headers); permission boundary = what that account can do | Full OIDC OBO, replaying the end-user IdP token, or server-enforced peer mTLS (connector outbound client certs: see `connector.tls`) |
+| Settings → Accounts (workspace) | Captured Chat logins, isolated per product workspace | The MCP export identity pool |
+
+Per-tenant cgroup / egress sandboxing is **out of scope** for this version (sandboxing belongs to the orchestrator).
+
+### `inbox`
+
+`channels[]`: seed config for inbound Webhook Inbox.
+
+### `mcp_export`
+
+`enabled`: `*bool`; omitted defaults to enabling Streamable HTTP MCP export. Export Keys, export identities (Headers), and per-connector **`identity_slots`** are managed under Settings → Expose capabilities (HTTP: `/v0/settings/mcp-export*`), not in this YAML section. Recent invocation audit: `GET /v0/settings/mcp-export/invocations` (Settings “Invocation audit” list; admin only).
+
+### `channels`
+
+Declarative channel instance list:
+
+```yaml
+channels:
+  - name: weixin          # instance name; required and unique when multiple instances share a type
+    type: webhook         # channel type key in the registry
+    enabled: true         # in declarative mode, only true is wired
+    config:               # opaque overrides (source, secret, outbound_url…)
+      source: weixin
+      send_assistant_replies: "false"  # optional: mute final assistant replies; operator mirrors and approval notices still send
+```
+
+**Omitting the entire `channels` section** uses legacy behavior: only auto-wire registry types that are **not** `DeclarativeOnly`. Types such as `webhook` (WeChat and similar) are DeclarativeOnly and must be explicitly `enabled: true` in this section.
+
+## Important environment variables
+
+| Variable | Role |
+|------|------|
+| `BAIZE_LISTEN` | When non-empty, overrides YAML `listen` |
+| `BAIZE_API_KEY` | Default LLM key (rename via `llm.api_key_env`) |
+| `BAIZE_CORS_ORIGINS` | Comma-separated browser Origins; when set, enables CORS on the control-plane API (Capacitor bundled www). Prefer same-origin `/ui` for the phone shell — see [Mobile](./mobile.en.md) |
+| `BAIZE_SETTINGS_KEY` | Sealing for settings / inbox / MCP OAuth, etc.; when unset, secrets cannot be sealed or opened (the related write endpoints return 400) — required in production |
+| `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN`, etc. | Referenced via YAML `env:…`, not hard-coded names |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Default credential env names for `storage.s3` |
+| `BAIZE_TEST_PG_DSN` | Postgres for **tests / CI only** |
+| `WEIXIN_ADAPTER_SECRET` | Shared HMAC for the Compose WeChat adapter (see deployment) |
+
+Other custom env names are declared by YAML fields (for example `middleware.redis.password_env`).

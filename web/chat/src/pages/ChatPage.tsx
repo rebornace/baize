@@ -1,0 +1,969 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { goalEventCount } from '../goalEvents'
+import {
+  createConversationHostedLogin,
+  exportConversation,
+  getGoal,
+  getUIConfig,
+  listModelProfiles,
+  listPendingApprovals,
+  streamPendingApprovals,
+  listSkills,
+  listTools,
+  patchGoalTip,
+  popGoal,
+  pushGoal,
+  putGoal,
+  resumeGoal,
+  resumeRun,
+  stopGoal,
+  type ConversationExportFormat,
+  type GoalStackView,
+  type ModelProfile,
+  type PendingApproval,
+  type SkillSummary,
+  type ToolInfo,
+} from '../api'
+import {
+  fetchConversationSkillDraft,
+  installSkillDraft,
+  polishSkillDraft,
+  type SkillDraftResponse,
+} from '../api/eval'
+import { Composer } from '../components/Composer'
+import { SkillDraftModal } from '../components/SkillDraftModal'
+import {
+  Button,
+  ConfirmDialog,
+  Modal,
+  ToastRegion,
+  useToast,
+} from '../components/ui'
+import { foldEvents } from '../foldEvents'
+import type { ToolCatalog } from '../friendlyTool'
+import { useGate } from '../gateContext'
+import { useLocale } from '../locale/LocaleContext'
+import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
+import {
+  conversationExportFilename,
+  conversationExportMime,
+  downloadTextFile,
+} from '../conversationExport'
+import { ConversationExportDialog } from './chat/ConversationExportDialog'
+import { desktopNotifyEnabled, showPendingNotification } from '../desktopNotify'
+import { freshPendingApprovals, pendingDocumentTitle } from '../pendingNotice'
+import { loadThinkingChoice, saveThinkingChoice } from '../thinkingChoice'
+import { isLikelyCloudModelBaseURL } from '../modelEndpoint'
+import { AUTO_MODEL_ID, isAutoChoice } from '../modelSelect'
+import { resolveChatLoginBanner } from '../loginEntry'
+import { openExternal } from '../openExternal'
+import { CHAT, EVAL, friendlyError, GOAL, LOGIN_AT, loginBrowserError } from '../strings'
+import { useStickToBottom } from '../useStickToBottom'
+import { useDrawer } from '../useDrawer'
+import { GoalBar } from './chat/GoalBar'
+import { goalCandidatesFromMessages } from './chat/goalCandidates'
+import { ChatMessageList, copyText } from './chat/ChatMessageList'
+import { ChatSidebar } from './chat/ChatSidebar'
+import { ChatComposerTrailing, ChatTopBar } from './chat/ChatTopBar'
+import { MessageSearch } from './chat/MessageSearch'
+import { PendingCenter } from './chat/PendingCenter'
+import { useChatRun } from './chat/useChatRun'
+import { useChatSession, type ChatLiveControls } from './chat/useChatSession'
+
+const AGENT_FALLBACK = 'default-agent'
+
+export function ChatPage() {
+  const { role, gateEnabled } = useGate()
+  // Subscribe so chat chrome rebuilds when language changes (without full reload).
+  const { locale } = useLocale()
+  const drawer = useDrawer()
+  const toast = useToast()
+  const pushToast = toast.push
+
+  const [agentId, setAgentId] = useState(AGENT_FALLBACK)
+  const [skills, setSkills] = useState<SkillSummary[]>([])
+  const [supportsVision, setSupportsVision] = useState(true)
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
+  // Persisted model choice (localStorage via modelChoice.ts); "" only until the
+  // lazy initializer runs. Auto is the server-side smart router.
+  const [selectedModelId, setSelectedModelId] = useState(loadModelChoice)
+  const [toolCatalog, setToolCatalog] = useState<ToolCatalog>([])
+  const [visionWarning, setVisionWarning] = useState<string | null>(null)
+  const [goalView, setGoalView] = useState<GoalStackView | null>(null)
+  const [goalLoadError, setGoalLoadError] = useState(false)
+  const runWasBusyRef = useRef(false)
+  const [skillDraftModal, setSkillDraftModal] = useState<{
+    runId: string
+    draft: SkillDraftResponse | null
+  } | null>(null)
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
+  const [pendingCenterOpen, setPendingCenterOpen] = useState(false)
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null)
+  // null until the first successful list, so startup does not toast existing
+  // items. Later lists diff against this set to announce only new ones.
+  const knownPendingRef = useRef<Set<string> | null>(null)
+  const pendingCenterOpenRef = useRef(false)
+  pendingCenterOpenRef.current = pendingCenterOpen
+  const pendingRefreshInFlightRef = useRef(false)
+  const baseTitleRef = useRef('')
+
+  const applyPendingApprovals = useCallback(
+    (items: PendingApproval[]) => {
+      const known = knownPendingRef.current
+      if (known !== null) {
+        const fresh = freshPendingApprovals(items, known)
+        if (fresh.length > 0 && !pendingCenterOpenRef.current) {
+          const first = fresh[0]
+          const detail =
+            fresh.length === 1
+              ? first.conversation_title || first.conversation_id
+              : CHAT.pendingNewToastDetail(fresh.length)
+          pushToast({ tone: 'info', title: CHAT.pendingNewToast, detail })
+          if (document.hidden && desktopNotifyEnabled()) {
+            showPendingNotification(CHAT.pendingNewToast, detail, () => setPendingCenterOpen(true))
+          }
+        }
+      }
+      knownPendingRef.current = new Set(items.map((p) => p.run_id))
+      setPendingApprovals(items)
+    },
+    [pushToast],
+  )
+
+  const refreshPendingApprovals = useCallback(async () => {
+    if (pendingRefreshInFlightRef.current) return
+    pendingRefreshInFlightRef.current = true
+    try {
+      const res = await listPendingApprovals()
+      applyPendingApprovals(Array.isArray(res.pending) ? res.pending : [])
+    } catch {
+      // Soft failure: keep the last good list; chat never depends on this.
+    } finally {
+      pendingRefreshInFlightRef.current = false
+    }
+  }, [applyPendingApprovals])
+
+  useEffect(() => {
+    let stopped = false
+    let streamReady = false
+    let retry: number | undefined
+    const controller = new AbortController()
+
+    const apply = (res: { pending: PendingApproval[] }) => {
+      if (stopped) return
+      streamReady = true
+      applyPendingApprovals(Array.isArray(res.pending) ? res.pending : [])
+    }
+    const connect = () => {
+      void streamPendingApprovals(controller.signal, apply)
+        .catch(() => {
+          // Fall back to the interval below; retry the stream shortly.
+        })
+        .finally(() => {
+          streamReady = false
+          if (!stopped) retry = window.setTimeout(connect, 3_000)
+        })
+    }
+
+    void refreshPendingApprovals()
+    connect()
+    const fallback = window.setInterval(() => {
+      if (!streamReady) void refreshPendingApprovals()
+    }, 15_000)
+    window.addEventListener('focus', refreshPendingApprovals)
+    return () => {
+      stopped = true
+      controller.abort()
+      window.clearInterval(fallback)
+      if (retry) window.clearTimeout(retry)
+      window.removeEventListener('focus', refreshPendingApprovals)
+    }
+  }, [applyPendingApprovals, refreshPendingApprovals])
+
+  // Keep the tab title useful when the window is in the background.
+  useEffect(() => {
+    if (!baseTitleRef.current) {
+      baseTitleRef.current = document.title.replace(/^\(\d+\)\s*/, '')
+    }
+    document.title = pendingDocumentTitle(baseTitleRef.current, pendingApprovals.length)
+  }, [pendingApprovals.length])
+
+  useEffect(
+    () => () => {
+      if (baseTitleRef.current) document.title = baseTitleRef.current
+    },
+    [],
+  )
+
+  const decidePending = useCallback(
+    async (runId: string, decision: 'approve' | 'reject', comment: string) => {
+      try {
+        await resumeRun(runId, decision, comment)
+      } catch (e) {
+        // Someone else may have handled it, or the wait expired; resync.
+        void refreshPendingApprovals()
+        throw e
+      }
+      setPendingApprovals((prev) => prev.filter((p) => p.run_id !== runId))
+      pushToast({
+        tone: 'success',
+        title: decision === 'approve' ? CHAT.pendingApproved : CHAT.pendingRejected,
+      })
+      void refreshPendingApprovals()
+    },
+    [pushToast, refreshPendingApprovals],
+  )
+  const [skillDraftMarkdown, setSkillDraftMarkdown] = useState('')
+  const [skillDraftEvalStub, setSkillDraftEvalStub] = useState(false)
+  const [skillDraftBusy, setSkillDraftBusy] = useState(false)
+
+  const liveRef = useRef<ChatLiveControls>({
+    busy: false,
+    liveRunId: null,
+    setBusy: () => {},
+    stopStream: () => {},
+    stopPoll: () => {},
+    resetLive: () => {},
+    attachRun: () => {},
+  })
+
+  // User-initiated actions surface friendly errors via Toast. Background
+  // failures (polling / idle sync / background refetches) stay silent so a
+  // 700ms poll loop cannot spam toasts; their state keeps advancing on retry.
+  const reportError = useCallback(
+    (e: unknown) => {
+      const f = friendlyError(e)
+      pushToast({ tone: 'error', title: f.title, detail: f.detail })
+    },
+    [pushToast],
+  )
+
+  const session = useChatSession({
+    role,
+    reportError,
+    pushToast,
+    liveRef,
+    agentId,
+  })
+
+  const exportChat = useCallback(
+    async (format: ConversationExportFormat, includeThinking: boolean) => {
+      setExporting(true)
+      try {
+        const text = await exportConversation(session.conversationId, {
+          format,
+          includeThinking,
+        })
+        downloadTextFile(
+          conversationExportFilename(session.conversationId, format),
+          text,
+          conversationExportMime(format),
+        )
+        pushToast({ tone: 'success', title: CHAT.exportSuccess })
+        setExportOpen(false)
+      } catch {
+        pushToast({ tone: 'error', title: CHAT.exportFailed })
+      } finally {
+        setExporting(false)
+      }
+    },
+    [pushToast, session.conversationId],
+  )
+
+  // Scroll to and flash a search hit once its conversation has rendered.
+  useEffect(() => {
+    if (!focusMessageId) return
+    let cancelled = false
+    const giveUp = window.setTimeout(() => setFocusMessageId(null), 3000)
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      const row = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-message-id]'),
+      ).find((el) => el.getAttribute('data-message-id') === focusMessageId)
+      if (!row) return
+      row.scrollIntoView({ block: 'center' })
+      row.classList.add('msg-focus')
+      window.setTimeout(() => row.classList.remove('msg-focus'), 2200)
+      setFocusMessageId(null)
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      window.clearTimeout(giveUp)
+    }
+  }, [focusMessageId, session.conversationId, session.messages])
+
+  // Per-conversation thinking override (sessionStorage); '' = follow model default.
+  const [thinkingLevel, setThinkingLevel] = useState(() =>
+    loadThinkingChoice(session.conversationId),
+  )
+
+  // Stable scroll handle so useChatRun's conversation-switch effect does not churn.
+  const scrollToBottomRef = useRef<(behavior?: ScrollBehavior) => void>(() => {})
+  const scrollToBottomStable = useCallback((behavior: ScrollBehavior = 'auto') => {
+    scrollToBottomRef.current(behavior)
+  }, [])
+
+  const run = useChatRun({
+    role,
+    agentId,
+    conversationId: session.conversationId,
+    conversationIdRef: session.conversationIdRef,
+    setMessages: session.setMessages,
+    setHistoryPages: session.setHistoryPages,
+    setHistoryBlocks: session.setHistoryBlocks,
+    setHistoryUsage: session.setHistoryUsage,
+    setHistoryDurationMs: session.setHistoryDurationMs,
+    fetchedRunsRef: session.fetchedRunsRef,
+    mergeHistoryPages: session.mergeHistoryPages,
+    refreshConversations: session.refreshConversations,
+    setComposerDraft: session.setComposerDraft,
+    modelProfiles,
+    selectedModelId,
+    thinkingLevel,
+    supportsVision,
+    scrollToBottom: scrollToBottomStable,
+    reportError,
+    pushToast,
+    liveRef,
+    setVisionWarning,
+    workspaceId: session.workspaceId,
+  })
+
+  const { scrollerRef, bottomRef, onScroll, scrollToBottom } = useStickToBottom([
+    session.messages,
+    run.liveEvents,
+    run.liveRunId,
+    session.conversationId,
+    session.historyPages,
+    session.historyBlocks,
+  ])
+  scrollToBottomRef.current = scrollToBottom
+
+  useEffect(() => {
+    // One cancel flag for every mount-time fetch: under StrictMode dev double
+    // mount, the first effect's stale responses must not fire setState/toasts
+    // (in particular a duplicated model-stale-fallback toast).
+    let cancelled = false
+    void getUIConfig()
+      .then((cfg) => {
+        if (cancelled) return
+        if (cfg.agent_id) setAgentId(cfg.agent_id)
+        setSupportsVision(cfg.supports_vision !== false)
+      })
+      .catch(() => {
+        /* keep fallback */
+      })
+    // Skills drive the Composer @-completion popup. GET /v0/skills is operator
+    // readable; load failures just disable the popup rather than blocking chat.
+    // Pass UI locale so catalog descriptions match the console language.
+    void listSkills(locale)
+      .then((res) => {
+        if (!cancelled) setSkills(res.skills ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setSkills([])
+      })
+    // Model profiles feed the model chip. GET /v0/settings/models is operator
+    // readable; a failure (or an empty list) shows the role-appropriate empty
+    // state and falls back to the default model without blocking chat.
+    void listModelProfiles()
+      .then((list) => {
+        if (cancelled) return
+        const profiles = Array.isArray(list) ? list : []
+        setModelProfiles(profiles)
+        // A persisted concrete choice whose model was deleted falls back to
+        // Auto; persist the fallback and tell the user once.
+        const resolved = resolveModelChoice(profiles)
+        if (resolved.stale) {
+          setSelectedModelId(AUTO_MODEL_ID)
+          saveModelChoice(AUTO_MODEL_ID)
+          toast.push({ tone: 'info', title: CHAT.modelStaleFallback })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setModelProfiles([])
+      })
+    // Tool catalog powers friendly tool names in cards. Failures degrade
+    // silently: cards then show the raw tool technical names.
+    void listTools()
+      .then((tools: ToolInfo[]) => {
+        if (cancelled) return
+        setToolCatalog(
+          tools.map((t) => ({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            connector_id: t.connector_id,
+          })),
+        )
+      })
+      .catch(() => {
+        /* catalog missing is non-blocking */
+      })
+    return () => {
+      cancelled = true
+    }
+    // toast.push is identity-stable (useCallback); re-run when UI locale changes
+    // so skill descriptions refresh with the console language.
+  }, [locale])
+
+  // Sticky thinking override is keyed by conversationId; switching chats resets
+  // to that chat's stored choice (or '' = follow model default).
+  useEffect(() => {
+    setThinkingLevel(loadThinkingChoice(session.conversationId))
+  }, [session.conversationId])
+
+  const refreshGoal = useCallback(
+    async (resetView = false) => {
+      const id = session.conversationId
+      if (!id) {
+        setGoalView(null)
+        setGoalLoadError(false)
+        return
+      }
+      if (resetView && session.conversationIdRef.current === id) {
+        setGoalView(null)
+        setGoalLoadError(false)
+      }
+      try {
+        const view = await getGoal(id)
+        if (session.conversationIdRef.current !== id) return
+        setGoalView(view)
+        setGoalLoadError(false)
+      } catch {
+        if (session.conversationIdRef.current !== id) return
+        setGoalLoadError(true)
+      }
+    },
+    [session.conversationId, session.conversationIdRef],
+  )
+
+  useEffect(() => {
+    void refreshGoal(true)
+  }, [session.conversationId, refreshGoal])
+
+  useEffect(() => {
+    const wasBusy = runWasBusyRef.current
+    runWasBusyRef.current = run.busy
+    if (wasBusy && !run.busy) void refreshGoal(false)
+  }, [run.busy, refreshGoal])
+
+  // Mid-run goal edits (goal.set / push / pop / update) refresh the bar
+  // without waiting for the run to finish. Debounced to one request per edit
+  // burst; the busy→idle refresh above still runs at the end.
+  const goalEventSeenRef = useRef(0)
+  useEffect(() => {
+    goalEventSeenRef.current = 0
+  }, [session.conversationId])
+  useEffect(() => {
+    const count = goalEventCount(run.liveEvents)
+    if (count === 0) {
+      goalEventSeenRef.current = 0
+      return
+    }
+    if (count <= goalEventSeenRef.current) return
+    goalEventSeenRef.current = count
+    const timer = window.setTimeout(() => {
+      void refreshGoal(false)
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [run.liveEvents, refreshGoal])
+
+  const goalWriteDisabled = run.busy || session.historyMutating
+
+  const runGoalAction = useCallback(
+    (fn: () => Promise<GoalStackView>) => {
+      void fn()
+        .then((view) => {
+          if (session.conversationIdRef.current === view.conversation_id) {
+            setGoalView(view)
+            setGoalLoadError(false)
+          }
+        })
+        .catch(reportError)
+    },
+    [reportError, session.conversationIdRef],
+  )
+
+  const onGoalSave = (payload: {
+    text: string
+    details: string
+    criteria: string[]
+    maxTurns: number
+    maxTokens: number
+    scope: 'root' | 'tip'
+  }) => {
+    const text = payload.text.trim()
+    if (!text) return
+    const details = payload.details.trim()
+    if (payload.scope === 'root') {
+      runGoalAction(() =>
+        putGoal(
+          session.conversationId,
+          text,
+          payload.criteria,
+          details,
+          payload.maxTurns,
+          payload.maxTokens,
+        ),
+      )
+      return
+    }
+    runGoalAction(() =>
+      patchGoalTip(
+        session.conversationId,
+        text,
+        details,
+        payload.criteria,
+        payload.maxTurns,
+        payload.maxTokens,
+      ),
+    )
+  }
+
+  const onGoalPush = () => {
+    const text = window.prompt(GOAL.pushPrompt, '')
+    if (text === null) return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => pushGoal(session.conversationId, trimmed))
+  }
+
+  const goalCandidates = useMemo(
+    () => goalCandidatesFromMessages(session.messages),
+    [session.messages],
+  )
+
+  const onPickMain = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => putGoal(session.conversationId, trimmed))
+  }
+
+  const onPickSide = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    runGoalAction(() => pushGoal(session.conversationId, trimmed))
+  }
+
+  const cloudModelRisk = useMemo(() => {
+    if (isAutoChoice(selectedModelId)) return true
+    const profile = modelProfiles.find((p) => p.id === selectedModelId)
+    return isLikelyCloudModelBaseURL(profile?.base_url)
+  }, [modelProfiles, selectedModelId])
+
+  const refreshToolCatalog = useCallback(() => {
+    void listTools()
+      .then((tools: ToolInfo[]) => {
+        setToolCatalog(
+          tools.map((t) => ({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            connector_id: t.connector_id,
+          })),
+        )
+      })
+      .catch(() => {
+        /* catalog refresh is best-effort */
+      })
+  }, [])
+
+  const onBrowserLogin = async (connectorId: string) => {
+    try {
+      // Re-fetch catalog so connector_id stays current after late hosted-login setup.
+      refreshToolCatalog()
+      const { url } = await createConversationHostedLogin(session.conversationId, connectorId)
+      await openExternal(url)
+      toast.push({ tone: 'success', title: LOGIN_AT.browserOpened })
+    } catch (err) {
+      const f = loginBrowserError(err)
+      toast.push({ tone: 'error', title: f.title, detail: f.detail })
+    }
+  }
+
+  const onLoginResume = async (decision: 'approve' | 'reject', comment = '') => {
+    const runId = run.liveRunId
+    if (!runId) {
+      toast.push({ tone: 'error', title: LOGIN_AT.browserLoginFailed })
+      return
+    }
+    try {
+      await resumeRun(runId, decision, comment)
+    } catch (err) {
+      const f = friendlyError(err)
+      toast.push({ tone: 'error', title: f.title, detail: f.detail })
+    }
+  }
+
+  // Model choice persists immediately (localStorage); it survives sends and
+  // reloads, and falls back to Auto when it no longer resolves (see mount effect).
+  const onChooseModel = (id: string) => {
+    setSelectedModelId(id)
+    saveModelChoice(id)
+  }
+
+  const onChooseThinking = (level: string) => {
+    setThinkingLevel(level)
+    saveThinkingChoice(session.conversationId, level)
+  }
+
+  const onCopyMessage = (m: (typeof session.messages)[number]) => {
+    void copyText(m.content).then((ok) => {
+      toast.push(
+        ok
+          ? { tone: 'success', title: CHAT.copySuccess }
+          : { tone: 'error', title: CHAT.copyFailed },
+      )
+    })
+  }
+
+  const liveBlocks = useMemo(
+    () => (run.liveRunId ? foldEvents(run.liveRunId, run.liveEvents) : []),
+    [run.liveRunId, run.liveEvents],
+  )
+  const showWelcome = session.messages.length === 0 && liveBlocks.length === 0
+  const composerDisabled = run.busy || session.historyMutating
+  const showStop = Boolean(run.liveRunId && run.busy)
+
+  const pendingLogin = useMemo(
+    () => resolveChatLoginBanner(run.liveRunId, liveBlocks, toolCatalog, run.liveEvents),
+    [run.liveRunId, liveBlocks, run.liveEvents, toolCatalog],
+  )
+  const pendingLoginConnector = pendingLogin.connectorId
+  const showLoginBanner = pendingLogin.active
+
+  // When a login wait appears, refresh the tool catalog so connector_id resolves
+  // after the operator configures hosted login mid-conversation.
+  useEffect(() => {
+    if (showLoginBanner) refreshToolCatalog()
+  }, [showLoginBanner, refreshToolCatalog])
+
+  const openDigSkill = useCallback(async () => {
+    const convId = session.conversationId
+    if (!convId) return
+    setSkillDraftModal({ runId: '', draft: null })
+    setSkillDraftMarkdown('')
+    setSkillDraftEvalStub(false)
+    setSkillDraftBusy(true)
+    try {
+      const draft = await fetchConversationSkillDraft(convId)
+      setSkillDraftModal({ runId: draft.source_run_id, draft })
+      setSkillDraftMarkdown(draft.markdown)
+    } catch (err) {
+      setSkillDraftModal(null)
+      const f = friendlyError(err)
+      pushToast({
+        tone: 'error',
+        title: EVAL.digSkillEmpty,
+        detail: f.detail ?? f.title,
+      })
+    } finally {
+      setSkillDraftBusy(false)
+    }
+  }, [session.conversationId, pushToast])
+
+  const polishSkillDraftMarkdown = useCallback(async () => {
+    if (!skillDraftModal?.draft || !skillDraftModal.runId) return
+    const before = skillDraftMarkdown
+    setSkillDraftBusy(true)
+    try {
+      const res = await polishSkillDraft(skillDraftModal.runId, {
+        markdown: skillDraftMarkdown,
+      })
+      setSkillDraftMarkdown(res.markdown)
+    } catch (err) {
+      setSkillDraftMarkdown(before)
+      const f = friendlyError(err)
+      pushToast({
+        tone: 'error',
+        title: EVAL.digSkillPolishFailed,
+        detail: f.detail ?? f.title,
+      })
+    } finally {
+      setSkillDraftBusy(false)
+    }
+  }, [skillDraftModal, skillDraftMarkdown, pushToast])
+
+  const confirmInstallSkillDraft = useCallback(async () => {
+    if (!skillDraftModal?.draft || !skillDraftModal.runId) return
+    const markdown = skillDraftMarkdown.trim()
+    if (!markdown) {
+      pushToast({ tone: 'error', title: EVAL.digSkillEmpty })
+      return
+    }
+    setSkillDraftBusy(true)
+    try {
+      const res = await installSkillDraft(skillDraftModal.runId, {
+        markdown,
+        create_eval_stub: skillDraftEvalStub || undefined,
+      })
+      setSkillDraftModal(null)
+      pushToast({ tone: 'success', title: EVAL.toastSkillInstalled(res.id) })
+      if (skillDraftEvalStub) {
+        if (res.eval_stub === 'created') {
+          pushToast({ tone: 'success', title: EVAL.digSkillEvalStubCreated })
+        } else if (res.eval_stub === 'skipped_exists') {
+          pushToast({ tone: 'info', title: EVAL.digSkillEvalStubSkipped })
+        } else if (res.eval_stub === 'error') {
+          pushToast({ tone: 'error', title: EVAL.digSkillEvalStubError })
+        }
+      }
+    } catch (err) {
+      const f = friendlyError(err)
+      pushToast({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setSkillDraftBusy(false)
+    }
+  }, [skillDraftModal, skillDraftMarkdown, skillDraftEvalStub, pushToast])
+
+  return (
+    <div className={`chat-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
+      <button
+        type="button"
+        className="app-drawer-scrim"
+        aria-label={CHAT.closeMenu}
+        onClick={drawer.close}
+      />
+      <ChatSidebar
+        role={role}
+        gateEnabled={gateEnabled}
+        conversationId={session.conversationId}
+        conversationScope={session.conversationScope}
+        conversations={session.conversations}
+        onNewChat={session.onNewChat}
+        onSelectConversation={session.onSelectConversation}
+        onDeleteConversation={session.onDeleteConversation}
+        onScopeChange={session.setConversationScope}
+        onCloseDrawer={drawer.close}
+        workspaceId={session.workspaceId}
+        workspaces={session.workspaces}
+        onSwitchWorkspace={(id) => {
+          void session.onSwitchWorkspace(id)
+        }}
+        onCreateWorkspace={session.onCreateWorkspace}
+        pendingCount={pendingApprovals.length}
+        onOpenPending={() => setPendingCenterOpen(true)}
+        onOpenMessageSearch={() => setMessageSearchOpen(true)}
+        onExportConversation={() => setExportOpen(true)}
+      />
+
+      <main className="chat-main">
+        <ChatTopBar onOpenDrawer={drawer.open} />
+        <ChatMessageList
+          messages={session.messages}
+          liveBlocks={liveBlocks}
+          liveRunId={run.liveRunId}
+          historyPages={session.historyPages}
+          historyBlocks={session.historyBlocks}
+          historyUsage={session.historyUsage}
+          historyDurationMs={session.historyDurationMs}
+          liveEvents={run.liveEvents}
+          toolCatalog={toolCatalog}
+          busy={run.busy}
+          historyMutating={session.historyMutating}
+          showWelcome={showWelcome}
+          scrollerRef={scrollerRef}
+          bottomRef={bottomRef}
+          onScroll={onScroll}
+          onRollbackUser={session.onRollbackUser}
+          onRegenerate={session.onRegenerate}
+          onRollbackTo={session.onRollbackTo}
+          onFork={session.onFork}
+          onCopyMessage={onCopyMessage}
+          reportError={reportError}
+          onBrowserLogin={onBrowserLogin}
+          onContinueSubagent={(text) => session.setComposerDraft(text)}
+          suppressLoginActions={showLoginBanner}
+          cloudModelRisk={cloudModelRisk}
+        />
+
+        <div className="chat-footer">
+          {showLoginBanner && (
+            <div className="chat-login-banner" data-testid="chat-login-banner" role="status">
+              <p className="chat-login-banner-text">{LOGIN_AT.pendingBanner}</p>
+              <div className="chat-login-banner-actions">
+                {pendingLoginConnector ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    data-testid="chat-login-banner-action"
+                    onClick={() => void onBrowserLogin(pendingLoginConnector)}
+                  >
+                    {LOGIN_AT.pendingBannerAction}
+                  </Button>
+                ) : null}
+                {run.liveRunId && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid="chat-login-banner-continue"
+                      onClick={() => void onLoginResume('approve')}
+                    >
+                      {LOGIN_AT.pendingContinue}
+                    </Button>
+                    {!pendingLogin.workflowStep ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          data-testid="chat-login-banner-skip-step"
+                          onClick={() => void onLoginResume('reject', 'skip_step')}
+                        >
+                          {LOGIN_AT.pendingSkipStep}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          data-testid="chat-login-banner-skip"
+                          onClick={() => void onLoginResume('reject', 'skip_login')}
+                        >
+                          {LOGIN_AT.pendingSkip}
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="chat-login-banner-abort"
+                      onClick={() => void onLoginResume('reject', 'abort_login')}
+                    >
+                      {LOGIN_AT.pendingAbort}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          {(run.status || showStop) && (
+            <div className="chat-status-row">
+              <p className="status">{run.status}</p>
+              {showStop && (
+                <button type="button" className="btn danger sm" onClick={() => void run.onCancelRun()}>
+                  {CHAT.stop}
+                </button>
+              )}
+            </div>
+          )}
+
+          <GoalBar
+            view={goalView}
+            candidates={goalCandidates}
+            loadError={goalLoadError}
+            writeDisabled={goalWriteDisabled}
+            onRetry={() => void refreshGoal(false)}
+            onSave={onGoalSave}
+            onPush={onGoalPush}
+            onPop={() => runGoalAction(() => popGoal(session.conversationId))}
+            onStop={() => runGoalAction(() => stopGoal(session.conversationId))}
+            onResume={() => runGoalAction(() => resumeGoal(session.conversationId))}
+            onPickMain={onPickMain}
+            onPickSide={onPickSide}
+          />
+
+          <Composer
+            disabled={composerDisabled}
+            draft={session.composerDraft}
+            skills={skills}
+            onSend={run.onSend}
+            plusMenuExtra={
+              role === 'admin'
+                ? [
+                    {
+                      id: 'dig-skill',
+                      label: CHAT.digSkill,
+                      onSelect: () => void openDigSkill(),
+                    },
+                  ]
+                : undefined
+            }
+            trailing={
+              <ChatComposerTrailing
+                role={role}
+                modelProfiles={modelProfiles}
+                selectedModelId={selectedModelId}
+                thinkingLevel={thinkingLevel}
+                disabled={composerDisabled}
+                onChooseModel={onChooseModel}
+                onChooseThinking={onChooseThinking}
+              />
+            }
+          />
+        </div>
+      </main>
+
+      <ConversationExportDialog
+        open={exportOpen}
+        busy={exporting}
+        onClose={() => setExportOpen(false)}
+        onExport={(format, includeThinking) => void exportChat(format, includeThinking)}
+      />
+
+      <MessageSearch
+        open={messageSearchOpen}
+        conversationId={session.conversationId}
+        onClose={() => setMessageSearchOpen(false)}
+        onOpenConversation={(id, messageId) => {
+          session.onSelectConversation(id)
+          setFocusMessageId(messageId)
+          setMessageSearchOpen(false)
+          drawer.close()
+        }}
+      />
+
+      <PendingCenter
+        open={pendingCenterOpen}
+        items={pendingApprovals}
+        onClose={() => setPendingCenterOpen(false)}
+        onOpenConversation={(id) => {
+          session.onSelectConversation(id)
+          setPendingCenterOpen(false)
+          drawer.close()
+        }}
+        onDecide={decidePending}
+      />
+
+      <SkillDraftModal
+        open={skillDraftModal != null}
+        runId={skillDraftModal?.runId || null}
+        draft={skillDraftModal?.draft ?? null}
+        markdown={skillDraftMarkdown}
+        onMarkdownChange={setSkillDraftMarkdown}
+        createEvalStub={skillDraftEvalStub}
+        onCreateEvalStubChange={setSkillDraftEvalStub}
+        busy={skillDraftBusy}
+        onClose={() => setSkillDraftModal(null)}
+        onPolish={() => void polishSkillDraftMarkdown()}
+        onInstall={() => void confirmInstallSkillDraft()}
+      />
+
+      <ConfirmDialog
+        open={session.confirmDelete !== null}
+        danger
+        title={CHAT.deleteTitle}
+        body={CHAT.deleteBody}
+        confirmText={CHAT.deleteConfirm}
+        onConfirm={() => void session.performDelete()}
+        onCancel={() => session.setConfirmDelete(null)}
+      />
+      <Modal
+        open={visionWarning !== null}
+        title={CHAT.visionWarningTitle}
+        onClose={() => setVisionWarning(null)}
+        footer={
+          <Button variant="primary" onClick={() => setVisionWarning(null)}>
+            {CHAT.visionWarningAck}
+          </Button>
+        }
+      >
+        <p className="vision-warning-body">{visionWarning}</p>
+      </Modal>
+      <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss} />
+    </div>
+  )
+}

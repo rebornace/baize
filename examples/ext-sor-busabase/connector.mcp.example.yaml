@@ -1,0 +1,10 @@
+# Copy into configs or merge under connector: / connectors:
+# MCP auth is via mcp.headers (not connector.auth). See docs/superpowers/specs/2026-08-23-mcp-bridge-v0-design.md §4.1
+connector:
+  id: busabase-mcp-readonly
+  type: mcp
+  mcp:
+    transport: http
+    url: http://localhost:15419/api/mcp   # Cloud: https://busabase.com/api/mcp
+    headers:
+      Authorization: "Bearer ${BUSABASE_TOKEN}"  # Local Desktop default: omit headers
