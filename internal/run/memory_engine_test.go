@@ -1,0 +1,524 @@
+package run
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/rebornace/baize/internal/agent"
+	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/llm"
+	"github.com/rebornace/baize/internal/memory"
+	"github.com/rebornace/baize/internal/runtimecfg"
+	"github.com/rebornace/baize/internal/store"
+	"github.com/rebornace/baize/internal/tool"
+)
+
+func TestMemoryBlockShowsKeysAndCorrectionHint(t *testing.T) {
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{
+		OwnerID: "alice", Key: "pref.drink", Text: "喜欢绿茶", Source: memory.SourceExplicit,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.Upsert(memory.Entry{
+		OwnerID: "alice", Text: "没有 key 的事实", Source: memory.SourceAuto,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{
+		Memory:   mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true}},
+	}
+	withKey := eng.memoryBlock("alice", "绿茶")
+	if !strings.Contains(withKey, "- [pref.drink] 喜欢绿茶") {
+		t.Fatalf("keyed entry missing bracket key: %q", withKey)
+	}
+	if !strings.Contains(withKey, "supersedes") {
+		t.Fatalf("correction hint missing: %q", withKey)
+	}
+	withoutKey := eng.memoryBlock("alice", "事实")
+	if !strings.Contains(withoutKey, "- 没有 key 的事实") {
+		t.Fatalf("empty-key entry must stay unprefixed: %q", withoutKey)
+	}
+	if strings.Contains(withoutKey, "[]") {
+		t.Fatalf("empty key must not render brackets: %q", withoutKey)
+	}
+}
+
+func TestMemoryInjectSameOwnerAcrossConversations(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-b", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{OwnerID: "alice", Text: "喜欢绿茶", Source: memory.SourceExplicit}); err != nil {
+		t.Fatal(err)
+	}
+
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "推荐龙井"}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	// Rank requires query as substring of entry text (no Chinese tokenization).
+	input := "绿茶"
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: input, ConversationID: "conv-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, input); err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, m := range saw {
+		if m.Role == llm.RoleSystem &&
+			strings.Contains(m.Content, "长期记忆") &&
+			strings.Contains(m.Content, "喜欢绿茶") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected memory block with 喜欢绿茶 in LLM messages; got %+v", saw)
+	}
+	if len(saw) < 2 || !strings.HasPrefix(saw[0].Content, "sys") || saw[1].Role != llm.RoleSystem || !strings.Contains(saw[1].Content, "长期记忆") {
+		t.Fatalf("memory block must follow system prompt; saw=%+v", saw)
+	}
+}
+
+func TestMemoryInjectSkipsDifferentOwner(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-alice", OwnerID: "alice", Source: "ui"})
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-bob", OwnerID: "bob", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{OwnerID: "alice", Text: "喜欢绿茶", Source: memory.SourceExplicit}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Query must Rank-hit alice's entry text so a false isolation pass is impossible.
+	input := "绿茶"
+	settings := fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}}
+
+	var sawAlice []llm.Message
+	engAlice := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			sawAlice = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem, Settings: settings,
+	}
+	rAlice, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: input, ConversationID: "conv-alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engAlice.Execute(context.Background(), rAlice.ID, agent.Def{ID: "a", System: "sys"}, input); err != nil {
+		t.Fatal(err)
+	}
+	aliceInjected := false
+	for _, m := range sawAlice {
+		if m.Role == llm.RoleSystem && strings.Contains(m.Content, "长期记忆") && strings.Contains(m.Content, "喜欢绿茶") {
+			aliceInjected = true
+			break
+		}
+	}
+	if !aliceInjected {
+		t.Fatalf("control: alice Run must inject own memory with query %q; saw=%+v", input, sawAlice)
+	}
+
+	var sawBob []llm.Message
+	engBob := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			sawBob = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "嗯"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem, Settings: settings,
+	}
+	rBob, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: input, ConversationID: "conv-bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engBob.Execute(context.Background(), rBob.ID, agent.Def{ID: "a", System: "sys"}, input); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range sawBob {
+		if strings.Contains(m.Content, "喜欢绿茶") {
+			t.Fatalf("bob Run must not inject alice memory (query %q would Rank-hit); saw=%+v", input, sawBob)
+		}
+	}
+	if !messagesContainExact(sawBob, memoryEmptyNotice) {
+		t.Fatalf("bob Run must inject empty notice; saw=%+v", sawBob)
+	}
+}
+
+func TestMemoryAutoExtractOnSucceeded(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+
+	calls := 0
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		calls++
+		if calls == 1 {
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的，已记下你喜欢绿茶"}
+		}
+		return llm.Message{Role: llm.RoleAssistant, Content: `[{"key":"tea","text":"喜欢绿茶"}]`}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: true}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "请记住我喜欢绿茶", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "请记住我喜欢绿茶"); err != nil {
+		t.Fatal(err)
+	}
+	if calls < 2 {
+		t.Fatalf("expected extract Chat call; calls=%d", calls)
+	}
+	list, err := mem.List("alice", 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range list {
+		if e.Source == memory.SourceAuto && strings.Contains(e.Text, "喜欢绿茶") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected auto memory entry; list=%+v", list)
+	}
+}
+
+func TestMemoryDisabledSkipsInjectAndExtract(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{OwnerID: "alice", Text: "喜欢绿茶", Source: memory.SourceExplicit}); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	var saw []llm.Message
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		calls++
+		saw = append([]llm.Message(nil), msgs...)
+		return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: false, MemoryAutoExtract: true}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "绿茶", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "绿茶"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("MemoryEnabled=false must not call extract Chat; calls=%d", calls)
+	}
+	for _, m := range saw {
+		if strings.Contains(m.Content, "长期记忆") || strings.Contains(m.Content, "喜欢绿茶") {
+			t.Fatalf("MemoryEnabled=false must not inject; saw=%+v", saw)
+		}
+		if m.Content == memoryEmptyNotice {
+			t.Fatalf("MemoryEnabled=false must not inject empty notice; saw=%+v", saw)
+		}
+	}
+	list, _ := mem.List("alice", 20, 0)
+	for _, e := range list {
+		if e.Source == memory.SourceAuto {
+			t.Fatalf("MemoryEnabled=false must not auto-extract; list=%+v", list)
+		}
+	}
+}
+
+func TestAutoExtractSkipsExistingKey(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	first, err := mem.Upsert(memory.Entry{OwnerID: "alice", Key: "tea", Text: "喜欢绿茶", Source: memory.SourceExplicit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+		calls++
+		if calls == 1 {
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}
+		return llm.Message{Role: llm.RoleAssistant, Content: `[{"key":"tea","text":"改喝红茶"},{"key":"cup","text":"常用马克杯"},{"key":"","text":"周一例会"}]`}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: true}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "更新习惯", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "更新习惯"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := mem.GetByOwnerKey("alice", "tea")
+	if err != nil || !ok || got.Text != "喜欢绿茶" || !got.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Fatalf("existing key changed: %+v ok=%v err=%v", got, ok, err)
+	}
+	cup, ok, err := mem.GetByOwnerKey("alice", "cup")
+	if err != nil || !ok || cup.Text != "常用马克杯" || cup.Source != memory.SourceAuto {
+		t.Fatalf("new key missing: %+v ok=%v err=%v", cup, ok, err)
+	}
+	list, _ := mem.List("alice", 20, 0)
+	blank := 0
+	for _, e := range list {
+		if e.Key == "" && e.Text == "周一例会" && e.Source == memory.SourceAuto {
+			blank++
+		}
+	}
+	if blank != 1 {
+		t.Fatalf("empty key insert count=%d list=%+v", blank, list)
+	}
+	evs, err := st.ListEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, ev := range evs {
+		if ev.Type != EventMemoryExtractSkipped {
+			continue
+		}
+		if ev.Data["reason"] == "key_exists" && ev.Data["key"] == "tea" {
+			if _, hasText := ev.Data["text"]; hasText {
+				t.Fatalf("event leaked text: %+v", ev.Data)
+			}
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("missing key_exists event: %+v", evs)
+	}
+}
+
+type lookupFailMemory struct {
+	*memory.MemoryStore
+	failKey string
+}
+
+func (m lookupFailMemory) GetByOwnerKey(ownerID, key string) (memory.Entry, bool, error) {
+	if strings.TrimSpace(key) == m.failKey {
+		return memory.Entry{}, false, errors.New("disk down")
+	}
+	return m.MemoryStore.GetByOwnerKey(ownerID, key)
+}
+
+func TestAutoExtractLookupErrorSkipsItem(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	base := memory.NewMemoryStore()
+	mem := lookupFailMemory{MemoryStore: base, failKey: "tea"}
+	calls := 0
+	llmStub := &captureLLM{onChat: func(_ []llm.Message, _ []llm.ToolSpec) llm.Message {
+		calls++
+		if calls == 1 {
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}
+		return llm.Message{Role: llm.RoleAssistant, Content: `[{"key":"tea","text":"喜欢绿茶"},{"key":"cup","text":"常用马克杯"}]`}
+	}}
+	eng := &Engine{
+		Store: st, LLM: llmStub, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: mem,
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: true}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "习惯", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "习惯"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := base.GetByOwnerKey("alice", "tea"); ok {
+		t.Fatal("lookup error must not insert tea")
+	}
+	if _, ok, err := base.GetByOwnerKey("alice", "cup"); err != nil || !ok {
+		t.Fatalf("cup should insert: ok=%v err=%v", ok, err)
+	}
+	evs, _ := st.ListEvents(r.ID)
+	seen := false
+	for _, ev := range evs {
+		if ev.Type == EventMemoryExtractSkipped && ev.Data["reason"] == "lookup_error" && ev.Data["key"] == "tea" {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("missing lookup_error: %+v", evs)
+	}
+	if rec, err := st.GetRun(r.ID); err != nil || rec.Status == store.StatusFailed {
+		t.Fatalf("run status changed: %+v err=%v", rec, err)
+	}
+}
+
+func TestMemoryEmptySearchInjectsNotice(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	var saw []llm.Message
+	eng := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			saw = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: memory.NewMemoryStore(),
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	r, err := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "红茶", ConversationID: "conv-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "红茶"); err != nil {
+		t.Fatal(err)
+	}
+	if !messagesContainExact(saw, memoryEmptyNotice) {
+		t.Fatalf("missing empty notice: %+v", saw)
+	}
+}
+
+type searchFailMemory struct{ *memory.MemoryStore }
+
+func (m searchFailMemory) Search(string, string, int) ([]memory.Entry, error) {
+	return nil, errors.New("index unavailable")
+}
+
+func TestMemorySearchErrorInjectsNoticeWithoutErrorText(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	var saw []llm.Message
+	eng := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			saw = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: searchFailMemory{MemoryStore: memory.NewMemoryStore()},
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "红茶", ConversationID: "conv-a"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "红茶"); err != nil {
+		t.Fatal(err)
+	}
+	if !messagesContainExact(saw, memoryEmptyNotice) {
+		t.Fatalf("missing notice: %+v", saw)
+	}
+	for _, m := range saw {
+		if strings.Contains(m.Content, "index unavailable") {
+			t.Fatalf("error leaked into prompt: %+v", saw)
+		}
+	}
+}
+
+type blankHitMemory struct{ *memory.MemoryStore }
+
+func (m blankHitMemory) Search(string, string, int) ([]memory.Entry, error) {
+	return []memory.Entry{{OwnerID: "alice", Text: "   "}}, nil
+}
+
+func TestMemoryUnusableHitsDoNotUseEmptyNotice(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	var saw []llm.Message
+	eng := &Engine{
+		Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+			saw = append([]llm.Message(nil), msgs...)
+			return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+		}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+		Messages: msgStore, Meta: msgStore, Memory: blankHitMemory{MemoryStore: memory.NewMemoryStore()},
+		Settings: fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}},
+	}
+	r, _ := st.CreateRun(store.CreateRunInput{AgentID: "a", Input: "红茶", ConversationID: "conv-a"})
+	if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "红茶"); err != nil {
+		t.Fatal(err)
+	}
+	if messagesContainExact(saw, memoryEmptyNotice) {
+		t.Fatalf("blank hits must not become the empty notice: %+v", saw)
+	}
+}
+
+func TestMemoryInjectSurvivesProfileChange(t *testing.T) {
+	st := store.NewMemory()
+	st.UpsertAgent(store.Agent{ID: "a", System: "sys"})
+	msgStore := conversation.NewMemoryStore()
+	_ = msgStore.EnsureMeta(conversation.Meta{ID: "conv-a", OwnerID: "alice", Source: "ui"})
+	mem := memory.NewMemoryStore()
+	if _, err := mem.Upsert(memory.Entry{OwnerID: "alice", Text: "喜欢绿茶", Source: memory.SourceExplicit}); err != nil {
+		t.Fatal(err)
+	}
+	settings := fakeKnobs{k: runtimecfg.Knobs{MemoryEnabled: true, MemoryAutoExtract: false}}
+	var first, second string
+	runOnce := func(profile string, dest *string) {
+		t.Helper()
+		eng := &Engine{
+			Store: st, LLM: &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
+				for _, m := range msgs {
+					if strings.Contains(m.Content, "喜欢绿茶") {
+						*dest = m.Content
+					}
+				}
+				return llm.Message{Role: llm.RoleAssistant, Content: "好的"}
+			}}, Tools: tool.NewRegistry(), MaxSteps: 4,
+			Messages: msgStore, Meta: msgStore, Memory: mem, Settings: settings,
+		}
+		r, err := st.CreateRun(store.CreateRunInput{
+			AgentID: "a", Input: "绿茶", ConversationID: "conv-a", ModelProfileID: profile,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := eng.Execute(context.Background(), r.ID, agent.Def{ID: "a", System: "sys"}, "绿茶"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runOnce("profile-fast", &first)
+	runOnce("profile-strong", &second)
+	if first == "" || first != second || !strings.Contains(first, "喜欢绿茶") {
+		t.Fatalf("profile swap changed memory block:\n%q\n%q", first, second)
+	}
+}
+
+func messagesContainExact(msgs []llm.Message, want string) bool {
+	for _, m := range msgs {
+		if m.Content == want {
+			return true
+		}
+	}
+	return false
+}

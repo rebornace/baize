@@ -1,0 +1,19 @@
+# Example: create a project, then archive it only when requested.
+# Requires input_args.project_title; input_args.target_status is optional.
+name: project-create
+steps:
+  - id: list
+    tool: list_projects
+  - id: create
+    tool: create_project
+    args:
+      title: "{{input.project_title}}"
+  - id: archive
+    tool: update_project_status
+    when:
+      path: input.target_status
+      op: eq
+      value: archived
+    args:
+      id: "{{create.result.id}}"
+      status: "{{input.target_status}}"

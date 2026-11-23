@@ -1,0 +1,794 @@
+package skill_test
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/rebornace/baize/internal/blob"
+	_ "github.com/rebornace/baize/internal/blob/memory"
+	"github.com/rebornace/baize/internal/skill"
+)
+
+func testMemoryBlobs(t *testing.T) blob.Store {
+	t.Helper()
+	s, err := blob.Open(context.Background(), "memory", blob.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestCatalogGenerationIncrementsOnReload(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	mustWriteSkill(t, filepath.Join(builtin, "only"), "only", "d", nil)
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), testMemoryBlobs(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen1 := cat.Generation()
+	if gen1 == 0 {
+		t.Fatal("LoadCatalog Reload should bump generation above 0")
+	}
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	gen2 := cat.Generation()
+	if gen2 != gen1+1 {
+		t.Fatalf("generation after Reload=%d want %d", gen2, gen1+1)
+	}
+	raw := []byte("---\nname: extra\ndescription: x\ntools: []\n---\n\nbody\n")
+	if _, err := cat.InstallMD("extra.md", raw); err != nil {
+		t.Fatal(err)
+	}
+	if cat.Generation() != gen2+1 {
+		t.Fatalf("InstallMD should Reload and bump generation, got %d", cat.Generation())
+	}
+}
+
+func TestCatalogUserSkillBlobInstallReloadDelete(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "from-disk", []string{"a"})
+
+	blobs := testMemoryBlobs(t)
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("builtin-only"); !ok {
+		t.Fatal("builtin skill should load from local dir")
+	}
+
+	raw := []byte("---\nname: blob-demo\ndescription: from-blob\ntools:\n  - t1\n---\n\nbody\n")
+	pkg, err := cat.InstallMD("blob-demo.md", raw)
+	if err != nil {
+		t.Fatalf("InstallMD: %v", err)
+	}
+	if pkg.ID != "blob-demo" || pkg.Source != skill.SourceUser || pkg.Description != "from-blob" {
+		t.Fatalf("installed=%+v", pkg)
+	}
+	if _, ok := cat.Get("blob-demo"); !ok {
+		t.Fatal("skill should be visible after InstallMD")
+	}
+
+	key := blob.SkillObjectKey("user", "blob-demo", "SKILL.md")
+	got, err := blobs.Get(context.Background(), key)
+	if err != nil {
+		t.Fatalf("blob Get: %v", err)
+	}
+	if string(got) != string(raw) {
+		t.Fatalf("blob content=%q", got)
+	}
+	userPath := filepath.Join(root, "user", "blob-demo", "SKILL.md")
+	if _, err := os.Stat(userPath); !os.IsNotExist(err) {
+		t.Fatalf("must not write userDir, stat err=%v", err)
+	}
+
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("blob-demo")
+	if !ok || p.Description != "from-blob" || p.Source != skill.SourceUser {
+		t.Fatalf("after Reload: %+v ok=%v", p, ok)
+	}
+	if _, ok := cat.Get("builtin-only"); !ok {
+		t.Fatal("builtin still present after Reload")
+	}
+
+	if err := cat.DeleteUser("blob-demo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("blob-demo"); ok {
+		t.Fatal("skill should be gone after DeleteUser")
+	}
+	if _, err := blobs.Get(context.Background(), key); !errors.Is(err, blob.ErrNotFound) {
+		t.Fatalf("blob after delete: err=%v", err)
+	}
+}
+
+func TestCatalogUserOverridesBuiltin(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "demo"), "demo", "from-builtin", []string{"a"})
+	blobs := testMemoryBlobs(t)
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("---\nname: demo\ndescription: from-user\ntools:\n  - b\n---\n\nbody\n")
+	if _, err := cat.InstallMD("demo.md", raw); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("demo")
+	if !ok || p.Description != "from-user" || p.Source != "user" {
+		t.Fatalf("%+v ok=%v", p, ok)
+	}
+}
+
+func TestCatalogLoadsManaged(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("login-auth")
+	if !ok {
+		t.Fatal("managed skill missing from Get")
+	}
+	if p.Source != skill.SourceManaged {
+		t.Fatalf("source=%q want managed", p.Source)
+	}
+	if !p.Managed || p.ManagedKind != "connector_login" || p.ManagedConnectorID != "auth" {
+		t.Fatalf("managed fields: %+v", p)
+	}
+	list := cat.List()
+	found := false
+	for _, x := range list {
+		if x.ID == "login-auth" && x.Source == skill.SourceManaged {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("List missing managed skill: %+v", list)
+	}
+}
+
+func TestCatalogManagedOverridesUser(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	blobs := testMemoryBlobs(t)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("---\nname: login-auth\ndescription: from-user\ntools:\n  - a\n---\n\nbody\n")
+	if err := blobs.Put(context.Background(), blob.SkillObjectKey("user", "login-auth", "SKILL.md"), raw, "text/markdown"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("login-auth")
+	if !ok || p.Source != skill.SourceManaged || p.Description == "from-user" {
+		t.Fatalf("want managed override, got %+v ok=%v", p, ok)
+	}
+	if !strings.Contains(p.Description, "auth") {
+		t.Fatalf("description=%q", p.Description)
+	}
+}
+
+func TestParseSKILLMDManagedFields(t *testing.T) {
+	raw := []byte(`---
+name: login-auth
+description: managed login
+tools:
+  - phoneLogin
+managed: true
+managed_kind: connector_login
+managed_connector_id: auth
+---
+
+body
+`)
+	pkg, err := skill.ParseSKILLMD(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pkg.Managed || pkg.ManagedKind != "connector_login" || pkg.ManagedConnectorID != "auth" {
+		t.Fatalf("%+v", pkg)
+	}
+}
+
+func TestCatalogSkipsDirWithoutSkillMD(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "good"), "good", "ok", []string{"a"})
+	if err := os.MkdirAll(filepath.Join(builtin, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, user, testMemoryBlobs(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("empty"); ok {
+		t.Fatal("empty dir should not be in catalog")
+	}
+	if _, ok := cat.Get("good"); !ok {
+		t.Fatal("good skill should be loaded")
+	}
+}
+
+func TestLoadCatalogRejectsInvalidSkillMD(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+
+	t.Run("missing frontmatter", func(t *testing.T) {
+		dir := filepath.Join(builtin, "bad-fm")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("no frontmatter\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := skill.LoadCatalog([]string{builtin}, user, nil); err == nil {
+			t.Fatal("expected error for missing frontmatter")
+		}
+	})
+
+	t.Run("missing name", func(t *testing.T) {
+		root2 := t.TempDir()
+		builtin2 := filepath.Join(root2, "builtin")
+		user2 := filepath.Join(root2, "user")
+		dir := filepath.Join(builtin2, "bad-name")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		raw := "---\ndescription: x\n---\n\nbody\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := skill.LoadCatalog([]string{builtin2}, user2, nil); err == nil {
+			t.Fatal("expected error for missing name")
+		}
+	})
+}
+
+func TestDeleteUser(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "x", []string{"a"})
+	blobs := testMemoryBlobs(t)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.InstallMD("user-skill.md", []byte("---\nname: user-skill\ndescription: y\ntools:\n  - b\n---\n\nbody\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cat.DeleteUser("missing"); !errors.Is(err, skill.ErrNotFound) {
+		t.Fatalf("missing: want ErrNotFound, got %v", err)
+	}
+	if err := cat.DeleteUser("builtin-only"); !errors.Is(err, skill.ErrBuiltin) {
+		t.Fatalf("builtin: want ErrBuiltin, got %v", err)
+	}
+	if err := cat.DeleteUser("login-auth"); !errors.Is(err, skill.ErrManaged) {
+		t.Fatalf("managed: want ErrManaged, got %v", err)
+	}
+	if err := cat.DeleteUser("user-skill"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("user-skill"); ok {
+		t.Fatal("user skill should be deleted")
+	}
+}
+
+func TestInstallMDRejectsUnsafeName(t *testing.T) {
+	root := t.TempDir()
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), testMemoryBlobs(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("---\nname: ../evil\ndescription: x\n---\n\nbody\n")
+	if _, err := cat.InstallMD("evil.md", raw); err == nil {
+		t.Fatal("expected error for path traversal name")
+	}
+}
+
+func TestInstallZipRejectsTraversal(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("../evil/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("---\nname: evil\ndescription: x\n---\n\nbody\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), testMemoryBlobs(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.InstallZip(buf.Bytes()); err == nil {
+		t.Fatal("expected error for path traversal")
+	}
+}
+
+func TestLoadCatalogReadsWorkflowYAML(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "pipe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"),
+		[]byte("---\nname: pipe\ntools:\n  - t\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"),
+		[]byte("name: pipe\nsteps:\n  - id: a\n    tool: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
+	if err != nil {
+		t.Fatalf("LoadCatalog: %v", err)
+	}
+	p, ok := cat.Get("pipe")
+	if !ok {
+		t.Fatal("pkg missing")
+	}
+	if p.Workflow == nil || p.Workflow.Name != "pipe" || len(p.Workflow.Steps) != 1 {
+		t.Fatalf("wf=%+v", p.Workflow)
+	}
+}
+
+func TestLoadCatalogInvalidWorkflowFails(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "bad")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: bad\n---\nb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflow.yaml"), []byte("name:\nsteps: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skill.LoadCatalog([]string{builtin}, user, nil); err == nil {
+		t.Fatal("want invalid workflow to fail load")
+	}
+}
+
+func TestLoadCatalogWithoutWorkflowYAML(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "plain"), "plain", "no pipeline", []string{"a"})
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("plain")
+	if !ok {
+		t.Fatal("plain skill should be loaded")
+	}
+	if p.Workflow != nil {
+		t.Fatalf("want nil Workflow, got %+v", p.Workflow)
+	}
+}
+
+func TestLoadCatalogWorkflowReadErrorFails(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	dir := filepath.Join(builtin, "broken")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: broken\n---\nb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// workflow.yaml 建成目录：ReadFile 对目录报非 NotExist 错误（Windows/Unix 均稳定）。
+	if err := os.MkdirAll(filepath.Join(dir, "workflow.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skill.LoadCatalog([]string{builtin}, user, nil); err == nil {
+		t.Fatal("want workflow.yaml read error to fail load")
+	}
+}
+
+func TestLoadRepoTicketTriage(t *testing.T) {
+	builtin := filepath.Join("..", "..", "examples", "skills")
+	user := t.TempDir()
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("ticket-triage")
+	if !ok {
+		t.Fatal("ticket-triage not found in examples/skills")
+	}
+	if p.Description != "工单分诊与建单流程（mock-ticket）" {
+		t.Fatalf("description=%q", p.Description)
+	}
+	wantTools := []string{"list_tickets", "get_ticket", "create_ticket", "update_ticket_status"}
+	if len(p.Tools) != len(wantTools) {
+		t.Fatalf("tools=%v want %v", p.Tools, wantTools)
+	}
+	for i, w := range wantTools {
+		if p.Tools[i] != w {
+			t.Fatalf("tools[%d]=%q want %q", i, p.Tools[i], w)
+		}
+	}
+	if p.Source != skill.SourceBuiltin {
+		t.Fatalf("source=%q want builtin", p.Source)
+	}
+	if !strings.Contains(p.Body, "list_tickets") {
+		t.Fatalf("body should mention list_tickets: %q", p.Body)
+	}
+	if p.Workflow != nil {
+		t.Fatal("ticket-triage must stay prompt-only; a fixed list→create workflow caused the EV-PRES regression")
+	}
+}
+
+func TestLoadRepoTicketCreate(t *testing.T) {
+	builtin := filepath.Join("..", "..", "examples", "skills")
+	cat, err := skill.LoadCatalog([]string{builtin}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("ticket-create")
+	if !ok {
+		t.Fatal("ticket-create not found in examples/skills")
+	}
+	if p.Workflow == nil || p.Workflow.Name != "ticket-create" || len(p.Workflow.Steps) != 2 {
+		t.Fatalf("ticket-create workflow=%+v", p.Workflow)
+	}
+	if p.Workflow.Steps[0].Tool != "list_tickets" || p.Workflow.Steps[1].Tool != "create_ticket" {
+		t.Fatalf("steps=%+v", p.Workflow.Steps)
+	}
+	if !p.Workflow.Steps[1].Approve {
+		t.Fatalf("create step must require approval: %+v", p.Workflow.Steps[1])
+	}
+}
+
+func TestLoadRepoProjectCreateExample(t *testing.T) {
+	builtin := filepath.Join("..", "..", "examples", "skills")
+	cat, err := skill.LoadCatalog([]string{builtin}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("project-create")
+	if !ok {
+		t.Fatal("project-create not found in examples/skills")
+	}
+	if p.Domain != "project" {
+		t.Fatalf("domain=%q want project", p.Domain)
+	}
+	if p.Workflow == nil || len(p.Workflow.Steps) != 3 {
+		t.Fatalf("project-create workflow=%+v", p.Workflow)
+	}
+	steps := p.Workflow.Steps
+	if steps[0].Tool != "list_projects" || steps[1].Tool != "create_project" || steps[2].Tool != "update_project_status" {
+		t.Fatalf("steps=%+v", steps)
+	}
+	if steps[2].When == nil || steps[2].When.Path != "input.target_status" || steps[2].When.Value != "archived" {
+		t.Fatalf("archive condition=%+v", steps[2].When)
+	}
+}
+
+func TestLoadCatalogMultipleBuiltinDirs(t *testing.T) {
+	core := filepath.Join("..", "..", "skills")
+	demo := filepath.Join("..", "..", "examples", "skills")
+	user := t.TempDir()
+	cat, err := skill.LoadCatalog([]string{core, demo}, user, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.Get("data-analytics"); !ok {
+		t.Fatal("data-analytics not found")
+	}
+	if _, ok := cat.Get("ticket-triage"); !ok {
+		t.Fatal("ticket-triage not found")
+	}
+	catMinimal, err := skill.LoadCatalog([]string{core}, user, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := catMinimal.Get("ticket-triage"); ok {
+		t.Fatal("minimal scan should not include ticket-triage")
+	}
+}
+
+func TestLoadRepoDataAnalytics(t *testing.T) {
+	builtin := filepath.Join("..", "..", "skills")
+	user := t.TempDir()
+	cat, err := skill.LoadCatalog([]string{builtin}, user, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("data-analytics")
+	if !ok {
+		t.Fatal("data-analytics not found in skills/")
+	}
+	help, ok := cat.Get("baize-help")
+	if !ok {
+		t.Fatal("baize-help not found in skills/")
+	}
+	if help.BodyEN == "" || !strings.Contains(help.BodyEN, "Baize product help") {
+		t.Fatalf("baize-help BodyEN missing English overlay: %q", help.BodyEN)
+	}
+	if !strings.Contains(help.Body, "白泽产品帮助") {
+		t.Fatalf("baize-help Body should be Chinese")
+	}
+	if strings.Contains(help.Body, "Settings → Models") {
+		t.Fatal("Chinese body must not include English menu table")
+	}
+	if p.Source != skill.SourceBuiltin {
+		t.Fatalf("source=%q want builtin", p.Source)
+	}
+	if !containsString(p.Tools, "create_analysis_page") {
+		t.Fatalf("tools=%v want create_analysis_page", p.Tools)
+	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func mustWriteSkill(t *testing.T, dir, name, desc string, tools []string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	b.WriteString("---\nname: " + name + "\ndescription: " + desc + "\ntools:\n")
+	for _, x := range tools {
+		b.WriteString("  - " + x + "\n")
+	}
+	b.WriteString("---\n\nbody\n")
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const sampleEvalYAML = `harness: evidence-eval
+cases:
+  - id: c1
+    protocol: V0
+    input: "只列表"
+    required_reads: ["list_tickets"]
+`
+
+func TestCatalogLoadBuiltinEval(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	dir := filepath.Join(builtin, "with-eval")
+	mustWriteSkill(t, dir, "with-eval", "has eval", []string{"a"})
+	if err := os.WriteFile(filepath.Join(dir, "EVAL.yaml"), []byte(sampleEvalYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := cat.Get("with-eval")
+	if !ok {
+		t.Fatal("skill missing")
+	}
+	if p.Eval == nil || len(p.Eval.Cases) != 1 || p.Eval.Cases[0].ID != "c1" {
+		t.Fatalf("Eval=%+v", p.Eval)
+	}
+	doc, ok := cat.GetEval("with-eval")
+	if !ok || len(doc.Cases) != 1 {
+		t.Fatalf("GetEval=%+v ok=%v", doc, ok)
+	}
+}
+
+func TestPutGetDeleteUserEval(t *testing.T) {
+	root := t.TempDir()
+	blobs := testMemoryBlobs(t)
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("---\nname: eval-user\ndescription: x\ntools: []\n---\n\nbody\n")
+	if _, err := cat.InstallMD("eval-user.md", raw); err != nil {
+		t.Fatal(err)
+	}
+	doc := skill.EvalDoc{
+		Harness: "evidence-eval",
+		Cases: []skill.EvalCase{
+			{ID: "c1", Protocol: "V0", Input: "hi"},
+		},
+	}
+	if err := cat.PutEval("eval-user", doc); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cat.GetEval("eval-user")
+	if !ok || len(got.Cases) != 1 || got.Cases[0].Input != "hi" {
+		t.Fatalf("GetEval=%+v ok=%v", got, ok)
+	}
+	p, _ := cat.Get("eval-user")
+	if p.Eval == nil || len(p.Eval.Cases) != 1 {
+		t.Fatalf("package Eval=%+v", p.Eval)
+	}
+	if err := cat.DeleteEval("eval-user"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cat.GetEval("eval-user"); ok {
+		t.Fatal("expected no eval after delete")
+	}
+	p, _ = cat.Get("eval-user")
+	if p.Eval != nil {
+		t.Fatalf("package Eval should be nil, got %+v", p.Eval)
+	}
+}
+
+func TestInstallMDPreservesEval(t *testing.T) {
+	root := t.TempDir()
+	blobs := testMemoryBlobs(t)
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1 := []byte("---\nname: keep-eval\ndescription: v1\ntools: []\n---\n\nbody v1\n")
+	if _, err := cat.InstallMD("keep-eval.md", v1); err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.PutEval("keep-eval", skill.EvalDoc{
+		Harness: "evidence-eval",
+		Cases:   []skill.EvalCase{{ID: "c1", Protocol: "V0", Input: "prompt"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	v2 := []byte("---\nname: keep-eval\ndescription: v2\ntools: []\n---\n\nbody v2\n")
+	pkg, err := cat.InstallMD("keep-eval.md", v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Description != "v2" {
+		t.Fatalf("description=%q", pkg.Description)
+	}
+	got, ok := cat.GetEval("keep-eval")
+	if !ok || len(got.Cases) != 1 || got.Cases[0].Input != "prompt" {
+		t.Fatalf("eval lost after reinstall: %+v ok=%v", got, ok)
+	}
+}
+
+func TestCatalogBadEvalStillListsSkill(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	dir := filepath.Join(builtin, "bad-eval")
+	mustWriteSkill(t, dir, "bad-eval", "bad eval file", nil)
+	if err := os.WriteFile(filepath.Join(dir, "EVAL.yaml"), []byte("harness: not-valid\ncases: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{builtin}, filepath.Join(root, "user"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSkillListedEvalNil(t, cat, "bad-eval")
+}
+
+func TestCatalogUserBlobBadEvalStillListsSkill(t *testing.T) {
+	root := t.TempDir()
+	blobs := testMemoryBlobs(t)
+	ctx := context.Background()
+	id := "user-bad-eval"
+	skillRaw := []byte("---\nname: " + id + "\ndescription: user bad eval\ntools: []\n---\n\nbody\n")
+	if err := blobs.Put(ctx, blob.SkillObjectKey("user", id, "SKILL.md"), skillRaw, "text/markdown"); err != nil {
+		t.Fatal(err)
+	}
+	if err := blobs.Put(ctx, blob.SkillObjectKey("user", id, "EVAL.yaml"), []byte("harness: not-valid\ncases: []\n"), "application/x-yaml"); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := skill.LoadCatalog([]string{filepath.Join(root, "builtin")}, filepath.Join(root, "user"), blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSkillListedEvalNil(t, cat, id)
+	if err := cat.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	assertSkillListedEvalNil(t, cat, id)
+}
+
+func TestPutDeleteEvalRejectsBuiltinAndManaged(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	user := filepath.Join(root, "user")
+	mustWriteSkill(t, filepath.Join(builtin, "builtin-only"), "builtin-only", "x", []string{"a"})
+	blobs := testMemoryBlobs(t)
+	mustPutManagedSkill(t, blobs, "login-auth", "auth", []string{"phoneLogin"})
+
+	cat, err := skill.LoadCatalog([]string{builtin}, user, blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := skill.EvalDoc{
+		Harness: "evidence-eval",
+		Cases:   []skill.EvalCase{{ID: "c1", Protocol: "V0", Input: "hi"}},
+	}
+	if err := cat.PutEval("builtin-only", doc); !errors.Is(err, skill.ErrBuiltin) {
+		t.Fatalf("PutEval builtin: want ErrBuiltin, got %v", err)
+	}
+	if err := cat.DeleteEval("builtin-only"); !errors.Is(err, skill.ErrBuiltin) {
+		t.Fatalf("DeleteEval builtin: want ErrBuiltin, got %v", err)
+	}
+	if err := cat.PutEval("login-auth", doc); !errors.Is(err, skill.ErrManaged) {
+		t.Fatalf("PutEval managed: want ErrManaged, got %v", err)
+	}
+	if err := cat.DeleteEval("login-auth"); !errors.Is(err, skill.ErrManaged) {
+		t.Fatalf("DeleteEval managed: want ErrManaged, got %v", err)
+	}
+}
+
+func assertSkillListedEvalNil(t *testing.T, cat *skill.Catalog, id string) {
+	t.Helper()
+	p, ok := cat.Get(id)
+	if !ok {
+		t.Fatal("skill should still load")
+	}
+	if p.Eval != nil {
+		t.Fatalf("want nil Eval on bad yaml, got %+v", p.Eval)
+	}
+	list := cat.List()
+	for _, x := range list {
+		if x.ID == id {
+			return
+		}
+	}
+	t.Fatalf("%q should appear in List", id)
+}
+
+func mustPutManagedSkill(t *testing.T, blobs blob.Store, name, connectorID string, tools []string) {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("---\nname: " + name + "\ndescription: connector " + connectorID + " login\ntools:\n")
+	for _, x := range tools {
+		b.WriteString("  - " + x + "\n")
+	}
+	b.WriteString("managed: true\nmanaged_kind: connector_login\nmanaged_connector_id: " + connectorID + "\n")
+	b.WriteString("---\n\nbody\n")
+	key := blob.SkillObjectKey("managed", name, "SKILL.md")
+	if err := blobs.Put(context.Background(), key, []byte(b.String()), "text/markdown"); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1,0 +1,61 @@
+package eventbus
+
+import "github.com/rebornace/baize/internal/store"
+
+type notifyingStore struct {
+	store.Store
+	hub *Hub
+}
+
+// Notify wraps st so successful AppendEvent / terminal UpdateRun fan out via hub.
+func Notify(st store.Store, hub *Hub) store.Store {
+	return &notifyingStore{Store: st, hub: hub}
+}
+
+func (n *notifyingStore) AppendEvent(runID string, ev store.Event) error {
+	inner := n.Store
+	if err := inner.AppendEvent(runID, ev); err != nil {
+		return err
+	}
+	evs, err := inner.ListEvents(runID)
+	if err != nil || len(evs) == 0 {
+		return nil
+	}
+	idx := len(evs) - 1
+	n.hub.Publish(runID, IndexedEvent{Index: idx, Event: evs[idx]})
+	return nil
+}
+
+func (n *notifyingStore) UpsertStreamingDelta(runID string, ev store.Event) (int, error) {
+	inner := n.Store
+	idx, err := inner.UpsertStreamingDelta(runID, ev)
+	if err != nil {
+		return -1, err
+	}
+	if idx < 0 {
+		return idx, nil
+	}
+	// Publish the upsert payload directly — do not ListEvents the whole run on
+	// every token (that was slower than the model on the stream hot path).
+	n.hub.Publish(runID, IndexedEvent{Index: idx, Event: ev})
+	return idx, nil
+}
+
+func (n *notifyingStore) UpdateRun(id string, status store.Status, output, errMsg string) error {
+	inner := n.Store
+	if err := inner.UpdateRun(id, status, output, errMsg); err != nil {
+		return err
+	}
+	if status == store.StatusSucceeded || status == store.StatusFailed || status == store.StatusCancelled || status == store.StatusRejected {
+		n.hub.PublishEnd(id, status)
+	}
+	return nil
+}
+
+func (n *notifyingStore) SetHITL(runID string, payload *store.HITLPayload) error {
+	if err := n.Store.SetHITL(runID, payload); err != nil {
+		return err
+	}
+	n.hub.PublishPending()
+	return nil
+}

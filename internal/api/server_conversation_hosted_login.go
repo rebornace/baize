@@ -1,0 +1,81 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"github.com/rebornace/baize/internal/hostedlogin"
+)
+
+// POST /v0/conversations/{id}/hosted-login — issue a conversation-scoped hosted
+// login session and return its public URL (Chat「浏览器登录」).
+func (s *Server) handlePostConversationHostedLogin(w http.ResponseWriter, r *http.Request) {
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if convID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	if s.HostedSessions == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "hosted login unavailable")
+		return
+	}
+	origin := strings.TrimRight(strings.TrimSpace(s.publicBaseURL()), "/")
+	if origin == "" {
+		writeError(w, http.StatusBadRequest, "public_base_required", "set public_base_url in Settings → Runtime (or External login wizard)")
+		return
+	}
+	var body struct {
+		ConnectorID string `json:"connector_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid json body")
+		return
+	}
+	connectorID := strings.TrimSpace(body.ConnectorID)
+	if connectorID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "connector_id is required")
+		return
+	}
+	conn, err := s.Store.GetConnector(connectorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "unknown connector_id")
+		return
+	}
+	cfg := conn.Auth.HostedLogin
+	if !cfg.Enabled {
+		writeError(w, http.StatusBadRequest, "hosted_login_disabled", "enable hosted login for this connector (Settings → External login)")
+		return
+	}
+	methodID := strings.TrimSpace(cfg.DefaultMethodID)
+	if methodID == "" {
+		writeError(w, http.StatusBadRequest, "hosted_login_incomplete", "hosted login has no default method configured")
+		return
+	}
+	seed, err := hostedlogin.MaterializeSession(cfg, methodID, hostedlogin.Session{
+		ConnectorID:    connectorID,
+		ConversationID: convID,
+		WorkspaceID:    s.workspaceIDForConv(convID),
+		PublicOrigin:   origin,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	id, _, err := s.HostedSessions.Issue(seed)
+	if err != nil || id == "" {
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to issue hosted login session")
+		return
+	}
+	s.hostedAudit().Record(hostedlogin.AuditEvent{
+		Kind:           hostedlogin.AuditSessionIssue,
+		SessionID:      id,
+		ConnectorID:    connectorID,
+		ConversationID: convID,
+		ClientIP:       clientIP(r),
+	})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"session_id": id,
+		"url":        origin + "/v0/auth/hosted/" + id,
+	})
+}

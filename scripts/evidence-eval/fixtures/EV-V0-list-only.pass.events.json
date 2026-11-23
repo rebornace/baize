@@ -1,0 +1,6 @@
+[
+  {"type": "run.started", "data": {}},
+  {"type": "llm.tool_call", "data": {"id": "c1", "name": "list_tickets", "arguments": {}}},
+  {"type": "tool.result", "data": {"id": "c1", "name": "list_tickets", "is_error": false, "content": {"tickets": []}}},
+  {"type": "llm.message", "data": {"role": "assistant", "content": "当前没有工单。"}}
+]

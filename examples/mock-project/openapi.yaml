@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: Mock Project API
+  version: 0.1.0
+paths:
+  /projects:
+    get:
+      operationId: list_projects
+      responses:
+        "200":
+          description: ok
+    post:
+      operationId: create_project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        "201":
+          description: created
+  /projects/{id}:
+    get:
+      operationId: get_project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+    patch:
+      operationId: update_project_status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string }
+      responses:
+        "200":
+          description: ok

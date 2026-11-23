@@ -1,0 +1,20 @@
+services:
+  baize:
+    build: .
+    image: baize:local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      BAIZE_API_KEY: ${BAIZE_API_KEY:?set BAIZE_API_KEY for production compose}
+      # Optional: set to require auth for admin/operator APIs.
+      BAIZE_ADMIN_TOKEN: ${BAIZE_ADMIN_TOKEN:-}
+      # Optional but required to persist encrypted secrets (API keys, channel secrets).
+      BAIZE_SETTINGS_KEY: ${BAIZE_SETTINGS_KEY:-}
+    volumes:
+      - baize-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+volumes:
+  baize-data:

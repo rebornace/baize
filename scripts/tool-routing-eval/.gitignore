@@ -1,0 +1,5 @@
+# Generated run artifacts (per-case events, summaries, aggregates).
+out/
+artifacts/
+*.req.json
+patch.json

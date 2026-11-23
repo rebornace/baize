@@ -1,0 +1,79 @@
+export type RunStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting_human'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'rejected'
+
+export interface Run {
+  id: string
+  agent_id: string
+  input: string
+  status: RunStatus
+  output?: string
+  error?: string
+  created_at: string
+  conversation_id?: string
+  /** Parent run when this is a depth-1 group-scoped child. */
+  parent_run_id?: string
+  /** 0 = normal; 1 = group-scoped child. */
+  depth?: number
+  group_id?: string
+  spawn_mode?: string
+  /** manual | scheduled; old rows may omit it. */
+  origin?: string
+}
+
+export interface Event {
+  type: string
+  timestamp: string
+  data?: Record<string, unknown>
+}
+
+export interface CreateRunResponse {
+  run_id: string
+  status: RunStatus
+  conversation_id?: string
+  /** Skills activated before the first model call for this run. */
+  pinned_skills?: string[]
+}
+
+export interface ResumeResponse {
+  run_id: string
+  status: RunStatus
+}
+
+export interface IdentityView {
+  id: string
+  label: string
+  scheme?: string
+  source: string
+  claims_summary?: Record<string, unknown>
+  is_default: boolean
+  last_used_at?: string
+}
+
+export interface Attachment {
+  filename: string
+  media_type: string
+  content_base64: string
+}
+
+/** Default thinking intensity for a model profile. */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
+
+export interface ChatMessage {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant' | 'system_note'
+  content: string
+  run_id?: string
+  created_at: string
+  /** Persisted model thinking for this assistant turn (optional). */
+  thinking?: string
+  thinking_redacted?: boolean
+  /** Skills activated for this user turn (from createRun / listMessages). */
+  pinned_skills?: string[]
+}
