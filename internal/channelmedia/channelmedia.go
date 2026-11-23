@@ -98,9 +98,7 @@ func (s *Store) open(ctx context.Context, convID, object string, maxBytes int) (
 	if s == nil || s.blobs == nil {
 		return nil, "", false, errors.New("channelmedia: no blob store configured")
 	}
-	object = strings.TrimSpace(object)
-	if object == "" || object == "." || object == ".." ||
-		strings.ContainsAny(object, "/\\") || strings.Contains(object, "..") {
+	if !validObject(object) {
 		return nil, "", false, errors.New("channelmedia: invalid object name")
 	}
 	key := path.Join(blobPrefix, safeConvSegment(convID), object)
@@ -116,6 +114,25 @@ func (s *Store) open(ctx context.Context, convID, object string, maxBytes int) (
 	}
 	ct := http.DetectContentType(b)
 	return b, ct, true, nil
+}
+
+// validObject accepts only a bare object name (no separators, no traversal).
+func validObject(object string) bool {
+	object = strings.TrimSpace(object)
+	return object != "" && object != "." && object != ".." &&
+		!strings.ContainsAny(object, "/\\") && !strings.Contains(object, "..")
+}
+
+// DeleteMedia removes a stored attachment for convID/object. Deleting a
+// missing object is a no-op success so retries are safe.
+func (s *Store) DeleteMedia(ctx context.Context, convID, object string) error {
+	if s == nil || s.blobs == nil {
+		return errors.New("channelmedia: no blob store configured")
+	}
+	if !validObject(object) {
+		return errors.New("channelmedia: invalid object name")
+	}
+	return s.blobs.Delete(ctx, path.Join(blobPrefix, safeConvSegment(convID), object))
 }
 
 // safeConvSegment reduces a conversation id (e.g. "weixin:acc:peer") to a

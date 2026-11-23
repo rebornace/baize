@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
 import { CHAT } from '../strings'
+import { deleteChannelMedia, isDeletableMediaUrl } from '../api/channelMedia'
 
 export interface ChannelImageProps {
   url: string
+  name?: string
   alt?: string
 }
 
@@ -15,13 +18,16 @@ export interface ChannelImageProps {
  * the bytes through an object URL. Falls back to the raw URL when the
  * control-plane gate is off.
  */
-export function ChannelImage({ url, alt }: ChannelImageProps) {
+export function ChannelImage({ url, name = '', alt }: ChannelImageProps) {
   const { gateEnabled } = useGate()
   // Local optimistic previews use blob: object URLs: render directly (no auth
   // fetch / no second object URL). Persisted media goes through the ACL route.
   const isLocal = url.startsWith('blob:')
   const [src, setSrc] = useState<string | null>(isLocal || !gateEnabled ? url : null)
   const [failed, setFailed] = useState(false)
+  const [deleted, setDeleted] = useState(false)
+  const [deleteFailed, setDeleteFailed] = useState(false)
+  const canDelete = !isLocal && isDeletableMediaUrl(url)
 
   useEffect(() => {
     let revoked: string | null = null
@@ -58,11 +64,43 @@ export function ChannelImage({ url, alt }: ChannelImageProps) {
     }
   }, [url, gateEnabled, isLocal])
 
+  const remove = async () => {
+    if (!window.confirm(CHAT.deleteAttachmentConfirm)) return
+    const ok = await deleteChannelMedia(url, name, gateEnabled)
+    if (ok) {
+      setDeleted(true)
+      setDeleteFailed(false)
+    } else {
+      setDeleteFailed(true)
+    }
+  }
+
+  if (deleted) {
+    return <span className="channel-image-failed">{CHAT.attachmentDeleted}</span>
+  }
   if (failed) {
     return <span className="channel-image-failed">{CHAT.imageLoadFailed}</span>
   }
   if (!src) {
     return <span className="channel-image-loading">{CHAT.imageLoading}</span>
   }
-  return <img src={src} alt={alt ?? CHAT.imageAlt} className="channel-image" loading="lazy" />
+  return (
+    <span className="channel-image-wrap">
+      <img src={src} alt={alt ?? CHAT.imageAlt} className="channel-image" loading="lazy" />
+      {canDelete ? (
+        <button
+          type="button"
+          className="channel-attachment-delete"
+          aria-label={CHAT.deleteAttachment}
+          title={CHAT.deleteAttachment}
+          onClick={() => void remove()}
+        >
+          <X size={12} aria-hidden="true" />
+        </button>
+      ) : null}
+      {deleteFailed ? (
+        <span className="channel-attachment-error">{CHAT.deleteAttachmentFailed}</span>
+      ) : null}
+    </span>
+  )
 }

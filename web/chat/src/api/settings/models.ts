@@ -1,4 +1,4 @@
-import { authInit, parseJSON } from '../http'
+﻿import { authInit, parseJSON } from '../http'
 import type { ThinkingLevel } from '../types'
 
 /** Wire dialect for thinking fields; `auto` lets the server infer. */
@@ -190,6 +190,7 @@ export interface CostSummary {
   days: CostDay[]
   today_total_usd: number
   budget_usd_per_day: number
+  budget_enforce: boolean
   over_budget: boolean
 }
 
@@ -198,11 +199,12 @@ export async function getCostSummary(days = 7): Promise<CostSummary> {
   return parseJSON(res)
 }
 
-export async function putCostBudget(budgetUsdPerDay: number): Promise<void> {
+export async function putCostBudget(budgetUsdPerDay: number, enforce = false): Promise<void> {
   const res = await fetch('/v0/settings/cost-budget', {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ budget_usd_per_day: budgetUsdPerDay }),
+    body: JSON.stringify({ budget_usd_per_day: budgetUsdPerDay, enforce }),
   })
   await parseJSON(res)
 }
+

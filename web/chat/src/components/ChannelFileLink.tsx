@@ -6,11 +6,14 @@ import {
   FileSpreadsheet,
   FileText,
   FileType2,
+  Trash2,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
+import { useState } from 'react'
 import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
 import { CHAT } from '../strings'
+import { deleteChannelMedia, isDeletableMediaUrl } from '../api/channelMedia'
 
 export interface ChannelFileLinkProps {
   name: string
@@ -53,6 +56,9 @@ export function ChannelFileLink({ name, url }: ChannelFileLinkProps) {
   const { gateEnabled } = useGate()
   const kind = fileKind(name)
   const Icon = kind.icon
+  const [deleted, setDeleted] = useState(false)
+  const [deleteFailed, setDeleteFailed] = useState(false)
+  const canDelete = isDeletableMediaUrl(url)
 
   const download = async () => {
     // Local optimistic preview (blob:): download the object URL directly.
@@ -86,16 +92,52 @@ export function ChannelFileLink({ name, url }: ChannelFileLinkProps) {
     }
   }
 
+  const remove = async () => {
+    if (!window.confirm(CHAT.deleteAttachmentConfirm)) return
+    const ok = await deleteChannelMedia(url, name, gateEnabled)
+    if (ok) {
+      setDeleted(true)
+      setDeleteFailed(false)
+    } else {
+      setDeleteFailed(true)
+    }
+  }
+
+  if (deleted) {
+    return <span className="channel-attachment-deleted">{CHAT.attachmentDeleted}</span>
+  }
+
   return (
-    <button type="button" className="channel-file-link" onClick={() => void download()} title={CHAT.clickToDownload}>
-      <span className="channel-file-icon">
-        <Icon size={18} />
-      </span>
-      <span className="channel-file-meta">
-        <span className="channel-file-name">{name}</span>
-        <span className="channel-file-kind">{kind.label}</span>
-      </span>
-      <Download size={16} className="channel-file-dl" aria-hidden="true" />
-    </button>
+    <div className="channel-file">
+      <button
+        type="button"
+        className="channel-file-link"
+        onClick={() => void download()}
+        title={CHAT.clickToDownload}
+      >
+        <span className="channel-file-icon">
+          <Icon size={18} />
+        </span>
+        <span className="channel-file-meta">
+          <span className="channel-file-name">{name}</span>
+          <span className="channel-file-kind">{kind.label}</span>
+        </span>
+        <Download size={16} className="channel-file-dl" aria-hidden="true" />
+      </button>
+      {canDelete ? (
+        <button
+          type="button"
+          className="channel-file-delete"
+          aria-label={CHAT.deleteAttachment}
+          title={CHAT.deleteAttachment}
+          onClick={() => void remove()}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      ) : null}
+      {deleteFailed ? (
+        <span className="channel-attachment-error">{CHAT.deleteAttachmentFailed}</span>
+      ) : null}
+    </div>
   )
 }

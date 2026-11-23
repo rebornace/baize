@@ -254,6 +254,10 @@ func (s *Server) handleInboxCreateRun(w http.ResponseWriter, r *http.Request, ch
 			writeError(w, http.StatusConflict, "conversation_busy", "该对话还有未结束的运行")
 			return
 		}
+		if errors.Is(err, ErrCostBudgetExceeded) {
+			writeError(w, http.StatusTooManyRequests, "cost_budget_exceeded", "今日费用已达到预算，已阻止新运行")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

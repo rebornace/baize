@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,4 +77,75 @@ func TestEvalScoreHistoryPostgres(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	evalScoreHistoryCase(t, st)
+}
+
+func evalScorePruneCase(t *testing.T, st Store) {
+	t.Helper()
+	id := "ec_" + uuid.NewString()
+	now := time.Now().UTC()
+	if err := st.UpsertEvalCase(EvalCase{
+		ID: id, Status: EvalCaseConfirmed, Protocol: "V1",
+		EventsJSON: []byte("[]"), CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteEvalCase(id) })
+	base := now.Add(-time.Duration(EvalScoreHistoryCap+10) * time.Minute)
+	total := EvalScoreHistoryCap + 5
+	for i := 0; i < total; i++ {
+		if err := st.AppendEvalScore(EvalScoreRecord{
+			CaseID: id, Pass: i%2 == 0, Notes: fmt.Sprintf("n%d", i),
+			ScoredAt: base.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An old backfill must be dropped immediately, not pushed to the front.
+	if err := st.AppendEvalScore(EvalScoreRecord{
+		CaseID: id, Notes: "stale", ScoredAt: base.Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := st.ListEvalScores(id, EvalScoreHistoryCap+10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != EvalScoreHistoryCap {
+		t.Fatalf("kept %d records, want %d", len(recs), EvalScoreHistoryCap)
+	}
+	if recs[0].Notes != fmt.Sprintf("n%d", total-1) {
+		t.Fatalf("newest=%q", recs[0].Notes)
+	}
+	if recs[len(recs)-1].Notes != fmt.Sprintf("n%d", total-EvalScoreHistoryCap) {
+		t.Fatalf("oldest=%q", recs[len(recs)-1].Notes)
+	}
+	for _, rec := range recs {
+		if rec.Notes == "stale" {
+			t.Fatal("stale backfill survived pruning")
+		}
+	}
+}
+
+func TestEvalScorePruneMemory(t *testing.T) { evalScorePruneCase(t, NewMemory()) }
+
+func TestEvalScorePruneSQLite(t *testing.T) {
+	st, err := OpenSQLite(filepath.Join(t.TempDir(), "eval_prune.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	evalScorePruneCase(t, st)
+}
+
+func TestEvalScorePrunePostgres(t *testing.T) {
+	dsn := os.Getenv("BAIZE_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("BAIZE_TEST_PG_DSN not set")
+	}
+	st, err := OpenPostgres(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	evalScorePruneCase(t, st)
 }

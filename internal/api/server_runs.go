@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -117,10 +118,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	sel, visionOK := llm.ResolveModel(llm.NormalizeProfileChoice(body.ModelProfileID), sig, profiles,
 		llm.WithContext(r.Context()), llm.WithTierAdvisor(s.TierAdvisor))
+	degradeImages := false
 	if hasImages && !visionOK {
-		writeError(w, http.StatusBadRequest, "vision_unsupported",
-			"the selected model does not support vision; switch to 智能路由 (Auto) or a vision-capable model, or remove image attachments")
-		return
+		if !sel.Auto {
+			writeError(w, http.StatusBadRequest, "vision_unsupported",
+				"the selected model does not support vision; switch to 智能路由 (Auto) or a vision-capable model, or remove image attachments")
+			return
+		}
+		// Smart routing found no vision-capable model at all. Keep the turn
+		// alive and tell the model the images could not be read, instead of
+		// failing a request the user cannot fix by picking another model.
+		degradeImages = true
 	}
 	modelProfileID := sel.ProfileID
 
@@ -153,6 +161,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 			"auto":                sel.Auto,
 			"reason":              reason,
 		},
+	}
+	if degradeImages {
+		modelRoutedEvent.Data["images_degraded"] = true
 	}
 
 	// Persist attachments to the per-conversation workspace (best-effort:
@@ -199,7 +210,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 					log.Printf("chat media: save image upload %q: %v", d.Filename, serr)
 					continue
 				}
-				bubbleMarkers = append(bubbleMarkers, "![图片]("+u+")")
+				bubbleMarkers = append(bubbleMarkers, "![图片]("+u+"?name="+url.QueryEscape(d.Filename)+")")
 				continue
 			}
 			u, _, serr := s.ChatMedia.SaveInboundFile(r.Context(), conv, d.Filename, d.MediaType, d.Data)
@@ -271,16 +282,27 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 			b.WriteString("\n\n【附件: ")
 			b.WriteString(t.Filename)
 			b.WriteString("】\n")
+			b.WriteString(attach.UntrustedContentNotice)
+			b.WriteString("\n")
 			b.WriteString(run.MaybeOffloadPaste(r.Context(), offloadWS, conv, t.Text, offloadEnabled))
+		}
+		if degradeImages {
+			for _, img := range imageExts {
+				b.WriteString("\n\n【附件: ")
+				b.WriteString(img.Filename)
+				b.WriteString("】\n（图片，当前没有可用的视觉模型，未能读取图片内容；切换到支持视觉的模型后可重新发送。）")
+			}
 		}
 		llmText = b.String()
 		userParts = append(userParts, llm.ContentPart{Type: "text", Text: llmText})
-		for _, img := range imageExts {
-			userParts = append(userParts, llm.ContentPart{
-				Type:       "image",
-				ImageMIME:  img.ImageMIME,
-				ImageBytes: img.ImageBytes,
-			})
+		if !degradeImages {
+			for _, img := range imageExts {
+				userParts = append(userParts, llm.ContentPart{
+					Type:       "image",
+					ImageMIME:  img.ImageMIME,
+					ImageBytes: img.ImageBytes,
+				})
+			}
 		}
 	} else if modelFacing != modelInput {
 		// Pure paste offload: inject stub via userParts so Input/outbound stay original.
@@ -371,6 +393,10 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, store.ErrConversationBusy) {
 			writeError(w, http.StatusConflict, "conversation_busy", "该对话还有未结束的运行")
+			return
+		}
+		if errors.Is(err, ErrCostBudgetExceeded) {
+			writeError(w, http.StatusTooManyRequests, "cost_budget_exceeded", "今日费用已达到预算，已阻止新运行")
 			return
 		}
 		if errors.Is(err, errConversationForbidden) || err.Error() == "无权访问该会话" {

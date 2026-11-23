@@ -335,6 +335,13 @@ func (s *SQLStore) AppendEvalScore(r EvalScoreRecord) error {
 	_, err = s.exec(`INSERT INTO eval_scores (id, case_id, scored_at, pass, codes_json, notes)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		r.ID, r.CaseID, r.ScoredAt.UTC().Format(time.RFC3339Nano), pass, codes, r.Notes)
+	if err != nil {
+		return err
+	}
+	// Drop everything past the newest EvalScoreHistoryCap rows for this case.
+	_, err = s.exec(`DELETE FROM eval_scores WHERE case_id = ? AND id NOT IN (
+		SELECT id FROM eval_scores WHERE case_id = ? ORDER BY scored_at DESC LIMIT ?)`,
+		r.CaseID, r.CaseID, EvalScoreHistoryCap)
 	return err
 }
 

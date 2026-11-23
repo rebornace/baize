@@ -778,6 +778,16 @@ type Store interface {
 	// best-effort in the eval package; scoring itself must still succeed.
 	AppendEvalScore(r EvalScoreRecord) error
 	ListEvalScores(caseID string, limit int) ([]EvalScoreRecord, error)
+	GetRunCost(runID string) (RunCost, bool, error)
+	PutRunCost(c RunCost) error
+	// CostDay rollups let summaries read one row per finished day instead of
+	// walking every run in the range. Finalized is set once the day can no
+	// longer change (all of its runs are terminal).
+	ListCostDays(fromDay, toDay string) ([]CostDay, error)
+	PutCostDay(d CostDay) error
+	// ClearCostCache drops cached run and day costs, e.g. after the price
+	// table changes.
+	ClearCostCache() error
 }
 
 // EvalCaseStatus is draft (incomplete expectations) or confirmed (ready to score).
@@ -843,6 +853,29 @@ type EvalScoreRecord struct {
 	Codes    []string
 	Notes    string
 	ScoredAt time.Time
+}
+
+// EvalScoreHistoryCap is how many score records each case keeps. Older
+// records are dropped on append so the trend table cannot grow without bound.
+const EvalScoreHistoryCap = 500
+
+// RunCost is a cached per-run cost estimate used by summaries and budgets.
+type RunCost struct {
+	RunID     string
+	Day       string
+	CostUSD   float64
+	Priced    bool
+	UpdatedAt time.Time
+}
+
+// CostDay is one day's rolled-up cost, cached so the cost summary does not
+// need to revisit every run created that day.
+type CostDay struct {
+	Day       string // YYYY-MM-DD (UTC)
+	CostUSD   float64
+	Runs      int
+	Finalized bool
+	UpdatedAt time.Time
 }
 
 // ErrEvalCaseNotFound is returned when an eval case row is missing.

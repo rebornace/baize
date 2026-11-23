@@ -17,6 +17,13 @@ import (
 // most maxEdge pixels, and re-encodes it. PNG keeps its MIME and alpha; jpeg
 // stays jpeg; webp and gif are re-encoded as PNG (first frame for gif).
 func processImage(data []byte, mime string, maxEdge int) (string, []byte, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", nil, fmt.Errorf("attach: decode image: %w", err)
+	}
+	if err := checkImagePixels(cfg.Width, cfg.Height); err != nil {
+		return "", nil, err
+	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", nil, fmt.Errorf("attach: decode image: %w", err)
@@ -49,6 +56,15 @@ func processImage(data []byte, mime string, maxEdge int) (string, []byte, error)
 		return "", nil, fmt.Errorf("%w: image output %s", ErrUnsupported, outMIME)
 	}
 	return outMIME, buf.Bytes(), nil
+}
+
+// checkImagePixels rejects images whose decoded pixel count exceeds the cap.
+func checkImagePixels(width, height int) error {
+	if int64(width)*int64(height) > maxImagePixels {
+		return fmt.Errorf("%w: image is %dx%d, above the %d pixel limit",
+			ErrTooLarge, width, height, maxImagePixels)
+	}
+	return nil
 }
 
 // resizeDown returns an image whose long edge is at most maxEdge. If src is

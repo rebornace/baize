@@ -952,11 +952,57 @@ describe('EvalSettings trend and batch actions', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(scoresSpy).toHaveBeenCalledWith('ec_trend')
+    expect(scoresSpy).toHaveBeenCalledWith('ec_trend', { days: undefined, limit: 100 })
     const trend = host.querySelector('[data-testid="eval-trend-ec_trend"]')
     expect(trend).toBeTruthy()
     expect(trend?.textContent).toContain('最近 2 次：通过 1')
     expect(trend?.querySelectorAll('.eval-trend-dot')).toHaveLength(2)
+  })
+
+  it('narrows the score trend to a day range', async () => {
+    const scoresSpy = vi
+      .spyOn(evalApi, 'listEvalScores')
+      .mockResolvedValueOnce({
+        items: [
+          { scored_at: '2026-02-02T12:00:00Z', pass: true },
+          { scored_at: '2026-02-01T12:00:00Z', pass: false },
+        ],
+        history_cap: 500,
+      })
+      .mockResolvedValueOnce({
+        items: [{ scored_at: '2026-02-02T12:00:00Z', pass: true }],
+        history_cap: 500,
+      })
+    await renderWithItems([baseCase])
+    const trendBtn = [...host.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '趋势',
+    ) as HTMLButtonElement
+    await act(async () => {
+      trendBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const trend = host.querySelector('[data-testid="eval-trend-ec_trend"]')
+    expect(trend?.textContent).toContain('每个用例保留最近 500 次评分')
+
+    const rangeSelect = host.querySelector(
+      '[data-testid="eval-trend-range-ec_trend"]',
+    ) as HTMLSelectElement
+    expect(rangeSelect).toBeTruthy()
+    const selectSetter = Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      'value',
+    )?.set
+    await act(async () => {
+      selectSetter?.call(rangeSelect, '30')
+      rangeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(scoresSpy).toHaveBeenLastCalledWith('ec_trend', { days: 30, limit: 100 })
+    expect(
+      host.querySelector('[data-testid="eval-trend-ec_trend"]')?.textContent,
+    ).toContain('最近 1 次：通过 1')
   })
 
   it('confirms selected drafts in one action', async () => {

@@ -277,6 +277,8 @@ export function EvalSettings() {
     null,
   )
   const [scoreHistory, setScoreHistory] = useState<Record<string, EvalScoreRecord[]>>({})
+  const [trendDays, setTrendDays] = useState<Record<string, number>>({})
+  const [trendCap, setTrendCap] = useState<Record<string, number>>({})
   const [scoreLoading, setScoreLoading] = useState<Record<string, boolean>>({})
   const [selectedCases, setSelectedCases] = useState<Record<string, boolean>>({})
   const [pendingDelete, setPendingDelete] = useState<EvalCase | null>(null)
@@ -706,12 +708,19 @@ export function EvalSettings() {
     }
   }
 
-  const loadScores = async (c: EvalCase) => {
-    if (scoreHistory[c.id] || scoreLoading[c.id]) return
+  const loadScores = async (c: EvalCase, days?: number) => {
+    if (scoreLoading[c.id]) return
+    const range = days ?? trendDays[c.id] ?? 0
     setScoreLoading((prev) => ({ ...prev, [c.id]: true }))
     try {
-      const body = await listEvalScores(c.id)
+      const body = await listEvalScores(c.id, {
+        days: range > 0 ? range : undefined,
+        limit: 100,
+      })
       setScoreHistory((prev) => ({ ...prev, [c.id]: [...body.items].reverse() }))
+      if (body.history_cap) {
+        setTrendCap((prev) => ({ ...prev, [c.id]: body.history_cap as number }))
+      }
     } catch (err) {
       const f = friendlyError(err)
       push({ tone: 'error', title: f.title, detail: f.detail })
@@ -722,6 +731,11 @@ export function EvalSettings() {
         return next
       })
     }
+  }
+
+  const changeTrendRange = (c: EvalCase, days: number) => {
+    setTrendDays((prev) => ({ ...prev, [c.id]: days }))
+    void loadScores(c, days)
   }
 
   const selectedIDs = (): string[] =>
@@ -1088,7 +1102,9 @@ export function EvalSettings() {
                                 scoreHistory[c.id].filter((r) => r.pass).length,
                                 scoreHistory[c.id].length,
                               )
-                            : EVAL.trendEmpty}
+                            : (trendDays[c.id] ?? 0) > 0
+                              ? EVAL.trendRangeEmpty
+                              : EVAL.trendEmpty}
                         </span>
                         <span className="eval-trend-dots">
                           {scoreHistory[c.id].map((r, i) => (
@@ -1099,6 +1115,24 @@ export function EvalSettings() {
                             />
                           ))}
                         </span>
+                        <Select
+                          aria-label={EVAL.trendRangeLabel}
+                          className="eval-trend-range"
+                          value={trendDays[c.id] ?? 0}
+                          disabled={!!scoreLoading[c.id]}
+                          onChange={(e) => changeTrendRange(c, Number(e.target.value))}
+                          data-testid={`eval-trend-range-${c.id}`}
+                        >
+                          <option value={0}>{EVAL.trendRangeAll}</option>
+                          <option value={7}>{EVAL.trendRangeDays(7)}</option>
+                          <option value={30}>{EVAL.trendRangeDays(30)}</option>
+                          <option value={90}>{EVAL.trendRangeDays(90)}</option>
+                        </Select>
+                        {trendCap[c.id] ? (
+                          <span className="settings-muted">
+                            {EVAL.trendRetention(trendCap[c.id])}
+                          </span>
+                        ) : null}
                       </div>
                     ) : null}
                     {trajectorySummaryLines(c).map((line, i) => (

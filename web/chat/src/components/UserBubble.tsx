@@ -16,8 +16,8 @@ export function UserBubble({ content }: { content: string }) {
       {text ? <MarkdownText text={text} plain /> : null}
       {images.length > 0 && (
         <div className="channel-images">
-          {images.map((url) => (
-            <ChannelImage key={url} url={url} />
+          {images.map((img) => (
+            <ChannelImage key={img.url} url={img.url} name={img.name} />
           ))}
         </div>
       )}

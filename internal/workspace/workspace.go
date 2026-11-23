@@ -241,6 +241,13 @@ func (s *Service) ReadFileOpts(ctx context.Context, convID, relPath string, opts
 	}, nil
 }
 
+// DeleteUpload removes the workspace copy of an uploaded attachment, addressed
+// by its original filename (the same name SaveUpload/SaveUploadBytes used).
+// Deleting a missing file is a no-op success.
+func (s *Service) DeleteUpload(ctx context.Context, convID, filename string) error {
+	return s.DeleteFile(ctx, convID, path.Join(uploadsDir, sanitizeName(filename)))
+}
+
 // DeleteFile removes a file; deleting a missing file is a no-op success.
 func (s *Service) DeleteFile(ctx context.Context, convID, relPath string) error {
 	if err := requireConv(convID); err != nil {

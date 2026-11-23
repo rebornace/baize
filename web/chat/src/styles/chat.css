@@ -1478,6 +1478,73 @@
   color: var(--accent);
 }
 
+.channel-image-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.channel-attachment-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.channel-attachment-delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.channel-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.channel-file-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.channel-file-delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.channel-attachment-deleted {
+  display: inline-block;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.channel-attachment-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
 .analysis-page-preview iframe {
   display: block;
   width: 100%;
@@ -2487,6 +2554,13 @@
 .settings-eval .eval-trend-dots {
   display: inline-flex;
   gap: 2px;
+}
+
+.settings-eval .eval-trend-range {
+  width: auto;
+  height: 30px;
+  padding: 0 0.5rem;
+  font-size: 0.85rem;
 }
 
 .settings-eval .eval-trend-dot {

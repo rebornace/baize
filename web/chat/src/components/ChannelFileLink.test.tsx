@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GateContext } from '../gateContext'
 import { setPack } from '../locale/pack'
 import { zhPack } from '../locales/zh'
@@ -17,6 +17,8 @@ beforeEach(() => {
 })
 afterEach(() => {
   host.remove()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   setPack(zhPack)
 })
 
@@ -56,5 +58,33 @@ describe('ChannelFileLink card', () => {
     expect(host.querySelector('.channel-file-name')?.textContent).toBe('黄山三日行程.docx')
     expect(host.querySelector('.channel-file-kind')?.textContent).toBe(CHAT.fileKindDoc)
     expect(card?.textContent).not.toContain(CHAT.clickToDownload)
+  })
+})
+
+describe('ChannelFileLink delete', () => {
+  it('deletes the file and its workspace copy', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<ChannelFileLink name="行程.docx" url="/v0/channels/media/x/y.docx" />)
+    const btn = host.querySelector('.channel-file-delete') as HTMLButtonElement
+    expect(btn).not.toBeNull()
+    await act(async () => {
+      btn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v0/channels/media/x/y.docx?name=%E8%A1%8C%E7%A8%8B.docx',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(host.textContent).toContain(CHAT.attachmentDeleted)
+  })
+
+  it('hides the delete affordance for blob previews', () => {
+    render(<ChannelFileLink name="n.pdf" url="blob:http://localhost/pdf" />)
+    expect(host.querySelector('.channel-file-delete')).toBeNull()
   })
 })

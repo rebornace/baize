@@ -161,6 +161,14 @@ func (s *Memory) AppendEvalScore(r EvalScoreRecord) error {
 	}
 	r.Codes = append([]string(nil), r.Codes...)
 	s.evalScores[r.CaseID] = append(s.evalScores[r.CaseID], r)
+	if records := s.evalScores[r.CaseID]; len(records) > EvalScoreHistoryCap {
+		// Keep the newest scores by time, not append order: backfills can
+		// insert an older record after a newer one.
+		sort.SliceStable(records, func(i, j int) bool {
+			return records[i].ScoredAt.Before(records[j].ScoredAt)
+		})
+		s.evalScores[r.CaseID] = records[len(records)-EvalScoreHistoryCap:]
+	}
 	return nil
 }
 

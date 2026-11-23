@@ -10,6 +10,7 @@ import {
 export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [summary, setSummary] = useState<CostSummary | null>(null)
   const [budget, setBudget] = useState('0')
+  const [enforce, setEnforce] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -18,6 +19,7 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
       const body = await getCostSummary(7)
       setSummary(body)
       setBudget(String(body.budget_usd_per_day))
+      setEnforce(body.budget_enforce)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -36,7 +38,7 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
     }
     setBusy(true)
     try {
-      await putCostBudget(n)
+      await putCostBudget(n, enforce)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -80,6 +82,15 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                   disabled={busy}
                   onChange={(e) => setBudget(e.target.value)}
                 />
+              </label>
+              <label className="settings-muted">
+                <input
+                  type="checkbox"
+                  checked={enforce}
+                  disabled={busy}
+                  onChange={(e) => setEnforce(e.target.checked)}
+                />{' '}
+                {MODELS.costEnforceLabel}
               </label>
               <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void save()}>
                 {MODELS.costSaveBudget}

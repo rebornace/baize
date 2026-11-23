@@ -4,12 +4,14 @@
  * endpoint:
  *
  *   你好（附件：image_xxx.jpg）
- *   ![图片](/v0/channels/media/<conv>/<object>.jpg)          // inline image
+ *   ![图片](/v0/channels/media/<conv>/<object>.jpg?name=image_xxx.jpg)
  *   [file:黄山三日行程.docx](/v0/channels/media/<conv>/<object>.docx)  // download
  *
  * The chat bubble shows the text (without those raw marker lines, which the
  * plain renderer would otherwise print literally), renders each image inline,
- * and each non-image file as a download link. This splits the references out.
+ * and each non-image file as a download link. Image URLs may carry the original
+ * filename as ?name= so deleting the attachment can also remove its workspace
+ * copy; older messages have no name and are only removed from media storage.
  */
 
 // Persisted references point at the conversation-ACL media endpoint; the
@@ -26,17 +28,27 @@ export interface ChannelAttachment {
 
 export interface SplitChannelAttachments {
   text: string
-  images: string[]
+  images: ChannelAttachment[]
   files: ChannelAttachment[]
 }
 
+function imageName(url: string): string {
+  const match = /[?&]name=([^&)]+)/.exec(url)
+  if (!match) return ''
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return ''
+  }
+}
+
 export function splitChannelAttachments(content: string): SplitChannelAttachments {
-  const images: string[] = []
+  const images: ChannelAttachment[] = []
   const files: ChannelAttachment[] = []
 
   const text = content
     .replace(IMAGE_RE, (_m, _alt, url: string) => {
-      images.push(url)
+      images.push({ name: imageName(url), url })
       return ''
     })
     .replace(FILE_RE, (_m, name: string, url: string) => {

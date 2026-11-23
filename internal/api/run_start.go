@@ -86,6 +86,9 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 	if err := s.prepareConversationMeta(ctx, conv, in.WorkspaceID); err != nil {
 		return nil, err
 	}
+	if err := s.requireCostBudget(); err != nil {
+		return nil, err
+	}
 
 	createIn := store.CreateRunInput{
 		AgentID:            in.AgentID,

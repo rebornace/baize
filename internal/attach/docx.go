@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -11,6 +12,9 @@ import (
 // extractDocx reads word/document.xml from a docx (Office Open XML Word)
 // package and strips XML tags to recover plain text.
 func extractDocx(data []byte) (string, error) {
+	if err := checkZipExpansion(data); err != nil {
+		return "", err
+	}
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", err
@@ -24,13 +28,34 @@ func extractDocx(data []byte) (string, error) {
 			return "", err
 		}
 		defer rc.Close()
-		raw, err := io.ReadAll(rc)
+		// Header sizes are attacker-controlled; cap the actual read too.
+		raw, err := io.ReadAll(io.LimitReader(rc, maxDocUncompressed+1))
 		if err != nil {
 			return "", err
+		}
+		if len(raw) > maxDocUncompressed {
+			return "", fmt.Errorf("%w: document expands beyond %d bytes", ErrTooLarge, maxDocUncompressed)
 		}
 		return stripXMLTags(string(raw)), nil
 	}
 	return "", errors.New("attach: docx missing word/document.xml")
+}
+
+// checkZipExpansion rejects a zip whose declared uncompressed content exceeds
+// maxDocUncompressed. Shared by docx and xlsx extraction.
+func checkZipExpansion(data []byte) error {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+	var total uint64
+	for _, f := range zr.File {
+		total += f.UncompressedSize64
+		if total > maxDocUncompressed {
+			return fmt.Errorf("%w: document expands beyond %d bytes", ErrTooLarge, maxDocUncompressed)
+		}
+	}
+	return nil
 }
 
 // stripXMLTags removes XML markup and unescapes the common entities. It does

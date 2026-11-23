@@ -400,6 +400,8 @@ func (s *Server) handleRunScheduleNow(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, store.ErrConversationBusy):
 			writeError(w, http.StatusConflict, "conversation_busy", "conversation already has an active run")
+		case errors.Is(err, ErrCostBudgetExceeded):
+			writeError(w, http.StatusTooManyRequests, "cost_budget_exceeded", "daily cost budget reached")
 		case errors.Is(err, store.ErrNoPriorConversationRun):
 			writeError(w, http.StatusConflict, "no_prior_run", "conversation has no prior run to copy agent/model from")
 		default:

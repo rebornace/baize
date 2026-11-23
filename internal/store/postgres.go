@@ -262,6 +262,21 @@ CREATE TABLE IF NOT EXISTS eval_scores (
   notes TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_eval_scores_case ON eval_scores(case_id, scored_at);
+CREATE TABLE IF NOT EXISTS run_costs (
+  run_id TEXT PRIMARY KEY,
+  day TEXT NOT NULL,
+  cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+  priced INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_run_costs_day ON run_costs(day);
+CREATE TABLE IF NOT EXISTS cost_days (
+  day TEXT PRIMARY KEY,
+  cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+  runs INTEGER NOT NULL DEFAULT 0,
+  finalized INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,

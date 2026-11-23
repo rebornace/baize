@@ -4,8 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -478,5 +480,66 @@ func TestProcessPartialOptionsKeepsCustom(t *testing.T) {
 	_, _, err := attach.Process(atts, attach.Options{MaxCount: 2})
 	if !errors.Is(err, attach.ErrTooMany) {
 		t.Fatalf("err=%v, want ErrTooMany", err)
+	}
+}
+
+// pngWithDeclaredSize builds a 1×1 PNG and rewrites its IHDR dimensions, so a
+// tiny upload can claim an enormous decoded size without allocating it.
+func pngWithDeclaredSize(t *testing.T, w, h uint32) []byte {
+	t.Helper()
+	b := makePng(1, 1)
+	binary.BigEndian.PutUint32(b[16:20], w)
+	binary.BigEndian.PutUint32(b[20:24], h)
+	binary.BigEndian.PutUint32(b[29:33], crc32.ChecksumIEEE(b[12:29]))
+	return b
+}
+
+func TestProcessImagePixelLimit(t *testing.T) {
+	_, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename:   "huge.png",
+		MediaType:  mimePng,
+		ContentB64: b64(pngWithDeclaredSize(t, 8000, 6000)),
+	}}, attach.DefaultOptions())
+	if !errors.Is(err, attach.ErrTooLarge) {
+		t.Fatalf("err=%v, want ErrTooLarge", err)
+	}
+}
+
+func TestProcessDocxExpansionLimit(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	f, err := w.CreateHeader(&zip.FileHeader{Name: "word/document.xml", Method: zip.Deflate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 33 MiB of repetitive XML compresses to a few KB but expands past the cap.
+	payload := strings.Repeat("a", 33<<20)
+	if _, err := f.Write([]byte(payload)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = attach.Process([]attach.AttachmentIn{{
+		Filename:   "bomb.docx",
+		MediaType:  mimeDocx,
+		ContentB64: b64(buf.Bytes()),
+	}}, attach.DefaultOptions())
+	if !errors.Is(err, attach.ErrTooLarge) {
+		t.Fatalf("err=%v, want ErrTooLarge", err)
+	}
+}
+
+func TestProcessPDFEmptyExplainsScannedFiles(t *testing.T) {
+	_, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename:   "scan.pdf",
+		MediaType:  mimePDF,
+		ContentB64: b64(buildPDF("")),
+	}}, attach.DefaultOptions())
+	if !errors.Is(err, attach.ErrEmptyPDFText) {
+		t.Fatalf("err=%v, want ErrEmptyPDFText", err)
+	}
+	if !strings.Contains(err.Error(), "scanned PDFs") {
+		t.Fatalf("err=%q, want scanned-PDF guidance", err)
 	}
 }

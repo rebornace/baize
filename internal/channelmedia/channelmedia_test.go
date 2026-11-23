@@ -110,3 +110,32 @@ func TestSafeConvSegment(t *testing.T) {
 		t.Fatalf("segment = %q", got)
 	}
 }
+
+func TestDeleteMediaRemovesObject(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	conv := "weixin:acc:peer"
+	_, obj, err := s.SaveInboundFile(ctx, conv, "a.pdf", "application/pdf", []byte("%PDF-1.4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteMedia(ctx, conv, obj); err != nil {
+		t.Fatalf("DeleteMedia: %v", err)
+	}
+	if _, _, found, err := s.OpenMedia(ctx, conv, obj); err != nil || found {
+		t.Fatalf("after delete found=%v err=%v", found, err)
+	}
+	// Deleting a missing object is a no-op success.
+	if err := s.DeleteMedia(ctx, conv, obj); err != nil {
+		t.Fatalf("second DeleteMedia: %v", err)
+	}
+}
+
+func TestDeleteMediaRejectsTraversal(t *testing.T) {
+	s := newTestStore(t)
+	for _, obj := range []string{"", ".", "..", "../x", "a/b", `a\b`} {
+		if err := s.DeleteMedia(context.Background(), "c", obj); err == nil {
+			t.Fatalf("object %q accepted", obj)
+		}
+	}
+}

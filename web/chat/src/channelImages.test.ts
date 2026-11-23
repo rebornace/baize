@@ -6,7 +6,9 @@ describe('splitChannelAttachments', () => {
     const content =
       '看这张图（附件：image_abc.jpg）\n![图片](/v0/channels/media/weixin:acc:peer/obj.jpg)'
     const { text, images, files } = splitChannelAttachments(content)
-    expect(images).toEqual(['/v0/channels/media/weixin:acc:peer/obj.jpg'])
+    expect(images).toEqual([
+      { name: '', url: '/v0/channels/media/weixin:acc:peer/obj.jpg' },
+    ])
     expect(files).toHaveLength(0)
     expect(text).toContain('看这张图（附件：image_abc.jpg）')
     expect(text).not.toContain('![图片]')
@@ -59,8 +61,19 @@ describe('splitChannelAttachments', () => {
       '![图片](blob:http://localhost/uuid-img)\n' +
       '[file:行程.docx](blob:http://localhost/uuid-doc)'
     const { text, images, files } = splitChannelAttachments(content)
-    expect(images).toEqual(['blob:http://localhost/uuid-img'])
+    expect(images).toEqual([
+      { name: '', url: 'blob:http://localhost/uuid-img' },
+    ])
     expect(files).toEqual([{ name: '行程.docx', url: 'blob:http://localhost/uuid-doc' }])
     expect(text).toBe('刚发的图')
+  })
+
+  it('reads the original filename from the ?name= query for image deletion', () => {
+    const content =
+      '报告\n![图片](/v0/channels/media/c/a.pdf.png?name=%E6%8A%A5%E5%91%8A.png)'
+    const { images } = splitChannelAttachments(content)
+    expect(images).toEqual([
+      { name: '报告.png', url: '/v0/channels/media/c/a.pdf.png?name=%E6%8A%A5%E5%91%8A.png' },
+    ])
   })
 })

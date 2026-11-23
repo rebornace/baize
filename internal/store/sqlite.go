@@ -247,15 +247,21 @@ CREATE TABLE IF NOT EXISTS eval_scores (
   notes TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_eval_scores_case ON eval_scores(case_id, scored_at);
-CREATE TABLE IF NOT EXISTS eval_scores (
-  id TEXT PRIMARY KEY,
-  case_id TEXT NOT NULL,
-  scored_at TEXT NOT NULL,
-  pass INTEGER NOT NULL,
-  codes_json TEXT,
-  notes TEXT
+CREATE TABLE IF NOT EXISTS run_costs (
+  run_id TEXT PRIMARY KEY,
+  day TEXT NOT NULL,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  priced INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_eval_scores_case ON eval_scores(case_id, scored_at);
+CREATE INDEX IF NOT EXISTS idx_run_costs_day ON run_costs(day);
+CREATE TABLE IF NOT EXISTS cost_days (
+  day TEXT PRIMARY KEY,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  runs INTEGER NOT NULL DEFAULT 0,
+  finalized INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
 `
 
 // SQLStore is a SQL-backed Store shared by sqlite and postgres drivers.

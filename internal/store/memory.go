@@ -33,6 +33,8 @@ type Memory struct {
 	mcpExportInvocations []MCPExportInvocation
 	evalCases            map[string]EvalCase
 	evalScores           map[string][]EvalScoreRecord
+	runCosts             map[string]RunCost
+	costDays             map[string]CostDay
 }
 
 // NewMemory creates an empty in-memory Store.

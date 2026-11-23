@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/rebornace/baize/internal/store"
 )
 
 func TestModelPricesGetPut(t *testing.T) {
@@ -31,6 +33,9 @@ func TestModelPricesGetPut(t *testing.T) {
 	}
 
 	body := `{"currency":"USD","entries":[{"model":"custom-model","input_per_mtok":1.5,"output_per_mtok":3,"cached_input_per_mtok":0.5}]}`
+	if err := srv.Store.PutRunCost(store.RunCost{RunID: "r-stale", Day: "2026-11-23", CostUSD: 9, Priced: true}); err != nil {
+		t.Fatal(err)
+	}
 	put := httptest.NewRequest(http.MethodPut, "/v0/settings/model-prices", bytes.NewBufferString(body))
 	put.Header.Set("Authorization", "Bearer adm")
 	put.Header.Set("Content-Type", "application/json")
@@ -38,6 +43,10 @@ func TestModelPricesGetPut(t *testing.T) {
 	h.ServeHTTP(putRR, put)
 	if putRR.Code != http.StatusOK {
 		t.Fatalf("put=%d %s", putRR.Code, putRR.Body.String())
+	}
+	// New prices invalidate costs computed with the old table.
+	if _, ok, _ := srv.Store.GetRunCost("r-stale"); ok {
+		t.Fatal("cached run cost survived a price change")
 	}
 
 	bad := httptest.NewRequest(http.MethodPut, "/v0/settings/model-prices",

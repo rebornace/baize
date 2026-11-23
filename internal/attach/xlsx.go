@@ -11,6 +11,9 @@ import (
 // extractXlsx reads every sheet of an xlsx workbook and concatenates the
 // cells into a lightweight Markdown table per sheet.
 func extractXlsx(data []byte) (string, error) {
+	if err := checkZipExpansion(data); err != nil {
+		return "", err
+	}
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return "", err

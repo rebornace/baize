@@ -27,6 +27,9 @@ func (failingWorkspace) SaveUpload(context.Context, string, string, string) (str
 func (failingWorkspace) SaveUploadBytes(context.Context, string, string, []byte, string) (string, error) {
 	return "", errors.New("boom")
 }
+func (failingWorkspace) DeleteUpload(context.Context, string, string) error {
+	return errors.New("boom")
+}
 
 func TestPostRunPersistsTextAttachmentToWorkspace(t *testing.T) {
 	mem := store.NewMemory()

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -377,6 +378,15 @@ func (s *Server) handleListEvalScores(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
+	days := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("days")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 3650 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "days must be between 1 and 3650")
+			return
+		}
+		days = n
+	}
 	if _, err := s.Store.GetEvalCase(id); errors.Is(err, store.ErrEvalCaseNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "eval case not found")
 		return
@@ -384,10 +394,34 @@ func (s *Server) handleListEvalScores(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	records, err := s.Store.ListEvalScores(id, limit)
+	// With a day range, read the whole retained history (bounded by
+	// EvalScoreHistoryCap) and narrow it here so the limit cannot hide
+	// scores that fall inside the range.
+	fetch := limit
+	var since time.Time
+	if days > 0 {
+		since = time.Now().UTC().AddDate(0, 0, -days)
+		fetch = store.EvalScoreHistoryCap
+	}
+	records, err := s.Store.ListEvalScores(id, fetch)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].ScoredAt.After(records[j].ScoredAt)
+	})
+	if !since.IsZero() {
+		inRange := records[:0]
+		for _, rec := range records {
+			if !rec.ScoredAt.Before(since) {
+				inRange = append(inRange, rec)
+			}
+		}
+		records = inRange
+	}
+	if len(records) > limit {
+		records = records[:limit]
 	}
 	items := make([]map[string]any, 0, len(records))
 	for _, rec := range records {
@@ -398,7 +432,10 @@ func (s *Server) handleListEvalScores(w http.ResponseWriter, r *http.Request) {
 			"notes":     rec.Notes,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":       items,
+		"history_cap": store.EvalScoreHistoryCap,
+	})
 }
 
 func (s *Server) handleGetEvalCase(w http.ResponseWriter, r *http.Request) {

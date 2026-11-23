@@ -92,12 +92,25 @@ export interface EvalScoreRecord {
   notes?: string
 }
 
+export interface EvalScoresQuery {
+  /** Only return scores from the last N days; omit for the whole history. */
+  days?: number
+  limit?: number
+}
+
+export interface EvalScoresResponse {
+  items: EvalScoreRecord[]
+  /** How many scores each case keeps before older ones are pruned. */
+  history_cap?: number
+}
+
 export async function listEvalScores(
   id: string,
-  limit = 20,
-): Promise<{ items: EvalScoreRecord[] }> {
+  query: EvalScoresQuery = {},
+): Promise<EvalScoresResponse> {
+  const { days, limit = 20 } = query
   const res = await fetch(
-    `/v0/settings/eval/cases/${encodeURIComponent(id)}/scores${qs({ limit })}`,
+    `/v0/settings/eval/cases/${encodeURIComponent(id)}/scores${qs({ limit, days })}`,
     { headers: authInit() },
   )
   return parseJSON(res)

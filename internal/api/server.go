@@ -67,6 +67,9 @@ type RunCanceller interface {
 type UploadSaver interface {
 	SaveUpload(ctx context.Context, conversationID, filename, text string) (string, error)
 	SaveUploadBytes(ctx context.Context, conversationID, filename string, data []byte, mime string) (string, error)
+	// DeleteUpload removes the workspace copy of an uploaded attachment by its
+	// original filename; a missing file is a no-op success.
+	DeleteUpload(ctx context.Context, conversationID, filename string) error
 }
 
 // ChannelMediaOpener serves a previously persisted inbound channel attachment
@@ -75,6 +78,8 @@ type UploadSaver interface {
 // by internal/channelmedia.Store.
 type ChannelMediaOpener interface {
 	OpenMedia(ctx context.Context, conversationID, object string) (data []byte, mime string, found bool, err error)
+	// DeleteMedia removes a stored attachment; a missing object is a no-op.
+	DeleteMedia(ctx context.Context, conversationID, object string) error
 }
 
 // ChatMediaSaver persists chat-uploaded attachments (images and files) to a
@@ -636,6 +641,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/runs/{id}/binding", s.handleGetRunBinding)
 	s.mux.HandleFunc("GET /v0/artifacts/{id}", s.handleGetArtifact)
 	s.mux.HandleFunc("GET /v0/channels/media/{conv}/{object}", s.handleChannelMedia)
+	s.mux.HandleFunc("DELETE /v0/channels/media/{conv}/{object}", s.handleDeleteChannelMedia)
 	s.mux.HandleFunc("GET /v0/workspaces", s.handleListWorkspaces)
 	s.mux.HandleFunc("POST /v0/workspaces", s.handleCreateWorkspace)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/identities", s.handleListIdentities)

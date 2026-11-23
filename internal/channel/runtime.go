@@ -540,6 +540,8 @@ func buildInboundContent(text string, files []InboundFile, supportsVision bool) 
 		b.WriteString("\n\n【附件: ")
 		b.WriteString(t.Filename)
 		b.WriteString("】\n")
+		b.WriteString(attach.UntrustedContentNotice)
+		b.WriteString("\n")
 		b.WriteString(t.Text)
 	}
 	if !supportsVision {

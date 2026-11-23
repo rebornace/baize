@@ -52,5 +52,10 @@ func (s *Server) handlePutModelPrices(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	// Cached run/day costs were computed with the old prices.
+	_ = s.Store.ClearCostCache()
+	costCache.mu.Lock()
+	costCache.at = time.Time{}
+	costCache.mu.Unlock()
 	writeJSON(w, http.StatusOK, t)
 }

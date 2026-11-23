@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -55,4 +56,45 @@ func (s *Server) handleChannelMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// handleDeleteChannelMedia removes a persisted attachment (the original upload
+// used for preview/download). When a `name` query parameter is present, the
+// matching workspace copy is removed too. Conversation ACL is the same as the
+// GET route.
+func (s *Server) handleDeleteChannelMedia(w http.ResponseWriter, r *http.Request) {
+	if s.ChannelMedia == nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "channel media is not configured")
+		return
+	}
+	convID := r.PathValue("conv")
+	object := r.PathValue("object")
+	if convID == "" || object == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation or object")
+		return
+	}
+	if strings.ContainsAny(object, "/\\") || strings.Contains(object, "..") || object == "." {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid object name")
+		return
+	}
+	if err := s.checkConversationAccess(r.Context(), convID); err != nil {
+		if errors.Is(err, errConversationForbidden) {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := s.ChannelMedia.DeleteMedia(r.Context(), convID, object); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "delete media failed")
+		return
+	}
+	// The workspace copy is derived data; a cleanup failure must not make the
+	// delete look unsuccessful.
+	if name := strings.TrimSpace(r.URL.Query().Get("name")); name != "" && s.Workspace != nil {
+		if err := s.Workspace.DeleteUpload(r.Context(), convID, name); err != nil {
+			log.Printf("workspace: delete upload %q: %v", name, err)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
