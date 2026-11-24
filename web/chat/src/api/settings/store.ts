@@ -39,3 +39,21 @@ export async function restartAfterStoreChange(): Promise<{ status: string }> {
   })
   return parseJSON<{ status: string }>(res)
 }
+
+export interface AttachmentRetention {
+  days: number
+}
+
+export async function getAttachmentRetention(): Promise<AttachmentRetention> {
+  const res = await fetch('/v0/settings/attachment-retention', { headers: authInit() })
+  return parseJSON<AttachmentRetention>(res)
+}
+
+export async function putAttachmentRetention(days: number): Promise<AttachmentRetention> {
+  const res = await fetch('/v0/settings/attachment-retention', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ days }),
+  })
+  return parseJSON<AttachmentRetention>(res)
+}

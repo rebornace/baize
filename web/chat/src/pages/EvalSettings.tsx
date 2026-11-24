@@ -5,12 +5,15 @@ import {
   deleteEvalCase,
   exportEvalCase,
   getCalibrationSummary,
+  getEvalGate,
   ingestEvalCase,
   listEvalCases,
   listEvalScores,
   patchEvalCase,
   putCalibration,
+  putEvalGate,
   queryEvalRuns,
+  runEvalGate,
   sampleEvalRuns,
   scoreEvalCase,
   fetchSkillDraft,
@@ -22,6 +25,7 @@ import {
   type EvalArgContains,
   type EvalChainLink,
   type EvalExpectState,
+  type EvalGateState,
   type EvalScoreRecord,
   type SkillDraftResponse,
 } from '../api/eval'
@@ -280,6 +284,9 @@ export function EvalSettings() {
   const [trendDays, setTrendDays] = useState<Record<string, number>>({})
   const [trendCap, setTrendCap] = useState<Record<string, number>>({})
   const [scoreLoading, setScoreLoading] = useState<Record<string, boolean>>({})
+  const [gate, setGate] = useState<EvalGateState | null>(null)
+  const [gateRate, setGateRate] = useState('90')
+  const [gateBusy, setGateBusy] = useState(false)
   const [selectedCases, setSelectedCases] = useState<Record<string, boolean>>({})
   const [pendingDelete, setPendingDelete] = useState<EvalCase | null>(null)
   const [eventsModal, setEventsModal] = useState<{ runId: string; events: Event[] | null } | null>(
@@ -330,9 +337,23 @@ export function EvalSettings() {
     await Promise.all([refreshCases(), refreshSummary()])
   }, [refreshCases, refreshSummary])
 
+  const refreshGate = useCallback(async () => {
+    try {
+      const next = await getEvalGate()
+      setGate(next)
+      setGateRate(String(Math.round(next.min_pass_rate * 100)))
+    } catch {
+      // Gate state is optional on first load; keep the section usable.
+    }
+  }, [])
+
   useEffect(() => {
     void refreshCasesAndSummary()
   }, [refreshCasesAndSummary])
+
+  useEffect(() => {
+    void refreshGate()
+  }, [refreshGate])
 
   const submitCalibration = async (c: EvalCase, agree: boolean | null) => {
     setBusy(true)
@@ -829,6 +850,43 @@ export function EvalSettings() {
     }
   }
 
+  const saveGateRate = async () => {
+    const pct = Number.parseFloat(gateRate)
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      push({ tone: 'error', title: EVAL.gateInvalid })
+      return
+    }
+    setGateBusy(true)
+    try {
+      await putEvalGate(pct / 100)
+      setGate((prev) => (prev ? { ...prev, min_pass_rate: pct / 100 } : prev))
+      push({ tone: 'success', title: EVAL.gateSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setGateBusy(false)
+    }
+  }
+
+  const runGate = async () => {
+    setGateBusy(true)
+    try {
+      const res = await runEvalGate()
+      setGate({ min_pass_rate: res.min_pass_rate, last: res })
+      await refreshCasesAndSummary()
+      push({
+        tone: res.pass ? 'success' : 'error',
+        title: res.empty ? EVAL.gateEmpty : res.pass ? EVAL.gatePass : EVAL.gateFail,
+      })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setGateBusy(false)
+    }
+  }
+
   return (
     <div className="settings-panel settings-eval">
       <PageHeader title={EVAL.title} description={EVAL.description} />
@@ -850,6 +908,84 @@ export function EvalSettings() {
           </span>
         )}
       </div>
+
+      <section className="settings-eval-gate" data-testid="eval-gate">
+        <h2 className="settings-subheading">{EVAL.gateTitle}</h2>
+        <p className="settings-muted">{EVAL.gateHint}</p>
+        <div className="settings-form-actions">
+          <Field label={EVAL.gateThresholdLabel}>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={gateRate}
+              disabled={gateBusy}
+              onChange={(e) => setGateRate(e.target.value)}
+              data-testid="eval-gate-threshold"
+            />
+          </Field>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={gateBusy}
+            onClick={() => void saveGateRate()}
+          >
+            {EVAL.gateSaveThreshold}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={gateBusy}
+            onClick={() => void runGate()}
+            data-testid="eval-gate-run"
+          >
+            {EVAL.gateRun}
+          </Button>
+        </div>
+        {gate?.last ? (
+          <div
+            className={`eval-gate-result ${gate.last.pass ? 'pass' : 'fail'}`}
+            data-testid="eval-gate-result"
+          >
+            <p>
+              <strong>
+                {gate.last.empty
+                  ? EVAL.gateEmpty
+                  : gate.last.pass
+                    ? EVAL.gatePass
+                    : EVAL.gateFail}
+              </strong>
+            </p>
+            <p className="settings-muted">
+              {EVAL.gateSummary(
+                gate.last.passed,
+                gate.last.total,
+                Math.round(gate.last.pass_rate * 100),
+                Math.round(gate.last.min_pass_rate * 100),
+              )}
+            </p>
+            <p className="settings-muted">{EVAL.gateRanAt(gate.last.ran_at)}</p>
+            {gate.last.failures.length > 0 ? (
+              <ul className="eval-gate-failures">
+                {gate.last.failures.map((f) => (
+                  <li key={f.id}>
+                    <strong>{f.id}</strong>{' '}
+                    <span className="settings-muted">{f.input}</span>
+                    <div>
+                      <span>{f.codes.join(', ')}</span>
+                      {f.notes ? <span className="settings-muted"> · {f.notes}</span> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : (
+          <p className="settings-muted">{EVAL.gateNeverRun}</p>
+        )}
+      </section>
 
       <h2 className="settings-subheading">{EVAL.candidatesTitle}</h2>
       <form className="settings-form" onSubmit={(e) => void runQuery(e)}>

@@ -118,7 +118,9 @@ type Server struct {
 	hostedLoginOnce    sync.Once
 	// HostedLoginAudit records session issue / submit outcomes without secrets. nil = LogAuditor.
 	HostedLoginAudit hostedlogin.Auditor
-	Messages         conversation.Store // optional; nil = no message persistence
+	// Messages stores conversation history (optional).
+	Messages             conversation.Store // optional; nil = no message persistence
+	attachmentBackfilled sync.Map
 	// skillsConvGen tracks the Catalog.Generation last aligned for each
 	// conversation (skills reload / auto-dirty). Process-local; after restart
 	// missing keys are treated as 0 so the first run realigns.
@@ -577,6 +579,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v0/settings/eval/runs/{id}/skill-draft/install", s.handlePostEvalRunSkillDraftInstall)
 	s.mux.HandleFunc("POST /v0/settings/eval/cases", s.handlePostEvalCase)
 	s.mux.HandleFunc("GET /v0/settings/eval/cases", s.handleListEvalCases)
+	s.mux.HandleFunc("GET /v0/settings/eval/gate", s.handleGetEvalGate)
+	s.mux.HandleFunc("PUT /v0/settings/eval/gate", s.handlePutEvalGate)
+	s.mux.HandleFunc("POST /v0/settings/eval/gate/run", s.handleRunEvalGate)
 	s.mux.HandleFunc("GET /v0/settings/eval/cases/{id}", s.handleGetEvalCase)
 	s.mux.HandleFunc("PATCH /v0/settings/eval/cases/{id}", s.handlePatchEvalCase)
 	s.mux.HandleFunc("POST /v0/settings/eval/cases/{id}/score", s.handlePostEvalCaseScore)
@@ -656,6 +661,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}", s.handleDeleteConversation)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/skill-draft", s.handleGetConversationSkillDraft)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
+	s.mux.HandleFunc("GET /v0/conversations/{id}/attachments", s.handleListConversationAttachments)
+	s.mux.HandleFunc("POST /v0/conversations/{id}/attachments/delete", s.handleBulkDeleteConversationAttachments)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}/messages", s.handleClearMessages)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/messages/{message_id}/rollback", s.handleRollbackMessages)
 	s.mux.HandleFunc("POST /v0/conversations/{id}/fork", s.handleForkConversation)
@@ -729,6 +736,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/model-prices", s.handleGetModelPrices)
 	s.mux.HandleFunc("PUT /v0/settings/model-prices", s.handlePutModelPrices)
 	s.mux.HandleFunc("GET /v0/settings/cost-summary", s.handleGetCostSummary)
+	s.mux.HandleFunc("GET /v0/settings/cost-status", s.handleGetCostStatus)
+	s.mux.HandleFunc("GET /v0/settings/run-overview", s.handleGetRunOverview)
+	s.mux.HandleFunc("GET /v0/settings/attachment-retention", s.handleGetAttachmentRetention)
+	s.mux.HandleFunc("PUT /v0/settings/attachment-retention", s.handlePutAttachmentRetention)
 	s.mux.HandleFunc("PUT /v0/settings/cost-budget", s.handlePutCostBudget)
 	s.mux.HandleFunc("POST /v0/settings/models/discover", s.handleDiscoverModels)
 	s.mux.HandleFunc("POST /v0/settings/models/batch", s.handleBatchImportModels)

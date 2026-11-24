@@ -43,6 +43,7 @@ function mockSummary(overrides: Partial<evalApi.EvalCalibrationSummary> = {}) {
 async function renderPage(summary: Partial<evalApi.EvalCalibrationSummary> = {}) {
   vi.spyOn(evalApi, 'listEvalCases').mockResolvedValue({ items: [] })
   vi.spyOn(evalApi, 'queryEvalRuns').mockResolvedValue({ items: [] })
+  vi.spyOn(evalApi, 'getEvalGate').mockResolvedValue({ min_pass_rate: 0.9, last: null })
   mockSummary(summary)
   await act(async () => {
     root.render(
@@ -56,6 +57,36 @@ async function renderPage(summary: Partial<evalApi.EvalCalibrationSummary> = {})
 }
 
 describe('EvalSettings', () => {
+  it('runs the regression gate and lists failures', async () => {
+    const runSpy = vi.spyOn(evalApi, 'runEvalGate').mockResolvedValue({
+      total: 2,
+      passed: 1,
+      failed: 1,
+      pass_rate: 0.5,
+      min_pass_rate: 0.9,
+      pass: false,
+      empty: false,
+      ran_at: '2026-11-24T03:00:00Z',
+      failures: [{ id: 'ec_bad', input: 'bad case', codes: ['BSR'], notes: 'missing_reads:a' }],
+    })
+    await renderPage()
+    expect(host.textContent).toContain('还没有运行过回归')
+    const btn = host.querySelector('[data-testid="eval-gate-run"]') as HTMLButtonElement
+    expect(btn).not.toBeNull()
+    await act(async () => {
+      btn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(runSpy).toHaveBeenCalled()
+    const result = host.querySelector('[data-testid="eval-gate-result"]')
+    expect(result?.textContent).toContain('门禁未通过')
+    expect(result?.textContent).toContain('通过 1/2（50%），阈值 90%')
+    expect(result?.textContent).toContain('ec_bad')
+    expect(result?.textContent).toContain('missing_reads:a')
+  })
+
   it('renders filter query and candidates container', async () => {
     await renderPage()
     expect(host.querySelector('[data-testid="eval-query"]')).toBeTruthy()

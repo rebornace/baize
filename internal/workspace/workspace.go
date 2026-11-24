@@ -115,12 +115,13 @@ func (s *Service) key(convID, rel string) string {
 }
 
 // SaveUpload persists an extracted text upload under uploads/ and returns its
-// logical path (e.g. "uploads/report.pdf").
+// logical path (e.g. "uploads/report.pdf"). A name that is already taken gets a
+// numeric suffix so two attachments never share one workspace copy.
 func (s *Service) SaveUpload(ctx context.Context, convID, filename, text string) (string, error) {
 	if err := requireConv(convID); err != nil {
 		return "", err
 	}
-	logical := path.Join(uploadsDir, sanitizeName(filename))
+	logical := s.uniqueUploadPath(ctx, convID, filename)
 	if err := s.blobs.Put(ctx, s.key(convID, logical), []byte(text), "text/plain; charset=utf-8"); err != nil {
 		return "", err
 	}
@@ -136,11 +137,31 @@ func (s *Service) SaveUploadBytes(ctx context.Context, convID, filename string, 
 	if mime == "" {
 		mime = http.DetectContentType(data)
 	}
-	logical := path.Join(uploadsDir, sanitizeName(filename))
+	logical := s.uniqueUploadPath(ctx, convID, filename)
 	if err := s.blobs.Put(ctx, s.key(convID, logical), data, mime); err != nil {
 		return "", err
 	}
 	return logical, nil
+}
+
+// uniqueUploadPath returns an unused path under uploads/ for filename, adding
+// " (2)", " (3)", … before the extension on collisions.
+func (s *Service) uniqueUploadPath(ctx context.Context, convID, filename string) string {
+	base := sanitizeName(filename)
+	ext := path.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	candidate := path.Join(uploadsDir, base)
+	for i := 2; i < 1000; i++ {
+		_, err := s.blobs.Get(ctx, s.key(convID, candidate))
+		if errors.Is(err, blob.ErrNotFound) {
+			return candidate
+		}
+		if err != nil {
+			return candidate
+		}
+		candidate = path.Join(uploadsDir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
+	}
+	return candidate
 }
 
 // WriteOffloadFile persists large tool output under offload/ (up to MaxOffloadBytes).

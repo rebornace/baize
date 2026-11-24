@@ -20,10 +20,10 @@ type ReconcileStore interface {
 const reconcileBatchLimit = 100
 
 // Reconcile re-enqueues orphaned (queued/running with expired lease) runs.
-// Re-enqueued jobs carry no UserParts: multimodal content is not persisted, so
-// a reconciled image run replays with text input only (v0: such failures go
-// through the normal run error path). Active runs are not duplicated: the
-// worker-side LeaseRun acquisition fails for holders of a live lease.
+// Re-enqueued jobs carry no UserParts; ExecuteJob rehydrates image parts from
+// the persisted conversation message when the media is still available.
+// Active runs are not duplicated: the worker-side LeaseRun acquisition fails
+// for holders of a live lease.
 func (mw *Middleware) Reconcile(ctx context.Context, rs ReconcileStore) {
 	runs, err := rs.ListRunsForReconcile(reconcileBatchLimit)
 	if err != nil {

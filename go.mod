@@ -5,23 +5,23 @@ go 1.26.0
 toolchain go1.27.3
 
 require (
-	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/getkin/kin-openapi v0.153.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.13.0
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
-	github.com/minio/minio-go/v7 v7.3.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/prometheus/client_golang v1.22.0
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
+	github.com/minio/minio-go/v7 v7.4.1
+	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/prometheus/client_golang v1.25.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xuri/excelize/v2 v2.11.1
-	github.com/yuin/goldmark v1.8.5
+	github.com/yuin/goldmark v1.8.7
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
-	golang.org/x/image v0.45.0
+	golang.org/x/image v0.48.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -42,19 +42,19 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
-	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/common v0.62.0 // indirect
-	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
@@ -74,14 +74,14 @@ require (
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/mobile v0.0.0-20240806205939-81131f6468ab // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.63.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect

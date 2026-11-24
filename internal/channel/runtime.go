@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -106,6 +107,9 @@ type Runtime struct {
 	// the web UI. nil = images are only sent to a vision-capable model and
 	// named in text (no inline display).
 	Media MediaStore
+	// IndexAttachment optionally records a persisted inbound attachment in the
+	// conversation attachment index (best-effort; failures never block inbound).
+	IndexAttachment func(ctx context.Context, conversationID, object, filename, mime string, size int64)
 
 	// routeMu guards Assignee/DefaultAgentID hot updates (SetRouting) against
 	// concurrent reads in HandleInbound. Construction-time writes before the
@@ -302,12 +306,13 @@ func (r *Runtime) handleInbound(ctx context.Context, ch Channel, in Inbound, fro
 	bubbleContent := displayText
 	if r.Messages != nil && r.Media != nil {
 		for _, img := range images {
-			u, _, serr := r.Media.SaveInboundImage(ctx, convID, img.Filename, img.ImageMIME, img.ImageBytes)
+			u, obj, serr := r.Media.SaveInboundImage(ctx, convID, img.Filename, img.ImageMIME, img.ImageBytes)
 			if serr != nil {
 				log.Printf("channel: persist inbound image %s: %v", img.Filename, serr)
 				continue
 			}
-			bubbleContent += "\n![图片](" + u + ")"
+			bubbleContent += "\n![图片](" + u + "?name=" + url.QueryEscape(img.Filename) + ")"
+			r.indexAttachment(ctx, convID, obj, img.Filename, img.ImageMIME, int64(len(img.ImageBytes)))
 		}
 		// Persist the original bytes of every non-image attachment so the
 		// operator can open/download it even when its contents were not (or
@@ -320,12 +325,13 @@ func (r *Runtime) handleInbound(ctx context.Context, ch Channel, in Inbound, fro
 			if name == "" {
 				name = "file"
 			}
-			u, _, serr := r.Media.SaveInboundFile(ctx, convID, name, f.MIME, f.Data)
+			u, obj, serr := r.Media.SaveInboundFile(ctx, convID, name, f.MIME, f.Data)
 			if serr != nil {
 				log.Printf("channel: persist inbound file %s: %v", name, serr)
 				continue
 			}
 			bubbleContent += "\n[file:" + name + "](" + u + ")"
+			r.indexAttachment(ctx, convID, obj, name, f.MIME, int64(len(f.Data)))
 		}
 		_, _ = r.Messages.Append(convID, conversation.Message{
 			Role:    conversation.RoleUser,
@@ -479,6 +485,13 @@ func containsImagePart(parts []llm.ContentPart) bool {
 		}
 	}
 	return false
+}
+
+func (r *Runtime) indexAttachment(ctx context.Context, convID, object, filename, mime string, size int64) {
+	if r.IndexAttachment == nil || object == "" {
+		return
+	}
+	r.IndexAttachment(ctx, convID, object, filename, mime, size)
 }
 
 // buildInboundContent mirrors internal/api handlePostRun attachment assembly:

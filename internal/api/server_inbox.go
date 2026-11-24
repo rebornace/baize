@@ -370,6 +370,7 @@ func (s *Server) handleInboxResume(w http.ResponseWriter, r *http.Request, chann
 		Comment:    payload.Comment,
 		Role:       p.Role,
 		OperatorID: p.OperatorID,
+		UserParts:  s.hydrateRunUserParts(r.Context(), runID, runRec.ConversationID, runRec.Input),
 	})
 
 	eventData := map[string]any{

@@ -621,7 +621,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 				_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
 				e.notifyParentChildResumed(runID)
 				_ = e.Store.SetHITL(runID, nil)
-				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipStep)
+				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipStep, d.UserParts)
 			}
 			if comment == store.HITLCommentSkipLogin {
 				e.skipConnectorForRun(runID, payload.ConnectorID)
@@ -635,7 +635,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 				_ = e.Store.UpdateRun(runID, store.StatusRunning, "", "")
 				e.notifyParentChildResumed(runID)
 				_ = e.Store.SetHITL(runID, nil)
-				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipSystem)
+				return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitSkipSystem, d.UserParts)
 			}
 		}
 		_ = e.Store.AppendEvent(runID, store.Event{
@@ -655,7 +655,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 	_ = e.Store.SetHITL(runID, nil)
 
 	if isLoginWait {
-		return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitResumed)
+		return e.continueRunAfterLoginWait(ctx, run, runID, payload.ConnectorID, payload.ToolName, loginWaitResumed, d.UserParts)
 	}
 
 	toolCallID := lastToolCallID(e.Store, runID)
@@ -693,7 +693,7 @@ func (e *Engine) ContinueFromHITL(ctx context.Context, runID string, d Decision)
 		locale = st.locale
 	}
 	sys = e.appendScheduleHint(sys, run, locale)
-	messages := e.buildResumeMessages(runID, sys, run.ConversationID, run.Input, evs)
+	messages := e.buildResumeMessagesWithParts(runID, sys, run.ConversationID, run.Input, evs, d.UserParts)
 	return e.runLoop(ctx, runID, messages)
 }
 
@@ -720,7 +720,7 @@ const (
 	loginWaitSkipSystem
 )
 
-func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, runID, connectorID, toolName string, kind loginWaitContinueKind) error {
+func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, runID, connectorID, toolName string, kind loginWaitContinueKind, userParts []llm.ContentPart) error {
 	ag, err := e.Store.GetAgent(run.AgentID)
 	if err != nil {
 		return err
@@ -740,7 +740,7 @@ func (e *Engine) continueRunAfterLoginWait(ctx context.Context, run *store.Run, 
 		locale = st.locale
 	}
 	sys = e.appendScheduleHint(sys, run, locale)
-	messages := e.buildResumeMessages(runID, sys, run.ConversationID, run.Input, evs)
+	messages := e.buildResumeMessagesWithParts(runID, sys, run.ConversationID, run.Input, evs, userParts)
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: loginWaitContinueHint(kind, connectorID, toolName)})
 	return e.runLoop(ctx, runID, messages)
 }

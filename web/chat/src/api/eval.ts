@@ -116,6 +116,52 @@ export async function listEvalScores(
   return parseJSON(res)
 }
 
+export interface EvalGateFailure {
+  id: string
+  input: string
+  codes: string[]
+  notes: string
+}
+
+export interface EvalGateResult {
+  total: number
+  passed: number
+  failed: number
+  pass_rate: number
+  min_pass_rate: number
+  pass: boolean
+  empty: boolean
+  ran_at: string
+  failures: EvalGateFailure[]
+}
+
+export interface EvalGateState {
+  min_pass_rate: number
+  last: EvalGateResult | null
+}
+
+export async function getEvalGate(): Promise<EvalGateState> {
+  const res = await fetch('/v0/settings/eval/gate', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function putEvalGate(minPassRate: number): Promise<void> {
+  const res = await fetch('/v0/settings/eval/gate', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ min_pass_rate: minPassRate }),
+  })
+  await parseJSON(res)
+}
+
+export async function runEvalGate(): Promise<EvalGateResult> {
+  const res = await fetch('/v0/settings/eval/gate/run', {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON(res)
+}
+
 export interface EvalRunsQuery {
   from: string
   to: string

@@ -189,9 +189,26 @@ export interface CostSummary {
   currency: string
   days: CostDay[]
   today_total_usd: number
+  month_total_usd: number
   budget_usd_per_day: number
+  budget_usd_per_month: number
   budget_enforce: boolean
   over_budget: boolean
+  month_over_budget: boolean
+}
+
+export interface CostStatus {
+  currency: string
+  today_total_usd: number
+  month_total_usd: number
+  budget_usd_per_day: number
+  budget_usd_per_month: number
+  day_ratio: number
+  month_ratio: number
+  day_alert: '' | 'warning' | 'exceeded'
+  month_alert: '' | 'warning' | 'exceeded'
+  alert_level: '' | 'warning' | 'exceeded'
+  alert_scope: '' | 'day' | 'month'
 }
 
 export async function getCostSummary(days = 7): Promise<CostSummary> {
@@ -199,11 +216,24 @@ export async function getCostSummary(days = 7): Promise<CostSummary> {
   return parseJSON(res)
 }
 
-export async function putCostBudget(budgetUsdPerDay: number, enforce = false): Promise<void> {
+export async function getCostStatus(): Promise<CostStatus> {
+  const res = await fetch('/v0/settings/cost-status', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function putCostBudget(
+  budgetUsdPerDay: number,
+  budgetUsdPerMonth: number,
+  enforce = false,
+): Promise<void> {
   const res = await fetch('/v0/settings/cost-budget', {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ budget_usd_per_day: budgetUsdPerDay, enforce }),
+    body: JSON.stringify({
+      budget_usd_per_day: budgetUsdPerDay,
+      budget_usd_per_month: budgetUsdPerMonth,
+      enforce,
+    }),
   })
   await parseJSON(res)
 }

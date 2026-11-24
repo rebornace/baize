@@ -26,6 +26,7 @@ import (
 	"github.com/rebornace/baize/internal/skill"
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/tool"
+	"github.com/rebornace/baize/internal/workspace"
 )
 
 type captureUserLLM struct {
@@ -118,6 +119,7 @@ func attachmentsServer(t *testing.T, vision bool) (*api.Server, store.Store, *ca
 	media := channelmedia.New(blobs)
 	srv.ChannelMedia = media
 	srv.ChatMedia = media
+	srv.Workspace = workspace.New(blobs)
 	return srv, st, llmMock, srv.Handler(), cat
 }
 

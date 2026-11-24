@@ -818,6 +818,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	closer.stops = append(closer.stops, scanCancel)
 	go runScheduleScanner(scanCtx, rt, srv)
 	go runHITLSweeper(scanCtx, engine)
+	go srv.StartAttachmentRetention(scanCtx, 6*time.Hour)
+	go srv.StartBudgetAlerts(scanCtx, 5*time.Minute)
 
 	return srv, closer, nil
 }
@@ -1020,7 +1022,24 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 		Messages:       d.messages,
 		DefaultAgentID: d.defaultAgentID,
 		Media:          d.channelMedia,
-		ResolveModel:   resolveModel,
+		IndexAttachment: func(ctx context.Context, convID, object, filename, mime string, size int64) {
+			if d.getStore == nil {
+				return
+			}
+			st := d.getStore()
+			if st == nil {
+				return
+			}
+			_ = st.AddConversationAttachment(store.ConversationAttachment{
+				ConversationID: convID,
+				Object:         object,
+				Filename:       filename,
+				MediaType:      mime,
+				SizeBytes:      size,
+				CreatedAt:      time.Now().UTC(),
+			})
+		},
+		ResolveModel: resolveModel,
 		// DP-0: expose the deterministic classifier so channel inbound records
 		// the desired tier on model.routed.
 		Classify: func(sig llm.TaskSignals) string {
@@ -1037,11 +1056,16 @@ func wireChannels(d channelDeps) (*channel.Router, error) {
 			return nil
 		},
 		ResumeHITL: func(ctx context.Context, runID string, approve bool, comment string) error {
+			var parts []llm.ContentPart
+			if runRec, err := d.srv.Store.GetRun(runID); err == nil && runRec != nil {
+				parts = d.srv.HydrateRunUserParts(ctx, runID, runRec.ConversationID, runRec.Input)
+			}
 			return d.engine.ContinueFromHITL(ctx, runID, run.Decision{
 				Approve:    approve,
 				Comment:    comment,
 				Role:       controlplane.RoleFrom(ctx),
 				OperatorID: controlplane.OperatorIDFrom(ctx),
+				UserParts:  parts,
 			})
 		},
 		// api.Server implements channel.RouteRegistrar: channels such as the

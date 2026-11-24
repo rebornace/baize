@@ -172,19 +172,23 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// only applies to chat turns that carry a conversation id; the machine
 	// path (empty conv) skips persistence entirely.
 	var savedWorkspaceFiles []string
+	textWorkspacePaths := make([]string, len(textExts))
+	imageWorkspacePaths := make([]string, len(imageExts))
 	if s.Workspace != nil && conv != "" {
-		for _, t := range textExts {
+		for i, t := range textExts {
 			if p, perr := s.Workspace.SaveUpload(r.Context(), conv, t.Filename, t.Text); perr != nil {
 				log.Printf("workspace: save text upload %q: %v", t.Filename, perr)
 			} else {
 				savedWorkspaceFiles = append(savedWorkspaceFiles, p)
+				textWorkspacePaths[i] = p
 			}
 		}
-		for _, im := range imageExts {
+		for i, im := range imageExts {
 			if p, perr := s.Workspace.SaveUploadBytes(r.Context(), conv, im.Filename, im.ImageBytes, im.ImageMIME); perr != nil {
 				log.Printf("workspace: save image upload %q: %v", im.Filename, perr)
 			} else {
 				savedWorkspaceFiles = append(savedWorkspaceFiles, p)
+				imageWorkspacePaths[i] = p
 			}
 		}
 	}
@@ -194,31 +198,53 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// bytes via userParts). Images use the thumbnail-capped bytes; non-image
 	// files keep their ORIGINAL bytes so they open/download unchanged even
 	// though only their extracted text was sent to the model. Markers are built
-	// in the original upload order.
+	// in the original upload order, and each successful save is indexed so the
+	// conversation can list and clean attachments later.
 	var bubbleMarkers []string
 	if conv != "" && s.ChatMedia != nil && len(decoded) > 0 {
-		imgIdx := 0 // imageExts are already in decoded order, images only
+		textIdx, imgIdx := 0, 0
+		record := func(object, filename, mime string, size int64, workspacePath string) {
+			if err := s.Store.AddConversationAttachment(store.ConversationAttachment{
+				ConversationID: conv,
+				Object:         object,
+				Filename:       filename,
+				MediaType:      mime,
+				SizeBytes:      size,
+				WorkspacePath:  workspacePath,
+				CreatedAt:      time.Now().UTC(),
+			}); err != nil {
+				log.Printf("chat media: index attachment %q: %v", filename, err)
+			}
+		}
 		for _, d := range decoded {
 			if attach.IsImageMIME(d.MediaType) {
 				if imgIdx >= len(imageExts) {
 					continue
 				}
 				ex := imageExts[imgIdx]
+				wsPath := imageWorkspacePaths[imgIdx]
 				imgIdx++
-				u, _, serr := s.ChatMedia.SaveInboundImage(r.Context(), conv, d.Filename, ex.ImageMIME, ex.ImageBytes)
+				u, obj, serr := s.ChatMedia.SaveInboundImage(r.Context(), conv, d.Filename, ex.ImageMIME, ex.ImageBytes)
 				if serr != nil {
 					log.Printf("chat media: save image upload %q: %v", d.Filename, serr)
 					continue
 				}
 				bubbleMarkers = append(bubbleMarkers, "![图片]("+u+"?name="+url.QueryEscape(d.Filename)+")")
+				record(obj, d.Filename, ex.ImageMIME, int64(len(ex.ImageBytes)), wsPath)
 				continue
 			}
-			u, _, serr := s.ChatMedia.SaveInboundFile(r.Context(), conv, d.Filename, d.MediaType, d.Data)
+			wsPath := ""
+			if textIdx < len(textWorkspacePaths) {
+				wsPath = textWorkspacePaths[textIdx]
+			}
+			textIdx++
+			u, obj, serr := s.ChatMedia.SaveInboundFile(r.Context(), conv, d.Filename, d.MediaType, d.Data)
 			if serr != nil {
 				log.Printf("chat media: save file upload %q: %v", d.Filename, serr)
 				continue
 			}
 			bubbleMarkers = append(bubbleMarkers, "[file:"+d.Filename+"]("+u+")")
+			record(obj, d.Filename, d.MediaType, int64(len(d.Data)), wsPath)
 		}
 	}
 

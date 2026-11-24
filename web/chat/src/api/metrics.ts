@@ -23,6 +23,30 @@ export interface RecentLogsResponse {
   limit: number
 }
 
+export interface RunOverviewError {
+  message: string
+  count: number
+}
+
+export interface RunOverview {
+  days: number
+  total: number
+  by_status: Record<string, number>
+  terminal: number
+  success_rate: number
+  active: number
+  waiting_human: number
+  range_cost_usd: number
+  today_cost_usd: number
+  top_errors: RunOverviewError[]
+  truncated: boolean
+}
+
+export async function getRunOverview(days = 7): Promise<RunOverview> {
+  const res = await fetch(`/v0/settings/run-overview?days=${days}`, { headers: authInit() })
+  return parseJSON<RunOverview>(res)
+}
+
 /** Fetch recent process log lines (Admin). */
 export async function getRecentLogs(limit = 200): Promise<RecentLogsResponse> {
   const res = await fetch(`/v0/settings/logs?limit=${limit}`, { headers: authInit() })

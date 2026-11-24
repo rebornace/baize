@@ -13,8 +13,12 @@ import (
 )
 
 const costBudgetSettingKey = "cost_budget_usd_per_day"
+const costBudgetMonthKey = "cost_budget_usd_per_month"
 const costBudgetEnforceKey = "cost_budget_enforce"
 const costSummaryCacheTTL = 30 * time.Second
+
+// costAlertRatio is the fraction of a budget that counts as a warning.
+const costAlertRatio = 0.8
 
 var (
 	ErrCostBudgetExceeded = errors.New("cost budget exceeded")
@@ -53,14 +57,29 @@ func (s *Server) handleGetCostSummary(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	budget := s.costBudget()
+	monthBudget := s.costBudgetMonth()
 	todayTotal := round6(byDay[now.Format("2006-01-02")])
+	monthTotal := 0.0
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	monthDays, _, merr := s.costByDay(monthStart, now)
+	if merr != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", merr.Error())
+		return
+	}
+	for _, v := range monthDays {
+		monthTotal += v
+	}
+	monthTotal = round6(monthTotal)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"currency":           "USD",
-		"days":               outDays,
-		"today_total_usd":    todayTotal,
-		"budget_usd_per_day": budget,
-		"budget_enforce":     s.costBudgetEnforced(),
-		"over_budget":        budget > 0 && todayTotal > budget,
+		"currency":             "USD",
+		"days":                 outDays,
+		"today_total_usd":      todayTotal,
+		"month_total_usd":      monthTotal,
+		"budget_usd_per_day":   budget,
+		"budget_usd_per_month": monthBudget,
+		"budget_enforce":       s.costBudgetEnforced(),
+		"over_budget":          budget > 0 && todayTotal > budget,
+		"month_over_budget":    monthBudget > 0 && monthTotal > monthBudget,
 	})
 }
 
@@ -209,19 +228,37 @@ func (s *Server) costBudgetEnforced() bool {
 
 func (s *Server) handlePutCostBudget(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		BudgetUSDPerDay float64 `json:"budget_usd_per_day"`
-		Enforce         bool    `json:"enforce"`
+		BudgetUSDPerDay   *float64 `json:"budget_usd_per_day"`
+		BudgetUSDPerMonth *float64 `json:"budget_usd_per_month"`
+		Enforce           bool     `json:"enforce"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
-	if body.BudgetUSDPerDay < 0 || body.BudgetUSDPerDay > 1_000_000 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "budget_usd_per_day must be between 0 and 1000000")
+	day := s.costBudget()
+	month := s.costBudgetMonth()
+	if body.BudgetUSDPerDay != nil {
+		if *body.BudgetUSDPerDay < 0 || *body.BudgetUSDPerDay > 1_000_000 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "budget_usd_per_day must be between 0 and 1000000")
+			return
+		}
+		day = *body.BudgetUSDPerDay
+	}
+	if body.BudgetUSDPerMonth != nil {
+		if *body.BudgetUSDPerMonth < 0 || *body.BudgetUSDPerMonth > 1_000_000 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "budget_usd_per_month must be between 0 and 1000000")
+			return
+		}
+		month = *body.BudgetUSDPerMonth
+	}
+	raw, _ := json.Marshal(day)
+	if err := s.Store.UpsertSetting(costBudgetSettingKey, raw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	raw, _ := json.Marshal(body.BudgetUSDPerDay)
-	if err := s.Store.UpsertSetting(costBudgetSettingKey, raw); err != nil {
+	monthRaw, _ := json.Marshal(month)
+	if err := s.Store.UpsertSetting(costBudgetMonthKey, monthRaw); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -233,10 +270,86 @@ func (s *Server) handlePutCostBudget(w http.ResponseWriter, r *http.Request) {
 	costCache.mu.Lock()
 	costCache.at = time.Time{}
 	costCache.mu.Unlock()
+	_ = s.Store.UpsertSetting(costAlertStateKey, []byte("{}"))
 	writeJSON(w, http.StatusOK, map[string]any{
-		"budget_usd_per_day": body.BudgetUSDPerDay,
-		"enforce":            body.Enforce,
+		"budget_usd_per_day":   day,
+		"budget_usd_per_month": month,
+		"enforce":              body.Enforce,
 	})
+}
+
+// handleGetCostStatus returns a compact budget snapshot for the chat sidebar.
+func (s *Server) handleGetCostStatus(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	byDay, _, err := s.costByDay(start, now)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	dayTotal := round6(byDay[now.Format("2006-01-02")])
+	var monthTotal float64
+	for _, v := range byDay {
+		monthTotal += v
+	}
+	monthTotal = round6(monthTotal)
+	dayBudget := s.costBudget()
+	monthBudget := s.costBudgetMonth()
+	dayLevel, dayRatio := budgetAlert(dayTotal, dayBudget)
+	monthLevel, monthRatio := budgetAlert(monthTotal, monthBudget)
+	alert, scope := worstAlert(dayLevel, monthLevel)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"currency":             "USD",
+		"today_total_usd":      dayTotal,
+		"month_total_usd":      monthTotal,
+		"budget_usd_per_day":   dayBudget,
+		"budget_usd_per_month": monthBudget,
+		"day_ratio":            round4(dayRatio),
+		"month_ratio":          round4(monthRatio),
+		"day_alert":            dayLevel,
+		"month_alert":          monthLevel,
+		"alert_level":          alert,
+		"alert_scope":          scope,
+	})
+}
+
+// budgetAlert reports how close a total is to its budget.
+func budgetAlert(total, budget float64) (level string, ratio float64) {
+	if budget <= 0 {
+		return "", 0
+	}
+	ratio = total / budget
+	switch {
+	case ratio >= 1:
+		return "exceeded", ratio
+	case ratio >= costAlertRatio:
+		return "warning", ratio
+	}
+	return "", ratio
+}
+
+// worstAlert returns the more severe level and which budget caused it.
+func worstAlert(dayLevel, monthLevel string) (level, scope string) {
+	rank := func(v string) int {
+		switch v {
+		case "exceeded":
+			return 2
+		case "warning":
+			return 1
+		}
+		return 0
+	}
+	if rank(monthLevel) > rank(dayLevel) {
+		return monthLevel, "month"
+	}
+	if dayLevel != "" {
+		return dayLevel, "day"
+	}
+	return "", ""
+}
+
+func round4(v float64) float64 {
+	return float64(int64(v*1e4+0.5)) / 1e4
 }
 
 func (s *Server) costBudget() float64 {
@@ -244,6 +357,21 @@ func (s *Server) costBudget() float64 {
 		return 0
 	}
 	raw, ok, err := s.Store.GetSetting(costBudgetSettingKey)
+	if err != nil || !ok {
+		return 0
+	}
+	var v float64
+	if json.Unmarshal(raw, &v) != nil || v < 0 {
+		return 0
+	}
+	return v
+}
+
+func (s *Server) costBudgetMonth() float64 {
+	if s.Store == nil {
+		return 0
+	}
+	raw, ok, err := s.Store.GetSetting(costBudgetMonthKey)
 	if err != nil || !ok {
 		return 0
 	}

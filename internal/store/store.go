@@ -788,6 +788,13 @@ type Store interface {
 	// ClearCostCache drops cached run and day costs, e.g. after the price
 	// table changes.
 	ClearCostCache() error
+	AddConversationAttachment(a ConversationAttachment) error
+	GetConversationAttachment(conversationID, object string) (ConversationAttachment, bool, error)
+	ListConversationAttachments(conversationID string, limit int) ([]ConversationAttachment, error)
+	DeleteConversationAttachment(conversationID, object string) error
+	// ListConversationAttachmentsBefore returns the oldest attachments created
+	// before the cutoff, for retention cleanup.
+	ListConversationAttachmentsBefore(before time.Time, limit int) ([]ConversationAttachment, error)
 }
 
 // EvalCaseStatus is draft (incomplete expectations) or confirmed (ready to score).
@@ -876,6 +883,18 @@ type CostDay struct {
 	Runs      int
 	Finalized bool
 	UpdatedAt time.Time
+}
+
+// ConversationAttachment indexes one persisted chat upload so the conversation
+// can list and clean up attachments without scanning message markers.
+type ConversationAttachment struct {
+	ConversationID string
+	Object         string
+	Filename       string
+	MediaType      string
+	SizeBytes      int64
+	WorkspacePath  string
+	CreatedAt      time.Time
 }
 
 // ErrEvalCaseNotFound is returned when an eval case row is missing.

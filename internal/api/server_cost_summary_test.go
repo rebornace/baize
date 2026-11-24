@@ -133,3 +133,109 @@ func TestRollupDayFinalizesOnlyPastCompleteDays(t *testing.T) {
 		t.Fatalf("today final=%v err=%v", final, err)
 	}
 }
+
+func TestCostMonthBudgetAndStatus(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	profile, err := st.UpsertModelProfile(store.ModelProfile{Name: "m2", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRec, err := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "x", ConversationID: "c-status", ModelProfileID: profile.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AppendEvent(runRec.ID, store.Event{
+		Type: run.EventLLMUsage,
+		Data: map[string]any{
+			"model_profile_id": profile.ID, "prompt_tokens": 1000, "completion_tokens": 1000, "total_tokens": 2000,
+		},
+	})
+	put := httptest.NewRequest(http.MethodPut, "/v0/settings/cost-budget",
+		bytes.NewBufferString(`{"budget_usd_per_day":0.01,"budget_usd_per_month":0.014,"enforce":false}`))
+	put.Header.Set("Authorization", "Bearer adm")
+	putRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRR, put)
+	if putRR.Code != http.StatusOK {
+		t.Fatalf("budget put=%d %s", putRR.Code, putRR.Body.String())
+	}
+
+	status := httptest.NewRequest(http.MethodGet, "/v0/settings/cost-status", nil)
+	status.Header.Set("Authorization", "Bearer adm")
+	statusRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(statusRR, status)
+	if statusRR.Code != http.StatusOK {
+		t.Fatalf("status=%d %s", statusRR.Code, statusRR.Body.String())
+	}
+	var body struct {
+		TodayTotal float64 `json:"today_total_usd"`
+		MonthTotal float64 `json:"month_total_usd"`
+		DayBudget  float64 `json:"budget_usd_per_day"`
+		MonBudget  float64 `json:"budget_usd_per_month"`
+		DayAlert   string  `json:"day_alert"`
+		MonAlert   string  `json:"month_alert"`
+		AlertLevel string  `json:"alert_level"`
+		AlertScope string  `json:"alert_scope"`
+	}
+	if err := json.Unmarshal(statusRR.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.TodayTotal <= 0 || body.MonthTotal < body.TodayTotal {
+		t.Fatalf("totals=%+v", body)
+	}
+	if body.DayBudget != 0.01 || body.MonBudget != 0.014 {
+		t.Fatalf("budgets=%+v", body)
+	}
+	if body.DayAlert != "exceeded" {
+		t.Fatalf("day_alert=%q, want exceeded", body.DayAlert)
+	}
+	if body.AlertLevel != "exceeded" || body.AlertScope != "day" {
+		t.Fatalf("alert=%q scope=%q", body.AlertLevel, body.AlertScope)
+	}
+
+	// Summary reports the same month totals and budget.
+	get := httptest.NewRequest(http.MethodGet, "/v0/settings/cost-summary?days=3", nil)
+	get.Header.Set("Authorization", "Bearer adm")
+	getRR := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRR, get)
+	var summary struct {
+		MonthTotal float64 `json:"month_total_usd"`
+		MonBudget  float64 `json:"budget_usd_per_month"`
+		MonthOver  bool    `json:"month_over_budget"`
+	}
+	if err := json.Unmarshal(getRR.Body.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.MonthTotal != body.MonthTotal || summary.MonBudget != 0.014 {
+		t.Fatalf("summary=%+v status=%+v", summary, body)
+	}
+}
+
+func TestCostBudgetPartialUpdateKeepsMonth(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	h := srv.Handler()
+	first := httptest.NewRequest(http.MethodPut, "/v0/settings/cost-budget",
+		bytes.NewBufferString(`{"budget_usd_per_day":1,"budget_usd_per_month":30,"enforce":false}`))
+	first.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, first)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("first=%d", rr.Code)
+	}
+	second := httptest.NewRequest(http.MethodPut, "/v0/settings/cost-budget",
+		bytes.NewBufferString(`{"budget_usd_per_day":2,"enforce":false}`))
+	second.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, second)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("second=%d %s", rr.Code, rr.Body.String())
+	}
+	if got := srv.costBudgetMonth(); got != 30 {
+		t.Fatalf("month budget=%v, want 30 (partial update must keep it)", got)
+	}
+	if got := srv.costBudget(); got != 2 {
+		t.Fatalf("day budget=%v, want 2", got)
+	}
+}

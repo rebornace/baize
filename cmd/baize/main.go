@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -43,6 +44,14 @@ func main() {
 		if err := runResetCredentials(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
+	case "eval-gate":
+		if err := runEvalGateCommand(os.Args[2:]); err != nil {
+			if errors.Is(err, errEvalGateFailed) {
+				fmt.Fprintln(os.Stderr, "eval gate failed")
+				os.Exit(1)
+			}
+			log.Fatal(err)
+		}
 	default:
 		printUsage()
 		os.Exit(2)
@@ -52,7 +61,8 @@ func main() {
 const defaultConfigPath = "configs/config.yaml"
 
 func printUsage() {
-	fmt.Println("usage: baize <serve|reset-credentials>")
+	fmt.Println("usage: baize <serve|reset-credentials|eval-gate>")
 	fmt.Println("  serve              run the Runtime (configs/config.yaml; override with -config)")
 	fmt.Println("  reset-credentials  clear hot-updated control-plane tokens (fall back to YAML break-glass)")
+	fmt.Println("  eval-gate          score confirmed eval cases and exit non-zero when below the threshold")
 }

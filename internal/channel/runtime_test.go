@@ -639,6 +639,10 @@ func TestHandleInboundPersistsImageForInlineDisplay(t *testing.T) {
 	rt, meta := newTestRuntime(t, runs)
 	media := &fakeMediaStore{}
 	rt.Media = media
+	var indexed []string
+	rt.IndexAttachment = func(_ context.Context, convID, object, filename, mime string, size int64) {
+		indexed = append(indexed, convID+"|"+object+"|"+filename+"|"+mime)
+	}
 	rt.ResolveModel = func(llm.TaskSignals) (string, bool, bool) {
 		return "", true, true // primary model is vision-capable
 	}
@@ -662,6 +666,9 @@ func TestHandleInboundPersistsImageForInlineDisplay(t *testing.T) {
 	}
 	if len(media.images) != 1 {
 		t.Fatalf("expected 1 image persisted, got %d", len(media.images))
+	}
+	if len(indexed) != 1 || indexed[0] != "weixin:acc-1:peer-1|obj_photo.png|photo.png|image/png" {
+		t.Fatalf("indexed=%v", indexed)
 	}
 	convID := "weixin:acc-1:peer-1"
 	msgs := meta.List(convID)

@@ -29,6 +29,19 @@ afterEach(() => {
 })
 
 async function renderPage() {
+  vi.spyOn(metricsApi, 'getRunOverview').mockResolvedValue({
+    days: 7,
+    total: 0,
+    by_status: {},
+    terminal: 0,
+    success_rate: 0,
+    active: 0,
+    waiting_human: 0,
+    range_cost_usd: 0,
+    today_cost_usd: 0,
+    top_errors: [],
+    truncated: false,
+  })
   await act(async () => {
     root.render(
       <LocaleProvider>

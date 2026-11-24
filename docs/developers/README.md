@@ -32,7 +32,9 @@
 | [架构](./architecture.md) · [EN](./architecture.en.md) | 运行时边界、插件与核心抽象 |
 | [部署](./deployment.md) · [EN](./deployment.en.md) | 单机与渠道适配器部署 |
 | [发布签名](./release-signing.md) · [EN](./release-signing.en.md) | cosign 密钥生成、离线保管、指纹、交接与轮换 |
+| [评测门禁](./eval-gate.md) · [EN](./eval-gate.en.md) | 无头回归门禁、退出码、CI 示例 |
 | [Postgres 运维](./postgres-ops.md) · [EN](./postgres-ops.en.md) | 多副本迁移锁、备份/恢复、PITR、failover 与限制 |
+| [PITR 演练](./pitr-drill.md) · [EN](./pitr-drill.en.md) | 恢复到指定时间点的步骤、校验与记录模板 |
 | [移动端](./mobile.md) · [EN](./mobile.en.md) | 遥控操作台，或用 `mobileagent` SDK 自绘 App 界面 |
 | [官网（GitHub Pages）](../../site/README.md) | 静态官网源码与启用说明 |
 | [性能探针](./performance.md) · [EN](./performance.en.md) | 本机热点路径复现 |

@@ -73,6 +73,9 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 			Comment:    job.HITLComment,
 			OperatorID: job.HITLOperatorID,
 		}
+		if len(d.UserParts) == 0 {
+			d.UserParts = s.hydrateRunUserParts(ctx, job.RunID, cur.ConversationID, cur.Input)
+		}
 		if err := s.Runner.ContinueFromHITL(ctx, job.RunID, d); err != nil {
 			if errors.Is(err, run.ErrHITLRejected) || errors.Is(err, run.ErrWaitingHuman) ||
 				errors.Is(err, run.ErrHITLExpired) || errors.Is(err, run.ErrHITLAlreadySettled) {
@@ -105,6 +108,9 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 	if err != nil {
 		s.finalizeRunError(job.RunID, cur.ConversationID, err)
 		return nil
+	}
+	if len(opts.UserParts) == 0 {
+		opts.UserParts = s.hydrateRunUserParts(ctx, job.RunID, cur.ConversationID, input)
 	}
 	if err := s.runExecute(ctx, job.RunID, def, input, opts); err != nil {
 		// A human declining an approval is an intentional terminal outcome

@@ -3,6 +3,7 @@ package webhook_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -243,5 +244,13 @@ func TestDispatcher4xxGoesDead(t *testing.T) {
 	}
 	if dead[0].Attempt != 1 {
 		t.Fatalf("attempt=%d want 1", dead[0].Attempt)
+	}
+}
+
+func TestSendBudgetAlertNoURL(t *testing.T) {
+	d := webhook.NewDispatcher(store.NewMemory(), webhook.Config{})
+	err := d.SendBudgetAlert(context.Background(), map[string]any{"scope": "day", "level": "warning"})
+	if !errors.Is(err, webhook.ErrNoURL) {
+		t.Fatalf("err=%v, want ErrNoURL", err)
 	}
 }

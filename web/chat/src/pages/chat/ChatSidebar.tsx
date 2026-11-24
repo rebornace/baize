@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useState } from 'react'
 import { Search } from 'lucide-react'
 import type { ConversationScope, ConversationSummary, Workspace } from '../../api'
 import { LanguageChip } from '../../components/LanguageChip'
@@ -10,6 +11,8 @@ import { useLocale } from '../../locale/LocaleContext'
 import { clearControlToken } from '../../controlAuth'
 import { CHAT } from '../../strings'
 import { FeatureSearchButton } from '../../components/FeatureSearch'
+import { BudgetChip } from './BudgetChip'
+import { AttachmentManager } from './AttachmentManager'
 
 export type ChatSidebarProps = {
   role: string
@@ -53,6 +56,7 @@ export function ChatSidebar({
   onExportConversation,
 }: ChatSidebarProps) {
   const { locale } = useLocale()
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false)
 
   return (
     <aside className="chat-sidebar" aria-label={CHAT.conversationListAria}>
@@ -191,11 +195,22 @@ export function ChatSidebar({
         </ul>
       </div>
       <div className="chat-sidebar-bottom">
+        <BudgetChip enabled={role === 'admin'} />
         <div className="sidebar-chrome-row">
           <ThemeToggle />
           <LanguageChip />
         </div>
         <div className="sidebar-footer-links">
+          {conversationId ? (
+            <button
+              type="button"
+              className="settings-link"
+              onClick={() => setAttachmentsOpen(true)}
+              data-testid="attachment-manager-open"
+            >
+              {CHAT.attachmentManager}
+            </button>
+          ) : null}
           <button
             type="button"
             className="settings-link sidebar-export"
@@ -223,6 +238,11 @@ export function ChatSidebar({
           )}
         </div>
       </div>
+      <AttachmentManager
+        conversationId={conversationId}
+        open={attachmentsOpen}
+        onClose={() => setAttachmentsOpen(false)}
+      />
       <SidebarResizer />
     </aside>
   )

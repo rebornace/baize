@@ -1,6 +1,8 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
+  getAttachmentRetention,
   getStoreSettings,
+  putAttachmentRetention,
   putStoreSettings,
   type StoreSettings,
 } from '../api'
@@ -32,6 +34,8 @@ export function StorageSettings() {
   const [busy, setBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>('hot')
+  const [retentionDays, setRetentionDays] = useState('0')
+  const [retentionBusy, setRetentionBusy] = useState(false)
   const { toasts, push, dismiss } = useToast()
 
   const load = useCallback(async () => {
@@ -49,6 +53,37 @@ export function StorageSettings() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    const loadRetention = async () => {
+      try {
+        const r = await getAttachmentRetention()
+        setRetentionDays(String(r.days))
+      } catch {
+        // Optional section; keep the default when the endpoint is unavailable.
+      }
+    }
+    void loadRetention()
+  }, [])
+
+  const saveRetention = async () => {
+    const n = Number.parseInt(retentionDays, 10)
+    if (!Number.isFinite(n) || n < 0 || n > 3650) {
+      push({ tone: 'error', title: STORAGE.retentionInvalid })
+      return
+    }
+    setRetentionBusy(true)
+    try {
+      const r = await putAttachmentRetention(n)
+      setRetentionDays(String(r.days))
+      push({ tone: 'success', title: STORAGE.retentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setRetentionBusy(false)
+    }
+  }
 
   const drivers = info?.drivers?.length ? info.drivers : FALLBACK_DRIVERS
 
@@ -179,6 +214,35 @@ export function StorageSettings() {
           </p>
         </details>
       )}
+
+      <Card>
+        <form
+          className="storage-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveRetention()
+          }}
+        >
+          <h2 className="settings-subheading">{STORAGE.retentionTitle}</h2>
+          <p className="settings-muted">{STORAGE.retentionHint}</p>
+          <Field label={STORAGE.retentionDaysLabel}>
+            <Input
+              type="number"
+              min={0}
+              max={3650}
+              value={retentionDays}
+              disabled={retentionBusy}
+              onChange={(e) => setRetentionDays(e.target.value)}
+              data-testid="attachment-retention-days"
+            />
+          </Field>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={retentionBusy}>
+              {STORAGE.retentionSave}
+            </Button>
+          </div>
+        </form>
+      </Card>
 
       <ConfirmDialog
         open={confirmOpen}

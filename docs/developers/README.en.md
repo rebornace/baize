@@ -32,7 +32,9 @@ Version detail lives in [CHANGELOG](../../CHANGELOG.md). These capabilities are 
 | [Architecture](./architecture.en.md) · [中文](./architecture.md) | Runtime boundaries, plugins, core abstractions |
 | [Deployment](./deployment.en.md) · [中文](./deployment.md) | Single-host and channel adapter deploy |
 | [Release signing](./release-signing.en.md) · [中文](./release-signing.md) | cosign key generation, offline custody, fingerprint, handoff and rotation |
+| [Eval gate](./eval-gate.en.md) · [中文](./eval-gate.md) | Headless regression gate, exit codes, CI example |
 | [Postgres ops](./postgres-ops.en.md) · [中文](./postgres-ops.md) | Multi-replica migration lock, backup/restore, PITR, failover and limits |
+| [PITR drill](./pitr-drill.en.md) · [中文](./pitr-drill.md) | Point-in-time recovery steps, validation and record template |
 | [Mobile](./mobile.en.md) · [中文](./mobile.md) | Remote console on phone, or custom UI via the `mobileagent` SDK |
 | [Website (GitHub Pages)](../../site/README.md) | Static site source and enable notes |
 | [Performance probes](./performance.en.md) · [中文](./performance.md) | Local hot-path reproduction |

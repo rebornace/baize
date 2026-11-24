@@ -28,6 +28,11 @@ afterEach(() => {
 async function renderPage(getBody: unknown = { driver: 'sqlite', drivers: ['memory', 'sqlite', 'postgres'] }) {
   fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
     if (!init?.method && String(url).endsWith('/settings/store')) return json(getBody)
+    if (String(url).endsWith('/settings/attachment-retention')) {
+      if (!init?.method) return json({ days: 0 })
+      const body = JSON.parse((init.body as string) || '{}')
+      return json({ days: body.days })
+    }
     return json({ status: 'ok', message: 'restarting' })
   })
   await act(async () => {
@@ -190,5 +195,26 @@ describe('StorageSettings', () => {
     const body = JSON.parse((puts[0][1] as RequestInit).body as string)
     expect(body).toMatchObject({ driver: 'postgres', acknowledge_no_migrate: true, restart: false })
     expect(body.dsn).toBe(nextDSN)
+  })
+
+  it('saves the attachment retention window', async () => {
+    await renderPage()
+    const input = host.querySelector<HTMLInputElement>(
+      '[data-testid="attachment-retention-days"]',
+    )
+    expect(input).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(input, '30')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await fire(findBtn('保存保留策略'))
+    const puts = fetchMock.mock.calls.filter(
+      ([u, i]) =>
+        String(u).endsWith('/settings/attachment-retention') &&
+        (i as RequestInit)?.method === 'PUT',
+    )
+    expect(puts).toHaveLength(1)
+    expect(JSON.parse((puts[0][1] as RequestInit).body as string)).toEqual({ days: 30 })
   })
 })

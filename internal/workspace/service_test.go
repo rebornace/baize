@@ -190,3 +190,31 @@ func TestResolveImagePart(t *testing.T) {
 		t.Fatal("missing image must resolve to ok=false")
 	}
 }
+
+func TestSaveUploadSameNameGetsUniquePath(t *testing.T) {
+	svc := newSvc(t)
+	ctx := context.Background()
+	p1, err := svc.SaveUpload(ctx, "c1", "report.txt", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := svc.SaveUpload(ctx, "c1", "report.txt", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1 == p2 {
+		t.Fatalf("same path for two uploads: %q", p1)
+	}
+	if p1 != "uploads/report.txt" || p2 != "uploads/report (2).txt" {
+		t.Fatalf("paths=%q %q", p1, p2)
+	}
+	if got, err := svc.ReadFile(ctx, "c1", p2); err != nil || got != "second" {
+		t.Fatalf("read second=%q err=%v", got, err)
+	}
+	if err := svc.DeleteFile(ctx, "c1", p1); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.ReadFile(ctx, "c1", p2); err != nil || got != "second" {
+		t.Fatalf("after delete first, second=%q err=%v", got, err)
+	}
+}

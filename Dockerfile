@@ -11,7 +11,7 @@ COPY . .
 RUN go build -trimpath -ldflags "-s -w" -o /out/baize ./cmd/baize \
  && go build -trimpath -ldflags "-s -w" -o /out/weixin-adapter ./cmd/weixin-adapter
 
-FROM alpine:3.20
+FROM alpine:3.23
 RUN apk upgrade --no-cache \
  && apk add --no-cache ca-certificates tzdata \
  && addgroup -S baize \

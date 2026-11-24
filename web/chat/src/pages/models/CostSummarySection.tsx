@@ -10,6 +10,7 @@ import {
 export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [summary, setSummary] = useState<CostSummary | null>(null)
   const [budget, setBudget] = useState('0')
+  const [monthBudget, setMonthBudget] = useState('0')
   const [enforce, setEnforce] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -19,6 +20,7 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
       const body = await getCostSummary(7)
       setSummary(body)
       setBudget(String(body.budget_usd_per_day))
+      setMonthBudget(String(body.budget_usd_per_month))
       setEnforce(body.budget_enforce)
       setError(null)
     } catch (e) {
@@ -32,13 +34,14 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
 
   const save = async () => {
     const n = Number.parseFloat(budget)
-    if (!Number.isFinite(n) || n < 0) {
+    const m = Number.parseFloat(monthBudget)
+    if (!Number.isFinite(n) || n < 0 || !Number.isFinite(m) || m < 0) {
       setError(MODELS.errInvalidRequest)
       return
     }
     setBusy(true)
     try {
-      await putCostBudget(n, enforce)
+      await putCostBudget(n, m, enforce)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -46,6 +49,15 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
       setBusy(false)
     }
   }
+
+  const nearBudget = summary
+    ? (summary.budget_usd_per_day > 0 &&
+        summary.today_total_usd / summary.budget_usd_per_day >= 0.8 &&
+        !summary.over_budget) ||
+      (summary.budget_usd_per_month > 0 &&
+        summary.month_total_usd / summary.budget_usd_per_month >= 0.8 &&
+        !summary.month_over_budget)
+    : false
 
   return (
     <section className="settings-model-prices" data-testid="cost-summary">
@@ -58,6 +70,15 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
             {MODELS.costToday(summary.today_total_usd, summary.currency)}
             {summary.over_budget ? (
               <span className="settings-error"> · {MODELS.costOverBudget}</span>
+            ) : null}
+          </p>
+          <p>
+            {MODELS.costMonth(summary.month_total_usd, summary.currency)}
+            {summary.month_over_budget ? (
+              <span className="settings-error"> · {MODELS.costMonthOverBudget}</span>
+            ) : null}
+            {nearBudget ? (
+              <span className="settings-warn"> · {MODELS.costNearBudget}</span>
             ) : null}
           </p>
           {summary.days.some((d) => d.runs > 0) ? (
@@ -84,6 +105,16 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                 />
               </label>
               <label className="settings-muted">
+                {MODELS.costMonthLabel}
+                <Input
+                  type="number"
+                  min={0}
+                  value={monthBudget}
+                  disabled={busy}
+                  onChange={(e) => setMonthBudget(e.target.value)}
+                />
+              </label>
+              <label className="settings-muted">
                 <input
                   type="checkbox"
                   checked={enforce}
@@ -97,6 +128,7 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
               </Button>
             </div>
           ) : null}
+          <p className="settings-muted">{MODELS.costWebhookHint}</p>
         </>
       ) : null}
     </section>

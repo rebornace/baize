@@ -36,6 +36,9 @@ type BuildDeps struct {
 	DefaultAgentID string
 	// Media optionally persists inbound channel images for inline web display.
 	Media MediaStore
+	// IndexAttachment optionally records persisted inbound attachments in the
+	// conversation attachment index. Best-effort; nil disables indexing.
+	IndexAttachment func(ctx context.Context, conversationID, object, filename, mime string, size int64)
 	// ResolveModel performs task-aware Auto routing for inbound messages. It is
 	// invoked per inbound message (hot reload: adding/editing a model takes
 	// effect without restart) with the turn's content signals and returns the

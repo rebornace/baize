@@ -11,6 +11,7 @@ import {
   formatDurationSeconds,
   type MetricsOverview,
 } from './metricsParse'
+import { RunOverviewCard } from './RunOverviewCard'
 
 type Tab = 'overview' | 'logs'
 
@@ -133,6 +134,8 @@ export function MetricsSettings() {
           </>
         }
       />
+
+      <RunOverviewCard />
 
       <div className="locale-choice runtime-tabs" role="tablist" aria-label={METRICS.title}>
         {(

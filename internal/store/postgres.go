@@ -277,6 +277,17 @@ CREATE TABLE IF NOT EXISTS cost_days (
   finalized INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conversation_attachments (
+  conversation_id TEXT NOT NULL,
+  object TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  media_type TEXT NOT NULL DEFAULT '',
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  workspace_path TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, object)
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_attachments_created ON conversation_attachments(created_at);
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,

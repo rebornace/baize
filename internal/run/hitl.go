@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/rebornace/baize/internal/controlplane"
+	"github.com/rebornace/baize/internal/llm"
 )
 
 // Decision is a human approval or rejection for a waiting run.
@@ -15,6 +16,9 @@ type Decision struct {
 	Comment    string
 	Role       controlplane.Role
 	OperatorID string
+	// UserParts optionally rehydrates the original multimodal user turn when a
+	// run resumes (HITL) after the live job payload is gone. Nil is the default.
+	UserParts []llm.ContentPart
 }
 
 // applyDecisionPrincipal copies the approver identity from d onto ctx when set.
