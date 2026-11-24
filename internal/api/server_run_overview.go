@@ -28,12 +28,11 @@ func (s *Server) handleGetRunOverview(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).
 		AddDate(0, 0, -(days - 1))
-	runs, err := s.Store.ListRunsCreatedBetween(start, now, "", runOverviewLimit)
+	counts, err := s.Store.CountRunsByStatusBetween(start, now)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-
 	byStatus := map[string]int{
 		string(store.StatusQueued):       0,
 		string(store.StatusRunning):      0,
@@ -43,33 +42,29 @@ func (s *Server) handleGetRunOverview(w http.ResponseWriter, r *http.Request) {
 		string(store.StatusCancelled):    0,
 		string(store.StatusRejected):     0,
 	}
-	terminal := 0
-	active := 0
-	waiting := 0
-	errorsByMessage := map[string]int{}
-	for _, runRec := range runs {
-		status := string(runRec.Status)
-		byStatus[status]++
-		switch runRec.Status {
-		case store.StatusSucceeded:
-			terminal++
-		case store.StatusFailed, store.StatusCancelled, store.StatusRejected:
-			terminal++
-		case store.StatusQueued, store.StatusRunning:
-			active++
-		case store.StatusWaitingHuman:
-			active++
-			waiting++
-		}
-		if runRec.Status == store.StatusFailed || runRec.Status == store.StatusRejected {
-			if msg := firstErrorLine(runRec.Error); msg != "" {
-				errorsByMessage[msg]++
-			}
-		}
+	total := 0
+	for st, n := range counts {
+		byStatus[string(st)] = n
+		total += n
 	}
+	terminal := counts[store.StatusSucceeded] + counts[store.StatusFailed] +
+		counts[store.StatusCancelled] + counts[store.StatusRejected]
+	active := counts[store.StatusQueued] + counts[store.StatusRunning] + counts[store.StatusWaitingHuman]
+	waiting := counts[store.StatusWaitingHuman]
 	successRate := 0.0
 	if terminal > 0 {
-		successRate = round4(float64(byStatus[string(store.StatusSucceeded)]) / float64(terminal))
+		successRate = round4(float64(counts[store.StatusSucceeded]) / float64(terminal))
+	}
+	failedRuns, ferr := s.Store.ListRunsCreatedBetween(start, now, store.StatusFailed, runOverviewLimit)
+	if ferr != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", ferr.Error())
+		return
+	}
+	errorsByMessage := map[string]int{}
+	for _, runRec := range failedRuns {
+		if msg := firstErrorLine(runRec.Error); msg != "" {
+			errorsByMessage[msg]++
+		}
 	}
 	type errorCount struct {
 		Message string `json:"message"`
@@ -100,7 +95,7 @@ func (s *Server) handleGetRunOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"days":           days,
-		"total":          len(runs),
+		"total":          total,
 		"by_status":      byStatus,
 		"terminal":       terminal,
 		"success_rate":   successRate,
@@ -109,7 +104,7 @@ func (s *Server) handleGetRunOverview(w http.ResponseWriter, r *http.Request) {
 		"range_cost_usd": round6(rangeCost),
 		"today_cost_usd": round6(byDay[now.Format("2006-01-02")]),
 		"top_errors":     topErrors,
-		"truncated":      len(runs) >= runOverviewLimit,
+		"truncated":      len(failedRuns) >= runOverviewLimit,
 	})
 }
 

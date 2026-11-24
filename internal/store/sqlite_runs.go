@@ -339,6 +339,10 @@ func (s *SQLStore) ClearRunLease(id string) error {
 }
 
 func (s *SQLStore) ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error) {
+	return s.ListRunsCreatedBetweenPage(from, to, status, limit, 0)
+}
+
+func (s *SQLStore) ListRunsCreatedBetweenPage(from, to time.Time, status Status, limit, offset int) ([]*Run, error) {
 	limit = normalizeEvalListLimit(limit)
 	from = from.UTC()
 	to = to.UTC()
@@ -348,13 +352,38 @@ func (s *SQLStore) ListRunsCreatedBetween(from, to time.Time, status Status, lim
 		q += ` AND status = ?`
 		args = append(args, string(status))
 	}
-	q += ` ORDER BY created_at DESC LIMIT ?`
-	args = append(args, limit)
+	q += ` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+	if offset < 0 {
+		offset = 0
+	}
+	args = append(args, limit, offset)
 	rows, err := s.query(q, args...)
 	if err != nil {
 		return nil, err
 	}
 	return scanRuns(rows)
+}
+
+func (s *SQLStore) CountRunsByStatusBetween(from, to time.Time) (map[Status]int, error) {
+	rows, err := s.query(`SELECT status, COUNT(*) FROM runs
+		WHERE created_at >= ? AND created_at <= ? GROUP BY status`,
+		s.timeArg(from.UTC()), s.timeArg(to.UTC()))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[Status]int{}
+	for rows.Next() {
+		var (
+			status string
+			count  int
+		)
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		out[Status(status)] = count
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLStore) ListRunsForReconcile(limit int) ([]*Run, error) {

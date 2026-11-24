@@ -34,3 +34,61 @@ export async function deleteConversationAttachments(
   )
   return parseJSON(res)
 }
+
+export interface ConversationRetention {
+  days: number
+  effective_days: number
+  global_days: number
+}
+
+export async function getConversationRetention(
+  conversationId: string,
+): Promise<ConversationRetention> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/attachment-retention`,
+    { headers: authInit() },
+  )
+  return parseJSON(res)
+}
+
+export async function putConversationRetention(
+  conversationId: string,
+  days: number,
+): Promise<ConversationRetention> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/attachment-retention`,
+    {
+      method: 'PUT',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ days }),
+    },
+  )
+  return parseJSON(res)
+}
+
+export interface ConversationCostBudget {
+  budget_usd_per_day: number
+  budget_usd_per_month: number
+}
+
+export async function getConversationCostBudget(
+  conversationId: string,
+): Promise<ConversationCostBudget> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/cost-budget`, {
+    headers: authInit(),
+  })
+  return parseJSON(res)
+}
+
+export async function putConversationCostBudget(
+  conversationId: string,
+  day: number,
+  month: number,
+): Promise<ConversationCostBudget> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/cost-budget`, {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ budget_usd_per_day: day, budget_usd_per_month: month }),
+  })
+  return parseJSON(res)
+}

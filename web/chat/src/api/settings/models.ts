@@ -192,6 +192,8 @@ export interface CostSummary {
   month_total_usd: number
   budget_usd_per_day: number
   budget_usd_per_month: number
+  warning_ratio: number
+  exceeded_ratio: number
   budget_enforce: boolean
   over_budget: boolean
   month_over_budget: boolean
@@ -225,6 +227,8 @@ export async function putCostBudget(
   budgetUsdPerDay: number,
   budgetUsdPerMonth: number,
   enforce = false,
+  warningRatio = 0.8,
+  exceededRatio = 1,
 ): Promise<void> {
   const res = await fetch('/v0/settings/cost-budget', {
     method: 'PUT',
@@ -232,9 +236,31 @@ export async function putCostBudget(
     body: JSON.stringify({
       budget_usd_per_day: budgetUsdPerDay,
       budget_usd_per_month: budgetUsdPerMonth,
+      warning_ratio: warningRatio,
+      exceeded_ratio: exceededRatio,
       enforce,
     }),
   })
   await parseJSON(res)
+}
+
+export interface AgentCostBudget {
+  agent_id: string
+  budget_usd_per_day: number
+  budget_usd_per_month: number
+}
+
+export async function getAgentCostBudgets(): Promise<{ items: AgentCostBudget[] }> {
+  const res = await fetch('/v0/settings/agent-cost-budgets', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function putAgentCostBudget(body: AgentCostBudget): Promise<AgentCostBudget> {
+  const res = await fetch('/v0/settings/agent-cost-budgets', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON(res)
 }
 

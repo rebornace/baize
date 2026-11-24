@@ -286,6 +286,7 @@ export function EvalSettings() {
   const [scoreLoading, setScoreLoading] = useState<Record<string, boolean>>({})
   const [gate, setGate] = useState<EvalGateState | null>(null)
   const [gateRate, setGateRate] = useState('90')
+  const [gateAutoHour, setGateAutoHour] = useState('-1')
   const [gateBusy, setGateBusy] = useState(false)
   const [selectedCases, setSelectedCases] = useState<Record<string, boolean>>({})
   const [pendingDelete, setPendingDelete] = useState<EvalCase | null>(null)
@@ -342,6 +343,7 @@ export function EvalSettings() {
       const next = await getEvalGate()
       setGate(next)
       setGateRate(String(Math.round(next.min_pass_rate * 100)))
+      setGateAutoHour(String(next.auto_hour ?? -1))
     } catch {
       // Gate state is optional on first load; keep the section usable.
     }
@@ -856,10 +858,17 @@ export function EvalSettings() {
       push({ tone: 'error', title: EVAL.gateInvalid })
       return
     }
+    const hour = Number.parseInt(gateAutoHour, 10)
+    if (!Number.isFinite(hour) || hour < -1 || hour > 23) {
+      push({ tone: 'error', title: EVAL.gateInvalidHour })
+      return
+    }
     setGateBusy(true)
     try {
-      await putEvalGate(pct / 100)
-      setGate((prev) => (prev ? { ...prev, min_pass_rate: pct / 100 } : prev))
+      await putEvalGate(pct / 100, hour)
+      setGate((prev) =>
+        prev ? { ...prev, min_pass_rate: pct / 100, auto_hour: hour } : prev,
+      )
       push({ tone: 'success', title: EVAL.gateSaved })
     } catch (e) {
       const f = friendlyError(e)
@@ -912,6 +921,7 @@ export function EvalSettings() {
       <section className="settings-eval-gate" data-testid="eval-gate">
         <h2 className="settings-subheading">{EVAL.gateTitle}</h2>
         <p className="settings-muted">{EVAL.gateHint}</p>
+        <p className="settings-muted">{EVAL.gateAutoHint}</p>
         <div className="settings-form-actions">
           <Field label={EVAL.gateThresholdLabel}>
             <Input
@@ -922,6 +932,17 @@ export function EvalSettings() {
               disabled={gateBusy}
               onChange={(e) => setGateRate(e.target.value)}
               data-testid="eval-gate-threshold"
+            />
+          </Field>
+          <Field label={EVAL.gateAutoLabel}>
+            <Input
+              type="number"
+              min={-1}
+              max={23}
+              value={gateAutoHour}
+              disabled={gateBusy}
+              onChange={(e) => setGateAutoHour(e.target.value)}
+              data-testid="eval-gate-auto-hour"
             />
           </Field>
           <Button

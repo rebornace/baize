@@ -48,6 +48,24 @@ async function renderManager() {
   const remove = vi
     .spyOn(api, 'deleteConversationAttachments')
     .mockResolvedValue({ deleted: 1, failed: 0 })
+  vi.spyOn(api, 'getConversationRetention').mockResolvedValue({
+    days: -1,
+    effective_days: 30,
+    global_days: 30,
+  })
+  vi.spyOn(api, 'getConversationCostBudget').mockResolvedValue({
+    budget_usd_per_day: 0,
+    budget_usd_per_month: 0,
+  })
+  const saveBudget = vi.spyOn(api, 'putConversationCostBudget').mockResolvedValue({
+    budget_usd_per_day: 1,
+    budget_usd_per_month: 20,
+  })
+  const saveRetention = vi.spyOn(api, 'putConversationRetention').mockResolvedValue({
+    days: 7,
+    effective_days: 7,
+    global_days: 30,
+  })
   await act(async () => {
     createRoot(host).render(
       <GateContext.Provider value={{ role: 'admin', gateEnabled: false, operatorId: 'op' }}>
@@ -57,7 +75,7 @@ async function renderManager() {
     await Promise.resolve()
     await Promise.resolve()
   })
-  return { list, remove }
+  return { list, remove, saveRetention, saveBudget }
 }
 
 describe('AttachmentManager', () => {
@@ -88,6 +106,51 @@ describe('AttachmentManager', () => {
     })
     expect(remove).toHaveBeenCalledWith('c1', ['a.pdf'])
     expect(host.querySelectorAll('.attachment-manager-item')).toHaveLength(1)
+  })
+
+  it('saves a conversation retention override', async () => {
+    const { saveRetention } = await renderManager()
+    const input = host.querySelector<HTMLInputElement>(
+      '[data-testid="attachment-retention-days"]',
+    )
+    expect(input).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(input, '7')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const save = host.querySelector(
+      '[data-testid="attachment-retention-save"]',
+    ) as HTMLButtonElement
+    await act(async () => {
+      save.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveRetention).toHaveBeenCalledWith('c1', 7)
+    expect(host.textContent).toContain('本会话：7 天')
+  })
+
+  it('saves a conversation budget', async () => {
+    const { saveBudget } = await renderManager()
+    const day = host.querySelector<HTMLInputElement>('[data-testid="conversation-budget-day"]')
+    const month = host.querySelector<HTMLInputElement>('[data-testid="conversation-budget-month"]')
+    expect(day).not.toBeNull()
+    expect(month).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(day, '1')
+      day!.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(month, '20')
+      month!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const save = host.querySelector('[data-testid="conversation-budget-save"]') as HTMLButtonElement
+    await act(async () => {
+      save.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveBudget).toHaveBeenCalledWith('c1', 1, 20)
   })
 
   it('shows an empty state', async () => {

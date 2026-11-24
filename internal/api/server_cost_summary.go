@@ -15,10 +15,13 @@ import (
 const costBudgetSettingKey = "cost_budget_usd_per_day"
 const costBudgetMonthKey = "cost_budget_usd_per_month"
 const costBudgetEnforceKey = "cost_budget_enforce"
+const costWarnRatioKey = "cost_alert_warning_ratio"
+const costExceededRatioKey = "cost_alert_exceeded_ratio"
 const costSummaryCacheTTL = 30 * time.Second
 
-// costAlertRatio is the fraction of a budget that counts as a warning.
+// costAlertRatio is the default fraction of a budget that counts as a warning.
 const costAlertRatio = 0.8
+const costAlertExceeded = 1.0
 
 var (
 	ErrCostBudgetExceeded = errors.New("cost budget exceeded")
@@ -58,6 +61,7 @@ func (s *Server) handleGetCostSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	budget := s.costBudget()
 	monthBudget := s.costBudgetMonth()
+	warnRatio, exceededRatio := s.costAlertThresholds()
 	todayTotal := round6(byDay[now.Format("2006-01-02")])
 	monthTotal := 0.0
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -77,16 +81,18 @@ func (s *Server) handleGetCostSummary(w http.ResponseWriter, r *http.Request) {
 		"month_total_usd":      monthTotal,
 		"budget_usd_per_day":   budget,
 		"budget_usd_per_month": monthBudget,
+		"warning_ratio":        warnRatio,
+		"exceeded_ratio":       exceededRatio,
 		"budget_enforce":       s.costBudgetEnforced(),
 		"over_budget":          budget > 0 && todayTotal > budget,
 		"month_over_budget":    monthBudget > 0 && monthTotal > monthBudget,
 	})
 }
 
-// costRollupDayLimit bounds how many runs a single day rollup will read. When
-// a day hits the cap it is never marked final, so the total stays conservative
-// instead of silently truncating.
-const costRollupDayLimit = 500
+// costRollupPageSize bounds one page of a day rollup. Large days are read in
+// pages so the total is not silently truncated at 500 runs.
+const costRollupPageSize = 500
+const costRollupMaxRuns = 50_000
 
 // costByDay returns per-day cost totals and run counts for [start, now].
 // Finished days come from the cost_days rollup in one query; today (and days
@@ -132,20 +138,34 @@ func (s *Server) costByDay(start, now time.Time) (map[string]float64, map[string
 func (s *Server) rollupDay(dayStart time.Time) (float64, int, bool, error) {
 	dayStart = dayStart.UTC().Truncate(24 * time.Hour)
 	dayEnd := dayStart.AddDate(0, 0, 1).Add(-time.Nanosecond)
-	runs, err := s.Store.ListRunsCreatedBetween(dayStart, dayEnd, "", costRollupDayLimit)
-	if err != nil {
-		return 0, 0, false, err
-	}
 	var total float64
+	count := 0
 	pending := false
-	for _, runRec := range runs {
-		total += s.runCostCached(runRec)
-		if !isTerminalRunStatus(runRec.Status) {
+	offset := 0
+	for {
+		runs, err := s.Store.ListRunsCreatedBetweenPage(dayStart, dayEnd, "", costRollupPageSize, offset)
+		if err != nil {
+			return 0, 0, false, err
+		}
+		for _, runRec := range runs {
+			total += s.runCostCached(runRec)
+			if !isTerminalRunStatus(runRec.Status) {
+				pending = true
+			}
+		}
+		count += len(runs)
+		if len(runs) < costRollupPageSize {
+			break
+		}
+		offset += len(runs)
+		if count >= costRollupMaxRuns {
+			// Huge day: keep the number conservative and never finalize it.
 			pending = true
+			break
 		}
 	}
-	final := !pending && len(runs) < costRollupDayLimit && dayEnd.Before(time.Now().UTC())
-	return round6(total), len(runs), final, nil
+	final := !pending && dayEnd.Before(time.Now().UTC())
+	return round6(total), count, final, nil
 }
 
 func isTerminalRunStatus(st store.Status) bool {
@@ -230,6 +250,8 @@ func (s *Server) handlePutCostBudget(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		BudgetUSDPerDay   *float64 `json:"budget_usd_per_day"`
 		BudgetUSDPerMonth *float64 `json:"budget_usd_per_month"`
+		WarningRatio      *float64 `json:"warning_ratio"`
+		ExceededRatio     *float64 `json:"exceeded_ratio"`
 		Enforce           bool     `json:"enforce"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -238,6 +260,25 @@ func (s *Server) handlePutCostBudget(w http.ResponseWriter, r *http.Request) {
 	}
 	day := s.costBudget()
 	month := s.costBudgetMonth()
+	warnRatio, exceededRatio := s.costAlertThresholds()
+	if body.WarningRatio != nil {
+		if *body.WarningRatio <= 0 || *body.WarningRatio > 5 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "warning_ratio must be between 0 and 5")
+			return
+		}
+		warnRatio = *body.WarningRatio
+	}
+	if body.ExceededRatio != nil {
+		if *body.ExceededRatio <= 0 || *body.ExceededRatio > 5 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "exceeded_ratio must be between 0 and 5")
+			return
+		}
+		exceededRatio = *body.ExceededRatio
+	}
+	if warnRatio >= exceededRatio {
+		writeError(w, http.StatusBadRequest, "invalid_request", "warning_ratio must be lower than exceeded_ratio")
+		return
+	}
 	if body.BudgetUSDPerDay != nil {
 		if *body.BudgetUSDPerDay < 0 || *body.BudgetUSDPerDay > 1_000_000 {
 			writeError(w, http.StatusBadRequest, "invalid_request", "budget_usd_per_day must be between 0 and 1000000")
@@ -267,6 +308,16 @@ func (s *Server) handlePutCostBudget(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	warnRaw, _ := json.Marshal(warnRatio)
+	if err := s.Store.UpsertSetting(costWarnRatioKey, warnRaw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	exceededRaw, _ := json.Marshal(exceededRatio)
+	if err := s.Store.UpsertSetting(costExceededRatioKey, exceededRaw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	costCache.mu.Lock()
 	costCache.at = time.Time{}
 	costCache.mu.Unlock()
@@ -274,6 +325,8 @@ func (s *Server) handlePutCostBudget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"budget_usd_per_day":   day,
 		"budget_usd_per_month": month,
+		"warning_ratio":        warnRatio,
+		"exceeded_ratio":       exceededRatio,
 		"enforce":              body.Enforce,
 	})
 }
@@ -295,8 +348,9 @@ func (s *Server) handleGetCostStatus(w http.ResponseWriter, r *http.Request) {
 	monthTotal = round6(monthTotal)
 	dayBudget := s.costBudget()
 	monthBudget := s.costBudgetMonth()
-	dayLevel, dayRatio := budgetAlert(dayTotal, dayBudget)
-	monthLevel, monthRatio := budgetAlert(monthTotal, monthBudget)
+	warnRatio, exceededRatio := s.costAlertThresholds()
+	dayLevel, dayRatio := budgetAlert(dayTotal, dayBudget, warnRatio, exceededRatio)
+	monthLevel, monthRatio := budgetAlert(monthTotal, monthBudget, warnRatio, exceededRatio)
 	alert, scope := worstAlert(dayLevel, monthLevel)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"currency":             "USD",
@@ -310,19 +364,21 @@ func (s *Server) handleGetCostStatus(w http.ResponseWriter, r *http.Request) {
 		"month_alert":          monthLevel,
 		"alert_level":          alert,
 		"alert_scope":          scope,
+		"warning_ratio":        warnRatio,
+		"exceeded_ratio":       exceededRatio,
 	})
 }
 
 // budgetAlert reports how close a total is to its budget.
-func budgetAlert(total, budget float64) (level string, ratio float64) {
+func budgetAlert(total, budget, warnRatio, exceededRatio float64) (level string, ratio float64) {
 	if budget <= 0 {
 		return "", 0
 	}
 	ratio = total / budget
 	switch {
-	case ratio >= 1:
+	case exceededRatio > 0 && ratio >= exceededRatio:
 		return "exceeded", ratio
-	case ratio >= costAlertRatio:
+	case warnRatio > 0 && ratio >= warnRatio:
 		return "warning", ratio
 	}
 	return "", ratio
@@ -380,6 +436,29 @@ func (s *Server) costBudgetMonth() float64 {
 		return 0
 	}
 	return v
+}
+
+func (s *Server) costAlertThresholds() (warn, exceeded float64) {
+	warn, exceeded = costAlertRatio, costAlertExceeded
+	if s.Store == nil {
+		return warn, exceeded
+	}
+	if raw, ok, err := s.Store.GetSetting(costWarnRatioKey); err == nil && ok {
+		var v float64
+		if json.Unmarshal(raw, &v) == nil && v > 0 && v <= 5 {
+			warn = v
+		}
+	}
+	if raw, ok, err := s.Store.GetSetting(costExceededRatioKey); err == nil && ok {
+		var v float64
+		if json.Unmarshal(raw, &v) == nil && v > 0 && v <= 5 {
+			exceeded = v
+		}
+	}
+	if warn >= exceeded {
+		return costAlertRatio, costAlertExceeded
+	}
+	return warn, exceeded
 }
 
 func round6(v float64) float64 {

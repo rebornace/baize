@@ -146,8 +146,8 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 	return ErrDeliveryFailed
 }
 
-// SendBudgetAlert enqueues a global budget.alert event to the events webhook.
-func (d *Dispatcher) SendBudgetAlert(ctx context.Context, data map[string]any) error {
+// SendAlert enqueues a global event to the events webhook (no run binding).
+func (d *Dispatcher) SendAlert(ctx context.Context, eventType string, data map[string]any) error {
 	url, headers, err := d.resolveTarget("", nil)
 	if err != nil {
 		return err
@@ -157,13 +157,18 @@ func (d *Dispatcher) SendBudgetAlert(ctx context.Context, data map[string]any) e
 	}
 	payload := map[string]any{
 		"event": map[string]any{
-			"type":      "budget.alert",
+			"type":      eventType,
 			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 			"data":      data,
 		},
 	}
 	_, _, err = d.enqueue(ctx, "", store.WebhookOutboxKindEvent, 0, url, headers, payload, true)
 	return err
+}
+
+// SendBudgetAlert enqueues a global budget.alert event to the events webhook.
+func (d *Dispatcher) SendBudgetAlert(ctx context.Context, data map[string]any) error {
+	return d.SendAlert(ctx, "budget.alert", data)
 }
 
 func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {

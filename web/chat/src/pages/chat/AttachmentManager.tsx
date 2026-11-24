@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { File as FileIcon } from 'lucide-react'
-import { Button, Modal } from '../../components/ui'
+import { Button, Input, Modal } from '../../components/ui'
 import { ChannelImage } from '../../components/ChannelImage'
 import { fileKind } from '../../components/ChannelFileLink'
 import {
   deleteConversationAttachments,
+  getConversationCostBudget,
+  getConversationRetention,
   listConversationAttachments,
+  putConversationCostBudget,
+  putConversationRetention,
   type ConversationAttachment,
+  type ConversationCostBudget,
+  type ConversationRetention,
 } from '../../api/conversationAttachments'
 import { CHAT } from '../../strings'
 
@@ -32,16 +38,36 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retention, setRetention] = useState<ConversationRetention | null>(null)
+  const [retentionDays, setRetentionDays] = useState('-1')
+  const [retentionBusy, setRetentionBusy] = useState(false)
+  const [costBudget, setCostBudget] = useState<ConversationCostBudget | null>(null)
+  const [budgetDay, setBudgetDay] = useState('0')
+  const [budgetMonth, setBudgetMonth] = useState('0')
+  const [budgetBusy, setBudgetBusy] = useState(false)
 
   const load = useCallback(async () => {
-    try {
-      const body = await listConversationAttachments(conversationId)
-      setItems(body.items)
+    const [listRes, retRes, budgetRes] = await Promise.allSettled([
+      listConversationAttachments(conversationId),
+      getConversationRetention(conversationId),
+      getConversationCostBudget(conversationId),
+    ])
+    if (listRes.status === 'fulfilled') {
+      setItems(listRes.value.items)
       setSelected({})
       setError(null)
-    } catch {
+    } else {
       setItems([])
       setError(CHAT.attachmentManagerLoadFailed)
+    }
+    if (retRes.status === 'fulfilled') {
+      setRetention(retRes.value)
+      setRetentionDays(String(retRes.value.days))
+    }
+    if (budgetRes.status === 'fulfilled') {
+      setCostBudget(budgetRes.value)
+      setBudgetDay(String(budgetRes.value.budget_usd_per_day))
+      setBudgetMonth(String(budgetRes.value.budget_usd_per_month))
     }
   }, [conversationId])
 
@@ -80,6 +106,46 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
     }
   }
 
+  const saveRetention = async () => {
+    const days = Number.parseInt(retentionDays, 10)
+    if (!Number.isFinite(days) || days < -1 || days > 3650) {
+      setError(CHAT.attachmentRetentionInvalid)
+      return
+    }
+    setRetentionBusy(true)
+    try {
+      const next = await putConversationRetention(conversationId, days)
+      setRetention(next)
+      setRetentionDays(String(next.days))
+      setError(null)
+    } catch {
+      setError(CHAT.attachmentRetentionFailed)
+    } finally {
+      setRetentionBusy(false)
+    }
+  }
+
+  const saveBudget = async () => {
+    const d = Number.parseFloat(budgetDay)
+    const m = Number.parseFloat(budgetMonth)
+    if (!Number.isFinite(d) || d < 0 || !Number.isFinite(m) || m < 0) {
+      setError(CHAT.conversationBudgetInvalid)
+      return
+    }
+    setBudgetBusy(true)
+    try {
+      const next = await putConversationCostBudget(conversationId, d, m)
+      setCostBudget(next)
+      setBudgetDay(String(next.budget_usd_per_day))
+      setBudgetMonth(String(next.budget_usd_per_month))
+      setError(null)
+    } catch {
+      setError(CHAT.conversationBudgetFailed)
+    } finally {
+      setBudgetBusy(false)
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -104,6 +170,74 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
       }
     >
       <p className="settings-muted">{CHAT.attachmentManagerHint}</p>
+      {retention ? (
+        <div className="attachment-retention">
+          <span className="settings-muted">
+            {CHAT.attachmentRetentionGlobal(retention.global_days)}
+            {' · '}
+            {CHAT.attachmentRetentionEffective(retention.effective_days)}
+          </span>
+          <label className="settings-muted">
+            {CHAT.attachmentRetentionLabel}
+            <Input
+              type="number"
+              min={-1}
+              max={3650}
+              value={retentionDays}
+              disabled={retentionBusy}
+              onChange={(e) => setRetentionDays(e.target.value)}
+              data-testid="attachment-retention-days"
+            />
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={retentionBusy}
+            onClick={() => void saveRetention()}
+            data-testid="attachment-retention-save"
+          >
+            {CHAT.attachmentRetentionSave}
+          </Button>
+        </div>
+      ) : null}
+      {costBudget ? (
+        <div className="attachment-retention">
+          <span className="settings-muted">{CHAT.conversationBudgetTitle}</span>
+          <label className="settings-muted">
+            {CHAT.conversationBudgetDay}
+            <Input
+              type="number"
+              min={0}
+              value={budgetDay}
+              disabled={budgetBusy}
+              onChange={(e) => setBudgetDay(e.target.value)}
+              data-testid="conversation-budget-day"
+            />
+          </label>
+          <label className="settings-muted">
+            {CHAT.conversationBudgetMonth}
+            <Input
+              type="number"
+              min={0}
+              value={budgetMonth}
+              disabled={budgetBusy}
+              onChange={(e) => setBudgetMonth(e.target.value)}
+              data-testid="conversation-budget-month"
+            />
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={budgetBusy}
+            onClick={() => void saveBudget()}
+            data-testid="conversation-budget-save"
+          >
+            {CHAT.conversationBudgetSave}
+          </Button>
+        </div>
+      ) : null}
       {error ? <p className="settings-error">{error}</p> : null}
       {items == null ? (
         <p className="settings-muted">{CHAT.attachmentManagerLoading}</p>

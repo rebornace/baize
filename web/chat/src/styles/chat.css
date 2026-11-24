@@ -1575,6 +1575,29 @@
   color: var(--warning);
 }
 
+.agent-budgets {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.agent-budget-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.agent-budget-id {
+  min-width: 8rem;
+  font-weight: 500;
+}
+
+.agent-budget-row .ui-input {
+  width: 7rem;
+}
+
 .run-overview {
   margin: var(--space-3) 0;
   padding: var(--space-3);
@@ -1632,6 +1655,21 @@
   justify-content: space-between;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
+}
+
+.attachment-retention {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.attachment-retention .ui-input {
+  width: 7rem;
 }
 
 .attachment-manager-list {

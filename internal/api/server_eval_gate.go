@@ -12,6 +12,7 @@ const evalGateLastResultKey = "eval_gate_last_result"
 func (s *Server) handleGetEvalGate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"min_pass_rate": s.evalGateMinRate(),
+		"auto_hour":     s.evalGateAutoHour(),
 		"last":          s.evalGateLastResult(),
 	})
 }
@@ -19,6 +20,7 @@ func (s *Server) handleGetEvalGate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutEvalGate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		MinPassRate float64 `json:"min_pass_rate"`
+		AutoHour    *int    `json:"auto_hour"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
@@ -28,12 +30,25 @@ func (s *Server) handlePutEvalGate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "min_pass_rate must be between 0 and 1")
 		return
 	}
+	if body.AutoHour != nil && (*body.AutoHour < -1 || *body.AutoHour > 23) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "auto_hour must be -1 (off) or 0..23")
+		return
+	}
 	raw, _ := json.Marshal(body.MinPassRate)
 	if err := s.Store.UpsertSetting(eval.GateMinRateSettingKey, raw); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"min_pass_rate": body.MinPassRate})
+	hour := s.evalGateAutoHour()
+	if body.AutoHour != nil {
+		hour = *body.AutoHour
+		hourRaw, _ := json.Marshal(hour)
+		if err := s.Store.UpsertSetting(evalGateAutoHourKey, hourRaw); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"min_pass_rate": body.MinPassRate, "auto_hour": hour})
 }
 
 func (s *Server) handleRunEvalGate(w http.ResponseWriter, r *http.Request) {

@@ -117,6 +117,9 @@ const (
 	mimeXlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	mimePDF  = "application/pdf"
 	mimePng  = "image/png"
+	mimePptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	mimeHTML = "text/html"
+	mimeZip  = "application/zip"
 )
 
 func TestProcessTextRoundTrip(t *testing.T) {
@@ -541,5 +544,90 @@ func TestProcessPDFEmptyExplainsScannedFiles(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "scanned PDFs") {
 		t.Fatalf("err=%q, want scanned-PDF guidance", err)
+	}
+}
+
+func makePptx() []byte {
+	buf := &bytes.Buffer{}
+	w := zip.NewWriter(buf)
+	add := func(name, content string) {
+		f, _ := w.Create(name)
+		_, _ = f.Write([]byte(content))
+	}
+	add("ppt/slides/slide1.xml", `<p:sld xmlns:p="p" xmlns:a="a"><a:t>Hello slide</a:t></p:sld>`)
+	add("ppt/slides/slide2.xml", `<p:sld xmlns:p="p" xmlns:a="a"><a:t>Second slide</a:t></p:sld>`)
+	add("ppt/notesSlides/notesSlide1.xml", `<p:notes xmlns:p="p" xmlns:a="a"><a:t>Speaker note</a:t></p:notes>`)
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func TestProcessPptx(t *testing.T) {
+	texts, images, err := attach.Process([]attach.AttachmentIn{{
+		Filename: "deck.pptx", MediaType: mimePptx, ContentB64: b64(makePptx()),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 1 || len(images) != 0 {
+		t.Fatalf("texts=%d images=%d", len(texts), len(images))
+	}
+	for _, want := range []string{"Slide 1", "Hello slide", "Speaker note", "Slide 2", "Second slide"} {
+		if !strings.Contains(texts[0].Text, want) {
+			t.Fatalf("pptx text missing %q: %q", want, texts[0].Text)
+		}
+	}
+}
+
+func TestProcessHTML(t *testing.T) {
+	page := []byte(`<html><head><title>T</title><script>bad()</script><style>.x{}</style></head><body><h1>Hi</h1><p>Hello <b>world</b></p></body></html>`)
+	texts, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename: "page.html", MediaType: mimeHTML, ContentB64: b64(page),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 1 || !strings.Contains(texts[0].Text, "Hello world") {
+		t.Fatalf("html=%+v", texts)
+	}
+	if strings.Contains(texts[0].Text, "bad()") || strings.Contains(texts[0].Text, ".x{}") {
+		t.Fatalf("html leaked script/style: %q", texts[0].Text)
+	}
+}
+
+func TestProcessZip(t *testing.T) {
+	buf := &bytes.Buffer{}
+	w := zip.NewWriter(buf)
+	f, _ := w.Create("notes/a.txt")
+	_, _ = f.Write([]byte("hello zip"))
+	b, _ := w.Create("img.bin")
+	_, _ = b.Write([]byte{0, 1, 2})
+	evil, _ := w.Create("../evil.txt")
+	_, _ = evil.Write([]byte("nope"))
+	_ = w.Close()
+	texts, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename: "bundle.zip", MediaType: mimeZip, ContentB64: b64(buf.Bytes()),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 1 {
+		t.Fatalf("texts=%+v", texts)
+	}
+	text := texts[0].Text
+	for _, want := range []string{"## notes/a.txt", "hello zip", "img.bin (binary, not extracted)"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("zip text missing %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "evil.txt") {
+		t.Fatalf("zip traversal entry leaked: %q", text)
+	}
+}
+
+func TestSupportsNewDocumentTypes(t *testing.T) {
+	for _, m := range []string{mimePptx, mimeHTML, mimeZip, "application/x-zip-compressed", "application/xhtml+xml"} {
+		if !attach.SupportsMediaType(m) {
+			t.Fatalf("SupportsMediaType(%q)=false", m)
+		}
 	}
 }

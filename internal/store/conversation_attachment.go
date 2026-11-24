@@ -77,6 +77,39 @@ func (s *Memory) DeleteConversationAttachment(conversationID, object string) err
 	return nil
 }
 
+func (s *Memory) ListAttachmentConversationIDs() ([]string, error) {
+	s.mu.RLock()
+	out := make([]string, 0, len(s.attachments))
+	for id := range s.attachments {
+		out = append(out, id)
+	}
+	s.mu.RUnlock()
+	sort.Strings(out)
+	return out, nil
+}
+
+func (s *Memory) ListConversationAttachmentsBeforeConv(conversationID string, before time.Time, limit int) ([]ConversationAttachment, error) {
+	limit = normalizeAttachmentLimit(limit)
+	s.mu.RLock()
+	out := make([]ConversationAttachment, 0)
+	for _, a := range s.attachments[conversationID] {
+		if a.CreatedAt.Before(before) {
+			out = append(out, a)
+		}
+	}
+	s.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].Object < out[j].Object
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (s *Memory) ListConversationAttachmentsBefore(before time.Time, limit int) ([]ConversationAttachment, error) {
 	limit = normalizeAttachmentLimit(limit)
 	s.mu.RLock()
@@ -154,6 +187,44 @@ func (s *SQLStore) DeleteConversationAttachment(conversationID, object string) e
 	_, err := s.exec(`DELETE FROM conversation_attachments WHERE conversation_id = ? AND object = ?`,
 		conversationID, object)
 	return err
+}
+
+func (s *SQLStore) ListAttachmentConversationIDs() ([]string, error) {
+	rows, err := s.query(`SELECT DISTINCT conversation_id FROM conversation_attachments ORDER BY conversation_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) ListConversationAttachmentsBeforeConv(conversationID string, before time.Time, limit int) ([]ConversationAttachment, error) {
+	limit = normalizeAttachmentLimit(limit)
+	rows, err := s.query(`SELECT conversation_id, object, filename, media_type, size_bytes, workspace_path, created_at
+		FROM conversation_attachments WHERE conversation_id = ? AND created_at < ?
+		ORDER BY created_at ASC, object ASC LIMIT ?`,
+		conversationID, before.UTC().Format(time.RFC3339Nano), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]ConversationAttachment, 0)
+	for rows.Next() {
+		a, err := scanConversationAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLStore) ListConversationAttachmentsBefore(before time.Time, limit int) ([]ConversationAttachment, error) {

@@ -2,18 +2,28 @@ import { useEffect, useState } from 'react'
 import { Button, Input } from '../../components/ui'
 import { MODELS } from '../../strings'
 import {
+  getAgentCostBudgets,
   getCostSummary,
+  putAgentCostBudget,
   putCostBudget,
+  type AgentCostBudget,
   type CostSummary,
 } from '../../api/settings/models'
+
+type AgentDraft = { day: string; month: string }
 
 export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [summary, setSummary] = useState<CostSummary | null>(null)
   const [budget, setBudget] = useState('0')
   const [monthBudget, setMonthBudget] = useState('0')
+  const [warnRatio, setWarnRatio] = useState('80')
+  const [exceededRatio, setExceededRatio] = useState('100')
   const [enforce, setEnforce] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [agents, setAgents] = useState<AgentCostBudget[] | null>(null)
+  const [agentDrafts, setAgentDrafts] = useState<Record<string, AgentDraft>>({})
+  const [agentBusy, setAgentBusy] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -21,6 +31,8 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
       setSummary(body)
       setBudget(String(body.budget_usd_per_day))
       setMonthBudget(String(body.budget_usd_per_month))
+      setWarnRatio(String(Math.round((body.warning_ratio ?? 0.8) * 100)))
+      setExceededRatio(String(Math.round((body.exceeded_ratio ?? 1) * 100)))
       setEnforce(body.budget_enforce)
       setError(null)
     } catch (e) {
@@ -28,34 +40,100 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
     }
   }
 
+  const loadAgents = async () => {
+    try {
+      const body = await getAgentCostBudgets()
+      setAgents(body.items)
+      const drafts: Record<string, AgentDraft> = {}
+      for (const item of body.items) {
+        drafts[item.agent_id] = {
+          day: String(item.budget_usd_per_day),
+          month: String(item.budget_usd_per_month),
+        }
+      }
+      setAgentDrafts(drafts)
+    } catch {
+      setAgents(null)
+    }
+  }
+
   useEffect(() => {
     void load()
+    void loadAgents()
   }, [])
 
   const save = async () => {
     const n = Number.parseFloat(budget)
     const m = Number.parseFloat(monthBudget)
-    if (!Number.isFinite(n) || n < 0 || !Number.isFinite(m) || m < 0) {
+    const w = Number.parseFloat(warnRatio)
+    const e = Number.parseFloat(exceededRatio)
+    if (
+      !Number.isFinite(n) ||
+      n < 0 ||
+      !Number.isFinite(m) ||
+      m < 0 ||
+      !Number.isFinite(w) ||
+      w <= 0 ||
+      w > 500 ||
+      !Number.isFinite(e) ||
+      e <= 0 ||
+      e > 500 ||
+      w >= e
+    ) {
       setError(MODELS.errInvalidRequest)
       return
     }
     setBusy(true)
     try {
-      await putCostBudget(n, m, enforce)
+      await putCostBudget(n, m, enforce, w / 100, e / 100)
       await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }
   }
 
+  const saveAgent = async (item: AgentCostBudget) => {
+    const draft = agentDrafts[item.agent_id] ?? { day: '0', month: '0' }
+    const d = Number.parseFloat(draft.day)
+    const m = Number.parseFloat(draft.month)
+    if (!Number.isFinite(d) || d < 0 || !Number.isFinite(m) || m < 0) {
+      setError(MODELS.errInvalidRequest)
+      return
+    }
+    setAgentBusy(item.agent_id)
+    try {
+      const next = await putAgentCostBudget({
+        agent_id: item.agent_id,
+        budget_usd_per_day: d,
+        budget_usd_per_month: m,
+      })
+      setAgents((prev) =>
+        prev ? prev.map((a) => (a.agent_id === next.agent_id ? next : a)) : prev,
+      )
+      setAgentDrafts((prev) => ({
+        ...prev,
+        [next.agent_id]: {
+          day: String(next.budget_usd_per_day),
+          month: String(next.budget_usd_per_month),
+        },
+      }))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAgentBusy(null)
+    }
+  }
+
   const nearBudget = summary
     ? (summary.budget_usd_per_day > 0 &&
-        summary.today_total_usd / summary.budget_usd_per_day >= 0.8 &&
+        summary.today_total_usd / summary.budget_usd_per_day >= (summary.warning_ratio ?? 0.8) &&
         !summary.over_budget) ||
       (summary.budget_usd_per_month > 0 &&
-        summary.month_total_usd / summary.budget_usd_per_month >= 0.8 &&
+        summary.month_total_usd / summary.budget_usd_per_month >=
+          (summary.warning_ratio ?? 0.8) &&
         !summary.month_over_budget)
     : false
 
@@ -115,6 +193,30 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                 />
               </label>
               <label className="settings-muted">
+                {MODELS.costWarnRatioLabel}
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={warnRatio}
+                  disabled={busy}
+                  onChange={(e) => setWarnRatio(e.target.value)}
+                  data-testid="cost-warning-ratio"
+                />
+              </label>
+              <label className="settings-muted">
+                {MODELS.costExceededRatioLabel}
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={exceededRatio}
+                  disabled={busy}
+                  onChange={(e) => setExceededRatio(e.target.value)}
+                  data-testid="cost-exceeded-ratio"
+                />
+              </label>
+              <label className="settings-muted">
                 <input
                   type="checkbox"
                   checked={enforce}
@@ -129,6 +231,59 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
             </div>
           ) : null}
           <p className="settings-muted">{MODELS.costWebhookHint}</p>
+          {!readOnly && agents && agents.length > 0 ? (
+            <div className="agent-budgets" data-testid="agent-budgets">
+              <h3 className="settings-subheading">{MODELS.agentBudgetTitle}</h3>
+              <p className="settings-muted">{MODELS.agentBudgetHint}</p>
+              {agents.map((item) => {
+                const draft = agentDrafts[item.agent_id] ?? { day: '0', month: '0' }
+                return (
+                  <div className="agent-budget-row" key={item.agent_id}>
+                    <span className="agent-budget-id">{item.agent_id}</span>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetDayLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.day}
+                        disabled={agentBusy === item.agent_id}
+                        onChange={(e) =>
+                          setAgentDrafts((prev) => ({
+                            ...prev,
+                            [item.agent_id]: { ...draft, day: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetMonthLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.month}
+                        disabled={agentBusy === item.agent_id}
+                        onChange={(e) =>
+                          setAgentDrafts((prev) => ({
+                            ...prev,
+                            [item.agent_id]: { ...draft, month: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={agentBusy === item.agent_id}
+                      onClick={() => void saveAgent(item)}
+                    >
+                      {MODELS.agentBudgetSave}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
         </>
       ) : null}
     </section>

@@ -769,6 +769,10 @@ type Store interface {
 	// ListRunsCreatedBetween returns runs with created_at in [from, to], optionally
 	// filtered by status (empty status = no filter), newest first. limit≤0 → 100; cap 500.
 	ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error)
+	// ListRunsCreatedBetweenPage is the paginated form used for cost rollups.
+	ListRunsCreatedBetweenPage(from, to time.Time, status Status, limit, offset int) ([]*Run, error)
+	// CountRunsByStatusBetween aggregates run counts without materializing rows.
+	CountRunsByStatusBetween(from, to time.Time) (map[Status]int, error)
 	UpsertEvalCase(c EvalCase) error
 	GetEvalCase(id string) (EvalCase, error)
 	ListEvalCases(limit int) ([]EvalCase, error)
@@ -795,6 +799,12 @@ type Store interface {
 	// ListConversationAttachmentsBefore returns the oldest attachments created
 	// before the cutoff, for retention cleanup.
 	ListConversationAttachmentsBefore(before time.Time, limit int) ([]ConversationAttachment, error)
+	// ListAttachmentConversationIDs returns conversations that have indexed
+	// attachments (used by per-conversation retention cleanup).
+	ListAttachmentConversationIDs() ([]string, error)
+	// ListConversationAttachmentsBeforeConv returns one conversation's oldest
+	// attachments before the cutoff.
+	ListConversationAttachmentsBeforeConv(conversationID string, before time.Time, limit int) ([]ConversationAttachment, error)
 }
 
 // EvalCaseStatus is draft (incomplete expectations) or confirmed (ready to score).

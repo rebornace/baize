@@ -27,20 +27,28 @@ const summary: modelsApi.CostSummary = {
   month_total_usd: 12,
   budget_usd_per_day: 1,
   budget_usd_per_month: 10,
+  warning_ratio: 0.8,
+  exceeded_ratio: 1,
   budget_enforce: false,
   over_budget: false,
   month_over_budget: true,
 }
 
-async function renderSection() {
+async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
   vi.spyOn(modelsApi, 'getCostSummary').mockResolvedValue(summary)
+  vi.spyOn(modelsApi, 'getAgentCostBudgets').mockResolvedValue({ items: agents })
   const save = vi.spyOn(modelsApi, 'putCostBudget').mockResolvedValue()
+  const saveAgent = vi.spyOn(modelsApi, 'putAgentCostBudget').mockResolvedValue({
+    agent_id: 'a1',
+    budget_usd_per_day: 1,
+    budget_usd_per_month: 20,
+  })
   await act(async () => {
     createRoot(host).render(<CostSummarySection readOnly={false} />)
     await Promise.resolve()
     await Promise.resolve()
   })
-  return { save }
+  return { save, saveAgent }
 }
 
 describe('CostSummarySection monthly budget', () => {
@@ -53,7 +61,7 @@ describe('CostSummarySection monthly budget', () => {
   it('saves the monthly budget alongside the daily budget', async () => {
     const { save } = await renderSection()
     const inputs = host.querySelectorAll<HTMLInputElement>('input[type="number"]')
-    expect(inputs).toHaveLength(2)
+    expect(inputs).toHaveLength(4)
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     await act(async () => {
       setter?.call(inputs[0], '2')
@@ -69,6 +77,36 @@ describe('CostSummarySection monthly budget', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(save).toHaveBeenCalledWith(2, 30, false)
+    expect(save).toHaveBeenCalledWith(2, 30, false, 0.8, 1)
+  })
+
+  it('saves per-agent budgets', async () => {
+    const { saveAgent } = await renderSection([
+      { agent_id: 'a1', budget_usd_per_day: 0, budget_usd_per_month: 0 },
+    ])
+    const row = host.querySelector('.agent-budget-row') as HTMLDivElement
+    expect(row).not.toBeNull()
+    const inputs = row.querySelectorAll<HTMLInputElement>('input[type="number"]')
+    expect(inputs).toHaveLength(2)
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(inputs[0], '1')
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(inputs[1], '20')
+      inputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveBtn = [...row.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '保存',
+    ) as HTMLButtonElement
+    await act(async () => {
+      saveBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveAgent).toHaveBeenCalledWith({
+      agent_id: 'a1',
+      budget_usd_per_day: 1,
+      budget_usd_per_month: 20,
+    })
   })
 })

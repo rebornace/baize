@@ -137,6 +137,7 @@ export interface EvalGateResult {
 
 export interface EvalGateState {
   min_pass_rate: number
+  auto_hour?: number
   last: EvalGateResult | null
 }
 
@@ -145,11 +146,13 @@ export async function getEvalGate(): Promise<EvalGateState> {
   return parseJSON(res)
 }
 
-export async function putEvalGate(minPassRate: number): Promise<void> {
+export async function putEvalGate(minPassRate: number, autoHour?: number): Promise<void> {
+  const body: { min_pass_rate: number; auto_hour?: number } = { min_pass_rate: minPassRate }
+  if (autoHour !== undefined) body.auto_hour = autoHour
   const res = await fetch('/v0/settings/eval/gate', {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ min_pass_rate: minPassRate }),
+    body: JSON.stringify(body),
   })
   await parseJSON(res)
 }

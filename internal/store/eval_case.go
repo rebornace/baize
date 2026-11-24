@@ -59,6 +59,14 @@ func cloneEvalCase(c EvalCase) EvalCase {
 }
 
 func (s *Memory) ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error) {
+	return s.listRunsCreatedBetween(from, to, status, limit, 0)
+}
+
+func (s *Memory) ListRunsCreatedBetweenPage(from, to time.Time, status Status, limit, offset int) ([]*Run, error) {
+	return s.listRunsCreatedBetween(from, to, status, limit, offset)
+}
+
+func (s *Memory) listRunsCreatedBetween(from, to time.Time, status Status, limit, offset int) ([]*Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	limit = normalizeEvalListLimit(limit)
@@ -83,14 +91,40 @@ func (s *Memory) ListRunsCreatedBetween(from, to time.Time, status Status, limit
 		out = append(out, &cp)
 	}
 	sortRunsByCreatedAtDesc(out)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
 	if len(out) > limit {
 		out = out[:limit]
 	}
 	return out, nil
 }
 
+func (s *Memory) CountRunsByStatusBetween(from, to time.Time) (map[Status]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	from = from.UTC()
+	to = to.UTC()
+	out := map[Status]int{}
+	for _, r := range s.runs {
+		created := r.CreatedAt.UTC()
+		if created.Before(from) || created.After(to) {
+			continue
+		}
+		out[r.Status]++
+	}
+	return out, nil
+}
+
 func sortRunsByCreatedAtDesc(runs []*Run) {
-	sort.Slice(runs, func(i, j int) bool {
+	sort.SliceStable(runs, func(i, j int) bool {
+		if runs[i].CreatedAt.Equal(runs[j].CreatedAt) {
+			return runs[i].ID > runs[j].ID
+		}
 		return runs[i].CreatedAt.After(runs[j].CreatedAt)
 	})
 }

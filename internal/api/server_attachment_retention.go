@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -10,6 +11,7 @@ import (
 )
 
 const attachmentRetentionKey = "attachment_retention_days"
+const attachmentRetentionConvPrefix = "attachment_retention_days:"
 const attachmentRetentionBatch = 200
 const defaultAttachmentRetentionInterval = 6 * time.Hour
 
@@ -54,39 +56,137 @@ func (s *Server) attachmentRetentionDays() int {
 	return days
 }
 
+// attachmentRetentionDaysFor resolves a conversation override. -1 or a missing
+// value inherits the global policy; 0 means forever.
+func (s *Server) attachmentRetentionDaysFor(convID string, global int) int {
+	if s.Store == nil || convID == "" {
+		return global
+	}
+	raw, ok, err := s.Store.GetSetting(attachmentRetentionConvPrefix + convID)
+	if err != nil || !ok {
+		return global
+	}
+	var days int
+	if json.Unmarshal(raw, &days) != nil || days < -1 || days > 3650 {
+		return global
+	}
+	if days < 0 {
+		return global
+	}
+	return days
+}
+
+// handleGetConversationAttachmentRetention returns the override and effective
+// policy for one conversation (-1 = inherit global).
+func (s *Server) handleGetConversationAttachmentRetention(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	if convID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	if err := s.checkConversationAccess(r.Context(), convID); err != nil {
+		if errors.Is(err, errConversationForbidden) {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	global := s.attachmentRetentionDays()
+	override := -1
+	if raw, ok, err := s.Store.GetSetting(attachmentRetentionConvPrefix + convID); err == nil && ok {
+		var v int
+		if json.Unmarshal(raw, &v) == nil && v >= -1 && v <= 3650 {
+			override = v
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"days":           override,
+		"effective_days": s.attachmentRetentionDaysFor(convID, global),
+		"global_days":    global,
+	})
+}
+
+func (s *Server) handlePutConversationAttachmentRetention(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	if convID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing conversation id")
+		return
+	}
+	if err := s.checkConversationAccess(r.Context(), convID); err != nil {
+		if errors.Is(err, errConversationForbidden) {
+			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	var body struct {
+		Days int `json:"days"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if body.Days < -1 || body.Days > 3650 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "days must be between -1 and 3650")
+		return
+	}
+	raw, _ := json.Marshal(body.Days)
+	if err := s.Store.UpsertSetting(attachmentRetentionConvPrefix+convID, raw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	global := s.attachmentRetentionDays()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"days":           body.Days,
+		"effective_days": s.attachmentRetentionDaysFor(convID, global),
+		"global_days":    global,
+	})
+}
+
 // cleanupExpiredAttachments deletes indexed attachments older than the
 // configured retention window and returns how many were removed.
 func (s *Server) cleanupExpiredAttachments(ctx context.Context) (int, error) {
-	days := s.attachmentRetentionDays()
-	if days <= 0 || s.ChannelMedia == nil || s.Store == nil {
+	if s.ChannelMedia == nil || s.Store == nil {
 		return 0, nil
 	}
-	cutoff := time.Now().UTC().AddDate(0, 0, -days)
+	convs, err := s.Store.ListAttachmentConversationIDs()
+	if err != nil {
+		return 0, err
+	}
+	global := s.attachmentRetentionDays()
+	now := time.Now().UTC()
 	total := 0
-	for {
-		list, err := s.Store.ListConversationAttachmentsBefore(cutoff, attachmentRetentionBatch)
-		if err != nil {
-			return total, err
+	for _, conv := range convs {
+		days := s.attachmentRetentionDaysFor(conv, global)
+		if days <= 0 {
+			continue
 		}
-		if len(list) == 0 {
-			return total, nil
-		}
-		progress := 0
-		for _, a := range list {
-			if err := s.deleteConversationAttachment(ctx, a.ConversationID, a.Object, a.Filename); err != nil {
-				log.Printf("attachment retention: delete %s/%s: %v", a.ConversationID, a.Object, err)
-				continue
+		cutoff := now.AddDate(0, 0, -days)
+		for {
+			list, lerr := s.Store.ListConversationAttachmentsBeforeConv(conv, cutoff, attachmentRetentionBatch)
+			if lerr != nil {
+				return total, lerr
 			}
-			progress++
-			total++
-		}
-		if progress == 0 {
-			return total, nil
-		}
-		if len(list) < attachmentRetentionBatch {
-			return total, nil
+			if len(list) == 0 {
+				break
+			}
+			progress := 0
+			for _, a := range list {
+				if err := s.deleteConversationAttachment(ctx, a.ConversationID, a.Object, a.Filename); err != nil {
+					log.Printf("attachment retention: delete %s/%s: %v", a.ConversationID, a.Object, err)
+					continue
+				}
+				progress++
+				total++
+			}
+			if progress == 0 || len(list) < attachmentRetentionBatch {
+				break
+			}
 		}
 	}
+	return total, nil
 }
 
 // StartAttachmentRetention runs an immediate cleanup and then repeats on the

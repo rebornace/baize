@@ -820,6 +820,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	go runHITLSweeper(scanCtx, engine)
 	go srv.StartAttachmentRetention(scanCtx, 6*time.Hour)
 	go srv.StartBudgetAlerts(scanCtx, 5*time.Minute)
+	go srv.StartOpsAlerts(scanCtx, 5*time.Minute)
+	go srv.StartEvalGateSchedule(scanCtx, 10*time.Minute)
 
 	return srv, closer, nil
 }

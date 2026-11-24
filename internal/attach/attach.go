@@ -180,6 +180,30 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 			ex.ImageMIME = mime
 			ex.ImageBytes = thumb
 			images = append(images, ex)
+		case d.MediaType == mimePptx:
+			t, perr := extractPptx(d.Data)
+			if perr != nil {
+				return nil, nil, perr
+			}
+			ex.Kind = "text"
+			ex.Text = truncateText(t, opts.MaxTextChars)
+			texts = append(texts, ex)
+		case d.MediaType == mimeHTML || d.MediaType == "application/xhtml+xml":
+			t, perr := extractHTML(d.Data)
+			if perr != nil {
+				return nil, nil, perr
+			}
+			ex.Kind = "text"
+			ex.Text = truncateText(t, opts.MaxTextChars)
+			texts = append(texts, ex)
+		case d.MediaType == mimeZip || d.MediaType == "application/x-zip-compressed":
+			t, perr := extractZip(d.Data)
+			if perr != nil {
+				return nil, nil, perr
+			}
+			ex.Kind = "text"
+			ex.Text = truncateText(t, opts.MaxTextChars)
+			texts = append(texts, ex)
 		default:
 			return nil, nil, fmt.Errorf("%w: %s", ErrUnsupported, d.MediaType)
 		}
@@ -255,11 +279,16 @@ func isImageMIME(m string) bool {
 // still sees and can reply to the message — instead of letting ErrUnsupported
 // abort the whole inbound message (which would silently drop it with no reply).
 func SupportsMediaType(m string) bool {
-	return isTextMIME(m) || isImageMIME(m) || m == mimeDocx || m == mimeXlsx || m == mimePDF
+	return isTextMIME(m) || isImageMIME(m) || m == mimeDocx || m == mimeXlsx ||
+		m == mimePDF || m == mimePptx || m == mimeHTML || m == mimeZip ||
+		m == "application/xhtml+xml" || m == "application/x-zip-compressed"
 }
 
 const (
 	mimeDocx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	mimeXlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	mimePptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	mimePDF  = "application/pdf"
+	mimeHTML = "text/html"
+	mimeZip  = "application/zip"
 )

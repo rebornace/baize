@@ -53,8 +53,9 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 	for _, v := range byDay {
 		monthTotal += v
 	}
-	dayLevel, dayRatio := budgetAlert(dayTotal, dayBudget)
-	monthLevel, monthRatio := budgetAlert(monthTotal, monthBudget)
+	warnRatio, exceededRatio := s.costAlertThresholds()
+	dayLevel, dayRatio := budgetAlert(dayTotal, dayBudget, warnRatio, exceededRatio)
+	monthLevel, monthRatio := budgetAlert(monthTotal, monthBudget, warnRatio, exceededRatio)
 	dayKey := now.Format("2006-01-02")
 	monthKey := now.Format("2006-01")
 
