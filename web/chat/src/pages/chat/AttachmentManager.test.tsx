@@ -56,10 +56,18 @@ async function renderManager() {
   vi.spyOn(api, 'getConversationCostBudget').mockResolvedValue({
     budget_usd_per_day: 0,
     budget_usd_per_month: 0,
+    warning_ratio: 0,
+    exceeded_ratio: 0,
+    spent_usd_per_day: 0,
+    spent_usd_per_month: 0,
   })
   const saveBudget = vi.spyOn(api, 'putConversationCostBudget').mockResolvedValue({
     budget_usd_per_day: 1,
     budget_usd_per_month: 20,
+    warning_ratio: 0.5,
+    exceeded_ratio: 1.2,
+    spent_usd_per_day: 0.01,
+    spent_usd_per_month: 0.2,
   })
   const saveRetention = vi.spyOn(api, 'putConversationRetention').mockResolvedValue({
     days: 7,
@@ -150,7 +158,8 @@ describe('AttachmentManager', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(saveBudget).toHaveBeenCalledWith('c1', 1, 20)
+    expect(saveBudget).toHaveBeenCalledWith('c1', 1, 20, 0, 0)
+    expect(host.textContent).toContain('已用：日 $0.0100 · 月 $0.2000')
   })
 
   it('shows an empty state', async () => {

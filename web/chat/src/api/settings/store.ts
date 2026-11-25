@@ -57,3 +57,39 @@ export async function putAttachmentRetention(days: number): Promise<AttachmentRe
   })
   return parseJSON<AttachmentRetention>(res)
 }
+
+export interface RunRetention {
+  days: number
+}
+
+export async function getRunRetention(): Promise<RunRetention> {
+  const res = await fetch('/v0/settings/run-retention', { headers: authInit() })
+  return parseJSON<RunRetention>(res)
+}
+
+export async function putRunRetention(days: number): Promise<RunRetention> {
+  const res = await fetch('/v0/settings/run-retention', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ days }),
+  })
+  return parseJSON<RunRetention>(res)
+}
+
+export interface MessageRetention {
+  days: number
+}
+
+export async function getMessageRetention(): Promise<MessageRetention> {
+  const res = await fetch('/v0/settings/message-retention', { headers: authInit() })
+  return parseJSON<MessageRetention>(res)
+}
+
+export async function putMessageRetention(days: number): Promise<MessageRetention> {
+  const res = await fetch('/v0/settings/message-retention', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ days }),
+  })
+  return parseJSON<MessageRetention>(res)
+}

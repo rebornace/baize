@@ -100,7 +100,9 @@ func OpenSQLite(db *sql.DB) (*SQLiteStore, error) {
 func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error) {
 	msg.ID = "msg_" + uuid.NewString()
 	msg.ConversationID = conversationID
-	msg.CreatedAt = time.Now().UTC()
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now().UTC()
+	}
 
 	var runID any
 	if msg.RunID != "" {
@@ -373,6 +375,39 @@ func scanMessageRows(rows *sql.Rows) ([]Message, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListConversationIDs() []string {
+	rows, err := s.query(`SELECT DISTINCT conversation_id FROM messages`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil
+		}
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *SQLiteStore) DeleteMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error) {
+	if keep < 0 {
+		keep = 0
+	}
+	res, err := s.exec(`DELETE FROM messages WHERE conversation_id = ? AND created_at < ?
+		AND id NOT IN (SELECT id FROM messages WHERE conversation_id = ?
+		ORDER BY created_at DESC, id DESC LIMIT ?)`,
+		conversationID, cutoff.UTC().Format(time.RFC3339Nano), conversationID, keep)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 func (s *SQLiteStore) ListSummaries() []Summary {

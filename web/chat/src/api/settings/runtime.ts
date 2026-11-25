@@ -4,6 +4,8 @@ import { authInit, parseJSON } from '../http'
 export interface RuntimeKnobs {
   max_messages: number
   max_steps: number
+  max_duration_sec: number
+  max_total_tokens: number
   tool_timeout_seconds: number
   compaction_enabled: boolean
   compact_threshold: number
@@ -61,6 +63,8 @@ export interface RuntimeKnobsView {
 export type RuntimeKnobsPatch = Partial<{
   max_messages: number
   max_steps: number
+  max_duration_sec: number
+  max_total_tokens: number
   tool_timeout_seconds: number
   compaction_enabled: boolean
   compact_threshold: number

@@ -25,6 +25,10 @@ const summary: modelsApi.CostSummary = {
   days: [{ date: '2026-11-24', total_usd: 1, runs: 2 }],
   today_total_usd: 1,
   month_total_usd: 12,
+  projected_month_usd: 30,
+  projection_day: 10,
+  days_in_month: 30,
+  projected_over_budget: true,
   budget_usd_per_day: 1,
   budget_usd_per_month: 10,
   warning_ratio: 0.8,
@@ -36,12 +40,22 @@ const summary: modelsApi.CostSummary = {
 
 async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
   vi.spyOn(modelsApi, 'getCostSummary').mockResolvedValue(summary)
+  vi.spyOn(modelsApi, 'getCostBreakdown').mockResolvedValue({
+    days: 30,
+    total_usd: 3,
+    by_model: [{ key: 'm1', name: 'power', cost_usd: 2, ratio: 0.6667 }],
+    by_agent: [{ key: 'a1', name: 'a1', cost_usd: 3, ratio: 1 }],
+  })
   vi.spyOn(modelsApi, 'getAgentCostBudgets').mockResolvedValue({ items: agents })
   const save = vi.spyOn(modelsApi, 'putCostBudget').mockResolvedValue()
   const saveAgent = vi.spyOn(modelsApi, 'putAgentCostBudget').mockResolvedValue({
     agent_id: 'a1',
     budget_usd_per_day: 1,
     budget_usd_per_month: 20,
+    warning_ratio: 0.5,
+    exceeded_ratio: 1.2,
+    spent_usd_per_day: 0.01,
+    spent_usd_per_month: 0.2,
   })
   await act(async () => {
     createRoot(host).render(<CostSummarySection readOnly={false} />)
@@ -56,6 +70,11 @@ describe('CostSummarySection monthly budget', () => {
     await renderSection()
     expect(host.textContent).toContain('本月 USD 12.000000')
     expect(host.textContent).toContain('本月费用已超过预算')
+    expect(host.textContent).toContain('本月预计')
+    expect(host.textContent).toContain('按当前速度预计超出月度预算')
+    expect(host.textContent).toContain('按模型')
+    expect(host.textContent).toContain('power')
+    expect(host.textContent).toContain('$2.0000 · 67%')
   })
 
   it('saves the monthly budget alongside the daily budget', async () => {
@@ -82,12 +101,20 @@ describe('CostSummarySection monthly budget', () => {
 
   it('saves per-agent budgets', async () => {
     const { saveAgent } = await renderSection([
-      { agent_id: 'a1', budget_usd_per_day: 0, budget_usd_per_month: 0 },
+      {
+        agent_id: 'a1',
+        budget_usd_per_day: 0,
+        budget_usd_per_month: 0,
+        warning_ratio: 0,
+        exceeded_ratio: 0,
+        spent_usd_per_day: 0,
+        spent_usd_per_month: 0,
+      },
     ])
     const row = host.querySelector('.agent-budget-row') as HTMLDivElement
     expect(row).not.toBeNull()
     const inputs = row.querySelectorAll<HTMLInputElement>('input[type="number"]')
-    expect(inputs).toHaveLength(2)
+    expect(inputs).toHaveLength(4)
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     await act(async () => {
       setter?.call(inputs[0], '1')
@@ -107,6 +134,9 @@ describe('CostSummarySection monthly budget', () => {
       agent_id: 'a1',
       budget_usd_per_day: 1,
       budget_usd_per_month: 20,
+      warning_ratio: 0,
+      exceeded_ratio: 0,
     })
+    expect(host.textContent).toContain('已用：日 $0.0100 · 月 $0.2000')
   })
 })

@@ -705,4 +705,27 @@ func TestObservabilityPersists(t *testing.T) {
 	}
 }
 
+func TestRunBudgetKnobPatch(t *testing.T) {
+	base := Snapshot{Knobs: Knobs{MaxDurationSec: 60, MaxTotalTokens: 1000}}
+	zero, tokens := 0, 2000
+	merged := mergeSnapshot(base,
+		knobsOverride{MaxDurationSec: &zero, MaxTotalTokens: &tokens},
+		credsOverride{}, nil, obsOverride{})
+	if merged.Knobs.MaxDurationSec != 0 || merged.Knobs.MaxTotalTokens != 2000 {
+		t.Fatalf("merged=%+v", merged.Knobs)
+	}
+	h := New(base)
+	if err := h.ValidateKnobs(KnobsPatch{MaxDurationSec: &zero, MaxTotalTokens: &tokens}); err != nil {
+		t.Fatal(err)
+	}
+	bad := -1
+	if err := h.ValidateKnobs(KnobsPatch{MaxDurationSec: &bad}); !errors.Is(err, ErrBadRange) {
+		t.Fatalf("bad duration err=%v", err)
+	}
+	tooMany := 10000001
+	if err := h.ValidateKnobs(KnobsPatch{MaxTotalTokens: &tooMany}); !errors.Is(err, ErrBadRange) {
+		t.Fatalf("bad tokens err=%v", err)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

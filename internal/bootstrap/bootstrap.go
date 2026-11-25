@@ -462,6 +462,8 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		LLM:                     provider,
 		Tools:                   reg,
 		MaxSteps:                cfg.Run.MaxSteps,
+		MaxDuration:             time.Duration(cfg.Run.MaxDurationSec) * time.Second,
+		MaxTotalTokens:          cfg.Run.MaxTotalTokens,
 		ToolTimeout:             time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
 		ParallelToolLimit:       cfg.Run.ParallelToolLimit,
 		LaseGateEnabled:         cfg.Run.LaseGateEnabled,
@@ -819,6 +821,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	go runScheduleScanner(scanCtx, rt, srv)
 	go runHITLSweeper(scanCtx, engine)
 	go srv.StartAttachmentRetention(scanCtx, 6*time.Hour)
+	go srv.StartRunRetention(scanCtx, 6*time.Hour)
+	go srv.StartMessageRetention(scanCtx, 6*time.Hour)
+	go srv.StartCostFinalizer(scanCtx, 5*time.Minute)
 	go srv.StartBudgetAlerts(scanCtx, 5*time.Minute)
 	go srv.StartOpsAlerts(scanCtx, 5*time.Minute)
 	go srv.StartEvalGateSchedule(scanCtx, 10*time.Minute)

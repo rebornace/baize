@@ -26,6 +26,11 @@ type Store interface {
 	// filters. Zero fields mean no restriction; empty query returns nil.
 	SearchAllFiltered(filter SearchFilter) ([]Message, error)
 	ListSummaries() []Summary
+	// ListConversationIDs returns conversations that currently have messages.
+	ListConversationIDs() []string
+	// DeleteMessagesBefore removes messages older than cutoff for one
+	// conversation, always keeping the newest `keep` messages.
+	DeleteMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error)
 	Clear(conversationID string)
 	TruncateFrom(conversationID, messageID string) (deleted int, err error)
 	Fork(srcConversationID, throughMessageID string) (newConversationID string, copied int, err error)
@@ -185,7 +190,9 @@ func (s *MemoryStore) Append(conversationID string, msg Message) (Message, error
 
 	msg.ID = "msg_" + uuid.NewString()
 	msg.ConversationID = conversationID
-	msg.CreatedAt = time.Now().UTC()
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now().UTC()
+	}
 
 	s.msgs[conversationID] = append(s.msgs[conversationID], msg)
 	return msg, nil
@@ -263,6 +270,56 @@ func (s *MemoryStore) SearchAllFiltered(filter SearchFilter) ([]Message, error) 
 		out = out[:filter.Limit]
 	}
 	return out, nil
+}
+
+func (s *MemoryStore) ListConversationIDs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.msgs))
+	for id, msgs := range s.msgs {
+		if len(msgs) > 0 {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *MemoryStore) DeleteMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	msgs := s.msgs[conversationID]
+	if len(msgs) == 0 {
+		return 0, nil
+	}
+	if keep < 0 {
+		keep = 0
+	}
+	protected := make(map[string]bool, keep)
+	if keep > 0 {
+		start := len(msgs) - keep
+		if start < 0 {
+			start = 0
+		}
+		for _, m := range msgs[start:] {
+			protected[m.ID] = true
+		}
+	}
+	kept := msgs[:0]
+	deleted := 0
+	for _, m := range msgs {
+		if !protected[m.ID] && m.CreatedAt.Before(cutoff) {
+			deleted++
+			continue
+		}
+		kept = append(kept, m)
+	}
+	if len(kept) == 0 {
+		delete(s.msgs, conversationID)
+	} else {
+		s.msgs[conversationID] = kept
+	}
+	return deleted, nil
 }
 
 func (s *MemoryStore) ListSummaries() []Summary {

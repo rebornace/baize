@@ -1,9 +1,11 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func runCostCase(t *testing.T, st Store) {
@@ -28,6 +30,95 @@ func runCostCase(t *testing.T, st Store) {
 }
 
 func TestRunCostMemory(t *testing.T) { runCostCase(t, NewMemory()) }
+
+func runCostScopeCase(t *testing.T, st Store) {
+	t.Helper()
+	now := time.Now().UTC()
+	suffix := fmt.Sprintf("%d", now.UnixNano())
+	agent1 := "scope-a1-" + suffix
+	agent2 := "scope-a2-" + suffix
+	conv1 := "scope-c1-" + suffix
+	conv2 := "scope-c2-" + suffix
+	model1 := "scope-m1-" + suffix
+	model2 := "scope-m2-" + suffix
+	mk := func(agentID, convID, modelID string) *Run {
+		r, err := st.CreateRun(CreateRunInput{
+			AgentID: agentID, Input: "x", ConversationID: convID, ModelProfileID: modelID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpdateRun(r.ID, StatusSucceeded, "ok", ""); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	r1 := mk(agent1, conv1, model1)
+	r2 := mk(agent1, conv2, model1)
+	r3 := mk(agent2, conv1, model2)
+	if err := st.PutRunCost(RunCost{RunID: r1.ID, Day: now.Format("2006-01-02"), CostUSD: 1.5, Priced: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutRunCost(RunCost{RunID: r3.ID, Day: now.Format("2006-01-02"), CostUSD: 2.5, Priced: true}); err != nil {
+		t.Fatal(err)
+	}
+	missing, err := st.ListRunIDsMissingCostsSince(now.Add(-time.Hour), 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, id := range missing {
+		if id == r2.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing costs=%v, want %s", missing, r2.ID)
+	}
+	start := now.Add(-time.Hour)
+	end := now.Add(time.Hour)
+	if sum, err := st.SumRunCostsByScope(agent1, "", start, end); err != nil || sum != 1.5 {
+		t.Fatalf("agent sum=%v err=%v", sum, err)
+	}
+	if sum, err := st.SumRunCostsByScope("", conv1, start, end); err != nil || sum != 4.0 {
+		t.Fatalf("conv sum=%v err=%v", sum, err)
+	}
+	byModel, err := st.SumRunCostsGrouped("model", start, end)
+	if err != nil || byModel[model1] != 1.5 || byModel[model2] != 2.5 {
+		t.Fatalf("byModel=%v err=%v", byModel, err)
+	}
+	byAgent, err := st.SumRunCostsGrouped("agent", start, end)
+	if err != nil || byAgent[agent1] != 1.5 || byAgent[agent2] != 2.5 {
+		t.Fatalf("byAgent=%v err=%v", byAgent, err)
+	}
+	if _, err := st.SumRunCostsGrouped("bad", start, end); err == nil {
+		t.Fatal("unknown dimension must error")
+	}
+}
+
+func TestRunCostScopeMemory(t *testing.T) { runCostScopeCase(t, NewMemory()) }
+
+func TestRunCostScopeSQLite(t *testing.T) {
+	st, err := OpenSQLite(filepath.Join(t.TempDir(), "run_cost_scope.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	runCostScopeCase(t, st)
+}
+
+func TestRunCostScopePostgres(t *testing.T) {
+	dsn := os.Getenv("BAIZE_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("BAIZE_TEST_PG_DSN not set")
+	}
+	st, err := OpenPostgres(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	runCostScopeCase(t, st)
+}
 
 func costDayCase(t *testing.T, st Store) {
 	t.Helper()

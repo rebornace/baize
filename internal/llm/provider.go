@@ -77,11 +77,15 @@ type Message struct {
 //     If DataURL is non-empty it is forwarded verbatim (caller-supplied data URI)
 //     and ImageBytes/ImageMIME are ignored.
 type ContentPart struct {
-	Type       string // "text" | "image"
+	Type       string // "text" | "image" | "file"
 	Text       string // Type == "text"
 	ImageMIME  string // Type == "image"
 	ImageBytes []byte // Type == "image" (raw bytes)
 	DataURL    string // Type == "image", optional pre-built data: URI
+	// Type == "file": native document input (currently PDF).
+	FileMIME  string
+	FileBytes []byte
+	Filename  string
 }
 
 type ToolCall struct {

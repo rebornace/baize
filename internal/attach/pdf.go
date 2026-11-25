@@ -2,11 +2,16 @@ package attach
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/ledongthuc/pdf"
+	pdfcpuapi "github.com/pdfcpu/pdfcpu/pkg/api"
+	pdfcpumodel "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
 // extractPDF pulls the text layer from a PDF. An empty result is reported by
@@ -53,4 +58,49 @@ func normalizePDFText(s string) string {
 		i += size
 	}
 	return strings.TrimSpace(b.String())
+}
+
+const maxDocumentImages = 20
+const maxDocumentImageBytes = 20 << 20
+
+// extractPDFImages pulls embedded raster images from a PDF that has no text
+// layer. The common scanned-PDF shape is one full-page image per page; vector
+// or mixed scans may still yield no images and keep the usual empty-PDF error.
+func extractPDFImages(data []byte, maxEdge int) []Extracted {
+	conf := pdfcpumodel.NewDefaultConfiguration()
+	conf.UnsupportedResourcePolicy = pdfcpumodel.UnsupportedResourceSkip
+	var out []Extracted
+	total := 0
+	_ = pdfcpuapi.ExtractImages(context.Background(), bytes.NewReader(data), nil,
+		func(img pdfcpumodel.Image, _ bool, _ int) error {
+			if len(out) >= maxDocumentImages || total >= maxDocumentImageBytes || img.Reader == nil {
+				return nil
+			}
+			if img.Thumb || img.IsImgMask {
+				return nil
+			}
+			b, rerr := io.ReadAll(io.LimitReader(img.Reader, int64(maxDocumentImageBytes-total)))
+			if rerr != nil || len(b) == 0 {
+				return nil
+			}
+			mime := http.DetectContentType(b)
+			if !isImageMIME(mime) {
+				return nil
+			}
+			mime, thumb, perr := processImage(b, mime, maxEdge)
+			if perr != nil || len(thumb) == 0 {
+				return nil
+			}
+			total += len(thumb)
+			name := img.Name
+			if name == "" {
+				name = fmt.Sprintf("page-%d", img.PageNr)
+			}
+			out = append(out, Extracted{
+				Filename: name, Kind: "image",
+				ImageMIME: mime, ImageBytes: thumb, Document: true,
+			})
+			return nil
+		}, conf)
+	return out
 }

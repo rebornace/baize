@@ -144,6 +144,26 @@ func TestResolveModelImageRequiresVision(t *testing.T) {
 	}
 }
 
+func TestResolveModelPDFRequiresPDFCapability(t *testing.T) {
+	profiles := []RoutingProfile{
+		{ID: "mp_text", SupportsVision: true, Tier: store.AutoTierStandard},
+		{ID: "mp_pdf", SupportsPDF: true, Tier: store.AutoTierStandard},
+	}
+	sel, ok := ResolveModel(AutoProfileID, TaskSignals{Text: "扫描件", HasPDF: true}, profiles)
+	if sel.ProfileID != "mp_pdf" || !ok || !sel.PDFOK {
+		t.Fatalf("pdf auto = %+v ok=%v", sel, ok)
+	}
+	sel, _ = ResolveModel("mp_text", TaskSignals{Text: "扫描件", HasPDF: true}, profiles)
+	if sel.PDFOK {
+		t.Fatalf("manual text-only profile must report PDFOK=false: %+v", sel)
+	}
+	noPDF := []RoutingProfile{{ID: "mp_text", Tier: store.AutoTierStandard}}
+	sel, _ = ResolveModel(AutoProfileID, TaskSignals{Text: "扫描件", HasPDF: true}, noPDF)
+	if sel.ProfileID != "" || sel.PDFOK {
+		t.Fatalf("no pdf model = %+v", sel)
+	}
+}
+
 func TestResolveModelNoProfiles(t *testing.T) {
 	// Non-image turn: visionOK stays true, but the empty id makes the Switch
 	// emit its friendly "no model configured" error.

@@ -95,9 +95,13 @@ connector_groups:
 | 字段 | 默认 |
 |------|------|
 | `max_steps` | 16 |
+| `max_duration_sec` | 0（关闭）；单个活动执行段的墙钟上限，人工等待不计入 |
+| `max_total_tokens` | 0（关闭）；整次运行（含 HITL 恢复）累计 token 上限 |
 | `tool_timeout_sec` | 60（单次工具调用） |
 | `lase_gate` | `false`；开启后 `spawn_group_run` 必须带 `lase.confidence` / `evidence_conflict` / `reason` |
 | `lase_confidence_threshold` | `0.8`；置信度高且无证据冲突时直接由 leader 处理，不 spawn |
+
+达到任一上限时，引擎不再调用工具，改为做一次无工具收尾；收尾成功则运行成功并在消息上带 `budget_grace` / `budget_reason`，失败才标记失败，同时记录 `run.budget_exceeded`。审批/登录等待不计入时长预算；token 预算跨 HITL 恢复累计。两项也可在设置页“运行参数”里热更新，YAML 只是启动基线。
 
 > 决策层（`internal/decide`）相关行为——记忆预抽取判断、工具候选收敛、工具枚举约束、大体积工具结果裁剪、Auto 档位回退——**不在 YAML**，而是库内的热更新参数，在 UI「运行参数 → 智能提速」调节（总开关 `decide_enabled` + 各功能开关，默认均关），经 `GET/PATCH /v0/settings/runtime` 读写。YAML 只提供启动基线。同页「记忆与压缩」含「长对话保留重点」（`context_projection_enabled`，默认关）：只整理给模型看的投影，不改写已保存消息。
 >

@@ -34,6 +34,9 @@ type GroupRunReceipt struct {
 	GroupID    string         `json:"group_id,omitempty"`
 	OpenHITL   bool           `json:"open_hitl,omitempty"`
 	Error      string         `json:"error,omitempty"`
+	// UserParts rehydrates the parent's original user turn (text attachments
+	// and images) when continuing the LLM loop. Never part of the wire receipt.
+	UserParts []llm.ContentPart `json:"-"`
 }
 
 const (
@@ -895,6 +898,6 @@ func (e *Engine) ContinueFromChildReceipt(ctx context.Context, parentRunID strin
 	if err != nil {
 		return err
 	}
-	messages := e.buildResumeMessages(parentRunID, sys, runRec.ConversationID, runRec.Input, evs)
+	messages := e.buildResumeMessagesWithParts(parentRunID, sys, runRec.ConversationID, runRec.Input, evs, receipt.UserParts)
 	return e.runLoop(ctx, parentRunID, messages)
 }

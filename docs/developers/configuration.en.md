@@ -95,9 +95,13 @@ Omit for unchanged pre-group behavior. Drafts can also hot-save under Settings �
 | Field | Default |
 |------|------|
 | `max_steps` | 16 |
+| `max_duration_sec` | 0 (off); wall-clock cap for one active run segment; human waits are excluded |
+| `max_total_tokens` | 0 (off); cumulative token cap for the whole run, including HITL resumes |
 | `tool_timeout_sec` | 60 (per tool call) |
 | `lase_gate` | `false`; when on, `spawn_group_run` must include `lase.confidence` / `evidence_conflict` / `reason` |
 | `lase_confidence_threshold` | `0.8`; high confidence with no evidence conflict is handled by the leader directly |
+
+When either cap is reached the engine stops calling tools and makes one tools-disabled concluding turn. A successful conclusion keeps the run succeeded and tags the message with `budget_grace` / `budget_reason`; only a failed conclusion marks the run failed. Both paths record `run.budget_exceeded`. Approval/login waits do not count toward the duration budget; the token budget accumulates across HITL resumes. Both values can also be hot-updated under Runtime settings; YAML is only the startup baseline.
 
 > The decision layer (`internal/decide`) behaviors — memory pre-extraction judgment, tool-candidate narrowing, tool-choice enum constraint, bulky tool-result pruning, Auto-tier fallback — are **not YAML keys**. They are in-store hot-reloadable settings under Runtime → Smart speed-up (master `decide_enabled` plus per-feature toggles, all off by default) via `GET/PATCH /v0/settings/runtime`; YAML only supplies the startup baseline. Under Memory & compaction, “keep important facts in long chats” (`context_projection_enabled`, default off) is a model-facing projection only; saved messages are not rewritten.
 >

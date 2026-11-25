@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const upsertModelProfileColumns = `name, provider, base_url, model, api_key, api_key_env, disable_thinking, thinking_level, thinking_dialect, supports_vision, context_tokens, auto_tier, fallback_profile_ids, created_at, updated_at`
+const upsertModelProfileColumns = `name, provider, base_url, model, api_key, api_key_env, disable_thinking, thinking_level, thinking_dialect, supports_vision, supports_pdf, context_tokens, auto_tier, fallback_profile_ids, created_at, updated_at`
 
 func encodeFallbackProfileIDs(ids []string) string {
 	if len(ids) == 0 {
@@ -38,16 +38,17 @@ func decodeFallbackProfileIDs(raw string) []string {
 func scanModelProfile(scanner interface{ Scan(...any) error }) (ModelProfile, error) {
 	var p ModelProfile
 	var createdAt, updatedAt string
-	var disableThinking, supportsVision sql.NullBool
+	var disableThinking, supportsVision, supportsPDF sql.NullBool
 	var thinkingLevel, thinkingDialect, autoTier, fallbackIDs sql.NullString
 	if err := scanner.Scan(&p.ID, &p.Name, &p.Provider, &p.BaseURL, &p.Model, &p.APIKey,
-		&p.APIKeyEnv, &disableThinking, &thinkingLevel, &thinkingDialect, &supportsVision, &p.ContextTokens, &autoTier, &fallbackIDs, &createdAt, &updatedAt); err != nil {
+		&p.APIKeyEnv, &disableThinking, &thinkingLevel, &thinkingDialect, &supportsVision, &supportsPDF, &p.ContextTokens, &autoTier, &fallbackIDs, &createdAt, &updatedAt); err != nil {
 		return ModelProfile{}, err
 	}
 	p.DisableThinking = disableThinking.Bool
 	p.ThinkingLevel = thinkingLevel.String
 	p.ThinkingDialect = thinkingDialect.String
 	p.SupportsVision = supportsVision.Bool
+	p.SupportsPDF = supportsPDF.Bool
 	p.AutoTier = NormalizeAutoTier(autoTier.String)
 	p.FallbackProfileIDs = decodeFallbackProfileIDs(fallbackIDs.String)
 	if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
@@ -66,16 +67,17 @@ func scanModelProfile(scanner interface{ Scan(...any) error }) (ModelProfile, er
 func scanModelProfileStored(scanner interface{ Scan(...any) error }) (ModelProfile, error) {
 	var p ModelProfile
 	var createdAt, updatedAt string
-	var disableThinking, supportsVision sql.NullBool
+	var disableThinking, supportsVision, supportsPDF sql.NullBool
 	var thinkingLevel, thinkingDialect, autoTier, fallbackIDs sql.NullString
 	if err := scanner.Scan(&p.ID, &p.Name, &p.Provider, &p.BaseURL, &p.Model, &p.APIKey,
-		&p.APIKeyEnv, &disableThinking, &thinkingLevel, &thinkingDialect, &supportsVision, &p.ContextTokens, &autoTier, &fallbackIDs, &createdAt, &updatedAt); err != nil {
+		&p.APIKeyEnv, &disableThinking, &thinkingLevel, &thinkingDialect, &supportsVision, &supportsPDF, &p.ContextTokens, &autoTier, &fallbackIDs, &createdAt, &updatedAt); err != nil {
 		return ModelProfile{}, err
 	}
 	p.DisableThinking = disableThinking.Bool
 	p.ThinkingLevel = thinkingLevel.String
 	p.ThinkingDialect = thinkingDialect.String
 	p.SupportsVision = supportsVision.Bool
+	p.SupportsPDF = supportsPDF.Bool
 	p.AutoTier = NormalizeAutoTier(autoTier.String)
 	p.FallbackProfileIDs = decodeFallbackProfileIDs(fallbackIDs.String)
 	if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
@@ -135,9 +137,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 			return ModelProfile{}, err
 		}
 		_, err := s.exec(
-			`INSERT INTO model_profiles (id, `+upsertModelProfileColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO model_profiles (id, `+upsertModelProfileColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.ID, p.Name, p.Provider, p.BaseURL, p.Model, p.APIKey, p.APIKeyEnv,
-			p.DisableThinking, p.ThinkingLevel, p.ThinkingDialect, p.SupportsVision, p.ContextTokens, p.AutoTier, fallbackJSON,
+			p.DisableThinking, p.ThinkingLevel, p.ThinkingDialect, p.SupportsVision, p.SupportsPDF, p.ContextTokens, p.AutoTier, fallbackJSON,
 			p.CreatedAt.Format(time.RFC3339Nano), p.UpdatedAt.Format(time.RFC3339Nano),
 		)
 		if err != nil {
@@ -167,9 +169,9 @@ func (s *SQLStore) UpsertModelProfile(p ModelProfile) (ModelProfile, error) {
 	}
 	_, err = s.exec(
 		`UPDATE model_profiles SET name=?, provider=?, base_url=?, model=?, api_key=?, api_key_env=?,
-		   disable_thinking=?, thinking_level=?, thinking_dialect=?, supports_vision=?, context_tokens=?, auto_tier=?, fallback_profile_ids=?, updated_at=? WHERE id=?`,
+		   disable_thinking=?, thinking_level=?, thinking_dialect=?, supports_vision=?, supports_pdf=?, context_tokens=?, auto_tier=?, fallback_profile_ids=?, updated_at=? WHERE id=?`,
 		p.Name, p.Provider, p.BaseURL, p.Model, p.APIKey, p.APIKeyEnv,
-		p.DisableThinking, p.ThinkingLevel, p.ThinkingDialect, p.SupportsVision, p.ContextTokens, p.AutoTier, fallbackJSON,
+		p.DisableThinking, p.ThinkingLevel, p.ThinkingDialect, p.SupportsVision, p.SupportsPDF, p.ContextTokens, p.AutoTier, fallbackJSON,
 		p.UpdatedAt.Format(time.RFC3339Nano), p.ID,
 	)
 	if err != nil {

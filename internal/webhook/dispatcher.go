@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"hash"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"strings"
@@ -162,8 +164,21 @@ func (d *Dispatcher) SendAlert(ctx context.Context, eventType string, data map[s
 			"data":      data,
 		},
 	}
-	_, _, err = d.enqueue(ctx, "", store.WebhookOutboxKindEvent, 0, url, headers, payload, true)
+	// Global alerts share the empty run id, so derive a stable index from the
+	// alert data. Different alerts (day vs month, different targets) then get
+	// distinct delivery keys instead of colliding in the outbox.
+	body, _ := json.Marshal(data)
+	h := fnvimhash(eventType)
+	h.Write(body)
+	eventIndex := int(h.Sum32() & 0x7fffffff)
+	_, _, err = d.enqueue(ctx, "", store.WebhookOutboxKindEvent, eventIndex, url, headers, payload, true)
 	return err
+}
+
+func fnvimhash(seed string) hash.Hash32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(seed))
+	return h
 }
 
 // SendBudgetAlert enqueues a global budget.alert event to the events webhook.

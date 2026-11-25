@@ -17,8 +17,12 @@ import (
 
 // Knobs is the effective engine-tuning snapshot.
 type Knobs struct {
-	MaxMessages           int
-	MaxSteps              int
+	MaxMessages int
+	MaxSteps    int
+	// MaxDurationSec bounds one active run segment (0 = off).
+	MaxDurationSec int
+	// MaxTotalTokens bounds total reported tokens for a whole run (0 = off).
+	MaxTotalTokens        int
 	ToolTimeout           time.Duration
 	CompactionEnabled     bool
 	CompactThreshold      float64
@@ -126,6 +130,8 @@ type operatorEntry struct {
 type knobsOverride struct {
 	MaxMessages                *int     `json:"max_messages,omitempty"`
 	MaxSteps                   *int     `json:"max_steps,omitempty"`
+	MaxDurationSec             *int     `json:"max_duration_sec,omitempty"`
+	MaxTotalTokens             *int     `json:"max_total_tokens,omitempty"`
 	ToolTimeoutSeconds         *int     `json:"tool_timeout_seconds,omitempty"`
 	CompactionEnabled          *bool    `json:"compaction_enabled,omitempty"`
 	CompactThreshold           *float64 `json:"compact_threshold,omitempty"`
@@ -290,6 +296,12 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 	if ko.MaxSteps != nil {
 		k.MaxSteps = *ko.MaxSteps
 	}
+	if ko.MaxDurationSec != nil {
+		k.MaxDurationSec = *ko.MaxDurationSec
+	}
+	if ko.MaxTotalTokens != nil {
+		k.MaxTotalTokens = *ko.MaxTotalTokens
+	}
 	if ko.ToolTimeoutSeconds != nil {
 		k.ToolTimeout = time.Duration(*ko.ToolTimeoutSeconds) * time.Second
 	}
@@ -430,6 +442,8 @@ func mergeSnapshot(base Snapshot, ko knobsOverride, co credsOverride, po *string
 type KnobsFieldFlags struct {
 	MaxMessages                bool `json:"max_messages"`
 	MaxSteps                   bool `json:"max_steps"`
+	MaxDurationSec             bool `json:"max_duration_sec"`
+	MaxTotalTokens             bool `json:"max_total_tokens"`
 	ToolTimeout                bool `json:"tool_timeout_seconds"`
 	CompactionEnabled          bool `json:"compaction_enabled"`
 	CompactThreshold           bool `json:"compact_threshold"`
@@ -483,6 +497,8 @@ func (h *Holder) KnobsView() KnobsView {
 		Overridden: KnobsFieldFlags{
 			MaxMessages:                ko.MaxMessages != nil,
 			MaxSteps:                   ko.MaxSteps != nil,
+			MaxDurationSec:             ko.MaxDurationSec != nil,
+			MaxTotalTokens:             ko.MaxTotalTokens != nil,
 			ToolTimeout:                ko.ToolTimeoutSeconds != nil,
 			CompactionEnabled:          ko.CompactionEnabled != nil,
 			CompactThreshold:           ko.CompactThreshold != nil,

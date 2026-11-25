@@ -29,7 +29,7 @@ func (s *SQLStore) PutCatalogRevision(r ConnectorCatalogRevision) error {
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(connector_id, revision) DO UPDATE SET
 		   at=excluded.at, diff_json=excluded.diff_json, tool_hashes_json=excluded.tool_hashes_json`,
-		r.ConnectorID, r.Revision, s.timeArg(r.At), string(diff), hashes,
+		r.ConnectorID, r.Revision, formatSQLiteTime(r.At), string(diff), hashes,
 	)
 	return err
 }
@@ -56,9 +56,7 @@ func (s *SQLStore) ListCatalogRevisions(connectorID string, limit int) ([]Connec
 		if err := rows.Scan(&r.ConnectorID, &r.Revision, &atStr, &diff, &hashes); err != nil {
 			return nil, err
 		}
-		if t, err := time.Parse(time.RFC3339, atStr); err == nil {
-			r.At = t
-		} else if t, err := time.Parse(sqliteTimeLayout, atStr); err == nil {
+		if t, err := parseStoreTime(atStr); err == nil {
 			r.At = t
 		}
 		r.DiffJSON = json.RawMessage(diff)
@@ -88,7 +86,7 @@ func (s *SQLStore) PutMCPExportInvocation(inv MCPExportInvocation) error {
 		`INSERT INTO mcp_export_invocations
 		 (id, at, key_id, identity_id, tool_name, connector_id, contract_hash, catalog_revision, is_error)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		inv.ID, s.timeArg(inv.At), inv.KeyID, inv.IdentityID, inv.ToolName,
+		inv.ID, formatSQLiteTime(inv.At), inv.KeyID, inv.IdentityID, inv.ToolName,
 		inv.ConnectorID, inv.ContractHash, inv.CatalogRevision, isErr,
 	)
 	return err
@@ -117,9 +115,7 @@ func (s *SQLStore) ListMCPExportInvocations(limit int) ([]MCPExportInvocation, e
 			&connectorID, &contractHash, &inv.CatalogRevision, &isErr); err != nil {
 			return nil, err
 		}
-		if t, err := time.Parse(time.RFC3339, atStr); err == nil {
-			inv.At = t
-		} else if t, err := time.Parse(sqliteTimeLayout, atStr); err == nil {
+		if t, err := parseStoreTime(atStr); err == nil {
 			inv.At = t
 		}
 		inv.ConnectorID = connectorID.String

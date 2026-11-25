@@ -48,6 +48,7 @@ export function AddModelModal({ open, onClose, onImported }: AddModelModalProps)
     thinkingLevel: 'medium' as ThinkingLevel,
     thinkingDialect: 'auto' as ThinkingDialect,
     supportsVision: false,
+    supportsPDF: false,
     contextTokens: 128000,
     apiKeyEnv: '',
   })
@@ -69,7 +70,7 @@ export function AddModelModal({ open, onClose, onImported }: AddModelModalProps)
       setManualForm({
         name: '', model: '', tier: 'auto',
         thinkingLevel: 'medium', thinkingDialect: 'auto',
-        supportsVision: false, contextTokens: 128000, apiKeyEnv: '',
+        supportsVision: false, supportsPDF: false, contextTokens: 128000, apiKeyEnv: '',
       })
     }
   }, [open])
@@ -150,6 +151,7 @@ export function AddModelModal({ open, onClose, onImported }: AddModelModalProps)
         thinking_level: manualForm.thinkingLevel,
         thinking_dialect: manualForm.thinkingDialect,
         supports_vision: manualForm.supportsVision,
+        supports_pdf: manualForm.supportsPDF,
         context_tokens: manualForm.contextTokens,
       })
       await onImported()
@@ -323,6 +325,17 @@ export function AddModelModal({ open, onClose, onImported }: AddModelModalProps)
                   disabled={busy}
                 />
                 <span>{MODELS.fieldVision}</span>
+              </label>
+              <label className="ui-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={manualForm.supportsPDF}
+                  onChange={(e) =>
+                    setManualForm((f) => ({ ...f, supportsPDF: e.target.checked }))
+                  }
+                  disabled={busy}
+                />
+                <span>{MODELS.fieldPDF}</span>
               </label>
               <Field label={MODELS.fieldThinkingDialect}>
                 <Select

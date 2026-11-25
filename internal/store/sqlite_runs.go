@@ -106,6 +106,9 @@ const insertRunSQL = `INSERT INTO runs (id, agent_id, input, status, output, err
 func prepareRunInsert(in CreateRunInput) (*Run, []any, error) {
 	id := "run_" + uuid.NewString()
 	now := time.Now().UTC()
+	if !in.CreatedAt.IsZero() {
+		now = in.CreatedAt.UTC()
+	}
 	r := &Run{
 		ID:                 id,
 		AgentID:            in.AgentID,
@@ -347,7 +350,9 @@ func (s *SQLStore) ListRunsCreatedBetweenPage(from, to time.Time, status Status,
 	from = from.UTC()
 	to = to.UTC()
 	q := `SELECT ` + runSelectColumns + ` FROM runs WHERE created_at >= ? AND created_at <= ?`
-	args := []any{s.timeArg(from), s.timeArg(to)}
+	// created_at is RFC3339 text in both dialects; bind the same fixed-width
+	// layout used on insert so Postgres compares text, not timestamptz.
+	args := []any{formatSQLiteTime(from), formatSQLiteTime(to)}
 	if status != "" {
 		q += ` AND status = ?`
 		args = append(args, string(status))
@@ -367,7 +372,27 @@ func (s *SQLStore) ListRunsCreatedBetweenPage(from, to time.Time, status Status,
 func (s *SQLStore) CountRunsByStatusBetween(from, to time.Time) (map[Status]int, error) {
 	rows, err := s.query(`SELECT status, COUNT(*) FROM runs
 		WHERE created_at >= ? AND created_at <= ? GROUP BY status`,
-		s.timeArg(from.UTC()), s.timeArg(to.UTC()))
+		formatSQLiteTime(from.UTC()), formatSQLiteTime(to.UTC()))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[Status]int{}
+	for rows.Next() {
+		var (
+			status string
+			count  int
+		)
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		out[Status(status)] = count
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) CountRunsByStatus() (map[Status]int, error) {
+	rows, err := s.query(`SELECT status, COUNT(*) FROM runs GROUP BY status`)
 	if err != nil {
 		return nil, err
 	}

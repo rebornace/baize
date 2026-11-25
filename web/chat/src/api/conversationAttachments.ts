@@ -69,6 +69,10 @@ export async function putConversationRetention(
 export interface ConversationCostBudget {
   budget_usd_per_day: number
   budget_usd_per_month: number
+  warning_ratio: number
+  exceeded_ratio: number
+  spent_usd_per_day: number
+  spent_usd_per_month: number
 }
 
 export async function getConversationCostBudget(
@@ -84,11 +88,18 @@ export async function putConversationCostBudget(
   conversationId: string,
   day: number,
   month: number,
+  warningRatio = 0,
+  exceededRatio = 0,
 ): Promise<ConversationCostBudget> {
   const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/cost-budget`, {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ budget_usd_per_day: day, budget_usd_per_month: month }),
+    body: JSON.stringify({
+      budget_usd_per_day: day,
+      budget_usd_per_month: month,
+      warning_ratio: warningRatio,
+      exceeded_ratio: exceededRatio,
+    }),
   })
   return parseJSON(res)
 }

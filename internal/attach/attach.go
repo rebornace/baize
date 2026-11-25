@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // AttachmentIn is a single inbound attachment as received from the API.
@@ -28,6 +29,9 @@ type Extracted struct {
 	Text       string // Kind == "text"
 	ImageMIME  string // Kind == "image"
 	ImageBytes []byte // Kind == "image", thumbnail-capped
+	// Document marks images extracted from inside a document (e.g. a scanned
+	// PDF page) rather than an image the user uploaded directly.
+	Document bool
 }
 
 // Decoded is a base64-decoded attachment in its original request order, with
@@ -49,6 +53,10 @@ type Options struct {
 	// bodies to the workspace pass 0 to keep the full text).
 	MaxTextChars int
 	MaxImageEdge int // max long edge (px) for image thumbnails
+	// AllowPDFPassthrough permits returning a text-less/no-image PDF as a
+	// native file part instead of ErrEmptyPDFText. Only callers that can route
+	// to a PDF-capable model should enable it.
+	AllowPDFPassthrough bool
 }
 
 // DefaultOptions returns the approved spec limits.
@@ -149,24 +157,52 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 			if perr != nil {
 				return nil, nil, perr
 			}
+			imgs := extractOfficeImages(d.Data, "word/media/", opts.MaxImageEdge)
+			text := truncateText(t, opts.MaxTextChars)
+			if strings.TrimSpace(t) == "" && len(imgs) > 0 {
+				text = documentImagesPlaceholder(len(imgs))
+			}
 			ex.Kind = "text"
-			ex.Text = truncateText(t, opts.MaxTextChars)
+			ex.Text = text
 			texts = append(texts, ex)
+			images = append(images, imgs...)
 		case d.MediaType == mimeXlsx:
 			t, perr := extractXlsx(d.Data)
 			if perr != nil {
 				return nil, nil, perr
 			}
+			imgs := extractOfficeImages(d.Data, "xl/media/", opts.MaxImageEdge)
+			text := truncateText(t, opts.MaxTextChars)
+			if strings.TrimSpace(t) == "" && len(imgs) > 0 {
+				text = documentImagesPlaceholder(len(imgs))
+			}
 			ex.Kind = "text"
-			ex.Text = truncateText(t, opts.MaxTextChars)
+			ex.Text = text
 			texts = append(texts, ex)
+			images = append(images, imgs...)
 		case d.MediaType == mimePDF:
 			t, perr := extractPDF(d.Data)
 			if perr != nil {
 				return nil, nil, perr
 			}
 			if t == "" {
-				return nil, nil, ErrEmptyPDFText
+				imgs := extractPDFImages(d.Data, opts.MaxImageEdge)
+				if len(imgs) == 0 {
+					if !opts.AllowPDFPassthrough {
+						return nil, nil, ErrEmptyPDFText
+					}
+					ex.Kind = "pdf"
+					ex.ImageMIME = "application/pdf"
+					ex.ImageBytes = append([]byte(nil), d.Data...)
+					ex.Document = true
+					images = append(images, ex)
+					continue
+				}
+				ex.Kind = "text"
+				ex.Text = fmt.Sprintf("（扫描版 PDF：未检测到文字层，已提取 %d 页图片，请从图片读取内容。）", len(imgs))
+				texts = append(texts, ex)
+				images = append(images, imgs...)
+				continue
 			}
 			ex.Kind = "text"
 			ex.Text = truncateText(t, opts.MaxTextChars)
@@ -185,9 +221,15 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 			if perr != nil {
 				return nil, nil, perr
 			}
+			imgs := extractOfficeImages(d.Data, "ppt/media/", opts.MaxImageEdge)
+			text := truncateText(t, opts.MaxTextChars)
+			if strings.TrimSpace(t) == "" && len(imgs) > 0 {
+				text = documentImagesPlaceholder(len(imgs))
+			}
 			ex.Kind = "text"
-			ex.Text = truncateText(t, opts.MaxTextChars)
+			ex.Text = text
 			texts = append(texts, ex)
+			images = append(images, imgs...)
 		case d.MediaType == mimeHTML || d.MediaType == "application/xhtml+xml":
 			t, perr := extractHTML(d.Data)
 			if perr != nil {

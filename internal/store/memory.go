@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -250,12 +251,16 @@ func (s *Memory) CreateRunIfConversationIdle(in CreateRunInput) (*Run, error) {
 
 func (s *Memory) createRunLocked(in CreateRunInput) *Run {
 	id := "run_" + uuid.NewString()
+	createdAt := time.Now().UTC()
+	if !in.CreatedAt.IsZero() {
+		createdAt = in.CreatedAt.UTC()
+	}
 	r := &Run{
 		ID:                 id,
 		AgentID:            in.AgentID,
 		Input:              in.Input,
 		Status:             StatusRunning,
-		CreatedAt:          time.Now().UTC(),
+		CreatedAt:          createdAt,
 		ConversationID:     in.ConversationID,
 		IdentityID:         in.IdentityID,
 		ModelProfileID:     in.ModelProfileID,
@@ -396,6 +401,21 @@ func (s *Memory) UpsertSetting(key string, jsonRaw []byte) error {
 	copy(cp, jsonRaw)
 	s.settings[key] = cp
 	return nil
+}
+
+func (s *Memory) ListSettingsByPrefix(prefix string) (map[string][]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string][]byte{}
+	for k, v := range s.settings {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		out[k] = cp
+	}
+	return out, nil
 }
 
 func (s *Memory) UpdateRun(id string, status Status, output, errMsg string) error {

@@ -152,6 +152,25 @@ func TestMemoryGetModelProfileSealedAPIKeyRequiresSettingsKey(t *testing.T) {
 	}
 }
 
+func TestModelProfileSupportsPDF(t *testing.T) {
+	setTestSettingsKey(t)
+	check := func(t *testing.T, s Store) {
+		p, err := s.UpsertModelProfile(ModelProfile{
+			Name: "pdf-" + t.Name(), Provider: "openai_compatible", BaseURL: "http://x", Model: "m",
+			APIKey: "sk-abcdefgh1234", SupportsPDF: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.GetModelProfile(p.ID)
+		if err != nil || !got.SupportsPDF {
+			t.Fatalf("pdf=%v err=%v", got.SupportsPDF, err)
+		}
+	}
+	t.Run("memory", func(t *testing.T) { check(t, NewMemory()) })
+	t.Run("sqlite", func(t *testing.T) { check(t, newSQLiteProfileStore(t)) })
+}
+
 func TestSQLiteModelProfileRoundTrip(t *testing.T) {
 	setTestSettingsKey(t)
 	s := newSQLiteProfileStore(t)

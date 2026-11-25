@@ -91,6 +91,7 @@ func (s *Server) ExecuteJob(ctx context.Context, job middleware.Job) error {
 		if job.ChildReceiptJSON != "" {
 			_ = json.Unmarshal([]byte(job.ChildReceiptJSON), &receipt)
 		}
+		receipt.UserParts = s.hydrateRunUserParts(ctx, job.RunID, cur.ConversationID, cur.Input)
 		if eng, ok := s.Runner.(*run.Engine); ok {
 			if err := eng.ContinueFromChildReceipt(ctx, job.RunID, receipt); err != nil {
 				if errors.Is(err, run.ErrWaitingHuman) || errors.Is(err, run.ErrHITLAlreadySettled) {

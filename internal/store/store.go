@@ -446,6 +446,9 @@ type CreateRunInput struct {
 	GroupID            string
 	SpawnMode          string
 	Origin             string
+	// CreatedAt overrides the insert timestamp (zero = now). Used by imports
+	// and retention tests; normal API starts leave it zero.
+	CreatedAt time.Time
 }
 
 // HITL kinds. Empty / "approval" = tool approval; "login" = wait for browser login or skip.
@@ -592,7 +595,10 @@ type ModelProfile struct {
 	ThinkingLevel   string `json:"thinking_level"`
 	ThinkingDialect string `json:"thinking_dialect"`
 	SupportsVision  bool   `json:"supports_vision"`
-	ContextTokens   int    `json:"context_tokens"`
+	// SupportsPDF reports whether the profile accepts a native PDF file part.
+	// Providers without native support keep the text/embedded-image path.
+	SupportsPDF   bool `json:"supports_pdf"`
+	ContextTokens int  `json:"context_tokens"`
 	// AutoTier classifies the model for task-aware Auto routing:
 	// "light" (fast/cheap), "standard" (default), "power" (strong reasoning).
 	// Empty/unknown values normalize to "standard".
@@ -645,6 +651,10 @@ type Store interface {
 	// ListChildRuns returns depth-1 children of parentRunID (newest last).
 	ListChildRuns(parentRunID string) ([]*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
+	// DeleteTerminalRunsBefore removes terminal runs created before cutoff,
+	// together with their events, cached costs and HITL payloads. Active runs
+	// are never touched. Returns the number of runs deleted.
+	DeleteTerminalRunsBefore(cutoff time.Time, limit int) (int, error)
 	// LeaseRun atomically acquires a worker lease for a queued/running/waiting_human
 	// run whose lease is absent or expired. Returns acquired=false when another
 	// worker holds a live lease or the run is terminal.
@@ -701,6 +711,8 @@ type Store interface {
 
 	GetSetting(key string) (jsonRaw []byte, ok bool, err error)
 	UpsertSetting(key string, jsonRaw []byte) error
+	// ListSettingsByPrefix returns every setting whose key starts with prefix.
+	ListSettingsByPrefix(prefix string) (map[string][]byte, error)
 
 	GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error)
 	PutInboxDelivery(d InboxDelivery) error
@@ -771,8 +783,13 @@ type Store interface {
 	ListRunsCreatedBetween(from, to time.Time, status Status, limit int) ([]*Run, error)
 	// ListRunsCreatedBetweenPage is the paginated form used for cost rollups.
 	ListRunsCreatedBetweenPage(from, to time.Time, status Status, limit, offset int) ([]*Run, error)
+	// ListRunsCreatedBetweenForScope lists runs for one agent or one
+	// conversation (empty filter = ignored), newest first.
+	ListRunsCreatedBetweenForScope(from, to time.Time, agentID, conversationID string, limit int) ([]*Run, error)
 	// CountRunsByStatusBetween aggregates run counts without materializing rows.
 	CountRunsByStatusBetween(from, to time.Time) (map[Status]int, error)
+	// CountRunsByStatus returns all-time counts by status.
+	CountRunsByStatus() (map[Status]int, error)
 	UpsertEvalCase(c EvalCase) error
 	GetEvalCase(id string) (EvalCase, error)
 	ListEvalCases(limit int) ([]EvalCase, error)
@@ -784,6 +801,17 @@ type Store interface {
 	ListEvalScores(caseID string, limit int) ([]EvalScoreRecord, error)
 	GetRunCost(runID string) (RunCost, bool, error)
 	PutRunCost(c RunCost) error
+	// ListRunIDsMissingCostsSince returns terminal runs newer than since that
+	// have no cached cost row yet (newest-last), for the cost finalizer.
+	ListRunIDsMissingCostsSince(since time.Time, limit int) ([]string, error)
+	// ListRunIDsMissingCostsBetween is the bounded form used by day rollups.
+	ListRunIDsMissingCostsBetween(from, to time.Time, limit int) ([]string, error)
+	// SumRunCostsByScope sums cached costs for terminal runs matching one agent
+	// or one conversation in [from, to]. Empty filters are ignored.
+	SumRunCostsByScope(agentID, conversationID string, from, to time.Time) (float64, error)
+	// SumRunCostsGrouped groups cached terminal costs by "model" or "agent" in
+	// [from, to]. Unknown dimensions return an error.
+	SumRunCostsGrouped(by string, from, to time.Time) (map[string]float64, error)
 	// CostDay rollups let summaries read one row per finished day instead of
 	// walking every run in the range. Finalized is set once the day can no
 	// longer change (all of its runs are terminal).
@@ -872,9 +900,19 @@ type EvalScoreRecord struct {
 	ScoredAt time.Time
 }
 
-// EvalScoreHistoryCap is how many score records each case keeps. Older
-// records are dropped on append so the trend table cannot grow without bound.
+// EvalScoreHistoryCap is the default number of score records each case keeps.
+// Older records are dropped on append so the trend table cannot grow without
+// bound. Operators can override it with SettingKeyEvalScoreHistoryCap.
 const EvalScoreHistoryCap = 500
+
+// EvalScoreHistoryCapMin/Max bound the configurable per-case history size.
+const (
+	EvalScoreHistoryCapMin = 10
+	EvalScoreHistoryCapMax = 5000
+)
+
+// SettingKeyEvalScoreHistoryCap stores the per-case score history cap.
+const SettingKeyEvalScoreHistoryCap = "eval_score_history_cap"
 
 // RunCost is a cached per-run cost estimate used by summaries and budgets.
 type RunCost struct {

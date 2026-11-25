@@ -89,6 +89,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// the workspace below (AC-04) instead of …[truncated].
 	attachOpts := attach.DefaultOptions()
 	attachOpts.MaxTextChars = 0
+	attachOpts.AllowPDFPassthrough = true
 	decoded, err := attach.Decode(body.Attachments, attachOpts)
 	if err != nil {
 		s.writeAttachmentError(w, err)
@@ -98,6 +99,25 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeAttachmentError(w, err)
 		return
+	}
+	// Images extracted from a scanned PDF are model input only; they are not a
+	// separately uploaded image attachment, so keep them out of the 1:1
+	// decoded-attachment mapping used for media saving and bubble markers.
+	var docImages []attach.Extracted
+	var pdfFiles []attach.Extracted
+	if len(imageExts) > 0 {
+		kept := imageExts[:0]
+		for _, im := range imageExts {
+			switch {
+			case im.Kind == "pdf":
+				pdfFiles = append(pdfFiles, im)
+			case im.Document:
+				docImages = append(docImages, im)
+			default:
+				kept = append(kept, im)
+			}
+		}
+		imageExts = kept
 	}
 	// Task-aware model routing. The per-run choice is either "auto" (smart
 	// routing — the default and the only mode for channel inbound) or a
@@ -109,11 +129,13 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// text-only model on an image turn is rejected with guidance to pick Auto /
 	// a vision model instead.
 	profiles := s.routingProfiles()
-	hasImages := len(imageExts) > 0
+	hasImages := len(imageExts) > 0 || len(docImages) > 0
+	hasPDF := len(pdfFiles) > 0
 	sig := llm.TaskSignals{
 		Text:      runInput,
 		HasImages: hasImages,
-		FileCount: len(textExts),
+		HasPDF:    hasPDF,
+		FileCount: len(textExts) + len(pdfFiles),
 		HasCode:   llm.DetectCode(runInput),
 	}
 	sel, visionOK := llm.ResolveModel(llm.NormalizeProfileChoice(body.ModelProfileID), sig, profiles,
@@ -129,6 +151,11 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		// alive and tell the model the images could not be read, instead of
 		// failing a request the user cannot fix by picking another model.
 		degradeImages = true
+	}
+	if hasPDF && !sel.PDFOK {
+		writeError(w, http.StatusBadRequest, "pdf_unsupported",
+			"the selected model does not support native PDF input; choose a model with PDF support or remove the PDF")
+		return
 	}
 	modelProfileID := sel.ProfileID
 
@@ -164,6 +191,9 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if degradeImages {
 		modelRoutedEvent.Data["images_degraded"] = true
+	}
+	if hasPDF {
+		modelRoutedEvent.Data["has_pdf"] = true
 	}
 
 	// Persist attachments to the per-conversation workspace (best-effort:
@@ -301,16 +331,17 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	modelFacing := run.MaybeOffloadPaste(r.Context(), offloadWS, conv, modelInput, offloadEnabled)
 	llmText := modelFacing
 	var userParts []llm.ContentPart
-	if len(textExts) > 0 || len(imageExts) > 0 {
+	if len(textExts) > 0 || len(imageExts) > 0 || len(docImages) > 0 || len(pdfFiles) > 0 {
 		var b strings.Builder
 		b.WriteString(modelFacing)
 		for _, t := range textExts {
+			b.WriteString(attachmentTextBlock(t.Filename,
+				run.MaybeOffloadPaste(r.Context(), offloadWS, conv, t.Text, offloadEnabled)))
+		}
+		for _, f := range pdfFiles {
 			b.WriteString("\n\n【附件: ")
-			b.WriteString(t.Filename)
-			b.WriteString("】\n")
-			b.WriteString(attach.UntrustedContentNotice)
-			b.WriteString("\n")
-			b.WriteString(run.MaybeOffloadPaste(r.Context(), offloadWS, conv, t.Text, offloadEnabled))
+			b.WriteString(f.Filename)
+			b.WriteString("】\nPDF 原文已随消息发送，请直接读取 PDF 内容。")
 		}
 		if degradeImages {
 			for _, img := range imageExts {
@@ -318,10 +349,20 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				b.WriteString(img.Filename)
 				b.WriteString("】\n（图片，当前没有可用的视觉模型，未能读取图片内容；切换到支持视觉的模型后可重新发送。）")
 			}
+			if len(docImages) > 0 {
+				b.WriteString("\n\n（扫描版 PDF 已提取页面图片，当前没有可用的视觉模型，未能读取图片内容；切换到支持视觉的模型后可重新发送。）")
+			}
 		}
 		llmText = b.String()
 		userParts = append(userParts, llm.ContentPart{Type: "text", Text: llmText})
 		if !degradeImages {
+			for _, img := range docImages {
+				userParts = append(userParts, llm.ContentPart{
+					Type:       "image",
+					ImageMIME:  img.ImageMIME,
+					ImageBytes: img.ImageBytes,
+				})
+			}
 			for _, img := range imageExts {
 				userParts = append(userParts, llm.ContentPart{
 					Type:       "image",
@@ -329,6 +370,14 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 					ImageBytes: img.ImageBytes,
 				})
 			}
+		}
+		for _, f := range pdfFiles {
+			userParts = append(userParts, llm.ContentPart{
+				Type:      "file",
+				FileMIME:  f.ImageMIME,
+				FileBytes: f.ImageBytes,
+				Filename:  f.Filename,
+			})
 		}
 	} else if modelFacing != modelInput {
 		// Pure paste offload: inject stub via userParts so Input/outbound stay original.

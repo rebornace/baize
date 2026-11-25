@@ -12,6 +12,7 @@ import {
   type MetricsOverview,
 } from './metricsParse'
 import { RunOverviewCard } from './RunOverviewCard'
+import { OpsStatusCard } from './OpsStatusCard'
 
 type Tab = 'overview' | 'logs'
 
@@ -134,6 +135,8 @@ export function MetricsSettings() {
           </>
         }
       />
+
+      <OpsStatusCard />
 
       <RunOverviewCard />
 

@@ -123,9 +123,12 @@ func (e *Engine) bindingKnobs() map[string]any {
 	if e.Settings != nil {
 		k = e.Settings.Knobs()
 	}
+	maxDuration, maxTokens := e.effectiveRunBudget()
 	return map[string]any{
 		"max_messages":                   k.MaxMessages,
 		"max_steps":                      k.MaxSteps,
+		"max_duration_sec":               int(maxDuration / time.Second),
+		"max_total_tokens":               maxTokens,
 		"tool_timeout_sec":               int(k.ToolTimeout / time.Second),
 		"compaction_enabled":             k.CompactionEnabled,
 		"compact_threshold":              k.CompactThreshold,

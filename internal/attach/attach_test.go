@@ -10,6 +10,7 @@ import (
 	"hash/crc32"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -80,8 +81,6 @@ func makePng(w, h int) []byte {
 	return buf.Bytes()
 }
 
-// buildPDF builds a minimal valid single-page PDF whose text is `text`.
-// If text is "", the page content stream is empty (no text operators).
 func buildPDF(text string) []byte {
 	var b bytes.Buffer
 	b.WriteString("%PDF-1.4\n")
@@ -99,6 +98,37 @@ func buildPDF(text string) []byte {
 	}
 	writeObj(4, fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream))
 	writeObj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+	xrefStart := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n", len(offsets))
+	fmt.Fprintf(&b, "%010d 65535 f \r\n", 0)
+	for _, off := range offsets[1:] {
+		fmt.Fprintf(&b, "%010d 00000 n \r\n", off)
+	}
+	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF", len(offsets), xrefStart)
+	return b.Bytes()
+}
+
+// buildScannedPDF embeds one JPEG page image and no text operators, matching
+// the common scanned-PDF shape.
+func buildScannedPDF() []byte {
+	var jpg bytes.Buffer
+	_ = jpeg.Encode(&jpg, image.NewRGBA(image.Rect(0, 0, 2, 2)), &jpeg.Options{Quality: 80})
+	var b bytes.Buffer
+	b.WriteString("%PDF-1.4\n")
+	offsets := []int{0}
+	writeObj := func(n int, content string) {
+		offsets = append(offsets, b.Len())
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", n, content)
+	}
+	writeObj(1, "<< /Type /Catalog /Pages 2 0 R >>")
+	writeObj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+	writeObj(3, "<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im0 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 4 0 R >>")
+	stream := "q 612 0 0 792 0 0 cm /Im0 Do Q"
+	writeObj(4, fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream))
+	offsets = append(offsets, b.Len())
+	fmt.Fprintf(&b, "5 0 obj\n<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\nstream\n", jpg.Len())
+	b.Write(jpg.Bytes())
+	b.WriteString("\nendstream\nendobj\n")
 	xrefStart := b.Len()
 	fmt.Fprintf(&b, "xref\n0 %d\n", len(offsets))
 	fmt.Fprintf(&b, "%010d 65535 f \r\n", 0)
@@ -234,6 +264,69 @@ func TestProcessPDFEmpty(t *testing.T) {
 	}
 	if !errors.Is(err, attach.ErrEmptyPDFText) {
 		t.Fatalf("err=%v, want ErrEmptyPDFText", err)
+	}
+}
+
+func TestProcessPDFPassthrough(t *testing.T) {
+	opts := attach.DefaultOptions()
+	opts.AllowPDFPassthrough = true
+	pdf := buildPDF("")
+	texts, images, err := attach.Process([]attach.AttachmentIn{{
+		Filename: "scan.pdf", MediaType: mimePDF, ContentB64: b64(pdf),
+	}}, opts)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(texts) != 0 || len(images) != 1 {
+		t.Fatalf("texts=%d images=%d", len(texts), len(images))
+	}
+	im := images[0]
+	if im.Kind != "pdf" || im.ImageMIME != "application/pdf" || len(im.ImageBytes) != len(pdf) {
+		t.Fatalf("pdf part=%+v", im)
+	}
+}
+
+func TestProcessScannedPDFExtractsPageImages(t *testing.T) {
+	texts, images, err := attach.Process([]attach.AttachmentIn{{
+		Filename:   "scan.pdf",
+		MediaType:  mimePDF,
+		ContentB64: b64(buildScannedPDF()),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(texts) != 1 || !strings.Contains(texts[0].Text, "扫描版 PDF") {
+		t.Fatalf("texts=%+v", texts)
+	}
+	if len(images) != 1 {
+		t.Fatalf("images=%d, want 1", len(images))
+	}
+	if !images[0].Document || images[0].ImageMIME != "image/jpeg" || len(images[0].ImageBytes) == 0 {
+		t.Fatalf("image=%+v", images[0])
+	}
+}
+
+func TestProcessDocxEmbeddedImages(t *testing.T) {
+	buf := &bytes.Buffer{}
+	w := zip.NewWriter(buf)
+	add := func(name string, data []byte) {
+		f, _ := w.Create(name)
+		_, _ = f.Write(data)
+	}
+	add("word/document.xml", []byte(docxBody("")))
+	add("word/media/image1.png", makePng(4, 4))
+	_ = w.Close()
+	texts, images, err := attach.Process([]attach.AttachmentIn{{
+		Filename: "scan.docx", MediaType: mimeDocx, ContentB64: b64(buf.Bytes()),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 1 || !strings.Contains(texts[0].Text, "内嵌图片") {
+		t.Fatalf("texts=%+v", texts)
+	}
+	if len(images) != 1 || !images[0].Document || images[0].ImageMIME != "image/png" {
+		t.Fatalf("images=%+v", images)
 	}
 }
 

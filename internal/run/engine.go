@@ -35,10 +35,13 @@ const (
 	EventLLMMessage       = "llm.message"
 	EventLLMUsage         = "llm.usage"
 	EventLLMError         = "llm.error"
-	EventHITLWaiting      = "hitl.waiting"
-	EventHITLResumed      = "hitl.resumed"
-	EventHITLRejected     = "hitl.rejected"
-	EventRunCancelled     = "run.cancelled"
+	// EventRunBudgetExceeded records that a run hit its token or wall-clock
+	// budget and is entering the single tools-disabled grace turn.
+	EventRunBudgetExceeded = "run.budget_exceeded"
+	EventHITLWaiting       = "hitl.waiting"
+	EventHITLResumed       = "hitl.resumed"
+	EventHITLRejected      = "hitl.rejected"
+	EventRunCancelled      = "run.cancelled"
 	// EventContextCompacted records a rolling-summary compaction before a run.
 	EventContextCompacted = "context.compacted"
 	EventWorkflowPrefix   = "workflow."
@@ -87,6 +90,13 @@ type Engine struct {
 	LLM      llm.Provider
 	Tools    *tool.Registry
 	MaxSteps int // default 16
+	// MaxDuration bounds one active run segment (tool loop wall clock). Human
+	// waits (HITL approval / child receipts) are not part of the next segment.
+	// 0 disables it.
+	MaxDuration time.Duration
+	// MaxTotalTokens bounds the total reported tokens for the whole run,
+	// including earlier resume segments. 0 disables it.
+	MaxTotalTokens int
 	// ToolTimeout bounds a single Tools.Invoke (default 60s).
 	ToolTimeout time.Duration
 	// ParallelToolLimit caps concurrent safe tool invokes in one LLM turn
@@ -779,6 +789,11 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	// Read once at loop start so the step bound is stable for the whole run
 	// even if an operator hot-patches knobs mid-run.
 	maxSteps := e.effectiveMaxStepsForRun(runID)
+	maxDuration, maxTokens := e.effectiveRunBudget()
+	budgetStart := time.Now()
+	budgetDeadline := runBudgetDeadline(maxDuration)
+	tokensUsed := e.existingRunTokens(runID, maxTokens)
+	budgetReason := ""
 	scheduled := false
 	convID := ""
 	isChild := false
@@ -796,6 +811,11 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		}
 		if e.isCancelled(runID) {
 			return context.Canceled
+		}
+		if reason := e.runBudgetReason(budgetDeadline, tokensUsed, maxDuration, maxTokens); reason != "" {
+			budgetReason = reason
+			e.emitRunBudgetExceeded(runID, reason, tokensUsed, time.Since(budgetStart))
+			break
 		}
 		if !isChild {
 			if paused, note := e.goalBudgetExceeded(convID); paused {
@@ -903,6 +923,7 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		if msg.Usage.TotalTokens > 0 && !isChild {
 			e.addGoalTokens(convID, msg.Usage.TotalTokens)
 		}
+		tokensUsed += msg.Usage.TotalTokens
 		if strings.TrimSpace(msg.Thinking) != "" || msg.ThinkingRedacted {
 			_ = e.Store.AppendEvent(runID, store.Event{
 				Type: EventLLMThinking,
@@ -947,7 +968,12 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 			}
 			if loginPaused {
 				connID := e.connectorIDForTool(pauseTool)
+				waitStart := time.Now()
 				waitErr := e.awaitLoginDecision(ctx, runID, pauseTool, connID)
+				if !budgetDeadline.IsZero() {
+					// Human wait must not consume the active-run wall clock.
+					budgetDeadline = budgetDeadline.Add(time.Since(waitStart))
+				}
 				switch {
 				case waitErr == nil,
 					errors.Is(waitErr, ErrLoginResumedContinue),
@@ -1028,7 +1054,11 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	if st := e.getRunSkillState(runID); st != nil {
 		locale = st.locale
 	}
-	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: budgetGraceHint(locale, maxSteps)})
+	hint := budgetGraceHint(locale, maxSteps)
+	if budgetReason != "" {
+		hint = budgetLimitHint(locale, budgetReason)
+	}
+	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: hint})
 	graceCtx := ctx
 	if rec, err := e.Store.GetRun(runID); err == nil && rec != nil {
 		if rec.ModelProfileID != "" {
@@ -1047,6 +1077,9 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 	}
 	if graceErr == nil && strings.TrimSpace(graceMsg.Content) != "" && len(graceMsg.ToolCalls) == 0 {
 		msgData := map[string]any{"content": graceMsg.Content, "budget_grace": true}
+		if budgetReason != "" {
+			msgData["budget_reason"] = budgetReason
+		}
 		if graceMsg.Usage.TotalTokens > 0 {
 			for k, v := range usageData(maxSteps, graceMsg.Usage, llm.ModelProfileIDFromContext(graceCtx)) {
 				msgData[k] = v
@@ -1073,6 +1106,9 @@ func (e *Engine) runLoop(ctx context.Context, runID string, messages []llm.Messa
 		return nil
 	}
 	errMsg := fmt.Sprintf("max steps exceeded (%d)", maxSteps)
+	if budgetReason != "" {
+		errMsg = "run budget exceeded: " + budgetReason
+	}
 	if graceErr != nil {
 		errMsg = errMsg + ": grace: " + graceErr.Error()
 	}

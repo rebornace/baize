@@ -26,6 +26,8 @@ func runtimeBaseline(cfg config.Config, operatorToken, adminToken string, operat
 		Knobs: runtimecfg.Knobs{
 			MaxMessages:          cfg.Conversation.MaxMessages,
 			MaxSteps:             cfg.Run.MaxSteps,
+			MaxDurationSec:       cfg.Run.MaxDurationSec,
+			MaxTotalTokens:       cfg.Run.MaxTotalTokens,
 			ToolTimeout:          time.Duration(cfg.Run.ToolTimeoutSec) * time.Second,
 			CompactionEnabled:    cfg.CompactEnabled(),
 			CompactThreshold:     cfg.Conversation.CompactThreshold,

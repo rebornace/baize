@@ -20,6 +20,8 @@ const AutoProfileID = "auto"
 type RoutingProfile struct {
 	ID             string
 	SupportsVision bool
+	// SupportsPDF reports whether the profile accepts native PDF file parts.
+	SupportsPDF bool
 	// Tier is one of store.AutoTier*; normalize via store.NormalizeAutoTier.
 	Tier string
 }
@@ -45,6 +47,9 @@ type ProfileSelection struct {
 	// creation. False when the point was skipped or the advisor returned a
 	// usable tier.
 	RouteAdvisorDegraded bool
+	// PDFOK reports whether the selected profile accepts native PDF parts.
+	// Only meaningful when the turn needs PDF passthrough.
+	PDFOK bool
 }
 
 // TaskSignals are the deterministic, per-turn inputs used to judge task
@@ -55,6 +60,8 @@ type TaskSignals struct {
 	Text string
 	// HasImages reports the turn actually carries image content.
 	HasImages bool
+	// HasPDF reports the turn needs native PDF passthrough (no text/images).
+	HasPDF bool
 	// FileCount is the number of non-image attachments (docx/pdf/code/…).
 	FileCount int
 	// HasCode reports a fenced code block / code-like payload in the text.
@@ -182,10 +189,13 @@ func tierFallbacks(tier string) []string {
 // pickByTier selects the first profile matching the desired tier (with
 // fallback), optionally restricted to vision-capable models. Profiles are
 // assumed already ordered by creation time (stable tiebreak).
-func pickByTier(profiles []RoutingProfile, tier string, requireVision bool) (id string, matched bool) {
+func pickByTier(profiles []RoutingProfile, tier string, requireVision, requirePDF bool) (id string, matched bool) {
 	for _, want := range tierFallbacks(tier) {
 		for _, p := range profiles {
 			if requireVision && !p.SupportsVision {
+				continue
+			}
+			if requirePDF && !p.SupportsPDF {
 				continue
 			}
 			if store.NormalizeAutoTier(p.Tier) == want {
@@ -220,9 +230,10 @@ func ResolveModel(choice string, sig TaskSignals, profiles []RoutingProfile, opt
 		}
 	}
 	if choice != "" && choice != AutoProfileID {
-		// Manual choice is honored exactly and never rerouted. visionOK is only
-		// meaningful on an image turn: a non-image turn is always fine.
-		ok := !sig.HasImages || profileSupportsVision(choice, profiles)
+		// Manual choice is honored exactly and never rerouted. visionOK/PDFOK
+		// report whether that specific profile can handle the turn.
+		visionOK := !sig.HasImages || profileSupportsVision(choice, profiles)
+		pdfOK := !sig.HasPDF || profileSupportsPDF(choice, profiles)
 		tier := ""
 		for _, p := range profiles {
 			if p.ID == choice {
@@ -230,7 +241,7 @@ func ResolveModel(choice string, sig TaskSignals, profiles []RoutingProfile, opt
 				break
 			}
 		}
-		return ProfileSelection{ProfileID: choice, Auto: false, Tier: tier}, ok
+		return ProfileSelection{ProfileID: choice, Auto: false, Tier: tier, PDFOK: pdfOK}, visionOK
 	}
 
 	desired := ClassifyTask(sig)
@@ -255,17 +266,20 @@ func ResolveModel(choice string, sig TaskSignals, profiles []RoutingProfile, opt
 		}
 	}
 	requireVision := sig.HasImages
-	id, _ := pickByTier(profiles, desired, requireVision)
-	if requireVision {
-		// No vision model at all: caller degrades images to a text note / warns.
+	requirePDF := sig.HasPDF
+	id, matched := pickByTier(profiles, desired, requireVision, requirePDF)
+	if requireVision || requirePDF {
+		// No suitable model: caller degrades/warns with a clear error.
 		sel.ProfileID = id
 		sel.Auto = true
 		sel.Tier = desired
-		return sel, id != ""
+		sel.PDFOK = !requirePDF || matched
+		return sel, !requireVision || id != ""
 	}
 	sel.ProfileID = id
 	sel.Auto = true
 	sel.Tier = desired
+	sel.PDFOK = !requirePDF || matched
 	return sel, true
 }
 
@@ -276,6 +290,7 @@ func RoutingProfilesFrom(list []store.ModelProfile) []RoutingProfile {
 		out = append(out, RoutingProfile{
 			ID:             p.ID,
 			SupportsVision: p.SupportsVision,
+			SupportsPDF:    p.SupportsPDF,
 			Tier:           store.NormalizeAutoTier(p.AutoTier),
 		})
 	}
@@ -286,6 +301,15 @@ func profileSupportsVision(id string, profiles []RoutingProfile) bool {
 	for _, p := range profiles {
 		if p.ID == id {
 			return p.SupportsVision
+		}
+	}
+	return false
+}
+
+func profileSupportsPDF(id string, profiles []RoutingProfile) bool {
+	for _, p := range profiles {
+		if p.ID == id {
+			return p.SupportsPDF
 		}
 	}
 	return false

@@ -84,7 +84,7 @@ func TestEvalGateRunAndThreshold(t *testing.T) {
 	}
 
 	put := httptest.NewRequest(http.MethodPut, "/v0/settings/eval/gate",
-		bytes.NewBufferString(`{"min_pass_rate":0.4}`))
+		bytes.NewBufferString(`{"min_pass_rate":0.4,"score_history_cap":120}`))
 	put.Header.Set("Authorization", "Bearer adm")
 	pr := httptest.NewRecorder()
 	h.ServeHTTP(pr, put)
@@ -101,13 +101,15 @@ func TestEvalGateRunAndThreshold(t *testing.T) {
 	gr := httptest.NewRecorder()
 	h.ServeHTTP(gr, get)
 	var state struct {
-		MinPassRate float64          `json:"min_pass_rate"`
-		Last        *eval.GateResult `json:"last"`
+		MinPassRate     float64          `json:"min_pass_rate"`
+		ScoreHistoryCap int              `json:"score_history_cap"`
+		Last            *eval.GateResult `json:"last"`
 	}
 	if err := json.Unmarshal(gr.Body.Bytes(), &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.MinPassRate != 0.4 || state.Last == nil || state.Last.Total != 2 || !state.Last.Pass {
+	if state.MinPassRate != 0.4 || state.ScoreHistoryCap != 120 || state.Last == nil ||
+		state.Last.Total != 2 || !state.Last.Pass {
 		t.Fatalf("state=%+v", state)
 	}
 
@@ -118,6 +120,15 @@ func TestEvalGateRunAndThreshold(t *testing.T) {
 	h.ServeHTTP(br, bad)
 	if br.Code != http.StatusBadRequest {
 		t.Fatalf("bad threshold=%d", br.Code)
+	}
+
+	badCap := httptest.NewRequest(http.MethodPut, "/v0/settings/eval/gate",
+		bytes.NewBufferString(`{"min_pass_rate":0.4,"score_history_cap":5}`))
+	badCap.Header.Set("Authorization", "Bearer adm")
+	cr := httptest.NewRecorder()
+	h.ServeHTTP(cr, badCap)
+	if cr.Code != http.StatusBadRequest {
+		t.Fatalf("bad cap=%d", cr.Code)
 	}
 }
 

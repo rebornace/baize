@@ -16,6 +16,8 @@ import type { RuntimeKnobs } from '../api'
 const baseKnobs: RuntimeKnobs = {
   max_messages: 40,
   max_steps: 16,
+  max_duration_sec: 0,
+  max_total_tokens: 0,
   tool_timeout_seconds: 60,
   compaction_enabled: true,
   compact_threshold: 0.8,
@@ -62,6 +64,8 @@ describe('field groups', () => {
     expect(mainKnobFields().map((f) => f.key)).toEqual([
       'max_messages',
       'max_steps',
+      'max_duration_sec',
+      'max_total_tokens',
       'tool_timeout_seconds',
     ])
     expect(compactAdvFields().map((f) => f.key)).toEqual([
@@ -84,8 +88,8 @@ describe('field groups', () => {
     ])
   })
 
-  it('allKnobFieldSpecs covers all fourteen numeric fields', () => {
-    expect(allKnobFieldSpecs()).toHaveLength(14)
+  it('allKnobFieldSpecs covers all sixteen numeric fields', () => {
+    expect(allKnobFieldSpecs()).toHaveLength(16)
   })
 })
 

@@ -33,7 +33,7 @@ func TestCostSummaryAndBudget(t *testing.T) {
 		},
 	})
 	put := httptest.NewRequest(http.MethodPut, "/v0/settings/cost-budget",
-		bytes.NewBufferString(`{"budget_usd_per_day":0.000001,"enforce":true}`))
+		bytes.NewBufferString(`{"budget_usd_per_day":0.000001,"budget_usd_per_month":0.000001,"enforce":true}`))
 	put.Header.Set("Authorization", "Bearer adm")
 	putRR := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(putRR, put)
@@ -48,19 +48,55 @@ func TestCostSummaryAndBudget(t *testing.T) {
 		t.Fatalf("summary=%d %s", getRR.Code, getRR.Body.String())
 	}
 	var body struct {
-		TodayTotal float64 `json:"today_total_usd"`
-		Budget     float64 `json:"budget_usd_per_day"`
-		Enforce    bool    `json:"budget_enforce"`
-		Over       bool    `json:"over_budget"`
+		TodayTotal    float64 `json:"today_total_usd"`
+		Budget        float64 `json:"budget_usd_per_day"`
+		Projected     float64 `json:"projected_month_usd"`
+		ProjectedOver bool    `json:"projected_over_budget"`
+		Enforce       bool    `json:"budget_enforce"`
+		Over          bool    `json:"over_budget"`
 	}
 	if err := json.Unmarshal(getRR.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.TodayTotal <= 0 || body.Budget != 0.000001 || !body.Over || !body.Enforce {
+	if body.TodayTotal <= 0 || body.Budget != 0.000001 || !body.Over || !body.Enforce ||
+		body.Projected <= 0 || !body.ProjectedOver {
 		t.Fatalf("summary=%+v", body)
 	}
 	if err := srv.requireCostBudget(); !errors.Is(err, ErrCostBudgetExceeded) {
 		t.Fatalf("requireCostBudget=%v", err)
+	}
+}
+
+func TestRollupDayPricesMissingTerminalCosts(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	profile, err := st.UpsertModelProfile(store.ModelProfile{Name: "rollup", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dayStart := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	runRec, err := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "x", ConversationID: "c1", ModelProfileID: profile.ID,
+		CreatedAt: dayStart.Add(12 * time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AppendEvent(runRec.ID, store.Event{
+		Type: run.EventLLMUsage,
+		Data: map[string]any{
+			"model_profile_id": profile.ID, "prompt_tokens": 1000, "completion_tokens": 1000, "total_tokens": 2000,
+		},
+	})
+	if err := st.UpdateRun(runRec.ID, store.StatusSucceeded, "ok", ""); err != nil {
+		t.Fatal(err)
+	}
+	total, count, final, err := srv.rollupDay(dayStart)
+	if err != nil || total <= 0 || count != 1 || !final {
+		t.Fatalf("rollup total=%v count=%d final=%v err=%v", total, count, final, err)
+	}
+	if _, ok, _ := st.GetRunCost(runRec.ID); !ok {
+		t.Fatal("missing terminal cost was not persisted")
 	}
 }
 

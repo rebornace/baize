@@ -47,6 +47,39 @@ export async function getRunOverview(days = 7): Promise<RunOverview> {
   return parseJSON<RunOverview>(res)
 }
 
+export interface OpsStatus {
+  runs: {
+    queued: number
+    running: number
+    waiting_human: number
+    active: number
+    succeeded_24h: number
+    failed_24h: number
+  }
+  webhook_configured: boolean
+  budget: {
+    day_alert: string
+    month_alert: string
+    scoped_alerts: number
+  }
+  eval_gate: {
+    last_pass: boolean | null
+    last_ran_at: string
+    total: number
+    failed: number
+  }
+  retention: {
+    attachment_days: number
+    run_days: number
+    message_days: number
+  }
+}
+
+export async function getOpsStatus(): Promise<OpsStatus> {
+  const res = await fetch('/v0/settings/ops-status', { headers: authInit() })
+  return parseJSON<OpsStatus>(res)
+}
+
 /** Fetch recent process log lines (Admin). */
 export async function getRecentLogs(limit = 200): Promise<RecentLogsResponse> {
   const res = await fetch(`/v0/settings/logs?limit=${limit}`, { headers: authInit() })

@@ -3,17 +3,20 @@ import { Button, Input } from '../../components/ui'
 import { MODELS } from '../../strings'
 import {
   getAgentCostBudgets,
+  getCostBreakdown,
   getCostSummary,
   putAgentCostBudget,
   putCostBudget,
   type AgentCostBudget,
+  type CostBreakdown,
   type CostSummary,
 } from '../../api/settings/models'
 
-type AgentDraft = { day: string; month: string }
+type AgentDraft = { day: string; month: string; warn: string; exceed: string }
 
 export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [summary, setSummary] = useState<CostSummary | null>(null)
+  const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null)
   const [budget, setBudget] = useState('0')
   const [monthBudget, setMonthBudget] = useState('0')
   const [warnRatio, setWarnRatio] = useState('80')
@@ -49,6 +52,8 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
         drafts[item.agent_id] = {
           day: String(item.budget_usd_per_day),
           month: String(item.budget_usd_per_month),
+          warn: String(Math.round(item.warning_ratio * 100)),
+          exceed: String(Math.round(item.exceeded_ratio * 100)),
         }
       }
       setAgentDrafts(drafts)
@@ -60,6 +65,9 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   useEffect(() => {
     void load()
     void loadAgents()
+    void getCostBreakdown(30)
+      .then(setBreakdown)
+      .catch(() => setBreakdown(null))
   }, [])
 
   const save = async () => {
@@ -95,10 +103,18 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   }
 
   const saveAgent = async (item: AgentCostBudget) => {
-    const draft = agentDrafts[item.agent_id] ?? { day: '0', month: '0' }
+    const draft = agentDrafts[item.agent_id] ?? { day: '0', month: '0', warn: '0', exceed: '0' }
     const d = Number.parseFloat(draft.day)
     const m = Number.parseFloat(draft.month)
-    if (!Number.isFinite(d) || d < 0 || !Number.isFinite(m) || m < 0) {
+    const w = Number.parseFloat(draft.warn)
+    const e = Number.parseFloat(draft.exceed)
+    if (
+      !Number.isFinite(d) || d < 0 ||
+      !Number.isFinite(m) || m < 0 ||
+      !Number.isFinite(w) || w < 0 || w > 500 ||
+      !Number.isFinite(e) || e < 0 || e > 500 ||
+      (w > 0 && e > 0 && w >= e)
+    ) {
       setError(MODELS.errInvalidRequest)
       return
     }
@@ -108,6 +124,8 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
         agent_id: item.agent_id,
         budget_usd_per_day: d,
         budget_usd_per_month: m,
+        warning_ratio: w / 100,
+        exceeded_ratio: e / 100,
       })
       setAgents((prev) =>
         prev ? prev.map((a) => (a.agent_id === next.agent_id ? next : a)) : prev,
@@ -117,6 +135,8 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
         [next.agent_id]: {
           day: String(next.budget_usd_per_day),
           month: String(next.budget_usd_per_month),
+          warn: String(Math.round(next.warning_ratio * 100)),
+          exceed: String(Math.round(next.exceeded_ratio * 100)),
         },
       }))
       setError(null)
@@ -159,6 +179,16 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
               <span className="settings-warn"> · {MODELS.costNearBudget}</span>
             ) : null}
           </p>
+          <p>
+            {MODELS.costProjectedMonth(
+              summary.projected_month_usd,
+              summary.projection_day,
+              summary.days_in_month,
+            )}
+            {summary.projected_over_budget ? (
+              <span className="settings-error"> · {MODELS.costProjectedOver}</span>
+            ) : null}
+          </p>
           {summary.days.some((d) => d.runs > 0) ? (
             <ul className="settings-muted">
               {summary.days.map((d) => (
@@ -170,6 +200,39 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
           ) : (
             <p className="settings-muted">{MODELS.costNoData}</p>
           )}
+          {breakdown && breakdown.total_usd > 0 ? (
+            <div className="cost-breakdown" data-testid="cost-breakdown">
+              <h3 className="settings-subheading">{MODELS.costBreakdownTitle}</h3>
+              <div className="cost-breakdown-grid">
+                <div>
+                  <span className="settings-muted">{MODELS.costByModel}</span>
+                  <ul>
+                    {breakdown.by_model.map((b) => (
+                      <li key={b.key || 'default'}>
+                        <span>{b.name || b.key || MODELS.costDefaultModel}</span>
+                        <strong>
+                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span className="settings-muted">{MODELS.costByAgent}</span>
+                  <ul>
+                    {breakdown.by_agent.map((b) => (
+                      <li key={b.key || 'default'}>
+                        <span>{b.name || b.key || MODELS.costDefaultModel}</span>
+                        <strong>
+                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {!readOnly ? (
             <div className="settings-form-actions">
               <label className="settings-muted">
@@ -236,10 +299,15 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
               <h3 className="settings-subheading">{MODELS.agentBudgetTitle}</h3>
               <p className="settings-muted">{MODELS.agentBudgetHint}</p>
               {agents.map((item) => {
-                const draft = agentDrafts[item.agent_id] ?? { day: '0', month: '0' }
+                const draft = agentDrafts[item.agent_id] ?? { day: '0', month: '0', warn: '0', exceed: '0' }
                 return (
                   <div className="agent-budget-row" key={item.agent_id}>
                     <span className="agent-budget-id">{item.agent_id}</span>
+                    {item.budget_usd_per_day > 0 || item.budget_usd_per_month > 0 ? (
+                      <span className="settings-muted agent-budget-spent">
+                        {MODELS.agentBudgetSpent(item.spent_usd_per_day, item.spent_usd_per_month)}
+                      </span>
+                    ) : null}
                     <label className="settings-muted">
                       {MODELS.agentBudgetDayLabel}
                       <Input
@@ -266,6 +334,38 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                           setAgentDrafts((prev) => ({
                             ...prev,
                             [item.agent_id]: { ...draft, month: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetWarnLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        max={500}
+                        value={draft.warn}
+                        disabled={agentBusy === item.agent_id}
+                        onChange={(e) =>
+                          setAgentDrafts((prev) => ({
+                            ...prev,
+                            [item.agent_id]: { ...draft, warn: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetExceedLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        max={500}
+                        value={draft.exceed}
+                        disabled={agentBusy === item.agent_id}
+                        onChange={(e) =>
+                          setAgentDrafts((prev) => ({
+                            ...prev,
+                            [item.agent_id]: { ...draft, exceed: e.target.value },
                           }))
                         }
                       />

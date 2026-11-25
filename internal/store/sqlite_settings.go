@@ -25,3 +25,29 @@ func (s *SQLStore) UpsertSetting(key string, jsonRaw []byte) error {
 	)
 	return err
 }
+
+func (s *SQLStore) ListSettingsByPrefix(prefix string) (map[string][]byte, error) {
+	rows, err := s.query(
+		`SELECT key, value_json FROM settings WHERE substr(key, 1, length(?)) = ?`,
+		prefix, prefix,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]byte{}
+	for rows.Next() {
+		var (
+			key   string
+			value sql.NullString
+		)
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		if !value.Valid || value.String == "" {
+			continue
+		}
+		out[key] = []byte(value.String)
+	}
+	return out, rows.Err()
+}

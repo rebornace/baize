@@ -43,6 +43,7 @@ export interface UIConfig {
   agent_id: string
   gate_enabled: boolean
   supports_vision: boolean
+  supports_pdf?: boolean
 }
 
 export async function getUIConfig(): Promise<UIConfig> {

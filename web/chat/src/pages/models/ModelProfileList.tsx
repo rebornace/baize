@@ -1,7 +1,7 @@
 import type { ModelProfile } from '../../api'
 import { Badge, Button, Card } from '../../components/ui'
 import { tierLabel } from '../../modelSelect'
-import { MODELS, VISION_LABEL } from '../../strings'
+import { MODELS, PDF_LABEL, VISION_LABEL } from '../../strings'
 import { credentialHint, resolveThinkingLevel } from './modelSettingsHelpers'
 
 export interface ModelProfileListProps {
@@ -37,6 +37,7 @@ export function ModelProfileList({
               <div className="accounts-actions">
                 <Badge tone="info">{tierLabel(p.auto_tier)}</Badge>
                 {p.supports_vision && <Badge tone="info">{VISION_LABEL}</Badge>}
+                {p.supports_pdf && <Badge tone="info">{PDF_LABEL}</Badge>}
               </div>
             }
           >

@@ -548,6 +548,12 @@ type openAIContentPart struct {
 	Type     string          `json:"type"`
 	Text     string          `json:"text,omitempty"`
 	ImageURL *openAIImageURL `json:"image_url,omitempty"`
+	File     *openAIFile     `json:"file,omitempty"`
+}
+
+type openAIFile struct {
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"`
 }
 
 type openAIImageURL struct {
@@ -652,6 +658,21 @@ func toOpenAIContentParts(parts []ContentPart) []openAIContentPart {
 			out = append(out, openAIContentPart{
 				Type:     "image_url",
 				ImageURL: &openAIImageURL{URL: url},
+			})
+		case "file":
+			if len(p.FileBytes) == 0 {
+				continue
+			}
+			mime := p.FileMIME
+			if mime == "" {
+				mime = "application/pdf"
+			}
+			out = append(out, openAIContentPart{
+				Type: "file",
+				File: &openAIFile{
+					Filename: p.Filename,
+					FileData: "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(p.FileBytes),
+				},
 			})
 		}
 	}

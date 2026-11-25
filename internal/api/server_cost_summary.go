@@ -74,25 +74,35 @@ func (s *Server) handleGetCostSummary(w http.ResponseWriter, r *http.Request) {
 		monthTotal += v
 	}
 	monthTotal = round6(monthTotal)
+	daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	projected := 0.0
+	if now.Day() > 0 {
+		projected = monthTotal / float64(now.Day()) * float64(daysInMonth)
+	}
+	projected = round6(projected)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"currency":             "USD",
-		"days":                 outDays,
-		"today_total_usd":      todayTotal,
-		"month_total_usd":      monthTotal,
-		"budget_usd_per_day":   budget,
-		"budget_usd_per_month": monthBudget,
-		"warning_ratio":        warnRatio,
-		"exceeded_ratio":       exceededRatio,
-		"budget_enforce":       s.costBudgetEnforced(),
-		"over_budget":          budget > 0 && todayTotal > budget,
-		"month_over_budget":    monthBudget > 0 && monthTotal > monthBudget,
+		"currency":              "USD",
+		"days":                  outDays,
+		"today_total_usd":       todayTotal,
+		"month_total_usd":       monthTotal,
+		"projected_month_usd":   projected,
+		"projection_day":        now.Day(),
+		"days_in_month":         daysInMonth,
+		"projected_over_budget": monthBudget > 0 && projected > monthBudget,
+		"budget_usd_per_day":    budget,
+		"budget_usd_per_month":  monthBudget,
+		"warning_ratio":         warnRatio,
+		"exceeded_ratio":        exceededRatio,
+		"budget_enforce":        s.costBudgetEnforced(),
+		"over_budget":           budget > 0 && todayTotal > budget,
+		"month_over_budget":     monthBudget > 0 && monthTotal > monthBudget,
 	})
 }
 
-// costRollupPageSize bounds one page of a day rollup. Large days are read in
-// pages so the total is not silently truncated at 500 runs.
-const costRollupPageSize = 500
-const costRollupMaxRuns = 50_000
+// costRollupPartialScan bounds how many recent in-flight runs a day rollup
+// reads to include partial usage. Terminal costs are summed in SQL.
+const costRollupPartialScan = 500
+const costRollupMissingLimit = 1000
 
 // costByDay returns per-day cost totals and run counts for [start, now].
 // Finished days come from the cost_days rollup in one query; today (and days
@@ -133,35 +143,50 @@ func (s *Server) costByDay(start, now time.Time) (map[string]float64, map[string
 	return byDay, runCount, nil
 }
 
-// rollupDay sums one UTC day's run costs. A day is final only when every run
-// created that day is terminal and the day is entirely in the past.
+// rollupDay sums one UTC day's run costs. Terminal costs come from SQL; missing
+// terminal cost rows and recent in-flight runs are computed on the fly. A day
+// is final only when every run created that day is terminal and the day is
+// entirely in the past.
 func (s *Server) rollupDay(dayStart time.Time) (float64, int, bool, error) {
 	dayStart = dayStart.UTC().Truncate(24 * time.Hour)
 	dayEnd := dayStart.AddDate(0, 0, 1).Add(-time.Nanosecond)
-	var total float64
+	total, err := s.Store.SumRunCostsByScope("", "", dayStart, dayEnd)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	counts, err := s.Store.CountRunsByStatusBetween(dayStart, dayEnd)
+	if err != nil {
+		return 0, 0, false, err
+	}
 	count := 0
 	pending := false
-	offset := 0
-	for {
-		runs, err := s.Store.ListRunsCreatedBetweenPage(dayStart, dayEnd, "", costRollupPageSize, offset)
-		if err != nil {
-			return 0, 0, false, err
-		}
-		for _, runRec := range runs {
-			total += s.runCostCached(runRec)
-			if !isTerminalRunStatus(runRec.Status) {
-				pending = true
-			}
-		}
-		count += len(runs)
-		if len(runs) < costRollupPageSize {
-			break
-		}
-		offset += len(runs)
-		if count >= costRollupMaxRuns {
-			// Huge day: keep the number conservative and never finalize it.
+	for status, n := range counts {
+		count += n
+		if !isTerminalRunStatus(status) {
 			pending = true
-			break
+		}
+	}
+	missing, err := s.Store.ListRunIDsMissingCostsBetween(dayStart, dayEnd, costRollupMissingLimit)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	for _, id := range missing {
+		rec, gerr := s.Store.GetRun(id)
+		if gerr != nil || rec == nil {
+			continue
+		}
+		total += s.runCostCached(rec)
+	}
+	if len(missing) >= costRollupMissingLimit {
+		pending = true
+	}
+	runs, err := s.Store.ListRunsCreatedBetweenForScope(dayStart, dayEnd, "", "", costRollupPartialScan)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	for _, rec := range runs {
+		if !isTerminalRunStatus(rec.Status) {
+			total += s.runCostCached(rec)
 		}
 	}
 	final := !pending && dayEnd.Before(time.Now().UTC())

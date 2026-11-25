@@ -43,6 +43,7 @@ export interface ProfileFormState {
   apiKey: string
   apiKeyEnv: string
   supportsVision: boolean
+  supportsPDF: boolean
   thinkingLevel: ThinkingLevel
   thinkingDialect: ThinkingDialect
   contextTokens: number
@@ -56,6 +57,7 @@ export const EMPTY_PROFILE_FORM: ProfileFormState = {
   apiKey: '',
   apiKeyEnv: '',
   supportsVision: false,
+  supportsPDF: false,
   thinkingLevel: 'medium',
   thinkingDialect: 'auto',
   contextTokens: 128000,
@@ -69,6 +71,7 @@ export interface ModelProfilePayload {
   api_key?: string
   api_key_env?: string
   supports_vision?: boolean
+  supports_pdf?: boolean
   disable_thinking?: boolean
   thinking_level?: ThinkingLevel
   thinking_dialect?: ThinkingDialect
@@ -91,6 +94,7 @@ export function profileToForm(p: ModelProfile): ProfileFormState {
     apiKey: '',
     apiKeyEnv: p.api_key_env ?? '',
     supportsVision: p.supports_vision,
+    supportsPDF: p.supports_pdf === true,
     thinkingLevel: resolveThinkingLevel(p),
     thinkingDialect: p.thinking_dialect ?? 'auto',
     contextTokens: p.context_tokens > 0 ? p.context_tokens : 128000,
@@ -121,6 +125,7 @@ export function buildCreatePayload(form: ProfileFormState):
       ...(apiKey ? { api_key: apiKey } : {}),
       ...(apiKeyEnv ? { api_key_env: apiKeyEnv } : {}),
       supports_vision: form.supportsVision,
+      supports_pdf: form.supportsPDF,
       thinking_level: form.thinkingLevel,
       thinking_dialect: form.thinkingDialect,
       context_tokens: form.contextTokens > 0 ? form.contextTokens : 128000,
@@ -149,6 +154,9 @@ export function buildPatchPayload(
   if (apiKeyEnv !== (original.api_key_env ?? '')) payload.api_key_env = apiKeyEnv
   if (form.supportsVision !== original.supports_vision) {
     payload.supports_vision = form.supportsVision
+  }
+  if (form.supportsPDF !== (original.supports_pdf === true)) {
+    payload.supports_pdf = form.supportsPDF
   }
   if (form.thinkingLevel !== resolveThinkingLevel(original)) {
     payload.thinking_level = form.thinkingLevel

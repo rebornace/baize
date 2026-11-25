@@ -18,6 +18,7 @@ export interface ModelProfile {
   thinking_level: ThinkingLevel
   thinking_dialect: ThinkingDialect
   supports_vision: boolean
+  supports_pdf?: boolean
   context_tokens: number
   /** Auto-routing capability tier: "light" | "standard" | "power". */
   auto_tier: ModelTier
@@ -41,6 +42,7 @@ export type ModelProfileInput = Partial<{
   thinking_level: ThinkingLevel
   thinking_dialect: ThinkingDialect
   supports_vision: boolean
+  supports_pdf?: boolean
   context_tokens: number
   auto_tier: ModelTier | 'auto'
 }>
@@ -190,6 +192,10 @@ export interface CostSummary {
   days: CostDay[]
   today_total_usd: number
   month_total_usd: number
+  projected_month_usd: number
+  projection_day: number
+  days_in_month: number
+  projected_over_budget: boolean
   budget_usd_per_day: number
   budget_usd_per_month: number
   warning_ratio: number
@@ -244,10 +250,36 @@ export async function putCostBudget(
   await parseJSON(res)
 }
 
-export interface AgentCostBudget {
+export interface CostBucket {
+  key: string
+  name: string
+  cost_usd: number
+  ratio: number
+}
+
+export interface CostBreakdown {
+  days: number
+  total_usd: number
+  by_model: CostBucket[]
+  by_agent: CostBucket[]
+}
+
+export async function getCostBreakdown(days = 30): Promise<CostBreakdown> {
+  const res = await fetch(`/v0/settings/cost-breakdown?days=${days}`, { headers: authInit() })
+  return parseJSON(res)
+}
+
+export interface AgentCostBudgetInput {
   agent_id: string
   budget_usd_per_day: number
   budget_usd_per_month: number
+  warning_ratio: number
+  exceeded_ratio: number
+}
+
+export interface AgentCostBudget extends AgentCostBudgetInput {
+  spent_usd_per_day: number
+  spent_usd_per_month: number
 }
 
 export async function getAgentCostBudgets(): Promise<{ items: AgentCostBudget[] }> {
@@ -255,7 +287,7 @@ export async function getAgentCostBudgets(): Promise<{ items: AgentCostBudget[] 
   return parseJSON(res)
 }
 
-export async function putAgentCostBudget(body: AgentCostBudget): Promise<AgentCostBudget> {
+export async function putAgentCostBudget(body: AgentCostBudgetInput): Promise<AgentCostBudget> {
   const res = await fetch('/v0/settings/agent-cost-budgets', {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),

@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS model_profiles (
   thinking_level TEXT NOT NULL DEFAULT 'medium',
   thinking_dialect TEXT NOT NULL DEFAULT 'auto',
   supports_vision BOOLEAN,
+  supports_pdf BOOLEAN,
   context_tokens INTEGER NOT NULL DEFAULT 128000,
   auto_tier TEXT NOT NULL DEFAULT 'standard',
   fallback_profile_ids TEXT NOT NULL DEFAULT '[]',
@@ -384,6 +385,10 @@ func OpenPostgres(dsn string) (*SQLStore, error) {
 			_ = db.Close()
 			return nil, fmt.Errorf("migrate runs scoped child columns: %w", err)
 		}
+	}
+	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS supports_pdf BOOLEAN`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate model_profiles supports_pdf: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS context_tokens INTEGER NOT NULL DEFAULT 128000`); err != nil {
 		_ = db.Close()

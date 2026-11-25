@@ -10,6 +10,8 @@ import (
 
 const conversationBudgetDayPrefix = "cost_budget_conv_day:"
 const conversationBudgetMonthPrefix = "cost_budget_conv_month:"
+const conversationBudgetWarnPrefix = "cost_budget_conv_warn:"
+const conversationBudgetExceedPrefix = "cost_budget_conv_exceed:"
 const conversationCostCacheTTL = 30 * time.Second
 
 type conversationCostEntry struct {
@@ -46,14 +48,19 @@ func (s *Server) conversationBudgets(convID string) (day, month float64) {
 	return s.conversationBudget(convID, false), s.conversationBudget(convID, true)
 }
 
+func (s *Server) conversationBudgetThresholds(convID string) (warn, exceed float64) {
+	return s.scopeRatio(conversationBudgetWarnPrefix + convID),
+		s.scopeRatio(conversationBudgetExceedPrefix + convID)
+}
+
 func clearConversationCostCache() {
 	conversationCostCache.mu.Lock()
 	conversationCostCache.entries = nil
 	conversationCostCache.mu.Unlock()
 }
 
-// conversationCostTotals sums this conversation's cached run costs for today
-// and this month. It scans at most 500 runs in the month (documented limit).
+// conversationCostTotals sums terminal costs via SQL and adds recent in-flight
+// usage. Terminal costs are not capped; only the in-flight partial scan is.
 func (s *Server) conversationCostTotals(convID string, now time.Time) (float64, float64, error) {
 	if convID == "" || s.Store == nil {
 		return 0, 0, nil
@@ -67,13 +74,21 @@ func (s *Server) conversationCostTotals(convID string, now time.Time) (float64, 
 
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	runs, err := s.Store.ListRunsCreatedBetween(monthStart, now, "", 500)
+	month, err := s.Store.SumRunCostsByScope("", convID, monthStart, now)
 	if err != nil {
 		return 0, 0, err
 	}
-	var day, month float64
+	day, err := s.Store.SumRunCostsByScope("", convID, dayStart, now)
+	if err != nil {
+		return 0, 0, err
+	}
+	// In-flight runs have no cached cost row yet; add their partial usage.
+	runs, err := s.Store.ListRunsCreatedBetweenForScope(monthStart, now, "", convID, scopePartialScanLimit)
+	if err != nil {
+		return 0, 0, err
+	}
 	for _, rec := range runs {
-		if rec.ConversationID != convID {
+		if rec.ConversationID != convID || isTerminalRunStatus(rec.Status) {
 			continue
 		}
 		cost := s.runCostCached(rec)
@@ -118,6 +133,15 @@ func (s *Server) requireCostBudgetFor(agentID, convID string) error {
 	return nil
 }
 
+type conversationBudgetJSON struct {
+	BudgetDay     float64 `json:"budget_usd_per_day"`
+	BudgetMonth   float64 `json:"budget_usd_per_month"`
+	WarningRatio  float64 `json:"warning_ratio"`
+	ExceededRatio float64 `json:"exceeded_ratio"`
+	SpentDay      float64 `json:"spent_usd_per_day"`
+	SpentMonth    float64 `json:"spent_usd_per_month"`
+}
+
 func (s *Server) handleGetConversationCostBudget(w http.ResponseWriter, r *http.Request) {
 	convID := r.PathValue("id")
 	if convID == "" {
@@ -133,10 +157,17 @@ func (s *Server) handleGetConversationCostBudget(w http.ResponseWriter, r *http.
 		return
 	}
 	day, month := s.conversationBudgets(convID)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"budget_usd_per_day":   day,
-		"budget_usd_per_month": month,
-	})
+	warn, exceed := s.conversationBudgetThresholds(convID)
+	out := conversationBudgetJSON{
+		BudgetDay: day, BudgetMonth: month,
+		WarningRatio: warn, ExceededRatio: exceed,
+	}
+	if day > 0 || month > 0 {
+		if spentDay, spentMonth, err := s.conversationCostTotals(convID, time.Now().UTC()); err == nil {
+			out.SpentDay, out.SpentMonth = spentDay, spentMonth
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handlePutConversationCostBudget(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +187,8 @@ func (s *Server) handlePutConversationCostBudget(w http.ResponseWriter, r *http.
 	var body struct {
 		BudgetUSDPerDay   float64 `json:"budget_usd_per_day"`
 		BudgetUSDPerMonth float64 `json:"budget_usd_per_month"`
+		WarningRatio      float64 `json:"warning_ratio"`
+		ExceededRatio     float64 `json:"exceeded_ratio"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
@@ -166,8 +199,15 @@ func (s *Server) handlePutConversationCostBudget(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "invalid_request", "budgets must be between 0 and 1000000")
 		return
 	}
+	if !s.scopeThresholdsValid(body.WarningRatio, body.ExceededRatio) {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"thresholds must be 0 (inherit) or in (0,5], with warning below exceeded")
+		return
+	}
 	dayRaw, _ := json.Marshal(body.BudgetUSDPerDay)
 	monthRaw, _ := json.Marshal(body.BudgetUSDPerMonth)
+	warnRaw, _ := json.Marshal(body.WarningRatio)
+	exceedRaw, _ := json.Marshal(body.ExceededRatio)
 	if err := s.Store.UpsertSetting(conversationBudgetDayPrefix+convID, dayRaw); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -176,9 +216,24 @@ func (s *Server) handlePutConversationCostBudget(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := s.Store.UpsertSetting(conversationBudgetWarnPrefix+convID, warnRaw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := s.Store.UpsertSetting(conversationBudgetExceedPrefix+convID, exceedRaw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	clearConversationCostCache()
-	writeJSON(w, http.StatusOK, map[string]any{
-		"budget_usd_per_day":   body.BudgetUSDPerDay,
-		"budget_usd_per_month": body.BudgetUSDPerMonth,
-	})
+	s.resetScopeAlertState("conversation:" + convID)
+	out := conversationBudgetJSON{
+		BudgetDay: body.BudgetUSDPerDay, BudgetMonth: body.BudgetUSDPerMonth,
+		WarningRatio: body.WarningRatio, ExceededRatio: body.ExceededRatio,
+	}
+	if out.BudgetDay > 0 || out.BudgetMonth > 0 {
+		if spentDay, spentMonth, err := s.conversationCostTotals(convID, time.Now().UTC()); err == nil {
+			out.SpentDay, out.SpentMonth = spentDay, spentMonth
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }

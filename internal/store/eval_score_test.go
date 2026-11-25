@@ -81,6 +81,9 @@ func TestEvalScoreHistoryPostgres(t *testing.T) {
 
 func evalScorePruneCase(t *testing.T, st Store) {
 	t.Helper()
+	if err := st.UpsertSetting(SettingKeyEvalScoreHistoryCap, []byte("500")); err != nil {
+		t.Fatal(err)
+	}
 	id := "ec_" + uuid.NewString()
 	now := time.Now().UTC()
 	if err := st.UpsertEvalCase(EvalCase{
@@ -148,4 +151,56 @@ func TestEvalScorePrunePostgres(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	evalScorePruneCase(t, st)
+}
+
+func evalScoreCapCase(t *testing.T, st Store) {
+	t.Helper()
+	t.Cleanup(func() { _ = st.UpsertSetting(SettingKeyEvalScoreHistoryCap, []byte("500")) })
+	if err := st.UpsertSetting(SettingKeyEvalScoreHistoryCap, []byte("10")); err != nil {
+		t.Fatal(err)
+	}
+	caseID := "cap-case-" + fmt.Sprintf("%d", time.Now().UnixNano())
+	base := time.Now().UTC()
+	for i := 0; i < 12; i++ {
+		if err := st.AppendEvalScore(EvalScoreRecord{
+			CaseID: caseID, Pass: true, Notes: fmt.Sprintf("n%d", i),
+			ScoredAt: base.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recs, err := st.ListEvalScores(caseID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 10 {
+		t.Fatalf("kept=%d want 10", len(recs))
+	}
+	if recs[0].Notes != "n11" || recs[9].Notes != "n2" {
+		t.Fatalf("newest=%q oldest=%q", recs[0].Notes, recs[9].Notes)
+	}
+}
+
+func TestEvalScoreCapMemory(t *testing.T) { evalScoreCapCase(t, NewMemory()) }
+
+func TestEvalScoreCapSQLite(t *testing.T) {
+	st, err := OpenSQLite(filepath.Join(t.TempDir(), "eval_cap.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	evalScoreCapCase(t, st)
+}
+
+func TestEvalScoreCapPostgres(t *testing.T) {
+	dsn := os.Getenv("BAIZE_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("BAIZE_TEST_PG_DSN not set")
+	}
+	st, err := OpenPostgres(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	evalScoreCapCase(t, st)
 }

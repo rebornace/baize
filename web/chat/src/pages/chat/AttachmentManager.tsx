@@ -44,6 +44,8 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
   const [costBudget, setCostBudget] = useState<ConversationCostBudget | null>(null)
   const [budgetDay, setBudgetDay] = useState('0')
   const [budgetMonth, setBudgetMonth] = useState('0')
+  const [budgetWarn, setBudgetWarn] = useState('0')
+  const [budgetExceed, setBudgetExceed] = useState('0')
   const [budgetBusy, setBudgetBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -68,6 +70,8 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
       setCostBudget(budgetRes.value)
       setBudgetDay(String(budgetRes.value.budget_usd_per_day))
       setBudgetMonth(String(budgetRes.value.budget_usd_per_month))
+      setBudgetWarn(String(Math.round(budgetRes.value.warning_ratio * 100)))
+      setBudgetExceed(String(Math.round(budgetRes.value.exceeded_ratio * 100)))
     }
   }, [conversationId])
 
@@ -128,16 +132,26 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
   const saveBudget = async () => {
     const d = Number.parseFloat(budgetDay)
     const m = Number.parseFloat(budgetMonth)
-    if (!Number.isFinite(d) || d < 0 || !Number.isFinite(m) || m < 0) {
+    const w = Number.parseFloat(budgetWarn)
+    const e = Number.parseFloat(budgetExceed)
+    if (
+      !Number.isFinite(d) || d < 0 ||
+      !Number.isFinite(m) || m < 0 ||
+      !Number.isFinite(w) || w < 0 || w > 500 ||
+      !Number.isFinite(e) || e < 0 || e > 500 ||
+      (w > 0 && e > 0 && w >= e)
+    ) {
       setError(CHAT.conversationBudgetInvalid)
       return
     }
     setBudgetBusy(true)
     try {
-      const next = await putConversationCostBudget(conversationId, d, m)
+      const next = await putConversationCostBudget(conversationId, d, m, w / 100, e / 100)
       setCostBudget(next)
       setBudgetDay(String(next.budget_usd_per_day))
       setBudgetMonth(String(next.budget_usd_per_month))
+      setBudgetWarn(String(Math.round(next.warning_ratio * 100)))
+      setBudgetExceed(String(Math.round(next.exceeded_ratio * 100)))
       setError(null)
     } catch {
       setError(CHAT.conversationBudgetFailed)
@@ -204,6 +218,14 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
       {costBudget ? (
         <div className="attachment-retention">
           <span className="settings-muted">{CHAT.conversationBudgetTitle}</span>
+          {costBudget.budget_usd_per_day > 0 || costBudget.budget_usd_per_month > 0 ? (
+            <span className="settings-muted">
+              {CHAT.conversationBudgetSpent(
+                costBudget.spent_usd_per_day,
+                costBudget.spent_usd_per_month,
+              )}
+            </span>
+          ) : null}
           <label className="settings-muted">
             {CHAT.conversationBudgetDay}
             <Input
@@ -224,6 +246,30 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
               disabled={budgetBusy}
               onChange={(e) => setBudgetMonth(e.target.value)}
               data-testid="conversation-budget-month"
+            />
+          </label>
+          <label className="settings-muted">
+            {CHAT.conversationBudgetWarn}
+            <Input
+              type="number"
+              min={0}
+              max={500}
+              value={budgetWarn}
+              disabled={budgetBusy}
+              onChange={(e) => setBudgetWarn(e.target.value)}
+              data-testid="conversation-budget-warn"
+            />
+          </label>
+          <label className="settings-muted">
+            {CHAT.conversationBudgetExceed}
+            <Input
+              type="number"
+              min={0}
+              max={500}
+              value={budgetExceed}
+              disabled={budgetBusy}
+              onChange={(e) => setBudgetExceed(e.target.value)}
+              data-testid="conversation-budget-exceed"
             />
           </label>
           <Button

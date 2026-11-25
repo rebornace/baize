@@ -61,6 +61,40 @@ func TestAttachmentRetentionCleanup(t *testing.T) {
 	}
 }
 
+func TestAttachmentRetentionPinsActiveRun(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	srv.ChannelMedia = &retentionFakeMedia{}
+	st := srv.Store
+	if err := st.AddConversationAttachment(store.ConversationAttachment{
+		ConversationID: "c1", Object: "old.pdf", Filename: "old.pdf",
+		MediaType: "application/pdf", CreatedAt: time.Now().UTC().AddDate(0, 0, -40),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(attachmentRetentionKey, []byte("30")); err != nil {
+		t.Fatal(err)
+	}
+	runRec, err := st.CreateRun(store.CreateRunInput{AgentID: "a1", Input: "x", ConversationID: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := srv.cleanupExpiredAttachments(context.Background()); err != nil || n != 0 {
+		t.Fatalf("active cleanup n=%d err=%v", n, err)
+	}
+	if left, _ := st.ListConversationAttachments("c1", 10); len(left) != 1 {
+		t.Fatalf("attachment removed while run active: %+v", left)
+	}
+	if err := st.UpdateRun(runRec.ID, store.StatusSucceeded, "ok", ""); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := srv.cleanupExpiredAttachments(context.Background()); err != nil || n != 1 {
+		t.Fatalf("settled cleanup n=%d err=%v", n, err)
+	}
+	if left, _ := st.ListConversationAttachments("c1", 10); len(left) != 0 {
+		t.Fatalf("left=%+v", left)
+	}
+}
+
 func TestAttachmentRetentionOffKeepsEverything(t *testing.T) {
 	srv := gateServer(t, "op", "adm")
 	srv.ChannelMedia = &retentionFakeMedia{}

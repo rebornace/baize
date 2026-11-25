@@ -20,11 +20,13 @@ function liveGroup<K extends keyof typeof zhPack>(key: K): (typeof zhPack)[K] {
 
 export let AUTO_LABEL = zhPack.AUTO_LABEL
 export let VISION_LABEL = zhPack.VISION_LABEL
+export let PDF_LABEL = zhPack.PDF_LABEL
 export let WORKFLOW_PREPARING = zhPack.WORKFLOW_PREPARING
 
 subscribePack((p) => {
   AUTO_LABEL = p.AUTO_LABEL
   VISION_LABEL = p.VISION_LABEL
+  PDF_LABEL = p.PDF_LABEL
   WORKFLOW_PREPARING = p.WORKFLOW_PREPARING
 })
 

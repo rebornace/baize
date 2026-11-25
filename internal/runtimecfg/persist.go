@@ -23,6 +23,8 @@ import (
 type KnobsPatch struct {
 	MaxMessages                  *int     `json:"max_messages,omitempty"`
 	MaxSteps                     *int     `json:"max_steps,omitempty"`
+	MaxDurationSec               *int     `json:"max_duration_sec,omitempty"`
+	MaxTotalTokens               *int     `json:"max_total_tokens,omitempty"`
 	ToolTimeoutSeconds           *int     `json:"tool_timeout_seconds,omitempty"`
 	CompactionEnabled            *bool    `json:"compaction_enabled,omitempty"`
 	CompactThreshold             *float64 `json:"compact_threshold,omitempty"`
@@ -176,6 +178,12 @@ func (h *Holder) ValidateKnobs(p KnobsPatch) error {
 	if p.MaxSteps != nil && (*p.MaxSteps < 1 || *p.MaxSteps > 100) {
 		return fmt.Errorf("%w: max_steps must be 1-100", ErrBadRange)
 	}
+	if p.MaxDurationSec != nil && (*p.MaxDurationSec < 0 || *p.MaxDurationSec > 86400) {
+		return fmt.Errorf("%w: max_duration_sec must be 0-86400", ErrBadRange)
+	}
+	if p.MaxTotalTokens != nil && (*p.MaxTotalTokens < 0 || *p.MaxTotalTokens > 10000000) {
+		return fmt.Errorf("%w: max_total_tokens must be 0-10000000", ErrBadRange)
+	}
 	if p.ToolTimeoutSeconds != nil && (*p.ToolTimeoutSeconds < 1 || *p.ToolTimeoutSeconds > 600) {
 		return fmt.Errorf("%w: tool_timeout_seconds must be 1-600", ErrBadRange)
 	}
@@ -268,6 +276,12 @@ func (h *Holder) ApplyKnobs(ctx context.Context, st store.Store, p KnobsPatch) e
 	}
 	if p.MaxSteps != nil {
 		next.MaxSteps = p.MaxSteps
+	}
+	if p.MaxDurationSec != nil {
+		next.MaxDurationSec = p.MaxDurationSec
+	}
+	if p.MaxTotalTokens != nil {
+		next.MaxTotalTokens = p.MaxTotalTokens
 	}
 	if p.ToolTimeoutSeconds != nil {
 		next.ToolTimeoutSeconds = p.ToolTimeoutSeconds

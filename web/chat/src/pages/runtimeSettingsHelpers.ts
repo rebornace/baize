@@ -5,6 +5,8 @@ import { RUNTIME } from '../strings'
 export interface KnobsForm {
   max_messages: string
   max_steps: string
+  max_duration_sec: string
+  max_total_tokens: string
   tool_timeout_seconds: string
   compaction_enabled: boolean
   compact_threshold: string
@@ -84,6 +86,22 @@ export function mainKnobFields(): KnobFieldSpec[] {
       hint: RUNTIME.hintMaxSteps,
       min: 1,
       max: 100,
+      integer: true,
+    },
+    {
+      key: 'max_duration_sec',
+      label: RUNTIME.fieldMaxDuration,
+      hint: RUNTIME.hintMaxDuration,
+      min: 0,
+      max: 86400,
+      integer: true,
+    },
+    {
+      key: 'max_total_tokens',
+      label: RUNTIME.fieldMaxTotalTokens,
+      hint: RUNTIME.hintMaxTotalTokens,
+      min: 0,
+      max: 10000000,
       integer: true,
     },
     {
@@ -231,6 +249,8 @@ export function knobsToForm(k: RuntimeKnobs): KnobsForm {
   return {
     max_messages: String(k.max_messages),
     max_steps: String(k.max_steps),
+    max_duration_sec: String(k.max_duration_sec ?? 0),
+    max_total_tokens: String(k.max_total_tokens ?? 0),
     tool_timeout_seconds: String(k.tool_timeout_seconds),
     compaction_enabled: k.compaction_enabled,
     compact_threshold: String(k.compact_threshold),
@@ -292,6 +312,14 @@ export function buildKnobsPatch(form: KnobsForm, effective: RuntimeKnobs): Runti
   if (maxMessages !== null && maxMessages !== effective.max_messages) patch.max_messages = maxMessages
   const maxSteps = int(form.max_steps)
   if (maxSteps !== null && maxSteps !== effective.max_steps) patch.max_steps = maxSteps
+  const maxDuration = int(form.max_duration_sec)
+  if (maxDuration !== null && maxDuration !== (effective.max_duration_sec ?? 0)) {
+    patch.max_duration_sec = maxDuration
+  }
+  const maxTokens = int(form.max_total_tokens)
+  if (maxTokens !== null && maxTokens !== (effective.max_total_tokens ?? 0)) {
+    patch.max_total_tokens = maxTokens
+  }
   const toolTimeout = int(form.tool_timeout_seconds)
   if (toolTimeout !== null && toolTimeout !== effective.tool_timeout_seconds) {
     patch.tool_timeout_seconds = toolTimeout

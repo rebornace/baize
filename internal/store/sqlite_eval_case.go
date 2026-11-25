@@ -174,11 +174,23 @@ func scanEvalCase(sc interface{ Scan(...any) error }) (EvalCase, error) {
 }
 
 func parseStoreTime(s string) (time.Time, error) {
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		t, err = time.Parse(time.RFC3339, s)
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05.999999999-07",
+		"2006-01-02 15:04:05-07",
 	}
-	return t, err
+	var lastErr error
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return time.Time{}, lastErr
 }
 
 const evalCaseSelectColumns = `id, source_run_id, status, protocol, input,
@@ -269,7 +281,7 @@ func (s *SQLStore) UpsertEvalCase(c EvalCase) error {
 		string(eventsCopy), c.RunStatusAtIngest,
 		lastPass, lastCodes, c.LastScoreNotes, lastScoredAt,
 		humanAgree, c.HumanNote, calibratedAt,
-		s.timeArg(c.CreatedAt), s.timeArg(c.UpdatedAt),
+		formatSQLiteTime(c.CreatedAt), formatSQLiteTime(c.UpdatedAt),
 	)
 	return err
 }
@@ -318,6 +330,7 @@ func (s *SQLStore) DeleteEvalCase(id string) error {
 }
 
 func (s *SQLStore) AppendEvalScore(r EvalScoreRecord) error {
+	cap := evalScoreHistoryCapFor(s)
 	if r.ID == "" {
 		r.ID = uuid.NewString()
 	}
@@ -338,10 +351,10 @@ func (s *SQLStore) AppendEvalScore(r EvalScoreRecord) error {
 	if err != nil {
 		return err
 	}
-	// Drop everything past the newest EvalScoreHistoryCap rows for this case.
+	// Drop everything past the newest cap rows for this case.
 	_, err = s.exec(`DELETE FROM eval_scores WHERE case_id = ? AND id NOT IN (
 		SELECT id FROM eval_scores WHERE case_id = ? ORDER BY scored_at DESC LIMIT ?)`,
-		r.CaseID, r.CaseID, EvalScoreHistoryCap)
+		r.CaseID, r.CaseID, cap)
 	return err
 }
 

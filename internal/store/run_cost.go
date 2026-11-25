@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"sort"
 	"time"
 )
@@ -21,6 +22,96 @@ func (s *Memory) PutRunCost(c RunCost) error {
 	c.UpdatedAt = time.Now().UTC()
 	s.runCosts[c.RunID] = c
 	return nil
+}
+
+func (s *Memory) ListRunIDsMissingCostsSince(since time.Time, limit int) ([]string, error) {
+	return s.listRunIDsMissingCosts(since, time.Now().UTC().Add(100*365*24*time.Hour), limit)
+}
+
+func (s *Memory) ListRunIDsMissingCostsBetween(from, to time.Time, limit int) ([]string, error) {
+	return s.listRunIDsMissingCosts(from, to, limit)
+}
+
+func (s *Memory) listRunIDsMissingCosts(from, to time.Time, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	from, to = from.UTC(), to.UTC()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	type candidate struct {
+		id string
+		at time.Time
+	}
+	var items []candidate
+	for id, r := range s.runs {
+		if !terminalRunStatus(r.Status) || r.CreatedAt.Before(from) || r.CreatedAt.After(to) {
+			continue
+		}
+		if _, ok := s.runCosts[id]; ok {
+			continue
+		}
+		items = append(items, candidate{id: id, at: r.CreatedAt})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].at.Before(items[j].at) })
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.id)
+	}
+	return out, nil
+}
+
+func (s *Memory) SumRunCostsByScope(agentID, conversationID string, from, to time.Time) (float64, error) {
+	from = from.UTC()
+	to = to.UTC()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var total float64
+	for id, cost := range s.runCosts {
+		r := s.runs[id]
+		if r == nil {
+			continue
+		}
+		if agentID != "" && r.AgentID != agentID {
+			continue
+		}
+		if conversationID != "" && r.ConversationID != conversationID {
+			continue
+		}
+		if r.CreatedAt.Before(from) || r.CreatedAt.After(to) {
+			continue
+		}
+		total += cost.CostUSD
+	}
+	return total, nil
+}
+
+func (s *Memory) SumRunCostsGrouped(by string, from, to time.Time) (map[string]float64, error) {
+	from = from.UTC()
+	to = to.UTC()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]float64{}
+	for id, cost := range s.runCosts {
+		r := s.runs[id]
+		if r == nil || r.CreatedAt.Before(from) || r.CreatedAt.After(to) {
+			continue
+		}
+		var key string
+		switch by {
+		case "model":
+			key = r.ModelProfileID
+		case "agent":
+			key = r.AgentID
+		default:
+			return nil, fmt.Errorf("unknown cost dimension %q", by)
+		}
+		out[key] += cost.CostUSD
+	}
+	return out, nil
 }
 
 func (s *SQLStore) GetRunCost(runID string) (RunCost, bool, error) {
@@ -52,6 +143,107 @@ func (s *SQLStore) PutRunCost(c RunCost) error {
 		  priced = excluded.priced, updated_at = excluded.updated_at`,
 		c.RunID, c.Day, c.CostUSD, priced, now.Format(time.RFC3339Nano))
 	return err
+}
+
+func (s *SQLStore) ListRunIDsMissingCostsSince(since time.Time, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.query(`SELECT r.id FROM runs r
+		LEFT JOIN run_costs c ON c.run_id = r.id
+		WHERE r.status IN ('succeeded','failed','cancelled','rejected')
+		  AND r.created_at >= ? AND c.run_id IS NULL
+		ORDER BY r.created_at ASC LIMIT ?`,
+		formatSQLiteTime(since), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) ListRunIDsMissingCostsBetween(from, to time.Time, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.query(`SELECT r.id FROM runs r
+		LEFT JOIN run_costs c ON c.run_id = r.id
+		WHERE r.status IN ('succeeded','failed','cancelled','rejected')
+		  AND r.created_at >= ? AND r.created_at <= ? AND c.run_id IS NULL
+		ORDER BY r.created_at ASC LIMIT ?`,
+		formatSQLiteTime(from), formatSQLiteTime(to), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) SumRunCostsByScope(agentID, conversationID string, from, to time.Time) (float64, error) {
+	q := `SELECT COALESCE(SUM(rc.cost_usd), 0) FROM run_costs rc
+		JOIN runs r ON r.id = rc.run_id
+		WHERE r.created_at >= ? AND r.created_at <= ?`
+	args := []any{formatSQLiteTime(from), formatSQLiteTime(to)}
+	if agentID != "" {
+		q += ` AND r.agent_id = ?`
+		args = append(args, agentID)
+	}
+	if conversationID != "" {
+		q += ` AND r.conversation_id = ?`
+		args = append(args, conversationID)
+	}
+	var total float64
+	if err := s.queryRow(q, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (s *SQLStore) SumRunCostsGrouped(by string, from, to time.Time) (map[string]float64, error) {
+	var col string
+	switch by {
+	case "model":
+		col = "r.model_profile_id"
+	case "agent":
+		col = "r.agent_id"
+	default:
+		return nil, fmt.Errorf("unknown cost dimension %q", by)
+	}
+	rows, err := s.query(`SELECT COALESCE(`+col+`, ''), COALESCE(SUM(rc.cost_usd), 0)
+		FROM run_costs rc JOIN runs r ON r.id = rc.run_id
+		WHERE r.created_at >= ? AND r.created_at <= ?
+		GROUP BY 1`,
+		formatSQLiteTime(from), formatSQLiteTime(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]float64{}
+	for rows.Next() {
+		var key string
+		var cost float64
+		if err := rows.Scan(&key, &cost); err != nil {
+			return nil, err
+		}
+		out[key] = cost
+	}
+	return out, rows.Err()
 }
 
 func (s *Memory) ListCostDays(fromDay, toDay string) ([]CostDay, error) {

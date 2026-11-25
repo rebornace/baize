@@ -43,6 +43,10 @@ agent:
 #     connectors: [mall, order]
 run:
   max_steps: 16
+  # Hard budget for one active run segment (human waits excluded). 0 = off.
+  # max_duration_sec: 1800
+  # Whole-run token budget, including HITL resumes. 0 = off.
+  # max_total_tokens: 200000
   # LASE gate: require spawn_group_run to declare an advisory confidence /
   # evidence conflict decision. Off by default.
   # lase_gate: false

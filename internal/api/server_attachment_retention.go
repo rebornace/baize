@@ -159,6 +159,17 @@ func (s *Server) cleanupExpiredAttachments(ctx context.Context) (int, error) {
 	now := time.Now().UTC()
 	total := 0
 	for _, conv := range convs {
+		// A queued/running/waiting_human run may still need its uploaded files
+		// to resume (HITL or reconciliation). Keep the conversation intact until
+		// the run settles; cleanup resumes on a later pass.
+		active, aerr := s.Store.HasActiveRun(conv)
+		if aerr != nil {
+			log.Printf("attachment retention: active-run check %s: %v", conv, aerr)
+			continue
+		}
+		if active {
+			continue
+		}
 		days := s.attachmentRetentionDaysFor(conv, global)
 		if days <= 0 {
 			continue

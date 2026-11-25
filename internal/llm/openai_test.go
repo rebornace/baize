@@ -79,6 +79,53 @@ func TestOpenAIMultimodalContentArray(t *testing.T) {
 	}
 }
 
+func TestOpenAIFileContentPart(t *testing.T) {
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		capturedBody = b
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAI(srv.URL, "k", "m")
+	pdf := []byte("%PDF-1.4 test")
+	_, err := p.Chat(context.Background(), []llm.Message{{
+		Role: llm.RoleUser,
+		Parts: []llm.ContentPart{
+			{Type: "text", Text: "读这份扫描件"},
+			{Type: "file", FileMIME: "application/pdf", FileBytes: pdf, Filename: "scan.pdf"},
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	var req struct {
+		Messages []struct {
+			Content []interface{} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Messages) != 1 || len(req.Messages[0].Content) != 2 {
+		t.Fatalf("content=%+v", req.Messages)
+	}
+	part, _ := req.Messages[0].Content[1].(map[string]any)
+	if part["type"] != "file" {
+		t.Fatalf("part=%+v", part)
+	}
+	file, _ := part["file"].(map[string]any)
+	if file["filename"] != "scan.pdf" {
+		t.Fatalf("file=%+v", file)
+	}
+	data, _ := file["file_data"].(string)
+	if !strings.HasPrefix(data, "data:application/pdf;base64,") {
+		t.Fatalf("file_data=%q", data)
+	}
+}
+
 // TestOpenAIDataURLPassthrough verifies that a ContentPart with DataURL set is
 // forwarded verbatim instead of being re-encoded from ImageBytes.
 func TestOpenAIDataURLPassthrough(t *testing.T) {

@@ -2,18 +2,29 @@ package api
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rebornace/baize/internal/conversation"
+	"github.com/rebornace/baize/internal/store"
 )
 
-type hydrateFakeMedia struct {
+type hydrateFakeFile struct {
 	data []byte
 	mime string
 }
 
-func (f *hydrateFakeMedia) OpenMedia(context.Context, string, string) ([]byte, string, bool, error) {
+type hydrateFakeMedia struct {
+	data  []byte
+	mime  string
+	files map[string]hydrateFakeFile
+}
+
+func (f *hydrateFakeMedia) OpenMedia(_ context.Context, _ string, object string) ([]byte, string, bool, error) {
+	if file, ok := f.files[object]; ok {
+		return file.data, file.mime, true, nil
+	}
 	if len(f.data) == 0 {
 		return nil, "", false, nil
 	}
@@ -47,5 +58,70 @@ func TestHydrateRunUserPartsFromMessage(t *testing.T) {
 	}
 	if got := srv.hydrateRunUserParts(context.Background(), "missing", "c1", "x"); got != nil {
 		t.Fatalf("missing run parts=%+v", got)
+	}
+}
+
+func TestHydrateRunUserPartsReplaysPDFFile(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	srv.Messages = conversation.NewMemoryStore()
+	profile, err := srv.Store.UpsertModelProfile(store.ModelProfile{
+		Name: "pdf-replay", Model: "gpt-4o", SupportsPDF: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf := []byte("%PDF-1.4 replay")
+	srv.ChannelMedia = &hydrateFakeMedia{files: map[string]hydrateFakeFile{
+		"scan.pdf": {data: pdf, mime: "application/pdf"},
+	}}
+	runRec, err := srv.Store.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "读附件", ConversationID: "c1", ModelProfileID: profile.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Messages.Append("c1", conversation.Message{
+		Role:      conversation.RoleUser,
+		RunID:     runRec.ID,
+		CreatedAt: time.Now().UTC(),
+		Content:   "读附件\n[file:scan.pdf](/v0/channels/media/c1/scan.pdf)",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	parts := srv.hydrateRunUserParts(context.Background(), runRec.ID, "c1", "读附件")
+	if len(parts) != 2 {
+		t.Fatalf("parts=%+v", parts)
+	}
+	if parts[1].Type != "file" || parts[1].FileMIME != "application/pdf" ||
+		parts[1].Filename != "scan.pdf" || len(parts[1].FileBytes) != len(pdf) {
+		t.Fatalf("file part=%+v", parts[1])
+	}
+}
+
+func TestHydrateRunUserPartsIncludesTextAttachment(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	srv.Messages = conversation.NewMemoryStore()
+	srv.ChannelMedia = &hydrateFakeMedia{files: map[string]hydrateFakeFile{
+		"notes.txt": {data: []byte("hello attachment"), mime: "text/plain"},
+	}}
+	if _, err := srv.Messages.Append("c1", conversation.Message{
+		Role:      conversation.RoleUser,
+		RunID:     "r2",
+		CreatedAt: time.Now().UTC(),
+		Content:   "看看附件\n[file:notes.txt](/v0/channels/media/c1/notes.txt)",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	parts := srv.hydrateRunUserParts(context.Background(), "r2", "c1", "看看附件")
+	if len(parts) != 1 {
+		t.Fatalf("parts=%+v", parts)
+	}
+	if parts[0].Type != "text" {
+		t.Fatalf("text part=%+v", parts[0])
+	}
+	for _, want := range []string{"看看附件", "【附件: notes.txt】", "hello attachment"} {
+		if !strings.Contains(parts[0].Text, want) {
+			t.Fatalf("text part missing %q: %q", want, parts[0].Text)
+		}
 	}
 }

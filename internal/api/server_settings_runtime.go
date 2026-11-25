@@ -14,6 +14,8 @@ import (
 type runtimeKnobsJSON struct {
 	MaxMessages                  int     `json:"max_messages"`
 	MaxSteps                     int     `json:"max_steps"`
+	MaxDurationSec               int     `json:"max_duration_sec"`
+	MaxTotalTokens               int     `json:"max_total_tokens"`
 	ToolTimeoutSeconds           int     `json:"tool_timeout_seconds"`
 	CompactionEnabled            bool    `json:"compaction_enabled"`
 	CompactThreshold             float64 `json:"compact_threshold"`
@@ -52,6 +54,8 @@ func knobsToJSON(k runtimecfg.Knobs) runtimeKnobsJSON {
 	return runtimeKnobsJSON{
 		MaxMessages:                  k.MaxMessages,
 		MaxSteps:                     k.MaxSteps,
+		MaxDurationSec:               k.MaxDurationSec,
+		MaxTotalTokens:               k.MaxTotalTokens,
 		ToolTimeoutSeconds:           int(k.ToolTimeout.Seconds()),
 		CompactionEnabled:            k.CompactionEnabled,
 		CompactThreshold:             k.CompactThreshold,

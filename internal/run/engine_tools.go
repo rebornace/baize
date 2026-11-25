@@ -22,13 +22,10 @@ import (
 // API), followed by the assistant tool-call / tool-result turns already
 // recorded for this run. This keeps cross-restart HITL from dropping prior
 // conversation context while avoiding duplicate system or user-input messages.
-func (e *Engine) buildResumeMessages(runID, system, conversationID, input string, evs []store.Event) []llm.Message {
-	return e.buildResumeMessagesWithParts(runID, system, conversationID, input, evs, nil)
-}
-
-// buildResumeMessagesWithParts is buildResumeMessages with an optional
-// rehydrated user turn (images from the original message) so HITL resumes keep
-// multimodal content.
+// buildResumeMessagesWithParts rebuilds the post-input conversation for a
+// resumed run and optionally replaces the user turn with rehydrated parts
+// (text attachments and images from the original message), so HITL and child
+// receipt resumes keep multimodal content.
 func (e *Engine) buildResumeMessagesWithParts(runID, system, conversationID, input string, evs []store.Event, userParts []llm.ContentPart) []llm.Message {
 	messages := e.buildMessagesForRun(runID, system, conversationID, input, userParts)
 	messages = append(messages, e.eventsAfterInput(evs, conversationID)...)

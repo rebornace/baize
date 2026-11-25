@@ -674,8 +674,14 @@ func TestContinueFromChildReceipt(t *testing.T) {
 	_ = st.SetHITL(parent.ID, &store.HITLPayload{
 		Kind: store.HITLKindWaitingChild, ToolName: SpawnGroupRunName, ToolCallID: "tc1", ChildRunID: "child_x",
 	})
+	sawParts := false
 	llmStub := &captureLLM{onChat: func(msgs []llm.Message, _ []llm.ToolSpec) llm.Message {
 		for _, m := range msgs {
+			for _, p := range m.Parts {
+				if p.Type == "image" && p.ImageMIME == "image/png" {
+					sawParts = true
+				}
+			}
 			if m.Role == llm.RoleTool && strings.Contains(m.Content, "child_x") {
 				return llm.Message{Role: llm.RoleAssistant, Content: "got receipt"}
 			}
@@ -685,9 +691,16 @@ func TestContinueFromChildReceipt(t *testing.T) {
 	eng := &Engine{Store: st, LLM: llmStub, Tools: tool.NewRegistry(), Settings: scopedKnobs{on: true}}
 	err = eng.ContinueFromChildReceipt(context.Background(), parent.ID, GroupRunReceipt{
 		Status: string(store.StatusSucceeded), Summary: "ok", ChildRunID: "child_x",
+		UserParts: []llm.ContentPart{
+			{Type: "text", Text: "parent goal"},
+			{Type: "image", ImageMIME: "image/png", ImageBytes: []byte{1, 2, 3}},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !sawParts {
+		t.Fatal("child receipt resume lost rehydrated user parts")
 	}
 	got, _ := st.GetRun(parent.ID)
 	if got.Status != store.StatusSucceeded {

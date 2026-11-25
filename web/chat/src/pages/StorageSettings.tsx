@@ -1,8 +1,12 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
   getAttachmentRetention,
+  getMessageRetention,
+  getRunRetention,
   getStoreSettings,
   putAttachmentRetention,
+  putMessageRetention,
+  putRunRetention,
   putStoreSettings,
   type StoreSettings,
 } from '../api'
@@ -36,6 +40,10 @@ export function StorageSettings() {
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>('hot')
   const [retentionDays, setRetentionDays] = useState('0')
   const [retentionBusy, setRetentionBusy] = useState(false)
+  const [runRetentionDays, setRunRetentionDays] = useState('0')
+  const [runRetentionBusy, setRunRetentionBusy] = useState(false)
+  const [messageRetentionDays, setMessageRetentionDays] = useState('0')
+  const [messageRetentionBusy, setMessageRetentionBusy] = useState(false)
   const { toasts, push, dismiss } = useToast()
 
   const load = useCallback(async () => {
@@ -62,6 +70,18 @@ export function StorageSettings() {
       } catch {
         // Optional section; keep the default when the endpoint is unavailable.
       }
+      try {
+        const r = await getRunRetention()
+        setRunRetentionDays(String(r.days))
+      } catch {
+        // Optional section; keep the default when the endpoint is unavailable.
+      }
+      try {
+        const r = await getMessageRetention()
+        setMessageRetentionDays(String(r.days))
+      } catch {
+        // Optional section; keep the default when the endpoint is unavailable.
+      }
     }
     void loadRetention()
   }, [])
@@ -82,6 +102,44 @@ export function StorageSettings() {
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setRetentionBusy(false)
+    }
+  }
+
+  const saveRunRetention = async () => {
+    const n = Number.parseInt(runRetentionDays, 10)
+    if (!Number.isFinite(n) || n < 0 || n > 3650) {
+      push({ tone: 'error', title: STORAGE.runRetentionInvalid })
+      return
+    }
+    setRunRetentionBusy(true)
+    try {
+      const r = await putRunRetention(n)
+      setRunRetentionDays(String(r.days))
+      push({ tone: 'success', title: STORAGE.runRetentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setRunRetentionBusy(false)
+    }
+  }
+
+  const saveMessageRetention = async () => {
+    const n = Number.parseInt(messageRetentionDays, 10)
+    if (!Number.isFinite(n) || n < 0 || n > 3650) {
+      push({ tone: 'error', title: STORAGE.messageRetentionInvalid })
+      return
+    }
+    setMessageRetentionBusy(true)
+    try {
+      const r = await putMessageRetention(n)
+      setMessageRetentionDays(String(r.days))
+      push({ tone: 'success', title: STORAGE.messageRetentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setMessageRetentionBusy(false)
     }
   }
 
@@ -239,6 +297,64 @@ export function StorageSettings() {
           <div className="storage-actions">
             <Button type="submit" variant="primary" disabled={retentionBusy}>
               {STORAGE.retentionSave}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <form
+          className="storage-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveRunRetention()
+          }}
+        >
+          <h2 className="settings-subheading">{STORAGE.runRetentionTitle}</h2>
+          <p className="settings-muted">{STORAGE.runRetentionHint}</p>
+          <Field label={STORAGE.runRetentionDaysLabel}>
+            <Input
+              type="number"
+              min={0}
+              max={3650}
+              value={runRetentionDays}
+              disabled={runRetentionBusy}
+              onChange={(e) => setRunRetentionDays(e.target.value)}
+              data-testid="run-retention-days"
+            />
+          </Field>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={runRetentionBusy}>
+              {STORAGE.runRetentionSave}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <form
+          className="storage-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveMessageRetention()
+          }}
+        >
+          <h2 className="settings-subheading">{STORAGE.messageRetentionTitle}</h2>
+          <p className="settings-muted">{STORAGE.messageRetentionHint}</p>
+          <Field label={STORAGE.messageRetentionDaysLabel}>
+            <Input
+              type="number"
+              min={0}
+              max={3650}
+              value={messageRetentionDays}
+              disabled={messageRetentionBusy}
+              onChange={(e) => setMessageRetentionDays(e.target.value)}
+              data-testid="message-retention-days"
+            />
+          </Field>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={messageRetentionBusy}>
+              {STORAGE.messageRetentionSave}
             </Button>
           </div>
         </form>

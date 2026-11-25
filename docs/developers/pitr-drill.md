@@ -93,3 +93,13 @@
 - 本流程不自动切换生产流量；生产恢复仍需人工审批与回退方案。
 - 容器化部署需要把备份/WAL 目录挂载进临时容器，步骤等价。
 - 演练结果必须附真实命令输出，不能只写“通过”。
+
+## 6. Docker 快速演练
+
+`scripts/pitr-drill.ps1` 在隔离容器里跑完整流程：基础备份 → WAL 归档 → 恢复到目标时间 → 校验。只创建 `baize-pitr-*` 容器和卷，默认结束后清理，不会碰现有实例。
+
+```powershell
+.\scripts\pitr-drill.ps1 -Docker "<path-to-docker.exe>"
+```
+
+`-Docker` 可省略（Docker 在 PATH 时）。可选参数：`-SourcePort`（默认 15433）、`-RestorePort`（默认 15434）、`-Keep`（保留现场）。2026-11-25 已实际执行一次，结果记录在私有 note `eval-artifacts/pitr-drill-20261125/report.md`：RTO 16.1 秒，目标时间之后的写入被正确排除。

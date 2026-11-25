@@ -1,11 +1,34 @@
 package store
 
 import (
+	"encoding/json"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// EvalScoreHistoryCapFor resolves the effective per-case cap from settings.
+func EvalScoreHistoryCapFor(st Store) int {
+	if st == nil {
+		return EvalScoreHistoryCap
+	}
+	return evalScoreHistoryCapFor(st)
+}
+
+// evalScoreHistoryCapFor resolves the per-case score cap from settings,
+// falling back to the default for missing or invalid values.
+func evalScoreHistoryCapFor(st Store) int {
+	raw, ok, err := st.GetSetting(SettingKeyEvalScoreHistoryCap)
+	if err != nil || !ok {
+		return EvalScoreHistoryCap
+	}
+	var n int
+	if json.Unmarshal(raw, &n) != nil || n < EvalScoreHistoryCapMin || n > EvalScoreHistoryCapMax {
+		return EvalScoreHistoryCap
+	}
+	return n
+}
 
 func cloneEvalCase(c EvalCase) EvalCase {
 	out := c
@@ -120,6 +143,16 @@ func (s *Memory) CountRunsByStatusBetween(from, to time.Time) (map[Status]int, e
 	return out, nil
 }
 
+func (s *Memory) CountRunsByStatus() (map[Status]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[Status]int{}
+	for _, r := range s.runs {
+		out[r.Status]++
+	}
+	return out, nil
+}
+
 func sortRunsByCreatedAtDesc(runs []*Run) {
 	sort.SliceStable(runs, func(i, j int) bool {
 		if runs[i].CreatedAt.Equal(runs[j].CreatedAt) {
@@ -182,6 +215,7 @@ func (s *Memory) DeleteEvalCase(id string) error {
 }
 
 func (s *Memory) AppendEvalScore(r EvalScoreRecord) error {
+	cap := evalScoreHistoryCapFor(s)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.evalScores == nil {
@@ -195,13 +229,13 @@ func (s *Memory) AppendEvalScore(r EvalScoreRecord) error {
 	}
 	r.Codes = append([]string(nil), r.Codes...)
 	s.evalScores[r.CaseID] = append(s.evalScores[r.CaseID], r)
-	if records := s.evalScores[r.CaseID]; len(records) > EvalScoreHistoryCap {
+	if records := s.evalScores[r.CaseID]; len(records) > cap {
 		// Keep the newest scores by time, not append order: backfills can
 		// insert an older record after a newer one.
 		sort.SliceStable(records, func(i, j int) bool {
 			return records[i].ScoredAt.Before(records[j].ScoredAt)
 		})
-		s.evalScores[r.CaseID] = records[len(records)-EvalScoreHistoryCap:]
+		s.evalScores[r.CaseID] = records[len(records)-cap:]
 	}
 	return nil
 }

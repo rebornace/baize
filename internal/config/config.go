@@ -108,6 +108,12 @@ type Config struct {
 		ToolTimeoutSec int `yaml:"tool_timeout_sec"`
 		// ParallelToolLimit caps concurrent safe tool invokes per turn (default 8).
 		ParallelToolLimit int `yaml:"parallel_tool_limit"`
+		// MaxDurationSec bounds one active run segment in wall-clock seconds.
+		// Human waits are excluded; 0 disables the budget.
+		MaxDurationSec int `yaml:"max_duration_sec"`
+		// MaxTotalTokens bounds the total reported tokens for a whole run,
+		// including resumes after HITL. 0 disables the budget.
+		MaxTotalTokens int `yaml:"max_total_tokens"`
 		// LaseGateEnabled requires spawn_group_run to carry an advisory LASE
 		// decision. Default off.
 		LaseGateEnabled bool `yaml:"lase_gate"`
@@ -369,6 +375,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Run.ToolTimeoutSec <= 0 {
 		cfg.Run.ToolTimeoutSec = 60
+	}
+	if cfg.Run.MaxDurationSec < 0 {
+		cfg.Run.MaxDurationSec = 0
+	}
+	if cfg.Run.MaxTotalTokens < 0 {
+		cfg.Run.MaxTotalTokens = 0
 	}
 	if cfg.Run.ParallelToolLimit <= 0 {
 		cfg.Run.ParallelToolLimit = 8

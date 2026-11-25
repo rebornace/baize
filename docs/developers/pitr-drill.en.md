@@ -89,5 +89,15 @@
 
 - Without WAL archiving you can only restore the base backup; true PITR is impossible.
 - This flow does not switch production traffic; production recovery still needs approval and a rollback plan.
-- Container deployments need the backup/WAL directories mounted into a scratch container; the steps are equivalent.
+- Container deployments need the backup/WAL directories mounted into a scratch container; the steps are equivalent. `scripts/pitr-drill.ps1` automates this for Docker.
 - A drill record must include real command output, not just “passed”.
+
+## 6. Docker drill
+
+`scripts/pitr-drill.ps1` runs the full flow in isolated containers: base backup → WAL archiving → recovery to a target time → verification. It only creates `baize-pitr-*` containers and volumes, cleans them up by default, and never touches an existing instance.
+
+```powershell
+.\scripts\pitr-drill.ps1 -Docker "<path-to-docker.exe>"
+```
+
+`-Docker` can be omitted when Docker is on PATH. Optional flags: `-SourcePort` (default 15433), `-RestorePort` (default 15434), `-Keep` (leave the containers running). A real drill was executed on 2026-11-25; the record is kept in the private note `eval-artifacts/pitr-drill-20261125/report.md`: RTO 16.1s, and writes after the target time were correctly excluded.

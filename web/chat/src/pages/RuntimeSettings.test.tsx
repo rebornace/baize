@@ -14,6 +14,8 @@ import { RuntimeSettings } from './RuntimeSettings'
 const baseKnobs: RuntimeKnobs = {
   max_messages: 40,
   max_steps: 16,
+  max_duration_sec: 0,
+  max_total_tokens: 0,
   tool_timeout_seconds: 60,
   compaction_enabled: true,
   compact_threshold: 0.8,
