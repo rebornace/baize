@@ -7,13 +7,16 @@ import {
   getCostBreakdown,
   getCostSummary,
   getModelCostBudgets,
+  getWorkspaceCostBudgets,
   putAgentCostBudget,
   putCostBudget,
   putModelCostBudget,
+  putWorkspaceCostBudget,
   type AgentCostBudget,
   type CostBreakdown,
   type CostSummary,
   type ModelCostBudget,
+  type WorkspaceCostBudget,
 } from '../../api/settings/models'
 
 type AgentDraft = { day: string; month: string; warn: string; exceed: string }
@@ -30,6 +33,7 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [enforce, setEnforce] = useState(false)
   const [busy, setBusy] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
+  const [breakdownBusy, setBreakdownBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [agents, setAgents] = useState<AgentCostBudget[] | null>(null)
   const [agentDrafts, setAgentDrafts] = useState<Record<string, AgentDraft>>({})
@@ -37,6 +41,9 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [models, setModels] = useState<ModelCostBudget[] | null>(null)
   const [modelDrafts, setModelDrafts] = useState<Record<string, AgentDraft>>({})
   const [modelBusy, setModelBusy] = useState<string | null>(null)
+  const [workspaces, setWorkspaces] = useState<WorkspaceCostBudget[] | null>(null)
+  const [workspaceDrafts, setWorkspaceDrafts] = useState<Record<string, AgentDraft>>({})
+  const [workspaceBusy, setWorkspaceBusy] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -91,10 +98,30 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
     }
   }
 
+  const loadWorkspaces = async () => {
+    try {
+      const body = await getWorkspaceCostBudgets()
+      setWorkspaces(body.items)
+      const drafts: Record<string, AgentDraft> = {}
+      for (const item of body.items) {
+        drafts[item.workspace_id] = {
+          day: String(item.budget_usd_per_day),
+          month: String(item.budget_usd_per_month),
+          warn: String(Math.round(item.warning_ratio * 100)),
+          exceed: String(Math.round(item.exceeded_ratio * 100)),
+        }
+      }
+      setWorkspaceDrafts(drafts)
+    } catch {
+      setWorkspaces(null)
+    }
+  }
+
   useEffect(() => {
     void load()
     void loadAgents()
     void loadModels()
+    void loadWorkspaces()
     void getCostBreakdown(30)
       .then(setBreakdown)
       .catch(() => setBreakdown(null))
@@ -222,24 +249,94 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
     }
   }
 
+  const saveWorkspace = async (item: WorkspaceCostBudget) => {
+    const draft = workspaceDrafts[item.workspace_id] ?? {
+      day: '0',
+      month: '0',
+      warn: '0',
+      exceed: '0',
+    }
+    const d = Number.parseFloat(draft.day)
+    const m = Number.parseFloat(draft.month)
+    const w = Number.parseFloat(draft.warn)
+    const e = Number.parseFloat(draft.exceed)
+    if (
+      !Number.isFinite(d) || d < 0 ||
+      !Number.isFinite(m) || m < 0 ||
+      !Number.isFinite(w) || w < 0 || w > 500 ||
+      !Number.isFinite(e) || e < 0 || e > 500 ||
+      (w > 0 && e > 0 && w >= e)
+    ) {
+      setError(MODELS.errInvalidRequest)
+      return
+    }
+    setWorkspaceBusy(item.workspace_id)
+    try {
+      const next = await putWorkspaceCostBudget({
+        workspace_id: item.workspace_id,
+        budget_usd_per_day: d,
+        budget_usd_per_month: m,
+        warning_ratio: w / 100,
+        exceeded_ratio: e / 100,
+      })
+      setWorkspaces((prev) =>
+        prev ? prev.map((row) => (row.workspace_id === next.workspace_id ? next : row)) : prev,
+      )
+      setWorkspaceDrafts((prev) => ({
+        ...prev,
+        [next.workspace_id]: {
+          day: String(next.budget_usd_per_day),
+          month: String(next.budget_usd_per_month),
+          warn: String(Math.round(next.warning_ratio * 100)),
+          exceed: String(Math.round(next.exceeded_ratio * 100)),
+        },
+      }))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setWorkspaceBusy(null)
+    }
+  }
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    if (typeof URL.createObjectURL !== 'function') return
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const exportCsv = async () => {
     setExportBusy(true)
     try {
       const blob = await downloadCostExport(COST_TREND_DAYS)
-      if (typeof URL.createObjectURL !== 'function') return
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `baize-cost-${new Date().toISOString().slice(0, 10)}.csv`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      downloadBlob(blob, `baize-cost-${new Date().toISOString().slice(0, 10)}.csv`)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setExportBusy(false)
+    }
+  }
+
+  const exportBreakdown = async () => {
+    setBreakdownBusy(true)
+    try {
+      const blob = await downloadCostExport(COST_TREND_DAYS, 'breakdown')
+      downloadBlob(
+        blob,
+        `baize-cost-breakdown-${new Date().toISOString().slice(0, 10)}.csv`,
+      )
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBreakdownBusy(false)
     }
   }
 
@@ -303,7 +400,7 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                   onClick={() => void exportCsv()}
                   data-testid="cost-export"
                 >
-                  {exportBusy ? MODELS.costExporting : MODELS.costExport}
+                  {exportBusy ? MODELS.costExporting : MODELS.costExportDaily}
                 </Button>
               </div>
               <div
@@ -336,7 +433,19 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
           )}
           {breakdown && breakdown.total_usd > 0 ? (
             <div className="cost-breakdown" data-testid="cost-breakdown">
-              <h3 className="settings-subheading">{MODELS.costBreakdownTitle}</h3>
+              <div className="cost-breakdown-head">
+                <h3 className="settings-subheading">{MODELS.costBreakdownTitle}</h3>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={breakdownBusy}
+                  onClick={() => void exportBreakdown()}
+                  data-testid="cost-export-breakdown"
+                >
+                  {breakdownBusy ? MODELS.costExporting : MODELS.costExportBreakdown}
+                </Button>
+              </div>
               <div className="cost-breakdown-grid">
                 <div>
                   <span className="settings-muted">{MODELS.costByModel}</span>
@@ -357,6 +466,32 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                     {breakdown.by_agent.map((b) => (
                       <li key={b.key || 'default'}>
                         <span>{b.name || b.key || MODELS.costDefaultModel}</span>
+                        <strong>
+                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span className="settings-muted">{MODELS.costByConversation}</span>
+                  <ul>
+                    {breakdown.by_conversation.map((b) => (
+                      <li key={b.key || 'default'}>
+                        <span>{b.name || b.key || MODELS.costUntitledConversation}</span>
+                        <strong>
+                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span className="settings-muted">{MODELS.costByWorkspace}</span>
+                  <ul>
+                    {breakdown.by_workspace.map((b) => (
+                      <li key={b.key || 'default'}>
+                        <span>{b.name || b.key || MODELS.costDefaultWorkspace}</span>
                         <strong>
                           ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
                         </strong>
@@ -607,6 +742,106 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                       variant="secondary"
                       disabled={modelBusy === item.model_profile_id}
                       onClick={() => void saveModel(item)}
+                    >
+                      {MODELS.agentBudgetSave}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+          {!readOnly && workspaces && workspaces.length > 0 ? (
+            <div className="agent-budgets" data-testid="workspace-budgets">
+              <h3 className="settings-subheading">{MODELS.workspaceBudgetTitle}</h3>
+              <p className="settings-muted">{MODELS.workspaceBudgetHint}</p>
+              {workspaces.map((item) => {
+                const draft = workspaceDrafts[item.workspace_id] ?? {
+                  day: '0',
+                  month: '0',
+                  warn: '0',
+                  exceed: '0',
+                }
+                return (
+                  <div className="agent-budget-row" key={item.workspace_id}>
+                    <span className="agent-budget-id" title={item.workspace_id}>
+                      {item.name || item.workspace_id}
+                    </span>
+                    {item.budget_usd_per_day > 0 || item.budget_usd_per_month > 0 ? (
+                      <span className="settings-muted agent-budget-spent">
+                        {MODELS.workspaceBudgetSpent(
+                          item.spent_usd_per_day,
+                          item.spent_usd_per_month,
+                        )}
+                      </span>
+                    ) : null}
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetDayLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.day}
+                        disabled={workspaceBusy === item.workspace_id}
+                        onChange={(e) =>
+                          setWorkspaceDrafts((prev) => ({
+                            ...prev,
+                            [item.workspace_id]: { ...draft, day: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetMonthLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.month}
+                        disabled={workspaceBusy === item.workspace_id}
+                        onChange={(e) =>
+                          setWorkspaceDrafts((prev) => ({
+                            ...prev,
+                            [item.workspace_id]: { ...draft, month: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetWarnLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        max={500}
+                        value={draft.warn}
+                        disabled={workspaceBusy === item.workspace_id}
+                        onChange={(e) =>
+                          setWorkspaceDrafts((prev) => ({
+                            ...prev,
+                            [item.workspace_id]: { ...draft, warn: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-muted">
+                      {MODELS.agentBudgetExceedLabel}
+                      <Input
+                        type="number"
+                        min={0}
+                        max={500}
+                        value={draft.exceed}
+                        disabled={workspaceBusy === item.workspace_id}
+                        onChange={(e) =>
+                          setWorkspaceDrafts((prev) => ({
+                            ...prev,
+                            [item.workspace_id]: { ...draft, exceed: e.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={workspaceBusy === item.workspace_id}
+                      onClick={() => void saveWorkspace(item)}
                     >
                       {MODELS.agentBudgetSave}
                     </Button>

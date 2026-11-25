@@ -488,6 +488,10 @@ export const enPack = {
     opsGatePass: 'Pass',
     opsGateFail: 'Fail',
     opsGateNone: 'No record',
+    opsRuntime: (goroutines: number, open: number, inUse: number, idle: number) =>
+      `Process: goroutines ${goroutines} · DB connections ${open} (in use ${inUse}, idle ${idle})`,
+    opsStreams: (live: number, dropped: number, slow: number) =>
+      `Approval streams: live ${live} · dropped ${dropped} · slow ${slow}`,
     opsRetention: (a: string, r: string, m: string) =>
       `Retention: attachments ${a} · runs ${r} · messages ${m}`,
     opsForever: 'forever',
@@ -1251,16 +1255,26 @@ export const enPack = {
       'Set daily/monthly budgets per model profile. Reaching a threshold sends budget.alert but does not change automatic routing.',
     modelBudgetSpent: (day: number, month: number) =>
       `Spent: day $${day.toFixed(4)} · month $${month.toFixed(4)}`,
+    workspaceBudgetTitle: 'Workspace budgets',
+    workspaceBudgetHint:
+      'Set daily/monthly budgets per workspace. Reaching a threshold sends budget.alert; when the global over-budget block is on, new runs in that workspace are blocked too.',
+    workspaceBudgetSpent: (day: number, month: number) =>
+      `Spent: day $${day.toFixed(4)} · month $${month.toFixed(4)}`,
     costBreakdownTitle: 'Cost breakdown (last 30 days)',
     costByModel: 'By model',
     costByAgent: 'By agent',
+    costByConversation: 'By conversation',
+    costByWorkspace: 'By workspace',
+    costUntitledConversation: 'Untitled conversation',
+    costDefaultWorkspace: 'Default workspace',
     costDefaultModel: 'Default model',
     costMonth: (cost: number, currency: string) => `This month ${currency} ${cost.toFixed(6)}`,
     costEnforceLabel: 'Block new runs when over budget',
     costTrendTitle: 'Daily cost (last 30 days)',
     costTrendTotal: (total: number, days: number) =>
       `${days}-day total USD ${total.toFixed(6)}`,
-    costExport: 'Export CSV',
+    costExportDaily: 'Export daily CSV',
+    costExportBreakdown: 'Export breakdown CSV',
     costExporting: 'Exporting…',
     costNoData: 'No priced runs in the last 30 days',
   },

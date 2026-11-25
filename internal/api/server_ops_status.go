@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/rebornace/baize/internal/store"
@@ -44,6 +45,12 @@ func (s *Server) handleGetOpsStatus(w http.ResponseWriter, r *http.Request) {
 		gateOut["failed"] = gate.Failed
 	}
 
+	streamLive, streamDropped, streamSlow := s.pendingStreamStats()
+	db := store.PoolStats{}
+	if ps, ok := s.Store.(store.PoolStatter); ok {
+		db = ps.PoolStats()
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"runs": map[string]any{
 			"queued":        all[store.StatusQueued],
@@ -52,6 +59,21 @@ func (s *Server) handleGetOpsStatus(w http.ResponseWriter, r *http.Request) {
 			"active":        all[store.StatusQueued] + all[store.StatusRunning] + all[store.StatusWaitingHuman],
 			"succeeded_24h": recent[store.StatusSucceeded],
 			"failed_24h":    recent[store.StatusFailed],
+		},
+		"process": map[string]any{
+			"goroutines": runtime.NumGoroutine(),
+		},
+		"db": map[string]any{
+			"max_open":   db.MaxOpen,
+			"open":       db.Open,
+			"in_use":     db.InUse,
+			"idle":       db.Idle,
+			"wait_count": db.WaitCount,
+		},
+		"streams": map[string]any{
+			"live":    streamLive,
+			"dropped": streamDropped,
+			"slow":    streamSlow,
 		},
 		"webhook_configured": s.loadEventsWebhook().URL != "",
 		"budget": map[string]any{

@@ -750,6 +750,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/settings/agent-cost-budgets", s.handlePutAgentCostBudget)
 	s.mux.HandleFunc("GET /v0/settings/model-cost-budgets", s.handleGetModelCostBudgets)
 	s.mux.HandleFunc("PUT /v0/settings/model-cost-budgets", s.handlePutModelCostBudget)
+	s.mux.HandleFunc("GET /v0/settings/workspace-cost-budgets", s.handleGetWorkspaceCostBudgets)
+	s.mux.HandleFunc("PUT /v0/settings/workspace-cost-budgets", s.handlePutWorkspaceCostBudget)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/cost-budget", s.handleGetConversationCostBudget)
 	s.mux.HandleFunc("PUT /v0/conversations/{id}/cost-budget", s.handlePutConversationCostBudget)
 	s.mux.HandleFunc("GET /v0/settings/run-overview", s.handleGetRunOverview)

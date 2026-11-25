@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/rebornace/baize/internal/conversation"
 )
 
 type costBucketsJSON struct {
@@ -14,8 +16,88 @@ type costBucketsJSON struct {
 	Ratio   float64 `json:"ratio"`
 }
 
-// handleGetCostBreakdown returns cached terminal costs grouped by model and by
-// agent for the last N days, newest range first.
+// costGroups holds terminal costs split by the dimensions shown on the cost
+// page and in the breakdown export.
+type costGroups struct {
+	model        map[string]float64
+	agent        map[string]float64
+	conversation map[string]float64
+}
+
+// costBreakdownTopConversations bounds the conversation list so the settings
+// response stays small when many conversations have usage.
+const costBreakdownTopConversations = 20
+const costBreakdownTopWorkspaces = 20
+
+// costGroupsBetween sums cached terminal costs for the three cost dimensions.
+func (s *Server) costGroupsBetween(from, to time.Time) (costGroups, error) {
+	var g costGroups
+	var err error
+	if g.model, err = s.Store.SumRunCostsGrouped("model", from, to); err != nil {
+		return g, err
+	}
+	if g.agent, err = s.Store.SumRunCostsGrouped("agent", from, to); err != nil {
+		return g, err
+	}
+	if g.conversation, err = s.Store.SumRunCostsGrouped("conversation", from, to); err != nil {
+		return g, err
+	}
+	return g, nil
+}
+
+// costGroupNames resolves display names for models, agents and conversations.
+func (s *Server) costGroupNames() (model, agent, conversation map[string]string) {
+	model = map[string]string{}
+	if profiles, err := s.Store.ListModelProfiles(); err == nil {
+		for _, p := range profiles {
+			model[p.ID] = p.Name
+		}
+	}
+	agent = map[string]string{}
+	for _, ag := range s.Store.ListAgents() {
+		agent[ag.ID] = ag.ID
+	}
+	conversation = map[string]string{}
+	if s.Messages != nil {
+		for _, sum := range s.Messages.ListSummaries() {
+			conversation[sum.ID] = sum.Title
+		}
+	}
+	return model, agent, conversation
+}
+
+// costByWorkspace rolls conversation costs up to workspaces. Conversations
+// without metadata fall into the default workspace.
+func (s *Server) costByWorkspace(byConversation map[string]float64) (map[string]float64, map[string]string) {
+	convWorkspace := map[string]string{}
+	if ms := s.metaStore(); ms != nil {
+		if list, err := ms.ListMeta(conversation.MetaFilter{}); err == nil {
+			for _, m := range list {
+				convWorkspace[m.ID] = conversation.NormalizeWorkspaceID(m.WorkspaceID)
+			}
+		}
+	}
+	names := map[string]string{}
+	if wst := s.workspaceStore(); wst != nil {
+		if list, err := wst.ListWorkspaces(); err == nil {
+			for _, w := range list {
+				names[w.ID] = w.Name
+			}
+		}
+	}
+	out := map[string]float64{}
+	for convID, cost := range byConversation {
+		wsID := convWorkspace[convID]
+		if wsID == "" {
+			wsID = conversation.DefaultWorkspaceID
+		}
+		out[wsID] += cost
+	}
+	return out, names
+}
+
+// handleGetCostBreakdown returns cached terminal costs grouped by model, agent
+// and conversation for the last N days, newest range first.
 func (s *Server) handleGetCostBreakdown(w http.ResponseWriter, r *http.Request) {
 	days := 30
 	if raw := r.URL.Query().Get("days"); raw != "" {
@@ -31,37 +113,34 @@ func (s *Server) handleGetCostBreakdown(w http.ResponseWriter, r *http.Request) 
 	}
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -days)
-	byModel, err := s.Store.SumRunCostsGrouped("model", from, now)
+	groups, err := s.costGroupsBetween(from, now)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	byAgent, err := s.Store.SumRunCostsGrouped("agent", from, now)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	modelNames := map[string]string{}
-	if profiles, err := s.Store.ListModelProfiles(); err == nil {
-		for _, p := range profiles {
-			modelNames[p.ID] = p.Name
-		}
-	}
-	agentNames := map[string]string{}
-	for _, ag := range s.Store.ListAgents() {
-		agentNames[ag.ID] = ag.ID
-	}
+	modelNames, agentNames, convNames := s.costGroupNames()
+	byWorkspace, workspaceNames := s.costByWorkspace(groups.conversation)
 	total := 0.0
-	for _, v := range byModel {
+	for _, v := range groups.model {
 		total += v
 	}
+	convBuckets := buildCostBuckets(groups.conversation, convNames, total)
+	if len(convBuckets) > costBreakdownTopConversations {
+		convBuckets = convBuckets[:costBreakdownTopConversations]
+	}
+	wsBuckets := buildCostBuckets(byWorkspace, workspaceNames, total)
+	if len(wsBuckets) > costBreakdownTopWorkspaces {
+		wsBuckets = wsBuckets[:costBreakdownTopWorkspaces]
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"days":      days,
-		"from":      from.Format(time.RFC3339),
-		"to":        now.Format(time.RFC3339),
-		"total_usd": round6(total),
-		"by_model":  buildCostBuckets(byModel, modelNames, total),
-		"by_agent":  buildCostBuckets(byAgent, agentNames, total),
+		"days":            days,
+		"from":            from.Format(time.RFC3339),
+		"to":              now.Format(time.RFC3339),
+		"total_usd":       round6(total),
+		"by_model":        buildCostBuckets(groups.model, modelNames, total),
+		"by_agent":        buildCostBuckets(groups.agent, agentNames, total),
+		"by_conversation": convBuckets,
+		"by_workspace":    wsBuckets,
 	})
 }
 

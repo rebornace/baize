@@ -2,8 +2,12 @@ package llm
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/rebornace/baize/internal/store"
 )
 
 // fakeProfileSource is an in-memory ProfileSource for tests.
@@ -164,6 +168,144 @@ func (f *failingProvider) Chat(ctx context.Context, messages []Message, tools []
 	return Message{}, f.err
 }
 func (f *failingProvider) SupportsVision() bool { return false }
+
+func TestSwitchFallbackSkipsNonPDFModelForPDFTurn(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	src.byID["mp_a"] = ModelProfileView{
+		ID:                 "mp_a",
+		Model:              "primary",
+		SupportsPDF:        true,
+		FallbackProfileIDs: []string{"mp_text", "mp_pdf"},
+	}
+	src.byID["mp_text"] = ModelProfileView{ID: "mp_text", Model: "text-only"}
+	src.byID["mp_pdf"] = ModelProfileView{ID: "mp_pdf", Model: "pdf-capable", SupportsPDF: true}
+	src.list = []ModelProfileView{src.byID["mp_a"], src.byID["mp_text"], src.byID["mp_pdf"]}
+
+	sw := NewSwitch(src)
+	used := []string{}
+	sw.build = func(v ModelProfileView) Provider {
+		used = append(used, v.Model)
+		if v.ID == "mp_a" {
+			return &failingProvider{err: context.DeadlineExceeded}
+		}
+		return &recordingProvider{model: v.Model}
+	}
+
+	msgs := []Message{{Role: RoleUser, Parts: []ContentPart{{Type: "file", FileMIME: "application/pdf"}}}}
+	ctx := WithModelProfileID(context.Background(), "mp_a")
+	msg, err := sw.Chat(ctx, msgs, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Content != "from:pdf-capable" {
+		t.Fatalf("want pdf fallback, got %q", msg.Content)
+	}
+	if len(used) != 2 || used[0] != "primary" || used[1] != "pdf-capable" {
+		t.Fatalf("text-only fallback should have been skipped, used=%v", used)
+	}
+}
+
+func TestSwitchFallbackSkipsNonVisionModelForImageTurn(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	src.byID["mp_a"] = ModelProfileView{
+		ID:                 "mp_a",
+		Model:              "primary",
+		SupportsVision:     true,
+		FallbackProfileIDs: []string{"mp_text", "mp_vis"},
+	}
+	src.byID["mp_text"] = ModelProfileView{ID: "mp_text", Model: "text-only"}
+	src.byID["mp_vis"] = ModelProfileView{ID: "mp_vis", Model: "vision", SupportsVision: true}
+	src.list = []ModelProfileView{src.byID["mp_a"], src.byID["mp_text"], src.byID["mp_vis"]}
+
+	sw := NewSwitch(src)
+	used := []string{}
+	sw.build = func(v ModelProfileView) Provider {
+		used = append(used, v.Model)
+		if v.ID == "mp_a" {
+			return &failingProvider{err: context.DeadlineExceeded}
+		}
+		return &recordingProvider{model: v.Model}
+	}
+
+	msgs := []Message{{Role: RoleUser, Parts: []ContentPart{{Type: "image", ImageMIME: "image/png"}}}}
+	ctx := WithModelProfileID(context.Background(), "mp_a")
+	msg, err := sw.Chat(ctx, msgs, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Content != "from:vision" {
+		t.Fatalf("want vision fallback, got %q", msg.Content)
+	}
+	if len(used) != 2 || used[0] != "primary" || used[1] != "vision" {
+		t.Fatalf("text-only fallback should have been skipped, used=%v", used)
+	}
+}
+
+func TestSwitchFallbackExplainsSkippedCapability(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	src.byID["mp_a"] = ModelProfileView{
+		ID:                 "mp_a",
+		Model:              "primary",
+		SupportsPDF:        true,
+		FallbackProfileIDs: []string{"mp_text"},
+	}
+	src.byID["mp_text"] = ModelProfileView{ID: "mp_text", Model: "text-only"}
+	src.list = []ModelProfileView{src.byID["mp_a"], src.byID["mp_text"]}
+
+	sw := NewSwitch(src)
+	sw.build = func(v ModelProfileView) Provider {
+		return &failingProvider{err: context.DeadlineExceeded}
+	}
+
+	msgs := []Message{{Role: RoleUser, Parts: []ContentPart{{Type: "file", FileMIME: "application/pdf"}}}}
+	ctx := WithModelProfileID(context.Background(), "mp_a")
+	_, err := sw.Chat(ctx, msgs, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error should wrap the primary failure: %v", err)
+	}
+	if !strings.Contains(err.Error(), "do not support PDF") {
+		t.Fatalf("error should explain the skipped fallback: %v", err)
+	}
+}
+
+func TestSwitchTextTurnKeepsTextOnlyFallback(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	src.byID["mp_a"] = ModelProfileView{
+		ID:                 "mp_a",
+		Model:              "primary",
+		SupportsPDF:        true,
+		FallbackProfileIDs: []string{"mp_text"},
+	}
+	src.byID["mp_text"] = ModelProfileView{ID: "mp_text", Model: "text-only"}
+	src.list = []ModelProfileView{src.byID["mp_a"], src.byID["mp_text"]}
+
+	sw := NewSwitch(src)
+	sw.build = func(v ModelProfileView) Provider {
+		if v.ID == "mp_a" {
+			return &failingProvider{err: context.DeadlineExceeded}
+		}
+		return &recordingProvider{model: v.Model}
+	}
+
+	ctx := WithModelProfileID(context.Background(), "mp_a")
+	msg, err := sw.Chat(ctx, []Message{{Role: RoleUser, Content: "hello"}}, nil)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if msg.Content != "from:text-only" {
+		t.Fatalf("text turn should use text-only fallback, got %q", msg.Content)
+	}
+}
+
+func TestToViewCopiesPDFCapability(t *testing.T) {
+	v := toView(store.ModelProfile{SupportsPDF: true})
+	if !v.SupportsPDF {
+		t.Fatal("toView must copy SupportsPDF so fallback filtering sees it")
+	}
+}
 
 func TestSwitchDefaultBuildCopiesThinkingFields(t *testing.T) {
 	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}

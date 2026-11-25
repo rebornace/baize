@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/store"
 )
 
@@ -54,6 +55,80 @@ func TestCostExportCSV(t *testing.T) {
 	}
 }
 
+func TestCostBreakdownExportCSV(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	ms := conversation.NewMemoryStore()
+	srv.Messages = ms
+	lab, err := ms.CreateWorkspace("Lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ms.EnsureMeta(conversation.Meta{ID: "c1", WorkspaceID: lab.ID, Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ms.EnsureMeta(conversation.Meta{ID: "c2", WorkspaceID: lab.ID, Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := st.UpsertModelProfile(store.ModelProfile{Name: "breakdown-model", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	mk := func(agentID, convID string, cost float64) {
+		r, err := st.CreateRun(store.CreateRunInput{
+			AgentID: agentID, Input: "x", ConversationID: convID, ModelProfileID: profile.ID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpdateRun(r.ID, store.StatusSucceeded, "ok", ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.PutRunCost(store.RunCost{
+			RunID: r.ID, Day: now.Format("2006-01-02"), CostUSD: cost, Priced: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("a1", "c1", 1.5)
+	mk("a2", "c2", 2.5)
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/settings/cost-export?days=7&group=breakdown", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("export=%d %s", rr.Code, rr.Body.String())
+	}
+	if disposition := rr.Header().Get("Content-Disposition"); !strings.Contains(disposition, "breakdown") {
+		t.Fatalf("content-disposition=%q", disposition)
+	}
+	lines := strings.Split(strings.TrimSpace(rr.Body.String()), "\n")
+	if lines[0] != "group,key,name,cost_usd,ratio" {
+		t.Fatalf("header=%q", lines[0])
+	}
+	want := []string{
+		"model," + profile.ID + ",breakdown-model,4.000000,1.000000",
+		"agent,a2,,2.500000,0.625000",
+		"agent,a1,,1.500000,0.375000",
+		"conversation,c1,,1.500000,0.375000",
+		"conversation,c2,,2.500000,0.625000",
+		"workspace," + lab.ID + ",Lab,4.000000,1.000000",
+	}
+	for _, w := range want {
+		found := false
+		for _, line := range lines {
+			if line == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %q", w, lines)
+		}
+	}
+}
+
 func TestCostExportRejectsBadWindow(t *testing.T) {
 	srv := gateServer(t, "op", "adm")
 	for _, q := range []string{"", "?days=0", "?days=abc", "?days=367"} {
@@ -70,5 +145,12 @@ func TestCostExportRejectsBadWindow(t *testing.T) {
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("%s=%d", q, rr.Code)
 		}
+	}
+	bad := httptest.NewRequest(http.MethodGet, "/v0/settings/cost-export?group=nope", nil)
+	bad.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, bad)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad group=%d", rr.Code)
 	}
 }

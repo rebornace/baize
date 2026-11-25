@@ -262,6 +262,8 @@ export interface CostBreakdown {
   total_usd: number
   by_model: CostBucket[]
   by_agent: CostBucket[]
+  by_conversation: CostBucket[]
+  by_workspace: CostBucket[]
 }
 
 export async function getCostBreakdown(days = 30): Promise<CostBreakdown> {
@@ -269,9 +271,14 @@ export async function getCostBreakdown(days = 30): Promise<CostBreakdown> {
   return parseJSON(res)
 }
 
-/** Fetch the daily cost rollup as a CSV blob for client-side download. */
-export async function downloadCostExport(days = 30): Promise<Blob> {
-  const res = await fetch(`/v0/settings/cost-export?days=${days}`, { headers: authInit() })
+/** Fetch cost data as a CSV blob for client-side download. */
+export async function downloadCostExport(
+  days = 30,
+  group: 'day' | 'breakdown' = 'day',
+): Promise<Blob> {
+  const res = await fetch(`/v0/settings/cost-export?days=${days}&group=${group}`, {
+    headers: authInit(),
+  })
   if (!res.ok) {
     let code = 'unknown'
     let message = res.statusText
@@ -336,6 +343,36 @@ export async function getModelCostBudgets(): Promise<{ items: ModelCostBudget[] 
 
 export async function putModelCostBudget(body: ModelCostBudgetInput): Promise<ModelCostBudget> {
   const res = await fetch('/v0/settings/model-cost-budgets', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON(res)
+}
+
+export interface WorkspaceCostBudgetInput {
+  workspace_id: string
+  budget_usd_per_day: number
+  budget_usd_per_month: number
+  warning_ratio: number
+  exceeded_ratio: number
+}
+
+export interface WorkspaceCostBudget extends WorkspaceCostBudgetInput {
+  name: string
+  spent_usd_per_day: number
+  spent_usd_per_month: number
+}
+
+export async function getWorkspaceCostBudgets(): Promise<{ items: WorkspaceCostBudget[] }> {
+  const res = await fetch('/v0/settings/workspace-cost-budgets', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function putWorkspaceCostBudget(
+  body: WorkspaceCostBudgetInput,
+): Promise<WorkspaceCostBudget> {
+  const res = await fetch('/v0/settings/workspace-cost-budgets', {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),

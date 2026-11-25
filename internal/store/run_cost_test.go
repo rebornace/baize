@@ -91,6 +91,10 @@ func runCostScopeCase(t *testing.T, st Store) {
 	if err != nil || byAgent[agent1] != 1.5 || byAgent[agent2] != 2.5 {
 		t.Fatalf("byAgent=%v err=%v", byAgent, err)
 	}
+	byConversation, err := st.SumRunCostsGrouped("conversation", start, end)
+	if err != nil || byConversation[conv1] != 4.0 || byConversation[conv2] != 0 {
+		t.Fatalf("byConversation=%v err=%v", byConversation, err)
+	}
 	if _, err := st.SumRunCostsGrouped("bad", start, end); err == nil {
 		t.Fatal("unknown dimension must error")
 	}

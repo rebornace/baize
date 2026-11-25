@@ -23,6 +23,7 @@ type ModelProfileView struct {
 	ThinkingLevel   string
 	ThinkingDialect string
 	SupportsVision  bool
+	SupportsPDF     bool
 	ContextTokens   int
 	Tier            string
 	// FallbackProfileIDs is an ordered list of profile ids to try when the
@@ -193,14 +194,70 @@ func (s *Switch) providerFor(ctx context.Context) (Provider, error) {
 	return s.cached(view), nil
 }
 
-// fallbackChain returns the primary profile followed by its FallbackProfileIDs
-// (skipping missing/cyclic ids).
-func (s *Switch) fallbackChain(ctx context.Context) ([]ModelProfileView, error) {
+// messageNeeds reports which model capabilities the outgoing turn requires.
+type messageNeeds struct {
+	vision bool
+	pdf    bool
+}
+
+func messageNeedsOf(messages []Message) messageNeeds {
+	var n messageNeeds
+	for _, m := range messages {
+		for _, part := range m.Parts {
+			switch part.Type {
+			case "image":
+				n.vision = true
+			case "file":
+				// Only native PDF parts exist today; add more capability flags
+				// here if other document types are introduced.
+				n.pdf = true
+			}
+		}
+	}
+	return n
+}
+
+func (n messageNeeds) label() string {
+	switch {
+	case n.pdf && n.vision:
+		return "vision and PDF"
+	case n.pdf:
+		return "PDF"
+	case n.vision:
+		return "vision"
+	}
+	return ""
+}
+
+// fallbackPlan is the primary profile plus the fallback profiles that can
+// handle this turn's capabilities.
+type fallbackPlan struct {
+	chain   []ModelProfileView
+	needs   messageNeeds
+	skipped int
+}
+
+// wrap adds a capability note when fallbacks were filtered out and the primary
+// still failed, so the error explains why no other model was tried.
+func (p fallbackPlan) wrap(err error) error {
+	if err == nil || p.skipped == 0 {
+		return err
+	}
+	return fmt.Errorf("%w; %d fallback model(s) skipped because they do not support %s",
+		err, p.skipped, p.needs.label())
+}
+
+// fallbackPlan returns the primary profile followed by its FallbackProfileIDs
+// (skipping missing/cyclic ids). Fallbacks that cannot accept the turn's image
+// or PDF parts are skipped so a document is never handed to a model that would
+// ignore or reject it.
+func (s *Switch) resolveFallbackPlan(ctx context.Context, messages []Message) (fallbackPlan, error) {
+	needs := messageNeedsOf(messages)
 	primary, err := s.viewFor(ctx)
 	if err != nil {
-		return nil, err
+		return fallbackPlan{needs: needs}, err
 	}
-	chain := []ModelProfileView{primary}
+	plan := fallbackPlan{chain: []ModelProfileView{primary}, needs: needs}
 	seen := map[string]bool{primary.ID: true}
 	for _, id := range primary.FallbackProfileIDs {
 		id = strings.TrimSpace(id)
@@ -212,9 +269,13 @@ func (s *Switch) fallbackChain(ctx context.Context) ([]ModelProfileView, error) 
 			continue
 		}
 		seen[id] = true
-		chain = append(chain, view)
+		if (needs.vision && !view.SupportsVision) || (needs.pdf && !view.SupportsPDF) {
+			plan.skipped++
+			continue
+		}
+		plan.chain = append(plan.chain, view)
 	}
-	return chain, nil
+	return plan, nil
 }
 
 func (s *Switch) cached(v ModelProfileView) Provider {
@@ -229,34 +290,34 @@ func (s *Switch) cached(v ModelProfileView) Provider {
 }
 
 func (s *Switch) Chat(ctx context.Context, messages []Message, tools []ToolSpec) (Message, error) {
-	chain, err := s.fallbackChain(ctx)
+	plan, err := s.resolveFallbackPlan(ctx, messages)
 	if err != nil {
 		return Message{}, err
 	}
 	var lastErr error
-	for _, view := range chain {
+	for _, view := range plan.chain {
 		msg, err := s.cached(view).Chat(ctx, messages, tools)
 		if err == nil {
 			return msg, nil
 		}
 		lastErr = err
 	}
-	return Message{}, lastErr
+	return Message{}, plan.wrap(lastErr)
 }
 
 // ChatWithChoice implements Chooser (DP-2b) by forwarding to the resolved
 // provider when it supports the optional capability. If the backing provider
 // cannot enforce a tool_choice, we return an error rather than silently
-// downgrading to Chat — dropping the constraint would make the call look
+// downgrading to Chat 鈥?dropping the constraint would make the call look
 // constrained when it was not.
 func (s *Switch) ChatWithChoice(ctx context.Context, messages []Message, tools []ToolSpec, choice ToolChoice) (Message, error) {
-	chain, err := s.fallbackChain(ctx)
+	plan, err := s.resolveFallbackPlan(ctx, messages)
 	if err != nil {
 		return Message{}, err
 	}
 	var lastErr error
 	var sawUnsupported bool
-	for _, view := range chain {
+	for _, view := range plan.chain {
 		prov := s.cached(view)
 		ch, ok := prov.(Chooser)
 		if !ok {
@@ -270,7 +331,7 @@ func (s *Switch) ChatWithChoice(ctx context.Context, messages []Message, tools [
 		lastErr = err
 	}
 	if lastErr != nil {
-		return Message{}, lastErr
+		return Message{}, plan.wrap(lastErr)
 	}
 	if sawUnsupported {
 		return Message{}, errChoiceUnsupported
@@ -280,12 +341,12 @@ func (s *Switch) ChatWithChoice(ctx context.Context, messages []Message, tools [
 
 // ChatStream implements Streamer: prefers a streaming provider, otherwise Chat.
 func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []ToolSpec, onThink, onContent func(cumulative string)) (Message, error) {
-	chain, err := s.fallbackChain(ctx)
+	plan, err := s.resolveFallbackPlan(ctx, messages)
 	if err != nil {
 		return Message{}, err
 	}
 	var lastErr error
-	for _, view := range chain {
+	for _, view := range plan.chain {
 		p := s.cached(view)
 		var msg Message
 		var err error
@@ -299,7 +360,7 @@ func (s *Switch) ChatStream(ctx context.Context, messages []Message, tools []Too
 		}
 		lastErr = err
 	}
-	return Message{}, lastErr
+	return Message{}, plan.wrap(lastErr)
 }
 
 // ChatStreamWithChoice implements StreamChooser (DP-2b). Prefers a streaming
@@ -312,13 +373,13 @@ func (s *Switch) ChatStreamWithChoice(
 	choice ToolChoice,
 	onThink, onContent func(cumulative string),
 ) (Message, error) {
-	chain, err := s.fallbackChain(ctx)
+	plan, err := s.resolveFallbackPlan(ctx, messages)
 	if err != nil {
 		return Message{}, err
 	}
 	var lastErr error
 	var sawUnsupported bool
-	for _, view := range chain {
+	for _, view := range plan.chain {
 		p := s.cached(view)
 		if sc, ok := p.(StreamChooser); ok {
 			msg, err := sc.ChatStreamWithChoice(ctx, messages, tools, choice, onThink, onContent)
@@ -339,7 +400,7 @@ func (s *Switch) ChatStreamWithChoice(
 		sawUnsupported = true
 	}
 	if lastErr != nil {
-		return Message{}, lastErr
+		return Message{}, plan.wrap(lastErr)
 	}
 	if sawUnsupported {
 		return Message{}, errChoiceUnsupported

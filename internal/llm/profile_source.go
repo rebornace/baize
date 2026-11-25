@@ -29,6 +29,7 @@ func toView(p store.ModelProfile) ModelProfileView {
 		ThinkingLevel:      p.ThinkingLevel,
 		ThinkingDialect:    p.ThinkingDialect,
 		SupportsVision:     p.SupportsVision,
+		SupportsPDF:        p.SupportsPDF,
 		ContextTokens:      p.ContextTokens,
 		Tier:               store.NormalizeAutoTier(p.AutoTier),
 		FallbackProfileIDs: append([]string(nil), p.FallbackProfileIDs...),

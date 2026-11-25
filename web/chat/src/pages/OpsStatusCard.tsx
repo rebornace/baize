@@ -72,6 +72,17 @@ export function OpsStatusCard() {
         </div>
       </div>
       <p className="settings-muted">
+        {METRICS.opsRuntime(
+          data.process.goroutines,
+          data.db.open,
+          data.db.in_use,
+          data.db.idle,
+        )}
+      </p>
+      <p className="settings-muted">
+        {METRICS.opsStreams(data.streams.live, data.streams.dropped, data.streams.slow)}
+      </p>
+      <p className="settings-muted">
         {METRICS.opsRetention(
           daysLabel(data.retention.attachment_days),
           daysLabel(data.retention.run_days),

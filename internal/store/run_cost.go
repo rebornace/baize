@@ -106,6 +106,8 @@ func (s *Memory) SumRunCostsGrouped(by string, from, to time.Time) (map[string]f
 			key = r.ModelProfileID
 		case "agent":
 			key = r.AgentID
+		case "conversation":
+			key = r.ConversationID
 		default:
 			return nil, fmt.Errorf("unknown cost dimension %q", by)
 		}
@@ -222,6 +224,8 @@ func (s *SQLStore) SumRunCostsGrouped(by string, from, to time.Time) (map[string
 		col = "r.model_profile_id"
 	case "agent":
 		col = "r.agent_id"
+	case "conversation":
+		col = "r.conversation_id"
 	default:
 		return nil, fmt.Errorf("unknown cost dimension %q", by)
 	}

@@ -56,6 +56,21 @@ export interface OpsStatus {
     succeeded_24h: number
     failed_24h: number
   }
+  process: {
+    goroutines: number
+  }
+  db: {
+    max_open: number
+    open: number
+    in_use: number
+    idle: number
+    wait_count: number
+  }
+  streams: {
+    live: number
+    dropped: number
+    slow: number
+  }
   webhook_configured: boolean
   budget: {
     day_alert: string

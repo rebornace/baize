@@ -495,6 +495,10 @@ export const zhPack = {
     opsGatePass: '通过',
     opsGateFail: '未通过',
     opsGateNone: '无记录',
+    opsRuntime: (goroutines: number, open: number, inUse: number, idle: number) =>
+      `进程：goroutine ${goroutines} · DB 连接 ${open}（占用 ${inUse}，空闲 ${idle}）`,
+    opsStreams: (live: number, dropped: number, slow: number) =>
+      `待审批流：活跃 ${live} · 丢弃 ${dropped} · 慢 ${slow}`,
     opsRetention: (a: string, r: string, m: string) => `保留：附件 ${a} · 运行 ${r} · 消息 ${m}`,
     opsForever: '永久',
     opsScopedAlerts: (n: number) => `Agent/会话告警 ${n}`,
@@ -1230,16 +1234,26 @@ export const zhPack = {
   modelBudgetHint: '按模型档案设置日/月预算；达到阈值会发送 budget.alert，但不会改变自动路由。',
   modelBudgetSpent: (day: number, month: number) =>
     `已用：日 $${day.toFixed(4)} · 月 $${month.toFixed(4)}`,
+  workspaceBudgetTitle: '工作区预算',
+  workspaceBudgetHint:
+    '按工作区设置日/月预算；达到阈值会发送 budget.alert；开启全局“超预算时阻止新运行”后，也会拦截该工作区的新运行。',
+  workspaceBudgetSpent: (day: number, month: number) =>
+    `已用：日 $${day.toFixed(4)} · 月 $${month.toFixed(4)}`,
   costBreakdownTitle: '费用分布（近 30 天）',
   costByModel: '按模型',
   costByAgent: '按 Agent',
+  costByConversation: '按会话',
+  costByWorkspace: '按工作区',
+  costUntitledConversation: '未命名会话',
+  costDefaultWorkspace: '默认工作区',
   costDefaultModel: '默认模型',
   costMonth: (cost: number, currency: string) => `本月 ${currency} ${cost.toFixed(6)}`,
   costEnforceLabel: '超预算时阻止新运行',
   costTrendTitle: '每日费用（近 30 天）',
   costTrendTotal: (total: number, days: number) =>
     `${days} 天合计 USD ${total.toFixed(6)}`,
-  costExport: '导出 CSV',
+  costExportDaily: '导出每日 CSV',
+  costExportBreakdown: '导出分布 CSV',
   costExporting: '导出中…',
   costNoData: '最近 30 天没有可计价的运行',
 },

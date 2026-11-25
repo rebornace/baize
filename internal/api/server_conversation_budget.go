@@ -130,6 +130,17 @@ func (s *Server) requireCostBudgetFor(agentID, convID string) error {
 			return ErrCostBudgetExceeded
 		}
 	}
+	if convID != "" {
+		if wsID := s.workspaceIDForConv(convID); wsID != "" {
+			wsDay, wsMonth := s.workspaceBudgets(wsID)
+			if wsDay > 0 || wsMonth > 0 {
+				day, month, err := s.workspaceCostTotals(wsID, time.Now().UTC())
+				if err == nil && ((wsDay > 0 && day >= wsDay) || (wsMonth > 0 && month >= wsMonth)) {
+					return ErrCostBudgetExceeded
+				}
+			}
+		}
+	}
 	return nil
 }
 

@@ -57,6 +57,20 @@ func TestOpsStatusAPI(t *testing.T) {
 			Run        int `json:"run_days"`
 			Message    int `json:"message_days"`
 		} `json:"retention"`
+		Process struct {
+			Goroutines int `json:"goroutines"`
+		} `json:"process"`
+		DB struct {
+			MaxOpen int `json:"max_open"`
+			Open    int `json:"open"`
+			InUse   int `json:"in_use"`
+			Idle    int `json:"idle"`
+		} `json:"db"`
+		Streams struct {
+			Live    int64 `json:"live"`
+			Dropped int64 `json:"dropped"`
+			Slow    int64 `json:"slow"`
+		} `json:"streams"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -70,5 +84,14 @@ func TestOpsStatusAPI(t *testing.T) {
 	}
 	if body.Retention.Attachment != 30 || body.Retention.Run != 60 || body.Retention.Message != 90 {
 		t.Fatalf("retention=%+v", body.Retention)
+	}
+	if body.Process.Goroutines <= 0 {
+		t.Fatalf("process=%+v", body.Process)
+	}
+	if body.DB.Open < 0 || body.DB.InUse < 0 || body.DB.Idle < 0 {
+		t.Fatalf("db=%+v", body.DB)
+	}
+	if body.Streams.Live != 0 || body.Streams.Dropped != 0 || body.Streams.Slow != 0 {
+		t.Fatalf("streams=%+v", body.Streams)
 	}
 }

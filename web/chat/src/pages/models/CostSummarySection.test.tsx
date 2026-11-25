@@ -45,6 +45,8 @@ async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
     total_usd: 3,
     by_model: [{ key: 'm1', name: 'power', cost_usd: 2, ratio: 0.6667 }],
     by_agent: [{ key: 'a1', name: 'a1', cost_usd: 3, ratio: 1 }],
+    by_conversation: [{ key: 'c1', name: '季度复盘', cost_usd: 3, ratio: 1 }],
+    by_workspace: [{ key: 'default', name: '默认', cost_usd: 3, ratio: 1 }],
   })
   vi.spyOn(modelsApi, 'getAgentCostBudgets').mockResolvedValue({ items: agents })
   vi.spyOn(modelsApi, 'getModelCostBudgets').mockResolvedValue({
@@ -83,12 +85,36 @@ async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
     spent_usd_per_day: 0.02,
     spent_usd_per_month: 0.3,
   })
+  vi.spyOn(modelsApi, 'getWorkspaceCostBudgets').mockResolvedValue({
+    items: [
+      {
+        workspace_id: 'default',
+        name: '默认',
+        budget_usd_per_day: 0,
+        budget_usd_per_month: 0,
+        warning_ratio: 0,
+        exceeded_ratio: 0,
+        spent_usd_per_day: 0,
+        spent_usd_per_month: 0,
+      },
+    ],
+  })
+  const saveWorkspace = vi.spyOn(modelsApi, 'putWorkspaceCostBudget').mockResolvedValue({
+    workspace_id: 'default',
+    name: '默认',
+    budget_usd_per_day: 2,
+    budget_usd_per_month: 30,
+    warning_ratio: 0.5,
+    exceeded_ratio: 1.2,
+    spent_usd_per_day: 0.03,
+    spent_usd_per_month: 0.4,
+  })
   await act(async () => {
     createRoot(host).render(<CostSummarySection readOnly={false} />)
     await Promise.resolve()
     await Promise.resolve()
   })
-  return { save, saveAgent, saveModel }
+  return { save, saveAgent, saveModel, saveWorkspace }
 }
 
 describe('CostSummarySection monthly budget', () => {
@@ -101,6 +127,11 @@ describe('CostSummarySection monthly budget', () => {
     expect(host.textContent).toContain('按模型')
     expect(host.textContent).toContain('power')
     expect(host.textContent).toContain('$2.0000 · 67%')
+    expect(host.textContent).toContain('按会话')
+    expect(host.textContent).toContain('季度复盘')
+    expect(host.textContent).toContain('按工作区')
+    expect(host.textContent).toContain('默认')
+    expect(host.textContent).toContain('$3.0000 · 100%')
   })
 
   it('shows the daily trend and exports CSV', async () => {
@@ -120,6 +151,23 @@ describe('CostSummarySection monthly budget', () => {
       await Promise.resolve()
     })
     expect(exportSpy).toHaveBeenCalledWith(30)
+    expect(click).toHaveBeenCalled()
+  })
+
+  it('exports the breakdown CSV', async () => {
+    const exportSpy = vi
+      .spyOn(modelsApi, 'downloadCostExport')
+      .mockResolvedValue(new Blob(['group,key\n'], { type: 'text/csv' }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await renderSection()
+    const button = host.querySelector('[data-testid="cost-export-breakdown"]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    await act(async () => {
+      button.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(exportSpy).toHaveBeenCalledWith(30, 'breakdown')
     expect(click).toHaveBeenCalled()
   })
 
@@ -219,5 +267,38 @@ describe('CostSummarySection monthly budget', () => {
       exceeded_ratio: 0,
     })
     expect(row.textContent).toContain('已用：日 $0.0200 · 月 $0.3000')
+  })
+
+  it('saves per-workspace budgets', async () => {
+    const { saveWorkspace } = await renderSection()
+    const section = host.querySelector('[data-testid="workspace-budgets"]') as HTMLDivElement
+    expect(section).not.toBeNull()
+    const row = section.querySelector('.agent-budget-row') as HTMLDivElement
+    expect(row).not.toBeNull()
+    const inputs = row.querySelectorAll<HTMLInputElement>('input[type="number"]')
+    expect(inputs).toHaveLength(4)
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(inputs[0], '2')
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(inputs[1], '30')
+      inputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveBtn = [...row.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '保存',
+    ) as HTMLButtonElement
+    await act(async () => {
+      saveBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveWorkspace).toHaveBeenCalledWith({
+      workspace_id: 'default',
+      budget_usd_per_day: 2,
+      budget_usd_per_month: 30,
+      warning_ratio: 0,
+      exceeded_ratio: 0,
+    })
+    expect(row.textContent).toContain('已用：日 $0.0300 · 月 $0.4000')
   })
 })

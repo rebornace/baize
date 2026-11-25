@@ -175,6 +175,22 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 			}
 		}
 	}
+	for _, wsID := range s.configuredBudgetIDs(workspaceBudgetDayPrefix, workspaceBudgetMonthPrefix) {
+		dayBudget, monthBudget := s.workspaceBudgets(wsID)
+		if dayBudget <= 0 && monthBudget <= 0 {
+			continue
+		}
+		totalsDay, totalsMonth, err := s.workspaceCostTotals(wsID, now)
+		if err != nil {
+			continue
+		}
+		key := "workspace:" + wsID
+		st := state.Scopes[key]
+		ww, we := s.workspaceBudgetThresholds(wsID)
+		sw, se := mergeAlertThresholds(ww, we, warnRatio, exceededRatio)
+		evaluate(&st, "workspace", wsID, budgetAlertTotals{day: totalsDay, month: totalsMonth}, dayBudget, monthBudget, sw, se)
+		scopes[key] = st
+	}
 	state.Scopes = scopes
 
 	raw, _ := json.Marshal(state)
