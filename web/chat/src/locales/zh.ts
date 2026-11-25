@@ -145,7 +145,7 @@ export const zhPack = {
   budgetExceeded: (scope: string, total: number, budget: number) =>
     `${scope}费用已超预算（$${total.toFixed(2)} / $${budget.toFixed(2)}）`,
   attachmentManager: '附件',
-  attachmentManagerTitle: '会话附件',
+  attachmentManagerTitle: '会话数据',
   attachmentManagerHint:
     '可以批量删除附件；原文件与会话工作区副本会一起移除，已发送给模型的历史内容不会撤回。删除后刷新聊天，气泡会显示附件已删除。',
   attachmentManagerLoading: '加载附件中…',
@@ -166,6 +166,9 @@ export const zhPack = {
   attachmentRetentionSave: '保存保留',
   attachmentRetentionInvalid: '保留天数需在 -1–3650 之间',
   attachmentRetentionFailed: '保存保留策略失败',
+  attachmentRetentionTitle: '附件保留',
+  conversationMessageRetentionTitle: '消息保留',
+  conversationRunRetentionTitle: '运行记录保留',
   conversationBudgetTitle: '会话预算（0 = 不限制）',
   conversationBudgetDay: '日（USD）',
   conversationBudgetMonth: '月（USD）',
@@ -451,14 +454,14 @@ export const zhPack = {
   retentionInvalid: '保留天数需在 0–3650 之间',
   runRetentionTitle: '运行历史保留',
   runRetentionHint:
-    '超过保留期的已完成运行会被自动清理，包括事件和费用缓存；排队、运行中、待审批的运行不会被删除。0 表示不清理。',
+    '超过保留期的已完成运行会被自动清理，包括事件和费用缓存；排队、运行中、待审批的运行不会被删除。0 表示不清理。可在会话数据面板为本会话单独覆盖。',
   runRetentionDaysLabel: '保留天数（0 = 永久）',
   runRetentionSave: '保存运行保留',
   runRetentionSaved: '运行保留已保存',
   runRetentionInvalid: '运行保留天数需在 0–3650 之间',
   messageRetentionTitle: '会话消息保留',
   messageRetentionHint:
-    '超过保留期的消息会被删除，但每个会话始终保留最近 2 条；有运行中或待审批任务的会话会跳过。0 表示不清理。',
+    '超过保留期的消息会被删除，但每个会话始终保留最近 2 条；有运行中或待审批任务的会话会跳过。0 表示不清理。可在会话数据面板为本会话单独覆盖。',
   messageRetentionDaysLabel: '保留天数（0 = 永久）',
   messageRetentionSave: '保存消息保留',
   messageRetentionSaved: '消息保留已保存',
@@ -1200,7 +1203,7 @@ export const zhPack = {
   priceCost: (cost: number, currency: string) => `预计费用 ${currency} ${cost.toFixed(6)}`,
   priceUnpriced: '未匹配到该模型价格',
   costTitle: '费用汇总',
-  costHint: '按运行创建时间汇总最近 7 天与本月预计费用；预算可只提示，也可阻止新运行。',
+  costHint: '按运行创建时间汇总最近 30 天与本月预计费用；预算可只提示，也可阻止新运行。',
   costToday: (cost: number, currency: string) => `今日 ${currency} ${cost.toFixed(6)}`,
   costBudgetLabel: '每日预算（USD，0 = 不提醒）',
   costMonthLabel: '月度预算（USD，0 = 不提醒）',
@@ -1223,13 +1226,22 @@ export const zhPack = {
   agentBudgetSave: '保存',
   agentBudgetSpent: (day: number, month: number) =>
     `已用：日 $${day.toFixed(4)} · 月 $${month.toFixed(4)}`,
+  modelBudgetTitle: '模型预算',
+  modelBudgetHint: '按模型档案设置日/月预算；达到阈值会发送 budget.alert，但不会改变自动路由。',
+  modelBudgetSpent: (day: number, month: number) =>
+    `已用：日 $${day.toFixed(4)} · 月 $${month.toFixed(4)}`,
   costBreakdownTitle: '费用分布（近 30 天）',
   costByModel: '按模型',
   costByAgent: '按 Agent',
   costDefaultModel: '默认模型',
   costMonth: (cost: number, currency: string) => `本月 ${currency} ${cost.toFixed(6)}`,
   costEnforceLabel: '超预算时阻止新运行',
-  costNoData: '最近 7 天没有可计价的运行',
+  costTrendTitle: '每日费用（近 30 天）',
+  costTrendTotal: (total: number, days: number) =>
+    `${days} 天合计 USD ${total.toFixed(6)}`,
+  costExport: '导出 CSV',
+  costExporting: '导出中…',
+  costNoData: '最近 30 天没有可计价的运行',
 },
   SKILLS: {
   title: '技能',

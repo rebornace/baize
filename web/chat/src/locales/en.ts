@@ -136,7 +136,7 @@ export const enPack = {
     budgetExceeded: (scope: string, total: number, budget: number) =>
       `${scope} spending is over budget ($${total.toFixed(2)} / $${budget.toFixed(2)})`,
     attachmentManager: 'Attachments',
-    attachmentManagerTitle: 'Conversation attachments',
+    attachmentManagerTitle: 'Conversation data',
     attachmentManagerHint:
       'Delete attachments in bulk. The original file and its workspace copy are removed; content already sent to the model is not recalled. Refresh the chat to see the deleted state in bubbles.',
     attachmentManagerLoading: 'Loading attachments…',
@@ -159,6 +159,9 @@ export const enPack = {
     attachmentRetentionSave: 'Save retention',
     attachmentRetentionInvalid: 'Retention days must be between -1 and 3650',
     attachmentRetentionFailed: 'Could not save the retention policy',
+    attachmentRetentionTitle: 'Attachment retention',
+    conversationMessageRetentionTitle: 'Message retention',
+    conversationRunRetentionTitle: 'Run history retention',
     conversationBudgetTitle: 'Conversation budget (0 = no limit)',
     conversationBudgetDay: 'Day (USD)',
     conversationBudgetMonth: 'Month (USD)',
@@ -444,14 +447,14 @@ export const enPack = {
     retentionInvalid: 'Retention days must be between 0 and 3650',
     runRetentionTitle: 'Run history retention',
     runRetentionHint:
-      'Completed runs older than the retention window are cleaned up automatically, including their events and cached costs. Queued, running, and waiting-for-approval runs are never deleted. 0 keeps everything.',
+      'Completed runs older than the retention window are cleaned up automatically, including their events and cached costs. Queued, running, and waiting-for-approval runs are never deleted. 0 keeps everything. Override it per conversation in the conversation data panel.',
     runRetentionDaysLabel: 'Retention days (0 = forever)',
     runRetentionSave: 'Save run retention',
     runRetentionSaved: 'Run retention saved',
     runRetentionInvalid: 'Run retention days must be between 0 and 3650',
     messageRetentionTitle: 'Conversation message retention',
     messageRetentionHint:
-      'Messages older than the retention window are deleted, but each conversation always keeps its newest 2 messages. Conversations with an active or waiting run are skipped. 0 keeps everything.',
+      'Messages older than the retention window are deleted, but each conversation always keeps its newest 2 messages. Conversations with an active or waiting run are skipped. 0 keeps everything. Override it per conversation in the conversation data panel.',
     messageRetentionDaysLabel: 'Retention days (0 = forever)',
     messageRetentionSave: 'Save message retention',
     messageRetentionSaved: 'Message retention saved',
@@ -1218,7 +1221,7 @@ export const enPack = {
     priceUnpriced: 'No matching model price',
     costTitle: 'Cost summary',
     costHint:
-      'Estimated cost for the last 7 days and this month by run creation time. Budgets can warn or block new runs.',
+      'Estimated cost for the last 30 days and this month by run creation time. Budgets can warn or block new runs.',
     costToday: (cost: number, currency: string) => `Today ${currency} ${cost.toFixed(6)}`,
     costBudgetLabel: 'Daily budget (USD, 0 = no warning)',
     costMonthLabel: 'Monthly budget (USD, 0 = no warning)',
@@ -1243,13 +1246,23 @@ export const enPack = {
     agentBudgetSave: 'Save',
     agentBudgetSpent: (day: number, month: number) =>
       `Spent: day $${day.toFixed(4)} · month $${month.toFixed(4)}`,
+    modelBudgetTitle: 'Model budgets',
+    modelBudgetHint:
+      'Set daily/monthly budgets per model profile. Reaching a threshold sends budget.alert but does not change automatic routing.',
+    modelBudgetSpent: (day: number, month: number) =>
+      `Spent: day $${day.toFixed(4)} · month $${month.toFixed(4)}`,
     costBreakdownTitle: 'Cost breakdown (last 30 days)',
     costByModel: 'By model',
     costByAgent: 'By agent',
     costDefaultModel: 'Default model',
     costMonth: (cost: number, currency: string) => `This month ${currency} ${cost.toFixed(6)}`,
     costEnforceLabel: 'Block new runs when over budget',
-    costNoData: 'No priced runs in the last 7 days',
+    costTrendTitle: 'Daily cost (last 30 days)',
+    costTrendTotal: (total: number, days: number) =>
+      `${days}-day total USD ${total.toFixed(6)}`,
+    costExport: 'Export CSV',
+    costExporting: 'Exporting…',
+    costNoData: 'No priced runs in the last 30 days',
   },
   SKILLS: {
     title: 'Skills',

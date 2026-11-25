@@ -74,6 +74,26 @@ async function renderManager() {
     effective_days: 7,
     global_days: 30,
   })
+  vi.spyOn(api, 'getConversationMessageRetention').mockResolvedValue({
+    days: -1,
+    effective_days: 30,
+    global_days: 30,
+  })
+  vi.spyOn(api, 'getConversationRunRetention').mockResolvedValue({
+    days: -1,
+    effective_days: 60,
+    global_days: 60,
+  })
+  const saveMessage = vi.spyOn(api, 'putConversationMessageRetention').mockResolvedValue({
+    days: 14,
+    effective_days: 14,
+    global_days: 30,
+  })
+  const saveRun = vi.spyOn(api, 'putConversationRunRetention').mockResolvedValue({
+    days: 0,
+    effective_days: 0,
+    global_days: 60,
+  })
   await act(async () => {
     createRoot(host).render(
       <GateContext.Provider value={{ role: 'admin', gateEnabled: false, operatorId: 'op' }}>
@@ -83,7 +103,7 @@ async function renderManager() {
     await Promise.resolve()
     await Promise.resolve()
   })
-  return { list, remove, saveRetention, saveBudget }
+  return { list, remove, saveRetention, saveBudget, saveMessage, saveRun }
 }
 
 describe('AttachmentManager', () => {
@@ -137,6 +157,37 @@ describe('AttachmentManager', () => {
     })
     expect(saveRetention).toHaveBeenCalledWith('c1', 7)
     expect(host.textContent).toContain('本会话：7 天')
+  })
+
+  it('saves conversation message and run retention overrides', async () => {
+    const { saveMessage, saveRun } = await renderManager()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    const messageInput = host.querySelector<HTMLInputElement>('[data-testid="message-retention-days"]')
+    const runInput = host.querySelector<HTMLInputElement>('[data-testid="run-retention-days"]')
+    expect(messageInput).not.toBeNull()
+    expect(runInput).not.toBeNull()
+    await act(async () => {
+      setter?.call(messageInput, '14')
+      messageInput!.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(runInput, '0')
+      runInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveMessageBtn = host.querySelector(
+      '[data-testid="message-retention-save"]',
+    ) as HTMLButtonElement
+    const saveRunBtn = host.querySelector('[data-testid="run-retention-save"]') as HTMLButtonElement
+    await act(async () => {
+      saveMessageBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      saveRunBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveMessage).toHaveBeenCalledWith('c1', 14)
+    expect(saveRun).toHaveBeenCalledWith('c1', 0)
   })
 
   it('saves a conversation budget', async () => {

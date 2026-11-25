@@ -6,10 +6,14 @@ import { fileKind } from '../../components/ChannelFileLink'
 import {
   deleteConversationAttachments,
   getConversationCostBudget,
+  getConversationMessageRetention,
   getConversationRetention,
+  getConversationRunRetention,
   listConversationAttachments,
   putConversationCostBudget,
+  putConversationMessageRetention,
   putConversationRetention,
+  putConversationRunRetention,
   type ConversationAttachment,
   type ConversationCostBudget,
   type ConversationRetention,
@@ -20,6 +24,51 @@ export interface AttachmentManagerProps {
   conversationId: string
   open: boolean
   onClose: () => void
+}
+
+interface RetentionRowProps {
+  title: string
+  policy: ConversationRetention
+  value: string
+  busy: boolean
+  testId: string
+  onChange: (value: string) => void
+  onSave: () => void
+}
+
+function RetentionRow({ title, policy, value, busy, testId, onChange, onSave }: RetentionRowProps) {
+  return (
+    <div className="attachment-retention">
+      <span className="settings-muted">{title}</span>
+      <span className="settings-muted">
+        {CHAT.attachmentRetentionGlobal(policy.global_days)}
+        {' · '}
+        {CHAT.attachmentRetentionEffective(policy.effective_days)}
+      </span>
+      <label className="settings-muted">
+        {CHAT.attachmentRetentionLabel}
+        <Input
+          type="number"
+          min={-1}
+          max={3650}
+          value={value}
+          disabled={busy}
+          onChange={(e) => onChange(e.target.value)}
+          data-testid={`${testId}-days`}
+        />
+      </label>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={busy}
+        onClick={onSave}
+        data-testid={`${testId}-save`}
+      >
+        {CHAT.attachmentRetentionSave}
+      </Button>
+    </div>
+  )
 }
 
 function formatBytes(n: number): string {
@@ -41,6 +90,13 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
   const [retention, setRetention] = useState<ConversationRetention | null>(null)
   const [retentionDays, setRetentionDays] = useState('-1')
   const [retentionBusy, setRetentionBusy] = useState(false)
+  const [messageRetention, setMessageRetention] = useState<ConversationRetention | null>(null)
+  const [messageDays, setMessageDays] = useState('-1')
+  const [messageBusy, setMessageBusy] = useState(false)
+  const [runRetention, setRunRetention] = useState<ConversationRetention | null>(null)
+  const [runDays, setRunDays] = useState('-1')
+  const [runBusy, setRunBusy] = useState(false)
+
   const [costBudget, setCostBudget] = useState<ConversationCostBudget | null>(null)
   const [budgetDay, setBudgetDay] = useState('0')
   const [budgetMonth, setBudgetMonth] = useState('0')
@@ -49,10 +105,12 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
   const [budgetBusy, setBudgetBusy] = useState(false)
 
   const load = useCallback(async () => {
-    const [listRes, retRes, budgetRes] = await Promise.allSettled([
+    const [listRes, retRes, budgetRes, msgRes, runRes] = await Promise.allSettled([
       listConversationAttachments(conversationId),
       getConversationRetention(conversationId),
       getConversationCostBudget(conversationId),
+      getConversationMessageRetention(conversationId),
+      getConversationRunRetention(conversationId),
     ])
     if (listRes.status === 'fulfilled') {
       setItems(listRes.value.items)
@@ -65,6 +123,14 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
     if (retRes.status === 'fulfilled') {
       setRetention(retRes.value)
       setRetentionDays(String(retRes.value.days))
+    }
+    if (msgRes.status === 'fulfilled') {
+      setMessageRetention(msgRes.value)
+      setMessageDays(String(msgRes.value.days))
+    }
+    if (runRes.status === 'fulfilled') {
+      setRunRetention(runRes.value)
+      setRunDays(String(runRes.value.days))
     }
     if (budgetRes.status === 'fulfilled') {
       setCostBudget(budgetRes.value)
@@ -110,24 +176,39 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
     }
   }
 
-  const saveRetention = async () => {
-    const days = Number.parseInt(retentionDays, 10)
+  const savePolicy = async (
+    raw: string,
+    put: (id: string, days: number) => Promise<ConversationRetention>,
+    apply: (next: ConversationRetention) => void,
+    setDays: (value: string) => void,
+    setPolicyBusy: (value: boolean) => void,
+  ) => {
+    const days = Number.parseInt(raw, 10)
     if (!Number.isFinite(days) || days < -1 || days > 3650) {
       setError(CHAT.attachmentRetentionInvalid)
       return
     }
-    setRetentionBusy(true)
+    setPolicyBusy(true)
     try {
-      const next = await putConversationRetention(conversationId, days)
-      setRetention(next)
-      setRetentionDays(String(next.days))
+      const next = await put(conversationId, days)
+      apply(next)
+      setDays(String(next.days))
       setError(null)
     } catch {
       setError(CHAT.attachmentRetentionFailed)
     } finally {
-      setRetentionBusy(false)
+      setPolicyBusy(false)
     }
   }
+
+  const saveRetention = () =>
+    savePolicy(retentionDays, putConversationRetention, setRetention, setRetentionDays, setRetentionBusy)
+
+  const saveMessageRetention = () =>
+    savePolicy(messageDays, putConversationMessageRetention, setMessageRetention, setMessageDays, setMessageBusy)
+
+  const saveRunRetention = () =>
+    savePolicy(runDays, putConversationRunRetention, setRunRetention, setRunDays, setRunBusy)
 
   const saveBudget = async () => {
     const d = Number.parseFloat(budgetDay)
@@ -185,35 +266,37 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
     >
       <p className="settings-muted">{CHAT.attachmentManagerHint}</p>
       {retention ? (
-        <div className="attachment-retention">
-          <span className="settings-muted">
-            {CHAT.attachmentRetentionGlobal(retention.global_days)}
-            {' · '}
-            {CHAT.attachmentRetentionEffective(retention.effective_days)}
-          </span>
-          <label className="settings-muted">
-            {CHAT.attachmentRetentionLabel}
-            <Input
-              type="number"
-              min={-1}
-              max={3650}
-              value={retentionDays}
-              disabled={retentionBusy}
-              onChange={(e) => setRetentionDays(e.target.value)}
-              data-testid="attachment-retention-days"
-            />
-          </label>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={retentionBusy}
-            onClick={() => void saveRetention()}
-            data-testid="attachment-retention-save"
-          >
-            {CHAT.attachmentRetentionSave}
-          </Button>
-        </div>
+        <RetentionRow
+          title={CHAT.attachmentRetentionTitle}
+          policy={retention}
+          value={retentionDays}
+          busy={retentionBusy}
+          testId="attachment-retention"
+          onChange={setRetentionDays}
+          onSave={() => void saveRetention()}
+        />
+      ) : null}
+      {messageRetention ? (
+        <RetentionRow
+          title={CHAT.conversationMessageRetentionTitle}
+          policy={messageRetention}
+          value={messageDays}
+          busy={messageBusy}
+          testId="message-retention"
+          onChange={setMessageDays}
+          onSave={() => void saveMessageRetention()}
+        />
+      ) : null}
+      {runRetention ? (
+        <RetentionRow
+          title={CHAT.conversationRunRetentionTitle}
+          policy={runRetention}
+          value={runDays}
+          busy={runBusy}
+          testId="run-retention"
+          onChange={setRunDays}
+          onSave={() => void saveRunRetention()}
+        />
       ) : null}
       {costBudget ? (
         <div className="attachment-retention">

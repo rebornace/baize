@@ -651,10 +651,21 @@ type Store interface {
 	// ListChildRuns returns depth-1 children of parentRunID (newest last).
 	ListChildRuns(parentRunID string) ([]*Run, error)
 	UpdateRun(id string, status Status, output, errMsg string) error
+	// ListRunConversationIDs returns non-empty conversation ids present in runs.
+	ListRunConversationIDs() ([]string, error)
+	// DeleteTerminalRunsBeforeForConversation is the scoped form used by
+	// per-conversation retention.
+	DeleteTerminalRunsBeforeForConversation(conversationID string, cutoff time.Time, limit int) (int, error)
 	// DeleteTerminalRunsBefore removes terminal runs created before cutoff,
 	// together with their events, cached costs and HITL payloads. Active runs
 	// are never touched. Returns the number of runs deleted.
 	DeleteTerminalRunsBefore(cutoff time.Time, limit int) (int, error)
+	// DeleteTerminalRunsBeforeExcluding removes terminal runs like
+	// DeleteTerminalRunsBefore but skips the given conversation ids. It backs
+	// per-conversation retention overrides in the global sweep.
+	DeleteTerminalRunsBeforeExcluding(
+		cutoff time.Time, limit int, excludeConversationIDs []string,
+	) (int, error)
 	// LeaseRun atomically acquires a worker lease for a queued/running/waiting_human
 	// run whose lease is absent or expired. Returns acquired=false when another
 	// worker holds a live lease or the run is terminal.

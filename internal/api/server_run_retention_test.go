@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -46,6 +47,163 @@ func TestRunRetentionSettingsAPI(t *testing.T) {
 		h.ServeHTTP(rr, bad)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("bad %s=%d", payload, rr.Code)
+		}
+	}
+}
+
+func TestConversationRunRetentionAPI(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	h := srv.Handler()
+	if err := srv.Store.UpsertSetting(runRetentionSettingKey, []byte("30")); err != nil {
+		t.Fatal(err)
+	}
+	get := httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/run-retention", nil)
+	get.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, get)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get=%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Days      int `json:"days"`
+		Effective int `json:"effective_days"`
+		Global    int `json:"global_days"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Days != -1 || body.Effective != 30 || body.Global != 30 {
+		t.Fatalf("default=%+v", body)
+	}
+	put := httptest.NewRequest(http.MethodPut, "/v0/conversations/c1/run-retention",
+		bytes.NewBufferString(`{"days":90}`))
+	put.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put=%d %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Days != 90 || body.Effective != 90 || body.Global != 30 {
+		t.Fatalf("override=%+v", body)
+	}
+	bad := httptest.NewRequest(http.MethodPut, "/v0/conversations/c1/run-retention",
+		bytes.NewBufferString(`{"days":3651}`))
+	bad.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, bad)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad=%d", rr.Code)
+	}
+}
+
+func TestRunRetentionConversationOverride(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	if err := st.UpsertSetting(runRetentionSettingKey, []byte("30")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionConvPrefix+"c-long", []byte("90")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionConvPrefix+"c-forever", []byte("0")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionConvPrefix+"c-short", []byte("10")); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	mk := func(conv string) *store.Run {
+		r, err := st.CreateRun(store.CreateRunInput{
+			AgentID: "a", Input: conv, ConversationID: conv, CreatedAt: old,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpdateRun(r.ID, store.StatusSucceeded, "ok", ""); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	plain := mk("c-plain")
+	long := mk("c-long")
+	forever := mk("c-forever")
+	short := mk("c-short")
+
+	n, err := srv.cleanupExpiredRuns()
+	if err != nil || n != 2 {
+		t.Fatalf("cleanup n=%d err=%v", n, err)
+	}
+	if _, err := st.GetRun(plain.ID); err == nil {
+		t.Fatal("global conversation not cleaned")
+	}
+	if _, err := st.GetRun(short.ID); err == nil {
+		t.Fatal("short override not cleaned")
+	}
+	if _, err := st.GetRun(long.ID); err != nil {
+		t.Fatalf("long override removed: %v", err)
+	}
+	if _, err := st.GetRun(forever.ID); err != nil {
+		t.Fatalf("forever override removed: %v", err)
+	}
+
+	// Turning the global policy off must not stop scoped overrides.
+	if err := st.UpsertSetting(runRetentionSettingKey, []byte("0")); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := srv.cleanupExpiredRuns(); err != nil || n != 0 {
+		t.Fatalf("global-off cleanup n=%d err=%v", n, err)
+	}
+	if _, err := st.GetRun(long.ID); err != nil {
+		t.Fatalf("long override damaged: %v", err)
+	}
+	if _, err := st.GetRun(forever.ID); err != nil {
+		t.Fatalf("forever override damaged: %v", err)
+	}
+}
+
+func TestRunRetentionManyOverridesFallback(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	// Force the per-conversation fallback with a large override set.
+	for i := 0; i <= runRetentionMaxOverrides; i++ {
+		key := fmt.Sprintf("%sbulk-%d", runRetentionConvPrefix, i)
+		if err := st.UpsertSetting(key, []byte("0")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.UpsertSetting(runRetentionConvPrefix+"c-old", []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	mk := func(conv string) {
+		r, err := st.CreateRun(store.CreateRunInput{
+			AgentID: "a", Input: conv, ConversationID: conv, CreatedAt: old,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpdateRun(r.ID, store.StatusSucceeded, "ok", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("c-old")
+	mk("c-plain")
+	n, err := srv.cleanupExpiredRuns()
+	if err != nil || n != 1 {
+		t.Fatalf("fallback n=%d err=%v", n, err)
+	}
+	convs, err := st.ListRunConversationIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, conv := range convs {
+		switch conv {
+		case "c-old":
+			t.Fatal("c-old should be cleaned")
+		case "c-plain":
 		}
 	}
 }

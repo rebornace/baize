@@ -66,6 +66,52 @@ export async function putConversationRetention(
   return parseJSON(res)
 }
 
+export async function getConversationMessageRetention(
+  conversationId: string,
+): Promise<ConversationRetention> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/message-retention`,
+    { headers: authInit() },
+  )
+  return parseJSON(res)
+}
+
+export async function putConversationMessageRetention(
+  conversationId: string,
+  days: number,
+): Promise<ConversationRetention> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/message-retention`,
+    {
+      method: 'PUT',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ days }),
+    },
+  )
+  return parseJSON(res)
+}
+
+export async function getConversationRunRetention(
+  conversationId: string,
+): Promise<ConversationRetention> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/run-retention`, {
+    headers: authInit(),
+  })
+  return parseJSON(res)
+}
+
+export async function putConversationRunRetention(
+  conversationId: string,
+  days: number,
+): Promise<ConversationRetention> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/run-retention`, {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ days }),
+  })
+  return parseJSON(res)
+}
+
 export interface ConversationCostBudget {
   budget_usd_per_day: number
   budget_usd_per_month: number

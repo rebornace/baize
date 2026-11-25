@@ -1626,6 +1626,61 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cost-trend {
+  margin: var(--space-3) 0;
+}
+
+.cost-trend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cost-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 96px;
+  margin-top: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.cost-trend-bar {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 2px;
+}
+
+.cost-trend-bar > span {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.cost-trend-bar:hover > span {
+  opacity: 1;
+}
+
+.cost-trend-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.route-loading {
+  display: flex;
+  min-height: 50vh;
+  align-items: center;
+  justify-content: center;
+}
+
 .run-overview {
   margin: var(--space-3) 0;
   padding: var(--space-3);

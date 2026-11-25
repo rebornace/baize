@@ -47,6 +47,21 @@ async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
     by_agent: [{ key: 'a1', name: 'a1', cost_usd: 3, ratio: 1 }],
   })
   vi.spyOn(modelsApi, 'getAgentCostBudgets').mockResolvedValue({ items: agents })
+  vi.spyOn(modelsApi, 'getModelCostBudgets').mockResolvedValue({
+    items: [
+      {
+        model_profile_id: 'm1',
+        name: 'power',
+        model: 'gpt-4o',
+        budget_usd_per_day: 0,
+        budget_usd_per_month: 0,
+        warning_ratio: 0,
+        exceeded_ratio: 0,
+        spent_usd_per_day: 0,
+        spent_usd_per_month: 0,
+      },
+    ],
+  })
   const save = vi.spyOn(modelsApi, 'putCostBudget').mockResolvedValue()
   const saveAgent = vi.spyOn(modelsApi, 'putAgentCostBudget').mockResolvedValue({
     agent_id: 'a1',
@@ -57,12 +72,23 @@ async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
     spent_usd_per_day: 0.01,
     spent_usd_per_month: 0.2,
   })
+  const saveModel = vi.spyOn(modelsApi, 'putModelCostBudget').mockResolvedValue({
+    model_profile_id: 'm1',
+    name: 'power',
+    model: 'gpt-4o',
+    budget_usd_per_day: 1,
+    budget_usd_per_month: 20,
+    warning_ratio: 0.5,
+    exceeded_ratio: 1.2,
+    spent_usd_per_day: 0.02,
+    spent_usd_per_month: 0.3,
+  })
   await act(async () => {
     createRoot(host).render(<CostSummarySection readOnly={false} />)
     await Promise.resolve()
     await Promise.resolve()
   })
-  return { save, saveAgent }
+  return { save, saveAgent, saveModel }
 }
 
 describe('CostSummarySection monthly budget', () => {
@@ -77,9 +103,31 @@ describe('CostSummarySection monthly budget', () => {
     expect(host.textContent).toContain('$2.0000 · 67%')
   })
 
+  it('shows the daily trend and exports CSV', async () => {
+    const exportSpy = vi
+      .spyOn(modelsApi, 'downloadCostExport')
+      .mockResolvedValue(new Blob(['date,runs,cost_usd\n'], { type: 'text/csv' }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await renderSection()
+    expect(host.querySelector('[data-testid="cost-trend"]')).not.toBeNull()
+    expect(host.querySelectorAll('[data-testid="cost-trend-bar"]')).toHaveLength(1)
+    expect(host.textContent).toContain('天合计 USD 1.000000')
+    const button = host.querySelector('[data-testid="cost-export"]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    await act(async () => {
+      button.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(exportSpy).toHaveBeenCalledWith(30)
+    expect(click).toHaveBeenCalled()
+  })
+
   it('saves the monthly budget alongside the daily budget', async () => {
     const { save } = await renderSection()
-    const inputs = host.querySelectorAll<HTMLInputElement>('input[type="number"]')
+    const inputs = host.querySelectorAll<HTMLInputElement>(
+      '.settings-form-actions input[type="number"]',
+    )
     expect(inputs).toHaveLength(4)
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     await act(async () => {
@@ -138,5 +186,38 @@ describe('CostSummarySection monthly budget', () => {
       exceeded_ratio: 0,
     })
     expect(host.textContent).toContain('已用：日 $0.0100 · 月 $0.2000')
+  })
+
+  it('saves per-model budgets', async () => {
+    const { saveModel } = await renderSection()
+    const section = host.querySelector('[data-testid="model-budgets"]') as HTMLDivElement
+    expect(section).not.toBeNull()
+    const row = section.querySelector('.agent-budget-row') as HTMLDivElement
+    expect(row).not.toBeNull()
+    const inputs = row.querySelectorAll<HTMLInputElement>('input[type="number"]')
+    expect(inputs).toHaveLength(4)
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(inputs[0], '1')
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(inputs[1], '20')
+      inputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveBtn = [...row.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '保存',
+    ) as HTMLButtonElement
+    await act(async () => {
+      saveBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveModel).toHaveBeenCalledWith({
+      model_profile_id: 'm1',
+      budget_usd_per_day: 1,
+      budget_usd_per_month: 20,
+      warning_ratio: 0,
+      exceeded_ratio: 0,
+    })
+    expect(row.textContent).toContain('已用：日 $0.0200 · 月 $0.3000')
   })
 })

@@ -1,4 +1,4 @@
-﻿import { authInit, parseJSON } from '../http'
+﻿import { ApiError, authInit, parseJSON } from '../http'
 import type { ThinkingLevel } from '../types'
 
 /** Wire dialect for thinking fields; `auto` lets the server infer. */
@@ -269,6 +269,24 @@ export async function getCostBreakdown(days = 30): Promise<CostBreakdown> {
   return parseJSON(res)
 }
 
+/** Fetch the daily cost rollup as a CSV blob for client-side download. */
+export async function downloadCostExport(days = 30): Promise<Blob> {
+  const res = await fetch(`/v0/settings/cost-export?days=${days}`, { headers: authInit() })
+  if (!res.ok) {
+    let code = 'unknown'
+    let message = res.statusText
+    try {
+      const body = (await res.json()) as { error?: { code?: string; message?: string } }
+      if (body.error?.code) code = body.error.code
+      if (body.error?.message) message = body.error.message
+    } catch {
+      /* ignore non-JSON */
+    }
+    throw new ApiError(res.status, code, `HTTP ${res.status}: ${message}`)
+  }
+  return res.blob()
+}
+
 export interface AgentCostBudgetInput {
   agent_id: string
   budget_usd_per_day: number
@@ -289,6 +307,35 @@ export async function getAgentCostBudgets(): Promise<{ items: AgentCostBudget[] 
 
 export async function putAgentCostBudget(body: AgentCostBudgetInput): Promise<AgentCostBudget> {
   const res = await fetch('/v0/settings/agent-cost-budgets', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON(res)
+}
+
+export interface ModelCostBudgetInput {
+  model_profile_id: string
+  budget_usd_per_day: number
+  budget_usd_per_month: number
+  warning_ratio: number
+  exceeded_ratio: number
+}
+
+export interface ModelCostBudget extends ModelCostBudgetInput {
+  name: string
+  model: string
+  spent_usd_per_day: number
+  spent_usd_per_month: number
+}
+
+export async function getModelCostBudgets(): Promise<{ items: ModelCostBudget[] }> {
+  const res = await fetch('/v0/settings/model-cost-budgets', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function putModelCostBudget(body: ModelCostBudgetInput): Promise<ModelCostBudget> {
+  const res = await fetch('/v0/settings/model-cost-budgets', {
     method: 'PUT',
     headers: authInit({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),

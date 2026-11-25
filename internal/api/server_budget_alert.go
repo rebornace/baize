@@ -156,6 +156,25 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 		evaluate(&st, "conversation", convID, budgetAlertTotals{day: totalsDay, month: totalsMonth}, dayBudget, monthBudget, sw, se)
 		scopes[key] = st
 	}
+	// Model budgets only alert; routing is not constrained by them yet.
+	if modelIDs := s.configuredBudgetIDs(modelBudgetDayPrefix, modelBudgetMonthPrefix); len(modelIDs) > 0 {
+		if modelDay, modelMonth, err := s.modelCostTotals(now); err == nil {
+			for _, modelID := range modelIDs {
+				dayBudget, monthBudget := s.modelBudgets(modelID)
+				if dayBudget <= 0 && monthBudget <= 0 {
+					continue
+				}
+				key := "model:" + modelID
+				st := state.Scopes[key]
+				mw, me := s.modelBudgetThresholds(modelID)
+				sw, se := mergeAlertThresholds(mw, me, warnRatio, exceededRatio)
+				evaluate(&st, "model", modelID, budgetAlertTotals{
+					day: modelDay[modelID], month: modelMonth[modelID],
+				}, dayBudget, monthBudget, sw, se)
+				scopes[key] = st
+			}
+		}
+	}
 	state.Scopes = scopes
 
 	raw, _ := json.Marshal(state)

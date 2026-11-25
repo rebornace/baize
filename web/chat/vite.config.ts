@@ -6,6 +6,18 @@ export default defineConfig({
   base: '/ui/',
   plugins: [react()],
   server: { proxy: { '/v0': 'http://127.0.0.1:8080' } },
-  build: { outDir: '../../internal/ui/dist', emptyOutDir: true },
+  build: {
+    outDir: '../../internal/ui/dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          icons: ['lucide-react'],
+          qrcode: ['qrcode'],
+        },
+      },
+    },
+  },
   test: { environment: 'node' },
 })

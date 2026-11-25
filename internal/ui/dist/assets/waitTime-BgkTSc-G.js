@@ -1,0 +1,1 @@
+function s(e,n,t){if(!e)return null;const o=Date.parse(e);if(!Number.isFinite(o))return null;const i=Math.max(0,n-o),r=Math.floor(i/6e4);if(r<60)return t.waitedMinutes(Math.max(1,r));const a=Math.floor(r/60);return a<24?t.waitedHours(a):t.waitedDays(Math.floor(a/24))}export{s as w};
