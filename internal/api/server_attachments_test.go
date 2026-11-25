@@ -1,11 +1,14 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -837,5 +840,133 @@ func TestPostRunSkillMentionActivatesSkill(t *testing.T) {
 	}
 	if !strings.Contains(sys, "use list_tickets for analytics") {
 		t.Fatalf("mention must activate the skill; system prompt missing skill guidance body: %q", sys)
+	}
+}
+
+// buildScannedPDFBase64 embeds one JPEG page image and no text operators.
+func buildScannedPDFBase64(t *testing.T) string {
+	t.Helper()
+	var jpg bytes.Buffer
+	if err := jpeg.Encode(&jpg, image.NewRGBA(image.Rect(0, 0, 2, 2)), &jpeg.Options{Quality: 80}); err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	b.WriteString("%PDF-1.4\n")
+	offsets := []int{0}
+	writeObj := func(n int, content string) {
+		offsets = append(offsets, b.Len())
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", n, content)
+	}
+	writeObj(1, "<< /Type /Catalog /Pages 2 0 R >>")
+	writeObj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+	writeObj(3, "<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im0 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 4 0 R >>")
+	stream := "q 612 0 0 792 0 0 cm /Im0 Do Q"
+	writeObj(4, fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream))
+	offsets = append(offsets, b.Len())
+	fmt.Fprintf(&b, "5 0 obj\n<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\nstream\n", jpg.Len())
+	b.Write(jpg.Bytes())
+	b.WriteString("\nendstream\nendobj\n")
+	xrefStart := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n", len(offsets))
+	fmt.Fprintf(&b, "%010d 65535 f \r\n", 0)
+	for _, off := range offsets[1:] {
+		fmt.Fprintf(&b, "%010d 00000 n \r\n", off)
+	}
+	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF", len(offsets), xrefStart)
+	return base64.StdEncoding.EncodeToString(b.Bytes())
+}
+
+// TestPostRunScannedPDFPersistsDocumentImages: page images extracted from a
+// scanned PDF are persisted as conversation attachments and shown in the user
+// bubble, with a source caption marker, instead of being model-only.
+func TestPostRunScannedPDFPersistsDocumentImages(t *testing.T) {
+	_, st, llmMock, h, _ := attachmentsServer(t, true)
+	putAgent(t, h, "a1")
+	seedVisionProfile(t, st, "视觉模型")
+
+	rr := postRun(t, h, map[string]any{
+		"agent_id":        "a1",
+		"input":           "读一下扫描件",
+		"conversation_id": "c1",
+		"attachments": []map[string]any{{
+			"filename":       "scan.pdf",
+			"media_type":     "application/pdf",
+			"content_base64": buildScannedPDFBase64(t),
+		}},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	runID := postRunID(t, rr)
+	pollRunStatus(t, h, runID, store.StatusSucceeded)
+	if _, sawImage, _ := llmMock.snapshot(); !sawImage {
+		t.Fatal("expected extracted page image to reach the model")
+	}
+
+	getMsgs := httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/messages", nil)
+	mr := httptest.NewRecorder()
+	h.ServeHTTP(mr, getMsgs)
+	if mr.Code != http.StatusOK {
+		t.Fatalf("messages status=%d", mr.Code)
+	}
+	var msgs []conversation.Message
+	if err := json.NewDecoder(mr.Body).Decode(&msgs); err != nil {
+		t.Fatal(err)
+	}
+	var bubble string
+	for _, m := range msgs {
+		if m.Role == conversation.RoleUser {
+			bubble = m.Content
+		}
+	}
+	if !strings.Contains(bubble, "![文档图片](/v0/channels/media/") {
+		t.Fatalf("bubble missing document image marker: %q", bubble)
+	}
+	if !strings.Contains(bubble, "from=doc") || !strings.Contains(bubble, "scan.pdf") {
+		t.Fatalf("bubble marker missing source metadata: %q", bubble)
+	}
+
+	_, images := splitBubbleMedia(bubble)
+	if len(images) != 1 {
+		t.Fatalf("want 1 document image, got %v (%q)", images, bubble)
+	}
+	mediaReq := httptest.NewRequest(http.MethodGet, images[0], nil)
+	mediaRR := httptest.NewRecorder()
+	h.ServeHTTP(mediaRR, mediaReq)
+	if mediaRR.Code != http.StatusOK {
+		t.Fatalf("media GET %s status=%d", images[0], mediaRR.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/attachments", nil)
+	lr := httptest.NewRecorder()
+	h.ServeHTTP(lr, listReq)
+	if lr.Code != http.StatusOK {
+		t.Fatalf("attachments status=%d body=%s", lr.Code, lr.Body.String())
+	}
+	var listed struct {
+		Items []struct {
+			Filename string `json:"filename"`
+			Media    string `json:"media_type"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(lr.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range listed.Items {
+		if strings.HasPrefix(item.Filename, "scan.pdf") && strings.HasPrefix(item.Media, "image/") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("document image not indexed: %+v", listed.Items)
+	}
+
+	runRec, err := st.GetRun(runID)
+	if err != nil || runRec == nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if strings.Contains(runRec.Input, "/v0/channels/media/") {
+		t.Fatalf("run.Input must stay clean, got %q", runRec.Input)
 	}
 }

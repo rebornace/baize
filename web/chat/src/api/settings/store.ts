@@ -58,6 +58,37 @@ export async function putAttachmentRetention(days: number): Promise<AttachmentRe
   return parseJSON<AttachmentRetention>(res)
 }
 
+export interface WorkspaceAttachmentRetentionItem {
+  workspace_id: string
+  name: string
+  days: number
+  effective_days: number
+}
+
+export interface WorkspaceAttachmentRetention {
+  global_days: number
+  items: WorkspaceAttachmentRetentionItem[]
+}
+
+export async function getWorkspaceAttachmentRetention(): Promise<WorkspaceAttachmentRetention> {
+  const res = await fetch('/v0/settings/workspace-attachment-retention', {
+    headers: authInit(),
+  })
+  return parseJSON<WorkspaceAttachmentRetention>(res)
+}
+
+export async function putWorkspaceAttachmentRetention(
+  workspaceId: string,
+  days: number,
+): Promise<WorkspaceAttachmentRetentionItem & { global_days: number }> {
+  const res = await fetch('/v0/settings/workspace-attachment-retention', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ workspace_id: workspaceId, days }),
+  })
+  return parseJSON(res)
+}
+
 export interface RunRetention {
   days: number
 }

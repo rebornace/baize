@@ -575,6 +575,27 @@ func (s *SQLiteStore) EnsureMeta(m Meta) error {
 	return err
 }
 
+func (s *SQLiteStore) UpdateMetaWorkspace(id, workspaceID string) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	res, err := s.exec(
+		`UPDATE conversation_meta SET workspace_id = ?, updated_at = ? WHERE id = ?`,
+		NormalizeWorkspaceID(workspaceID), time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrMetaNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) GetMeta(id string) (Meta, error) {
 	row := s.queryRow(
 		`SELECT id, owner_id, source, title, channel_peer, workspace_id, updated_at

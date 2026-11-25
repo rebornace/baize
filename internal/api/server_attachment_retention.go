@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/rebornace/baize/internal/conversation"
 )
 
 const attachmentRetentionKey = "attachment_retention_days"
 const attachmentRetentionConvPrefix = "attachment_retention_days:"
+const attachmentRetentionWorkspacePrefix = "attachment_retention_days_ws:"
 const attachmentRetentionBatch = 200
 const defaultAttachmentRetentionInterval = 6 * time.Hour
 
@@ -56,24 +59,50 @@ func (s *Server) attachmentRetentionDays() int {
 	return days
 }
 
-// attachmentRetentionDaysFor resolves a conversation override. -1 or a missing
-// value inherits the global policy; 0 means forever.
+// attachmentRetentionDaysFor resolves a conversation override, then its
+// workspace override, then the global policy. -1 or a missing value inherits
+// the next level; 0 means forever.
 func (s *Server) attachmentRetentionDaysFor(convID string, global int) int {
-	if s.Store == nil || convID == "" {
+	if s.Store == nil {
 		return global
 	}
-	raw, ok, err := s.Store.GetSetting(attachmentRetentionConvPrefix + convID)
+	if convID != "" {
+		if days, ok := s.settingRetentionDays(attachmentRetentionConvPrefix + convID); ok {
+			return days
+		}
+	}
+	if wsID := s.workspaceIDForConv(convID); wsID != "" {
+		if days, ok := s.settingRetentionDays(attachmentRetentionWorkspacePrefix + wsID); ok {
+			return days
+		}
+	}
+	return global
+}
+
+// attachmentRetentionWorkspaceOverride returns the explicit workspace value, or
+// -1 when it inherits the global policy.
+func (s *Server) attachmentRetentionWorkspaceOverride(wsID string) int {
+	if days, ok := s.settingRetentionDays(attachmentRetentionWorkspacePrefix + wsID); ok {
+		return days
+	}
+	return -1
+}
+
+// settingRetentionDays reads a non-negative day override. A missing, malformed
+// or -1 value reports ok=false so the caller can inherit.
+func (s *Server) settingRetentionDays(key string) (int, bool) {
+	if s.Store == nil {
+		return 0, false
+	}
+	raw, ok, err := s.Store.GetSetting(key)
 	if err != nil || !ok {
-		return global
+		return 0, false
 	}
 	var days int
-	if json.Unmarshal(raw, &days) != nil || days < -1 || days > 3650 {
-		return global
+	if json.Unmarshal(raw, &days) != nil || days < 0 || days > 3650 {
+		return 0, false
 	}
-	if days < 0 {
-		return global
-	}
-	return days
+	return days, true
 }
 
 // handleGetConversationAttachmentRetention returns the override and effective
@@ -141,6 +170,79 @@ func (s *Server) handlePutConversationAttachmentRetention(w http.ResponseWriter,
 	writeJSON(w, http.StatusOK, map[string]any{
 		"days":           body.Days,
 		"effective_days": s.attachmentRetentionDaysFor(convID, global),
+		"global_days":    global,
+	})
+}
+
+type workspaceAttachmentRetentionJSON struct {
+	WorkspaceID   string `json:"workspace_id"`
+	Name          string `json:"name"`
+	Days          int    `json:"days"`
+	EffectiveDays int    `json:"effective_days"`
+}
+
+func (s *Server) handleGetWorkspaceAttachmentRetention(w http.ResponseWriter, r *http.Request) {
+	list, err := s.workspaceList()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	global := s.attachmentRetentionDays()
+	items := make([]workspaceAttachmentRetentionJSON, 0, len(list))
+	for _, ws := range list {
+		override := s.attachmentRetentionWorkspaceOverride(ws.ID)
+		effective := global
+		if override >= 0 {
+			effective = override
+		}
+		items = append(items, workspaceAttachmentRetentionJSON{
+			WorkspaceID: ws.ID, Name: ws.Name,
+			Days: override, EffectiveDays: effective,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"global_days": global,
+		"items":       items,
+	})
+}
+
+func (s *Server) handlePutWorkspaceAttachmentRetention(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		WorkspaceID string `json:"workspace_id"`
+		Days        int    `json:"days"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if body.Days < -1 || body.Days > 3650 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "days must be between -1 and 3650")
+		return
+	}
+	wsID := conversation.NormalizeWorkspaceID(body.WorkspaceID)
+	if wst := s.workspaceStore(); wst != nil {
+		if _, err := wst.GetWorkspace(wsID); err != nil {
+			writeError(w, http.StatusNotFound, "not_found", "workspace not found")
+			return
+		}
+	} else if wsID != conversation.DefaultWorkspaceID {
+		writeError(w, http.StatusNotFound, "not_found", "workspace not found")
+		return
+	}
+	raw, _ := json.Marshal(body.Days)
+	if err := s.Store.UpsertSetting(attachmentRetentionWorkspacePrefix+wsID, raw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	global := s.attachmentRetentionDays()
+	effective := global
+	if body.Days >= 0 {
+		effective = body.Days
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workspace_id":   wsID,
+		"days":           body.Days,
+		"effective_days": effective,
 		"global_days":    global,
 	})
 }

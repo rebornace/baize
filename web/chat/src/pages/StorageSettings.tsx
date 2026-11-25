@@ -4,11 +4,14 @@ import {
   getMessageRetention,
   getRunRetention,
   getStoreSettings,
+  getWorkspaceAttachmentRetention,
   putAttachmentRetention,
   putMessageRetention,
   putRunRetention,
   putStoreSettings,
+  putWorkspaceAttachmentRetention,
   type StoreSettings,
+  type WorkspaceAttachmentRetentionItem,
 } from '../api'
 import {
   Button,
@@ -44,6 +47,11 @@ export function StorageSettings() {
   const [runRetentionBusy, setRunRetentionBusy] = useState(false)
   const [messageRetentionDays, setMessageRetentionDays] = useState('0')
   const [messageRetentionBusy, setMessageRetentionBusy] = useState(false)
+  const [workspaceRetention, setWorkspaceRetention] = useState<
+    WorkspaceAttachmentRetentionItem[] | null
+  >(null)
+  const [workspaceDrafts, setWorkspaceDrafts] = useState<Record<string, string>>({})
+  const [workspaceBusy, setWorkspaceBusy] = useState<string | null>(null)
   const { toasts, push, dismiss } = useToast()
 
   const load = useCallback(async () => {
@@ -82,6 +90,17 @@ export function StorageSettings() {
       } catch {
         // Optional section; keep the default when the endpoint is unavailable.
       }
+      try {
+        const r = await getWorkspaceAttachmentRetention()
+        setWorkspaceRetention(Array.isArray(r.items) ? r.items : [])
+        const drafts: Record<string, string> = {}
+        for (const item of r.items ?? []) {
+          drafts[item.workspace_id] = String(item.days)
+        }
+        setWorkspaceDrafts(drafts)
+      } catch {
+        setWorkspaceRetention(null)
+      }
     }
     void loadRetention()
   }, [])
@@ -102,6 +121,35 @@ export function StorageSettings() {
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setRetentionBusy(false)
+    }
+  }
+
+  const saveWorkspaceRetention = async (item: WorkspaceAttachmentRetentionItem) => {
+    const raw = workspaceDrafts[item.workspace_id] ?? String(item.days)
+    const days = Number.parseInt(raw, 10)
+    if (!Number.isFinite(days) || days < -1 || days > 3650) {
+      push({ tone: 'error', title: STORAGE.workspaceRetentionInvalid })
+      return
+    }
+    setWorkspaceBusy(item.workspace_id)
+    try {
+      const next = await putWorkspaceAttachmentRetention(item.workspace_id, days)
+      setWorkspaceRetention((prev) =>
+        prev
+          ? prev.map((row) =>
+              row.workspace_id === next.workspace_id
+                ? { ...row, days: next.days, effective_days: next.effective_days }
+                : row,
+            )
+          : prev,
+      )
+      setWorkspaceDrafts((prev) => ({ ...prev, [next.workspace_id]: String(next.days) }))
+      push({ tone: 'success', title: STORAGE.retentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setWorkspaceBusy(null)
     }
   }
 
@@ -300,6 +348,47 @@ export function StorageSettings() {
             </Button>
           </div>
         </form>
+      </Card>
+
+      <Card>
+        <h2 className="settings-subheading">{STORAGE.workspaceRetentionTitle}</h2>
+        <p className="settings-muted">{STORAGE.workspaceRetentionHint}</p>
+        {workspaceRetention == null ? null : workspaceRetention.length === 0 ? (
+          <p className="settings-muted">{STORAGE.workspaceRetentionEmpty}</p>
+        ) : (
+          workspaceRetention.map((item) => (
+            <div className="agent-budget-row" key={item.workspace_id}>
+              <span className="agent-budget-id">{item.name || item.workspace_id}</span>
+              <span className="settings-muted">
+                {STORAGE.workspaceRetentionEffective(item.effective_days)}
+              </span>
+              <Input
+                type="number"
+                min={-1}
+                max={3650}
+                value={workspaceDrafts[item.workspace_id] ?? String(item.days)}
+                disabled={workspaceBusy === item.workspace_id}
+                onChange={(e) =>
+                  setWorkspaceDrafts((prev) => ({
+                    ...prev,
+                    [item.workspace_id]: e.target.value,
+                  }))
+                }
+                data-testid={`workspace-retention-days-${item.workspace_id}`}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={workspaceBusy === item.workspace_id}
+                onClick={() => void saveWorkspaceRetention(item)}
+                data-testid={`workspace-retention-save-${item.workspace_id}`}
+              >
+                {STORAGE.retentionSave}
+              </Button>
+            </div>
+          ))
+        )}
       </Card>
 
       <Card>

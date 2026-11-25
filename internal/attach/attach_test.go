@@ -304,6 +304,9 @@ func TestProcessScannedPDFExtractsPageImages(t *testing.T) {
 	if !images[0].Document || images[0].ImageMIME != "image/jpeg" || len(images[0].ImageBytes) == 0 {
 		t.Fatalf("image=%+v", images[0])
 	}
+	if images[0].Source != "scan.pdf" {
+		t.Fatalf("source=%q, want scan.pdf", images[0].Source)
+	}
 }
 
 func TestProcessDocxEmbeddedImages(t *testing.T) {
@@ -327,6 +330,9 @@ func TestProcessDocxEmbeddedImages(t *testing.T) {
 	}
 	if len(images) != 1 || !images[0].Document || images[0].ImageMIME != "image/png" {
 		t.Fatalf("images=%+v", images)
+	}
+	if images[0].Source != "scan.docx" {
+		t.Fatalf("source=%q, want scan.docx", images[0].Source)
 	}
 }
 

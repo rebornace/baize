@@ -32,6 +32,9 @@ type Extracted struct {
 	// Document marks images extracted from inside a document (e.g. a scanned
 	// PDF page) rather than an image the user uploaded directly.
 	Document bool
+	// Source is the uploaded document's filename for Document images (e.g.
+	// "scan.pdf"). Empty for directly uploaded images and text extracts.
+	Source string
 }
 
 // Decoded is a base64-decoded attachment in its original request order, with
@@ -137,6 +140,16 @@ func Process(atts []AttachmentIn, opts Options) (texts []Extracted, images []Ext
 	return ProcessDecoded(decoded, opts)
 }
 
+// markDocumentSource stamps extracted document images with the upload's
+// filename so callers can label them (e.g. "scan.pdf · page-3").
+func markDocumentSource(imgs []Extracted, source string) {
+	for i := range imgs {
+		if imgs[i].Document {
+			imgs[i].Source = source
+		}
+	}
+}
+
 // ProcessDecoded runs content extraction over already-decoded attachments
 // (see Decode). It lets a caller decode once and then both extract model-bound
 // content and persist the original bytes without re-decoding base64. On error
@@ -158,6 +171,7 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 				return nil, nil, perr
 			}
 			imgs := extractOfficeImages(d.Data, "word/media/", opts.MaxImageEdge)
+			markDocumentSource(imgs, d.Filename)
 			text := truncateText(t, opts.MaxTextChars)
 			if strings.TrimSpace(t) == "" && len(imgs) > 0 {
 				text = documentImagesPlaceholder(len(imgs))
@@ -172,6 +186,7 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 				return nil, nil, perr
 			}
 			imgs := extractOfficeImages(d.Data, "xl/media/", opts.MaxImageEdge)
+			markDocumentSource(imgs, d.Filename)
 			text := truncateText(t, opts.MaxTextChars)
 			if strings.TrimSpace(t) == "" && len(imgs) > 0 {
 				text = documentImagesPlaceholder(len(imgs))
@@ -187,6 +202,7 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 			}
 			if t == "" {
 				imgs := extractPDFImages(d.Data, opts.MaxImageEdge)
+				markDocumentSource(imgs, d.Filename)
 				if len(imgs) == 0 {
 					if !opts.AllowPDFPassthrough {
 						return nil, nil, ErrEmptyPDFText
@@ -222,6 +238,7 @@ func ProcessDecoded(decoded []Decoded, opts Options) (texts []Extracted, images 
 				return nil, nil, perr
 			}
 			imgs := extractOfficeImages(d.Data, "ppt/media/", opts.MaxImageEdge)
+			markDocumentSource(imgs, d.Filename)
 			text := truncateText(t, opts.MaxTextChars)
 			if strings.TrimSpace(t) == "" && len(imgs) > 0 {
 				text = documentImagesPlaceholder(len(imgs))

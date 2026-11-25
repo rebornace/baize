@@ -28,6 +28,24 @@ afterEach(() => {
 async function renderPage(getBody: unknown = { driver: 'sqlite', drivers: ['memory', 'sqlite', 'postgres'] }) {
   fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
     if (!init?.method && String(url).endsWith('/settings/store')) return json(getBody)
+    if (String(url).endsWith('/settings/workspace-attachment-retention')) {
+      if (!init?.method) {
+        return json({
+          global_days: 30,
+          items: [
+            { workspace_id: 'default', name: 'Default', days: -1, effective_days: 30 },
+          ],
+        })
+      }
+      const body = JSON.parse((init.body as string) || '{}')
+      return json({
+        workspace_id: body.workspace_id,
+        name: 'Default',
+        days: body.days,
+        effective_days: body.days >= 0 ? body.days : 30,
+        global_days: 30,
+      })
+    }
     if (String(url).endsWith('/settings/attachment-retention')) {
       if (!init?.method) return json({ days: 0 })
       const body = JSON.parse((init.body as string) || '{}')
@@ -216,5 +234,30 @@ describe('StorageSettings', () => {
     )
     expect(puts).toHaveLength(1)
     expect(JSON.parse((puts[0][1] as RequestInit).body as string)).toEqual({ days: 30 })
+  })
+
+  it('saves a workspace attachment retention override', async () => {
+    await renderPage()
+    const input = host.querySelector<HTMLInputElement>(
+      '[data-testid="workspace-retention-days-default"]',
+    )
+    expect(input).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(input, '7')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await fire(host.querySelector('[data-testid="workspace-retention-save-default"]')!)
+    const puts = fetchMock.mock.calls.filter(
+      ([u, i]) =>
+        String(u).endsWith('/settings/workspace-attachment-retention') &&
+        (i as RequestInit)?.method === 'PUT',
+    )
+    expect(puts).toHaveLength(1)
+    expect(JSON.parse((puts[0][1] as RequestInit).body as string)).toEqual({
+      workspace_id: 'default',
+      days: 7,
+    })
+    expect(host.textContent).toContain('生效：7 天')
   })
 })

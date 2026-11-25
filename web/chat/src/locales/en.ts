@@ -222,6 +222,15 @@ export const enPack = {
     exportBusy: 'Exporting…',
     exportSuccess: 'Exported',
     exportFailed: 'Export failed. Please try again.',
+    moveConversation: 'Move to workspace',
+    moveConversationTitle: 'Move to workspace',
+    moveConversationHint:
+      'Logins from the original workspace do not follow the conversation; you may need to sign in again in the target workspace.',
+    moveConversationTarget: 'Target workspace',
+    moveConversationConfirm: 'Move',
+    moveConversationBusy: 'Moving…',
+    moveConversationSuccess: 'Moved to the new workspace',
+    moveConversationFailed: 'Move failed. Check whether the conversation still has an active run.',
     send: 'Send',
     attachmentsAria: 'Attachments',
     removeAttachmentAria: (name: string) => `Remove ${name}`,
@@ -243,6 +252,7 @@ export const enPack = {
     imageLoadFailed: '(Image failed to load)',
     imageLoading: '(Loading image…)',
     imageAlt: 'Image',
+    documentImageCaption: (name: string) => `From document: ${name}`,
     deleteAttachment: 'Delete attachment',
     deleteAttachmentConfirm:
       'After deleting, the preview and download in this chat stop working; content already given to the model is not recalled. Delete?',
@@ -445,6 +455,13 @@ export const enPack = {
     retentionSave: 'Save retention',
     retentionSaved: 'Retention saved',
     retentionInvalid: 'Retention days must be between 0 and 3650',
+    workspaceRetentionTitle: 'Workspace attachment retention',
+    workspaceRetentionHint:
+      'Override attachment retention per workspace. Conversation overrides win; -1 inherits the global policy, 0 keeps everything.',
+    workspaceRetentionEffective: (days: number) =>
+      days > 0 ? `Effective: ${days} days` : 'Effective: forever',
+    workspaceRetentionEmpty: 'No workspaces yet',
+    workspaceRetentionInvalid: 'Workspace retention days must be between -1 and 3650',
     runRetentionTitle: 'Run history retention',
     runRetentionHint:
       'Completed runs older than the retention window are cleaned up automatically, including their events and cached costs. Queued, running, and waiting-for-approval runs are never deleted. 0 keeps everything. Override it per conversation in the conversation data panel.',
@@ -1273,6 +1290,12 @@ export const enPack = {
     costTrendTitle: 'Daily cost (last 30 days)',
     costTrendTotal: (total: number, days: number) =>
       `${days}-day total USD ${total.toFixed(6)}`,
+    costSeriesTitle: (name: string) => `Conversation cost (last 30 days) · ${name}`,
+    costWorkspaceSeriesTitle: (name: string) => `Workspace cost (last 30 days) · ${name}`,
+    costSeriesHint: 'Click a conversation or workspace to see its 30-day trend',
+    costSeriesLoading: 'Loading…',
+    costSeriesEmpty: 'No cost in the last 30 days for this conversation',
+    costSeriesFailed: 'Could not load the conversation cost trend',
     costExportDaily: 'Export daily CSV',
     costExportBreakdown: 'Export breakdown CSV',
     costExporting: 'Exporting…',
@@ -2306,6 +2329,11 @@ export const enPack = {
     title: 'Unlock',
     enter: 'Enter',
     badToken: 'Incorrect passphrase',
+  },
+  ROUTE_ERROR: {
+    title: 'Page failed to load',
+    hint: 'The app may have updated or the network dropped. Refresh to fetch the latest page.',
+    reload: 'Refresh page',
   },
   COMING_SOON: {
     body: 'Coming soon — no placeholder settings here.',

@@ -34,6 +34,9 @@ type MetaStore interface {
 	// DeleteMeta removes the meta row for id. Deleting a missing id is not an
 	// error (idempotent); a DB/scan failure is returned.
 	DeleteMeta(id string) error
+	// UpdateMetaWorkspace moves a conversation to another workspace. A missing
+	// meta row returns ErrMetaNotFound.
+	UpdateMetaWorkspace(id, workspaceID string) error
 }
 
 // CanAccess reports whether principal may read/write the conversation meta.

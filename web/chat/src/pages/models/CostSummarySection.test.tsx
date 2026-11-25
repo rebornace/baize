@@ -109,12 +109,28 @@ async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
     spent_usd_per_day: 0.03,
     spent_usd_per_month: 0.4,
   })
+  const series = vi.spyOn(modelsApi, 'getCostSeries').mockResolvedValue({
+    conversation_id: 'c1',
+    days: 30,
+    total_usd: 3,
+    series: [
+      { date: '2026-11-23', total_usd: 1 },
+      { date: '2026-11-24', total_usd: 2 },
+    ],
+  })
+  const wsSeries = vi.spyOn(modelsApi, 'getWorkspaceCostSeries').mockResolvedValue({
+    scope: 'workspace',
+    workspace_id: 'default',
+    days: 30,
+    total_usd: 3,
+    series: [{ date: '2026-11-23', total_usd: 3 }],
+  })
   await act(async () => {
     createRoot(host).render(<CostSummarySection readOnly={false} />)
     await Promise.resolve()
     await Promise.resolve()
   })
-  return { save, saveAgent, saveModel, saveWorkspace }
+  return { save, saveAgent, saveModel, saveWorkspace, series, wsSeries }
 }
 
 describe('CostSummarySection monthly budget', () => {
@@ -267,6 +283,35 @@ describe('CostSummarySection monthly budget', () => {
       exceeded_ratio: 0,
     })
     expect(row.textContent).toContain('已用：日 $0.0200 · 月 $0.3000')
+  })
+
+  it('drills into a conversation cost series', async () => {
+    const { series } = await renderSection()
+    const row = host.querySelector('[data-testid="cost-conversation-c1"]') as HTMLButtonElement
+    expect(row).not.toBeNull()
+    await act(async () => {
+      row.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(series).toHaveBeenCalledWith('c1', 30)
+    expect(host.querySelector('[data-testid="cost-conversation-series"]')).not.toBeNull()
+    expect(host.textContent).toContain('会话费用（近 30 天）· 季度复盘')
+    expect(host.querySelectorAll('[data-testid="cost-series-bar"]')).toHaveLength(2)
+  })
+
+  it('drills into a workspace cost series', async () => {
+    const { wsSeries } = await renderSection()
+    const row = host.querySelector('[data-testid="cost-workspace-default"]') as HTMLButtonElement
+    expect(row).not.toBeNull()
+    await act(async () => {
+      row.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(wsSeries).toHaveBeenCalledWith('default', 30)
+    expect(host.textContent).toContain('工作区费用（近 30 天）· 默认')
+    expect(host.querySelectorAll('[data-testid="cost-series-bar"]')).toHaveLength(1)
   })
 
   it('saves per-workspace budgets', async () => {

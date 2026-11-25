@@ -6,6 +6,7 @@ import {
   listWorkspaces,
   createWorkspace,
   listEvents,
+  moveConversation,
   rollbackMessages,
   type ChatMessage,
   type ConversationScope,
@@ -266,7 +267,7 @@ export function useChatSession({
   }, [clearHistoryState, liveRef, setConversationId])
 
   const onSwitchWorkspace = useCallback(
-    async (id: string) => {
+    async (id: string, preferredConversationID?: string) => {
       if (!id || id === workspaceIdRef.current) return
       const live = liveRef.current
       live.stopStream()
@@ -278,7 +279,9 @@ export function useChatSession({
         const scope = role === 'admin' ? conversationScopeRef.current : undefined
         const list = await listConversations(scope, id)
         setConversations(list)
-        if (list.length > 0) {
+        if (preferredConversationID && list.some((c) => c.id === preferredConversationID)) {
+          setConversationId(preferredConversationID)
+        } else if (list.length > 0) {
           setConversationId(list[0].id)
         } else {
           setConversationId(newConversationId())
@@ -289,6 +292,15 @@ export function useChatSession({
       }
     },
     [clearHistoryState, liveRef, reportError, role, setConversationId, setWorkspaceId],
+  )
+
+  const onMoveConversation = useCallback(
+    async (id: string, targetWorkspaceID: string) => {
+      await moveConversation(id, targetWorkspaceID)
+      pushToast({ tone: 'success', title: CHAT.moveConversationSuccess })
+      await onSwitchWorkspace(targetWorkspaceID, id)
+    },
+    [onSwitchWorkspace, pushToast],
   )
 
   const onCreateWorkspace = useCallback(
@@ -470,6 +482,7 @@ export function useChatSession({
     onCreateWorkspace,
     onSelectConversation,
     onDeleteConversation,
+    onMoveConversation,
     performDelete,
     onRollbackUser,
     onRegenerate,

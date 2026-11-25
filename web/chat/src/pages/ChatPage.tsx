@@ -750,6 +750,7 @@ export function ChatPage() {
         onOpenPending={() => setPendingCenterOpen(true)}
         onOpenMessageSearch={() => setMessageSearchOpen(true)}
         onExportConversation={() => setExportOpen(true)}
+        onMoveConversation={session.onMoveConversation}
       />
 
       <main className="chat-main">

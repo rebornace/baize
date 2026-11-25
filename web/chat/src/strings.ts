@@ -63,6 +63,7 @@ export const MODEL_SELECT = liveGroup('MODEL_SELECT')
 export const COMMON = liveGroup('COMMON')
 export const UNLOCK = liveGroup('UNLOCK')
 export const COMING_SOON = liveGroup('COMING_SOON')
+export const ROUTE_ERROR = liveGroup('ROUTE_ERROR')
 
 /** 内部档位 id -> 对外叫法；未知值按「标准」。 */
 export function tierLabel(tier?: string): string {

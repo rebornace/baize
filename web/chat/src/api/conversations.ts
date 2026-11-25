@@ -150,6 +150,22 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await parseJSON<{ status: string }>(res)
 }
 
+/** Move a conversation to another workspace. Rejected while a run is active. */
+export async function moveConversation(
+  conversationId: string,
+  workspaceId: string,
+): Promise<{ conversation_id: string; workspace_id: string }> {
+  const res = await fetch(
+    `/v0/conversations/${encodeURIComponent(conversationId)}/workspace`,
+    {
+      method: 'PATCH',
+      headers: authInit({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ workspace_id: workspaceId }),
+    },
+  )
+  return parseJSON<{ conversation_id: string; workspace_id: string }>(res)
+}
+
 export interface RollbackMessagesResult {
   conversation_id: string
   deleted_count: number

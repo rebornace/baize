@@ -22,11 +22,11 @@ afterEach(() => {
   setPack(zhPack)
 })
 
-function render(url: string, name = '') {
+function render(url: string, name = '', document = false) {
   act(() => {
     createRoot(host).render(
       <GateContext.Provider value={{ role: 'operator', gateEnabled: false, operatorId: 'op' }}>
-        <ChannelImage url={url} name={name} />
+        <ChannelImage url={url} name={name} document={document} />
       </GateContext.Provider>,
     )
   })
@@ -87,6 +87,16 @@ describe('ChannelImage attachment delete', () => {
 
   it('hides the delete affordance for local optimistic previews', () => {
     render('blob:http://localhost/img')
+    expect(host.querySelector('.channel-attachment-delete')).toBeNull()
+  })
+
+  it('captions document-derived images and hides delete', () => {
+    render(
+      '/v0/channels/media/c/p.jpg?name=scan.pdf%20%C2%B7%20page-1&from=doc',
+      'scan.pdf · page-1',
+      true,
+    )
+    expect(host.textContent).toContain(CHAT.documentImageCaption('scan.pdf · page-1'))
     expect(host.querySelector('.channel-attachment-delete')).toBeNull()
   })
 })

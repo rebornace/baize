@@ -17,7 +17,13 @@ export function UserBubble({ content }: { content: string }) {
       {images.length > 0 && (
         <div className="channel-images">
           {images.map((img) => (
-            <ChannelImage key={img.url} url={img.url} name={img.name} />
+            <ChannelImage
+              key={img.url}
+              url={img.url}
+              name={img.name}
+              document={img.document}
+              deletable={!img.document}
+            />
           ))}
         </div>
       )}

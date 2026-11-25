@@ -157,6 +157,22 @@ func (s *MemoryStore) GetMeta(id string) (Meta, error) {
 	return m, nil
 }
 
+func (s *MemoryStore) UpdateMetaWorkspace(id, workspaceID string) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.meta[id]
+	if !ok {
+		return ErrMetaNotFound
+	}
+	m.WorkspaceID = NormalizeWorkspaceID(workspaceID)
+	m.UpdatedAt = time.Now().UTC()
+	s.meta[id] = m
+	return nil
+}
+
 func (s *MemoryStore) ListMeta(filter MetaFilter) ([]Meta, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

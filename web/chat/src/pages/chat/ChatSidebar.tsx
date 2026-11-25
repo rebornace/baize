@@ -13,6 +13,7 @@ import { CHAT } from '../../strings'
 import { FeatureSearchButton } from '../../components/FeatureSearch'
 import { BudgetChip } from './BudgetChip'
 import { AttachmentManager } from './AttachmentManager'
+import { MoveConversationDialog } from './MoveConversationDialog'
 
 export type ChatSidebarProps = {
   role: string
@@ -33,6 +34,7 @@ export type ChatSidebarProps = {
   onOpenPending: () => void
   onOpenMessageSearch: () => void
   onExportConversation: () => void
+  onMoveConversation: (id: string, workspaceId: string) => Promise<void>
 }
 
 export function ChatSidebar({
@@ -54,9 +56,12 @@ export function ChatSidebar({
   onOpenPending,
   onOpenMessageSearch,
   onExportConversation,
+  onMoveConversation,
 }: ChatSidebarProps) {
   const { locale } = useLocale()
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
+  const moveTargets = workspaces.filter((w) => w.id !== workspaceId)
 
   return (
     <aside className="chat-sidebar" aria-label={CHAT.conversationListAria}>
@@ -218,6 +223,15 @@ export function ChatSidebar({
           >
             {CHAT.exportConversation}
           </button>
+          {conversationId && moveTargets.length > 0 ? (
+            <button
+              type="button"
+              className="settings-link"
+              onClick={() => setMoveOpen(true)}
+              data-testid="move-conversation-open"            >
+              {CHAT.moveConversation}
+            </button>
+          ) : null}
           <Link
             to={role === 'admin' ? '/settings' : '/settings/identities'}
             className="settings-link"
@@ -242,6 +256,12 @@ export function ChatSidebar({
         conversationId={conversationId}
         open={attachmentsOpen}
         onClose={() => setAttachmentsOpen(false)}
+      />
+      <MoveConversationDialog
+        open={moveOpen}
+        targets={moveTargets}
+        onClose={() => setMoveOpen(false)}
+        onMove={(workspaceId) => onMoveConversation(conversationId, workspaceId)}
       />
       <SidebarResizer />
     </aside>

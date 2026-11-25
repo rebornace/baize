@@ -24,6 +24,8 @@ const FILE_RE = new RegExp(String.raw`\[file:([^\]]+)\]\((${MEDIA_URL})\)`, 'g')
 export interface ChannelAttachment {
   name: string
   url: string
+  /** True for page/embedded images extracted from a document, not a user upload. */
+  document: boolean
 }
 
 export interface SplitChannelAttachments {
@@ -48,11 +50,15 @@ export function splitChannelAttachments(content: string): SplitChannelAttachment
 
   const text = content
     .replace(IMAGE_RE, (_m, _alt, url: string) => {
-      images.push({ name: imageName(url), url })
+      images.push({
+        name: imageName(url),
+        url,
+        document: /[?&]from=doc(?:&|$)/.test(url),
+      })
       return ''
     })
     .replace(FILE_RE, (_m, name: string, url: string) => {
-      files.push({ name, url })
+      files.push({ name, url, document: false })
       return ''
     })
 

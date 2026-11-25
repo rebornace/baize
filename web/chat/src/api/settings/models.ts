@@ -271,6 +271,39 @@ export async function getCostBreakdown(days = 30): Promise<CostBreakdown> {
   return parseJSON(res)
 }
 
+export interface CostSeriesPoint {
+  date: string
+  total_usd: number
+}
+
+export interface CostSeries {
+  scope?: 'conversation' | 'workspace'
+  conversation_id?: string
+  workspace_id?: string
+  days: number
+  total_usd: number
+  series: CostSeriesPoint[]
+}
+
+export async function getCostSeries(conversationId: string, days = 30): Promise<CostSeries> {
+  const res = await fetch(
+    `/v0/settings/cost-series?conversation_id=${encodeURIComponent(conversationId)}&days=${days}`,
+    { headers: authInit() },
+  )
+  return parseJSON<CostSeries>(res)
+}
+
+export async function getWorkspaceCostSeries(
+  workspaceId: string,
+  days = 30,
+): Promise<CostSeries> {
+  const res = await fetch(
+    `/v0/settings/cost-series?workspace_id=${encodeURIComponent(workspaceId)}&days=${days}`,
+    { headers: authInit() },
+  )
+  return parseJSON<CostSeries>(res)
+}
+
 /** Fetch cost data as a CSV blob for client-side download. */
 export async function downloadCostExport(
   days = 30,

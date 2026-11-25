@@ -9,6 +9,8 @@ export interface ChannelImageProps {
   url: string
   name?: string
   alt?: string
+  /** Marks a page/embedded image extracted from a document. */
+  document?: boolean
   /** Set false to hide the per-image delete affordance (e.g. inside a bulk manager). */
   deletable?: boolean
 }
@@ -20,7 +22,7 @@ export interface ChannelImageProps {
  * the bytes through an object URL. Falls back to the raw URL when the
  * control-plane gate is off.
  */
-export function ChannelImage({ url, name = '', alt, deletable = true }: ChannelImageProps) {
+export function ChannelImage({ url, name = '', alt, document = false, deletable = true }: ChannelImageProps) {
   const { gateEnabled } = useGate()
   // Local optimistic previews use blob: object URLs: render directly (no auth
   // fetch / no second object URL). Persisted media goes through the ACL route.
@@ -29,7 +31,7 @@ export function ChannelImage({ url, name = '', alt, deletable = true }: ChannelI
   const [failed, setFailed] = useState(false)
   const [deleted, setDeleted] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
-  const canDelete = deletable && !isLocal && isDeletableMediaUrl(url)
+  const canDelete = deletable && !document && !isLocal && isDeletableMediaUrl(url)
 
   useEffect(() => {
     let revoked: string | null = null
@@ -89,6 +91,9 @@ export function ChannelImage({ url, name = '', alt, deletable = true }: ChannelI
   return (
     <span className="channel-image-wrap">
       <img src={src} alt={alt ?? CHAT.imageAlt} className="channel-image" loading="lazy" />
+      {document && name ? (
+        <span className="channel-image-caption">{CHAT.documentImageCaption(name)}</span>
+      ) : null}
       {canDelete ? (
         <button
           type="button"

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rebornace/baize/internal/attach"
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/store"
 )
@@ -95,6 +96,35 @@ func TestHydrateRunUserPartsReplaysPDFFile(t *testing.T) {
 	if parts[1].Type != "file" || parts[1].FileMIME != "application/pdf" ||
 		parts[1].Filename != "scan.pdf" || len(parts[1].FileBytes) != len(pdf) {
 		t.Fatalf("file part=%+v", parts[1])
+	}
+}
+
+func TestAppendReplayImagesDedupesDocumentImages(t *testing.T) {
+	doc := []byte("page-image-bytes")
+	imgs := []attach.Extracted{
+		{Kind: "image", ImageMIME: "image/png", ImageBytes: doc, Document: true},
+		{Kind: "image", ImageMIME: "image/png", ImageBytes: doc, Document: true},
+		{Kind: "image", ImageMIME: "image/png", ImageBytes: []byte("user-upload")},
+	}
+	seen := map[string]bool{documentImageKey("image/png", doc): true}
+	parts := appendReplayImages(nil, imgs, seen)
+	if len(parts) != 1 || string(parts[0].ImageBytes) != "user-upload" {
+		t.Fatalf("parts=%+v", parts)
+	}
+
+	fresh := map[string]bool{}
+	parts = appendReplayImages(nil, imgs, fresh)
+	if len(parts) != 2 {
+		t.Fatalf("fresh parts=%d, want one document image + one user image", len(parts))
+	}
+	if !fresh[documentImageKey("image/png", doc)] {
+		t.Fatal("document image key was not recorded")
+	}
+	if !isDocumentImageURL("/v0/channels/media/c/p.jpg?name=scan.pdf&from=doc") {
+		t.Fatal("from=doc URL not recognised")
+	}
+	if isDocumentImageURL("/v0/channels/media/c/p.jpg?name=from=doc.jpg") {
+		t.Fatal("name query must not be mistaken for from=doc")
 	}
 }
 

@@ -66,6 +66,42 @@ func TestSQLiteEnsureGetListMeta(t *testing.T) {
 	}
 }
 
+func TestUpdateMetaWorkspace(t *testing.T) {
+	mem := conversation.NewMemoryStore()
+	if err := mem.EnsureMeta(conversation.Meta{ID: "c-mem", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpdateMetaWorkspace("c-mem", "ws_lab"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := mem.GetMeta("c-mem")
+	if err != nil || got.WorkspaceID != "ws_lab" {
+		t.Fatalf("memory meta=%+v err=%v", got, err)
+	}
+	if err := mem.UpdateMetaWorkspace("missing", "ws_lab"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("memory missing err=%v", err)
+	}
+
+	db, _ := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureMeta(conversation.Meta{ID: "c-sql", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMetaWorkspace("c-sql", "ws_lab"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetMeta("c-sql")
+	if err != nil || got.WorkspaceID != "ws_lab" {
+		t.Fatalf("sqlite meta=%+v err=%v", got, err)
+	}
+	if err := s.UpdateMetaWorkspace("missing", "ws_lab"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("sqlite missing err=%v", err)
+	}
+}
+
 func TestSQLiteGetMetaDistinguishesNotFoundAndParseError(t *testing.T) {
 	db, _ := openTestDB(t)
 	s, err := conversation.OpenSQLite(db)

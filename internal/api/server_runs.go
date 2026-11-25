@@ -23,6 +23,25 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
+const maxPersistedDocumentImages = 20
+const maxPersistedDocumentImageBytes = 20 << 20
+
+// documentImageLabel names a derived page/embedded image after its source
+// document so the bubble and attachment list show where it came from.
+func documentImageLabel(img attach.Extracted) string {
+	source := strings.TrimSpace(img.Source)
+	name := strings.TrimSpace(img.Filename)
+	switch {
+	case source != "" && name != "" && source != name:
+		return source + " · " + name
+	case source != "":
+		return source
+	case name != "":
+		return name
+	}
+	return "document-image"
+}
+
 func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		AgentID        string                `json:"agent_id"`
@@ -231,21 +250,21 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// in the original upload order, and each successful save is indexed so the
 	// conversation can list and clean attachments later.
 	var bubbleMarkers []string
+	recordAttachment := func(object, filename, mime string, size int64, workspacePath string) {
+		if err := s.Store.AddConversationAttachment(store.ConversationAttachment{
+			ConversationID: conv,
+			Object:         object,
+			Filename:       filename,
+			MediaType:      mime,
+			SizeBytes:      size,
+			WorkspacePath:  workspacePath,
+			CreatedAt:      time.Now().UTC(),
+		}); err != nil {
+			log.Printf("chat media: index attachment %q: %v", filename, err)
+		}
+	}
 	if conv != "" && s.ChatMedia != nil && len(decoded) > 0 {
 		textIdx, imgIdx := 0, 0
-		record := func(object, filename, mime string, size int64, workspacePath string) {
-			if err := s.Store.AddConversationAttachment(store.ConversationAttachment{
-				ConversationID: conv,
-				Object:         object,
-				Filename:       filename,
-				MediaType:      mime,
-				SizeBytes:      size,
-				WorkspacePath:  workspacePath,
-				CreatedAt:      time.Now().UTC(),
-			}); err != nil {
-				log.Printf("chat media: index attachment %q: %v", filename, err)
-			}
-		}
 		for _, d := range decoded {
 			if attach.IsImageMIME(d.MediaType) {
 				if imgIdx >= len(imageExts) {
@@ -260,7 +279,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				bubbleMarkers = append(bubbleMarkers, "![图片]("+u+"?name="+url.QueryEscape(d.Filename)+")")
-				record(obj, d.Filename, ex.ImageMIME, int64(len(ex.ImageBytes)), wsPath)
+				recordAttachment(obj, d.Filename, ex.ImageMIME, int64(len(ex.ImageBytes)), wsPath)
 				continue
 			}
 			wsPath := ""
@@ -274,7 +293,34 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			bubbleMarkers = append(bubbleMarkers, "[file:"+d.Filename+"]("+u+")")
-			record(obj, d.Filename, d.MediaType, int64(len(d.Data)), wsPath)
+			recordAttachment(obj, d.Filename, d.MediaType, int64(len(d.Data)), wsPath)
+		}
+	}
+	// Persist page/embedded images extracted from documents so the user can see
+	// what the model received. These are derived, not uploads: they are indexed
+	// as conversation attachments (so retention/cleanup covers them) and the
+	// bubble marks them with `from=doc` for a caption. The per-message cap keeps
+	// one huge document set from doubling storage without limit.
+	if conv != "" && s.ChatMedia != nil && len(docImages) > 0 {
+		persistedCount, persistedBytes := 0, 0
+		for _, doc := range docImages {
+			if persistedCount >= maxPersistedDocumentImages ||
+				persistedBytes+len(doc.ImageBytes) > maxPersistedDocumentImageBytes {
+				break
+			}
+			label := documentImageLabel(doc)
+			u, obj, serr := s.ChatMedia.SaveInboundImage(r.Context(), conv, label, doc.ImageMIME, doc.ImageBytes)
+			if serr != nil {
+				log.Printf("chat media: save document image %q: %v", label, serr)
+				continue
+			}
+			q := url.Values{}
+			q.Set("name", label)
+			q.Set("from", "doc")
+			bubbleMarkers = append(bubbleMarkers, "![文档图片]("+u+"?"+q.Encode()+")")
+			recordAttachment(obj, label, doc.ImageMIME, int64(len(doc.ImageBytes)), "")
+			persistedCount++
+			persistedBytes += len(doc.ImageBytes)
 		}
 	}
 

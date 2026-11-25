@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"net/url"
 	"strings"
 
 	"github.com/rebornace/baize/internal/attach"
@@ -36,6 +38,7 @@ func (s *Server) hydrateRunUserParts(ctx context.Context, runID, convID, input s
 	text := input
 	var images []llm.ContentPart
 	var files []llm.ContentPart
+	seenDocImages := map[string]bool{}
 	supportsPDF := s.runSupportsPDF(runID)
 	appendAttachment := func(filename string, data []byte, mime string) {
 		opts := attach.DefaultOptions()
@@ -51,13 +54,7 @@ func (s *Server) hydrateRunUserParts(ctx context.Context, runID, convID, input s
 				text += attachmentTextBlock(filename, t.Text)
 			}
 		}
-		for _, img := range imgs {
-			if img.Kind == "image" {
-				images = append(images, llm.ContentPart{
-					Type: "image", ImageMIME: img.ImageMIME, ImageBytes: img.ImageBytes,
-				})
-			}
-		}
+		images = appendReplayImages(images, imgs, seenDocImages)
 	}
 	for _, match := range attachmentImageRef.FindAllStringSubmatch(content, -1) {
 		object := mediaObjectFromURL(match[2])
@@ -69,6 +66,9 @@ func (s *Server) hydrateRunUserParts(ctx context.Context, runID, convID, input s
 			continue
 		}
 		images = append(images, llm.ContentPart{Type: "image", ImageMIME: mime, ImageBytes: data})
+		if isDocumentImageURL(match[2]) {
+			seenDocImages[documentImageKey(mime, data)] = true
+		}
 	}
 	for _, match := range attachmentFileRef.FindAllStringSubmatch(content, -1) {
 		filename := strings.TrimSpace(match[1])
@@ -115,4 +115,43 @@ func (s *Server) runSupportsPDF(runID string) bool {
 	}
 	p, err := s.Store.GetModelProfile(rec.ModelProfileID)
 	return err == nil && p.SupportsPDF
+}
+
+// appendReplayImages adds extracted images, skipping document-derived images
+// already replayed from the bubble. Without this, a resumed run would send the
+// same page images twice: once from the persisted markers and once when the
+// original PDF is re-extracted.
+func appendReplayImages(
+	dst []llm.ContentPart, imgs []attach.Extracted, seenDocImages map[string]bool,
+) []llm.ContentPart {
+	for _, img := range imgs {
+		if img.Kind != "image" {
+			continue
+		}
+		if img.Document {
+			key := documentImageKey(img.ImageMIME, img.ImageBytes)
+			if seenDocImages[key] {
+				continue
+			}
+			seenDocImages[key] = true
+		}
+		dst = append(dst, llm.ContentPart{
+			Type: "image", ImageMIME: img.ImageMIME, ImageBytes: img.ImageBytes,
+		})
+	}
+	return dst
+}
+
+func documentImageKey(mime string, data []byte) string {
+	sum := sha256.Sum256(data)
+	return mime + "\x00" + string(sum[:])
+}
+
+func isDocumentImageURL(raw string) bool {
+	i := strings.IndexByte(raw, '?')
+	if i < 0 {
+		return false
+	}
+	q, err := url.ParseQuery(raw[i+1:])
+	return err == nil && q.Get("from") == "doc"
 }

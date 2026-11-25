@@ -7,7 +7,7 @@ describe('splitChannelAttachments', () => {
       '看这张图（附件：image_abc.jpg）\n![图片](/v0/channels/media/weixin:acc:peer/obj.jpg)'
     const { text, images, files } = splitChannelAttachments(content)
     expect(images).toEqual([
-      { name: '', url: '/v0/channels/media/weixin:acc:peer/obj.jpg' },
+      { name: '', url: '/v0/channels/media/weixin:acc:peer/obj.jpg', document: false },
     ])
     expect(files).toHaveLength(0)
     expect(text).toContain('看这张图（附件：image_abc.jpg）')
@@ -21,7 +21,11 @@ describe('splitChannelAttachments', () => {
     const { text, images, files } = splitChannelAttachments(content)
     expect(images).toHaveLength(0)
     expect(files).toEqual([
-      { name: '黄山三日行程.docx', url: '/v0/channels/media/weixin:a:p/obj.docx' },
+      {
+        name: '黄山三日行程.docx',
+        url: '/v0/channels/media/weixin:a:p/obj.docx',
+        document: false,
+      },
     ])
     expect(text).toContain('行程（附件：黄山三日行程.docx）')
     expect(text).not.toContain('[file:')
@@ -62,9 +66,11 @@ describe('splitChannelAttachments', () => {
       '[file:行程.docx](blob:http://localhost/uuid-doc)'
     const { text, images, files } = splitChannelAttachments(content)
     expect(images).toEqual([
-      { name: '', url: 'blob:http://localhost/uuid-img' },
+      { name: '', url: 'blob:http://localhost/uuid-img', document: false },
     ])
-    expect(files).toEqual([{ name: '行程.docx', url: 'blob:http://localhost/uuid-doc' }])
+    expect(files).toEqual([
+      { name: '行程.docx', url: 'blob:http://localhost/uuid-doc', document: false },
+    ])
     expect(text).toBe('刚发的图')
   })
 
@@ -73,7 +79,25 @@ describe('splitChannelAttachments', () => {
       '报告\n![图片](/v0/channels/media/c/a.pdf.png?name=%E6%8A%A5%E5%91%8A.png)'
     const { images } = splitChannelAttachments(content)
     expect(images).toEqual([
-      { name: '报告.png', url: '/v0/channels/media/c/a.pdf.png?name=%E6%8A%A5%E5%91%8A.png' },
+      {
+        name: '报告.png',
+        url: '/v0/channels/media/c/a.pdf.png?name=%E6%8A%A5%E5%91%8A.png',
+        document: false,
+      },
     ])
+  })
+
+  it('marks page images extracted from a document', () => {
+    const content =
+      '扫描件\n![文档图片](/v0/channels/media/c/p.jpg?name=scan.pdf%20%C2%B7%20page-1&from=doc)'
+    const { images, text } = splitChannelAttachments(content)
+    expect(images).toEqual([
+      {
+        name: 'scan.pdf · page-1',
+        url: '/v0/channels/media/c/p.jpg?name=scan.pdf%20%C2%B7%20page-1&from=doc',
+        document: true,
+      },
+    ])
+    expect(text).toBe('扫描件')
   })
 })

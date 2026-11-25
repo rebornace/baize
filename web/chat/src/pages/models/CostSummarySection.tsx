@@ -5,15 +5,19 @@ import {
   downloadCostExport,
   getAgentCostBudgets,
   getCostBreakdown,
+  getCostSeries,
   getCostSummary,
   getModelCostBudgets,
   getWorkspaceCostBudgets,
+  getWorkspaceCostSeries,
   putAgentCostBudget,
   putCostBudget,
   putModelCostBudget,
   putWorkspaceCostBudget,
   type AgentCostBudget,
   type CostBreakdown,
+  type CostSeries,
+  type CostSeriesPoint,
   type CostSummary,
   type ModelCostBudget,
   type WorkspaceCostBudget,
@@ -22,6 +26,33 @@ import {
 type AgentDraft = { day: string; month: string; warn: string; exceed: string }
 
 const COST_TREND_DAYS = 30
+
+function SeriesBars({ series }: { series: CostSeriesPoint[] }) {
+  const max = series.reduce((m, d) => Math.max(m, d.total_usd), 0)
+  return (
+    <>
+      <div className="cost-trend-bars" role="img">
+        {series.map((d) => {
+          const pct = max > 0 ? Math.max(2, Math.round((d.total_usd / max) * 100)) : 0
+          return (
+            <div
+              key={d.date}
+              className="cost-trend-bar"
+              data-testid="cost-series-bar"
+              title={`${d.date} · USD ${d.total_usd.toFixed(6)}`}
+            >
+              <span style={{ height: `${pct}%` }} />
+            </div>
+          )
+        })}
+      </div>
+      <div className="cost-trend-axis settings-muted">
+        <span>{series[0]?.date}</span>
+        <span>{series[series.length - 1]?.date}</span>
+      </div>
+    </>
+  )
+}
 
 export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [summary, setSummary] = useState<CostSummary | null>(null)
@@ -44,6 +75,14 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceCostBudget[] | null>(null)
   const [workspaceDrafts, setWorkspaceDrafts] = useState<Record<string, AgentDraft>>({})
   const [workspaceBusy, setWorkspaceBusy] = useState<string | null>(null)
+  const [seriesTarget, setSeriesTarget] = useState<{
+    kind: 'conversation' | 'workspace'
+    id: string
+    name: string
+  } | null>(null)
+  const [conversationSeries, setConversationSeries] = useState<CostSeries | null>(null)
+  const [seriesBusy, setSeriesBusy] = useState(false)
+  const [seriesError, setSeriesError] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -299,6 +338,28 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
     }
   }
 
+  const loadSeries = async (
+    kind: 'conversation' | 'workspace',
+    id: string,
+    name: string,
+  ) => {
+    setSeriesTarget({ kind, id, name })
+    setSeriesBusy(true)
+    setSeriesError(null)
+    try {
+      const next =
+        kind === 'conversation'
+          ? await getCostSeries(id, COST_TREND_DAYS)
+          : await getWorkspaceCostSeries(id, COST_TREND_DAYS)
+      setConversationSeries(next)
+    } catch {
+      setConversationSeries(null)
+      setSeriesError(MODELS.costSeriesFailed)
+    } finally {
+      setSeriesBusy(false)
+    }
+  }
+
   const downloadBlob = (blob: Blob, filename: string) => {
     if (typeof URL.createObjectURL !== 'function') return
     const url = URL.createObjectURL(blob)
@@ -478,28 +539,76 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                   <ul>
                     {breakdown.by_conversation.map((b) => (
                       <li key={b.key || 'default'}>
-                        <span>{b.name || b.key || MODELS.costUntitledConversation}</span>
-                        <strong>
-                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
-                        </strong>
+                        <button
+                          type="button"
+                          className="cost-scope-row"
+                          onClick={() =>
+                            void loadSeries('conversation', b.key, b.name || b.key)
+                          }
+                          data-testid={`cost-conversation-${b.key || 'default'}`}
+                        >
+                          <span>{b.name || b.key || MODELS.costUntitledConversation}</span>
+                          <strong>
+                            ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                          </strong>
+                        </button>
                       </li>
                     ))}
                   </ul>
+                  <span className="settings-muted">{MODELS.costSeriesHint}</span>
                 </div>
                 <div>
                   <span className="settings-muted">{MODELS.costByWorkspace}</span>
                   <ul>
                     {breakdown.by_workspace.map((b) => (
                       <li key={b.key || 'default'}>
-                        <span>{b.name || b.key || MODELS.costDefaultWorkspace}</span>
-                        <strong>
-                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
-                        </strong>
+                        <button
+                          type="button"
+                          className="cost-scope-row"
+                          onClick={() =>
+                            void loadSeries('workspace', b.key, b.name || b.key)
+                          }
+                          data-testid={`cost-workspace-${b.key || 'default'}`}
+                        >
+                          <span>{b.name || b.key || MODELS.costDefaultWorkspace}</span>
+                          <strong>
+                            ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                          </strong>
+                        </button>
                       </li>
                     ))}
                   </ul>
                 </div>
               </div>
+              {seriesTarget ? (
+                <div className="cost-trend" data-testid="cost-conversation-series">
+                  <div className="cost-trend-head">
+                    <h3 className="settings-subheading">
+                      {seriesTarget.kind === 'workspace'
+                        ? MODELS.costWorkspaceSeriesTitle(seriesTarget.name)
+                        : MODELS.costSeriesTitle(seriesTarget.name)}
+                    </h3>
+                    {seriesBusy ? (
+                      <span className="settings-muted">{MODELS.costSeriesLoading}</span>
+                    ) : conversationSeries ? (
+                      <span className="settings-muted">
+                        {MODELS.costTrendTotal(
+                          conversationSeries.total_usd,
+                          conversationSeries.series.length,
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                  {seriesError ? <p className="settings-error">{seriesError}</p> : null}
+                  {conversationSeries ? (
+                    conversationSeries.total_usd > 0 ? (
+                      <SeriesBars series={conversationSeries.series} />
+                    ) : (
+                      <p className="settings-muted">{MODELS.costSeriesEmpty}</p>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
           {!readOnly ? (
