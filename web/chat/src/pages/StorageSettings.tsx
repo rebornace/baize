@@ -565,8 +565,8 @@ export function StorageSettings() {
               label={STORAGE.dsn}
               hint={
                 info?.dsn_redacted
-                  ? `已保存：${info.dsn_redacted}，重新保存需再次填写完整连接串`
-                  : '连接串形如 host=... user=... password=... dbname=...，仅保存在服务端配置。'
+                  ? STORAGE.dsnSavedHint(info.dsn_redacted)
+                  : STORAGE.dsnFormatHint
               }
               error={dsnError ?? undefined}
             >

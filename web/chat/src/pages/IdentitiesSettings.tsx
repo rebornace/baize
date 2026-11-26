@@ -85,7 +85,7 @@ export function IdentitiesSettings() {
       <PageHeader title={ACCOUNTS.title} description={ACCOUNTS.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
-      {identities === null && <p className="settings-muted">加载中…</p>}
+      {identities === null && <p className="settings-muted">{ACCOUNTS.loading}</p>}
       {identities !== null && identities.length === 0 && (
         <EmptyState
           icon={<Users size={28} aria-hidden="true" />}

@@ -43,7 +43,7 @@ export function McpExportSettings() {
         }
       />
 
-      {s.loading && <p className="settings-muted">加载中…</p>}
+      {s.loading && <p className="settings-muted">{MCP_EXPORTS.loading}</p>}
       {!s.loading && s.error && (
         <p className="ui-inline-error" role="alert">
           {s.error}
@@ -70,7 +70,7 @@ export function McpExportSettings() {
     "baize-export": {
       "url": "${s.endpointUrl || 'https://<host>/v0/mcp/export'}",
       "headers": {
-        "Authorization": "Bearer <导出 Key>"
+        "Authorization": "Bearer <key>"
       }
     }
   }

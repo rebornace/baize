@@ -255,7 +255,7 @@ export function SkillsSettings() {
             void onSave()
           }}
         >
-          {saving ? '保存中…' : SKILLS.saveDefaults}
+          {saving ? SKILLS.saving : SKILLS.saveDefaults}
         </Button>
       </div>
     )

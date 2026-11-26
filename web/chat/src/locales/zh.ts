@@ -477,6 +477,7 @@ export const zhPack = {
   confirmDeleteOk: '删除',
 },
   ACCOUNTS: {
+    loading: '加载中…',
   title: '账号',
   description:
     '这里显示助手已登录的业务系统账号，新建对话也会继续使用。不需要时可以退出或清空。',
@@ -505,6 +506,8 @@ export const zhPack = {
   sqlitePath: '数据库文件路径',
   sqliteHint: '默认 ./data/baize.db；换成新路径不会自动搬迁已有数据。',
   dsn: '连接地址（DSN）',
+  dsnSavedHint: (dsn: string) => `已保存：${dsn}，重新保存需再次填写完整连接串`,
+  dsnFormatHint: '连接串形如 host=... user=... password=... dbname=...，仅保存在服务端配置。',
   ack: '我了解：切换存储不会自动迁移数据，旧库中的数据需自行处理',
   ackRequired: '请先勾选确认：切换存储不会自动迁移数据',
   postgresRequiresDSN: '使用 PostgreSQL 需要填写连接地址（DSN）',
@@ -637,6 +640,7 @@ export const zhPack = {
     overviewCost: '花费（USD）',
     overviewTopErrors: '失败原因',
     opsTitle: '运维状态',
+    opsDeveloper: '开发者信息',
     opsActive: '活动运行',
     opsQueued: '排队',
     opsWaiting: '待审批',
@@ -804,14 +808,17 @@ export const zhPack = {
   },
   EVAL: {
     title: '质量检查',
-    description: '把失败或偏慢的对话收成用例，对快照重打分；本页不会再调模型。',
+    description: '把失败或偏慢的对话收成用例并重打分；本页不调用模型。',
     harnessHint: '本页只管理语料与快照评分。若要整批重跑并再调模型，请用仓库里的评测脚本（开发者）。',
+    developerTitle: '开发者',
     candidatesTitle: '候选对话',
     fromLabel: '开始时间',
     toLabel: '结束时间',
     statusLabel: '结束状态',
-    statusHint: '可选，如失败、成功（接口值 failed / succeeded）',
-    statusPlaceholder: 'failed',
+    statusHint: '只看失败或成功的对话（可选）。',
+    statusAll: '全部状态',
+    statusFailed: '失败',
+    statusSucceeded: '成功',
     minDurationLabel: '最短耗时（毫秒）',
     minDurationPlaceholder: '60000',
     eventTypeLabel: '事件类型',
@@ -908,8 +915,10 @@ export const zhPack = {
     toastDeleted: '已删除语料',
     deleteTitle: '删除这条语料？',
     deleteBody: '将永久删除快照与评分记录，不可恢复。',
-    calibrationHint: '通过/未通过由规则重打分决定；人工标定只作校准记录，不会改写分数。',
+    calibrationHint: '人工标定只作校准记录，不改写分数。',
     calibrationSummaryScored: (n: number) => `已打分 ${n}`,
+    pass: '通过',
+    fail: '未通过',
     calibrationSummaryCalibrated: (n: number) => `已标定 ${n}`,
     calibrationSummaryRateNone: '尚无标定',
     calibrationSummaryRate: (pct: string) => `一致率 ${pct}`,
@@ -1006,6 +1015,7 @@ export const zhPack = {
     toastSkillInstalled: (id: string) => `已安装用户 Skill：${id}`,
   },
   WEBHOOKS: {
+    loading: '加载中…',
   title: '消息回调',
   description: '有消息或任务结束时，自动通知你填的网址。',
   catalogDiffNote:
@@ -1140,7 +1150,7 @@ export const zhPack = {
   connectorGroupsScopedSaved: '子任务开关已生效',
   connectorGroupsAutoWakeEnable: '子代理完成后自动继续（默认关）',
   connectorGroupsAutoWakeHint:
-    '仅在父 Run 已结束且会话空闲时，用子代理回执自动开一轮；父忙或等审批时不插队。会消耗模型调用。',
+    '仅在当前对话已结束且空闲时，用子代理回执自动开启下一轮；忙或等审批时不插队。会消耗模型调用。',
   connectorGroupsId: '分组名称',
   connectorGroupsIdHint: '用短英文 id，例如 finance、commerce',
   connectorGroupsIdPlaceholder: '例如 finance',
@@ -1213,6 +1223,7 @@ export const zhPack = {
   toolMatchModelMissing: 'Ollama 已就绪，尚未下载匹配模型',
   toolMatchModelReady: '匹配模型已在本机',
   toolMatchInstalledNotRunning: '已检测到本机 Ollama，但服务未启动（请打开托盘应用）',
+  toolMatchErrorGeneric: '增强匹配暂不可用，已回退到标准匹配。',
   toolMatchCleanupTitle: '清理本机下载',
   toolMatchCleanupHint:
     '关闭增强匹配，删除匹配模型与安装包缓存。可选同时卸载 Ollama 本体（适合当初由本页安装、且不再需要本机模型服务的情况）。',
@@ -1363,6 +1374,7 @@ export const zhPack = {
   badgeConfig: '配置',
 },
   MODELS: {
+    loading: '加载中…',
   title: '模型',
   description: '管理对话与理解用的模型；可按任务档位区分，并支持「智能选择」。',
   add: '添加模型',
@@ -1520,13 +1532,13 @@ export const zhPack = {
   SKILLS: {
   title: '技能',
   description:
-    '勾选并保存后，仅作为新对话的「预激活」起点；未勾选的技能仍会出现在目录里，也可在聊天用 @技能 或由助手 activate_skill 按需加载。登录类技能请用 @login-连接器，不要勾成默认。',
+    '勾选后作为新对话的默认技能；未勾选的仍可在对话里用 @ 调用。',
   upload: '上传技能',
   saveDefaults: '保存默认配置',
   selectionHint:
-    '勾选 ≠ 限制助手只能用这些技能。未勾选仍可发现与激活；勾选过多（尤其是登录类）会挤占工具预筛名额。',
+    '勾选只是默认推荐，不会限制助手使用其他技能。',
   domainHint: (domain: string) =>
-    `域专用技能（${domain}）：建议在需要时用 @ 单轮激活，不要勾成账号默认。`,
+    `域专用技能（${domain}）：建议需要时用 @ 单轮激活。`,
   emptyTitle: '还没有技能',
   emptyDesc: '上传 .md 或 .zip 技能包后，即可在对话中选用。',
   confirmDeleteTitle: '删除这个技能？',
@@ -1542,8 +1554,9 @@ export const zhPack = {
   sourceManaged: '自动生成',
   exclusiveBinding: '严格工具绑定',
   exclusiveBindingHint:
-    '开启后，模型起初只能看到已激活技能声明的工具；仍可通过 activate_skill 合法扩大。关闭时保留全部已启用工具（技能 tools 仅作预筛保底）。',
+    '开启后，助手起初只能使用已激活技能声明的工具；关闭时保留全部已启用工具。',
   loading: '加载中…',
+  saving: '保存中…',
   toolsCount: (n: number) => `${n} 个相关工具`,
   managedLoginTitle: (connectorId: string) => `连接器 ${connectorId} 的登录能力（自动维护）`,
   builtinTitles: {
@@ -1721,6 +1734,7 @@ export const zhPack = {
   phLoginSignalsMessages: '未登录\n请登录',
   phToolPath: '/items/{id}',
   searchPlaceholder: '搜索',
+  noMatch: '没有匹配的功能',
   confirmDeleteTitle: '删除这个功能？',
   confirmDeleteBody: '删除后不可恢复。仅可删除手动添加的 extra 工具。',
   confirmDeleteOk: '删除',
@@ -1750,6 +1764,7 @@ export const zhPack = {
   addModalHintAfter: '上传接口文档。',
 },
   CONNECTORS: {
+  loading: '加载中…',
   openapiTitle: '业务系统',
   openapiDesc:
     '上传一份接口文档，助手就能对接公司内部的各类业务系统。无需写代码。',
@@ -1928,6 +1943,7 @@ export const zhPack = {
   errOAuthState: '授权状态无效或已过期，请重新点击「去授权」。',
 },
   MCP_EXPORTS: {
+    loading: '加载中…',
   title: '对外提供能力',
   intro:
     '把助手的能力以标准 MCP 服务对外开放，供 Cursor 等其他客户端调用。调用方凭下方创建的专用密钥访问。',
@@ -2091,6 +2107,7 @@ export const zhPack = {
   qrScanHint: (url: string) => `请用手机微信扫码（内容：${url}）`,
   settingsSection: '设置',
   fieldAssignee: '受理人（assignee）',
+  fieldAssigneePlaceholder: 'alice 或 channel:weixin',
   fieldAllowlist: 'allowlist（每行一个 peer id）',
   enableChannel: '启用微信渠道',
   saveSettings: '保存设置',
@@ -2101,6 +2118,7 @@ export const zhPack = {
   loginUnknown: '未知状态',
 },
   INBOX: {
+    loading: '加载中…',
   title: '外部来信',
   description:
     '给外部系统一个专用收件地址；对方按约定发来后，会在这里变成一场对话。',
@@ -2252,6 +2270,9 @@ export const zhPack = {
     browserLogin: '浏览器登录',
     continueLogin: '已完成登录，继续',
     summary: '摘要',
+    fallbackGoal: '子任务',
+    continuePrompt: '请根据以上回执继续处理；如果没有需要继续的动作，简要告知我结果。',
+    retryPrompt: '请判断是否需要重试或改用其他方式，并说明结果。',
     continueWork: '继续处理',
     continueBusy: '当前回复结束后可继续',
     abort: '放弃',
@@ -2421,6 +2442,8 @@ export const zhPack = {
     goAddModel: '去添加',
   },
   MODEL_SELECT: {
+    label: '模型',
+    aria: '选择本次消息使用的模型',
     visionNone:
       '当前没有可用的「视觉」模型，请到「设置 → AI 模型」添加，或移除图片后再发送。',
     visionUnsupported:
@@ -2502,6 +2525,7 @@ export const zhPack = {
     confirm: '确认',
     cancel: '取消',
     loading: '加载中…',
+    close: '关闭',
   },
   UNLOCK: {
     title: '解锁',

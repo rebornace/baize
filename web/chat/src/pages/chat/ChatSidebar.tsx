@@ -4,7 +4,7 @@ import { Search } from 'lucide-react'
 import type { ConversationScope, ConversationSummary, Workspace } from '../../api'
 import { LanguageChip } from '../../components/LanguageChip'
 import { SidebarResizer } from '../../components/SidebarResizer'
-import { Pencil, Pin, Archive, ArchiveRestore, Tag } from 'lucide-react'
+import { Pencil, Pin, Archive, ArchiveRestore, Tag, X, Check } from 'lucide-react'
 import { Button, ThemeToggle } from '../../components/ui'
 import { conversationListLabel } from '../../conversationLabel'
 import { conversationUpdatedLabel } from '../../conversationUpdatedLabel'
@@ -353,7 +353,7 @@ export function ChatSidebar({
               >
                 {batch ? (
                   <span className="conversation-batch-check" aria-hidden="true">
-                    {selected.has(c.id) ? '✓' : ''}
+                    {selected.has(c.id) ? <Check size={12} /> : null}
                   </span>
                 ) : null}
                 <span className="conversation-item-title">
@@ -451,7 +451,7 @@ export function ChatSidebar({
                       onDeleteConversation(c.id)
                     }}
                   >
-                    ✕
+                    <X size={12} aria-hidden="true" />
                   </button>
                 </span>
               ) : null}

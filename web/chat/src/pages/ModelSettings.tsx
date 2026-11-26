@@ -47,7 +47,7 @@ export function ModelSettings() {
       <PageHeader title={MODELS.title} description={MODELS.description} actions={headerAdd} />
       <ToastRegion toasts={s.toasts} onDismiss={s.dismiss} />
 
-      {s.loading && <p className="settings-muted">加载中…</p>}
+      {s.loading && <p className="settings-muted">{MODELS.loading}</p>}
 
       {s.showEmpty && (
         <EmptyState

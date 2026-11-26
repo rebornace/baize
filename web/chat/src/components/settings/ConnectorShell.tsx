@@ -96,7 +96,7 @@ export function ConnectorShell({
       />
 
       {loadError && <p className="ui-inline-error" role="alert">{loadError}</p>}
-      {loading && rows.length === 0 && <p className="settings-muted">加载中…</p>}
+      {loading && rows.length === 0 && <p className="settings-muted">{CONNECTORS.loading}</p>}
 
       {showEmptyState && (
         <EmptyState title={labels.emptyTitle} description={labels.emptyDesc}

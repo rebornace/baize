@@ -108,7 +108,7 @@ function mapRunStatus(status: string | undefined): SubagentBlock['status'] | und
 
 export function subagentContinuePrompt(block: SubagentBlock): string {
   const status = statusLabel(block.status, block.waitingKind)
-  const lines = [`${SUBAGENT.title}「${block.goal || '子任务'}」${status}。`]
+  const lines = [`${SUBAGENT.title}「${block.goal || SUBAGENT.fallbackGoal}」${status}。`]
   if (block.summary) lines.push(`${SUBAGENT.summary}: ${block.summary}`)
   const facts = Object.entries(block.facts ?? {}).slice(0, 6)
   if (facts.length > 0) {
@@ -117,9 +117,9 @@ export function subagentContinuePrompt(block: SubagentBlock): string {
   }
   if (block.error) lines.push(`${SUBAGENT.error}: ${block.error}`)
   if (block.status === 'succeeded') {
-    lines.push('请根据以上回执继续处理；如果没有需要继续的动作，简要告知我结果。')
+    lines.push(SUBAGENT.continuePrompt)
   } else {
-    lines.push('请判断是否需要重试或改用其他方式，并说明结果。')
+    lines.push(SUBAGENT.retryPrompt)
   }
   return lines.join('\n')
 }

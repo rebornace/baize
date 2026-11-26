@@ -908,10 +908,11 @@ export function EvalSettings() {
   return (
     <div className="settings-panel settings-eval">
       <PageHeader title={EVAL.title} description={EVAL.description} />
-      <div className="settings-eval-hints">
-        <p className="settings-muted">{EVAL.calibrationHint}</p>
+      <p className="settings-muted">{EVAL.calibrationHint}</p>
+      <details className="settings-developer">
+        <summary>{EVAL.developerTitle}</summary>
         <p className="settings-muted">{EVAL.harnessHint}</p>
-      </div>
+      </details>
 
       <div className="settings-eval-summary" data-testid="eval-calibration-summary">
         {calibrationSummary == null ? (
@@ -1051,12 +1052,11 @@ export function EvalSettings() {
             />
           </Field>
           <Field label={EVAL.statusLabel} hint={EVAL.statusHint}>
-            <Input
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              disabled={busy}
-              placeholder={EVAL.statusPlaceholder}
-            />
+            <Select value={status} onChange={(e) => setStatus(e.target.value)} disabled={busy}>
+              <option value="">{EVAL.statusAll}</option>
+              <option value="failed">{EVAL.statusFailed}</option>
+              <option value="succeeded">{EVAL.statusSucceeded}</option>
+            </Select>
           </Field>
           <Field label={EVAL.minDurationLabel}>
             <Input
@@ -1289,7 +1289,7 @@ export function EvalSettings() {
                             <span
                               key={`${c.id}-score-${i}`}
                               className={`eval-trend-dot ${r.pass ? 'pass' : 'fail'}`}
-                              title={`${r.scored_at} ${r.pass ? '✓' : '✗'}`}
+                              title={`${r.scored_at} ${r.pass ? EVAL.pass : EVAL.fail}`}
                             />
                           ))}
                         </span>

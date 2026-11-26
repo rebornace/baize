@@ -305,7 +305,7 @@ export function InboxSettings() {
       <PageHeader title={INBOX.title} description={INBOX.description} />
       <ToastRegion toasts={toasts} onDismiss={dismiss} />
 
-      {loading && <p className="settings-muted">加载中…</p>}
+      {loading && <p className="settings-muted">{INBOX.loading}</p>}
 
       {!loading && (
         <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>

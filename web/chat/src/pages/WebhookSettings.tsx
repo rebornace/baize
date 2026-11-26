@@ -187,7 +187,7 @@ export function WebhookSettings() {
         {WEBHOOKS.catalogDiffNote}
       </p>
 
-      {loading && <p className="settings-muted">加载中…</p>}
+      {loading && <p className="settings-muted">{WEBHOOKS.loading}</p>}
       {!loading && (
         <form className="settings-form" onSubmit={(e) => void onSubmit(e)}>
           <Field label={WEBHOOKS.urlLabel} hint={WEBHOOKS.urlHint}>

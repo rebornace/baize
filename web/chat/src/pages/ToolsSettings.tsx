@@ -57,7 +57,7 @@ export function ToolsSettings() {
                   </Button>
                 )}
               </div>
-              {s.visible.length === 0 && <p className="settings-empty settings-tools-empty">无匹配</p>}
+              {s.visible.length === 0 && <p className="settings-empty settings-tools-empty">{TOOLS.noMatch}</p>}
               {s.visible.length > 0 && (
                 <ToolsTree
                   tree={s.tree}

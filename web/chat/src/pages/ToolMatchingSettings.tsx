@@ -72,12 +72,20 @@ function errorLabel(code?: string): string {
   if (!code) return ''
   const map = RUNTIME.toolMatchPhase as Record<string, string>
   if (map[code]) return map[code]
-  if (code === 'ollama_installed_but_not_running') return RUNTIME.toolMatchInstalledNotRunning
+  // These are already explained by the Ollama status line above.
+  if (code === 'ollama_installed_but_not_running' || code === 'ollama_not_running') return ''
   // Pull errors may arrive as "pull: ollama_version_too_old" or raw Ollama text.
   if (code.includes('ollama_version_too_old') || /newer version of ollama/i.test(code)) {
-    return map.ollama_version_too_old || code
+    return map.ollama_version_too_old || RUNTIME.toolMatchErrorGeneric
   }
-  return code
+  // Never surface a raw machine code on a user-facing settings page.
+  return RUNTIME.toolMatchErrorGeneric
+}
+
+function errorLine(st: ToolRetrievalStatus): string {
+  if (!st.error) return ''
+  const label = errorLabel(st.error)
+  return label === phaseLabel(st.phase, st.detail) ? '' : label
 }
 
 function matchModeTitle(st: ToolRetrievalStatus | null, busy: boolean, enhanced: boolean): string {
@@ -493,7 +501,11 @@ export function ToolMatchingSettings() {
                   <p className="settings-muted">{RUNTIME.toolMatchInstalledNotRunning}</p>
                 ) : null}
                 <ProgressBlock st={st} />
-                {st.error ? <p className="settings-muted">{errorLabel(st.error)}</p> : null}
+                {errorLine(st) ? (
+                  <p className="settings-muted" title={st.error}>
+                    {errorLine(st)}
+                  </p>
+                ) : null}
                 <p className="settings-muted">
                   {RUNTIME.toolMatchModel}: {st.model || '—'}
                   {st.base_url ? ` · ${st.base_url}` : ''}
@@ -623,7 +635,9 @@ export function ToolMatchingSettings() {
                   </p>
                 ) : null}
                 <ProgressBlock st={dec} />
-                {dec.error ? <p className="settings-muted">{errorLabel(dec.error)}</p> : null}
+                {dec.error && errorLabel(dec.error) ? (
+                  <p className="settings-muted">{errorLabel(dec.error)}</p>
+                ) : null}
                 <p className="settings-muted">
                   {RUNTIME.fieldDecideSystemOneModel}: {dec.model || 'tev1'}
                   {dec.base_url ? ` · ${dec.base_url}` : ''}

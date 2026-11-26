@@ -431,7 +431,7 @@ export function WeixinChannelSettings() {
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
               disabled={uiBusy}
-              placeholder="alice 或 channel:weixin"
+              placeholder={WEIXIN.fieldAssigneePlaceholder}
             />
           </label>
           <label className="settings-field">

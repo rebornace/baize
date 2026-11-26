@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
+import { X } from 'lucide-react'
+import { COMMON } from '../../strings'
 
 export type ToastTone = 'success' | 'error' | 'info'
 
@@ -69,10 +71,10 @@ export function ToastRegion({
             type="button"
             className="toast-close"
             data-testid="toast-close"
-            aria-label="关闭提示"
+            aria-label={COMMON.close}
             onClick={() => onDismiss(t.id)}
           >
-            ×
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
       ))}

@@ -1,4 +1,5 @@
 import type { ToolInfo } from '../../api'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge, Button, DropdownMenu } from '../../components/ui'
 import { canDeleteCatalogTool } from '../../toolCatalog'
 import { TOOLS } from '../../strings'
@@ -264,7 +265,12 @@ export function ToolsTree(props: TreeProps) {
                 className="settings-group-toggle"
                 onClick={() => setExpandedConnectors((prev) => toggleKey(prev, group.connectorId))}
               >
-                {connectorOpen ? '▾' : '▸'} {group.connectorId || TOOLS.noConnector}
+                {connectorOpen ? (
+                  <ChevronDown size={14} aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={14} aria-hidden="true" />
+                )}{' '}
+                {group.connectorId || TOOLS.noConnector}
               </button>
               <span className="settings-group-meta">
                 {TOOLS.groupMeta(groupRows.length, enabledCount(groupRows))}
@@ -285,7 +291,12 @@ export function ToolsTree(props: TreeProps) {
                           className="settings-group-toggle"
                           onClick={() => setExpandedPrefixes((prev) => toggleKey(prev, pKey))}
                         >
-                          {prefixOpen ? '▾' : '▸'} {prefixGroup.prefix}
+                          {prefixOpen ? (
+                            <ChevronDown size={14} aria-hidden="true" />
+                          ) : (
+                            <ChevronRight size={14} aria-hidden="true" />
+                          )}{' '}
+                          {prefixGroup.prefix}
                         </button>
                         <span className="settings-group-meta">
                           {TOOLS.groupMeta(prefixGroup.tools.length, enabledCount(prefixGroup.tools))}

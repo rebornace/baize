@@ -469,6 +469,7 @@ export const enPack = {
     confirmDeleteOk: 'Delete',
   },
   ACCOUNTS: {
+    loading: 'Loading…',
     title: 'Accounts',
     description:
       'Business-system accounts the assistant is signed into. New chats keep using them. Sign out or clear here if you no longer need them.',
@@ -498,6 +499,10 @@ export const enPack = {
     sqlitePath: 'Database file path',
     sqliteHint: 'Default ./data/baize.db; a new path does not migrate existing data.',
     dsn: 'Connection string (DSN)',
+    dsnSavedHint: (dsn: string) =>
+      `Saved: ${dsn}. Re-enter the full connection string to update it.`,
+    dsnFormatHint:
+      'Format: host=... user=... password=... dbname=...; stored only in server config.',
     ack: 'I understand: switching storage does not migrate data; handle the old database yourself',
     ackRequired: 'Please confirm that switching storage does not migrate data',
     postgresRequiresDSN: 'PostgreSQL requires a connection string (DSN)',
@@ -636,6 +641,7 @@ export const enPack = {
     overviewCost: 'Cost (USD)',
     overviewTopErrors: 'Failure reasons',
     opsTitle: 'Operations status',
+    opsDeveloper: 'Developer details',
     opsActive: 'Active runs',
     opsQueued: 'Queued',
     opsWaiting: 'Waiting approval',
@@ -806,15 +812,18 @@ export const enPack = {
   EVAL: {
     title: 'Quality checks',
     description:
-      'Turn failed or slow chats into cases and re-score snapshots here. This page does not call the model.',
+      'Turn failed or slow chats into cases and re-score snapshots; this page does not call the model.',
     harnessHint:
       'This page only manages corpus and snapshot scores. For batch re-runs that call the model, use the repo eval scripts (developers).',
+    developerTitle: 'Developers',
     candidatesTitle: 'Candidate chats',
     fromLabel: 'From',
     toLabel: 'To',
     statusLabel: 'Status',
-    statusHint: 'Optional, e.g. failed or succeeded',
-    statusPlaceholder: 'failed',
+    statusHint: 'Show only failed or succeeded chats (optional).',
+    statusAll: 'All statuses',
+    statusFailed: 'Failed',
+    statusSucceeded: 'Succeeded',
     minDurationLabel: 'Min duration (milliseconds)',
     minDurationPlaceholder: '60000',
     eventTypeLabel: 'Event type',
@@ -916,8 +925,10 @@ export const enPack = {
     deleteTitle: 'Delete this case?',
     deleteBody: 'Permanently removes the snapshot and score history.',
     calibrationHint:
-      'Pass/fail comes from rule-based re-score; human calibration is recorded separately and does not change the score.',
+      'Human calibration is recorded separately and does not change the score.',
     calibrationSummaryScored: (n: number) => `Scored ${n}`,
+    pass: 'Pass',
+    fail: 'Fail',
     calibrationSummaryCalibrated: (n: number) => `Calibrated ${n}`,
     calibrationSummaryRateNone: 'No calibrations yet',
     calibrationSummaryRate: (pct: string) => `Agreement ${pct}`,
@@ -1017,6 +1028,7 @@ export const enPack = {
     toastSkillInstalled: (id: string) => `Installed user skill: ${id}`,
   },
   WEBHOOKS: {
+    loading: 'Loading…',
     title: 'Message callbacks',
     description: 'Notify a URL you provide when messages arrive or tasks finish.',
     catalogDiffNote:
@@ -1152,7 +1164,7 @@ export const enPack = {
     connectorGroupsScopedSaved: 'Sub-task toggle applied',
     connectorGroupsAutoWakeEnable: 'Auto-continue when an async subagent finishes (default off)',
     connectorGroupsAutoWakeHint:
-      'Only when the parent run has finished and the conversation is idle; never interrupts a running or waiting parent. Uses an extra model call.',
+      'Only when the current conversation has finished and is idle; never interrupts a busy conversation or a pending approval. Uses an extra model call.',
     connectorGroupsId: 'Group name',
     connectorGroupsIdHint: 'Short English id, e.g. finance or commerce',
     connectorGroupsIdPlaceholder: 'e.g. finance',
@@ -1229,6 +1241,7 @@ export const enPack = {
     toolMatchModelMissing: 'Ollama is ready; matching model not downloaded yet',
     toolMatchModelReady: 'Matching model is on this computer',
     toolMatchInstalledNotRunning: 'Ollama is installed but not running (open the tray app)',
+    toolMatchErrorGeneric: 'Enhanced matching is unavailable; using standard matching.',
     toolMatchCleanupTitle: 'Clean up local downloads',
     toolMatchCleanupHint:
       'Turns off enhanced matching and removes the matching model plus installer cache. Optionally uninstall Ollama itself (useful if it was installed from this page and you no longer need a local model runtime).',
@@ -1383,6 +1396,7 @@ export const enPack = {
     badgeConfig: 'Config',
   },
   MODELS: {
+    loading: 'Loading…',
     title: 'Models',
     description: 'Manage models for chat and understanding; tier them by task and enable Auto select.',
     add: 'Add model',
@@ -1548,13 +1562,13 @@ export const enPack = {
   SKILLS: {
     title: 'Skills',
     description:
-      'Checked skills are only the pre-activation starting set for new chats. Unchecked skills stay in the catalog and can still be used via @skill or activate_skill. Prefer @login-<connector> for login skills—do not check them as defaults.',
+      'Checked skills become defaults for new chats; unchecked skills are still available with @ in a conversation.',
     upload: 'Upload skill',
     saveDefaults: 'Save default configuration',
     selectionHint:
-      'Checking does not restrict the agent to those skills only. Unchecked skills remain discoverable; checking too many (especially login skills) crowds the tool prefilter budget.',
+      'Checking is only a recommendation and never limits which skills the assistant can use.',
     domainHint: (domain: string) =>
-      `Domain-specific skill (${domain}): prefer @mention for one run; do not set it as the account default.`,
+      `Domain-specific skill (${domain}): prefer an @ mention for one run.`,
     emptyTitle: 'No skills yet',
     emptyDesc: 'Upload a .md or .zip skill pack to use it in chat.',
     confirmDeleteTitle: 'Delete this skill?',
@@ -1570,8 +1584,9 @@ export const enPack = {
     sourceManaged: 'Auto-generated',
     exclusiveBinding: 'Strict tool binding',
     exclusiveBindingHint:
-      'When on, the model initially sees only tools declared on activated skills; it may still expand via activate_skill. Off by default so all enabled tools stay available (skill tools: is only a prefilter floor).',
+      'When on, the assistant first sees only tools declared on activated skills; turning it off keeps all enabled tools available.',
     loading: 'Loading…',
+    saving: 'Saving…',
     toolsCount: (n: number) => (n === 1 ? '1 related tool' : `${n} related tools`),
     managedLoginTitle: (connectorId: string) =>
       `Login capability for connector ${connectorId} (auto-maintained)`,
@@ -1760,6 +1775,7 @@ export const enPack = {
     phLoginSignalsMessages: '未登录\n请登录',
     phToolPath: '/items/{id}',
     searchPlaceholder: 'Search',
+    noMatch: 'No matching capabilities',
     confirmDeleteTitle: 'Delete this capability?',
     confirmDeleteBody: 'This cannot be undone. Only manually added extra tools can be deleted.',
     confirmDeleteOk: 'Delete',
@@ -1790,6 +1806,7 @@ export const enPack = {
     addModalHintAfter: 'to upload an API document.',
   },
   CONNECTORS: {
+    loading: 'Loading…',
     openapiTitle: 'Business systems',
     openapiDesc: 'Upload an API document so the assistant can call internal business systems — no code required.',
     pluginTitle: 'Plugin services',
@@ -1974,6 +1991,7 @@ export const enPack = {
     errOAuthState: 'Authorization state is invalid or expired; click Authorize again.',
   },
   MCP_EXPORTS: {
+    loading: 'Loading…',
     title: 'Expose capabilities',
     intro:
       'Expose assistant capabilities as a standard MCP server for clients like Cursor. Callers authenticate with dedicated keys created below.',
@@ -2144,6 +2162,7 @@ export const enPack = {
     qrScanHint: (url: string) => `Scan with WeChat on your phone (content: ${url})`,
     settingsSection: 'Settings',
     fieldAssignee: 'Assignee',
+    fieldAssigneePlaceholder: 'alice or channel:weixin',
     fieldAllowlist: 'Allowlist (one peer id per line)',
     enableChannel: 'Enable WeChat channel',
     saveSettings: 'Save settings',
@@ -2154,6 +2173,7 @@ export const enPack = {
     loginUnknown: 'Unknown status',
   },
   INBOX: {
+    loading: 'Loading…',
     title: 'Inbound mail',
     description:
       'Give external systems a dedicated inbox URL; messages sent as agreed become conversations here.',
@@ -2312,6 +2332,10 @@ export const enPack = {
     browserLogin: 'Browser login',
     continueLogin: 'Login done, continue',
     summary: 'Summary',
+    fallbackGoal: 'Subtask',
+    continuePrompt:
+      'Continue from the receipt above; if no further action is needed, briefly report the result.',
+    retryPrompt: 'Decide whether to retry or use another approach, and explain the result.',
     continueWork: 'Continue',
     continueBusy: 'Available after the current reply finishes',
     abort: 'Abort',
@@ -2488,6 +2512,8 @@ export const enPack = {
     goAddModel: 'Add model',
   },
   MODEL_SELECT: {
+    label: 'Model',
+    aria: 'Choose the model for this message',
     visionNone:
       'No Vision model is available. Add one under Settings → Models, or remove images before sending.',
     visionUnsupported:
@@ -2569,6 +2595,7 @@ export const enPack = {
     confirm: 'Confirm',
     cancel: 'Cancel',
     loading: 'Loading…',
+    close: 'Close',
   },
   UNLOCK: {
     title: 'Unlock',

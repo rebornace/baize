@@ -71,36 +71,39 @@ export function OpsStatusCard() {
           <strong>{gate}</strong>
         </div>
       </div>
-      <p className="settings-muted">
-        {METRICS.opsRuntime(
-          data.process.goroutines,
-          data.db.open,
-          data.db.in_use,
-          data.db.idle,
-        )}
-      </p>
-      <p className="settings-muted">
-        {METRICS.opsStreams(data.streams.live, data.streams.dropped, data.streams.slow)}
-      </p>
-      <p className="settings-muted">
-        {METRICS.opsReplicaCount(data.replica_count)}
-        {data.replicas.length > 0
-          ? ' · ' +
-            data.replicas
-              .map((r) => METRICS.opsReplicaItem(r.id, r.age_sec, r.goroutines))
-              .join(' · ')
-          : ''}
-      </p>
-      <p className="settings-muted">
-        {METRICS.opsRetention(
-          daysLabel(data.retention.attachment_days),
-          daysLabel(data.retention.run_days),
-          daysLabel(data.retention.message_days),
-        )}
-        {data.budget.scoped_alerts > 0
-          ? ` · ${METRICS.opsScopedAlerts(data.budget.scoped_alerts)}`
-          : ''}
-      </p>
+      <details className="settings-developer">
+        <summary>{METRICS.opsDeveloper}</summary>
+        <p className="settings-muted">
+          {METRICS.opsRuntime(
+            data.process.goroutines,
+            data.db.open,
+            data.db.in_use,
+            data.db.idle,
+          )}
+        </p>
+        <p className="settings-muted">
+          {METRICS.opsStreams(data.streams.live, data.streams.dropped, data.streams.slow)}
+        </p>
+        <p className="settings-muted">
+          {METRICS.opsReplicaCount(data.replica_count)}
+          {data.replicas.length > 0
+            ? ' · ' +
+              data.replicas
+                .map((r) => METRICS.opsReplicaItem(r.id, r.age_sec, r.goroutines))
+                .join(' · ')
+            : ''}
+        </p>
+        <p className="settings-muted">
+          {METRICS.opsRetention(
+            daysLabel(data.retention.attachment_days),
+            daysLabel(data.retention.run_days),
+            daysLabel(data.retention.message_days),
+          )}
+          {data.budget.scoped_alerts > 0
+            ? ` · ${METRICS.opsScopedAlerts(data.budget.scoped_alerts)}`
+            : ''}
+        </p>
+      </details>
     </section>
   )
 }

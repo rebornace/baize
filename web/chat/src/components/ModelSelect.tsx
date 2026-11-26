@@ -1,5 +1,6 @@
 import type { ModelProfile } from '../api'
 import { AUTO_MODEL_ID, modelOptions } from '../modelSelect'
+import { MODEL_SELECT } from '../strings'
 
 export interface ModelSelectProps {
   profiles: ModelProfile[]
@@ -20,12 +21,12 @@ export function ModelSelect({ profiles, value, onChange, disabled }: ModelSelect
   const selected = value.trim() === '' ? AUTO_MODEL_ID : value
   return (
     <label className="chat-model-row">
-      <span className="chat-model-label">模型</span>
+      <span className="chat-model-label">{MODEL_SELECT.label}</span>
       <select
         className="chat-model-select"
         value={selected}
         disabled={disabled}
-        aria-label="选择本次消息使用的模型"
+        aria-label={MODEL_SELECT.aria}
         onChange={(e) => onChange(e.target.value)}
       >
         {options.map((o) => (
