@@ -2527,6 +2527,13 @@ export const zhPack = {
     loading: '加载中…',
     close: '关闭',
   },
+  SEARCH: {
+    entry: '搜索',
+    placeholder: '搜索消息、功能与设置',
+    messagesTab: '消息',
+    featuresTab: '功能与设置',
+    more: '更多',
+  },
   UNLOCK: {
     title: '解锁',
     enter: '进入',

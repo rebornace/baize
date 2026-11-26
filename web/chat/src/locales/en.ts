@@ -2597,6 +2597,13 @@ export const enPack = {
     loading: 'Loading…',
     close: 'Close',
   },
+  SEARCH: {
+    entry: 'Search',
+    placeholder: 'Search messages, features and settings',
+    messagesTab: 'Messages',
+    featuresTab: 'Features & settings',
+    more: 'More',
+  },
   UNLOCK: {
     title: 'Unlock',
     enter: 'Enter',

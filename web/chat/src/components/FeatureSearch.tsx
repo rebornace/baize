@@ -22,7 +22,7 @@ import {
 } from '../featureCatalog'
 import { FEATURE_SEARCH } from '../strings'
 
-type Ctx = { open: () => void }
+type Ctx = { open: () => void; setOverride: (fn: (() => void) | null) => void }
 const FeatureSearchContext = createContext<Ctx | null>(null)
 
 export function useFeatureSearch(): Ctx {
@@ -53,10 +53,16 @@ export function FeatureSearchProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState<FeatureEntry | null>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
+  // Chat 页注册自己的统一搜索；设置页没有覆盖时仍打开功能面板。
+  const overrideRef = useRef<(() => void) | null>(null)
 
   const openPalette = useCallback(() => {
     restoreRef.current = document.activeElement as HTMLElement | null
     setOpen(true)
+  }, [])
+
+  const setOverride = useCallback((fn: (() => void) | null) => {
+    overrideRef.current = fn
   }, [])
 
   const closePalette = useCallback((restore = true) => {
@@ -70,12 +76,12 @@ export function FeatureSearchProvider({ children }: { children: ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        if (!dialogOpen()) openPalette()
+        if (!dialogOpen()) (overrideRef.current ?? openPalette)()
         return
       }
       if (e.key === '/' && !isEditable(e.target) && !dialogOpen()) {
         e.preventDefault()
-        openPalette()
+        ;(overrideRef.current ?? openPalette)()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -88,7 +94,7 @@ export function FeatureSearchProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(id)
   }, [hint])
 
-  const value = useMemo(() => ({ open: openPalette }), [openPalette])
+  const value = useMemo(() => ({ open: openPalette, setOverride }), [openPalette, setOverride])
 
   return (
     <FeatureSearchContext.Provider value={value}>

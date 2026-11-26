@@ -43,6 +43,7 @@ import {
 import { foldEvents } from '../foldEvents'
 import type { ToolCatalog } from '../friendlyTool'
 import { useGate } from '../gateContext'
+import { useFeatureSearch } from '../components/FeatureSearch'
 import { useLocale } from '../locale/LocaleContext'
 import { loadModelChoice, resolveModelChoice, saveModelChoice } from '../modelChoice'
 import {
@@ -66,7 +67,7 @@ import { goalCandidatesFromMessages } from './chat/goalCandidates'
 import { ChatMessageList, copyText } from './chat/ChatMessageList'
 import { ChatSidebar } from './chat/ChatSidebar'
 import { ChatComposerTrailing, ChatTopBar } from './chat/ChatTopBar'
-import { MessageSearch } from './chat/MessageSearch'
+import { UnifiedSearch } from './chat/UnifiedSearch'
 import { PendingCenter } from './chat/PendingCenter'
 import { useChatRun } from './chat/useChatRun'
 import { useChatSession, type ChatLiveControls } from './chat/useChatSession'
@@ -101,7 +102,12 @@ export function ChatPage() {
   const [pendingCenterOpen, setPendingCenterOpen] = useState(false)
   const [quoteMessage, setQuoteMessage] = useState<ChatMessage | null>(null)
   const replyToIdRef = useRef('')
-  const [messageSearchOpen, setMessageSearchOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const featureSearch = useFeatureSearch()
+  useEffect(() => {
+    featureSearch.setOverride(() => setSearchOpen(true))
+    return () => featureSearch.setOverride(null)
+  }, [featureSearch])
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null)
@@ -755,7 +761,7 @@ export function ChatPage() {
         onCreateWorkspace={session.onCreateWorkspace}
         pendingCount={pendingApprovals.length}
         onOpenPending={() => setPendingCenterOpen(true)}
-        onOpenMessageSearch={() => setMessageSearchOpen(true)}
+        onOpenSearch={() => setSearchOpen(true)}
         onExportConversation={() => setExportOpen(true)}
         onMoveConversation={session.onMoveConversation}
         onMoveConversations={session.onMoveConversations}
@@ -961,14 +967,14 @@ export function ChatPage() {
         onExport={(format, includeThinking) => void exportChat(format, includeThinking)}
       />
 
-      <MessageSearch
-        open={messageSearchOpen}
+      <UnifiedSearch
+        open={searchOpen}
         conversationId={session.conversationId}
-        onClose={() => setMessageSearchOpen(false)}
+        onClose={() => setSearchOpen(false)}
         onOpenConversation={(id, messageId) => {
           session.onSelectConversation(id)
           setFocusMessageId(messageId)
-          setMessageSearchOpen(false)
+          setSearchOpen(false)
           drawer.close()
         }}
       />

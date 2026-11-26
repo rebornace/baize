@@ -1,17 +1,31 @@
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import { Search } from 'lucide-react'
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  Download,
+  FolderInput,
+  ListChecks,
+  LogOut,
+  MoreHorizontal,
+  Paperclip,
+  Pencil,
+  Pin,
+  Search,
+  Settings,
+  Tag,
+  X,
+} from 'lucide-react'
 import type { ConversationScope, ConversationSummary, Workspace } from '../../api'
 import { LanguageChip } from '../../components/LanguageChip'
 import { SidebarResizer } from '../../components/SidebarResizer'
-import { Pencil, Pin, Archive, ArchiveRestore, Tag, X, Check } from 'lucide-react'
-import { Button, ThemeToggle } from '../../components/ui'
+import { Button, DropdownMenu, ThemeToggle, type MenuItem } from '../../components/ui'
 import { conversationListLabel } from '../../conversationLabel'
 import { conversationUpdatedLabel } from '../../conversationUpdatedLabel'
 import { useLocale } from '../../locale/LocaleContext'
 import { clearControlToken } from '../../controlAuth'
-import { CHAT } from '../../strings'
-import { FeatureSearchButton } from '../../components/FeatureSearch'
+import { CHAT, SEARCH } from '../../strings'
 import { BudgetChip } from './BudgetChip'
 import { AttachmentManager } from './AttachmentManager'
 import { MoveConversationDialog } from './MoveConversationDialog'
@@ -35,7 +49,7 @@ export type ChatSidebarProps = {
   onCreateWorkspace: (name: string) => Promise<unknown>
   pendingCount: number
   onOpenPending: () => void
-  onOpenMessageSearch: () => void
+  onOpenSearch: () => void
   onExportConversation: () => void
   onMoveConversation: (id: string, workspaceId: string) => Promise<void>
   onMoveConversations: (ids: string[], workspaceId: string) => Promise<void>
@@ -68,7 +82,7 @@ export function ChatSidebar({
   onCreateWorkspace,
   pendingCount,
   onOpenPending,
-  onOpenMessageSearch,
+  onOpenSearch,
   onExportConversation,
   onMoveConversation,
   onMoveConversations,
@@ -152,6 +166,70 @@ export function ChatSidebar({
     onToggleArchivedView()
   }
 
+  const moreItems: MenuItem[] = []
+  if (conversationId && !readOnly) {
+    moreItems.push({
+      id: 'attachments',
+      label: CHAT.attachmentManager,
+      icon: <Paperclip size={14} aria-hidden="true" />,
+      onSelect: () => setAttachmentsOpen(true),
+    })
+  }
+  moreItems.push({
+    id: 'export',
+    label: CHAT.exportConversation,
+    icon: <Download size={14} aria-hidden="true" />,
+    onSelect: onExportConversation,
+  })
+  if (conversationId && moveTargets.length > 0 && !readOnly) {
+    moreItems.push({
+      id: 'move',
+      label: CHAT.moveConversation,
+      icon: <FolderInput size={14} aria-hidden="true" />,
+      onSelect: () => setMoveOpen(true),
+    })
+  }
+  if (conversations.length > 0 && !batch && !readOnly) {
+    moreItems.push({
+      id: 'batch',
+      label: CHAT.batchManage,
+      icon: <ListChecks size={14} aria-hidden="true" />,
+      onSelect: () => setBatch(true),
+    })
+  }
+  if (!batch && unreadCount > 0) {
+    moreItems.push({
+      id: 'mark-read',
+      label: CHAT.markAllRead(unreadCount),
+      icon: <Check size={14} aria-hidden="true" />,
+      onSelect: () => void onMarkAllRead(),
+    })
+  }
+  if (!batch) {
+    moreItems.push({
+      id: 'archived',
+      label: archivedView ? CHAT.showActiveConversations : CHAT.showArchivedConversations,
+      icon: archivedView ? (
+        <ArchiveRestore size={14} aria-hidden="true" />
+      ) : (
+        <Archive size={14} aria-hidden="true" />
+      ),
+      onSelect: toggleArchivedView,
+    })
+  }
+  if (gateEnabled) {
+    moreItems.push({
+      id: 'logout',
+      label: CHAT.logout,
+      icon: <LogOut size={14} aria-hidden="true" />,
+      destructive: true,
+      onSelect: () => {
+        clearControlToken()
+        window.location.assign('/ui/')
+      },
+    })
+  }
+
   return (
     <aside className="chat-sidebar" aria-label={CHAT.conversationListAria}>
       <div className="chat-sidebar-top">
@@ -168,16 +246,17 @@ export function ChatSidebar({
             {CHAT.newChat}
           </button>
         ) : null}
-        {!readOnly ? <FeatureSearchButton className="sidebar-search" /> : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="sidebar-message-search"
-          onClick={onOpenMessageSearch}
+        <button
+          type="button"
+          className="sidebar-search sidebar-search-unified"
+          onClick={onOpenSearch}
+          data-testid="unified-search-trigger"
+          title={SEARCH.placeholder}
         >
           <Search size={14} aria-hidden="true" />
-          {CHAT.messageSearchTitle}
-        </Button>
+          <span>{SEARCH.entry}</span>
+          <kbd>Ctrl K</kbd>
+        </button>
         {pendingCount > 0 && !readOnly && (
           <Button
             size="sm"
@@ -465,90 +544,28 @@ export function ChatSidebar({
           <ThemeToggle />
           <LanguageChip />
         </div>
-        <div className="sidebar-footer-links">
-          {conversationId && !readOnly ? (
-            <button
-              type="button"
-              className="settings-link"
-              onClick={() => setAttachmentsOpen(true)}
-              data-testid="attachment-manager-open"
-            >
-              {CHAT.attachmentManager}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="settings-link sidebar-export"
-            onClick={onExportConversation}
-          >
-            {CHAT.exportConversation}
-          </button>
-          {conversationId && moveTargets.length > 0 && !readOnly ? (
-            <button
-              type="button"
-              className="settings-link"
-              onClick={() => setMoveOpen(true)}
-              data-testid="move-conversation-open"
-            >
-              {CHAT.moveConversation}
-            </button>
-          ) : null}
-          {conversations.length > 0 && !batch && !readOnly ? (
-            <button
-              type="button"
-              className="settings-link"
-              onClick={() => setBatch(true)}
-              data-testid="conversation-batch-open"
-            >
-              {CHAT.batchManage}
-            </button>
-          ) : null}
-          {!batch && unreadCount > 0 ? (
-            <button
-              type="button"
-              className="settings-link"
-              onClick={() => void onMarkAllRead()}
-              data-testid="mark-all-read"
-            >
-              {CHAT.markAllRead(unreadCount)}
-            </button>
-          ) : null}
-          {!batch ? (
-            <button
-              type="button"
-              className="settings-link"
-              onClick={toggleArchivedView}
-              data-testid="conversation-archived-toggle"
-            >
-              {archivedView ? CHAT.showActiveConversations : CHAT.showArchivedConversations}
-            </button>
-          ) : null}
-        </div>
         <div className="sidebar-footer-nav">
           {!readOnly ? (
             <Link
               to={role === 'admin' ? '/settings' : '/settings/identities'}
-              className="settings-link"
+              className="settings-link sidebar-settings-link"
             >
+              <Settings size={14} aria-hidden="true" />
               {role === 'admin' ? CHAT.linkSettings : CHAT.linkAccounts}
             </Link>
           ) : (
-            <Link to="/settings/viewer" className="settings-link">
+            <Link to="/settings/viewer" className="settings-link sidebar-settings-link">
+              <Settings size={14} aria-hidden="true" />
               {CHAT.viewerDashboard}
             </Link>
           )}
-          {gateEnabled && (
-            <button
-              type="button"
-              className="settings-logout"
-              onClick={() => {
-                clearControlToken()
-                window.location.assign('/ui/')
-              }}
-            >
-              {CHAT.logout}
-            </button>
-          )}
+          <DropdownMenu
+            triggerLabel={SEARCH.more}
+            triggerClassName="sidebar-more"
+            items={moreItems}
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </DropdownMenu>
         </div>
       </div>
       <AttachmentManager

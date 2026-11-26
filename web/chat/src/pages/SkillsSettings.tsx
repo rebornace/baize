@@ -405,7 +405,8 @@ export function SkillsSettings() {
                   {s.source === 'user' && !readOnly && (
                     <Button
                       size="sm"
-                      variant="danger"
+                      variant="ghost"
+                      className="danger-text"
                       disabled={busy}
                       onClick={() => beginDelete(s)}
                     >

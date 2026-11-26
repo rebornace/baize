@@ -154,11 +154,13 @@ export function ModelPriceSection({ readOnly }: { readOnly: boolean }) {
           {table.entries.map((entry, i) => (
             <div className="model-price-row" key={`${entry.model}-${i}`}>
               <Input
+                aria-label={MODELS.priceModel}
                 value={entry.model}
                 disabled={readOnly || busy}
                 onChange={(e) => update(i, { model: e.target.value })}
               />
               <Input
+                aria-label={MODELS.priceInput}
                 type="number"
                 min={0}
                 value={String(entry.input_per_mtok)}
@@ -166,6 +168,7 @@ export function ModelPriceSection({ readOnly }: { readOnly: boolean }) {
                 onChange={(e) => update(i, { input_per_mtok: Number(e.target.value) || 0 })}
               />
               <Input
+                aria-label={MODELS.priceOutput}
                 type="number"
                 min={0}
                 value={String(entry.output_per_mtok)}
@@ -173,6 +176,7 @@ export function ModelPriceSection({ readOnly }: { readOnly: boolean }) {
                 onChange={(e) => update(i, { output_per_mtok: Number(e.target.value) || 0 })}
               />
               <Input
+                aria-label={MODELS.priceCached}
                 type="number"
                 min={0}
                 value={String(entry.cached_input_per_mtok)}

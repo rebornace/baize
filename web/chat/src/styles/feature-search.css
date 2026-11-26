@@ -7,7 +7,7 @@
 
 .feature-search-trigger kbd {
   margin-left: auto;
-  font-size: 0.6875rem;
+  font-size: var(--text-meta-size);
   color: var(--text-muted);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -62,7 +62,7 @@
 
 .feature-search-group {
   margin: var(--space-2) var(--space-2) var(--space-1);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta-size);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -111,10 +111,10 @@
 
 .feature-search-badge {
   flex: 0 0 auto;
-  font-size: 0.6875rem;
+  font-size: var(--text-meta-size);
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 6px;
 }
 
@@ -131,7 +131,7 @@
 .feature-search-footer {
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--border);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta-size);
   color: var(--text-muted);
 }
 
@@ -168,4 +168,44 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+/* ---- 统一搜索（消息 + 功能） ---- */
+.unified-search-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.unified-search-tab {
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-small-size);
+  cursor: pointer;
+}
+
+.unified-search-tab:hover {
+  color: var(--text);
+}
+
+.unified-search-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.unified-search-filters {
+  margin: var(--space-2) var(--space-3) 0;
+}
+
+.unified-search-filters + .message-search-results {
+  margin: 0 var(--space-3) var(--space-2);
+}
+
+.message-search-hit.active {
+  background: var(--surface-2);
 }

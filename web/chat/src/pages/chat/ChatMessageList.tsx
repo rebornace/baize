@@ -193,7 +193,7 @@ export function ChatMessageList({
       <div className="messages-inner">
         {showWelcome && (
           <div className="welcome">
-            <span className="welcome-mark" aria-hidden="true" />
+            <span className="welcome-mark" aria-hidden="true">泽</span>
             <p className="welcome-brand">{WELCOME.brand}</p>
             <p className="welcome-title">{WELCOME.title}</p>
             <p className="welcome-sub">{WELCOME.subtitle}</p>
