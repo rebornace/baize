@@ -8,7 +8,7 @@ import {
   type AlertChannel,
   type SMTPSettings,
 } from '../api/settings/alerts'
-import { Button, Input, Select } from '../components/ui'
+import { Button, Field, Input, Select } from '../components/ui'
 import { METRICS } from '../strings'
 
 const TYPES: AlertChannel['type'][] = ['feishu', 'dingtalk', 'wecom', 'generic', 'email']
@@ -128,7 +128,7 @@ export function AlertChannelsCard() {
           >
             {TYPES.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {METRICS.alertChannelTypeLabels[type] ?? type}
               </option>
             ))}
           </Select>
@@ -198,57 +198,65 @@ export function AlertChannelsCard() {
       {smtp ? (
         <details className="settings-developer" open>
           <summary>{METRICS.smtpTitle}</summary>
-          <div className="alert-channel-row">
-            <Input
-              placeholder={METRICS.smtpHost}
-              aria-label={METRICS.smtpHost}
-              value={smtp.host}
-              disabled={smtpBusy}
-              onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
-            />
-            <Input
-              type="number"
-              min={1}
-              max={65535}
-              aria-label={METRICS.smtpPort}
-              value={String(smtp.port)}
-              disabled={smtpBusy}
-              onChange={(e) => setSmtp({ ...smtp, port: Number(e.target.value) || 587 })}
-            />
-            <Input
-              placeholder={METRICS.smtpFrom}
-              aria-label={METRICS.smtpFrom}
-              value={smtp.from}
-              disabled={smtpBusy}
-              onChange={(e) => setSmtp({ ...smtp, from: e.target.value })}
-            />
-            <Input
-              placeholder={METRICS.smtpUsername}
-              aria-label={METRICS.smtpUsername}
-              value={smtp.username}
-              disabled={smtpBusy}
-              onChange={(e) => setSmtp({ ...smtp, username: e.target.value })}
-            />
-            <Input
-              type="password"
-              placeholder={smtp.has_password ? METRICS.smtpPasswordSaved : METRICS.smtpPassword}
-              aria-label={METRICS.smtpPassword}
-              value={smtpPassword}
-              disabled={smtpBusy}
-              onChange={(e) => setSmtpPassword(e.target.value)}
-            />
-            <Select
-              aria-label={METRICS.smtpSecurity}
-              value={smtp.security}
-              disabled={smtpBusy}
-              onChange={(e) =>
-                setSmtp({ ...smtp, security: e.target.value as SMTPSettings['security'] })
-              }
-            >
-              <option value="starttls">starttls</option>
-              <option value="tls">tls</option>
-              <option value="none">none</option>
-            </Select>
+          <div className="smtp-grid">
+            <Field label={METRICS.smtpHost}>
+              <Input
+                placeholder="smtp.example.com"
+                value={smtp.host}
+                disabled={smtpBusy}
+                onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
+              />
+            </Field>
+            <Field label={METRICS.smtpPort}>
+              <Input
+                type="number"
+                min={1}
+                max={65535}
+                value={String(smtp.port)}
+                disabled={smtpBusy}
+                onChange={(e) => setSmtp({ ...smtp, port: Number(e.target.value) || 587 })}
+              />
+            </Field>
+            <Field label={METRICS.smtpFrom}>
+              <Input
+                type="email"
+                placeholder="alerts@example.com"
+                value={smtp.from}
+                disabled={smtpBusy}
+                onChange={(e) => setSmtp({ ...smtp, from: e.target.value })}
+              />
+            </Field>
+            <Field label={METRICS.smtpUsername}>
+              <Input
+                value={smtp.username}
+                disabled={smtpBusy}
+                onChange={(e) => setSmtp({ ...smtp, username: e.target.value })}
+              />
+            </Field>
+            <Field label={METRICS.smtpPassword}>
+              <Input
+                type="password"
+                placeholder={smtp.has_password ? METRICS.smtpPasswordSaved : undefined}
+                value={smtpPassword}
+                disabled={smtpBusy}
+                onChange={(e) => setSmtpPassword(e.target.value)}
+              />
+            </Field>
+            <Field label={METRICS.smtpSecurity}>
+              <Select
+                value={smtp.security}
+                disabled={smtpBusy}
+                onChange={(e) =>
+                  setSmtp({ ...smtp, security: e.target.value as SMTPSettings['security'] })
+                }
+              >
+                <option value="starttls">starttls</option>
+                <option value="tls">tls</option>
+                <option value="none">none</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="settings-form-actions">
             <Button
               type="button"
               size="sm"

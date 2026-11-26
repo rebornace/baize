@@ -465,6 +465,28 @@
   min-width: 9rem;
 }
 
+/* SMTP 设置：带可见标签的两列表单 */
+.smtp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.settings-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 720px) {
+  .smtp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chat-sidebar-bottom {
   padding: var(--space-3);
   border-top: 1px solid var(--border);
@@ -4014,6 +4036,17 @@ button.settings-link {
   align-items: center;
   gap: 0.65rem;
   margin-bottom: 0.85rem;
+}
+
+/* 工具栏里的计数/状态不要被可伸缩输入挤成竖排 */
+.settings-toolbar > .settings-muted {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* 记忆页筛选：固定宽度，把剩余空间留给搜索框 */
+.settings-toolbar .settings-input.memory-source-filter {
+  flex: 0 0 8.5rem;
 }
 
 .settings-tools-list-shell {

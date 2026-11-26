@@ -61,8 +61,9 @@ export function ModelProfileList({
                 </Button>
                 <Button
                   type="button"
-                  variant="danger"
+                  variant="ghost"
                   size="sm"
+                  className="danger-text"
                   disabled={busy}
                   onClick={() => onDelete(p)}
                 >

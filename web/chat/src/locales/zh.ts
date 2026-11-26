@@ -710,6 +710,13 @@ export const zhPack = {
       '把预算与费用异常告警发送到飞书、钉钉、企业微信或通用 Webhook；最多 20 个。',
     alertChannelName: '名称',
     alertChannelType: '类型',
+    alertChannelTypeLabels: {
+      feishu: '飞书',
+      dingtalk: '钉钉',
+      wecom: '企业微信',
+      generic: '通用 Webhook',
+      email: '邮件',
+    },
     alertChannelURL: 'Webhook URL',
     alertChannelEnabled: '启用',
     alertChannelAdd: '添加通道',

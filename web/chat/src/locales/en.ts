@@ -711,6 +711,13 @@ export const enPack = {
       'Deliver budget and cost-anomaly alerts to Feishu, DingTalk, WeCom or a generic webhook; up to 20 channels.',
     alertChannelName: 'Name',
     alertChannelType: 'Type',
+    alertChannelTypeLabels: {
+      feishu: 'Feishu',
+      dingtalk: 'DingTalk',
+      wecom: 'WeCom',
+      generic: 'Generic webhook',
+      email: 'Email',
+    },
     alertChannelURL: 'Webhook URL',
     alertChannelEnabled: 'Enabled',
     alertChannelAdd: 'Add channel',

@@ -31,6 +31,12 @@ textarea {
   font: inherit;
 }
 
+/* 原生勾选框跟随主题主色，避免各浏览器默认蓝/灰混杂 */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
 /* P4-12：主滚动区与侧栏细滚动条（WebKit 全局 + Firefox 按容器） */
 ::-webkit-scrollbar {
   width: var(--scrollbar-size);

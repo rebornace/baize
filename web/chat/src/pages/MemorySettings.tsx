@@ -15,6 +15,7 @@ import {
   Field,
   Input,
   PageHeader,
+  Select,
   Textarea,
   ToastRegion,
   useToast,
@@ -306,8 +307,9 @@ export function MemorySettings() {
 
       {showToolbar && (
         <div className="settings-toolbar">
-          <select
+          <Select
             name="memory-source"
+            className="settings-input memory-source-filter"
             aria-label={MEMORY.filterLabel}
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value as 'all' | 'explicit' | 'auto')}
@@ -316,7 +318,7 @@ export function MemorySettings() {
             <option value="all">{MEMORY.filterAll}</option>
             <option value="explicit">{MEMORY.filterExplicit}</option>
             <option value="auto">{MEMORY.filterAuto}</option>
-          </select>
+          </Select>
           <Input
             name="memory-search"
             aria-label={MEMORY.searchPlaceholder}
