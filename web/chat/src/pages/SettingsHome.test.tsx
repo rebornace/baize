@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GateContext } from '../gateContext'
@@ -14,6 +14,7 @@ function jsonResponse(body: unknown): Response {
 }
 
 let host: HTMLDivElement
+let root: Root | null = null
 beforeEach(() => {
   localStorage.clear()
   localStorage.setItem('baize.locale', 'zh-CN')
@@ -23,11 +24,21 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
   vi.clearAllMocks()
 })
-afterEach(() => { host.remove(); vi.unstubAllGlobals(); localStorage.clear(); setPack(zhPack) })
+afterEach(() => {
+  if (root) {
+    act(() => root?.unmount())
+    root = null
+  }
+  host.remove()
+  vi.unstubAllGlobals()
+  localStorage.clear()
+  setPack(zhPack)
+})
 
 function render(role: 'admin' | 'operator') {
+  root = createRoot(host)
   act(() => {
-    createRoot(host).render(
+    root?.render(
       <LocaleProvider>
         <MemoryRouter>
           <GateContext.Provider value={{ role, gateEnabled: true, operatorId: 'op' }}>
