@@ -336,3 +336,31 @@ func TestSwitchDefaultBuildCopiesThinkingFields(t *testing.T) {
 		t.Fatalf("thinking fields not copied: level=%q dialect=%q", o.ThinkingLevel, o.ThinkingDialect)
 	}
 }
+
+func TestFallbackSkipsBudgetBlockedProfiles(t *testing.T) {
+	src := &fakeProfileSource{byID: map[string]ModelProfileView{}}
+	src.byID["mp_a"] = ModelProfileView{
+		ID:                 "mp_a",
+		Model:              "primary",
+		FallbackProfileIDs: []string{"mp_b", "mp_c"},
+	}
+	src.byID["mp_b"] = ModelProfileView{ID: "mp_b", Model: "fallback-b"}
+	src.byID["mp_c"] = ModelProfileView{ID: "mp_c", Model: "fallback-c"}
+	src.list = []ModelProfileView{src.byID["mp_a"], src.byID["mp_b"], src.byID["mp_c"]}
+
+	sw := NewSwitch(src)
+	sw.SetFallbackBlocked(func() map[string]bool { return map[string]bool{"mp_b": true} })
+	plan, err := sw.resolveFallbackPlan(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.chain) != 2 || plan.chain[1].ID != "mp_c" {
+		t.Fatalf("chain=%+v", plan.chain)
+	}
+	if plan.budgetSkipped != 1 {
+		t.Fatalf("budgetSkipped=%d", plan.budgetSkipped)
+	}
+	if msg := plan.wrap(errors.New("boom")).Error(); !strings.Contains(msg, "budget is exhausted") {
+		t.Fatalf("wrap=%q", msg)
+	}
+}

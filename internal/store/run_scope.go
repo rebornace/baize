@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // scopeRunsMaxLimit caps scoped run listings. Budgets for one agent or one
 // conversation rarely need more than this many runs per month.
@@ -74,4 +77,61 @@ func (s *SQLStore) ListRunsCreatedBetweenForScope(from, to time.Time, agentID, c
 		return nil, err
 	}
 	return scanRuns(rows)
+}
+
+// CountRunsCreatedBetweenForConversations counts runs created in the window for
+// an operator's conversations. At most 1000 ids are considered.
+func (s *Memory) CountRunsCreatedBetweenForConversations(conversationIDs []string, from, to time.Time) (int, error) {
+	allowed := make(map[string]bool, len(conversationIDs))
+	for _, id := range conversationIDs {
+		if id != "" {
+			allowed[id] = true
+		}
+	}
+	if len(allowed) == 0 {
+		return 0, nil
+	}
+	from, to = from.UTC(), to.UTC()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for _, r := range s.runs {
+		if !allowed[r.ConversationID] {
+			continue
+		}
+		if r.CreatedAt.Before(from) || r.CreatedAt.After(to) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (s *SQLStore) CountRunsCreatedBetweenForConversations(conversationIDs []string, from, to time.Time) (int, error) {
+	ids := make([]string, 0, len(conversationIDs))
+	for _, id := range conversationIDs {
+		if id != "" {
+			ids = append(ids, id)
+		}
+		if len(ids) >= 1000 {
+			break
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+2)
+	args = append(args, formatSQLiteTime(from), formatSQLiteTime(to))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	var n int
+	err := s.queryRow(`SELECT COUNT(*) FROM runs
+		WHERE created_at >= ? AND created_at <= ? AND conversation_id IN (`+placeholders+`)`,
+		args...).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }

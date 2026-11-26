@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,10 +11,10 @@ import (
 	"github.com/rebornace/baize/internal/store"
 )
 
-func seedCost(t *testing.T, st store.Store, convID, day string, cost float64) {
+func seedCostRun(t *testing.T, st store.Store, agentID, modelID, convID, day string, cost float64) {
 	t.Helper()
 	r, err := st.CreateRun(store.CreateRunInput{
-		AgentID: "a", Input: "x", ConversationID: convID,
+		AgentID: agentID, Input: "x", ConversationID: convID, ModelProfileID: modelID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -23,6 +24,11 @@ func seedCost(t *testing.T, st store.Store, convID, day string, cost float64) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func seedCost(t *testing.T, st store.Store, convID, day string, cost float64) {
+	t.Helper()
+	seedCostRun(t, st, "a", "", convID, day, cost)
 }
 
 func getAnomalyHistory(t *testing.T, srv *Server) []costAnomalyHistoryEntry {
@@ -49,42 +55,72 @@ func TestCostAnomalyDetection(t *testing.T) {
 	now := time.Now().UTC()
 	today := now.Format("2006-01-02")
 	baselineDay := now.AddDate(0, 0, -3).Format("2006-01-02")
-	seedCost(t, st, "c-spike", baselineDay, 7) // 7-day average = $1.00
-	seedCost(t, st, "c-spike", today, 3)
+	profile, err := st.UpsertModelProfile(store.ModelProfile{Name: "anomaly", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedCostRun(t, st, "a", profile.ID, "c-spike", baselineDay, 7) // 7-day average = $1.00
+	seedCostRun(t, st, "a", profile.ID, "c-spike", today, 3)
 	seedCost(t, st, "c-small", today, 0.2)
 
 	if n, err := srv.checkCostAnomalies(t.Context()); err != nil {
 		t.Fatalf("sent=%d err=%v", n, err)
 	}
 	items := getAnomalyHistory(t, srv)
-	if len(items) != 2 {
+	if len(items) != 3 {
 		t.Fatalf("items=%+v", items)
 	}
-	var global, conv bool
+	var conv, agent, model bool
 	for _, it := range items {
 		switch it.Scope {
 		case "global":
-			global = true
-			if it.TodayUSD <= 0 || it.BaselineUSD <= 0 {
-				t.Fatalf("global=%+v", it)
-			}
+			t.Fatalf("global must be suppressed when narrower scopes fired: %+v", it)
 		case "conversation":
 			conv = true
 			if it.ConversationID != "c-spike" || it.Ratio < 2 {
 				t.Fatalf("conv=%+v", it)
 			}
+		case "agent":
+			agent = true
+			if it.AgentID != "a" || it.Ratio < 2 {
+				t.Fatalf("agent=%+v", it)
+			}
+		case "model":
+			model = true
+			if it.ModelID != profile.ID || it.Ratio < 2 {
+				t.Fatalf("model=%+v", it)
+			}
 		}
 	}
-	if !global || !conv {
-		t.Fatalf("global=%v conv=%v items=%+v", global, conv, items)
+	if !conv || !agent || !model {
+		t.Fatalf("conv=%v agent=%v model=%v items=%+v", conv, agent, model, items)
 	}
 
 	// Same day: deduped, no new history entries.
 	if _, err := srv.checkCostAnomalies(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if again := getAnomalyHistory(t, srv); len(again) != 2 {
+	if again := getAnomalyHistory(t, srv); len(again) != 3 {
 		t.Fatalf("dedupe failed: %+v", again)
+	}
+}
+
+func TestCostAnomalyGlobalBroadSpike(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	now := time.Now().UTC()
+	today := now.Format("2006-01-02")
+	baselineDay := now.AddDate(0, 0, -3).Format("2006-01-02")
+	seedCostRun(t, st, "a-old", "", "c-base", baselineDay, 7)
+	for i := 0; i < 10; i++ {
+		seedCostRun(t, st, fmt.Sprintf("a-new-%d", i), "", fmt.Sprintf("c-new-%d", i), today, 1)
+	}
+	if _, err := srv.checkCostAnomalies(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	items := getAnomalyHistory(t, srv)
+	if len(items) != 1 || items[0].Scope != "global" {
+		t.Fatalf("items=%+v", items)
 	}
 }
 

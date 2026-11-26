@@ -202,3 +202,40 @@ func TestRetentionPreviewAndRunNow(t *testing.T) {
 		t.Fatalf("result=%+v", result)
 	}
 }
+
+func TestRetentionIntervalSetting(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	h := srv.Handler()
+	get := httptest.NewRequest(http.MethodGet, "/v0/settings/retention-interval", nil)
+	get.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, get)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get=%d", rr.Code)
+	}
+	var body struct {
+		Hours int `json:"hours"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil || body.Hours != 6 {
+		t.Fatalf("default=%+v err=%v", body, err)
+	}
+	put := httptest.NewRequest(http.MethodPut, "/v0/settings/retention-interval",
+		bytes.NewBufferString(`{"hours":12}`))
+	put.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put=%d %s", rr.Code, rr.Body.String())
+	}
+	if got := srv.retentionInterval(6 * time.Hour); got != 12*time.Hour {
+		t.Fatalf("interval=%v", got)
+	}
+	bad := httptest.NewRequest(http.MethodPut, "/v0/settings/retention-interval",
+		bytes.NewBufferString(`{"hours":0}`))
+	bad.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, bad)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad=%d", rr.Code)
+	}
+}

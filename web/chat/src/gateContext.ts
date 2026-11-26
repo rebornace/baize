@@ -7,6 +7,8 @@ export interface GateContextValue {
   gateEnabled: boolean
   /** Current operator id from /v0/me (or local-dev when gate is off). */
   operatorId: string
+  /** Optional workspace scope for the viewer role. */
+  viewerWorkspace?: string
 }
 
 export const GateContext = createContext<GateContextValue | null>(null)

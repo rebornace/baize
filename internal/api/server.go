@@ -157,7 +157,9 @@ type Server struct {
 	OperatorToken string
 	AdminToken    string
 	ViewerToken   string
-	Operators     []controlplane.Operator
+	// ViewerWorkspace optionally limits the viewer role to one workspace.
+	ViewerWorkspace string
+	Operators       []controlplane.Operator
 	// Settings optionally supplies hot-reloadable engine knobs and control-plane
 	// credentials. nil = use the static OperatorToken/AdminToken/Operators
 	// fields above (legacy behavior; existing tests leave it nil).
@@ -339,6 +341,11 @@ func (s *Server) Handler() http.Handler {
 		if !ok {
 			return
 		}
+		if strings.HasPrefix(r2.URL.Path, "/v0/") && !s.allowOperatorRequest(r2.Context()) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, "rate_limited", "operator request limit exceeded")
+			return
+		}
 		if !s.shouldAuditRequest(r2) {
 			s.mux.ServeHTTP(w, r2)
 			return
@@ -418,6 +425,13 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 			return nil, false
 		}
 	}
+	// A workspace-scoped viewer only sees that workspace's conversations; global
+	// cost and audit reports would leak other workspaces.
+	if principal.Role == controlplane.RoleViewer && s.viewerWorkspace() != "" &&
+		controlplane.ViewerAllowedRead(r.Method, r.URL.Path) {
+		writeError(w, http.StatusForbidden, "forbidden", "该只读账号仅限指定工作区")
+		return nil, false
+	}
 	// 控制面口令只用于过门禁。门开着且鉴权成功后，从交给 mux 的 request 上
 	// 删掉 Authorization，避免 passthrough 把它 PickHeaders 进 Run 的
 	// passthrough_json（SQLite），进而被机器路径打到下游 API。门关着时
@@ -495,6 +509,9 @@ func (s *Server) checkConversationAccess(ctx context.Context, convID string) err
 	meta, err := ms.GetMeta(convID)
 	if errors.Is(err, conversation.ErrMetaNotFound) {
 		if p.Role == controlplane.RoleAdmin || p.Role == controlplane.RoleViewer {
+			if p.Role == controlplane.RoleViewer && s.viewerScoped(ctx) {
+				return errConversationForbidden
+			}
 			return nil
 		}
 		// A fresh UI conversation exists in localStorage before its first run
@@ -507,6 +524,10 @@ func (s *Server) checkConversationAccess(ctx context.Context, convID string) err
 	}
 	if err != nil {
 		return err
+	}
+	if p.Role == controlplane.RoleViewer && s.viewerScoped(ctx) &&
+		conversation.NormalizeWorkspaceID(meta.WorkspaceID) != s.viewerWorkspace() {
+		return errConversationForbidden
 	}
 	if !conversation.CanAccess(p, meta) {
 		return errConversationForbidden
@@ -690,6 +711,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /v0/conversations/{id}", s.handleRenameConversation)
 	s.mux.HandleFunc("PUT /v0/conversations/{id}/pin", s.handleSetConversationPin)
 	s.mux.HandleFunc("PUT /v0/conversations/{id}/archived", s.handleSetConversationArchived)
+	s.mux.HandleFunc("PUT /v0/conversations/{id}/tags", s.handleSetConversationTags)
 	s.mux.HandleFunc("PUT /v0/conversations/{id}/read", s.handleMarkConversationRead)
 	s.mux.HandleFunc("POST /v0/conversations/read-all", s.handleMarkAllConversationsRead)
 	s.mux.HandleFunc("PATCH /v0/conversations/{id}/workspace", s.handleMoveConversationWorkspace)
@@ -788,10 +810,23 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/budget-alert-silence", s.handleGetBudgetAlertSilence)
 	s.mux.HandleFunc("PUT /v0/settings/budget-alert-silence", s.handlePutBudgetAlertSilence)
 	s.mux.HandleFunc("GET /v0/settings/cost-anomalies", s.handleGetCostAnomalies)
+	s.mux.HandleFunc("GET /v0/settings/alert-channels", s.handleGetAlertChannels)
+	s.mux.HandleFunc("PUT /v0/settings/alert-channels", s.handlePutAlertChannels)
+	s.mux.HandleFunc("POST /v0/settings/alert-channels/test", s.handleTestAlertChannel)
+	s.mux.HandleFunc("GET /v0/settings/smtp", s.handleGetSMTP)
+	s.mux.HandleFunc("PUT /v0/settings/smtp", s.handlePutSMTP)
+	s.mux.HandleFunc("GET /v0/settings/operator-limits", s.handleGetOperatorLimits)
+	s.mux.HandleFunc("PUT /v0/settings/operator-limits", s.handlePutOperatorLimits)
+	s.mux.HandleFunc("GET /v0/settings/backups", s.handleListBackups)
+	s.mux.HandleFunc("POST /v0/settings/backups", s.handleCreateBackup)
+	s.mux.HandleFunc("GET /v0/settings/backups/{name}", s.handleDownloadBackup)
+	s.mux.HandleFunc("POST /v0/settings/backups/restore", s.handleStageRestore)
 	s.mux.HandleFunc("GET /v0/settings/workspace-retention", s.handleGetWorkspaceRetention)
 	s.mux.HandleFunc("PUT /v0/settings/workspace-retention", s.handlePutWorkspaceRetention)
 	s.mux.HandleFunc("GET /v0/settings/retention/preview", s.handleRetentionPreview)
 	s.mux.HandleFunc("POST /v0/settings/retention/run", s.handleRunRetentionNow)
+	s.mux.HandleFunc("GET /v0/settings/retention-interval", s.handleGetRetentionInterval)
+	s.mux.HandleFunc("PUT /v0/settings/retention-interval", s.handlePutRetentionInterval)
 	s.mux.HandleFunc("GET /v0/settings/archive-retention", s.handleGetArchiveRetention)
 	s.mux.HandleFunc("PUT /v0/settings/archive-retention", s.handlePutArchiveRetention)
 	s.mux.HandleFunc("GET /v0/settings/agent-cost-budgets", s.handleGetAgentCostBudgets)
@@ -910,8 +945,21 @@ func (s *Server) routingProfiles() []llm.RoutingProfile {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"role":         string(controlplane.RoleFrom(r.Context())),
-		"operator_id":  controlplane.OperatorIDFrom(r.Context()),
-		"gate_enabled": s.gateTokens().Enabled(),
+		"role":             string(controlplane.RoleFrom(r.Context())),
+		"operator_id":      controlplane.OperatorIDFrom(r.Context()),
+		"gate_enabled":     s.gateTokens().Enabled(),
+		"viewer_workspace": s.viewerWorkspace(),
 	})
+}
+
+// viewerWorkspace returns the configured data scope for the viewer role.
+func (s *Server) viewerWorkspace() string {
+	if s.ViewerWorkspace == "" {
+		return ""
+	}
+	return conversation.NormalizeWorkspaceID(s.ViewerWorkspace)
+}
+
+func (s *Server) viewerScoped(ctx context.Context) bool {
+	return controlplane.RoleFrom(ctx) == controlplane.RoleViewer && s.viewerWorkspace() != ""
 }

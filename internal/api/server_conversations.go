@@ -120,17 +120,19 @@ func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// applySummaryMeta overrides derived titles with an explicit rename and marks
-// archived conversations. It returns the archived id set for list filtering.
-func (s *Server) applySummaryMeta(out []conversation.Summary) map[string]bool {
+// applySummaryMeta overrides derived titles with an explicit rename, marks
+// archived conversations and attaches tags. It returns the archived id set and
+// tag map for list filtering.
+func (s *Server) applySummaryMeta(out []conversation.Summary) (map[string]bool, map[string][]string) {
 	archived := map[string]bool{}
+	tagsByID := map[string][]string{}
 	ms := s.metaStore()
 	if ms == nil || len(out) == 0 {
-		return archived
+		return archived, tagsByID
 	}
 	metas, err := ms.ListMeta(conversation.MetaFilter{})
 	if err != nil {
-		return archived
+		return archived, tagsByID
 	}
 	titles := make(map[string]string, len(metas))
 	for _, m := range metas {
@@ -140,6 +142,9 @@ func (s *Server) applySummaryMeta(out []conversation.Summary) map[string]bool {
 		if !m.ArchivedAt.IsZero() {
 			archived[m.ID] = true
 		}
+		if len(m.Tags) > 0 {
+			tagsByID[m.ID] = m.Tags
+		}
 	}
 	for i := range out {
 		if t, ok := titles[out[i].ID]; ok {
@@ -148,8 +153,31 @@ func (s *Server) applySummaryMeta(out []conversation.Summary) map[string]bool {
 		if archived[out[i].ID] {
 			out[i].Archived = true
 		}
+		if tags, ok := tagsByID[out[i].ID]; ok {
+			out[i].Tags = tags
+		}
 	}
-	return archived
+	return archived, tagsByID
+}
+
+// filterSummariesByTag keeps conversations carrying the requested tag
+// (case-insensitive).
+func filterSummariesByTag(in []conversation.Summary, tagsByID map[string][]string, tag string) []conversation.Summary {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return in
+	}
+	want := strings.ToLower(tag)
+	out := make([]conversation.Summary, 0, len(in))
+	for _, sum := range in {
+		for _, got := range tagsByID[sum.ID] {
+			if strings.ToLower(got) == want {
+				out = append(out, sum)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // filterSummariesByArchived applies the list's archive view:
@@ -184,9 +212,12 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			out = sum
 		}
 	}
-	archived := s.applySummaryMeta(out)
+	archived, tagsByID := s.applySummaryMeta(out)
 	if ws := strings.TrimSpace(r.URL.Query().Get("workspace_id")); ws != "" {
 		out = s.filterSummariesByWorkspace(out, ws)
+	}
+	if tag := strings.TrimSpace(r.URL.Query().Get("tag")); tag != "" {
+		out = filterSummariesByTag(out, tagsByID, tag)
 	}
 	if s.gateTokens().Enabled() {
 		filtered, err := s.filterConversationSummaries(r, out)
@@ -234,7 +265,11 @@ func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.
 	}
 	for _, m := range metas {
 		if filterOwner == "" {
-			// admin all: still require CanAccess (always true for admin)
+			// admin all / viewer: workspace scope still applies to viewers.
+			if p.Role == controlplane.RoleViewer && s.viewerWorkspace() != "" &&
+				conversation.NormalizeWorkspaceID(m.WorkspaceID) != s.viewerWorkspace() {
+				continue
+			}
 			if conversation.CanAccess(p, m) {
 				allowed[m.ID] = true
 			}
@@ -242,8 +277,12 @@ func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.
 			allowed[m.ID] = true
 		}
 	}
-	// Admin/viewer all also includes meta-less legacy conversations.
-	includeOrphans := (p.Role == controlplane.RoleAdmin || p.Role == controlplane.RoleViewer) && scope != "mine"
+	// Admin all also includes meta-less legacy conversations; a scoped viewer
+	// must not see them.
+	includeOrphans := p.Role == controlplane.RoleAdmin && scope != "mine"
+	if p.Role == controlplane.RoleViewer && s.viewerWorkspace() == "" {
+		includeOrphans = true
+	}
 
 	out := make([]conversation.Summary, 0, len(in))
 	for _, sum := range in {

@@ -821,6 +821,9 @@ type Store interface {
 	// ListRunsCreatedBetweenForScope lists runs for one agent or one
 	// conversation (empty filter = ignored), newest first.
 	ListRunsCreatedBetweenForScope(from, to time.Time, agentID, conversationID string, limit int) ([]*Run, error)
+	// CountRunsCreatedBetweenForConversations counts runs for an operator's
+	// conversations, used by daily run quotas.
+	CountRunsCreatedBetweenForConversations(conversationIDs []string, from, to time.Time) (int, error)
 	// CountRunsByStatusBetween aggregates run counts without materializing rows.
 	CountRunsByStatusBetween(from, to time.Time) (map[Status]int, error)
 	// CountRunsByStatus returns all-time counts by status.
@@ -862,6 +865,9 @@ type Store interface {
 	// ClearCostCache drops cached run and day costs, e.g. after the price
 	// table changes.
 	ClearCostCache() error
+	// BackupTo writes a consistent backup to path. SQLite uses VACUUM INTO;
+	// other drivers return ErrBackupUnsupported.
+	BackupTo(path string) error
 	AddConversationAttachment(a ConversationAttachment) error
 	GetConversationAttachment(conversationID, object string) (ConversationAttachment, bool, error)
 	ListConversationAttachments(conversationID string, limit int) ([]ConversationAttachment, error)

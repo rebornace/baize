@@ -64,3 +64,34 @@ func TestMessageRetentionSQLite(t *testing.T) {
 	}
 	messageRetentionCase(t, st)
 }
+
+func TestMessageReplyToRoundTrip(t *testing.T) {
+	check := func(t *testing.T, st conversation.Store) {
+		t.Helper()
+		first, err := st.Append("reply", conversation.Message{
+			Role: conversation.RoleAssistant, Content: "source", CreatedAt: time.Now().UTC(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Append("reply", conversation.Message{
+			Role: conversation.RoleUser, Content: "quoted", ReplyToID: first.ID,
+			CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		msgs := st.List("reply")
+		if len(msgs) != 2 || msgs[1].ReplyToID != first.ID {
+			t.Fatalf("msgs=%+v", msgs)
+		}
+	}
+	t.Run("memory", func(t *testing.T) { check(t, conversation.NewMemoryStore()) })
+	t.Run("sqlite", func(t *testing.T) {
+		db, _ := openTestDB(t)
+		st, err := conversation.OpenSQLite(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(t, st)
+	})
+}

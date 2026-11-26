@@ -47,6 +47,7 @@ var aclRules = []routeRule{
 	{method: "PATCH", segments: []string{"v0", "conversations", "{id}"}, role: RoleOperator},
 	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "pin"}, role: RoleOperator},
 	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "archived"}, role: RoleOperator},
+	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "tags"}, role: RoleOperator},
 	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "read"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "conversations", "read-all"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "conversations", "batch", "workspace"}, role: RoleOperator},

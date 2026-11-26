@@ -1,4 +1,4 @@
-import { NavLink, Outlet, Link, Navigate } from 'react-router-dom'
+import { NavLink, Outlet, Link, Navigate, useLocation } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { LanguageChip } from '../components/LanguageChip'
 import { ThemeToggle } from '../components/ui'
@@ -16,7 +16,10 @@ export function SettingsLayout() {
   const navCopy = strings.SETTINGS_NAV
   const nav = visibleNavItems(role)
   const drawer = useDrawer()
-  if (role === 'viewer') return <Navigate to="/" replace />
+  const location = useLocation()
+  if (role === 'viewer' && location.pathname !== '/settings/viewer') {
+    return <Navigate to="/settings/viewer" replace />
+  }
   return (
     <div className={`settings-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
       <button
@@ -29,38 +32,52 @@ export function SettingsLayout() {
         <p className="settings-nav-title">{navCopy.title}</p>
         <FeatureSearchButton className="settings-search" />
         <nav className="settings-nav-list">
-          <NavLink
-            to={OVERVIEW_ITEM.to}
-            end
-            className={({ isActive }) =>
-              `settings-nav-link settings-nav-overview${isActive ? ' active' : ''}`
-            }
-            onClick={drawer.close}
-          >
-            {strings.SETTINGS_NAV.overview}
-          </NavLink>
+          {role === 'viewer' ? (
+            <NavLink
+              to="/settings/viewer"
+              className={({ isActive }) =>
+                `settings-nav-link settings-nav-overview${isActive ? ' active' : ''}`
+              }
+              onClick={drawer.close}
+            >
+              {navCopy.viewer}
+            </NavLink>
+          ) : (
+            <NavLink
+              to={OVERVIEW_ITEM.to}
+              end
+              className={({ isActive }) =>
+                `settings-nav-link settings-nav-overview${isActive ? ' active' : ''}`
+              }
+              onClick={drawer.close}
+            >
+              {strings.SETTINGS_NAV.overview}
+            </NavLink>
+          )}
 
-          {SETTINGS_GROUPS.map((group) => {
-            const items = nav.filter((i) => i.group === group.id)
-            if (items.length === 0) return null
-            return (
-              <div className="settings-nav-group" key={group.id}>
-                <p className="settings-nav-group-title">{group.label}</p>
-                {items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      `settings-nav-link${isActive ? ' active' : ''}`
-                    }
-                    onClick={drawer.close}
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            )
-          })}
+          {role !== 'viewer'
+            ? SETTINGS_GROUPS.map((group) => {
+                const items = nav.filter((i) => i.group === group.id)
+                if (items.length === 0) return null
+                return (
+                  <div className="settings-nav-group" key={group.id}>
+                    <p className="settings-nav-group-title">{group.label}</p>
+                    {items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        className={({ isActive }) =>
+                          `settings-nav-link${isActive ? ' active' : ''}`
+                        }
+                        onClick={drawer.close}
+                      >
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )
+              })
+            : null}
         </nav>
         <div className="settings-nav-bottom">
           <div className="sidebar-chrome-row">

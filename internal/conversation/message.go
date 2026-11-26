@@ -23,6 +23,8 @@ type Message struct {
 	ThinkingRedacted bool      `json:"thinking_redacted,omitempty"`
 	RunID            string    `json:"run_id"`
 	CreatedAt        time.Time `json:"created_at"`
+	// ReplyToID points at an earlier message in the same conversation.
+	ReplyToID string `json:"reply_to_id,omitempty"`
 	// PinnedSkills is the skill activation set for this user turn (agent
 	// defaults and/or @id mentions). Empty for assistant / system_note rows.
 	PinnedSkills []string `json:"pinned_skills,omitempty"`

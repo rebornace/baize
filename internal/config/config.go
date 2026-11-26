@@ -175,10 +175,11 @@ type Config struct {
 		} `yaml:"s3"`
 	} `yaml:"storage"`
 	ControlPlane struct {
-		OperatorToken string          `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
-		AdminToken    string          `yaml:"admin_token"`    // 空=未配；同上
-		ViewerToken   string          `yaml:"viewer_token"`   // 只读角色；同上
-		Operators     []OperatorEntry `yaml:"operators"`
+		OperatorToken   string          `yaml:"operator_token"`   // 空=未配；env:VAR 或 file:/path 或明文
+		AdminToken      string          `yaml:"admin_token"`      // 空=未配；同上
+		ViewerToken     string          `yaml:"viewer_token"`     // 只读角色；同上
+		ViewerWorkspace string          `yaml:"viewer_workspace"` // 可选：只读账号限定到该工作区
+		Operators       []OperatorEntry `yaml:"operators"`
 	} `yaml:"control_plane"`
 	Events struct {
 		Webhook struct {

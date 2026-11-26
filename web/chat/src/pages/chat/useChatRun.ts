@@ -38,6 +38,7 @@ export type UseChatRunArgs = {
   setHistoryUsage: Dispatch<SetStateAction<Record<string, UsageMeta>>>
   setHistoryDurationMs: Dispatch<SetStateAction<Record<string, number>>>
   fetchedRunsRef: MutableRefObject<Set<string>>
+  replyToIdRef: MutableRefObject<string>
   mergeHistoryPages: (runId: string, urls: string[]) => void
   refreshConversations: () => Promise<void>
   setComposerDraft: Dispatch<SetStateAction<string | undefined>>
@@ -64,6 +65,7 @@ export function useChatRun({
   setHistoryUsage,
   setHistoryDurationMs,
   fetchedRunsRef,
+  replyToIdRef,
   mergeHistoryPages,
   refreshConversations,
   setComposerDraft,
@@ -279,6 +281,7 @@ export function useChatRun({
         role: 'user',
         content: userBubble,
         created_at: new Date().toISOString(),
+        reply_to_id: replyToIdRef.current || undefined,
       },
     ])
     writeLiveEvents([])
@@ -288,6 +291,7 @@ export function useChatRun({
     try {
       const runOptions = buildRunOptions(selectedModelId, {
         attachments,
+        replyToId: replyToIdRef.current || undefined,
         ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
         workspaceId,
         locale,

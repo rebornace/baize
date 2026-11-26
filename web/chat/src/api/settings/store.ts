@@ -253,3 +253,89 @@ export async function putArchiveRetention(days: number): Promise<ArchiveRetentio
   })
   return parseJSON<ArchiveRetention>(res)
 }
+
+export interface RetentionInterval {
+  hours: number
+  min: number
+  max: number
+}
+
+export async function getRetentionInterval(): Promise<RetentionInterval> {
+  const res = await fetch('/v0/settings/retention-interval', { headers: authInit() })
+  return parseJSON<RetentionInterval>(res)
+}
+
+export async function putRetentionInterval(hours: number): Promise<{ hours: number }> {
+  const res = await fetch('/v0/settings/retention-interval', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ hours }),
+  })
+  return parseJSON(res)
+}
+
+export interface OperatorLimits {
+  requests_per_minute: number
+  runs_per_day: number
+  max_concurrent_runs: number
+}
+
+export async function getOperatorLimits(): Promise<OperatorLimits> {
+  const res = await fetch('/v0/settings/operator-limits', { headers: authInit() })
+  return parseJSON<OperatorLimits>(res)
+}
+
+export async function putOperatorLimits(body: OperatorLimits): Promise<OperatorLimits> {
+  const res = await fetch('/v0/settings/operator-limits', {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  })
+  return parseJSON<OperatorLimits>(res)
+}
+
+export interface BackupInfo {
+  name: string
+  size: number
+  created_at: string
+}
+
+export async function listBackups(): Promise<{ items: BackupInfo[]; dir: string }> {
+  const res = await fetch('/v0/settings/backups', { headers: authInit() })
+  return parseJSON(res)
+}
+
+export async function createBackup(): Promise<BackupInfo> {
+  const res = await fetch('/v0/settings/backups', {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON<BackupInfo>(res)
+}
+
+export async function downloadBackup(name: string): Promise<void> {
+  const res = await fetch(`/v0/settings/backups/${encodeURIComponent(name)}`, {
+    headers: authInit(),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+export async function stageRestore(file: File): Promise<{ status: string; message?: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch('/v0/settings/backups/restore', {
+    method: 'POST',
+    headers: authInit(),
+    body: form,
+  })
+  return parseJSON(res)
+}

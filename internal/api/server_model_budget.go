@@ -35,6 +35,12 @@ func (s *Server) modelBudgets(profileID string) (day, month float64) {
 	return s.modelBudget(profileID, false), s.modelBudget(profileID, true)
 }
 
+// OverBudgetModelIDs exposes the current model budget state to the fallback
+// planner. It returns nil when enforcement is off (fail open).
+func (s *Server) OverBudgetModelIDs() map[string]bool {
+	return s.overBudgetModelIDs(time.Now().UTC())
+}
+
 func (s *Server) modelBudgetThresholds(profileID string) (warn, exceed float64) {
 	return s.scopeRatio(modelBudgetWarnPrefix + profileID),
 		s.scopeRatio(modelBudgetExceedPrefix + profileID)

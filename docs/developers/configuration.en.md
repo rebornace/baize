@@ -143,6 +143,7 @@ Blob: `driver` is `file` / `s3` / `memory` (empty → bootstrap defaults to memo
 |------|------|
 | `operator_token` / `admin_token` | Empty = unset; supports `env:VAR`, `file:/path`, or plaintext |
 | `viewer_token` | Read-only role: can view all conversations, runs, cost reports and audit, but cannot write; same `env:` / `file:` support |
+| `viewer_workspace` | Optional; limits the viewer account to one workspace and disables global cost/audit reports |
 | `operators[]` | Named operators `{ id, token }` |
 
 All gates empty means development mode (no multi-operator isolation). This is not downstream business IAM.

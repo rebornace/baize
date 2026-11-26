@@ -21,10 +21,14 @@ const costAnomalyMultiplier = 2.0
 const costAnomalyMinBaselineUSD = 0.50
 const costAnomalyMinTodayUSD = 1.00
 const costAnomalyMaxConversations = 5
+const costAnomalyMaxAgents = 3
+const costAnomalyMaxModels = 3
 
 type costAnomalyState struct {
-	DayKey        string          `json:"day_key"`
-	Global        bool            `json:"global,omitempty"`
+	DayKey string          `json:"day_key"`
+	Global bool            `json:"global,omitempty"`
+	Scopes map[string]bool `json:"scopes,omitempty"`
+	// Conversations is the pre-scope-map format; read for compatibility.
 	Conversations map[string]bool `json:"conversations,omitempty"`
 }
 
@@ -32,6 +36,8 @@ type costAnomalyHistoryEntry struct {
 	At             time.Time `json:"at"`
 	Scope          string    `json:"scope"`
 	ConversationID string    `json:"conversation_id,omitempty"`
+	AgentID        string    `json:"agent_id,omitempty"`
+	ModelID        string    `json:"model_id,omitempty"`
 	TodayUSD       float64   `json:"today_usd"`
 	BaselineUSD    float64   `json:"baseline_usd"`
 	Ratio          float64   `json:"ratio"`
@@ -86,9 +92,50 @@ func costAnomalyTripped(baselineAvg, today float64) bool {
 	return today >= baselineAvg*costAnomalyMultiplier
 }
 
-// checkCostAnomalies compares today's spend with the previous 7-day average,
-// both globally and per conversation, and announces each new spike once per day.
-// It shares the budget alert silence window: maintenance mode suppresses it too.
+type costAnomalyHit struct {
+	scope string
+	id    string
+	key   string
+	today float64
+	base  float64
+}
+
+// collectCostAnomalies returns at most `limit` new spikes for one dimension.
+func collectCostAnomalies(
+	scope string, today, baseline map[string]float64, seen map[string]bool, limit int,
+) []costAnomalyHit {
+	hits := make([]costAnomalyHit, 0)
+	for id, todayUSD := range today {
+		if id == "" {
+			continue
+		}
+		key := scope + ":" + id
+		if seen[key] {
+			continue
+		}
+		baselineAvg := baseline[id] / float64(costAnomalyDays)
+		if costAnomalyTripped(baselineAvg, todayUSD) {
+			hits = append(hits, costAnomalyHit{
+				scope: scope, id: id, key: key, today: todayUSD, base: baselineAvg,
+			})
+		}
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].today == hits[j].today {
+			return hits[i].id < hits[j].id
+		}
+		return hits[i].today > hits[j].today
+	})
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	return hits
+}
+
+// checkCostAnomalies compares today's spend with the previous 7-day average
+// globally, per conversation, per agent and per model. Specific spikes are
+// preferred over the global roll-up so one incident does not produce a global
+// alert plus every narrower scope in the same run.
 func (s *Server) checkCostAnomalies(ctx context.Context) (int, error) {
 	if s.Store == nil {
 		return 0, nil
@@ -109,32 +156,61 @@ func (s *Server) checkCostAnomalies(ctx context.Context) (int, error) {
 	if state.DayKey != dayKey {
 		state = costAnomalyState{DayKey: dayKey}
 	}
-	if state.Conversations == nil {
-		state.Conversations = map[string]bool{}
+	if state.Scopes == nil {
+		state.Scopes = map[string]bool{}
+	}
+	for id := range state.Conversations {
+		state.Scopes["conversation:"+id] = true
 	}
 
-	baseline, err := s.Store.SumRunCostsGroupedByDay("conversation", fromDay, toDay)
+	baselineConv, err := s.Store.SumRunCostsGroupedByDay("conversation", fromDay, toDay)
 	if err != nil {
 		return 0, err
 	}
-	today, err := s.Store.SumRunCostsGroupedByDay("conversation", dayKey, dayKey)
+	todayConv, err := s.Store.SumRunCostsGroupedByDay("conversation", dayKey, dayKey)
 	if err != nil {
 		return 0, err
 	}
+	baselineAgent, err := s.Store.SumRunCostsGroupedByDay("agent", fromDay, toDay)
+	if err != nil {
+		return 0, err
+	}
+	todayAgent, err := s.Store.SumRunCostsGroupedByDay("agent", dayKey, dayKey)
+	if err != nil {
+		return 0, err
+	}
+	baselineModel, err := s.Store.SumRunCostsGroupedByDay("model", fromDay, toDay)
+	if err != nil {
+		return 0, err
+	}
+	todayModel, err := s.Store.SumRunCostsGroupedByDay("model", dayKey, dayKey)
+	if err != nil {
+		return 0, err
+	}
+
+	hits := collectCostAnomalies("conversation", todayConv, baselineConv, state.Scopes, costAnomalyMaxConversations)
+	hits = append(hits, collectCostAnomalies("agent", todayAgent, baselineAgent, state.Scopes, costAnomalyMaxAgents)...)
+	hits = append(hits, collectCostAnomalies("model", todayModel, baselineModel, state.Scopes, costAnomalyMaxModels)...)
 
 	sent := 0
-	notify := func(scope, convID string, todayUSD, baselineAvg float64) {
+	notify := func(scope, id string, todayUSD, baselineAvg float64) {
 		ratio := 0.0
 		if baselineAvg > 0 {
 			ratio = todayUSD / baselineAvg
 		}
-		s.recordCostAnomaly(costAnomalyHistoryEntry{
-			At: time.Now().UTC(), Scope: scope, ConversationID: convID,
+		entry := costAnomalyHistoryEntry{
+			At: time.Now().UTC(), Scope: scope,
 			TodayUSD: round6(todayUSD), BaselineUSD: round6(baselineAvg), Ratio: round4(ratio),
-		})
-		if s.Webhook == nil {
-			return
 		}
+		switch scope {
+		case "conversation":
+			entry.ConversationID = id
+		case "agent":
+			entry.AgentID = id
+		case "model":
+			entry.ModelID = id
+		}
+		s.recordCostAnomaly(entry)
 		data := map[string]any{
 			"scope":        scope,
 			"day":          dayKey,
@@ -144,24 +220,39 @@ func (s *Server) checkCostAnomalies(ctx context.Context) (int, error) {
 			"multiplier":   costAnomalyMultiplier,
 			"days":         costAnomalyDays,
 		}
-		if convID != "" {
-			data["conversation_id"] = convID
+		switch scope {
+		case "conversation":
+			data["conversation_id"] = id
+		case "agent":
+			data["agent_id"] = id
+		case "model":
+			data["model_id"] = id
 		}
-		if err := s.Webhook.SendCostAnomaly(ctx, data); err != nil {
-			if !errors.Is(err, webhook.ErrNoURL) {
-				log.Printf("cost anomaly webhook (%s %s): %v", scope, convID, err)
+		if s.Webhook != nil {
+			if err := s.Webhook.SendCostAnomaly(ctx, data); err != nil {
+				if !errors.Is(err, webhook.ErrNoURL) {
+					log.Printf("cost anomaly webhook (%s %s): %v", scope, id, err)
+				}
+			} else {
+				sent++
 			}
-			return
 		}
-		sent++
+		s.sendAlertChannels(ctx, "cost.anomaly", data)
 	}
 
-	if !state.Global {
+	for _, hit := range hits {
+		notify(hit.scope, hit.id, hit.today, hit.base)
+		state.Scopes[hit.key] = true
+	}
+
+	// Global alert only when no narrower scope fired (including scopes already
+	// announced earlier today); otherwise the specific alerts explain the spike.
+	if len(hits) == 0 && len(state.Scopes) == 0 && !state.Global {
 		var baselineTotal, todayTotal float64
-		for _, v := range baseline {
+		for _, v := range baselineConv {
 			baselineTotal += v
 		}
-		for _, v := range today {
+		for _, v := range todayConv {
 			todayTotal += v
 		}
 		baselineAvg := baselineTotal / float64(costAnomalyDays)
@@ -169,35 +260,6 @@ func (s *Server) checkCostAnomalies(ctx context.Context) (int, error) {
 			notify("global", "", todayTotal, baselineAvg)
 			state.Global = true
 		}
-	}
-
-	type candidate struct {
-		id    string
-		today float64
-		base  float64
-	}
-	candidates := make([]candidate, 0)
-	for id, todayUSD := range today {
-		if id == "" || state.Conversations[id] {
-			continue
-		}
-		baselineAvg := baseline[id] / float64(costAnomalyDays)
-		if costAnomalyTripped(baselineAvg, todayUSD) {
-			candidates = append(candidates, candidate{id: id, today: todayUSD, base: baselineAvg})
-		}
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].today == candidates[j].today {
-			return candidates[i].id < candidates[j].id
-		}
-		return candidates[i].today > candidates[j].today
-	})
-	if len(candidates) > costAnomalyMaxConversations {
-		candidates = candidates[:costAnomalyMaxConversations]
-	}
-	for _, c := range candidates {
-		notify("conversation", c.id, c.today, c.base)
-		state.Conversations[c.id] = true
 	}
 
 	raw, _ := json.Marshal(state)

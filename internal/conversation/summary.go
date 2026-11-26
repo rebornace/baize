@@ -9,6 +9,7 @@ type Summary struct {
 	Pinned    bool      `json:"pinned,omitempty"`
 	Archived  bool      `json:"archived,omitempty"`
 	Unread    bool      `json:"unread,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
 }
 
 func TruncateTitle(s string) string {

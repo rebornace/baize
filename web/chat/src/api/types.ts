@@ -76,4 +76,6 @@ export interface ChatMessage {
   thinking_redacted?: boolean
   /** Skills activated for this user turn (from createRun / listMessages). */
   pinned_skills?: string[]
+  /** Earlier message quoted by this user turn. */
+  reply_to_id?: string
 }

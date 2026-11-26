@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS messages (
   thinking_redacted INTEGER NOT NULL DEFAULT 0,
   run_id TEXT,
   created_at TEXT NOT NULL,
+  reply_to_id TEXT,
   pinned_skills TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS conversation_meta (
   channel_peer TEXT,
   workspace_id TEXT NOT NULL DEFAULT '',
   archived_at TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS conversation_summaries (
@@ -111,8 +113,8 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 	}
 
 	_, err := s.exec(
-		`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.ID, msg.ConversationID, msg.Role, msg.Content, nullIfEmpty(msg.Thinking), msg.ThinkingRedacted, runID, msg.CreatedAt.Format(time.RFC3339Nano), encodeJSONList(msg.PinnedSkills),
+		`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, reply_to_id, pinned_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.ConversationID, msg.Role, msg.Content, nullIfEmpty(msg.Thinking), msg.ThinkingRedacted, runID, msg.CreatedAt.Format(time.RFC3339Nano), nullIfEmpty(msg.ReplyToID), encodeJSONList(msg.PinnedSkills),
 	)
 	if err != nil {
 		return Message{}, err
@@ -122,7 +124,7 @@ func (s *SQLiteStore) Append(conversationID string, msg Message) (Message, error
 
 func (s *SQLiteStore) List(conversationID string) []Message {
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, reply_to_id, pinned_skills
 		 FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,
 		conversationID,
 	)
@@ -246,7 +248,7 @@ func (s *SQLiteStore) searchFTSAll(filter SearchFilter) ([]Message, error) {
 	args = append([]any{messagesFTSMatchQuery(filter.Query)}, args...)
 	args = append(args, filter.Limit)
 	rows, err := s.query(
-		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
+		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.reply_to_id, m.pinned_skills
 		 FROM messages m
 		 INNER JOIN messages_fts ON messages_fts.rowid = m.rowid
 		 WHERE `+strings.Join(where, " AND ")+`
@@ -275,7 +277,7 @@ func (s *SQLiteStore) searchLIKEAllMatching(filter SearchFilter, op string) ([]M
 	args = append([]any{"%" + filter.Query + "%"}, args...)
 	args = append(args, filter.Limit)
 	rows, err := s.query(
-		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
+		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.reply_to_id, m.pinned_skills
 		 FROM messages m
 		 WHERE `+strings.Join(where, " AND ")+`
 		 ORDER BY m.created_at DESC
@@ -319,7 +321,7 @@ func (f SearchFilter) whereClauses() ([]string, []any) {
 
 func (s *SQLiteStore) searchFTS(conversationID, query string, topK int) ([]Message, error) {
 	rows, err := s.query(
-		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.pinned_skills
+		`SELECT m.id, m.conversation_id, m.role, m.content, m.thinking, m.thinking_redacted, m.run_id, m.created_at, m.reply_to_id, m.pinned_skills
 		 FROM messages m
 		 INNER JOIN messages_fts ON messages_fts.rowid = m.rowid
 		 WHERE m.conversation_id = ? AND messages_fts MATCH ?
@@ -336,7 +338,7 @@ func (s *SQLiteStore) searchFTS(conversationID, query string, topK int) ([]Messa
 
 func (s *SQLiteStore) searchLIKE(conversationID, query string, topK int) ([]Message, error) {
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, reply_to_id, pinned_skills
 		 FROM messages
 		 WHERE conversation_id = ? AND content LIKE ?
 		 ORDER BY created_at DESC
@@ -352,7 +354,7 @@ func (s *SQLiteStore) searchLIKE(conversationID, query string, topK int) ([]Mess
 
 func (s *SQLiteStore) searchPostgres(conversationID, query string, topK int) ([]Message, error) {
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, reply_to_id, pinned_skills
 		 FROM messages
 		 WHERE conversation_id = ? AND content ILIKE ?
 		 ORDER BY created_at DESC
@@ -508,7 +510,7 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 		return "", 0, err
 	}
 	rows, err := s.query(
-		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills
+		`SELECT id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, reply_to_id, pinned_skills
 		 FROM messages WHERE conversation_id = ? AND created_at <= ? ORDER BY created_at ASC`,
 		srcConversationID, createdAt,
 	)
@@ -542,8 +544,8 @@ func (s *SQLiteStore) Fork(srcConversationID, throughMessageID string) (string, 
 			runID = newMsg.RunID
 		}
 		_, err := s.exec(
-			`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, pinned_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, nullIfEmpty(newMsg.Thinking), newMsg.ThinkingRedacted, runID, newMsg.CreatedAt.Format(time.RFC3339Nano), encodeJSONList(newMsg.PinnedSkills),
+			`INSERT INTO messages (id, conversation_id, role, content, thinking, thinking_redacted, run_id, created_at, reply_to_id, pinned_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			newMsg.ID, newMsg.ConversationID, newMsg.Role, newMsg.Content, nullIfEmpty(newMsg.Thinking), newMsg.ThinkingRedacted, runID, newMsg.CreatedAt.Format(time.RFC3339Nano), nullIfEmpty(newMsg.ReplyToID), encodeJSONList(newMsg.PinnedSkills),
 		)
 		if err != nil {
 			return "", 0, err
@@ -658,9 +660,34 @@ func (s *SQLiteStore) UpdateMetaArchived(id string, archived bool) error {
 	return nil
 }
 
+func (s *SQLiteStore) UpdateMetaTags(id string, tags []string) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	raw, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	res, err := s.exec(
+		`UPDATE conversation_meta SET tags_json = ?, updated_at = ? WHERE id = ?`,
+		string(raw), time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrMetaNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) GetMeta(id string) (Meta, error) {
 	row := s.queryRow(
-		`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
+		`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, tags_json, updated_at
 		 FROM conversation_meta WHERE id = ?`, id,
 	)
 	m, err := scanMeta(row)
@@ -686,25 +713,25 @@ func (s *SQLiteStore) ListMeta(filter MetaFilter) ([]Meta, error) {
 	)
 	if filter.OwnerID != "" && filter.WorkspaceID != "" {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, tags_json, updated_at
 			 FROM conversation_meta WHERE owner_id = ? AND workspace_id = ? ORDER BY updated_at DESC`,
 			filter.OwnerID, filter.WorkspaceID,
 		)
 	} else if filter.OwnerID != "" {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, tags_json, updated_at
 			 FROM conversation_meta WHERE owner_id = ? ORDER BY updated_at DESC`,
 			filter.OwnerID,
 		)
 	} else if filter.WorkspaceID != "" {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, tags_json, updated_at
 			 FROM conversation_meta WHERE workspace_id = ? ORDER BY updated_at DESC`,
 			filter.WorkspaceID,
 		)
 	} else {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, tags_json, updated_at
 			 FROM conversation_meta ORDER BY updated_at DESC`,
 		)
 	}
@@ -735,9 +762,9 @@ func scanMeta(scanner interface {
 	Scan(dest ...any) error
 }) (Meta, error) {
 	var m Meta
-	var title, peer, workspaceID, archivedAt sql.NullString
+	var title, peer, workspaceID, archivedAt, tagsJSON sql.NullString
 	var updatedAt string
-	if err := scanner.Scan(&m.ID, &m.OwnerID, &m.Source, &title, &peer, &workspaceID, &archivedAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&m.ID, &m.OwnerID, &m.Source, &title, &peer, &workspaceID, &archivedAt, &tagsJSON, &updatedAt); err != nil {
 		return Meta{}, err
 	}
 	if title.Valid {
@@ -756,6 +783,9 @@ func scanMeta(scanner interface {
 			m.ArchivedAt = ts
 		}
 	}
+	if tagsJSON.Valid && tagsJSON.String != "" {
+		_ = json.Unmarshal([]byte(tagsJSON.String), &m.Tags)
+	}
 	ts, err := time.Parse(time.RFC3339Nano, updatedAt)
 	if err != nil {
 		ts, err = time.Parse(time.RFC3339, updatedAt)
@@ -772,9 +802,9 @@ func scanMessage(scanner interface {
 }) (Message, error) {
 	var m Message
 	var createdAt string
-	var thinking, runID, pinnedSkills sql.NullString
+	var thinking, runID, pinnedSkills, replyToID sql.NullString
 	var redacted bool
-	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &thinking, &redacted, &runID, &createdAt, &pinnedSkills); err != nil {
+	if err := scanner.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &thinking, &redacted, &runID, &createdAt, &replyToID, &pinnedSkills); err != nil {
 		return Message{}, err
 	}
 	if thinking.Valid {
@@ -783,6 +813,9 @@ func scanMessage(scanner interface {
 	m.ThinkingRedacted = redacted
 	if runID.Valid {
 		m.RunID = runID.String
+	}
+	if replyToID.Valid {
+		m.ReplyToID = replyToID.String
 	}
 	if pinnedSkills.Valid {
 		m.PinnedSkills = decodeJSONList(pinnedSkills.String)

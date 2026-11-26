@@ -29,19 +29,19 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | MCP OAuth | `POST .../mcp/oauth/start` 等 | MCP 连接器 OAuth |
 | Tools | `GET /v0/tools`、`PATCH /v0/tools/{name}` | 工具目录（含停用行） |
 | Skills | `GET/POST /v0/skills`、`GET/DELETE /v0/skills/{id}`、`GET/PUT/DELETE /v0/skills/{id}/workflow`、`PUT .../workflow/raw`、`POST .../workflow/preview`、`POST .../workflow/clone` | 技能包；用户技能可编辑/原始 YAML/预览/失败重试/单步超时/失败后继续/总超时；内置可复制为用户覆盖；保存校验工具与模板引用 |
-| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`POST` 可带 `skills` / `input_args`（结构化 workflow 输入，≤64 键 / 64 KiB）；`GET .../binding` 为当轮依赖闭包（Chat「查看运行绑定」） |
+| Runs | `POST /v0/runs`、`GET /v0/runs/{id}`、`.../events`、`.../stream`（SSE）、`.../resume`、`.../cancel`、`.../binding`、`.../plugin-callbacks` | 执行与轨迹；`POST` 可带 `skills` / `input_args`（结构化 workflow 输入，≤64 键 / 64 KiB）与 `reply_to_id`（引用同一会话消息）；`GET .../binding` 为当轮依赖闭包（Chat「查看运行绑定」） |
 | HITL approval link（公网） | `GET/POST /v0/hitl/approvals/{token}` | 渠道审批链接；GET 只读、POST 同意/拒绝，均用短时 HMAC token（`RoleNone`），最终走同一 `ContinueFromHITL` |
 | Pending approvals | `GET /v0/hitl/pending`、`GET /v0/hitl/pending/stream`（SSE） | 跨会话 `waiting_human` 快照 / 推送（HITL 设置/清除时事件总线唤醒；30s 兜底重查，按会话 ACL 过滤）；SSE 断线时前端回退 15s 轮询；每进程最多 100 路，超限 429，慢客户端 5s 写超时断开 |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
-| Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`PUT .../{id}/pin`、`PUT .../{id}/archived`、`PUT .../{id}/read`、`POST .../read-all`、`POST .../batch/archived`；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=` 与 `?archived=only\|all`；批量接口单批最多 200 个；`read` / `read-all` 记录当前操作员的已读时间；签发对话作用域托管登录 URL |
+| Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`PUT .../{id}/pin`、`PUT .../{id}/archived`、`PUT .../{id}/read`、`PUT .../{id}/tags`、`POST .../read-all`、`POST .../batch/archived`；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`、`?archived=only\|all` 与 `?tag=`；批量接口单批最多 200 个；`read` / `read-all` 记录当前操作员的已读时间；签发对话作用域托管登录 URL |
 | Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | 跨会话消息搜索；`role` / `days` / `conversation_id` 可选；按会话 ACL 过滤，返回标题、片段与角色 |
 | Conversation export | `GET /v0/conversations/{id}/export?format=markdown\|json\|html&include_thinking=1` | 三格式导出（ACL）；thinking 显式开启；附件只列文件名，不含内部媒体链接 |
-| 费用与告警 | `GET /v0/settings/cost-summary\|cost-breakdown\|cost-series\|cost-export\|budget-alerts\|cost-anomalies`；`PUT /v0/settings/cost-budget`、`/v0/settings/budget-alert-silence` | 费用汇总、分布、趋势、导出；预算告警、站内历史、费用异常与临时静默（Admin） |
+| 费用与告警 | `GET /v0/settings/cost-summary\|cost-breakdown\|cost-series\|cost-export\|budget-alerts\|cost-anomalies\|alert-channels`；`PUT /v0/settings/cost-budget`、`/v0/settings/budget-alert-silence`、`/v0/settings/alert-channels`；`POST /v0/settings/alert-channels/test` | 费用汇总、分布、趋势、导出；预算告警、站内历史、费用异常、临时静默与通知通道（管理员） |
 | Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`、`POST .../{id}/retry` | 失败的 webhook 入站查看与重试（管理员；不返回消息体） |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
-| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval、workspace-retention、retention/preview、retention/run、archive-retention、audit-retention… |
+| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval、workspace-retention、retention/preview、retention/run、retention-interval、archive-retention、audit-retention、alert-channels、smtp、operator-limits、backups… |
 | MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys`、`.../invocations` | 导出开关、身份、Key、调用审计（契约指纹）；设置 → 对外提供能力「调用审计」列表 |
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | Hosted auth（公网） | `GET/POST /v0/auth/hosted/{id}`、`POST .../method`、`GET .../oauth/callback` | 托管登录页 / 提交 / 切换登录方式 / OAuth 回调（不经 `/ui`） |

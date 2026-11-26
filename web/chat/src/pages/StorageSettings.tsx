@@ -4,21 +4,30 @@ import {
   getArchiveRetention,
   getAttachmentRetention,
   getMessageRetention,
+  getOperatorLimits,
   getRetentionPreview,
+  getRetentionInterval,
   getRunRetention,
   getStoreSettings,
   getWorkspaceAttachmentRetention,
   getWorkspaceRetention,
+  listBackups,
+  createBackup,
+  downloadBackup,
+  stageRestore,
   putAgentRunRetention,
   putArchiveRetention,
   putAttachmentRetention,
   putMessageRetention,
+  putOperatorLimits,
+  putRetentionInterval,
   putRunRetention,
   putStoreSettings,
   putWorkspaceAttachmentRetention,
   putWorkspaceRetention,
   runRetentionNow,
   type AgentRunRetentionItem,
+  type BackupInfo,
   type RetentionPreview,
   type StoreSettings,
   type WorkspaceAttachmentRetentionItem,
@@ -60,6 +69,16 @@ export function StorageSettings() {
   const [messageRetentionBusy, setMessageRetentionBusy] = useState(false)
   const [archiveRetentionDays, setArchiveRetentionDays] = useState('0')
   const [archiveRetentionBusy, setArchiveRetentionBusy] = useState(false)
+  const [retentionIntervalHours, setRetentionIntervalHours] = useState('6')
+  const [retentionIntervalBusy, setRetentionIntervalBusy] = useState(false)
+  const [rpmLimit, setRpmLimit] = useState('0')
+  const [dailyRunLimit, setDailyRunLimit] = useState('0')
+  const [concurrentLimit, setConcurrentLimit] = useState('0')
+  const [limitsBusy, setLimitsBusy] = useState(false)
+  const [backups, setBackups] = useState<BackupInfo[] | null>(null)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [workspaceRetention, setWorkspaceRetention] = useState<
     WorkspaceAttachmentRetentionItem[] | null
   >(null)
@@ -119,6 +138,26 @@ export function StorageSettings() {
         setArchiveRetentionDays(String(r.days))
       } catch {
         // Optional section; keep the default when the endpoint is unavailable.
+      }
+      try {
+        const r = await getRetentionInterval()
+        setRetentionIntervalHours(String(r.hours))
+      } catch {
+        // Optional section; keep the default when the endpoint is unavailable.
+      }
+      try {
+        const r = await getOperatorLimits()
+        setRpmLimit(String(r.requests_per_minute))
+        setDailyRunLimit(String(r.runs_per_day))
+        setConcurrentLimit(String(r.max_concurrent_runs))
+      } catch {
+        // Optional section; keep the default when the endpoint is unavailable.
+      }
+      try {
+        const r = await listBackups()
+        setBackups(r.items ?? [])
+      } catch {
+        setBackups(null)
       }
       try {
         const r = await getWorkspaceAttachmentRetention()
@@ -291,8 +330,88 @@ export function StorageSettings() {
     }
   }
 
-  const saveWorkspaceMessageRunRetention = async (item: WorkspaceRetentionItem) => {
-    const messageRaw = wsMessageDrafts[item.workspace_id] ?? String(item.message_days)
+  const saveRetentionInterval = async () => {
+    const n = Number.parseInt(retentionIntervalHours, 10)
+    if (!Number.isFinite(n) || n < 1 || n > 168) {
+      push({ tone: 'error', title: STORAGE.retentionIntervalInvalid })
+      return
+    }
+    setRetentionIntervalBusy(true)
+    try {
+      const r = await putRetentionInterval(n)
+      setRetentionIntervalHours(String(r.hours))
+      push({ tone: 'success', title: STORAGE.retentionIntervalSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setRetentionIntervalBusy(false)
+    }
+  }
+
+  const saveOperatorLimits = async () => {
+    const rpm = Number.parseInt(rpmLimit, 10)
+    const daily = Number.parseInt(dailyRunLimit, 10)
+    const concurrent = Number.parseInt(concurrentLimit, 10)
+    if (
+      !Number.isFinite(rpm) || rpm < 0 || rpm > 100000 ||
+      !Number.isFinite(daily) || daily < 0 || daily > 100000 ||
+      !Number.isFinite(concurrent) || concurrent < 0 || concurrent > 10000
+    ) {
+      push({ tone: 'error', title: STORAGE.operatorLimitsInvalid })
+      return
+    }
+    setLimitsBusy(true)
+    try {
+      const next = await putOperatorLimits({
+        requests_per_minute: rpm,
+        runs_per_day: daily,
+        max_concurrent_runs: concurrent,
+      })
+      setRpmLimit(String(next.requests_per_minute))
+      setDailyRunLimit(String(next.runs_per_day))
+      setConcurrentLimit(String(next.max_concurrent_runs))
+      push({ tone: 'success', title: STORAGE.operatorLimitsSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setLimitsBusy(false)
+    }
+  }
+
+  const backupNow = async () => {
+    setBackupBusy(true)
+    setBackupMessage(null)
+    try {
+      const info = await createBackup()
+      setBackups((prev) => [info, ...(prev ?? [])])
+      setBackupMessage(STORAGE.backupCreated(info.name))
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const restoreNow = async () => {
+    if (!restoreFile) return
+    setBackupBusy(true)
+    setBackupMessage(null)
+    try {
+      const res = await stageRestore(restoreFile)
+      setBackupMessage(res.message ?? STORAGE.backupRestoreStaged)
+      setRestoreFile(null)
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const saveWorkspaceMessageRunRetention = async (item: WorkspaceRetentionItem) => {    const messageRaw = wsMessageDrafts[item.workspace_id] ?? String(item.message_days)
     const runRaw = wsRunDrafts[item.workspace_id] ?? String(item.run_days)
     const messageDays = Number.parseInt(messageRaw, 10)
     const runDays = Number.parseInt(runRaw, 10)
@@ -819,6 +938,130 @@ export function StorageSettings() {
             </Button>
           </div>
         </form>
+      </Card>
+
+      <Card>
+        <form
+          className="storage-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveRetentionInterval()
+          }}
+        >
+          <h2 className="settings-subheading">{STORAGE.retentionIntervalTitle}</h2>
+          <p className="settings-muted">{STORAGE.retentionIntervalHint}</p>
+          <Field label={STORAGE.retentionIntervalLabel}>
+            <Input
+              type="number"
+              min={1}
+              max={168}
+              value={retentionIntervalHours}
+              disabled={retentionIntervalBusy}
+              onChange={(e) => setRetentionIntervalHours(e.target.value)}
+              data-testid="retention-interval-hours"
+            />
+          </Field>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={retentionIntervalBusy}>
+              {STORAGE.retentionIntervalSave}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <form
+          className="storage-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveOperatorLimits()
+          }}
+        >
+          <h2 className="settings-subheading">{STORAGE.operatorLimitsTitle}</h2>
+          <p className="settings-muted">{STORAGE.operatorLimitsHint}</p>
+          <Field label={STORAGE.operatorLimitsRPM}>
+            <Input
+              type="number"
+              min={0}
+              value={rpmLimit}
+              disabled={limitsBusy}
+              onChange={(e) => setRpmLimit(e.target.value)}
+              data-testid="operator-limit-rpm"
+            />
+          </Field>
+          <Field label={STORAGE.operatorLimitsDaily}>
+            <Input
+              type="number"
+              min={0}
+              value={dailyRunLimit}
+              disabled={limitsBusy}
+              onChange={(e) => setDailyRunLimit(e.target.value)}
+              data-testid="operator-limit-daily-runs"
+            />
+          </Field>
+          <Field label={STORAGE.operatorLimitsConcurrent}>
+            <Input
+              type="number"
+              min={0}
+              value={concurrentLimit}
+              disabled={limitsBusy}
+              onChange={(e) => setConcurrentLimit(e.target.value)}
+              data-testid="operator-limit-concurrent"
+            />
+          </Field>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={limitsBusy}>
+              {STORAGE.operatorLimitsSave}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="settings-subheading">{STORAGE.backupTitle}</h2>
+        <p className="settings-muted">{STORAGE.backupHint}</p>
+        <div className="storage-actions">
+          <Button type="button" variant="primary" disabled={backupBusy} onClick={() => void backupNow()}>
+            {STORAGE.backupNow}
+          </Button>
+        </div>
+        {backupMessage ? <p className="settings-muted">{backupMessage}</p> : null}
+        {backups && backups.length > 0 ? (
+          <ul className="settings-muted" data-testid="backup-list">
+            {backups.map((b) => (
+              <li key={b.name}>
+                {b.name} · {b.size} B · {new Date(b.created_at).toLocaleString()}{' '}
+                <button
+                  type="button"
+                  className="settings-link"
+                  onClick={() => void downloadBackup(b.name).catch(() => undefined)}
+                >
+                  {STORAGE.backupDownload}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="settings-muted">{STORAGE.backupEmpty}</p>
+        )}
+        <div className="storage-actions">
+          <input
+            type="file"
+            accept=".db,application/vnd.sqlite3,application/octet-stream"
+            disabled={backupBusy}
+            onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+            data-testid="restore-file"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={backupBusy || !restoreFile}
+            onClick={() => void restoreNow()}
+          >
+            {STORAGE.backupRestore}
+          </Button>
+        </div>
+        <p className="settings-muted">{STORAGE.backupRestoreHint}</p>
       </Card>
 
       <ConfirmDialog

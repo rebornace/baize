@@ -195,13 +195,14 @@ func (s *Server) StartMessageRetention(ctx context.Context, interval time.Durati
 		}
 	}
 	run()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
+		interval = s.retentionInterval(interval)
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			run()
 		}
 	}

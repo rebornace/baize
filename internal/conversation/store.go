@@ -211,6 +211,22 @@ func (s *MemoryStore) UpdateMetaArchived(id string, archived bool) error {
 	return nil
 }
 
+func (s *MemoryStore) UpdateMetaTags(id string, tags []string) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.meta[id]
+	if !ok {
+		return ErrMetaNotFound
+	}
+	m.Tags = append([]string(nil), tags...)
+	m.UpdatedAt = time.Now().UTC()
+	s.meta[id] = m
+	return nil
+}
+
 func (s *MemoryStore) ListMeta(filter MetaFilter) ([]Meta, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

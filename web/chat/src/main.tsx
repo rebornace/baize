@@ -71,6 +71,9 @@ const StorageSettings = lazyRoute(() =>
 const MetricsSettings = lazyRoute(() =>
   import('./pages/MetricsSettings').then((m) => ({ default: m.MetricsSettings })),
 )
+const ViewerHome = lazyRoute(() =>
+  import('./pages/ViewerHome').then((m) => ({ default: m.ViewerHome })),
+)
 const EvalSettings = lazyRoute(() =>
   import('./pages/EvalSettings').then((m) => ({ default: m.EvalSettings })),
 )
@@ -113,6 +116,7 @@ createRoot(document.getElementById('app')!).render(
                 <Route path="/" element={<ChatPage />} />
                 <Route path="/settings" element={<SettingsLayout />}>
                   <Route index element={<SettingsHome />} />
+                  <Route path="viewer" element={<ViewerHome />} />
                   <Route path="tools" element={<ToolsSettings />} />
                   <Route
                     path="openapi"

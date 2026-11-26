@@ -7,7 +7,7 @@ import { UnlockPage } from './UnlockPage'
 type GateState =
   | { status: 'loading' }
   | { status: 'locked' }
-  | { status: 'ready'; role: GateRole; gateEnabled: boolean; operatorId: string }
+  | { status: 'ready'; role: GateRole; gateEnabled: boolean; operatorId: string; viewerWorkspace?: string }
 
 function asGateRole(role: string): GateRole | null {
   if (role === 'viewer' || role === 'operator' || role === 'admin') return role
@@ -54,7 +54,13 @@ export function GateRoot({ children }: { children: ReactNode }) {
           }
           const operatorId =
             (me.operator_id ?? '').trim() || (role === 'admin' ? 'admin' : '')
-          setState({ status: 'ready', role, gateEnabled: true, operatorId })
+          setState({
+            status: 'ready',
+            role,
+            gateEnabled: true,
+            operatorId,
+            viewerWorkspace: (me.viewer_workspace ?? '').trim() || undefined,
+          })
         } catch (err) {
           if (cancelled) return
           if (isUnauthorized(err)) clearControlToken()
@@ -88,6 +94,7 @@ export function GateRoot({ children }: { children: ReactNode }) {
             role: state.role,
             gateEnabled: state.gateEnabled,
             operatorId: state.operatorId,
+            viewerWorkspace: state.viewerWorkspace,
           }}
         >
           {children}

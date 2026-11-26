@@ -46,6 +46,7 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		AgentID        string                `json:"agent_id"`
 		Input          string                `json:"input"`
+		ReplyToID      string                `json:"reply_to_id"`
 		ConversationID string                `json:"conversation_id"`
 		IdentityID     string                `json:"identity_id"`
 		SessionToken   string                `json:"session_token"`
@@ -525,9 +526,40 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	replyToID := strings.TrimSpace(body.ReplyToID)
+	if replyToID != "" {
+		if conv == "" || s.Messages == nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "reply_to_id requires a conversation")
+			return
+		}
+		found := false
+		for _, m := range s.Messages.List(conv) {
+			if m.ID == replyToID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, "invalid_request", "reply_to_id not found in conversation")
+			return
+		}
+	}
+
+	if err := s.checkOperatorRunLimits(r.Context()); err != nil {
+		code := "operator_run_quota"
+		message := "operator daily run quota exceeded"
+		if err == ErrOperatorConcurrency {
+			code = "operator_concurrency"
+			message = "operator concurrent run limit exceeded"
+		}
+		writeError(w, http.StatusTooManyRequests, code, message)
+		return
+	}
+
 	updated, err := s.startRun(r.Context(), startRunInput{
 		AgentID:        body.AgentID,
 		Input:          displayText,
+		ReplyToID:      replyToID,
 		ConversationID: conv,
 		IdentityID:     identityID,
 		Skills:         runSkills,

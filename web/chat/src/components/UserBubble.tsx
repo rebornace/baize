@@ -2,6 +2,7 @@ import { MarkdownText } from './MarkdownText'
 import { ChannelImage } from './ChannelImage'
 import { ChannelFileLink } from './ChannelFileLink'
 import { splitChannelAttachments } from '../channelImages'
+import { CHAT } from '../strings'
 
 /**
  * Renders a user (or system_note) bubble, splitting out inbound channel
@@ -9,10 +10,24 @@ import { splitChannelAttachments } from '../channelImages'
  * images render inline and files render as download links rather than literal
  * marker text.
  */
-export function UserBubble({ content }: { content: string }) {
+export function UserBubble({
+  content,
+  quote,
+}: {
+  content: string
+  quote?: { role: string; content: string }
+}) {
   const { text, images, files } = splitChannelAttachments(content)
   return (
     <>
+      {quote ? (
+        <div className="msg-quote" data-testid="message-quote">
+          <span className="msg-quote-role">
+            {quote.role === 'assistant' ? CHAT.assistant : CHAT.you}
+          </span>
+          <span className="msg-quote-text">{quote.content}</span>
+        </div>
+      ) : null}
       {text ? <MarkdownText text={text} plain /> : null}
       {images.length > 0 && (
         <div className="channel-images">

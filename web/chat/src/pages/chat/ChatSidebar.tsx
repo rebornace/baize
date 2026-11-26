@@ -4,7 +4,7 @@ import { Search } from 'lucide-react'
 import type { ConversationScope, ConversationSummary, Workspace } from '../../api'
 import { LanguageChip } from '../../components/LanguageChip'
 import { SidebarResizer } from '../../components/SidebarResizer'
-import { Pencil, Pin, Archive, ArchiveRestore } from 'lucide-react'
+import { Pencil, Pin, Archive, ArchiveRestore, Tag } from 'lucide-react'
 import { Button, ThemeToggle } from '../../components/ui'
 import { conversationListLabel } from '../../conversationLabel'
 import { conversationUpdatedLabel } from '../../conversationUpdatedLabel'
@@ -16,6 +16,7 @@ import { BudgetChip } from './BudgetChip'
 import { AttachmentManager } from './AttachmentManager'
 import { MoveConversationDialog } from './MoveConversationDialog'
 import { RenameConversationDialog } from './RenameConversationDialog'
+import { TagsDialog } from './TagsDialog'
 
 export type ChatSidebarProps = {
   role: string
@@ -46,6 +47,7 @@ export type ChatSidebarProps = {
   onSetConversationArchived: (id: string, archived: boolean) => Promise<void>
   onArchiveConversations: (ids: string[], archived: boolean) => Promise<void>
   onMarkAllRead: () => Promise<void>
+  onSetConversationTags: (id: string, tags: string[]) => Promise<void>
   readOnly?: boolean
 }
 
@@ -78,25 +80,36 @@ export function ChatSidebar({
   onSetConversationArchived,
   onArchiveConversations,
   onMarkAllRead,
+  onSetConversationTags,
   readOnly = false,
 }: ChatSidebarProps) {
   const { locale } = useLocale()
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<ConversationSummary | null>(null)
+  const [tagTarget, setTagTarget] = useState<ConversationSummary | null>(null)
+  const [tagFilter, setTagFilter] = useState('')
   const [batch, setBatch] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
   const [archiveQuery, setArchiveQuery] = useState('')
   const moveTargets = workspaces.filter((w) => w.id !== workspaceId)
 
-  const visibleConversations = archivedView && archiveQuery.trim()
+  const allTags = [...new Set(conversations.flatMap((c) => c.tags ?? []))].sort((a, b) =>
+    a.localeCompare(b),
+  )
+  let visibleConversations = archivedView && archiveQuery.trim()
     ? conversations.filter((c) =>
         conversationListLabel(c.id, c.title)
           .toLowerCase()
           .includes(archiveQuery.trim().toLowerCase()),
       )
     : conversations
+  if (tagFilter) {
+    visibleConversations = visibleConversations.filter((c) =>
+      (c.tags ?? []).some((tag) => tag.toLowerCase() === tagFilter.toLowerCase()),
+    )
+  }
   const unreadCount = visibleConversations.filter((c) => c.unread).length
 
   const toggleSelected = (id: string) => {
@@ -216,6 +229,24 @@ export function ChatSidebar({
             </button>
           ) : null}
         </div>
+        {allTags.length > 0 ? (
+          <select
+            className="workspace-select conversation-tag-filter"
+            aria-label={CHAT.tagsFilterLabel}
+            value={tagFilter}
+            onChange={(e) => {
+              setTagFilter(e.target.value)
+              setSelected(new Set())
+            }}
+          >
+            <option value="">{CHAT.tagsFilterAll}</option>
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {role === 'admin' && (
           <div className="conversation-scope" role="group" aria-label={CHAT.scopeAria}>
             <button
@@ -328,6 +359,15 @@ export function ChatSidebar({
                 <span className="conversation-item-title">
                   {conversationListLabel(c.id, c.title)}
                 </span>
+                {c.tags && c.tags.length > 0 ? (
+                  <span className="conversation-item-tags">
+                    {c.tags.slice(0, 3).map((tag) => (
+                      <span className="conversation-tag-chip" key={tag}>
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
                 {c.unread ? (
                   <span
                     className="conversation-unread-dot"
@@ -373,6 +413,18 @@ export function ChatSidebar({
                     ) : (
                       <Archive size={12} aria-hidden="true" />
                     )}
+                  </button>
+                  <button
+                    type="button"
+                    className="conversation-tag"
+                    title={CHAT.editTags}
+                    aria-label={CHAT.editTagsAria(conversationListLabel(c.id, c.title))}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setTagTarget(c)
+                    }}
+                  >
+                    <Tag size={12} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -474,7 +526,11 @@ export function ChatSidebar({
             >
               {role === 'admin' ? CHAT.linkSettings : CHAT.linkAccounts}
             </Link>
-          ) : null}
+          ) : (
+            <Link to="/settings/viewer" className="settings-link">
+              {CHAT.viewerDashboard}
+            </Link>
+          )}
           {gateEnabled && (
             <button
               type="button"
@@ -515,6 +571,14 @@ export function ChatSidebar({
         onClose={() => setRenameTarget(null)}
         onSave={(title) =>
           renameTarget ? onRenameConversation(renameTarget.id, title) : Promise.resolve()
+        }
+      />
+      <TagsDialog
+        open={tagTarget != null}
+        initialTags={tagTarget?.tags ?? []}
+        onClose={() => setTagTarget(null)}
+        onSave={(tags) =>
+          tagTarget ? onSetConversationTags(tagTarget.id, tags) : Promise.resolve()
         }
       />
       <SidebarResizer />

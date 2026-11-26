@@ -158,13 +158,14 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
 
   useEffect(() => {
     void load()
-    void loadAgents()
-    void loadModels()
-    void loadWorkspaces()
     void getCostBreakdown(30)
       .then(setBreakdown)
       .catch(() => setBreakdown(null))
-  }, [])
+    if (readOnly) return
+    void loadAgents()
+    void loadModels()
+    void loadWorkspaces()
+  }, [readOnly])
 
   const save = async () => {
     const n = Number.parseFloat(budget)

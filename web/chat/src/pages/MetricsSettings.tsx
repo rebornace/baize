@@ -17,6 +17,7 @@ import { BudgetAlertHistoryCard } from './BudgetAlertHistoryCard'
 import { AuditLogCard } from './AuditLogCard'
 import { BudgetSilenceCard } from './BudgetSilenceCard'
 import { CostAnomalyCard } from './CostAnomalyCard'
+import { AlertChannelsCard } from './AlertChannelsCard'
 
 type Tab = 'overview' | 'logs'
 
@@ -142,6 +143,7 @@ export function MetricsSettings() {
 
       <OpsStatusCard />
       <BudgetSilenceCard />
+      <AlertChannelsCard />
       <BudgetAlertHistoryCard />
       <CostAnomalyCard />
       <AuditLogCard />

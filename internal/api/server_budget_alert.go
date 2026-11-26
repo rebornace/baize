@@ -140,9 +140,6 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 			Scope: scope, Period: period, Level: level,
 			TotalUSD: round6(total), BudgetUSD: budget, Ratio: round4(ratio),
 		})
-		if s.Webhook == nil {
-			return
-		}
 		data := map[string]any{
 			"scope": scope, "level": level, "period": period,
 			"total_usd": round6(total), "budget_usd": budget, "ratio": round4(ratio),
@@ -151,14 +148,16 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 			data["target"] = target
 			data["target_id"] = targetID
 		}
-		err := s.Webhook.SendBudgetAlert(ctx, data)
-		if err != nil {
-			if !errors.Is(err, webhook.ErrNoURL) {
+		if s.Webhook != nil {
+			err := s.Webhook.SendBudgetAlert(ctx, data)
+			if err != nil && !errors.Is(err, webhook.ErrNoURL) {
 				log.Printf("budget alert webhook (%s %s %s): %v", target, targetID, level, err)
 			}
-			return
+			if err == nil {
+				sent++
+			}
 		}
-		sent++
+		s.sendAlertChannels(ctx, "budget.alert", data)
 	}
 	evaluate := func(st *budgetAlertLevels, target, targetID string, totals budgetAlertTotals, dayBudget, monthBudget, warn, exceed float64) {
 		resetLevels(st, dayKey, monthKey)

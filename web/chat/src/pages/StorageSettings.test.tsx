@@ -109,6 +109,22 @@ async function renderPage(getBody: unknown = { driver: 'sqlite', drivers: ['memo
       const body = JSON.parse((init.body as string) || '{}')
       return json({ days: body.days })
     }
+    if (String(url).endsWith('/settings/retention-interval')) {
+      if (!init?.method) return json({ hours: 6, min: 1, max: 168 })
+      const body = JSON.parse((init.body as string) || '{}')
+      return json({ hours: body.hours })
+    }
+    if (String(url).endsWith('/settings/operator-limits')) {
+      if (!init?.method) {
+        return json({ requests_per_minute: 0, runs_per_day: 0, max_concurrent_runs: 0 })
+      }
+      const body = JSON.parse((init.body as string) || '{}')
+      return json(body)
+    }
+    if (String(url).endsWith('/settings/backups')) {
+      if (!init?.method) return json({ items: [], dir: './data/backups' })
+      return json({ name: 'baize-backup-1.db', size: 1024, created_at: '2026-11-26T00:00:00Z' })
+    }
     return json({ status: 'ok', message: 'restarting' })
   })
   await act(async () => {

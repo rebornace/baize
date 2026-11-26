@@ -230,6 +230,8 @@ export interface CostAnomalyEntry {
   at: string
   scope: string
   conversation_id?: string
+  agent_id?: string
+  model_id?: string
   today_usd: number
   baseline_usd: number
   ratio: number

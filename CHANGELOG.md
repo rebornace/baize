@@ -1,5 +1,86 @@
 # Changelog
 
+## 0.48.0 — 2026-11-26
+
+### 备份与恢复
+
+- 存储设置页新增“备份与恢复”卡片。
+- SQLite 支持应用内热备份（`VACUUM INTO`）、备份列表与下载。
+- 恢复上传会校验 SQLite 文件头，暂存为 `<db>.restore` 并等待重启；启动时替换数据库，旧库保留为 `.pre-restore-*`。
+- Postgres 仍使用 `pg_dump` / PITR 脚本；应用内备份/恢复返回 501。
+
+### 操作员限流与配额
+
+- 新增 `GET/PUT /v0/settings/operator-limits`：每分钟请求数、每日运行数、最大并发运行数，0 表示不限制。
+- 请求限流按副本进程统计；运行配额按操作员自己的会话统计。
+- 触发限流返回 429；存储设置页新增配置卡片。
+
+### 消息引用回复
+
+- 消息记录新增 `reply_to_id`；SQLite/Postgres 自动迁移。
+- `POST /v0/runs` 支持 `reply_to_id`，引用必须属于同一会话。
+- 消息操作新增“引用”；输入框上方显示引用条，可取消。
+- 用户气泡展示被引用的原消息摘要。
+
+### 邮件 SMTP 通道
+
+- 新增 `GET/PUT /v0/settings/smtp`，支持 starttls / tls / none、用户名与加密保存的密码。
+- 告警通道新增 `email` 类型：填写收件人即可复用 SMTP 配置。
+- 指标页告警通道卡片内新增 SMTP 设置表单。
+- 密码需要 `BAIZE_SETTINGS_KEY` 才能加密保存。
+
+### 费用查询基准
+
+- 新增 `BenchmarkSumRunCostsPerDayGrouped`（内存 / SQLite）。
+- 性能文档补充费用趋势聚合基准命令与 Postgres `EXPLAIN` 查询。
+
+### Viewer 工作区范围
+
+- `control_plane.viewer_workspace` 可把 Viewer 限定到单个工作区。
+- 限定后只返回该工作区的会话；跨工作区读取返回 403。
+- 全局费用与审计报表对该 Viewer 关闭，避免泄露其他工作区数据。
+- `/v0/me` 返回 `viewer_workspace`；只读页面显示范围说明。
+
+### 清理任务间隔
+
+- 新增 `GET/PUT /v0/settings/retention-interval`，范围 1–168 小时，默认 6 小时。
+- 消息、运行、归档清理任务使用同一间隔，并在每次执行后重新读取设置。
+- 存储设置页新增间隔配置卡片。
+
+### 会话标签
+
+- 会话支持最多 8 个标签，每个标签最多 24 个字符；大小写不敏感去重。
+- 新增 `PUT /v0/conversations/{id}/tags`，body `{tags: []}`；空数组清除标签。
+- 会话列表返回 `tags`，支持 `?tag=` 过滤；侧栏可按标签筛选。
+- 侧栏显示前 3 个标签，并提供标签编辑入口。
+- 标签存放在 `conversation_meta.tags_json`，SQLite/Postgres 自动迁移。
+
+### 告警通知通道
+
+- 新增 `GET/PUT /v0/settings/alert-channels` 与 `POST /v0/settings/alert-channels/test`。
+- 支持飞书、钉钉、企业微信和通用 Webhook，最多 20 个通道，可单独启用/停用。
+- 预算告警与费用异常会同时发送到已启用通道；通道失败只记日志，不影响告警判定。
+- 指标页新增“告警通知通道”卡片，可编辑、测试和删除通道。
+
+### 费用异常扩展到 Agent / 模型
+
+- 费用异常检测新增 Agent 与模型维度，继续使用近 7 天日均、2 倍阈值和每日去重。
+- 当会话/Agent/模型等具体范围已触发时，不再额外发送全局异常，避免同一事件重复告警。
+- 站内历史与 Webhook 数据增加 `agent_id` / `model_id`。
+- 指标页费用异常卡片显示 Agent / 模型范围。
+
+### Fallback 预算约束
+
+- 开启“超预算时阻止新运行”后，fallback 链也会跳过已超预算的模型。
+- 错误信息会说明有多少 fallback 因预算耗尽被跳过。
+- 预算计算失败时仍放行（fail open）。
+
+### Viewer 只读视图
+
+- Viewer 新增 `/settings/viewer` 只读页面，展示费用概览与操作审计。
+- 只读页面隐藏预算编辑、审计保留设置等写操作；其他设置页对 Viewer 自动跳回只读视图。
+- 对话框侧栏为 Viewer 提供“只读视图”入口。
+
 ## 0.47.0 — 2026-11-26
 
 ### 只读 Viewer 角色

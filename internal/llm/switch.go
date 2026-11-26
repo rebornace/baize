@@ -107,12 +107,21 @@ type Switch struct {
 
 	// build constructs a Provider from a profile. Overridable in tests.
 	build func(ModelProfileView) Provider
+	// fallbackBlocked optionally returns profiles that must not be used as
+	// fallbacks (for example, models whose budget is exhausted).
+	fallbackBlocked func() map[string]bool
 }
 
 func NewSwitch(src ProfileSource) *Switch {
 	s := &Switch{src: src, cache: map[string]*cachedProvider{}}
 	s.build = s.defaultBuild
 	return s
+}
+
+// SetFallbackBlocked installs an optional filter for fallback profiles. The
+// callback is evaluated once per fallback plan; nil clears the filter.
+func (s *Switch) SetFallbackBlocked(fn func() map[string]bool) {
+	s.fallbackBlocked = fn
 }
 
 // SetOpenAIMaxRetries applies llm.api_max_retries to OpenAI clients built by
@@ -232,19 +241,27 @@ func (n messageNeeds) label() string {
 // fallbackPlan is the primary profile plus the fallback profiles that can
 // handle this turn's capabilities.
 type fallbackPlan struct {
-	chain   []ModelProfileView
-	needs   messageNeeds
-	skipped int
+	chain         []ModelProfileView
+	needs         messageNeeds
+	skipped       int
+	budgetSkipped int
 }
 
 // wrap adds a capability note when fallbacks were filtered out and the primary
 // still failed, so the error explains why no other model was tried.
 func (p fallbackPlan) wrap(err error) error {
-	if err == nil || p.skipped == 0 {
+	if err == nil {
 		return err
 	}
-	return fmt.Errorf("%w; %d fallback model(s) skipped because they do not support %s",
-		err, p.skipped, p.needs.label())
+	if p.skipped > 0 {
+		err = fmt.Errorf("%w; %d fallback model(s) skipped because they do not support %s",
+			err, p.skipped, p.needs.label())
+	}
+	if p.budgetSkipped > 0 {
+		err = fmt.Errorf("%w; %d fallback model(s) skipped because their budget is exhausted",
+			err, p.budgetSkipped)
+	}
+	return err
 }
 
 // fallbackPlan returns the primary profile followed by its FallbackProfileIDs
@@ -258,6 +275,10 @@ func (s *Switch) resolveFallbackPlan(ctx context.Context, messages []Message) (f
 		return fallbackPlan{needs: needs}, err
 	}
 	plan := fallbackPlan{chain: []ModelProfileView{primary}, needs: needs}
+	var blocked map[string]bool
+	if s.fallbackBlocked != nil {
+		blocked = s.fallbackBlocked()
+	}
 	seen := map[string]bool{primary.ID: true}
 	for _, id := range primary.FallbackProfileIDs {
 		id = strings.TrimSpace(id)
@@ -269,6 +290,10 @@ func (s *Switch) resolveFallbackPlan(ctx context.Context, messages []Message) (f
 			continue
 		}
 		seen[id] = true
+		if blocked[id] {
+			plan.budgetSkipped++
+			continue
+		}
 		if (needs.vision && !view.SupportsVision) || (needs.pdf && !view.SupportsPDF) {
 			plan.skipped++
 			continue

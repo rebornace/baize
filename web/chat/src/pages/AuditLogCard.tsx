@@ -16,7 +16,7 @@ function dateBounds(from: string, to: string): { from?: string; to?: string } {
   return bounds
 }
 
-export function AuditLogCard() {
+export function AuditLogCard({ readOnly = false }: { readOnly?: boolean }) {
   const [items, setItems] = useState<AuditEvent[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -48,6 +48,7 @@ export function AuditLogCard() {
 
   useEffect(() => {
     void load()
+    if (readOnly) return
     void getAuditRetention()
       .then((r) => setRetentionRows(r.rows))
       .catch(() => undefined)
@@ -139,32 +140,36 @@ export function AuditLogCard() {
         <Button size="sm" variant="secondary" disabled={busy} onClick={() => void download()}>
           {METRICS.auditExport}
         </Button>
-        <select
-          className="settings-input audit-limit"
-          aria-label={METRICS.auditRetentionLabel}
-          value={retentionRows}
-          disabled={retentionBusy}
-          onChange={(e) => {
-            setRetentionRows(Number(e.target.value))
-            setRetentionSaved(false)
-          }}
-        >
-          {[500, 1000, 2000, 5000].map((rows) => (
-            <option key={rows} value={rows}>
-              {METRICS.auditRetentionOption(rows)}
-            </option>
-          ))}
-        </select>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={retentionBusy}
-          onClick={() => void saveRetention()}
-        >
-          {METRICS.auditRetentionSave}
-        </Button>
-        {retentionSaved ? (
-          <span className="settings-muted">{METRICS.auditRetentionSaved}</span>
+        {!readOnly ? (
+          <>
+            <select
+              className="settings-input audit-limit"
+              aria-label={METRICS.auditRetentionLabel}
+              value={retentionRows}
+              disabled={retentionBusy}
+              onChange={(e) => {
+                setRetentionRows(Number(e.target.value))
+                setRetentionSaved(false)
+              }}
+            >
+              {[500, 1000, 2000, 5000].map((rows) => (
+                <option key={rows} value={rows}>
+                  {METRICS.auditRetentionOption(rows)}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={retentionBusy}
+              onClick={() => void saveRetention()}
+            >
+              {METRICS.auditRetentionSave}
+            </Button>
+            {retentionSaved ? (
+              <span className="settings-muted">{METRICS.auditRetentionSaved}</span>
+            ) : null}
+          </>
         ) : null}
       </div>
       {failed ? <p className="settings-muted">{METRICS.auditLoadFailed}</p> : null}

@@ -55,6 +55,7 @@ export interface MeResponse {
   role: string
   operator_id?: string
   gate_enabled?: boolean
+  viewer_workspace?: string
 }
 
 export async function getMe(): Promise<MeResponse> {

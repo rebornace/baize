@@ -286,3 +286,31 @@ func TestSQLiteUpdateMetaArchived(t *testing.T) {
 		t.Fatalf("unarchive failed: %+v", got)
 	}
 }
+
+func TestUpdateMetaTags(t *testing.T) {
+	check := func(t *testing.T, s conversation.MetaStore) {
+		t.Helper()
+		if err := s.EnsureMeta(conversation.Meta{ID: "c-tags", OwnerID: "alice", Source: "ui"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.UpdateMetaTags("c-tags", []string{"Work", "Urgent"}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.GetMeta("c-tags")
+		if err != nil || len(got.Tags) != 2 || got.Tags[0] != "Work" {
+			t.Fatalf("meta=%+v err=%v", got, err)
+		}
+		if err := s.UpdateMetaTags("missing", []string{"x"}); !errors.Is(err, conversation.ErrMetaNotFound) {
+			t.Fatalf("missing err=%v", err)
+		}
+	}
+	t.Run("memory", func(t *testing.T) { check(t, conversation.NewMemoryStore()) })
+	t.Run("sqlite", func(t *testing.T) {
+		db, _ := openTestDB(t)
+		s, err := conversation.OpenSQLite(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(t, s)
+	})
+}

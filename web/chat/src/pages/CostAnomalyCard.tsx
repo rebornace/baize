@@ -8,6 +8,12 @@ function scopeLabel(entry: CostAnomalyEntry): string {
       ? `${METRICS.anomalyConversation}:${entry.conversation_id}`
       : METRICS.anomalyConversation
   }
+  if (entry.scope === 'agent') {
+    return entry.agent_id ? `${METRICS.anomalyAgent}:${entry.agent_id}` : METRICS.anomalyAgent
+  }
+  if (entry.scope === 'model') {
+    return entry.model_id ? `${METRICS.anomalyModel}:${entry.model_id}` : METRICS.anomalyModel
+  }
   return METRICS.anomalyGlobal
 }
 

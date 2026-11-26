@@ -18,6 +18,8 @@ type Meta struct {
 	// ArchivedAt is zero for active conversations. Archived conversations stay
 	// readable but are hidden from the default sidebar list.
 	ArchivedAt time.Time
+	// Tags are operator-defined labels used for filtering; max 8.
+	Tags []string
 }
 
 // MetaFilter selects conversation meta rows. Empty OwnerID means no owner filter.
@@ -46,6 +48,9 @@ type MetaStore interface {
 	// UpdateMetaArchived archives or unarchives a conversation. A missing row
 	// returns ErrMetaNotFound.
 	UpdateMetaArchived(id string, archived bool) error
+	// UpdateMetaTags replaces the conversation's tags. A missing row returns
+	// ErrMetaNotFound.
+	UpdateMetaTags(id string, tags []string) error
 }
 
 // CanAccess reports whether principal may read/write the conversation meta.

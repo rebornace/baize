@@ -26,6 +26,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if err := migrateMessagesPinnedSkillsColumn(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
+		if err := migrateMessagesReplyToColumn(db, store.DialectSQLite); err != nil {
+			return nil, err
+		}
 		if err := migrateConversationProjections(db); err != nil {
 			return nil, err
 		}
@@ -41,6 +44,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if err := migrateConversationArchive(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
+		if err := migrateConversationTags(db, store.DialectSQLite); err != nil {
+			return nil, err
+		}
 		if err := ensureMessagesFTS(db); err != nil {
 			return nil, err
 		}
@@ -54,7 +60,8 @@ CREATE TABLE IF NOT EXISTS conversation_meta (
   title TEXT,
   channel_peer TEXT,
   updated_at TEXT NOT NULL,
-  archived_at TEXT
+  archived_at TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]'
 );`
 		if _, err := db.Exec(pgMeta); err != nil {
 			return nil, err
@@ -76,6 +83,9 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 		if err := migrateMessagesPinnedSkillsColumn(db, store.DialectPostgres); err != nil {
 			return nil, err
 		}
+		if err := migrateMessagesReplyToColumn(db, store.DialectPostgres); err != nil {
+			return nil, err
+		}
 		if err := migrateConversationProjections(db); err != nil {
 			return nil, err
 		}
@@ -89,6 +99,9 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 			return nil, err
 		}
 		if err := migrateConversationArchive(db, store.DialectPostgres); err != nil {
+			return nil, err
+		}
+		if err := migrateConversationTags(db, store.DialectPostgres); err != nil {
 			return nil, err
 		}
 	}
@@ -128,6 +141,20 @@ func migrateMessagesPinnedSkillsColumn(db *sql.DB, dialect store.SQLDialect) err
 		return nil
 	}
 	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN pinned_skills TEXT NOT NULL DEFAULT '[]'`); err != nil && !isDuplicateColumnErr(err) {
+		return err
+	}
+	return nil
+}
+
+// migrateMessagesReplyToColumn adds the message quote reference.
+func migrateMessagesReplyToColumn(db *sql.DB, dialect store.SQLDialect) error {
+	if dialect == store.DialectPostgres {
+		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id TEXT`); err != nil {
+			return fmt.Errorf("migrate messages reply_to_id: %w", err)
+		}
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN reply_to_id TEXT`); err != nil && !isDuplicateColumnErr(err) {
 		return err
 	}
 	return nil
@@ -210,6 +237,20 @@ func migrateConversationArchive(db *sql.DB, dialect store.SQLDialect) error {
 	}
 	if _, err := db.Exec(`ALTER TABLE conversation_meta ADD COLUMN archived_at TEXT`); err != nil && !isDuplicateColumnErr(err) {
 		return fmt.Errorf("meta archived_at: %w", err)
+	}
+	return nil
+}
+
+// migrateConversationTags adds the JSON tag array used by conversation labels.
+func migrateConversationTags(db *sql.DB, dialect store.SQLDialect) error {
+	if dialect == store.DialectPostgres {
+		if _, err := db.Exec(`ALTER TABLE conversation_meta ADD COLUMN IF NOT EXISTS tags_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+			return fmt.Errorf("meta tags_json: %w", err)
+		}
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE conversation_meta ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'`); err != nil && !isDuplicateColumnErr(err) {
+		return fmt.Errorf("meta tags_json: %w", err)
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ export interface CreateRunOptions {
   sessionToken?: string
   webhookUrl?: string
   webhookHeaders?: Record<string, string>
+  replyToId?: string
   skills?: string[]
   attachments?: Attachment[]
   modelProfileId?: string
@@ -42,6 +43,7 @@ export async function createRun(
   if (options?.webhookHeaders && Object.keys(options.webhookHeaders).length > 0) {
     body.webhook_headers = options.webhookHeaders
   }
+  if (options?.replyToId) body.reply_to_id = options.replyToId
   if (options?.skills && options.skills.length > 0) {
     body.skills = options.skills
   }

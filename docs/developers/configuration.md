@@ -143,6 +143,7 @@ Blob：`driver` 为 `file` / `s3` / `memory`（空则 bootstrap 默认 memory）
 |------|------|
 | `operator_token` / `admin_token` | 空=未配；支持 `env:VAR`、`file:/path` 或明文 |
 | `viewer_token` | 只读角色；可查看全部会话、运行、费用与审计，不能写入；同样支持 `env:VAR` / `file:` |
+| `viewer_workspace` | 可选；把只读账号限定到该工作区，费用/审计报表对其关闭 |
 | `operators[]` | `{ id, token }` 具名操作员 |
 
 Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。

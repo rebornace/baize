@@ -212,6 +212,40 @@ func StartForTest(t testing.TB, cfg config.Config) (runtimeURL, ticketURL string
 	return runtimeURL, ticketURL, shutdown
 }
 
+// applyPendingSQLiteRestore swaps in a staged SQLite database on startup. The
+// running database is never modified; the previous file is kept as a backup.
+func applyPendingSQLiteRestore(driver, sqlitePath string) error {
+	if driver != "sqlite" || sqlitePath == "" {
+		return nil
+	}
+	marker := sqlitePath + ".restore-pending"
+	if _, err := os.Stat(marker); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	staged := sqlitePath + ".restore"
+	if _, err := os.Stat(staged); err != nil {
+		_ = os.Remove(marker)
+		return err
+	}
+	if _, err := os.Stat(sqlitePath); err == nil {
+		backup := sqlitePath + ".pre-restore-" + time.Now().UTC().Format("20060102-150405")
+		if err := os.Rename(sqlitePath, backup); err != nil {
+			return err
+		}
+		log.Printf("restore: previous database kept at %s", backup)
+	}
+	_ = os.Remove(sqlitePath + "-wal")
+	_ = os.Remove(sqlitePath + "-shm")
+	if err := os.Rename(staged, sqlitePath); err != nil {
+		return err
+	}
+	_ = os.Remove(marker)
+	log.Printf("restore: staged SQLite database applied from %s", staged)
+	return nil
+}
+
 func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer, error) {
 	// newLLM validates the YAML llm section at startup and provides the
 	// provider for the mock/demo path. Real deployments replace it with the
@@ -243,6 +277,9 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		TTL:        callbackTTL,
 	}
 
+	if err := applyPendingSQLiteRestore(cfg.Store.Driver, cfg.Store.SQLitePath); err != nil {
+		return nil, nil, fmt.Errorf("apply pending restore: %w", err)
+	}
 	st, err := store.OpenWithOptions(cfg.Store.Driver, store.OpenOptions{
 		SQLitePath: cfg.Store.SQLitePath,
 		DSN:        cfg.Store.DSN,
@@ -509,6 +546,10 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		reg.RegisterSpecApproved(tm.Spec, tm.Invoker, false)
 	}
 	srv := api.NewServer(st, reg, engine)
+	if sw, ok := provider.(*llm.Switch); ok {
+		// Fallback models must honor model budgets just like Auto/manual routing.
+		sw.SetFallbackBlocked(srv.OverBudgetModelIDs)
+	}
 	cfgCopy := cfg
 	srv.Config = &cfgCopy
 	srv.ConfigPath = configPath
@@ -632,6 +673,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	srv.OperatorToken = op
 	srv.AdminToken = adm
 	srv.ViewerToken = viewer
+	srv.ViewerWorkspace = strings.TrimSpace(cfg.ControlPlane.ViewerWorkspace)
 	srv.Operators = operators
 
 	// Hot-reloadable runtime settings: build from config baseline + persisted KV

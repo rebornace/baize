@@ -39,6 +39,7 @@ func validateInputArgs(args map[string]any) error {
 
 type startRunInput struct {
 	AgentID, Input, ConversationID, IdentityID string
+	ReplyToID                                  string
 	Skills                                     []string
 	Webhook                                    *store.WebhookConfig
 	Passthrough                                map[string]string
@@ -122,6 +123,7 @@ func (s *Server) startRun(ctx context.Context, in startRunInput) (*store.Run, er
 			Role:         conversation.RoleUser,
 			Content:      bubble,
 			RunID:        runRec.ID,
+			ReplyToID:    in.ReplyToID,
 			PinnedSkills: append([]string(nil), in.PinnedSkills...),
 		})
 		s.deliverUserOutbound(ctx, runRec.ID, conv, in.Input)

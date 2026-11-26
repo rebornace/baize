@@ -16,6 +16,7 @@ import {
   rollbackMessages,
   setConversationPinned,
   setConversationArchived,
+  setConversationTags,
   type ChatMessage,
   type ConversationScope,
   type ConversationSummary,
@@ -422,6 +423,18 @@ export function useChatSession({
     [refreshConversations, reportError],
   )
 
+  const onSetConversationTags = useCallback(
+    async (id: string, tags: string[]) => {
+      try {
+        await setConversationTags(id, tags)
+        await refreshConversations()
+      } catch (e) {
+        reportError(e)
+      }
+    },
+    [refreshConversations, reportError],
+  )
+
   const onToggleArchivedView = useCallback(() => {
     setArchivedView((v) => !v)
   }, [])
@@ -646,6 +659,7 @@ export function useChatSession({
     onRenameConversation,
     onToggleConversationPin,
     onSetConversationArchived,
+    onSetConversationTags,
     performDelete,
     onRollbackUser,
     onRegenerate,

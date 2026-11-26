@@ -17,6 +17,7 @@ import {
   resumeGoal,
   resumeRun,
   stopGoal,
+  type ChatMessage,
   type ConversationExportFormat,
   type GoalStackView,
   type ModelProfile,
@@ -98,6 +99,8 @@ export function ChatPage() {
   } | null>(null)
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
   const [pendingCenterOpen, setPendingCenterOpen] = useState(false)
+  const [quoteMessage, setQuoteMessage] = useState<ChatMessage | null>(null)
+  const replyToIdRef = useRef('')
   const [messageSearchOpen, setMessageSearchOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -319,6 +322,7 @@ export function ChatPage() {
     setHistoryUsage: session.setHistoryUsage,
     setHistoryDurationMs: session.setHistoryDurationMs,
     fetchedRunsRef: session.fetchedRunsRef,
+    replyToIdRef,
     mergeHistoryPages: session.mergeHistoryPages,
     refreshConversations: session.refreshConversations,
     setComposerDraft: session.setComposerDraft,
@@ -761,6 +765,7 @@ export function ChatPage() {
         archivedView={session.archivedView}
         onToggleArchivedView={session.onToggleArchivedView}
         onSetConversationArchived={session.onSetConversationArchived}
+        onSetConversationTags={session.onSetConversationTags}
         onArchiveConversations={session.onArchiveConversations}
         onMarkAllRead={session.onMarkAllRead}
         readOnly={role === 'viewer'}
@@ -788,6 +793,10 @@ export function ChatPage() {
           onRegenerate={session.onRegenerate}
           onRollbackTo={session.onRollbackTo}
           onFork={session.onFork}
+          onQuoteMessage={(m) => {
+            replyToIdRef.current = m.id
+            setQuoteMessage(m)
+          }}
           onCopyMessage={onCopyMessage}
           reportError={reportError}
           onBrowserLogin={onBrowserLogin}
@@ -883,11 +892,36 @@ export function ChatPage() {
                 onPickSide={onPickSide}
               />
 
+              {quoteMessage ? (
+                <div className="composer-quote" data-testid="composer-quote">
+                  <span className="composer-quote-label">
+                    {CHAT.quoteReply} · {quoteMessage.role === 'assistant' ? CHAT.assistant : CHAT.you}
+                  </span>
+                  <span className="composer-quote-text">{quoteMessage.content}</span>
+                  <button
+                    type="button"
+                    className="settings-link"
+                    onClick={() => {
+                      replyToIdRef.current = ''
+                      setQuoteMessage(null)
+                    }}
+                  >
+                    {CHAT.quoteCancel}
+                  </button>
+                </div>
+              ) : null}
               <Composer
                 disabled={composerDisabled}
                 draft={session.composerDraft}
                 skills={skills}
-                onSend={run.onSend}
+                onSend={async (text, files) => {
+                  const ok = await run.onSend(text, files)
+                  if (ok !== false) {
+                    replyToIdRef.current = ''
+                    setQuoteMessage(null)
+                  }
+                  return ok
+                }}
                 plusMenuExtra={
                   role === 'admin'
                     ? [

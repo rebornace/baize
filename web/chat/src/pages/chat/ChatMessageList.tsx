@@ -91,6 +91,7 @@ export type ChatMessageListProps = {
   onRegenerate: (m: ChatMessage) => void
   onRollbackTo: (m: ChatMessage) => void
   onFork: (m: ChatMessage) => void
+  onQuoteMessage: (m: ChatMessage) => void
   onCopyMessage: (m: ChatMessage) => void
   reportError: (e: unknown) => void
   onBrowserLogin?: (connectorId: string) => void
@@ -150,6 +151,7 @@ export function ChatMessageList({
   onRegenerate,
   onRollbackTo,
   onFork,
+  onQuoteMessage,
   onCopyMessage,
   reportError,
   onBrowserLogin,
@@ -301,7 +303,19 @@ export function ChatMessageList({
                     <MarkdownText text={m.content} />
                   </>
                 ) : (
-                  <UserBubble content={m.content} />
+                  <UserBubble
+                    content={m.content}
+                    quote={(() => {
+                      if (!m.reply_to_id) return undefined
+                      const source = messages.find((x) => x.id === m.reply_to_id)
+                      return source
+                        ? {
+                            role: source.role,
+                            content: source.content,
+                          }
+                        : undefined
+                    })()}
+                  />
                 )}
                 {m.role === 'user' && m.pinned_skills && m.pinned_skills.length > 0 && (
                   <div className="msg-pinned-skills" data-testid="pinned-skills">
@@ -337,6 +351,9 @@ export function ChatMessageList({
                     </button>
                   ) : (
                     <>
+                      <button type="button" className="btn ghost sm" onClick={() => onQuoteMessage(m)}>
+                        {ACTIONS.quote}
+                      </button>
                       {m.role === 'user' && (
                         <>
                           <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>

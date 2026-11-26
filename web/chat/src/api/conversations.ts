@@ -260,6 +260,18 @@ export async function markAllConversationsRead(): Promise<{ read_at: string }> {
   return parseJSON(res)
 }
 
+export async function setConversationTags(
+  conversationId: string,
+  tags: string[],
+): Promise<{ conversation_id: string; tags: string[] }> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/tags`, {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ tags }),
+  })
+  return parseJSON(res)
+}
+
 export interface RollbackMessagesResult {
   conversation_id: string
   deleted_count: number
@@ -318,6 +330,7 @@ export interface ConversationSummary {
   pinned?: boolean
   archived?: boolean
   unread?: boolean
+  tags?: string[]
 }
 
 export async function listConversations(
