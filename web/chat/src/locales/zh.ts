@@ -426,7 +426,7 @@ export const zhPack = {
   title: '对话日程',
   description: '在指定时间自动向某个对话发送指令；仅对本账号可见。',
   emptyTitle: '还没有日程',
-  emptyDesc: '在下方创建一次性、每天或每周的提醒。',
+  emptyDesc: '在上方创建一次性、每天或每周的提醒。',
   add: '新建日程',
   save: '保存',
   pause: '暂停',

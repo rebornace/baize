@@ -66,8 +66,7 @@
   /* 固定列数：末行不足 3 张时仍与上行同宽，避免 1fr 把尾行撑满 */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
-}
-.settings-card-grid .ui-card {
+}.settings-card-grid .ui-card {
   box-shadow: none;
   height: 100%;
   display: flex;
@@ -129,12 +128,13 @@
   padding: 0 var(--space-2);
   margin: 0 0 var(--space-1);
   font-size: var(--text-meta-size);
-  font-weight: var(--text-meta-weight);
+  font-weight: 600;
   color: var(--text-muted);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.04em;
 }
 
-@media (max-width: 960px) {
+/* 3 列在 1200px 以下会低于 280px/卡，提前降 2 列 */
+@media (max-width: 1200px) {
   .settings-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
@@ -337,4 +337,19 @@
   font-size: var(--text-meta-size);
   color: var(--danger);
   overflow-wrap: anywhere;
+}
+
+/* 移动端顶部栏已显示「设置」，总览页不再重复同一标题（保留给读屏） */
+@media (max-width: 768px) {
+  .settings-home .settings-home-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }

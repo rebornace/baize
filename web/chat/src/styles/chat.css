@@ -2723,7 +2723,9 @@ button.settings-link {
 }
 
 .settings-nav-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -2731,6 +2733,19 @@ button.settings-link {
   font-size: var(--text-small-size);
   font-weight: var(--text-small-weight);
   line-height: 1.4;
+}
+
+.settings-nav-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.settings-nav-link:hover .settings-nav-icon {
+  color: var(--text);
+}
+
+.settings-nav-link.active .settings-nav-icon {
+  color: var(--accent);
 }
 
 .settings-nav-link:hover {
@@ -2974,6 +2989,11 @@ button.settings-link {
   margin-top: 0;
 }
 
+/* 表单主操作按内容宽度，不要整行铺满（通栏蓝条过重） */
+.settings-form > .btn {
+  align-self: flex-start;
+}
+
 .settings-subheading {
   margin: 0;
   font-size: var(--text-title-size);
@@ -3055,12 +3075,12 @@ button.settings-link {
 }
 
 .settings-panel.settings-runtime {
-  max-width: 44rem;
+  max-width: var(--settings-panel-max);
 }
 
 /* 运行状态：概览为主，原始指标收进开发者区 */
 .settings-panel.settings-metrics {
-  max-width: min(100%, 40rem);
+  max-width: min(100%, var(--settings-panel-max));
 }
 
 .settings-metrics-meta {
@@ -3387,7 +3407,7 @@ button.settings-link {
 }
 
 .settings-panel.settings-weixin {
-  max-width: 40rem;
+  max-width: var(--settings-panel-max);
 }
 
 .settings-weixin .weixin-login-block {
@@ -3470,12 +3490,12 @@ button.settings-link {
 }
 
 .settings-panel.settings-tool-matching {
-  max-width: 40rem;
+  max-width: var(--settings-panel-max);
 }
 
 .settings-panel.settings-memory,
 .settings-panel.settings-schedules {
-  max-width: 40rem;
+  max-width: var(--settings-panel-max);
 }
 
 .settings-memory .settings-list-item,

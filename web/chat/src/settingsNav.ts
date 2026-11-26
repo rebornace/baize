@@ -150,8 +150,9 @@ export const OVERVIEW_ITEM = {
 export const SETTINGS_GROUPS: { id: SettingsGroup; get label(): string }[] = [
   { id: 'conversation', get label() { return getPack().SETTINGS_NAV.groupConversation } },
   { id: 'connect', get label() { return getPack().SETTINGS_NAV.groupConnect } },
-  { id: 'quality', get label() { return getPack().SETTINGS_NAV.groupQuality } },
+  // 账号/存储/高级参数是管理员常用入口，放在「质量与评测」之前
   { id: 'system', get label() { return getPack().SETTINGS_NAV.groupSystem } },
+  { id: 'quality', get label() { return getPack().SETTINGS_NAV.groupQuality } },
 ]
 
 function buildItems(): SettingsNavItem[] {

@@ -418,7 +418,7 @@ export const enPack = {
     title: 'Conversation schedules',
     description: 'Run an instruction in a conversation at set times; visible only to this account.',
     emptyTitle: 'No schedules yet',
-    emptyDesc: 'Create a one-off, daily, or weekly reminder below.',
+    emptyDesc: 'Create a one-off, daily, or weekly reminder above.',
     add: 'New schedule',
     save: 'Save',
     pause: 'Pause',

@@ -40,6 +40,7 @@ export function SettingsLayout() {
               }
               onClick={drawer.close}
             >
+              <OVERVIEW_ITEM.icon size={15} className="settings-nav-icon" aria-hidden="true" />
               {navCopy.viewer}
             </NavLink>
           ) : (
@@ -51,6 +52,7 @@ export function SettingsLayout() {
               }
               onClick={drawer.close}
             >
+              <OVERVIEW_ITEM.icon size={15} className="settings-nav-icon" aria-hidden="true" />
               {strings.SETTINGS_NAV.overview}
             </NavLink>
           )}
@@ -71,6 +73,7 @@ export function SettingsLayout() {
                         }
                         onClick={drawer.close}
                       >
+                        <item.icon size={15} className="settings-nav-icon" aria-hidden="true" />
                         {item.label}
                       </NavLink>
                     ))}

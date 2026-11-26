@@ -14,14 +14,14 @@ describe('SETTINGS_GROUPS', () => {
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual([
       'conversation',
       'connect',
-      'quality',
       'system',
+      'quality',
     ])
     expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual([
       '对话相关',
       '连接与工具',
-      '质量与评测',
       '系统',
+      '质量与评测',
     ])
   })
 
@@ -30,8 +30,8 @@ describe('SETTINGS_GROUPS', () => {
     expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual([
       'Chat',
       'Connections',
-      'Quality',
       'System',
+      'Quality',
     ])
   })
 })
