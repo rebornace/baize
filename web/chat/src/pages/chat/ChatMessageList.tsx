@@ -99,6 +99,7 @@ export type ChatMessageListProps = {
   /** Footer banner owns login CTAs; cards only show the message. */
   suppressLoginActions?: boolean
   cloudModelRisk?: boolean
+  readOnly?: boolean
 }
 
 // Copy with a legacy fallback for non-secure (HTTP/LAN) contexts without
@@ -155,6 +156,7 @@ export function ChatMessageList({
   onContinueSubagent,
   suppressLoginActions = false,
   cloudModelRisk = false,
+  readOnly = false,
 }: ChatMessageListProps) {
   const liveDurationMs = useLiveRunDurationMs(liveEvents, Boolean(busy && liveRunId))
 
@@ -329,33 +331,41 @@ export function ChatMessageList({
                 )}
               {canAct && (
                 <div className="msg-actions">
-                  {m.role === 'user' && (
+                  {readOnly ? (
+                    <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
+                      {ACTIONS.copy}
+                    </button>
+                  ) : (
                     <>
-                      <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
-                        {ACTIONS.editAndReanswer}
-                      </button>
-                      <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
-                        {ACTIONS.copy}
-                      </button>
+                      {m.role === 'user' && (
+                        <>
+                          <button type="button" className="btn ghost sm" onClick={() => void onRollbackUser(m)}>
+                            {ACTIONS.editAndReanswer}
+                          </button>
+                          <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
+                            {ACTIONS.copy}
+                          </button>
+                        </>
+                      )}
+                      {m.role === 'assistant' && (
+                        <>
+                          <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
+                            {ACTIONS.regenerate}
+                          </button>
+                          <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
+                            {ACTIONS.copy}
+                          </button>
+                          {m.run_id && isFirstAssistantMessageOfRun(msgIndex, messages) ? (
+                            <RunBindingButton runId={m.run_id} />
+                          ) : null}
+                        </>
+                      )}
+                      <DropdownMenu
+                        triggerLabel={ACTIONS.more}
+                        items={buildMessageMenuItems(m)}
+                      />
                     </>
                   )}
-                  {m.role === 'assistant' && (
-                    <>
-                      <button type="button" className="btn ghost sm" onClick={() => void onRegenerate(m)}>
-                        {ACTIONS.regenerate}
-                      </button>
-                      <button type="button" className="btn ghost sm" onClick={() => onCopyMessage(m)}>
-                        {ACTIONS.copy}
-                      </button>
-                      {m.run_id && isFirstAssistantMessageOfRun(msgIndex, messages) ? (
-                        <RunBindingButton runId={m.run_id} />
-                      ) : null}
-                    </>
-                  )}
-                  <DropdownMenu
-                    triggerLabel={ACTIONS.more}
-                    items={buildMessageMenuItems(m)}
-                  />
                 </div>
               )}
             </div>

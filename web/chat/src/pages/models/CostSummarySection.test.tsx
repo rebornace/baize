@@ -44,6 +44,7 @@ async function renderSection(agents: modelsApi.AgentCostBudget[] = []) {
     days: 30,
     total_usd: 3,
     by_model: [{ key: 'm1', name: 'power', cost_usd: 2, ratio: 0.6667 }],
+    by_provider: [{ key: 'openai_compatible', name: 'openai_compatible', cost_usd: 3, ratio: 1 }],
     by_agent: [{ key: 'a1', name: 'a1', cost_usd: 3, ratio: 1 }],
     by_conversation: [{ key: 'c1', name: '季度复盘', cost_usd: 3, ratio: 1 }],
     by_workspace: [{ key: 'default', name: '默认', cost_usd: 3, ratio: 1 }],
@@ -143,6 +144,8 @@ describe('CostSummarySection monthly budget', () => {
     expect(host.textContent).toContain('按模型')
     expect(host.textContent).toContain('power')
     expect(host.textContent).toContain('$2.0000 · 67%')
+    expect(host.textContent).toContain('按供应商')
+    expect(host.textContent).toContain('openai_compatible')
     expect(host.textContent).toContain('按会话')
     expect(host.textContent).toContain('季度复盘')
     expect(host.textContent).toContain('按工作区')

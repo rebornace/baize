@@ -34,6 +34,11 @@ describe('OpsStatusCard', () => {
       process: { goroutines: 12 },
       db: { max_open: 10, open: 3, in_use: 1, idle: 2, wait_count: 0 },
       streams: { live: 1, dropped: 2, slow: 3 },
+      replicas: [
+        { id: 'replica-a', age_sec: 0, goroutines: 12 },
+        { id: 'replica-b', age_sec: 5, goroutines: 8 },
+      ],
+      replica_count: 2,
       webhook_configured: true,
       budget: { day_alert: 'warning', month_alert: '', scoped_alerts: 2 },
       eval_gate: { last_pass: true, last_ran_at: '2026-11-25T00:00:00Z', total: 5, failed: 0 },
@@ -56,5 +61,8 @@ describe('OpsStatusCard', () => {
     expect(card?.textContent).toContain('goroutine 12')
     expect(card?.textContent).toContain('DB 连接 3（占用 1，空闲 2）')
     expect(card?.textContent).toContain('待审批流：活跃 1 · 丢弃 2 · 慢 3')
+    expect(card?.textContent).toContain('副本：2')
+    expect(card?.textContent).toContain('replica-a（0s，goroutine 12）')
+    expect(card?.textContent).toContain('replica-b（5s，goroutine 8）')
   })
 })

@@ -13,6 +13,10 @@ import {
 } from './metricsParse'
 import { RunOverviewCard } from './RunOverviewCard'
 import { OpsStatusCard } from './OpsStatusCard'
+import { BudgetAlertHistoryCard } from './BudgetAlertHistoryCard'
+import { AuditLogCard } from './AuditLogCard'
+import { BudgetSilenceCard } from './BudgetSilenceCard'
+import { CostAnomalyCard } from './CostAnomalyCard'
 
 type Tab = 'overview' | 'logs'
 
@@ -137,6 +141,10 @@ export function MetricsSettings() {
       />
 
       <OpsStatusCard />
+      <BudgetSilenceCard />
+      <BudgetAlertHistoryCard />
+      <CostAnomalyCard />
+      <AuditLogCard />
 
       <RunOverviewCard />
 

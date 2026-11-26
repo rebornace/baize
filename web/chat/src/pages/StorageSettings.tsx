@@ -1,17 +1,28 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
+  getAgentRunRetention,
+  getArchiveRetention,
   getAttachmentRetention,
   getMessageRetention,
+  getRetentionPreview,
   getRunRetention,
   getStoreSettings,
   getWorkspaceAttachmentRetention,
+  getWorkspaceRetention,
+  putAgentRunRetention,
+  putArchiveRetention,
   putAttachmentRetention,
   putMessageRetention,
   putRunRetention,
   putStoreSettings,
   putWorkspaceAttachmentRetention,
+  putWorkspaceRetention,
+  runRetentionNow,
+  type AgentRunRetentionItem,
+  type RetentionPreview,
   type StoreSettings,
   type WorkspaceAttachmentRetentionItem,
+  type WorkspaceRetentionItem,
 } from '../api'
 import {
   Button,
@@ -47,11 +58,24 @@ export function StorageSettings() {
   const [runRetentionBusy, setRunRetentionBusy] = useState(false)
   const [messageRetentionDays, setMessageRetentionDays] = useState('0')
   const [messageRetentionBusy, setMessageRetentionBusy] = useState(false)
+  const [archiveRetentionDays, setArchiveRetentionDays] = useState('0')
+  const [archiveRetentionBusy, setArchiveRetentionBusy] = useState(false)
   const [workspaceRetention, setWorkspaceRetention] = useState<
     WorkspaceAttachmentRetentionItem[] | null
   >(null)
   const [workspaceDrafts, setWorkspaceDrafts] = useState<Record<string, string>>({})
   const [workspaceBusy, setWorkspaceBusy] = useState<string | null>(null)
+  const [agentRunRetention, setAgentRunRetention] = useState<AgentRunRetentionItem[] | null>(null)
+  const [agentRunDrafts, setAgentRunDrafts] = useState<Record<string, string>>({})
+  const [agentRunGlobalDays, setAgentRunGlobalDays] = useState(0)
+  const [agentRunBusy, setAgentRunBusy] = useState<string | null>(null)
+  const [wsRetention, setWsRetention] = useState<WorkspaceRetentionItem[] | null>(null)
+  const [wsMessageDrafts, setWsMessageDrafts] = useState<Record<string, string>>({})
+  const [wsRunDrafts, setWsRunDrafts] = useState<Record<string, string>>({})
+  const [wsRetentionBusy, setWsRetentionBusy] = useState<string | null>(null)
+  const [preview, setPreview] = useState<RetentionPreview | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const { toasts, push, dismiss } = useToast()
 
   const load = useCallback(async () => {
@@ -91,6 +115,12 @@ export function StorageSettings() {
         // Optional section; keep the default when the endpoint is unavailable.
       }
       try {
+        const r = await getArchiveRetention()
+        setArchiveRetentionDays(String(r.days))
+      } catch {
+        // Optional section; keep the default when the endpoint is unavailable.
+      }
+      try {
         const r = await getWorkspaceAttachmentRetention()
         setWorkspaceRetention(Array.isArray(r.items) ? r.items : [])
         const drafts: Record<string, string> = {}
@@ -100,6 +130,32 @@ export function StorageSettings() {
         setWorkspaceDrafts(drafts)
       } catch {
         setWorkspaceRetention(null)
+      }
+      try {
+        const r = await getAgentRunRetention()
+        setAgentRunRetention(Array.isArray(r.items) ? r.items : [])
+        setAgentRunGlobalDays(r.global_days ?? 0)
+        const drafts: Record<string, string> = {}
+        for (const item of r.items ?? []) {
+          drafts[item.agent_id] = String(item.days)
+        }
+        setAgentRunDrafts(drafts)
+      } catch {
+        setAgentRunRetention(null)
+      }
+      try {
+        const r = await getWorkspaceRetention()
+        setWsRetention(Array.isArray(r.items) ? r.items : [])
+        const messageDrafts: Record<string, string> = {}
+        const runDrafts: Record<string, string> = {}
+        for (const item of r.items ?? []) {
+          messageDrafts[item.workspace_id] = String(item.message_days)
+          runDrafts[item.workspace_id] = String(item.run_days)
+        }
+        setWsMessageDrafts(messageDrafts)
+        setWsRunDrafts(runDrafts)
+      } catch {
+        setWsRetention(null)
       }
     }
     void loadRetention()
@@ -153,6 +209,31 @@ export function StorageSettings() {
     }
   }
 
+  const saveAgentRunRetention = async (item: AgentRunRetentionItem) => {
+    const raw = agentRunDrafts[item.agent_id] ?? String(item.days)
+    const days = Number.parseInt(raw, 10)
+    if (!Number.isFinite(days) || days < -1 || days > 3650) {
+      push({ tone: 'error', title: STORAGE.agentRunRetentionInvalid })
+      return
+    }
+    setAgentRunBusy(item.agent_id)
+    try {
+      const next = await putAgentRunRetention(item.agent_id, days)
+      setAgentRunRetention((prev) =>
+        prev
+          ? prev.map((row) => (row.agent_id === next.agent_id ? { ...row, days: next.days } : row))
+          : prev,
+      )
+      setAgentRunDrafts((prev) => ({ ...prev, [next.agent_id]: String(next.days) }))
+      push({ tone: 'success', title: STORAGE.retentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setAgentRunBusy(null)
+    }
+  }
+
   const saveRunRetention = async () => {
     const n = Number.parseInt(runRetentionDays, 10)
     if (!Number.isFinite(n) || n < 0 || n > 3650) {
@@ -188,6 +269,104 @@ export function StorageSettings() {
       push({ tone: 'error', title: f.title, detail: f.detail })
     } finally {
       setMessageRetentionBusy(false)
+    }
+  }
+
+  const saveArchiveRetention = async () => {
+    const n = Number.parseInt(archiveRetentionDays, 10)
+    if (!Number.isFinite(n) || n < 0 || n > 3650) {
+      push({ tone: 'error', title: STORAGE.archiveRetentionInvalid })
+      return
+    }
+    setArchiveRetentionBusy(true)
+    try {
+      const r = await putArchiveRetention(n)
+      setArchiveRetentionDays(String(r.days))
+      push({ tone: 'success', title: STORAGE.archiveRetentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setArchiveRetentionBusy(false)
+    }
+  }
+
+  const saveWorkspaceMessageRunRetention = async (item: WorkspaceRetentionItem) => {
+    const messageRaw = wsMessageDrafts[item.workspace_id] ?? String(item.message_days)
+    const runRaw = wsRunDrafts[item.workspace_id] ?? String(item.run_days)
+    const messageDays = Number.parseInt(messageRaw, 10)
+    const runDays = Number.parseInt(runRaw, 10)
+    if (
+      !Number.isFinite(messageDays) || messageDays < -1 || messageDays > 3650 ||
+      !Number.isFinite(runDays) || runDays < -1 || runDays > 3650
+    ) {
+      push({ tone: 'error', title: STORAGE.workspaceMessageRunInvalid })
+      return
+    }
+    setWsRetentionBusy(item.workspace_id)
+    try {
+      const next = await putWorkspaceRetention(item.workspace_id, {
+        message_days: messageDays,
+        run_days: runDays,
+      })
+      setWsRetention((prev) =>
+        prev ? prev.map((row) => (row.workspace_id === next.workspace_id ? next : row)) : prev,
+      )
+      setWsMessageDrafts((prev) => ({ ...prev, [next.workspace_id]: String(next.message_days) }))
+      setWsRunDrafts((prev) => ({ ...prev, [next.workspace_id]: String(next.run_days) }))
+      push({ tone: 'success', title: STORAGE.retentionSaved })
+    } catch (e) {
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setWsRetentionBusy(null)
+    }
+  }
+
+  const loadPreview = async () => {
+    setPreviewBusy(true)
+    setPreviewError(null)
+    try {
+      setPreview(await getRetentionPreview())
+    } catch (e) {
+      setPreviewError(STORAGE.previewFailed)
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
+  const runRetention = async () => {
+    if (!preview) return
+    if (!window.confirm(
+      STORAGE.previewRunConfirm(
+        preview.messages.total,
+        preview.runs.total,
+        preview.archived.total,
+      ),
+    )) {
+      return
+    }
+    setPreviewBusy(true)
+    setPreviewError(null)
+    try {
+      const res = await runRetentionNow()
+      push({
+        tone: 'success',
+        title: STORAGE.previewRunDone(
+          res.messages_deleted,
+          res.runs_deleted,
+          res.archived_deleted,
+        ),
+      })
+      setPreview(await getRetentionPreview())
+    } catch (e) {
+      setPreviewError(STORAGE.previewFailed)
+      const f = friendlyError(e)
+      push({ tone: 'error', title: f.title, detail: f.detail })
+    } finally {
+      setPreviewBusy(false)
     }
   }
 
@@ -421,6 +600,170 @@ export function StorageSettings() {
       </Card>
 
       <Card>
+        <h2 className="settings-subheading">{STORAGE.agentRunRetentionTitle}</h2>
+        <p className="settings-muted">{STORAGE.agentRunRetentionHint}</p>
+        {agentRunRetention == null ? null : agentRunRetention.length === 0 ? (
+          <p className="settings-muted">{STORAGE.agentRunRetentionEmpty}</p>
+        ) : (
+          agentRunRetention.map((item) => {
+            const days = item.days >= 0 ? item.days : agentRunGlobalDays
+            return (
+              <div className="agent-budget-row" key={item.agent_id}>
+                <span className="agent-budget-id">{item.agent_id}</span>
+                <span className="settings-muted">
+                  {STORAGE.agentRunRetentionEffective(days)}
+                </span>
+                <Input
+                  type="number"
+                  min={-1}
+                  max={3650}
+                  value={agentRunDrafts[item.agent_id] ?? String(item.days)}
+                  disabled={agentRunBusy === item.agent_id}
+                  onChange={(e) =>
+                    setAgentRunDrafts((prev) => ({
+                      ...prev,
+                      [item.agent_id]: e.target.value,
+                    }))
+                  }
+                  data-testid={`agent-run-retention-days-${item.agent_id}`}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={agentRunBusy === item.agent_id}
+                  onClick={() => void saveAgentRunRetention(item)}
+                  data-testid={`agent-run-retention-save-${item.agent_id}`}
+                >
+                  {STORAGE.retentionSave}
+                </Button>
+              </div>
+            )
+          })
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="settings-subheading">{STORAGE.workspaceMessageRunTitle}</h2>
+        <p className="settings-muted">{STORAGE.workspaceMessageRunHint}</p>
+        {wsRetention == null ? null : wsRetention.length === 0 ? (
+          <p className="settings-muted">{STORAGE.workspaceMessageRunEmpty}</p>
+        ) : (
+          wsRetention.map((item) => (
+            <div className="agent-budget-row" key={item.workspace_id}>
+              <span className="agent-budget-id">{item.name || item.workspace_id}</span>
+              <span className="settings-muted">
+                {STORAGE.workspaceMessageRunEffective(
+                  item.effective_message_days,
+                  item.effective_run_days,
+                )}
+              </span>
+              <label className="settings-muted">
+                {STORAGE.workspaceMessageDays}
+                <Input
+                  type="number"
+                  min={-1}
+                  max={3650}
+                  value={wsMessageDrafts[item.workspace_id] ?? String(item.message_days)}
+                  disabled={wsRetentionBusy === item.workspace_id}
+                  onChange={(e) =>
+                    setWsMessageDrafts((prev) => ({
+                      ...prev,
+                      [item.workspace_id]: e.target.value,
+                    }))
+                  }
+                  data-testid={`workspace-message-retention-${item.workspace_id}`}
+                />
+              </label>
+              <label className="settings-muted">
+                {STORAGE.workspaceRunDays}
+                <Input
+                  type="number"
+                  min={-1}
+                  max={3650}
+                  value={wsRunDrafts[item.workspace_id] ?? String(item.run_days)}
+                  disabled={wsRetentionBusy === item.workspace_id}
+                  onChange={(e) =>
+                    setWsRunDrafts((prev) => ({
+                      ...prev,
+                      [item.workspace_id]: e.target.value,
+                    }))
+                  }
+                  data-testid={`workspace-run-retention-${item.workspace_id}`}
+                />
+              </label>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={wsRetentionBusy === item.workspace_id}
+                onClick={() => void saveWorkspaceMessageRunRetention(item)}
+                data-testid={`workspace-message-run-retention-save-${item.workspace_id}`}
+              >
+                {STORAGE.retentionSave}
+              </Button>
+            </div>
+          ))
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="settings-subheading">{STORAGE.previewTitle}</h2>
+        <p className="settings-muted">{STORAGE.previewHint}</p>
+        <div className="storage-actions">
+          <Button type="button" variant="secondary" disabled={previewBusy} onClick={() => void loadPreview()}
+            data-testid="retention-preview-load">
+            {previewBusy ? STORAGE.previewLoading : STORAGE.previewButton}
+          </Button>
+          {preview &&
+          (preview.messages.total > 0 ||
+            preview.runs.total > 0 ||
+            preview.archived.total > 0) ? (
+            <Button type="button" variant="danger" disabled={previewBusy} onClick={() => void runRetention()}
+              data-testid="retention-preview-run">
+              {STORAGE.previewRunNow}
+            </Button>
+          ) : null}
+        </div>
+        {previewError ? <p className="settings-error">{previewError}</p> : null}
+        {preview ? (
+          <div data-testid="retention-preview">
+            <p className="settings-muted">
+              {STORAGE.previewMessages(
+                preview.messages.total,
+                preview.messages.conversations.length,
+              )}
+            </p>
+            <p className="settings-muted">
+              {STORAGE.previewRuns(
+                preview.runs.total,
+                preview.runs.conversations.length,
+                preview.runs.agents.length,
+              )}
+            </p>
+            <p className="settings-muted">
+              {STORAGE.previewArchived(preview.archived.total, preview.archived.days)}
+            </p>
+            {preview.runs.blocked ? (
+              <p className="settings-error">{STORAGE.previewBlocked}</p>
+            ) : null}
+            {preview.messages.conversations.length > 0 ? (
+              <details className="settings-developer">
+                <summary>{STORAGE.previewDetails}</summary>
+                <ul className="settings-muted">
+                  {preview.messages.conversations.map((row) => (
+                    <li key={row.conversation_id}>
+                      {STORAGE.previewMessageItem(row.conversation_id, row.count, row.days)}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+
+      <Card>
         <form
           className="storage-form"
           onSubmit={(e) => {
@@ -444,6 +787,35 @@ export function StorageSettings() {
           <div className="storage-actions">
             <Button type="submit" variant="primary" disabled={messageRetentionBusy}>
               {STORAGE.messageRetentionSave}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <form
+          className="storage-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveArchiveRetention()
+          }}
+        >
+          <h2 className="settings-subheading">{STORAGE.archiveRetentionTitle}</h2>
+          <p className="settings-muted">{STORAGE.archiveRetentionHint}</p>
+          <Field label={STORAGE.archiveRetentionDaysLabel}>
+            <Input
+              type="number"
+              min={0}
+              max={3650}
+              value={archiveRetentionDays}
+              disabled={archiveRetentionBusy}
+              onChange={(e) => setArchiveRetentionDays(e.target.value)}
+              data-testid="archive-retention-days"
+            />
+          </Field>
+          <div className="storage-actions">
+            <Button type="submit" variant="primary" disabled={archiveRetentionBusy}>
+              {STORAGE.archiveRetentionSave}
             </Button>
           </div>
         </form>

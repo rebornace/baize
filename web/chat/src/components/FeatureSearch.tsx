@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, X } from 'lucide-react'
-import { useGate } from '../gateContext'
+import { useGate, type GateRole } from '../gateContext'
 import { useLocale } from '../locale/LocaleContext'
 import {
   featureEntries,
@@ -150,7 +150,7 @@ function FeatureSearchPalette({
   onClose,
   onSelect,
 }: {
-  role: 'operator' | 'admin'
+  role: GateRole
   locale: string
   onClose: (restore?: boolean) => void
   onSelect: (entry: FeatureEntry) => void

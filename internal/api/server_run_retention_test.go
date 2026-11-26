@@ -51,6 +51,120 @@ func TestRunRetentionSettingsAPI(t *testing.T) {
 	}
 }
 
+func TestAgentRunRetentionSettingsAPI(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	srv.Store.UpsertAgent(store.Agent{ID: "a1", System: "s"})
+	srv.Store.UpsertAgent(store.Agent{ID: "a2", System: "s"})
+	h := srv.Handler()
+
+	get := httptest.NewRequest(http.MethodGet, "/v0/settings/agent-run-retention", nil)
+	get.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, get)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get=%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		GlobalDays int `json:"global_days"`
+		Items      []struct {
+			AgentID string `json:"agent_id"`
+			Days    int    `json:"days"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 2 || body.Items[0].Days != -1 {
+		t.Fatalf("items=%+v", body.Items)
+	}
+
+	put := httptest.NewRequest(http.MethodPut, "/v0/settings/agent-run-retention",
+		bytes.NewBufferString(`{"agent_id":"a1","days":7}`))
+	put.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, put)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("put=%d %s", rr.Code, rr.Body.String())
+	}
+	if d, ok := srv.runRetentionDaysForAgent("a1"); !ok || d != 7 {
+		t.Fatalf("agent days=%d ok=%v", d, ok)
+	}
+
+	bad := httptest.NewRequest(http.MethodPut, "/v0/settings/agent-run-retention",
+		bytes.NewBufferString(`{"agent_id":"a1","days":-2}`))
+	bad.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, bad)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad days=%d", rr.Code)
+	}
+
+	missing := httptest.NewRequest(http.MethodPut, "/v0/settings/agent-run-retention",
+		bytes.NewBufferString(`{"agent_id":"nope","days":7}`))
+	missing.Header.Set("Authorization", "Bearer adm")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, missing)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("missing agent=%d", rr.Code)
+	}
+}
+
+func TestAgentRunRetentionCleanup(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	st.UpsertAgent(store.Agent{ID: "a1", System: "s"})
+	st.UpsertAgent(store.Agent{ID: "a2", System: "s"})
+	old := time.Now().UTC().AddDate(0, 0, -40)
+	mk := func(agentID, conv string) *store.Run {
+		t.Helper()
+		r, err := st.CreateRun(store.CreateRunInput{
+			AgentID: agentID, Input: "x", ConversationID: conv, CreatedAt: old,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpdateRun(r.ID, store.StatusSucceeded, "ok", ""); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	a1Old := mk("a1", "c-a1")
+	a2Old := mk("a2", "c-a2")
+	a1Forever := mk("a1", "c-a1-forever")
+	a2Short := mk("a2", "c-a2-short")
+	if err := st.UpsertSetting(runRetentionSettingKey, []byte("30")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionAgentPrefix+"a1", []byte("7")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionAgentPrefix+"a2", []byte("0")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionConvPrefix+"c-a1-forever", []byte("0")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(runRetentionConvPrefix+"c-a2-short", []byte("3")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := srv.cleanupExpiredRuns(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetRun(a1Old.ID); err == nil {
+		t.Fatal("a1 run should use the agent 7-day window")
+	}
+	if _, err := st.GetRun(a2Old.ID); err != nil {
+		t.Fatalf("a2 agent 0 should keep the run: %v", err)
+	}
+	if _, err := st.GetRun(a1Forever.ID); err != nil {
+		t.Fatalf("conversation 0 should win over agent 7: %v", err)
+	}
+	if _, err := st.GetRun(a2Short.ID); err == nil {
+		t.Fatal("conversation 3 should win over agent 0")
+	}
+}
+
 func TestConversationRunRetentionAPI(t *testing.T) {
 	srv := gateServer(t, "op", "adm")
 	h := srv.Handler()

@@ -11,9 +11,10 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 可选控制面口令（YAML `control_plane.operator_token` / `admin_token`，或具名 `operators[]`）：
 
 - Gate 开启后挡住 Runtime 的 `/v0`（开发态 Gate 全空则不挡）。
+- **只读 Viewer**：可查看全部会话、消息、运行、费用与审计，不能发消息或改设置。
 - **操作员**：跑 Run / HITL / 会话身份等。
 - **管理员**：改 Agent、Connector、Tools、渠道与多数设置写接口；目录写（如 `PATCH /v0/tools/{name}`）需 admin，否则 `403`。
-- 具名操作员下 `/ui` 会话按 `owner_id` 互不可见（admin 可看全部）。
+- 具名操作员下 `/ui` 会话按 `owner_id` 互不可见（admin / viewer 可看全部）。
 
 这不是下游业务 IAM，也不是多租户 SSO。
 
@@ -33,17 +34,20 @@ Baize Runtime 暴露 REST 风格控制面，路径前缀 **`/v0`**（另有 `GET
 | Pending approvals | `GET /v0/hitl/pending`、`GET /v0/hitl/pending/stream`（SSE） | 跨会话 `waiting_human` 快照 / 推送（HITL 设置/清除时事件总线唤醒；30s 兜底重查，按会话 ACL 过滤）；SSE 断线时前端回退 15s 轮询；每进程最多 100 路，超限 429，慢客户端 5s 写超时断开 |
 | Inbox | `POST /v0/inbox/{channel_id}` | Webhook Inbox 入站 |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | 声明式渠道入站（当前示例：微信适配器；渠道类型可扩展） |
-| Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=`；签发对话作用域托管登录 URL |
+| Conversations | 列表 / 删会话、消息、身份、fork、rollback 等；`PUT .../{id}/pin`、`PUT .../{id}/archived`、`PUT .../{id}/read`、`POST .../read-all`、`POST .../batch/archived`；`POST /v0/conversations/{id}/hosted-login` | 会话与身份；列表可带 `?workspace_id=` 与 `?archived=only\|all`；批量接口单批最多 200 个；`read` / `read-all` 记录当前操作员的已读时间；签发对话作用域托管登录 URL |
 | Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | 跨会话消息搜索；`role` / `days` / `conversation_id` 可选；按会话 ACL 过滤，返回标题、片段与角色 |
 | Conversation export | `GET /v0/conversations/{id}/export?format=markdown\|json\|html&include_thinking=1` | 三格式导出（ACL）；thinking 显式开启；附件只列文件名，不含内部媒体链接 |
+| 费用与告警 | `GET /v0/settings/cost-summary\|cost-breakdown\|cost-series\|cost-export\|budget-alerts\|cost-anomalies`；`PUT /v0/settings/cost-budget`、`/v0/settings/budget-alert-silence` | 费用汇总、分布、趋势、导出；预算告警、站内历史、费用异常与临时静默（Admin） |
 | Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`、`POST .../{id}/retry` | 失败的 webhook 入站查看与重试（管理员；不返回消息体） |
 | Workspaces | `GET/POST /v0/workspaces` | Web 工作区；同组共享登录身份（设置 → 账号） |
 | Artifacts / media | `GET /v0/artifacts/{id}`、`GET /v0/channels/media/...` | 产物与渠道媒体 |
-| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval… |
+| Settings | `/v0/settings/*` | webhook、inbox、store、channels、runtime、credentials、models、memory、**mcp-export**（对外提供能力）、tool-retrieval、workspace-retention、retention/preview、retention/run、archive-retention、audit-retention… |
 | MCP export admin | `/v0/settings/mcp-export`、`.../identities`、`.../keys`、`.../invocations` | 导出开关、身份、Key、调用审计（契约指纹）；设置 → 对外提供能力「调用审计」列表 |
 | MCP export | `HANDLE /v0/mcp/export`（及尾斜杠） | 作为 MCP 服务端，把工具目录只读子集导出给 Cursor 等 Agent 客户端 |
 | Hosted auth（公网） | `GET/POST /v0/auth/hosted/{id}`、`POST .../method`、`GET .../oauth/callback` | 托管登录页 / 提交 / 切换登录方式 / OAuth 回调（不经 `/ui`） |
 | 元信息 | `GET /v0/me`、`GET /v0/ui-config` | 当前身份与 UI 配置 |
+| 操作审计 | `GET /v0/audit/events?limit=&action=&operator_id=&q=&from=&to=`；`GET /v0/audit/export` | 管理操作审计（Admin）；支持关键词、操作员与时间筛选；导出 CSV（最多 5000 条），不记录请求体 |
+| 健康检查 | `GET /healthz`、`GET /readyz` | `/healthz` 只表示进程存活；`/readyz` 在存储不可用时返回 503，供负载均衡摘除故障实例 |
 | 观测 | `GET /metrics`、`GET /v0/settings/logs`；`GET/PATCH /v0/settings/runtime` 的 `log_format` / `otel_*` | Prometheus 文本（Admin）；近期进程日志环形缓冲（Admin；`?limit=` 默认 200、上限 1000）。设置 → **运行指标** 可直接查看；OTel / `log_format` 可在运行参数 → 观测热更新（KV 覆盖，不写 YAML）；指标/日志环不落盘，重启丢失 |
 
 `Run` 状态机（最小）：`queued` → `running` →（可 `waiting_human` ↔ `running`）→ `succeeded` | `failed` | `cancelled`。

@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-export type GateRole = 'operator' | 'admin'
+export type GateRole = 'viewer' | 'operator' | 'admin'
 
 export interface GateContextValue {
   role: GateRole

@@ -50,6 +50,17 @@ func (s *Server) handleGetOpsStatus(w http.ResponseWriter, r *http.Request) {
 	if ps, ok := s.Store.(store.PoolStatter); ok {
 		db = ps.PoolStats()
 	}
+	replicas := s.liveReplicas(now)
+	replicaItems := make([]map[string]any, 0, len(replicas))
+	for _, hb := range replicas {
+		replicaItems = append(replicaItems, map[string]any{
+			"id":         hb.ID,
+			"age_sec":    int(now.Sub(hb.At).Seconds()),
+			"goroutines": hb.Goroutines,
+			"db":         hb.DB,
+			"streams":    hb.Streams,
+		})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"runs": map[string]any{
@@ -75,6 +86,8 @@ func (s *Server) handleGetOpsStatus(w http.ResponseWriter, r *http.Request) {
 			"dropped": streamDropped,
 			"slow":    streamSlow,
 		},
+		"replicas":           replicaItems,
+		"replica_count":      len(replicaItems),
 		"webhook_configured": s.loadEventsWebhook().URL != "",
 		"budget": map[string]any{
 			"day_alert":     state.DayLevel,

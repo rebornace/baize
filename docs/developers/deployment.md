@@ -42,6 +42,7 @@ docker compose ps                              # STATUS 应为 healthy
 
 - 容器内用户为 `baize`（非 root）；`/app/data` 是唯一需要持久化的目录。
 - 健康检查每 30s 请求 `http://127.0.0.1:8080/healthz`，启动宽限 15s。
+- 镜像健康检查仍是进程存活语义；多副本放在负载均衡后面时，用 `/readyz` 做就绪探针，存储故障会返回 503。
 - 未设置 `BAIZE_SETTINGS_KEY` 时，API key / 渠道 secret 等加密设置无法落库。
 - 容器内 `configs/docker-minimal.yaml` 默认 SQLite + `/app/data/baize.db`。
 

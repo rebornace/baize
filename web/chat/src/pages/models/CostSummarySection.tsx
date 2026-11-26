@@ -522,6 +522,19 @@ export function CostSummarySection({ readOnly }: { readOnly: boolean }) {
                   </ul>
                 </div>
                 <div>
+                  <span className="settings-muted">{MODELS.costByProvider}</span>
+                  <ul>
+                    {breakdown.by_provider.map((b) => (
+                      <li key={b.key || 'unknown'}>
+                        <span>{b.name || b.key || 'unknown'}</span>
+                        <strong>
+                          ${b.cost_usd.toFixed(4)} · {Math.round(b.ratio * 100)}%
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
                   <span className="settings-muted">{MODELS.costByAgent}</span>
                   <ul>
                     {breakdown.by_agent.map((b) => (

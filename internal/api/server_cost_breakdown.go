@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rebornace/baize/internal/conversation"
@@ -96,6 +97,27 @@ func (s *Server) costByWorkspace(byConversation map[string]float64) (map[string]
 	return out, names
 }
 
+// costByProvider rolls model costs up to their provider string.
+func (s *Server) costByProvider(byModel map[string]float64) (map[string]float64, map[string]string) {
+	providerByModel := map[string]string{}
+	if profiles, err := s.Store.ListModelProfiles(); err == nil {
+		for _, p := range profiles {
+			providerByModel[p.ID] = p.Provider
+		}
+	}
+	out := map[string]float64{}
+	names := map[string]string{}
+	for modelID, cost := range byModel {
+		provider := strings.TrimSpace(providerByModel[modelID])
+		if provider == "" {
+			provider = "unknown"
+		}
+		out[provider] += cost
+		names[provider] = provider
+	}
+	return out, names
+}
+
 // handleGetCostBreakdown returns cached terminal costs grouped by model, agent
 // and conversation for the last N days, newest range first.
 func (s *Server) handleGetCostBreakdown(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +142,7 @@ func (s *Server) handleGetCostBreakdown(w http.ResponseWriter, r *http.Request) 
 	}
 	modelNames, agentNames, convNames := s.costGroupNames()
 	byWorkspace, workspaceNames := s.costByWorkspace(groups.conversation)
+	byProvider, providerNames := s.costByProvider(groups.model)
 	total := 0.0
 	for _, v := range groups.model {
 		total += v
@@ -138,6 +161,7 @@ func (s *Server) handleGetCostBreakdown(w http.ResponseWriter, r *http.Request) 
 		"to":              now.Format(time.RFC3339),
 		"total_usd":       round6(total),
 		"by_model":        buildCostBuckets(groups.model, modelNames, total),
+		"by_provider":     buildCostBuckets(byProvider, providerNames, total),
 		"by_agent":        buildCostBuckets(groups.agent, agentNames, total),
 		"by_conversation": convBuckets,
 		"by_workspace":    wsBuckets,

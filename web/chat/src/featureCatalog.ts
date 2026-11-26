@@ -65,6 +65,7 @@ const DEFAULT_IDS = [
 ]
 
 export function featureEntries(role: SettingsRole): FeatureEntry[] {
+  if (role === 'viewer') return []
   const pack = getPack().FEATURE_SEARCH
   const overview: FeatureEntry = {
     id: 'page:/settings',

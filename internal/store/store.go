@@ -656,15 +656,33 @@ type Store interface {
 	// DeleteTerminalRunsBeforeForConversation is the scoped form used by
 	// per-conversation retention.
 	DeleteTerminalRunsBeforeForConversation(conversationID string, cutoff time.Time, limit int) (int, error)
+	// DeleteTerminalRunsBeforeForAgent is the scoped form used by per-agent
+	// retention; conversations with their own override are excluded.
+	DeleteTerminalRunsBeforeForAgent(
+		agentID string, cutoff time.Time, limit int, excludeConversationIDs []string,
+	) (int, error)
 	// DeleteTerminalRunsBefore removes terminal runs created before cutoff,
 	// together with their events, cached costs and HITL payloads. Active runs
 	// are never touched. Returns the number of runs deleted.
 	DeleteTerminalRunsBefore(cutoff time.Time, limit int) (int, error)
 	// DeleteTerminalRunsBeforeExcluding removes terminal runs like
-	// DeleteTerminalRunsBefore but skips the given conversation ids. It backs
-	// per-conversation retention overrides in the global sweep.
+	// DeleteTerminalRunsBefore but skips the given conversation and agent ids.
+	// It backs retention overrides in the global sweep.
 	DeleteTerminalRunsBeforeExcluding(
-		cutoff time.Time, limit int, excludeConversationIDs []string,
+		cutoff time.Time, limit int, excludeConversationIDs, excludeAgentIDs []string,
+	) (int, error)
+	// CountTerminalRunsBeforeExcluding counts what the global sweep would
+	// delete, for retention preview.
+	CountTerminalRunsBeforeExcluding(
+		cutoff time.Time, excludeConversationIDs, excludeAgentIDs []string,
+	) (int, error)
+	// CountTerminalRunsBeforeForConversation counts one conversation's
+	// eligible terminal runs.
+	CountTerminalRunsBeforeForConversation(conversationID string, cutoff time.Time) (int, error)
+	// CountTerminalRunsBeforeForAgent counts one agent's eligible terminal runs,
+	// excluding conversations with a stronger override.
+	CountTerminalRunsBeforeForAgent(
+		agentID string, cutoff time.Time, excludeConversationIDs []string,
 	) (int, error)
 	// LeaseRun atomically acquires a worker lease for a queued/running/waiting_human
 	// run whose lease is absent or expired. Returns acquired=false when another
@@ -724,6 +742,12 @@ type Store interface {
 	UpsertSetting(key string, jsonRaw []byte) error
 	// ListSettingsByPrefix returns every setting whose key starts with prefix.
 	ListSettingsByPrefix(prefix string) (map[string][]byte, error)
+
+	// Audit trail of state-changing requests. Bodies are never stored.
+	AppendAuditEvent(e AuditEvent) error
+	ListAuditEvents(f AuditFilter) ([]AuditEvent, error)
+	// TrimAuditEvents keeps only the newest `keep` rows.
+	TrimAuditEvents(keep int) error
 
 	GetInboxDelivery(channelID, idempotencyKey string) (InboxDelivery, bool, error)
 	PutInboxDelivery(d InboxDelivery) error
@@ -823,6 +847,13 @@ type Store interface {
 	// SumRunCostsGrouped groups cached terminal costs by "model" or "agent" in
 	// [from, to]. Unknown dimensions return an error.
 	SumRunCostsGrouped(by string, from, to time.Time) (map[string]float64, error)
+	// SumRunCostsGroupedByDay groups cached costs by "model", "agent" or
+	// "conversation" using the cost row's calendar day, for day-over-day
+	// comparisons such as anomaly detection.
+	SumRunCostsGroupedByDay(by string, fromDay, toDay string) (map[string]float64, error)
+	// SumRunCostsPerDayGrouped returns day -> dimension -> cost, so callers can
+	// build a series without one query per day.
+	SumRunCostsPerDayGrouped(by string, fromDay, toDay string) (map[string]map[string]float64, error)
 	// CostDay rollups let summaries read one row per finished day instead of
 	// walking every run in the range. Finalized is set once the day can no
 	// longer change (all of its runs are terminal).

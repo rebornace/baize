@@ -43,31 +43,26 @@ func (s *Server) handleGetCostSeries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// One grouped query for the whole window instead of one query per day.
+	perDay, err := s.Store.SumRunCostsPerDayGrouped(
+		"conversation", start.Format("2006-01-02"), today.Format("2006-01-02"),
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	series := make([]map[string]any, 0, days)
 	total := 0.0
 	for d := start; !d.After(today); d = d.AddDate(0, 0, 1) {
-		end := d.AddDate(0, 0, 1).Add(-time.Nanosecond)
+		byConv := perDay[d.Format("2006-01-02")]
 		cost := 0.0
 		if convID != "" {
-			cost, err := s.Store.SumRunCostsByScope("", convID, d, end)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-				return
+			cost = byConv[convID]
+		} else {
+			for id := range convSet {
+				cost += byConv[id]
 			}
-			series = append(series, map[string]any{
-				"date":      d.Format("2006-01-02"),
-				"total_usd": round6(cost),
-			})
-			total += round6(cost)
-			continue
-		}
-		byConv, err := s.Store.SumRunCostsGrouped("conversation", d, end)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		for id := range convSet {
-			cost += byConv[id]
 		}
 		cost = round6(cost)
 		total += cost

@@ -100,3 +100,23 @@ describe('ChannelImage attachment delete', () => {
     expect(host.querySelector('.channel-attachment-delete')).toBeNull()
   })
 })
+
+describe('ChannelImage lightbox', () => {
+  it('opens a full-screen preview and closes on Escape', async () => {
+    render('blob:http://localhost/img')
+    const open = host.querySelector('.channel-image-open') as HTMLButtonElement
+    expect(open).not.toBeNull()
+    await act(async () => {
+      open.click()
+      await Promise.resolve()
+    })
+    expect(host.querySelector('.media-lightbox')).not.toBeNull()
+    expect(host.querySelector('.media-lightbox-image')).not.toBeNull()
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await Promise.resolve()
+    })
+    expect(host.querySelector('.media-lightbox')).toBeNull()
+  })
+})

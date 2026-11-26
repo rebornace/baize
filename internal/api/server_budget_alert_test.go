@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -11,6 +13,133 @@ import (
 	"github.com/rebornace/baize/internal/store"
 	"github.com/rebornace/baize/internal/webhook"
 )
+
+func TestBudgetAlertHistory(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	now := time.Now().UTC()
+	srv.recordBudgetAlert(budgetAlertHistoryEntry{
+		At: now, Target: "agent", TargetID: "a1", Scope: "day",
+		Period: now.Format("2006-01-02"), Level: "warning",
+		TotalUSD: 1, BudgetUSD: 2, Ratio: 0.5,
+	})
+	srv.recordBudgetAlert(budgetAlertHistoryEntry{
+		At: now.Add(time.Second), Target: "model", TargetID: "m1", Scope: "month",
+		Period: now.Format("2006-01"), Level: "exceeded",
+		TotalUSD: 3, BudgetUSD: 2, Ratio: 1.5,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v0/settings/budget-alerts?limit=1", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("alerts=%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Items []budgetAlertHistoryEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 1 || body.Items[0].Level != "exceeded" ||
+		body.Items[0].Target != "model" || body.Items[0].TargetID != "m1" {
+		t.Fatalf("items=%+v", body.Items)
+	}
+}
+
+func TestBudgetAlertHistoryFromCheckWithoutWebhook(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	profile, err := st.UpsertModelProfile(store.ModelProfile{Name: "alert-history", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRec, err := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "x", ConversationID: "c-history", ModelProfileID: profile.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AppendEvent(runRec.ID, store.Event{
+		Type: run.EventLLMUsage,
+		Data: map[string]any{
+			"model_profile_id": profile.ID, "prompt_tokens": 1000, "completion_tokens": 1000, "total_tokens": 2000,
+		},
+	})
+	if err := st.UpsertSetting(costBudgetSettingKey, []byte("0.005")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertSetting(costBudgetMonthKey, []byte("100")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.checkBudgetAlerts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v0/settings/budget-alerts", nil)
+	req.Header.Set("Authorization", "Bearer adm")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("alerts=%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Items []budgetAlertHistoryEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) == 0 || body.Items[0].Scope != "day" || body.Items[0].Level != "exceeded" {
+		t.Fatalf("items=%+v", body.Items)
+	}
+}
+
+func TestBudgetProjectionAlert(t *testing.T) {
+	srv := gateServer(t, "op", "adm")
+	st := srv.Store
+	profile, err := st.UpsertModelProfile(store.ModelProfile{Name: "projection", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRec, err := st.CreateRun(store.CreateRunInput{
+		AgentID: "a", Input: "x", ConversationID: "c-projection", ModelProfileID: profile.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AppendEvent(runRec.ID, store.Event{
+		Type: run.EventLLMUsage,
+		Data: map[string]any{
+			"model_profile_id": profile.ID, "prompt_tokens": 1000, "completion_tokens": 1000, "total_tokens": 2000,
+		},
+	})
+	// Only a monthly budget: the projection should cross it immediately.
+	if err := st.UpsertSetting(costBudgetMonthKey, []byte("0.005")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.checkBudgetAlerts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok, err := st.GetSetting(costAlertStateKey)
+	if err != nil || !ok {
+		t.Fatalf("state missing ok=%v err=%v", ok, err)
+	}
+	var state budgetAlertState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.ProjectionLevel != "exceeded" {
+		t.Fatalf("projection level=%q", state.ProjectionLevel)
+	}
+	if _, err := srv.checkBudgetAlerts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	raw, _, _ = st.GetSetting(costAlertStateKey)
+	var again budgetAlertState
+	_ = json.Unmarshal(raw, &again)
+	if again.ProjectionLevel != "exceeded" {
+		t.Fatalf("projection level changed: %q", again.ProjectionLevel)
+	}
+}
 
 func TestBudgetAlertStateTransition(t *testing.T) {
 	srv := gateServer(t, "op", "adm")

@@ -12,6 +12,7 @@ ui:
 control_plane:
   operator_token: ""
   admin_token: ""
+  viewer_token: ""     # read-only role; env:BAIZE_VIEWER_TOKEN
 llm:
   provider: openai_compatible
   base_url: https://api.deepseek.com

@@ -13,6 +13,7 @@ import (
 
 const runRetentionSettingKey = "run_retention_days"
 const runRetentionConvPrefix = "run_retention_days:"
+const runRetentionAgentPrefix = "run_retention_days_agent:"
 const defaultRunRetentionInterval = 6 * time.Hour
 const runRetentionBatchSize = 500
 const runRetentionMaxPerPass = 5000
@@ -38,24 +39,25 @@ func (s *Server) runRetentionDays() int {
 	return days
 }
 
-// runRetentionDaysFor resolves a conversation override. -1 or a missing value
-// inherits the global policy; 0 means forever.
+// runRetentionDaysFor resolves conversation > workspace > global for display.
+// -1 or a missing value inherits the next level; 0 means forever.
 func (s *Server) runRetentionDaysFor(convID string, global int) int {
-	if s.Store == nil || convID == "" {
-		return global
+	if days, ok := s.settingRetentionDays(runRetentionConvPrefix + convID); ok {
+		return days
 	}
-	raw, ok, err := s.Store.GetSetting(runRetentionConvPrefix + convID)
-	if err != nil || !ok {
-		return global
+	if ms := s.metaStore(); ms != nil {
+		if meta, err := ms.GetMeta(convID); err == nil {
+			if days := s.workspaceRetentionSetting(runRetentionWorkspacePrefix, meta.WorkspaceID); days >= 0 {
+				return days
+			}
+		}
 	}
-	var days int
-	if json.Unmarshal(raw, &days) != nil || days < -1 || days > 3650 {
-		return global
-	}
-	if days < 0 {
-		return global
-	}
-	return days
+	return global
+}
+
+// runRetentionDaysForAgent returns an explicit agent override, if any.
+func (s *Server) runRetentionDaysForAgent(agentID string) (int, bool) {
+	return s.settingRetentionDays(runRetentionAgentPrefix + agentID)
 }
 
 func (s *Server) handleGetRunRetention(w http.ResponseWriter, r *http.Request) {
@@ -151,10 +153,57 @@ func (s *Server) handlePutConversationRunRetention(w http.ResponseWriter, r *htt
 	})
 }
 
+type agentRunRetentionJSON struct {
+	AgentID string `json:"agent_id"`
+	Days    int    `json:"days"`
+}
+
+func (s *Server) handleGetAgentRunRetention(w http.ResponseWriter, r *http.Request) {
+	global := s.runRetentionDays()
+	agents := s.Store.ListAgents()
+	items := make([]agentRunRetentionJSON, 0, len(agents))
+	for _, ag := range agents {
+		days := -1
+		if v, ok := s.runRetentionDaysForAgent(ag.ID); ok {
+			days = v
+		}
+		items = append(items, agentRunRetentionJSON{AgentID: ag.ID, Days: days})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"global_days": global,
+		"items":       items,
+	})
+}
+
+func (s *Server) handlePutAgentRunRetention(w http.ResponseWriter, r *http.Request) {
+	var body agentRunRetentionJSON
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if body.AgentID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "agent_id is required")
+		return
+	}
+	if body.Days < -1 || body.Days > 3650 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "days must be between -1 and 3650")
+		return
+	}
+	if _, err := s.Store.GetAgent(body.AgentID); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "agent not found")
+		return
+	}
+	raw, _ := json.Marshal(body.Days)
+	if err := s.Store.UpsertSetting(runRetentionAgentPrefix+body.AgentID, raw); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
 // cleanupExpiredRuns deletes terminal runs older than the configured window.
-// It never touches queued/running/waiting_human runs. Conversations with an
-// explicit override are excluded from the global sweep and handled with their
-// own cutoff; 0 means forever.
+// It never touches queued/running/waiting_human runs. Precedence is
+// conversation override > agent override > global; 0 means forever.
 func (s *Server) cleanupExpiredRuns() (int, error) {
 	if s.Store == nil {
 		return 0, nil
@@ -162,25 +211,45 @@ func (s *Server) cleanupExpiredRuns() (int, error) {
 	global := s.runRetentionDays()
 	now := time.Now().UTC()
 
-	overrides, err := s.Store.ListSettingsByPrefix(runRetentionConvPrefix)
+	convSettings, err := s.Store.ListSettingsByPrefix(runRetentionConvPrefix)
 	if err != nil {
 		return 0, err
 	}
-	overrideDays := parseRetentionOverrides(overrides, runRetentionConvPrefix)
+	convDays := parseRetentionOverrides(convSettings, runRetentionConvPrefix)
+	agentSettings, err := s.Store.ListSettingsByPrefix(runRetentionAgentPrefix)
+	if err != nil {
+		return 0, err
+	}
+	agentDays := parseRetentionOverrides(agentSettings, runRetentionAgentPrefix)
+	workspaceDays := s.workspaceRetentionDays(runRetentionWorkspacePrefix)
+	workspaceByConv := s.workspaceByConversation()
+
+	workspaceConvs := map[string]bool{}
+	convsByWorkspace := map[string][]string{}
+	for convID, wsID := range workspaceByConv {
+		if _, ok := workspaceDays[wsID]; !ok {
+			continue
+		}
+		workspaceConvs[convID] = true
+		convsByWorkspace[wsID] = append(convsByWorkspace[wsID], convID)
+	}
 
 	total := 0
-	// Very large override sets fall back to one sweep per conversation so the
-	// global query never has to carry an unbounded exclusion list.
-	if len(overrideDays) > runRetentionMaxOverrides {
+	// Very large override sets cannot fit the exclusion lists. With agent
+	// overrides a per-conversation sweep cannot resolve per-run precedence, so
+	// skip this pass rather than risk deleting runs that should be kept.
+	if len(convDays)+len(agentDays)+len(workspaceConvs) > runRetentionMaxOverrides {
+		if len(agentDays) > 0 {
+			log.Printf("run retention: %d overrides exceed the exclusion limit; skipping pass",
+				len(convDays)+len(agentDays)+len(workspaceConvs))
+			return 0, nil
+		}
 		convs, cerr := s.Store.ListRunConversationIDs()
 		if cerr != nil {
 			return total, cerr
 		}
 		for _, convID := range convs {
-			days, ok := overrideDays[convID]
-			if !ok {
-				days = global
-			}
+			days := resolveRunRetentionDays(convID, global, convDays, workspaceDays, workspaceByConv)
 			n, derr := s.deleteRunsForConversation(convID, days, now)
 			if derr != nil {
 				return total, derr
@@ -190,13 +259,28 @@ func (s *Server) cleanupExpiredRuns() (int, error) {
 				break
 			}
 		}
+		if global > 0 && total < runRetentionMaxPerPass {
+			cutoff := now.AddDate(0, 0, -global)
+			for {
+				n, derr := s.Store.DeleteTerminalRunsBeforeExcluding(cutoff, runRetentionBatchSize, convs, nil)
+				if derr != nil {
+					return total, derr
+				}
+				total += n
+				if n < runRetentionBatchSize || total >= runRetentionMaxPerPass {
+					break
+				}
+			}
+		}
 		logRunRetention(total)
 		return total, nil
 	}
 
-	scoped := make([]string, 0, len(overrideDays))
-	for convID, days := range overrideDays {
-		scoped = append(scoped, convID)
+	scopedSet := map[string]bool{}
+	scopedConvs := make([]string, 0, len(convDays)+len(workspaceConvs))
+	for convID, days := range convDays {
+		scopedSet[convID] = true
+		scopedConvs = append(scopedConvs, convID)
 		if days <= 0 {
 			continue
 		}
@@ -211,10 +295,57 @@ func (s *Server) cleanupExpiredRuns() (int, error) {
 		}
 	}
 
+	// Workspace overrides apply to its conversations unless the conversation
+	// has its own explicit override.
+	for wsID, days := range workspaceDays {
+		if days <= 0 {
+			continue
+		}
+		for _, convID := range convsByWorkspace[wsID] {
+			if _, has := convDays[convID]; has {
+				continue
+			}
+			n, derr := s.deleteRunsForConversation(convID, days, now)
+			if derr != nil {
+				return total, derr
+			}
+			total += n
+			if total >= runRetentionMaxPerPass {
+				logRunRetention(total)
+				return total, nil
+			}
+		}
+	}
+	for convID := range workspaceConvs {
+		if !scopedSet[convID] {
+			scopedSet[convID] = true
+			scopedConvs = append(scopedConvs, convID)
+		}
+	}
+
+	scopedAgents := make([]string, 0, len(agentDays))
+	for agentID, days := range agentDays {
+		scopedAgents = append(scopedAgents, agentID)
+		if days <= 0 {
+			continue
+		}
+		n, derr := s.deleteRunsForAgent(agentID, days, now, scopedConvs)
+		if derr != nil {
+			return total, derr
+		}
+		total += n
+		if total >= runRetentionMaxPerPass {
+			logRunRetention(total)
+			return total, nil
+		}
+	}
+
 	if global > 0 && total < runRetentionMaxPerPass {
 		cutoff := now.AddDate(0, 0, -global)
 		for {
-			n, derr := s.Store.DeleteTerminalRunsBeforeExcluding(cutoff, runRetentionBatchSize, scoped)
+			n, derr := s.Store.DeleteTerminalRunsBeforeExcluding(
+				cutoff, runRetentionBatchSize, scopedConvs, scopedAgents,
+			)
 			if derr != nil {
 				return total, derr
 			}
@@ -248,10 +379,50 @@ func (s *Server) deleteRunsForConversation(convID string, days int, now time.Tim
 	}
 }
 
+func (s *Server) deleteRunsForAgent(
+	agentID string, days int, now time.Time, excludeConversations []string,
+) (int, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+	cutoff := now.AddDate(0, 0, -days)
+	total := 0
+	for {
+		n, err := s.Store.DeleteTerminalRunsBeforeForAgent(
+			agentID, cutoff, runRetentionBatchSize, excludeConversations,
+		)
+		if err != nil {
+			return total, err
+		}
+		total += n
+		if n < runRetentionBatchSize {
+			return total, nil
+		}
+	}
+}
+
 func logRunRetention(total int) {
 	if total > 0 {
 		log.Printf("run retention: removed %d terminal runs", total)
 	}
+}
+
+// resolveRunRetentionDays applies conversation > workspace > agent > global.
+// Agent overrides are handled by their own sweep, so this helper stops at the
+// workspace level.
+func resolveRunRetentionDays(
+	convID string, global int, convDays, workspaceDays map[string]int,
+	workspaceByConv map[string]string,
+) int {
+	if days, ok := convDays[convID]; ok {
+		return days
+	}
+	if wsID, ok := workspaceByConv[convID]; ok {
+		if days, ok := workspaceDays[wsID]; ok {
+			return days
+		}
+	}
+	return global
 }
 
 // parseRetentionOverrides keeps only explicit per-conversation values (>= 0);

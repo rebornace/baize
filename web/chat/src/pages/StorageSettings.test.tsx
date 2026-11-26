@@ -23,6 +23,7 @@ beforeEach(() => {
 afterEach(() => {
   host.remove()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 async function renderPage(getBody: unknown = { driver: 'sqlite', drivers: ['memory', 'sqlite', 'postgres'] }) {
@@ -46,7 +47,64 @@ async function renderPage(getBody: unknown = { driver: 'sqlite', drivers: ['memo
         global_days: 30,
       })
     }
+    if (String(url).endsWith('/settings/agent-run-retention')) {
+      if (!init?.method) {
+        return json({
+          global_days: 30,
+          items: [{ agent_id: 'a1', days: -1 }],
+        })
+      }
+      const body = JSON.parse((init.body as string) || '{}')
+      return json({ agent_id: body.agent_id, days: body.days })
+    }
     if (String(url).endsWith('/settings/attachment-retention')) {
+      if (!init?.method) return json({ days: 0 })
+      const body = JSON.parse((init.body as string) || '{}')
+      return json({ days: body.days })
+    }
+    if (String(url).endsWith('/settings/workspace-retention')) {
+      if (!init?.method) {
+        return json({
+          global_message_days: 30,
+          global_run_days: 30,
+          items: [
+            {
+              workspace_id: 'default',
+              name: 'Default',
+              message_days: -1,
+              run_days: -1,
+              effective_message_days: 30,
+              effective_run_days: 30,
+            },
+          ],
+        })
+      }
+      const body = JSON.parse((init.body as string) || '{}')
+      return json({
+        workspace_id: body.workspace_id,
+        name: 'Default',
+        message_days: body.message_days ?? -1,
+        run_days: body.run_days ?? -1,
+        effective_message_days: body.message_days >= 0 ? body.message_days : 30,
+        effective_run_days: body.run_days >= 0 ? body.run_days : 30,
+      })
+    }
+    if (String(url).endsWith('/settings/retention/preview')) {
+      return json({
+        messages: {
+          total: 2,
+          conversations: [
+            { conversation_id: 'c1', workspace_id: 'default', days: 30, count: 2 },
+          ],
+        },
+        runs: { total: 1, conversations: [], agents: [] },
+        archived: { total: 0, days: 0, conversations: [] },
+      })
+    }
+    if (String(url).endsWith('/settings/retention/run') && init?.method === 'POST') {
+      return json({ messages_deleted: 2, runs_deleted: 1, archived_deleted: 0 })
+    }
+    if (String(url).endsWith('/settings/archive-retention')) {
       if (!init?.method) return json({ days: 0 })
       const body = JSON.parse((init.body as string) || '{}')
       return json({ days: body.days })
@@ -259,5 +317,73 @@ describe('StorageSettings', () => {
       days: 7,
     })
     expect(host.textContent).toContain('生效：7 天')
+  })
+
+  it('saves an agent run retention override', async () => {
+    await renderPage()
+    const input = host.querySelector<HTMLInputElement>(
+      '[data-testid="agent-run-retention-days-a1"]',
+    )
+    expect(input).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(input, '7')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await fire(host.querySelector('[data-testid="agent-run-retention-save-a1"]')!)
+    const puts = fetchMock.mock.calls.filter(
+      ([u, i]) =>
+        String(u).endsWith('/settings/agent-run-retention') &&
+        (i as RequestInit)?.method === 'PUT',
+    )
+    expect(puts).toHaveLength(1)
+    expect(JSON.parse((puts[0][1] as RequestInit).body as string)).toEqual({
+      agent_id: 'a1',
+      days: 7,
+    })
+    expect(host.textContent).toContain('生效：7 天')
+  })
+
+  it('saves workspace message and run retention', async () => {
+    await renderPage()
+    const msgInput = host.querySelector<HTMLInputElement>(
+      '[data-testid="workspace-message-retention-default"]',
+    )
+    const runInput = host.querySelector<HTMLInputElement>(
+      '[data-testid="workspace-run-retention-default"]',
+    )
+    expect(msgInput).not.toBeNull()
+    expect(runInput).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(msgInput, '7')
+      msgInput!.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(runInput, '0')
+      runInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await fire(host.querySelector('[data-testid="workspace-message-run-retention-save-default"]')!)
+    const puts = fetchMock.mock.calls.filter(
+      ([u, i]) =>
+        String(u).endsWith('/settings/workspace-retention') &&
+        (i as RequestInit)?.method === 'PUT',
+    )
+    expect(puts).toHaveLength(1)
+    expect(JSON.parse((puts[0][1] as RequestInit).body as string)).toEqual({
+      workspace_id: 'default',
+      message_days: 7,
+      run_days: 0,
+    })
+  })
+
+  it('previews and runs retention cleanup', async () => {
+    await renderPage()
+    await fire(host.querySelector('[data-testid="retention-preview-load"]')!)
+    expect(host.querySelector('[data-testid="retention-preview"]')).not.toBeNull()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await fire(host.querySelector('[data-testid="retention-preview-run"]')!)
+    const posts = fetchMock.mock.calls.filter(
+      ([u, i]) => String(u).endsWith('/settings/retention/run') && (i as RequestInit)?.method === 'POST',
+    )
+    expect(posts).toHaveLength(1)
   })
 })

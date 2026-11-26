@@ -9,7 +9,21 @@ type routeRule struct {
 }
 
 var aclRules = []routeRule{
-	{method: "GET", segments: []string{"v0", "me"}, role: RoleOperator},
+	// Viewer: read-only chat, run history, cost reports and audit.
+	{method: "GET", segments: []string{"v0", "me"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "conversations"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "conversations", "search"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "conversations", "{id}", "export"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "conversations", "{id}", "messages"}, role: RoleViewer},
+	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "read"}, role: RoleViewer},
+	{method: "POST", segments: []string{"v0", "conversations", "read-all"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "runs", "{id}"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "runs", "{id}", "events"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "runs", "{id}", "stream"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "runs", "{id}", "children"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "artifacts", "{id}"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "channels", "media", "{conv}", "{object}"}, role: RoleViewer},
+	{method: "GET", segments: []string{"v0", "workspaces"}, role: RoleViewer},
 	{method: "POST", segments: []string{"v0", "runs"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "runs", "{id}", "resume"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "runs", "{id}", "cancel"}, role: RoleOperator},
@@ -30,6 +44,14 @@ var aclRules = []routeRule{
 	{method: "GET", segments: []string{"v0", "workspaces"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "workspaces"}, role: RoleOperator},
 	{method: "DELETE", segments: []string{"v0", "conversations", "{id}"}, role: RoleOperator},
+	{method: "PATCH", segments: []string{"v0", "conversations", "{id}"}, role: RoleOperator},
+	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "pin"}, role: RoleOperator},
+	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "archived"}, role: RoleOperator},
+	{method: "PUT", segments: []string{"v0", "conversations", "{id}", "read"}, role: RoleOperator},
+	{method: "POST", segments: []string{"v0", "conversations", "read-all"}, role: RoleOperator},
+	{method: "POST", segments: []string{"v0", "conversations", "batch", "workspace"}, role: RoleOperator},
+	{method: "POST", segments: []string{"v0", "conversations", "batch", "delete"}, role: RoleOperator},
+	{method: "POST", segments: []string{"v0", "conversations", "batch", "archived"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "conversations", "{id}", "messages"}, role: RoleOperator},
 	{method: "DELETE", segments: []string{"v0", "conversations", "{id}", "messages"}, role: RoleOperator},
 	{method: "GET", segments: []string{"v0", "conversations", "{id}", "goal"}, role: RoleOperator},
@@ -149,6 +171,20 @@ var aclRules = []routeRule{
 	{method: "POST", segments: []string{"v0", "settings", "schedules", "{id}", "resume"}, role: RoleOperator},
 	{method: "POST", segments: []string{"v0", "settings", "schedules", "{id}", "run"}, role: RoleOperator},
 	{method: "DELETE", segments: []string{"v0", "settings", "schedules", "{id}"}, role: RoleOperator},
+}
+
+// ViewerAllowedRead lists admin-level read endpoints that a viewer may call.
+// It keeps operators out of cost/audit data while still letting a read-only
+// auditor see them.
+func ViewerAllowedRead(method, path string) bool {
+	if method != "GET" {
+		return false
+	}
+	path = normalizePath(path)
+	if path == "/v0/audit/events" || path == "/v0/audit/export" {
+		return true
+	}
+	return strings.HasPrefix(path, "/v0/settings/cost-")
 }
 
 func MinRole(method, path string) Role {

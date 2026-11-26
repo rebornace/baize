@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import {
+  batchArchiveConversations,
+  batchDeleteConversations,
+  batchMoveConversations,
   deleteConversation,
   forkConversation,
   listConversations,
   listWorkspaces,
+  markAllConversationsRead,
+  markConversationRead,
   createWorkspace,
   listEvents,
   moveConversation,
+  renameConversation,
   rollbackMessages,
+  setConversationPinned,
+  setConversationArchived,
   type ChatMessage,
   type ConversationScope,
   type ConversationSummary,
@@ -86,6 +94,7 @@ export function useChatSession({
   const [conversationScope, setConversationScopeState] = useState<ConversationScope>(() =>
     loadConversationScope(role === 'admin'),
   )
+  const [archivedView, setArchivedView] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [historyMutating, setHistoryMutating] = useState(false)
@@ -107,6 +116,8 @@ export function useChatSession({
   workspaceIdRef.current = workspaceId
   const conversationScopeRef = useRef(conversationScope)
   conversationScopeRef.current = conversationScope
+  const archivedViewRef = useRef(archivedView)
+  archivedViewRef.current = archivedView
 
   // Transient blob: object URLs backing optimistic attachment previews. They
   // are revoked as soon as no message references them (the optimistic bubble
@@ -146,8 +157,26 @@ export function useChatSession({
   const refreshConversations = useCallback(async () => {
     try {
       const scope = role === 'admin' ? conversationScopeRef.current : undefined
-      const list = await listConversations(scope, workspaceIdRef.current)
+      const list = await listConversations(
+        scope,
+        workspaceIdRef.current,
+        archivedViewRef.current ? 'only' : undefined,
+      )
+      const current = conversationIdRef.current
+      let markRead = ''
+      for (const c of list) {
+        if (c.id === current && c.unread) {
+          c.unread = false
+          markRead = current
+        }
+      }
       setConversations(list)
+      if (
+        markRead &&
+        (typeof document === 'undefined' || document.visibilityState === 'visible')
+      ) {
+        void markConversationRead(markRead).catch(() => undefined)
+      }
     } catch {
       // Background list refresh (also runs on the 2s idle sync): stay silent,
       // the next tick retries. Never toast here to avoid notification spam.
@@ -177,7 +206,7 @@ export function useChatSession({
 
   useEffect(() => {
     void refreshConversations()
-  }, [conversationScope, workspaceId, refreshConversations])
+  }, [conversationScope, workspaceId, archivedView, refreshConversations])
 
   useEffect(() => {
     void refreshWorkspaces()
@@ -277,7 +306,11 @@ export function useChatSession({
       setWorkspaceId(id)
       try {
         const scope = role === 'admin' ? conversationScopeRef.current : undefined
-        const list = await listConversations(scope, id)
+        const list = await listConversations(
+          scope,
+          id,
+          archivedViewRef.current ? 'only' : undefined,
+        )
         setConversations(list)
         if (preferredConversationID && list.some((c) => c.id === preferredConversationID)) {
           setConversationId(preferredConversationID)
@@ -303,6 +336,123 @@ export function useChatSession({
     [onSwitchWorkspace, pushToast],
   )
 
+  const onMoveConversations = useCallback(
+    async (ids: string[], targetWorkspaceID: string) => {
+      try {
+        const res = await batchMoveConversations(ids, targetWorkspaceID)
+        pushToast({
+          tone: 'success',
+          title: CHAT.batchMoved(res.moved, res.skipped.length),
+        })
+        const current = conversationIdRef.current
+        const currentSkipped = res.skipped.some((s) => s.id === current)
+        if (ids.includes(current) && !currentSkipped) {
+          await onSwitchWorkspace(targetWorkspaceID, current)
+        } else {
+          await refreshConversations()
+        }
+      } catch (e) {
+        reportError(e)
+      }
+    },
+    [onSwitchWorkspace, pushToast, refreshConversations, reportError],
+  )
+
+  const onDeleteConversations = useCallback(
+    async (ids: string[]) => {
+      try {
+        const res = await batchDeleteConversations(ids)
+        pushToast({
+          tone: 'success',
+          title: CHAT.batchDeleted(res.deleted, res.skipped.length),
+        })
+        const current = conversationIdRef.current
+        if (ids.includes(current) && !res.skipped.some((s) => s.id === current)) {
+          const live = liveRef.current
+          live.stopStream()
+          live.stopPoll()
+          live.resetLive()
+          clearHistoryState()
+          setConversationId(newConversationId())
+        }
+        await refreshConversations()
+      } catch (e) {
+        reportError(e)
+      }
+    },
+    [
+      clearHistoryState,
+      liveRef,
+      pushToast,
+      refreshConversations,
+      reportError,
+      setConversationId,
+    ],
+  )
+
+  const onRenameConversation = useCallback(
+    async (id: string, title: string) => {
+      await renameConversation(id, title)
+      await refreshConversations()
+    },
+    [refreshConversations],
+  )
+
+  const onToggleConversationPin = useCallback(
+    async (id: string, pinned: boolean) => {
+      try {
+        await setConversationPinned(id, pinned)
+        await refreshConversations()
+      } catch (e) {
+        reportError(e)
+      }
+    },
+    [refreshConversations, reportError],
+  )
+
+  const onSetConversationArchived = useCallback(
+    async (id: string, archived: boolean) => {
+      try {
+        await setConversationArchived(id, archived)
+        await refreshConversations()
+      } catch (e) {
+        reportError(e)
+      }
+    },
+    [refreshConversations, reportError],
+  )
+
+  const onToggleArchivedView = useCallback(() => {
+    setArchivedView((v) => !v)
+  }, [])
+
+  const onMarkAllRead = useCallback(async () => {
+    try {
+      await markAllConversationsRead()
+      setConversations((prev) => prev.map((c) => (c.unread ? { ...c, unread: false } : c)))
+    } catch (e) {
+      reportError(e)
+    }
+  }, [reportError])
+
+  const onArchiveConversations = useCallback(
+    async (ids: string[], archived: boolean) => {
+      try {
+        const res = await batchArchiveConversations(ids, archived)
+        pushToast({
+          tone: 'success',
+          title: archived
+            ? CHAT.batchArchived(res.updated, res.skipped.length)
+            : CHAT.batchUnarchived(res.updated, res.skipped.length),
+        })
+        await refreshConversations()
+      } catch (e) {
+        reportError(e)
+      }
+    },
+    [pushToast, refreshConversations, reportError],
+  )
+
   const onCreateWorkspace = useCallback(
     async (name: string) => {
       const ws = await createWorkspace(name)
@@ -317,6 +467,10 @@ export function useChatSession({
     (id: string) => {
       if (id === conversationIdRef.current) return
       setConversationId(id)
+      setConversations((prev) =>
+        prev.map((c) => (c.id === id && c.unread ? { ...c, unread: false } : c)),
+      )
+      void markConversationRead(id).catch(() => undefined)
     },
     [setConversationId],
   )
@@ -455,6 +609,10 @@ export function useChatSession({
     workspaces,
     conversationScope,
     setConversationScope,
+    archivedView,
+    onToggleArchivedView,
+    onMarkAllRead,
+    onArchiveConversations,
     conversations,
     messages,
     setMessages,
@@ -483,6 +641,11 @@ export function useChatSession({
     onSelectConversation,
     onDeleteConversation,
     onMoveConversation,
+    onMoveConversations,
+    onDeleteConversations,
+    onRenameConversation,
+    onToggleConversationPin,
+    onSetConversationArchived,
     performDelete,
     onRollbackUser,
     onRegenerate,

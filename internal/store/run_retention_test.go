@@ -12,8 +12,15 @@ func runRetentionCase(t *testing.T, st Store) {
 	now := time.Now().UTC()
 	old := now.AddDate(0, 0, -40)
 	recent := now.AddDate(0, 0, -1)
+	suffix := now.Format("150405.000000000")
+	agentID := "a-" + suffix
+	convOld := "ret-old-" + suffix
+	convRecent := "ret-recent-" + suffix
+	convWaiting := "ret-waiting-" + suffix
 
-	oldRun, err := st.CreateRun(CreateRunInput{AgentID: "a", Input: "old", CreatedAt: old})
+	oldRun, err := st.CreateRun(CreateRunInput{
+		AgentID: agentID, Input: "old", ConversationID: convOld, CreatedAt: old,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,14 +30,18 @@ func runRetentionCase(t *testing.T, st Store) {
 	_ = st.AppendEvent(oldRun.ID, Event{Type: "llm.message", Data: map[string]any{"content": "old"}})
 	_ = st.PutRunCost(RunCost{RunID: oldRun.ID, Day: old.Format("2006-01-02"), CostUSD: 1})
 
-	recentRun, err := st.CreateRun(CreateRunInput{AgentID: "a", Input: "recent", CreatedAt: recent})
+	recentRun, err := st.CreateRun(CreateRunInput{
+		AgentID: agentID, Input: "recent", ConversationID: convRecent, CreatedAt: recent,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateRun(recentRun.ID, StatusSucceeded, "ok", ""); err != nil {
 		t.Fatal(err)
 	}
-	waiting, err := st.CreateRun(CreateRunInput{AgentID: "a", Input: "waiting", CreatedAt: old})
+	waiting, err := st.CreateRun(CreateRunInput{
+		AgentID: agentID, Input: "waiting", ConversationID: convWaiting, CreatedAt: old,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +49,14 @@ func runRetentionCase(t *testing.T, st Store) {
 		t.Fatal(err)
 	}
 
-	n, err := st.DeleteTerminalRunsBefore(now.AddDate(0, 0, -30), 10)
+	cutoff := now.AddDate(0, 0, -30)
+	if n, err := st.CountTerminalRunsBeforeForConversation(convOld, cutoff); err != nil || n != 1 {
+		t.Fatalf("count=%d err=%v", n, err)
+	}
+	if n, err := st.CountTerminalRunsBeforeForAgent(agentID, cutoff, nil); err != nil || n != 1 {
+		t.Fatalf("agent count=%d err=%v", n, err)
+	}
+	n, err := st.DeleteTerminalRunsBefore(cutoff, 10)
 	if err != nil || n < 1 {
 		t.Fatalf("deleted=%d err=%v", n, err)
 	}
@@ -129,7 +147,7 @@ func runRetentionScopedCase(t *testing.T, st Store) {
 		t.Fatalf("scoped delete removed c-b: %v", err)
 	}
 
-	if n, err := st.DeleteTerminalRunsBeforeExcluding(now.AddDate(0, 0, -30), 10, []string{convB}); err != nil || n == 0 {
+	if n, err := st.DeleteTerminalRunsBeforeExcluding(now.AddDate(0, 0, -30), 10, []string{convB}, nil); err != nil || n == 0 {
 		t.Fatalf("excluding n=%d err=%v", n, err)
 	}
 	if _, err := st.GetRun(b.ID); err != nil {
@@ -162,4 +180,75 @@ func TestRunRetentionScopedPostgres(t *testing.T) {
 	}
 	defer st.Close()
 	runRetentionScopedCase(t, st)
+}
+
+func runRetentionAgentCase(t *testing.T, st Store) {
+	t.Helper()
+	now := time.Now().UTC()
+	old := now.AddDate(0, 0, -40)
+	suffix := now.Format("150405.000000000")
+	mk := func(agentID string) *Run {
+		r, err := st.CreateRun(CreateRunInput{
+			AgentID: agentID, Input: "x",
+			ConversationID: "c-" + agentID + "-" + suffix, CreatedAt: old,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpdateRun(r.ID, StatusSucceeded, "ok", ""); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	a := mk("ag-a-" + suffix)
+	b := mk("ag-b-" + suffix)
+	c := mk("ag-c-" + suffix)
+
+	if n, err := st.DeleteTerminalRunsBeforeForAgent(
+		"ag-a-"+suffix, now.AddDate(0, 0, -30), 10, nil,
+	); err != nil || n != 1 {
+		t.Fatalf("agent delete n=%d err=%v", n, err)
+	}
+	if _, err := st.GetRun(a.ID); err == nil {
+		t.Fatal("agent delete left ag-a")
+	}
+	if _, err := st.GetRun(b.ID); err != nil {
+		t.Fatalf("agent delete removed ag-b: %v", err)
+	}
+
+	if n, err := st.DeleteTerminalRunsBeforeExcluding(
+		now.AddDate(0, 0, -30), 10, nil, []string{"ag-b-" + suffix},
+	); err != nil || n == 0 {
+		t.Fatalf("excluding agent n=%d err=%v", n, err)
+	}
+	if _, err := st.GetRun(b.ID); err != nil {
+		t.Fatalf("excluded agent removed: %v", err)
+	}
+	if _, err := st.GetRun(c.ID); err == nil {
+		t.Fatal("excluding agent delete left ag-c")
+	}
+}
+
+func TestRunRetentionAgentMemory(t *testing.T) { runRetentionAgentCase(t, NewMemory()) }
+
+func TestRunRetentionAgentSQLite(t *testing.T) {
+	st, err := OpenSQLite(filepath.Join(t.TempDir(), "run_retention_agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	runRetentionAgentCase(t, st)
+}
+
+func TestRunRetentionAgentPostgres(t *testing.T) {
+	dsn := os.Getenv("BAIZE_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("BAIZE_TEST_PG_DSN not set")
+	}
+	st, err := OpenPostgres(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	runRetentionAgentCase(t, st)
 }

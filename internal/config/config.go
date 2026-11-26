@@ -177,6 +177,7 @@ type Config struct {
 	ControlPlane struct {
 		OperatorToken string          `yaml:"operator_token"` // 空=未配；env:VAR 或 file:/path 或明文
 		AdminToken    string          `yaml:"admin_token"`    // 空=未配；同上
+		ViewerToken   string          `yaml:"viewer_token"`   // 只读角色；同上
 		Operators     []OperatorEntry `yaml:"operators"`
 	} `yaml:"control_plane"`
 	Events struct {

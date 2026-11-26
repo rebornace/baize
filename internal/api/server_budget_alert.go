@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +15,8 @@ import (
 )
 
 const costAlertStateKey = "cost_alert_state"
+const costAlertHistoryKey = "cost_alert_history"
+const costAlertHistoryLimit = 200
 const defaultBudgetAlertInterval = 5 * time.Minute
 
 type budgetAlertLevels struct {
@@ -23,11 +27,70 @@ type budgetAlertLevels struct {
 }
 
 type budgetAlertState struct {
-	DayKey     string                       `json:"day_key"`
-	DayLevel   string                       `json:"day_level"`
-	MonthKey   string                       `json:"month_key"`
-	MonthLevel string                       `json:"month_level"`
-	Scopes     map[string]budgetAlertLevels `json:"scopes,omitempty"`
+	DayKey     string `json:"day_key"`
+	DayLevel   string `json:"day_level"`
+	MonthKey   string `json:"month_key"`
+	MonthLevel string `json:"month_level"`
+	// Projection tracks the month-end forecast separately so crossing the
+	// projected budget alerts once per month and level.
+	ProjectionMonthKey string                       `json:"projection_month_key,omitempty"`
+	ProjectionLevel    string                       `json:"projection_level,omitempty"`
+	Scopes             map[string]budgetAlertLevels `json:"scopes,omitempty"`
+}
+
+type budgetAlertHistoryEntry struct {
+	At        time.Time `json:"at"`
+	Target    string    `json:"target,omitempty"`
+	TargetID  string    `json:"target_id,omitempty"`
+	Scope     string    `json:"scope"`
+	Period    string    `json:"period"`
+	Level     string    `json:"level"`
+	TotalUSD  float64   `json:"total_usd"`
+	BudgetUSD float64   `json:"budget_usd"`
+	Ratio     float64   `json:"ratio"`
+}
+
+// recordBudgetAlert appends one alert to the capped in-app history. It runs
+// even when no webhook is configured, so operators can still see what fired.
+func (s *Server) recordBudgetAlert(entry budgetAlertHistoryEntry) {
+	if s.Store == nil {
+		return
+	}
+	var list []budgetAlertHistoryEntry
+	if raw, ok, err := s.Store.GetSetting(costAlertHistoryKey); err == nil && ok {
+		_ = json.Unmarshal(raw, &list)
+	}
+	list = append(list, entry)
+	if len(list) > costAlertHistoryLimit {
+		list = list[len(list)-costAlertHistoryLimit:]
+	}
+	raw, _ := json.Marshal(list)
+	_ = s.Store.UpsertSetting(costAlertHistoryKey, raw)
+}
+
+// handleGetBudgetAlerts returns the newest alert entries first.
+func (s *Server) handleGetBudgetAlerts(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > costAlertHistoryLimit {
+		limit = costAlertHistoryLimit
+	}
+	var list []budgetAlertHistoryEntry
+	if raw, ok, err := s.Store.GetSetting(costAlertHistoryKey); err == nil && ok {
+		_ = json.Unmarshal(raw, &list)
+	}
+	out := make([]budgetAlertHistoryEntry, 0, limit)
+	for i := len(list) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, list[i])
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out, "limit": limit})
 }
 
 var budgetAlertMu sync.Mutex
@@ -50,6 +113,11 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	now := time.Now().UTC()
+	// During a maintenance window keep the dedupe state untouched, so an active
+	// exceedance alerts again after the silence ends instead of being lost.
+	if s.budgetAlertsSilenced(now) {
+		return 0, nil
+	}
 	dayKey := now.Format("2006-01-02")
 	monthKey := now.Format("2006-01")
 	warnRatio, exceededRatio := s.costAlertThresholds()
@@ -67,6 +135,11 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 
 	sent := 0
 	notify := func(target, targetID, scope, period, level string, total, budget, ratio float64) {
+		s.recordBudgetAlert(budgetAlertHistoryEntry{
+			At: time.Now().UTC(), Target: target, TargetID: targetID,
+			Scope: scope, Period: period, Level: level,
+			TotalUSD: round6(total), BudgetUSD: budget, Ratio: round4(ratio),
+		})
 		if s.Webhook == nil {
 			return
 		}
@@ -121,6 +194,21 @@ func (s *Server) checkBudgetAlerts(ctx context.Context) (int, error) {
 		evaluate(&global, "", "", budgetAlertTotals{day: dayTotal, month: monthTotal}, dayBudget, monthBudget, warnRatio, exceededRatio)
 		state.DayKey, state.DayLevel = global.DayKey, global.DayLevel
 		state.MonthKey, state.MonthLevel = global.MonthKey, global.MonthLevel
+
+		// Month-end projection: alert early when the current pace is expected to
+		// exceed the monthly budget. Deduped per month and level.
+		if monthBudget > 0 {
+			if state.ProjectionMonthKey != monthKey {
+				state.ProjectionMonthKey, state.ProjectionLevel = monthKey, ""
+			}
+			daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+			projected := monthTotal / float64(now.Day()) * float64(daysInMonth)
+			level, ratio := budgetAlert(projected, monthBudget, warnRatio, exceededRatio)
+			if alertRank(level) > alertRank(state.ProjectionLevel) {
+				notify("projection", "", "month", monthKey, level, projected, monthBudget, ratio)
+				state.ProjectionLevel = level
+			}
+		}
 	}
 
 	scopes := map[string]budgetAlertLevels{}
@@ -297,6 +385,7 @@ func (s *Server) StartBudgetAlerts(ctx context.Context, interval time.Duration) 
 		}
 		defer budgetAlertMu.Unlock()
 		_, _ = s.checkBudgetAlerts(ctx)
+		_, _ = s.checkCostAnomalies(ctx)
 	}
 	run()
 	ticker := time.NewTicker(interval)

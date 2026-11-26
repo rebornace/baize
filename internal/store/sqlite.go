@@ -160,6 +160,19 @@ CREATE TABLE IF NOT EXISTS channel_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_channel_outbox_pending ON channel_outbox(status, next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_channel_outbox_channel_status ON channel_outbox(channel, status);
+CREATE TABLE IF NOT EXISTS audit_events (
+  id TEXT PRIMARY KEY,
+  operator_id TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  method TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  status INTEGER NOT NULL DEFAULT 0,
+  remote_addr TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_events_operator ON audit_events(operator_id, created_at);
 CREATE TABLE IF NOT EXISTS channel_pending (
   conversation_id TEXT NOT NULL,
   batch_id TEXT NOT NULL,

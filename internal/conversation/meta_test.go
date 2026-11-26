@@ -102,6 +102,49 @@ func TestUpdateMetaWorkspace(t *testing.T) {
 	}
 }
 
+func TestUpdateMetaTitle(t *testing.T) {
+	mem := conversation.NewMemoryStore()
+	if err := mem.EnsureMeta(conversation.Meta{ID: "c-mem", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpdateMetaTitle("c-mem", "新标题"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := mem.GetMeta("c-mem")
+	if err != nil || got.Title != "新标题" {
+		t.Fatalf("memory title=%q err=%v", got.Title, err)
+	}
+	if err := mem.UpdateMetaTitle("c-mem", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = mem.GetMeta("c-mem")
+	if got.Title != "" {
+		t.Fatalf("clear title=%q", got.Title)
+	}
+	if err := mem.UpdateMetaTitle("missing", "x"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("memory missing err=%v", err)
+	}
+
+	db, _ := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureMeta(conversation.Meta{ID: "c-sql", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMetaTitle("c-sql", "改名"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetMeta("c-sql")
+	if err != nil || got.Title != "改名" {
+		t.Fatalf("sqlite title=%q err=%v", got.Title, err)
+	}
+	if err := s.UpdateMetaTitle("missing", "x"); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("sqlite missing err=%v", err)
+	}
+}
+
 func TestSQLiteGetMetaDistinguishesNotFoundAndParseError(t *testing.T) {
 	db, _ := openTestDB(t)
 	s, err := conversation.OpenSQLite(db)
@@ -188,5 +231,58 @@ func TestSQLiteDeleteMeta(t *testing.T) {
 	}
 	if err := s.DeleteMeta("never-existed"); err != nil {
 		t.Fatalf("DeleteMeta missing should be no-op, got %v", err)
+	}
+}
+
+func TestMemoryUpdateMetaArchived(t *testing.T) {
+	s := conversation.NewMemoryStore()
+	if err := s.EnsureMeta(conversation.Meta{ID: "c1", OwnerID: "alice", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMetaArchived("c1", true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMeta("c1")
+	if err != nil || got.ArchivedAt.IsZero() {
+		t.Fatalf("archived=%+v err=%v", got, err)
+	}
+	if err := s.UpdateMetaArchived("c1", false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetMeta("c1")
+	if !got.ArchivedAt.IsZero() {
+		t.Fatalf("unarchive failed: %+v", got)
+	}
+	if err := s.UpdateMetaArchived("missing", true); !errors.Is(err, conversation.ErrMetaNotFound) {
+		t.Fatalf("missing err=%v", err)
+	}
+}
+
+func TestSQLiteUpdateMetaArchived(t *testing.T) {
+	db, _ := openTestDB(t)
+	s, err := conversation.OpenSQLite(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureMeta(conversation.Meta{ID: "c1", OwnerID: "alice", Source: "ui"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMetaArchived("c1", true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMeta("c1")
+	if err != nil || got.ArchivedAt.IsZero() {
+		t.Fatalf("archived=%+v err=%v", got, err)
+	}
+	list, err := s.ListMeta(conversation.MetaFilter{})
+	if err != nil || len(list) != 1 || list[0].ArchivedAt.IsZero() {
+		t.Fatalf("list=%+v err=%v", list, err)
+	}
+	if err := s.UpdateMetaArchived("c1", false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetMeta("c1")
+	if !got.ArchivedAt.IsZero() {
+		t.Fatalf("unarchive failed: %+v", got)
 	}
 }

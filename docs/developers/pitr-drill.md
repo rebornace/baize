@@ -103,3 +103,17 @@
 ```
 
 `-Docker` 可省略（Docker 在 PATH 时）。可选参数：`-SourcePort`（默认 15433）、`-RestorePort`（默认 15434）、`-Keep`（保留现场）。2026-11-25 已实际执行一次，结果记录在私有 note `eval-artifacts/pitr-drill-20261125/report.md`：RTO 16.1 秒，目标时间之后的写入被正确排除。
+
+## 7. 定时演练
+
+`scripts/pitr-drill-scheduled.ps1` 调用上面的隔离演练并写入带时间戳的报告；可选注册 Windows 每日计划任务：
+
+```powershell
+# 立即演练一次，报告写到默认的私有 note 目录
+.\scripts\pitr-drill-scheduled.ps1
+
+# 同时注册每天 03:00 的演练任务（需要管理员权限）
+.\scripts\pitr-drill-scheduled.ps1 -RegisterTask -DailyAt 03:00
+```
+
+报告包含状态、耗时、退出码和完整输出；失败时脚本以非零退出码结束，便于外部监控。定时任务只做演练，不会切换生产流量。

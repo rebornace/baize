@@ -521,6 +521,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	mx := metricsx.New()
 	mx.AttachHub(hub)
 	srv.MetricsHandler = mx.Handler()
+	registerOpsMetrics(mx, srv)
 	srv.MCPExportMetrics = mx.RecordExportCall
 	srv.Webhook = dispatcher
 	srv.Inbox = inboxReg
@@ -611,6 +612,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 		_ = closer.Close()
 		return nil, nil, fmt.Errorf("control_plane.admin_token: %w", err)
 	}
+	viewer, err := controlplane.ResolveSecret(cfg.ControlPlane.ViewerToken)
+	if err != nil {
+		_ = closer.Close()
+		return nil, nil, fmt.Errorf("control_plane.viewer_token: %w", err)
+	}
 	var operators []controlplane.Operator
 	for _, entry := range cfg.ControlPlane.Operators {
 		token, err := controlplane.ResolveSecret(entry.Token)
@@ -625,6 +631,7 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	}
 	srv.OperatorToken = op
 	srv.AdminToken = adm
+	srv.ViewerToken = viewer
 	srv.Operators = operators
 
 	// Hot-reloadable runtime settings: build from config baseline + persisted KV
@@ -823,9 +830,11 @@ func newAPIServer(cfg config.Config, configPath string) (*api.Server, io.Closer,
 	go srv.StartAttachmentRetention(scanCtx, 6*time.Hour)
 	go srv.StartRunRetention(scanCtx, 6*time.Hour)
 	go srv.StartMessageRetention(scanCtx, 6*time.Hour)
+	go srv.StartArchiveRetention(scanCtx, 6*time.Hour)
 	go srv.StartCostFinalizer(scanCtx, 5*time.Minute)
 	go srv.StartBudgetAlerts(scanCtx, 5*time.Minute)
 	go srv.StartOpsAlerts(scanCtx, 5*time.Minute)
+	go srv.StartReplicaHeartbeat(scanCtx, 15*time.Second)
 	go srv.StartEvalGateSchedule(scanCtx, 10*time.Minute)
 
 	return srv, closer, nil

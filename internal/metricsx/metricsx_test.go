@@ -123,6 +123,25 @@ func histogramSampleCount(t *testing.T, m *metricsx.Collector, name, connectorID
 	return false
 }
 
+func TestRegisterGauge(t *testing.T) {
+	m := metricsx.New()
+	m.RegisterGauge("baize_test_gauge", "test gauge", func() float64 { return 7 })
+	mfs, err := m.Reg().Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != "baize_test_gauge" {
+			continue
+		}
+		if len(mf.GetMetric()) != 1 || mf.GetMetric()[0].GetGauge().GetValue() != 7 {
+			t.Fatalf("metric=%+v", mf.GetMetric())
+		}
+		return
+	}
+	t.Fatal("gauge not found")
+}
+
 func TestRecordExportCall(t *testing.T) {
 	m := metricsx.New()
 	m.RecordExportCall("conn_a", false)

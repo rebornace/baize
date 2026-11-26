@@ -79,6 +79,9 @@ func extractPptx(data []byte) (string, error) {
 			b.WriteString(strings.TrimSpace(s.notes))
 		}
 	}
+	if extra, xerr := extractOfficeChartsAndDiagrams(data, "ppt/charts/", "ppt/diagrams/"); xerr == nil {
+		b.WriteString(extra)
+	}
 	return b.String(), nil
 }
 

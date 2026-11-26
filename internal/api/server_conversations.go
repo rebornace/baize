@@ -11,6 +11,7 @@ import (
 	"github.com/rebornace/baize/internal/conversation"
 	"github.com/rebornace/baize/internal/identity"
 	"github.com/rebornace/baize/internal/run"
+	"github.com/rebornace/baize/internal/store"
 )
 
 func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +120,63 @@ func (s *Server) handleClearIdentities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// applySummaryMeta overrides derived titles with an explicit rename and marks
+// archived conversations. It returns the archived id set for list filtering.
+func (s *Server) applySummaryMeta(out []conversation.Summary) map[string]bool {
+	archived := map[string]bool{}
+	ms := s.metaStore()
+	if ms == nil || len(out) == 0 {
+		return archived
+	}
+	metas, err := ms.ListMeta(conversation.MetaFilter{})
+	if err != nil {
+		return archived
+	}
+	titles := make(map[string]string, len(metas))
+	for _, m := range metas {
+		if strings.TrimSpace(m.Title) != "" {
+			titles[m.ID] = m.Title
+		}
+		if !m.ArchivedAt.IsZero() {
+			archived[m.ID] = true
+		}
+	}
+	for i := range out {
+		if t, ok := titles[out[i].ID]; ok {
+			out[i].Title = t
+		}
+		if archived[out[i].ID] {
+			out[i].Archived = true
+		}
+	}
+	return archived
+}
+
+// filterSummariesByArchived applies the list's archive view:
+// "" hides archived rows, "only" returns just archived rows, "all" returns both.
+func filterSummariesByArchived(in []conversation.Summary, archived map[string]bool, mode string) []conversation.Summary {
+	switch mode {
+	case "all":
+		return in
+	case "only", "1", "true":
+		out := make([]conversation.Summary, 0, len(in))
+		for _, sum := range in {
+			if archived[sum.ID] {
+				out = append(out, sum)
+			}
+		}
+		return out
+	default:
+		out := make([]conversation.Summary, 0, len(in))
+		for _, sum := range in {
+			if !archived[sum.ID] {
+				out = append(out, sum)
+			}
+		}
+		return out
+	}
+}
+
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
 	out := []conversation.Summary{}
 	if s.Messages != nil {
@@ -126,6 +184,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			out = sum
 		}
 	}
+	archived := s.applySummaryMeta(out)
 	if ws := strings.TrimSpace(r.URL.Query().Get("workspace_id")); ws != "" {
 		out = s.filterSummariesByWorkspace(out, ws)
 	}
@@ -137,6 +196,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		}
 		out = filtered
 	}
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("archived")))
+	out = filterSummariesByArchived(out, archived, mode)
+	out = s.applySummaryPins(out)
+	s.applySummaryUnread(r, out)
 	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
 }
 
@@ -157,6 +220,8 @@ func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.
 			}
 		}
 		// default / scope=all: no owner filter
+	case controlplane.RoleViewer:
+		// Viewers are read-only across all owners; ignore scope=mine.
 	default:
 		// operators always see mine
 		filterOwner = p.OperatorID
@@ -177,8 +242,8 @@ func (s *Server) filterConversationSummaries(r *http.Request, in []conversation.
 			allowed[m.ID] = true
 		}
 	}
-	// Admin all also includes meta-less legacy conversations.
-	includeOrphans := p.Role == controlplane.RoleAdmin && scope != "mine"
+	// Admin/viewer all also includes meta-less legacy conversations.
+	includeOrphans := (p.Role == controlplane.RoleAdmin || p.Role == controlplane.RoleViewer) && scope != "mine"
 
 	out := make([]conversation.Summary, 0, len(in))
 	for _, sum := range in {
@@ -276,14 +341,28 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 	if !s.requireConversationAccess(w, r, convID) {
 		return
 	}
-	if s.Store != nil {
-		if busy, err := s.Store.HasActiveRun(convID); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		} else if busy {
+	if err := s.deleteConversationData(convID); err != nil {
+		if errors.Is(err, store.ErrConversationBusy) {
 			writeError(w, http.StatusConflict, "conversation_busy",
 				"conversation has an active run; cancel it before deleting")
 			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": convID})
+}
+
+// deleteConversationData removes messages, metadata and isolated logins. It
+// rejects conversations with an active run so a delete cannot race a worker.
+func (s *Server) deleteConversationData(convID string) error {
+	if s.Store != nil {
+		busy, err := s.Store.HasActiveRun(convID)
+		if err != nil {
+			return err
+		}
+		if busy {
+			return store.ErrConversationBusy
 		}
 	}
 	// Messages + rolling summary (a fully-cleared conversation already drops
@@ -295,8 +374,7 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 	// list / ACL scope.
 	if ms := s.metaStore(); ms != nil {
 		if err := ms.DeleteMeta(convID); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
+			return err
 		}
 	}
 	// Channel / MCP-export logins stay tied to that thread. Web chats share
@@ -304,7 +382,7 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 	if s.Identities != nil && identity.IsolatedConversation(convID) {
 		s.Identities.ClearCaptured(convID)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": convID})
+	return nil
 }
 
 func (s *Server) handleRollbackMessages(w http.ResponseWriter, r *http.Request) {

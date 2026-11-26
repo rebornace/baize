@@ -60,3 +60,13 @@ func TestRoleAtLeast(t *testing.T) {
 		t.Fatal("operator satisfies operator")
 	}
 }
+
+func TestAuthenticateViewerToken(t *testing.T) {
+	p, ok := AuthenticatePrincipal("Bearer view-secret", Tokens{Viewer: "view-secret"})
+	if !ok || p.Role != RoleViewer || p.OperatorID != "viewer" {
+		t.Fatalf("principal=%+v ok=%v", p, ok)
+	}
+	if _, ok := AuthenticatePrincipal("Bearer wrong", Tokens{Viewer: "view-secret"}); ok {
+		t.Fatal("wrong token must fail")
+	}
+}

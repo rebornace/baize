@@ -4,6 +4,7 @@ import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
 import { CHAT } from '../strings'
 import { deleteChannelMedia, isDeletableMediaUrl } from '../api/channelMedia'
+import { ImageLightbox } from './ImageLightbox'
 
 export interface ChannelImageProps {
   url: string
@@ -31,6 +32,7 @@ export function ChannelImage({ url, name = '', alt, document = false, deletable 
   const [failed, setFailed] = useState(false)
   const [deleted, setDeleted] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
+  const [open, setOpen] = useState(false)
   const canDelete = deletable && !document && !isLocal && isDeletableMediaUrl(url)
 
   useEffect(() => {
@@ -90,7 +92,15 @@ export function ChannelImage({ url, name = '', alt, document = false, deletable 
   }
   return (
     <span className="channel-image-wrap">
-      <img src={src} alt={alt ?? CHAT.imageAlt} className="channel-image" loading="lazy" />
+      <button
+        type="button"
+        className="channel-image-open"
+        title={CHAT.enlargeImage}
+        aria-label={CHAT.enlargeImageAria(name || alt || CHAT.imageAlt)}
+        onClick={() => setOpen(true)}
+      >
+        <img src={src} alt={alt ?? CHAT.imageAlt} className="channel-image" loading="lazy" />
+      </button>
       {document && name ? (
         <span className="channel-image-caption">{CHAT.documentImageCaption(name)}</span>
       ) : null}
@@ -108,6 +118,9 @@ export function ChannelImage({ url, name = '', alt, document = false, deletable 
       {deleteFailed ? (
         <span className="channel-attachment-error">{CHAT.deleteAttachmentFailed}</span>
       ) : null}
+      <ImageLightbox open={open} title={name || alt || CHAT.imageAlt} onClose={() => setOpen(false)}>
+        <img src={src} alt={alt ?? CHAT.imageAlt} className="media-lightbox-image" />
+      </ImageLightbox>
     </span>
   )
 }

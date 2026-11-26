@@ -28,7 +28,11 @@ func messageRetentionCase(t *testing.T, st conversation.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err := st.DeleteMessagesBefore(conv, now.AddDate(0, 0, -30), 2)
+	cutoff := now.AddDate(0, 0, -30)
+	if c, err := st.CountMessagesBefore(conv, cutoff, 2); err != nil || c != 3 {
+		t.Fatalf("count=%d err=%v", c, err)
+	}
+	n, err := st.DeleteMessagesBefore(conv, cutoff, 2)
 	if err != nil || n != 3 {
 		t.Fatalf("deleted=%d err=%v", n, err)
 	}

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS conversation_meta (
   title TEXT,
   channel_peer TEXT,
   workspace_id TEXT NOT NULL DEFAULT '',
+  archived_at TEXT,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS conversation_summaries (
@@ -410,6 +411,21 @@ func (s *SQLiteStore) DeleteMessagesBefore(conversationID string, cutoff time.Ti
 	return int(n), nil
 }
 
+func (s *SQLiteStore) CountMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error) {
+	if keep < 0 {
+		keep = 0
+	}
+	var n int
+	err := s.queryRow(`SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND created_at < ?
+		AND id NOT IN (SELECT id FROM messages WHERE conversation_id = ?
+		ORDER BY created_at DESC, id DESC LIMIT ?)`,
+		conversationID, cutoff.UTC().Format(time.RFC3339Nano), conversationID, keep).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *SQLiteStore) ListSummaries() []Summary {
 	rows, err := s.query(
 		`SELECT conversation_id, MAX(created_at) FROM messages GROUP BY conversation_id`,
@@ -596,9 +612,55 @@ func (s *SQLiteStore) UpdateMetaWorkspace(id, workspaceID string) error {
 	return nil
 }
 
+func (s *SQLiteStore) UpdateMetaTitle(id, title string) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	res, err := s.exec(
+		`UPDATE conversation_meta SET title = ?, updated_at = ? WHERE id = ?`,
+		nullIfEmpty(title), time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrMetaNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateMetaArchived(id string, archived bool) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	var archivedAt any
+	if archived {
+		archivedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	res, err := s.exec(
+		`UPDATE conversation_meta SET archived_at = ?, updated_at = ? WHERE id = ?`,
+		archivedAt, time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrMetaNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) GetMeta(id string) (Meta, error) {
 	row := s.queryRow(
-		`SELECT id, owner_id, source, title, channel_peer, workspace_id, updated_at
+		`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
 		 FROM conversation_meta WHERE id = ?`, id,
 	)
 	m, err := scanMeta(row)
@@ -624,25 +686,25 @@ func (s *SQLiteStore) ListMeta(filter MetaFilter) ([]Meta, error) {
 	)
 	if filter.OwnerID != "" && filter.WorkspaceID != "" {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
 			 FROM conversation_meta WHERE owner_id = ? AND workspace_id = ? ORDER BY updated_at DESC`,
 			filter.OwnerID, filter.WorkspaceID,
 		)
 	} else if filter.OwnerID != "" {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
 			 FROM conversation_meta WHERE owner_id = ? ORDER BY updated_at DESC`,
 			filter.OwnerID,
 		)
 	} else if filter.WorkspaceID != "" {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
 			 FROM conversation_meta WHERE workspace_id = ? ORDER BY updated_at DESC`,
 			filter.WorkspaceID,
 		)
 	} else {
 		rows, err = s.query(
-			`SELECT id, owner_id, source, title, channel_peer, workspace_id, updated_at
+			`SELECT id, owner_id, source, title, channel_peer, workspace_id, archived_at, updated_at
 			 FROM conversation_meta ORDER BY updated_at DESC`,
 		)
 	}
@@ -673,9 +735,9 @@ func scanMeta(scanner interface {
 	Scan(dest ...any) error
 }) (Meta, error) {
 	var m Meta
-	var title, peer, workspaceID sql.NullString
+	var title, peer, workspaceID, archivedAt sql.NullString
 	var updatedAt string
-	if err := scanner.Scan(&m.ID, &m.OwnerID, &m.Source, &title, &peer, &workspaceID, &updatedAt); err != nil {
+	if err := scanner.Scan(&m.ID, &m.OwnerID, &m.Source, &title, &peer, &workspaceID, &archivedAt, &updatedAt); err != nil {
 		return Meta{}, err
 	}
 	if title.Valid {
@@ -686,6 +748,13 @@ func scanMeta(scanner interface {
 	}
 	if workspaceID.Valid {
 		m.WorkspaceID = workspaceID.String
+	}
+	if archivedAt.Valid && archivedAt.String != "" {
+		if ts, err := time.Parse(time.RFC3339Nano, archivedAt.String); err == nil {
+			m.ArchivedAt = ts
+		} else if ts, err := time.Parse(time.RFC3339, archivedAt.String); err == nil {
+			m.ArchivedAt = ts
+		}
 	}
 	ts, err := time.Parse(time.RFC3339Nano, updatedAt)
 	if err != nil {

@@ -148,6 +148,29 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 	// text-only model on an image turn is rejected with guidance to pick Auto /
 	// a vision model instead.
 	profiles := s.routingProfiles()
+	// Model budgets steer Auto routing away from exhausted models when the
+	// global enforcement switch is on. Errors fail open; a manual choice is
+	// never silently rerouted — it is rejected instead.
+	if blocked := s.overBudgetModelIDs(time.Now().UTC()); len(blocked) > 0 {
+		requested := llm.NormalizeProfileChoice(body.ModelProfileID)
+		if requested != llm.AutoProfileID && blocked[requested] {
+			writeError(w, http.StatusTooManyRequests, "cost_budget_exceeded",
+				"the selected model has reached its budget")
+			return
+		}
+		filtered := make([]llm.RoutingProfile, 0, len(profiles))
+		for _, p := range profiles {
+			if !blocked[p.ID] {
+				filtered = append(filtered, p)
+			}
+		}
+		profiles = filtered
+		if requested == llm.AutoProfileID && len(profiles) == 0 {
+			writeError(w, http.StatusTooManyRequests, "cost_budget_exceeded",
+				"all model budgets are exhausted; raise a budget or disable enforcement")
+			return
+		}
+	}
 	hasImages := len(imageExts) > 0 || len(docImages) > 0
 	hasPDF := len(pdfFiles) > 0
 	sig := llm.TaskSignals{
@@ -318,7 +341,16 @@ func (s *Server) handlePostRun(w http.ResponseWriter, r *http.Request) {
 			q.Set("name", label)
 			q.Set("from", "doc")
 			bubbleMarkers = append(bubbleMarkers, "![文档图片]("+u+"?"+q.Encode()+")")
-			recordAttachment(obj, label, doc.ImageMIME, int64(len(doc.ImageBytes)), "")
+			wsPath := ""
+			if s.Workspace != nil {
+				if p, perr := s.Workspace.SaveUploadBytes(r.Context(), conv, label, doc.ImageBytes, doc.ImageMIME); perr != nil {
+					log.Printf("workspace: save document image %q: %v", label, perr)
+				} else {
+					wsPath = p
+					savedWorkspaceFiles = append(savedWorkspaceFiles, p)
+				}
+			}
+			recordAttachment(obj, label, doc.ImageMIME, int64(len(doc.ImageBytes)), wsPath)
 			persistedCount++
 			persistedBytes += len(doc.ImageBytes)
 		}

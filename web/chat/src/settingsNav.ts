@@ -26,7 +26,7 @@ import { zhPack } from './locales/zh'
 
 if (!hasPack()) setPack(zhPack)
 
-export type SettingsRole = 'operator' | 'admin'
+export type SettingsRole = 'viewer' | 'operator' | 'admin'
 export type SettingsGroup = 'conversation' | 'connect' | 'quality' | 'system'
 export type SettingsAccess = 'full' | 'read' | 'login' | 'locked'
 export type BadgeKind =
@@ -175,6 +175,7 @@ export function settingsNavItems(_role: SettingsRole): SettingsNavItem[] {
 /** Items rendered in the sidebar / reachable by a role: locked items are operator-invisible. */
 export function visibleNavItems(role: SettingsRole): SettingsNavItem[] {
   const items = buildItems()
+  if (role === 'viewer') return []
   if (role === 'admin') return items
   return items.filter((i) => i.operator !== 'locked')
 }

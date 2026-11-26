@@ -101,3 +101,17 @@
 ```
 
 `-Docker` can be omitted when Docker is on PATH. Optional flags: `-SourcePort` (default 15433), `-RestorePort` (default 15434), `-Keep` (leave the containers running). A real drill was executed on 2026-11-25; the record is kept in the private note `eval-artifacts/pitr-drill-20261125/report.md`: RTO 16.1s, and writes after the target time were correctly excluded.
+
+## 7. Scheduled drills
+
+`scripts/pitr-drill-scheduled.ps1` runs the isolated drill above and writes a timestamped report; it can also register a daily Windows Scheduled Task:
+
+```powershell
+# Run one drill now; the report goes to the default private note directory
+.\scripts\pitr-drill-scheduled.ps1
+
+# Also register a daily 03:00 drill (requires administrator rights)
+.\scripts\pitr-drill-scheduled.ps1 -RegisterTask -DailyAt 03:00
+```
+
+The report includes status, duration, exit code and the full output; the script exits non-zero on failure so external monitoring can catch it. The scheduled task only runs the drill; it never switches production traffic.

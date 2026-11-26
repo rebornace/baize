@@ -26,22 +26,22 @@ func TestMinRoleTable(t *testing.T) {
 		{"PATCH", "/v0/settings/eval/cases/ec_1/calibration", RoleAdmin},
 		{"GET", "/v0/settings/eval/calibration-summary", RoleAdmin},
 		{"GET", "/v0/ui-config", RoleNone},
-		{"GET", "/v0/me", RoleOperator},
+		{"GET", "/v0/me", RoleViewer},
 		{"POST", "/v0/runs", RoleOperator},
 		{"POST", "/v0/runs/r1/resume", RoleOperator},
 		{"POST", "/v0/runs/r1/cancel", RoleOperator},
 		{"POST", "/v0/runs/r1/plugin-callbacks", RoleNone},
 		{"GET", "/v0/hitl/approvals/tok", RoleNone},
 		{"POST", "/v0/hitl/approvals/tok", RoleNone},
-		{"GET", "/v0/runs/r1", RoleOperator},
-		{"GET", "/v0/runs/r1/events", RoleOperator},
-		{"GET", "/v0/runs/r1/stream", RoleOperator},
-		{"GET", "/v0/artifacts/art_1", RoleOperator},
-		{"GET", "/v0/conversations", RoleOperator},
-		{"GET", "/v0/workspaces", RoleOperator},
+		{"GET", "/v0/runs/r1", RoleViewer},
+		{"GET", "/v0/runs/r1/events", RoleViewer},
+		{"GET", "/v0/runs/r1/stream", RoleViewer},
+		{"GET", "/v0/artifacts/art_1", RoleViewer},
+		{"GET", "/v0/conversations", RoleViewer},
+		{"GET", "/v0/workspaces", RoleViewer},
 		{"POST", "/v0/workspaces", RoleOperator},
 		{"DELETE", "/v0/conversations/c1", RoleOperator},
-		{"GET", "/v0/conversations/c1/messages", RoleOperator},
+		{"GET", "/v0/conversations/c1/messages", RoleViewer},
 		{"DELETE", "/v0/conversations/c1/messages", RoleOperator},
 		{"GET", "/v0/conversations/c1/identities", RoleOperator},
 		{"POST", "/v0/conversations/c1/identities", RoleOperator},
@@ -143,5 +143,43 @@ func TestMinRoleTable(t *testing.T) {
 func TestChannelInboundIsRoleNone(t *testing.T) {
 	if got := MinRole("POST", "/v0/channels/feishu/inbound"); got != RoleNone {
 		t.Fatalf("inbound should be RoleNone (channel HMAC), got %v", got)
+	}
+}
+
+func TestViewerRoleMinRole(t *testing.T) {
+	cases := []struct {
+		method string
+		path   string
+		want   Role
+	}{
+		{"GET", "/v0/conversations", RoleViewer},
+		{"GET", "/v0/conversations/c1/messages", RoleViewer},
+		{"GET", "/v0/runs/r1/events", RoleViewer},
+		{"GET", "/v0/audit/events", RoleAdmin},
+		{"GET", "/v0/settings/cost-series", RoleAdmin},
+		{"POST", "/v0/conversations/read-all", RoleViewer},
+		{"POST", "/v0/runs", RoleOperator},
+		{"PUT", "/v0/conversations/c1/pin", RoleOperator},
+		{"PUT", "/v0/settings/cost-budget", RoleAdmin},
+		{"GET", "/v0/settings/credentials", RoleAdmin},
+	}
+	for _, tc := range cases {
+		if got := MinRole(tc.method, tc.path); got != tc.want {
+			t.Fatalf("%s %s: got %q want %q", tc.method, tc.path, got, tc.want)
+		}
+	}
+	if !RoleViewer.AtLeast(RoleViewer) || !RoleOperator.AtLeast(RoleViewer) || !RoleAdmin.AtLeast(RoleViewer) {
+		t.Fatal("viewer requirement must accept viewer and above")
+	}
+	if RoleViewer.AtLeast(RoleOperator) {
+		t.Fatal("viewer must not satisfy operator")
+	}
+	for _, path := range []string{"/v0/audit/events", "/v0/audit/export", "/v0/settings/cost-series"} {
+		if !ViewerAllowedRead("GET", path) {
+			t.Fatalf("viewer should read %s", path)
+		}
+	}
+	if ViewerAllowedRead("GET", "/v0/settings/credentials") || ViewerAllowedRead("POST", "/v0/audit/events") {
+		t.Fatal("viewer exception must stay read-only and scoped")
 	}
 }

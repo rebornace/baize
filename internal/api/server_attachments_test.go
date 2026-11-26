@@ -902,6 +902,10 @@ func TestPostRunScannedPDFPersistsDocumentImages(t *testing.T) {
 	if _, sawImage, _ := llmMock.snapshot(); !sawImage {
 		t.Fatal("expected extracted page image to reach the model")
 	}
+	if text, _, _ := llmMock.snapshot(); !strings.Contains(text, "[工作区]") ||
+		!strings.Contains(text, "scan.pdf") {
+		t.Fatalf("workspace listing missing document image: %q", text)
+	}
 
 	getMsgs := httptest.NewRequest(http.MethodGet, "/v0/conversations/c1/messages", nil)
 	mr := httptest.NewRecorder()
@@ -960,6 +964,19 @@ func TestPostRunScannedPDFPersistsDocumentImages(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("document image not indexed: %+v", listed.Items)
+	}
+	stored, err := st.ListConversationAttachments("c1", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceCopy := false
+	for _, item := range stored {
+		if strings.HasPrefix(item.Filename, "scan.pdf") && item.WorkspacePath != "" {
+			workspaceCopy = true
+		}
+	}
+	if !workspaceCopy {
+		t.Fatalf("document image workspace path missing: %+v", stored)
 	}
 
 	runRec, err := st.GetRun(runID)

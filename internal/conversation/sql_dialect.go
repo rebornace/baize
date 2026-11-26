@@ -38,6 +38,9 @@ func openSQLStore(db *sql.DB, dialect store.SQLDialect) (*SQLiteStore, error) {
 		if err := migrateChatWorkspaces(db, store.DialectSQLite); err != nil {
 			return nil, err
 		}
+		if err := migrateConversationArchive(db, store.DialectSQLite); err != nil {
+			return nil, err
+		}
 		if err := ensureMessagesFTS(db); err != nil {
 			return nil, err
 		}
@@ -50,7 +53,8 @@ CREATE TABLE IF NOT EXISTS conversation_meta (
   source TEXT NOT NULL,
   title TEXT,
   channel_peer TEXT,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  archived_at TEXT
 );`
 		if _, err := db.Exec(pgMeta); err != nil {
 			return nil, err
@@ -82,6 +86,9 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 			return nil, err
 		}
 		if err := migrateChatWorkspaces(db, store.DialectPostgres); err != nil {
+			return nil, err
+		}
+		if err := migrateConversationArchive(db, store.DialectPostgres); err != nil {
 			return nil, err
 		}
 	}
@@ -188,6 +195,21 @@ func migrateChatWorkspaces(db *sql.DB, dialect store.SQLDialect) error {
 	}
 	if _, err := db.Exec(`UPDATE conversation_meta SET workspace_id = ? WHERE (source = 'ui' OR source = '') AND workspace_id = ''`, DefaultWorkspaceID); err != nil {
 		return err
+	}
+	return nil
+}
+
+// migrateConversationArchive adds the archived_at marker used by soft-delete
+// archive. Fresh schemas already include it; old databases get the column here.
+func migrateConversationArchive(db *sql.DB, dialect store.SQLDialect) error {
+	if dialect == store.DialectPostgres {
+		if _, err := db.Exec(`ALTER TABLE conversation_meta ADD COLUMN IF NOT EXISTS archived_at TEXT`); err != nil {
+			return fmt.Errorf("meta archived_at: %w", err)
+		}
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE conversation_meta ADD COLUMN archived_at TEXT`); err != nil && !isDuplicateColumnErr(err) {
+		return fmt.Errorf("meta archived_at: %w", err)
 	}
 	return nil
 }

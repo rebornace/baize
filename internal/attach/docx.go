@@ -36,7 +36,11 @@ func extractDocx(data []byte) (string, error) {
 		if len(raw) > maxDocUncompressed {
 			return "", fmt.Errorf("%w: document expands beyond %d bytes", ErrTooLarge, maxDocUncompressed)
 		}
-		return stripXMLTags(string(raw)), nil
+		text := stripXMLTags(string(raw))
+		if extra, xerr := extractOfficeChartsAndDiagrams(data, "word/charts/", "word/diagrams/"); xerr == nil {
+			text += extra
+		}
+		return text, nil
 	}
 	return "", errors.New("attach: docx missing word/document.xml")
 }

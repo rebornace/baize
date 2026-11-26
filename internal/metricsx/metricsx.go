@@ -88,6 +88,18 @@ func (c *Collector) Handler() http.Handler {
 	return promhttp.HandlerFor(c.reg, promhttp.HandlerOpts{})
 }
 
+// RegisterGauge adds a function-backed gauge to the private registry. It is used
+// for process/DB/SSE signals that are read live at scrape time.
+func (c *Collector) RegisterGauge(name, help string, fn func() float64) {
+	if c == nil || fn == nil || strings.TrimSpace(name) == "" {
+		return
+	}
+	c.reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: name,
+		Help: help,
+	}, fn))
+}
+
 // AttachHub subscribes to run events and terminal status (same pattern as otelx).
 func (c *Collector) AttachHub(hub *eventbus.Hub) {
 	if c == nil || hub == nil {

@@ -65,6 +65,10 @@ func TestCostBreakdownAPI(t *testing.T) {
 			CostUSD float64 `json:"cost_usd"`
 			Ratio   float64 `json:"ratio"`
 		} `json:"by_model"`
+		Provider []struct {
+			Key     string  `json:"key"`
+			CostUSD float64 `json:"cost_usd"`
+		} `json:"by_provider"`
 		Agent []struct {
 			Key     string  `json:"key"`
 			CostUSD float64 `json:"cost_usd"`
@@ -85,6 +89,9 @@ func TestCostBreakdownAPI(t *testing.T) {
 	if body.Total != 3 || len(body.Model) != 2 || len(body.Agent) != 2 ||
 		len(body.Conversation) != 1 || len(body.Workspace) != 1 {
 		t.Fatalf("body=%+v", body)
+	}
+	if len(body.Provider) != 1 || body.Provider[0].Key != "openai_compatible" || body.Provider[0].CostUSD != 3 {
+		t.Fatalf("provider=%+v", body.Provider)
 	}
 	if body.Model[0].Name != "power" || body.Model[0].CostUSD != 2 || body.Model[0].Ratio != 0.6667 {
 		t.Fatalf("model[0]=%+v", body.Model[0])

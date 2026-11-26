@@ -10,7 +10,7 @@ type GateState =
   | { status: 'ready'; role: GateRole; gateEnabled: boolean; operatorId: string }
 
 function asGateRole(role: string): GateRole | null {
-  if (role === 'operator' || role === 'admin') return role
+  if (role === 'viewer' || role === 'operator' || role === 'admin') return role
   return null
 }
 

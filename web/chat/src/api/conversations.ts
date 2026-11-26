@@ -166,6 +166,100 @@ export async function moveConversation(
   return parseJSON<{ conversation_id: string; workspace_id: string }>(res)
 }
 
+export interface BatchSkip {
+  id: string
+  reason: string
+}
+
+export async function batchMoveConversations(
+  conversationIds: string[],
+  workspaceId: string,
+): Promise<{ moved: number; skipped: BatchSkip[]; workspace_id: string }> {
+  const res = await fetch('/v0/conversations/batch/workspace', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ conversation_ids: conversationIds, workspace_id: workspaceId }),
+  })
+  return parseJSON(res)
+}
+
+export async function batchDeleteConversations(
+  conversationIds: string[],
+): Promise<{ deleted: number; skipped: BatchSkip[] }> {
+  const res = await fetch('/v0/conversations/batch/delete', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ conversation_ids: conversationIds }),
+  })
+  return parseJSON(res)
+}
+
+export async function batchArchiveConversations(
+  conversationIds: string[],
+  archived: boolean,
+): Promise<{ updated: number; archived: boolean; skipped: BatchSkip[] }> {
+  const res = await fetch('/v0/conversations/batch/archived', {
+    method: 'POST',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ conversation_ids: conversationIds, archived }),
+  })
+  return parseJSON(res)
+}
+
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+): Promise<{ conversation_id: string; title: string }> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}`, {
+    method: 'PATCH',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ title }),
+  })
+  return parseJSON(res)
+}
+
+export async function setConversationPinned(
+  conversationId: string,
+  pinned: boolean,
+): Promise<{ conversation_id: string; pinned: boolean }> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/pin`, {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ pinned }),
+  })
+  return parseJSON(res)
+}
+
+export async function setConversationArchived(
+  conversationId: string,
+  archived: boolean,
+): Promise<{ conversation_id: string; archived: boolean }> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/archived`, {
+    method: 'PUT',
+    headers: authInit({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ archived }),
+  })
+  return parseJSON(res)
+}
+
+export async function markConversationRead(
+  conversationId: string,
+): Promise<{ conversation_id: string; read_at: string }> {
+  const res = await fetch(`/v0/conversations/${encodeURIComponent(conversationId)}/read`, {
+    method: 'PUT',
+    headers: authInit(),
+  })
+  return parseJSON(res)
+}
+
+export async function markAllConversationsRead(): Promise<{ read_at: string }> {
+  const res = await fetch('/v0/conversations/read-all', {
+    method: 'POST',
+    headers: authInit(),
+  })
+  return parseJSON(res)
+}
+
 export interface RollbackMessagesResult {
   conversation_id: string
   deleted_count: number
@@ -221,15 +315,20 @@ export interface ConversationSummary {
   id: string
   title: string
   updated_at: string
+  pinned?: boolean
+  archived?: boolean
+  unread?: boolean
 }
 
 export async function listConversations(
   scope?: ConversationScope,
   workspaceId?: string,
+  archived?: 'only' | 'all',
 ): Promise<ConversationSummary[]> {
   const qs = new URLSearchParams()
   if (scope) qs.set('scope', scope)
   if (workspaceId) qs.set('workspace_id', workspaceId)
+  if (archived) qs.set('archived', archived)
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
   const res = await fetch(`/v0/conversations${suffix}`, { headers: authInit() })
   const body = await parseJSON<{ conversations: ConversationSummary[] }>(res)

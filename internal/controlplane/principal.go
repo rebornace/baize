@@ -28,5 +28,8 @@ func AuthenticatePrincipal(authorizationHeader string, t Tokens) (Principal, boo
 			return Principal{Role: RoleOperator, OperatorID: op.ID}, true
 		}
 	}
+	if t.Viewer != "" && secretEqual(token, t.Viewer) {
+		return Principal{Role: RoleViewer, OperatorID: "viewer"}, true
+	}
 	return Principal{}, false
 }

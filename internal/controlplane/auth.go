@@ -9,6 +9,7 @@ type Role string
 
 const (
 	RoleNone     Role = ""
+	RoleViewer   Role = "viewer"
 	RoleOperator Role = "operator"
 	RoleAdmin    Role = "admin"
 )
@@ -16,11 +17,12 @@ const (
 type Tokens struct {
 	Operator  string
 	Admin     string
+	Viewer    string
 	Operators []Operator
 }
 
 func (t Tokens) Enabled() bool {
-	if t.Admin != "" || t.Operator != "" {
+	if t.Admin != "" || t.Operator != "" || t.Viewer != "" {
 		return true
 	}
 	for _, op := range t.Operators {
@@ -35,6 +37,8 @@ func (r Role) AtLeast(min Role) bool {
 	switch min {
 	case RoleNone:
 		return true
+	case RoleViewer:
+		return r == RoleViewer || r == RoleOperator || r == RoleAdmin
 	case RoleOperator:
 		return r == RoleOperator || r == RoleAdmin
 	case RoleAdmin:

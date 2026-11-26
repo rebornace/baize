@@ -261,6 +261,7 @@ export interface CostBreakdown {
   days: number
   total_usd: number
   by_model: CostBucket[]
+  by_provider: CostBucket[]
   by_agent: CostBucket[]
   by_conversation: CostBucket[]
   by_workspace: CostBucket[]

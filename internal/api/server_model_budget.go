@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,50 @@ func (s *Server) modelBudgets(profileID string) (day, month float64) {
 func (s *Server) modelBudgetThresholds(profileID string) (warn, exceed float64) {
 	return s.scopeRatio(modelBudgetWarnPrefix + profileID),
 		s.scopeRatio(modelBudgetExceedPrefix + profileID)
+}
+
+// overBudgetModelIDs returns model profiles whose configured day or month
+// budget is already reached. It returns nil when enforcement is off, no model
+// budget is configured, or spend cannot be computed (fail open).
+func (s *Server) overBudgetModelIDs(now time.Time) map[string]bool {
+	if s.Store == nil || !s.costBudgetEnforced() {
+		return nil
+	}
+	daySettings, err := s.Store.ListSettingsByPrefix(modelBudgetDayPrefix)
+	if err != nil {
+		return nil
+	}
+	monthSettings, err := s.Store.ListSettingsByPrefix(modelBudgetMonthPrefix)
+	if err != nil {
+		return nil
+	}
+	configured := map[string]bool{}
+	for key := range daySettings {
+		if id := strings.TrimPrefix(key, modelBudgetDayPrefix); id != key && id != "" {
+			configured[id] = true
+		}
+	}
+	for key := range monthSettings {
+		if id := strings.TrimPrefix(key, modelBudgetMonthPrefix); id != key && id != "" {
+			configured[id] = true
+		}
+	}
+	if len(configured) == 0 {
+		return nil
+	}
+	day, month, err := s.modelCostTotals(now)
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for id := range configured {
+		dayBudget, monthBudget := s.modelBudgets(id)
+		if (dayBudget > 0 && day[id] >= dayBudget) ||
+			(monthBudget > 0 && month[id] >= monthBudget) {
+			out[id] = true
+		}
+	}
+	return out
 }
 
 // modelCostTotals returns per-model-profile day and month spend. Terminal costs

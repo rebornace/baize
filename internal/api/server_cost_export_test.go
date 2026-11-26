@@ -110,6 +110,7 @@ func TestCostBreakdownExportCSV(t *testing.T) {
 	}
 	want := []string{
 		"model," + profile.ID + ",breakdown-model,4.000000,1.000000",
+		"provider,openai_compatible,openai_compatible,4.000000,1.000000",
 		"agent,a2,,2.500000,0.625000",
 		"agent,a1,,1.500000,0.375000",
 		"conversation,c1,,1.500000,0.375000",

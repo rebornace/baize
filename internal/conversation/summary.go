@@ -6,6 +6,9 @@ type Summary struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Pinned    bool      `json:"pinned,omitempty"`
+	Archived  bool      `json:"archived,omitempty"`
+	Unread    bool      `json:"unread,omitempty"`
 }
 
 func TruncateTitle(s string) string {

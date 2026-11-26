@@ -156,6 +156,7 @@ type Server struct {
 	// one is set, /v0 routes require a Bearer token whose role meets MinRole.
 	OperatorToken string
 	AdminToken    string
+	ViewerToken   string
 	Operators     []controlplane.Operator
 	// Settings optionally supplies hot-reloadable engine knobs and control-plane
 	// credentials. nil = use the static OperatorToken/AdminToken/Operators
@@ -338,7 +339,17 @@ func (s *Server) Handler() http.Handler {
 		if !ok {
 			return
 		}
-		s.mux.ServeHTTP(w, r2)
+		if !s.shouldAuditRequest(r2) {
+			s.mux.ServeHTTP(w, r2)
+			return
+		}
+		rec := &auditStatusWriter{ResponseWriter: w}
+		s.mux.ServeHTTP(rec, r2)
+		status := rec.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		s.recordAudit(r2, status)
 	})
 }
 
@@ -385,7 +396,7 @@ func (s *Server) writeCORS(w http.ResponseWriter, r *http.Request) bool {
 // and returns false to short-circuit. When the gate is off it is a no-op.
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	path := r.URL.Path
-	if path == "/healthz" || strings.HasPrefix(path, "/ui/") || path == "/ui" {
+	if path == "/healthz" || path == "/readyz" || strings.HasPrefix(path, "/ui/") || path == "/ui" {
 		return r, true
 	}
 	tok := s.gateTokens()
@@ -402,8 +413,10 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (*http.Reques
 		return nil, false
 	}
 	if !principal.Role.AtLeast(min) {
-		writeError(w, http.StatusForbidden, "forbidden", "需要管理员口令")
-		return nil, false
+		if principal.Role != controlplane.RoleViewer || !controlplane.ViewerAllowedRead(r.Method, r.URL.Path) {
+			writeError(w, http.StatusForbidden, "forbidden", "需要管理员口令")
+			return nil, false
+		}
 	}
 	// 控制面口令只用于过门禁。门开着且鉴权成功后，从交给 mux 的 request 上
 	// 删掉 Authorization，避免 passthrough 把它 PickHeaders 进 Run 的
@@ -423,12 +436,14 @@ func (s *Server) gateTokens() controlplane.Tokens {
 		return controlplane.Tokens{
 			Operator:  c.OperatorToken,
 			Admin:     c.AdminToken,
+			Viewer:    s.ViewerToken,
 			Operators: c.Operators,
 		}
 	}
 	return controlplane.Tokens{
 		Operator:  s.OperatorToken,
 		Admin:     s.AdminToken,
+		Viewer:    s.ViewerToken,
 		Operators: s.Operators,
 	}
 }
@@ -479,7 +494,7 @@ func (s *Server) checkConversationAccess(ctx context.Context, convID string) err
 	p := s.principalFrom(ctx)
 	meta, err := ms.GetMeta(convID)
 	if errors.Is(err, conversation.ErrMetaNotFound) {
-		if p.Role == controlplane.RoleAdmin {
+		if p.Role == controlplane.RoleAdmin || p.Role == controlplane.RoleViewer {
 			return nil
 		}
 		// A fresh UI conversation exists in localStorage before its first run
@@ -510,10 +525,18 @@ func (s *Server) prepareConversationMeta(ctx context.Context, convID, workspaceI
 	meta, err := ms.GetMeta(convID)
 	if err == nil {
 		if !s.gateTokens().Enabled() {
+			if !meta.ArchivedAt.IsZero() {
+				return ms.UpdateMetaArchived(convID, false)
+			}
 			return nil
 		}
 		if !conversation.CanAccess(s.principalFrom(ctx), meta) {
 			return errConversationForbidden
+		}
+		// New activity restores an archived conversation so it reappears in the
+		// default list instead of silently accumulating hidden history.
+		if !meta.ArchivedAt.IsZero() {
+			return ms.UpdateMetaArchived(convID, false)
 		}
 		return nil
 	}
@@ -570,6 +593,11 @@ func (s *Server) identityStoreKey(convID string) string {
 func (s *Server) routes() {
 	s.mux.Handle("/ui/", ui.Handler())
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
+	s.mux.HandleFunc("GET /v0/audit/events", s.handleListAuditEvents)
+	s.mux.HandleFunc("GET /v0/audit/export", s.handleExportAuditEvents)
+	s.mux.HandleFunc("GET /v0/settings/audit-retention", s.handleGetAuditRetention)
+	s.mux.HandleFunc("PUT /v0/settings/audit-retention", s.handlePutAuditRetention)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 	s.mux.HandleFunc("GET /v0/settings/logs", s.handleGetRecentLogs)
 	s.mux.HandleFunc("GET /v0/settings/eval/runs", s.handleGetEvalRuns)
@@ -659,7 +687,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/conversations/search", s.handleSearchConversationMessages)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/export", s.handleExportConversation)
 	s.mux.HandleFunc("DELETE /v0/conversations/{id}", s.handleDeleteConversation)
+	s.mux.HandleFunc("PATCH /v0/conversations/{id}", s.handleRenameConversation)
+	s.mux.HandleFunc("PUT /v0/conversations/{id}/pin", s.handleSetConversationPin)
+	s.mux.HandleFunc("PUT /v0/conversations/{id}/archived", s.handleSetConversationArchived)
+	s.mux.HandleFunc("PUT /v0/conversations/{id}/read", s.handleMarkConversationRead)
+	s.mux.HandleFunc("POST /v0/conversations/read-all", s.handleMarkAllConversationsRead)
 	s.mux.HandleFunc("PATCH /v0/conversations/{id}/workspace", s.handleMoveConversationWorkspace)
+	s.mux.HandleFunc("POST /v0/conversations/batch/workspace", s.handleBatchMoveConversations)
+	s.mux.HandleFunc("POST /v0/conversations/batch/delete", s.handleBatchDeleteConversations)
+	s.mux.HandleFunc("POST /v0/conversations/batch/archived", s.handleBatchArchiveConversations)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/skill-draft", s.handleGetConversationSkillDraft)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/messages", s.handleListMessages)
 	s.mux.HandleFunc("GET /v0/conversations/{id}/attachments", s.handleListConversationAttachments)
@@ -748,6 +784,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v0/settings/cost-export", s.handleGetCostExport)
 	s.mux.HandleFunc("GET /v0/settings/ops-status", s.handleGetOpsStatus)
 	s.mux.HandleFunc("GET /v0/settings/cost-status", s.handleGetCostStatus)
+	s.mux.HandleFunc("GET /v0/settings/budget-alerts", s.handleGetBudgetAlerts)
+	s.mux.HandleFunc("GET /v0/settings/budget-alert-silence", s.handleGetBudgetAlertSilence)
+	s.mux.HandleFunc("PUT /v0/settings/budget-alert-silence", s.handlePutBudgetAlertSilence)
+	s.mux.HandleFunc("GET /v0/settings/cost-anomalies", s.handleGetCostAnomalies)
+	s.mux.HandleFunc("GET /v0/settings/workspace-retention", s.handleGetWorkspaceRetention)
+	s.mux.HandleFunc("PUT /v0/settings/workspace-retention", s.handlePutWorkspaceRetention)
+	s.mux.HandleFunc("GET /v0/settings/retention/preview", s.handleRetentionPreview)
+	s.mux.HandleFunc("POST /v0/settings/retention/run", s.handleRunRetentionNow)
+	s.mux.HandleFunc("GET /v0/settings/archive-retention", s.handleGetArchiveRetention)
+	s.mux.HandleFunc("PUT /v0/settings/archive-retention", s.handlePutArchiveRetention)
 	s.mux.HandleFunc("GET /v0/settings/agent-cost-budgets", s.handleGetAgentCostBudgets)
 	s.mux.HandleFunc("PUT /v0/settings/agent-cost-budgets", s.handlePutAgentCostBudget)
 	s.mux.HandleFunc("GET /v0/settings/model-cost-budgets", s.handleGetModelCostBudgets)
@@ -763,6 +809,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v0/settings/workspace-attachment-retention", s.handlePutWorkspaceAttachmentRetention)
 	s.mux.HandleFunc("GET /v0/settings/run-retention", s.handleGetRunRetention)
 	s.mux.HandleFunc("PUT /v0/settings/run-retention", s.handlePutRunRetention)
+	s.mux.HandleFunc("GET /v0/settings/agent-run-retention", s.handleGetAgentRunRetention)
+	s.mux.HandleFunc("PUT /v0/settings/agent-run-retention", s.handlePutAgentRunRetention)
 	s.mux.HandleFunc("GET /v0/settings/message-retention", s.handleGetMessageRetention)
 	s.mux.HandleFunc("PUT /v0/settings/message-retention", s.handlePutMessageRetention)
 	s.mux.HandleFunc("PUT /v0/settings/cost-budget", s.handlePutCostBudget)

@@ -14,6 +14,7 @@ import { authHeaders } from '../controlAuth'
 import { useGate } from '../gateContext'
 import { CHAT } from '../strings'
 import { deleteChannelMedia, isDeletableMediaUrl } from '../api/channelMedia'
+import { PdfPreviewButton } from './PdfPreviewButton'
 
 export interface ChannelFileLinkProps {
   name: string
@@ -44,6 +45,10 @@ export function fileKind(name: string): Kind {
     return { icon: FileType2, label: CHAT.fileKindDeck }
   }
   return { icon: FileIcon, label: ext ? ext.toUpperCase() : CHAT.fileKindFile }
+}
+
+export function isPdfFile(name: string): boolean {
+  return name.slice(name.lastIndexOf('.') + 1).toLowerCase() === 'pdf'
 }
 
 /**
@@ -124,6 +129,7 @@ export function ChannelFileLink({ name, url }: ChannelFileLinkProps) {
         </span>
         <Download size={16} className="channel-file-dl" aria-hidden="true" />
       </button>
+      {isPdfFile(name) ? <PdfPreviewButton url={url} name={name} /> : null}
       {canDelete ? (
         <button
           type="button"

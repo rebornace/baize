@@ -1,4 +1,4 @@
-import { NavLink, Outlet, Link } from 'react-router-dom'
+import { NavLink, Outlet, Link, Navigate } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import { LanguageChip } from '../components/LanguageChip'
 import { ThemeToggle } from '../components/ui'
@@ -16,6 +16,7 @@ export function SettingsLayout() {
   const navCopy = strings.SETTINGS_NAV
   const nav = visibleNavItems(role)
   const drawer = useDrawer()
+  if (role === 'viewer') return <Navigate to="/" replace />
   return (
     <div className={`settings-shell app-with-drawer${drawer.isOpen ? ' drawer-open' : ''}`}>
       <button

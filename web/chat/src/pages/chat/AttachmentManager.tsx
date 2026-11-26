@@ -3,6 +3,7 @@ import { File as FileIcon } from 'lucide-react'
 import { Button, Input, Modal } from '../../components/ui'
 import { ChannelImage } from '../../components/ChannelImage'
 import { fileKind } from '../../components/ChannelFileLink'
+import { PdfPreviewButton } from '../../components/PdfPreviewButton'
 import {
   deleteConversationAttachments,
   getConversationCostBudget,
@@ -392,6 +393,8 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
           <ul className="attachment-manager-list" data-testid="attachment-manager-list">
             {items.map((it) => {
               const isImage = it.media_type.startsWith('image/')
+              const isPdf =
+                it.media_type === 'application/pdf' || it.filename.toLowerCase().endsWith('.pdf')
               const Kind = isImage ? null : fileKind(it.filename).icon
               return (
                 <li key={it.object} className="attachment-manager-item">
@@ -423,6 +426,7 @@ export function AttachmentManager({ conversationId, open, onClose }: AttachmentM
                     <span className="attachment-manager-name">{it.filename}</span>
                     <span className="settings-muted">
                       {formatBytes(it.size_bytes)} · {formatTime(it.created_at)}
+                      {isPdf ? <PdfPreviewButton url={it.url} name={it.filename} /> : null}
                     </span>
                   </div>
                 </li>

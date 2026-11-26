@@ -11,9 +11,10 @@ The **authoritative route table** is the `HandleFunc` / `Handle` registration in
 Optional control-plane tokens (YAML `control_plane.operator_token` / `admin_token`, or named `operators[]`):
 
 - When the gate is on, it blocks Runtime `/v0` (empty gate = open for local development).
+- **Viewer:** read-only across all conversations, messages, runs, cost reports and audit; cannot send messages or change settings.
 - **Operator:** runs, human approval, conversation identity, etc.
 - **Admin:** agents, connectors, tools, channels, and most settings writes; catalog writes (e.g. `PATCH /v0/tools/{name}`) need admin or `403`.
-- With named operators, `/ui` conversations are isolated by `owner_id` (admin sees all).
+- With named operators, `/ui` conversations are isolated by `owner_id` (admin / viewer see all).
 
 This is not downstream business IAM or multi-tenant SSO.
 
@@ -33,17 +34,20 @@ This is not downstream business IAM or multi-tenant SSO.
 | Pending approvals | `GET /v0/hitl/pending`, `GET /v0/hitl/pending/stream` (SSE) | Cross-conversation `waiting_human` snapshot/push (event-bus nudge on HITL set/clear; 30s fallback re-read, conversation ACL filtered); the UI falls back to 15s polling when SSE disconnects; max 100 streams per process, 429 over limit, 5s write timeout for slow clients |
 | Inbox | `POST /v0/inbox/{channel_id}` | Signed webhook inbox ingress |
 | Channels inbound | `POST /v0/channels/{name}/inbound` | Declarative channel inbound (current example: WeChat adapter; channel types are extensible) |
-| Conversations | list / delete, messages, identities, fork, rollback, etc.; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=`; issue a conversation-scoped hosted login URL |
+| Conversations | list / delete, messages, identities, fork, rollback, etc.; `PUT .../{id}/pin`, `PUT .../{id}/archived`, `PUT .../{id}/read`, `POST .../read-all`, `POST .../batch/archived`; `POST /v0/conversations/{id}/hosted-login` | Conversations and identity; list accepts `?workspace_id=` and `?archived=only\|all`; batch endpoints cap at 200 ids; `read` / `read-all` record the caller's last-read time; issue a conversation-scoped hosted login URL |
 | Message search | `GET /v0/conversations/search?q=&limit=&role=&days=&conversation_id=` | Cross-conversation message search; optional `role` / `days` / `conversation_id`; ACL-filtered, returns title, snippet and role |
 | Conversation export | `GET /v0/conversations/{id}/export?format=markdown\|json\|html&include_thinking=1` | Three formats (ACL); thinking is opt-in; attachments list filenames only, no internal media links |
+| Cost & alerts | `GET /v0/settings/cost-summary\|cost-breakdown\|cost-series\|cost-export\|budget-alerts\|cost-anomalies`; `PUT /v0/settings/cost-budget`, `/v0/settings/budget-alert-silence` | Cost summary, breakdown, trend and export; budget alerts, in-app history, cost anomalies and temporary silence (Admin) |
 | Channel inbound jobs | `GET /v0/settings/channels/inbound-jobs`, `POST .../{id}/retry` | Inspect/retry failed webhook inbound jobs (admin; message body omitted) |
 | Workspaces | `GET/POST /v0/workspaces` | Web workspaces; logins shared within a workspace (Settings → Accounts) |
 | Artifacts / media | `GET /v0/artifacts/{id}`, `GET /v0/channels/media/...` | Artifacts and channel media |
-| Settings | `/v0/settings/*` | webhook, inbox, store, channels, runtime, credentials, models, memory, **mcp-export** (Expose capabilities), tool-retrieval… |
+| Settings | `/v0/settings/*` | webhook, inbox, store, channels, runtime, credentials, models, memory, **mcp-export** (Expose capabilities), tool-retrieval, workspace-retention, retention/preview, retention/run, archive-retention, audit-retention… |
 | MCP export admin | `/v0/settings/mcp-export`, `.../identities`, `.../keys`, `.../invocations` | Export toggle, identities, Keys, invocation audit (contract fingerprints); Settings → Expose capabilities “Invocation audit” list |
 | MCP export | `HANDLE /v0/mcp/export` (and trailing slash) | MCP server exporting a read-only tool-catalog subset to Agent clients such as Cursor |
 | Hosted auth (public) | `GET/POST /v0/auth/hosted/{id}`, `POST .../method`, `GET .../oauth/callback` | Hosted login page / submit / switch method / OAuth callback (no `/ui` dependency) |
 | Meta | `GET /v0/me`, `GET /v0/ui-config` | Current identity and UI config |
+| Audit | `GET /v0/audit/events?limit=&action=&operator_id=&q=&from=&to=`; `GET /v0/audit/export` | Admin operation audit; keyword/operator/time filters; CSV export (up to 5000 rows), never request bodies |
+| Health | `GET /healthz`, `GET /readyz` | `/healthz` means the process is alive; `/readyz` returns 503 when the store is unavailable so load balancers can drain the instance |
 | Observability | `GET /metrics`, `GET /v0/settings/logs`; `GET/PATCH /v0/settings/runtime` `log_format` / `otel_*` | Prometheus text (Admin); recent process log ring buffer (Admin; `?limit=` default 200, max 1000). Settings → **Runtime metrics** shows both; OTel / `log_format` are hot-reloadable under Runtime → Observability (KV override, no YAML rewrite); metrics/log ring are not durable across restarts |
 
 Minimal `Run` state machine: `queued` → `running` → (optional `waiting_human` ↔ `running`) → `succeeded` | `failed` | `cancelled`.

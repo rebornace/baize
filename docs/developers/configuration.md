@@ -142,6 +142,7 @@ Blob：`driver` 为 `file` / `s3` / `memory`（空则 bootstrap 默认 memory）
 | 字段 | 说明 |
 |------|------|
 | `operator_token` / `admin_token` | 空=未配；支持 `env:VAR`、`file:/path` 或明文 |
+| `viewer_token` | 只读角色；可查看全部会话、运行、费用与审计，不能写入；同样支持 `env:VAR` / `file:` |
 | `operators[]` | `{ id, token }` 具名操作员 |
 
 Gate 全空为开发态（无多运营隔离）。不是下游业务 IAM。
@@ -212,7 +213,7 @@ channels:
 | `BAIZE_API_KEY` | 默认 LLM Key（可由 `llm.api_key_env` 改名） |
 | `BAIZE_CORS_ORIGINS` | 逗号分隔的浏览器 Origin；非空时为控制面 API 开 CORS（Capacitor 捆绑 www 跨域调用）。手机壳优先用同源 `/ui`，见 [移动端](./mobile.md) |
 | `BAIZE_SETTINGS_KEY` | 设置 / 收件箱 / MCP OAuth 等密封；未设置时无法密封或打开密钥（相关写接口返回 400），生产必须配置 |
-| `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN` 等 | 经 YAML `env:…` 引用，非硬编码名 |
+| `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN` / `BAIZE_VIEWER_TOKEN` 等 | 经 YAML `env:…` 引用，非硬编码名 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `storage.s3` 默认凭证 env |
 | `BAIZE_TEST_PG_DSN` | **仅测试 / CI** Postgres |
 | `WEIXIN_ADAPTER_SECRET` | Compose 独立微信适配器共享 HMAC（见 deployment） |

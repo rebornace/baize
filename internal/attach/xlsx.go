@@ -45,5 +45,9 @@ func extractXlsx(data []byte) (string, error) {
 			}
 		}
 	}
-	return strings.TrimSpace(b.String()), nil
+	out := strings.TrimSpace(b.String())
+	if extra, xerr := extractOfficeChartsAndDiagrams(data, "xl/charts/", "xl/diagrams/"); xerr == nil {
+		out += extra
+	}
+	return out, nil
 }

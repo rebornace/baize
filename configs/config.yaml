@@ -17,6 +17,7 @@ ui:
 control_plane:
   operator_token: ""   # 生产建议 env:BAIZE_OPERATOR_TOKEN / env:BAIZE_ADMIN_TOKEN
   admin_token: ""
+  viewer_token: ""     # 只读角色；env:BAIZE_VIEWER_TOKEN
 llm:
   provider: openai_compatible
   base_url: https://api.deepseek.com

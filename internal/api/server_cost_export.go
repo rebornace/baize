@@ -99,6 +99,8 @@ func (s *Server) exportCostBreakdownCSV(w http.ResponseWriter, start, now time.T
 		}
 	}
 	writeBuckets("model", buildCostBuckets(groups.model, modelNames, total))
+	byProvider, providerNames := s.costByProvider(groups.model)
+	writeBuckets("provider", buildCostBuckets(byProvider, providerNames, total))
 	writeBuckets("agent", buildCostBuckets(groups.agent, agentNames, total))
 	writeBuckets("conversation", buildCostBuckets(groups.conversation, convNames, total))
 	byWorkspace, workspaceNames := s.costByWorkspace(groups.conversation)

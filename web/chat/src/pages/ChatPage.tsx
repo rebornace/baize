@@ -147,6 +147,7 @@ export function ChatPage() {
   }, [applyPendingApprovals])
 
   useEffect(() => {
+    if (role === 'viewer') return
     let stopped = false
     let streamReady = false
     let retry: number | undefined
@@ -181,7 +182,7 @@ export function ChatPage() {
       if (retry) window.clearTimeout(retry)
       window.removeEventListener('focus', refreshPendingApprovals)
     }
-  }, [applyPendingApprovals, refreshPendingApprovals])
+  }, [applyPendingApprovals, refreshPendingApprovals, role])
 
   // Keep the tab title useful when the window is in the background.
   useEffect(() => {
@@ -344,6 +345,7 @@ export function ChatPage() {
   scrollToBottomRef.current = scrollToBottom
 
   useEffect(() => {
+    if (role === 'viewer') return
     // One cancel flag for every mount-time fetch: under StrictMode dev double
     // mount, the first effect's stale responses must not fire setState/toasts
     // (in particular a duplicated model-stale-fallback toast).
@@ -409,7 +411,7 @@ export function ChatPage() {
     }
     // toast.push is identity-stable (useCallback); re-run when UI locale changes
     // so skill descriptions refresh with the console language.
-  }, [locale])
+  }, [locale, role])
 
   // Sticky thinking override is keyed by conversationId; switching chats resets
   // to that chat's stored choice (or '' = follow model default).
@@ -443,8 +445,9 @@ export function ChatPage() {
   )
 
   useEffect(() => {
+    if (role === 'viewer') return
     void refreshGoal(true)
-  }, [session.conversationId, refreshGoal])
+  }, [session.conversationId, refreshGoal, role])
 
   useEffect(() => {
     const wasBusy = runWasBusyRef.current
@@ -751,6 +754,16 @@ export function ChatPage() {
         onOpenMessageSearch={() => setMessageSearchOpen(true)}
         onExportConversation={() => setExportOpen(true)}
         onMoveConversation={session.onMoveConversation}
+        onMoveConversations={session.onMoveConversations}
+        onDeleteConversations={session.onDeleteConversations}
+        onRenameConversation={session.onRenameConversation}
+        onToggleConversationPin={session.onToggleConversationPin}
+        archivedView={session.archivedView}
+        onToggleArchivedView={session.onToggleArchivedView}
+        onSetConversationArchived={session.onSetConversationArchived}
+        onArchiveConversations={session.onArchiveConversations}
+        onMarkAllRead={session.onMarkAllRead}
+        readOnly={role === 'viewer'}
       />
 
       <main className="chat-main">
@@ -781,6 +794,7 @@ export function ChatPage() {
           onContinueSubagent={(text) => session.setComposerDraft(text)}
           suppressLoginActions={showLoginBanner}
           cloudModelRisk={cloudModelRisk}
+          readOnly={role === 'viewer'}
         />
 
         <div className="chat-footer">
@@ -852,49 +866,57 @@ export function ChatPage() {
             </div>
           )}
 
-          <GoalBar
-            view={goalView}
-            candidates={goalCandidates}
-            loadError={goalLoadError}
-            writeDisabled={goalWriteDisabled}
-            onRetry={() => void refreshGoal(false)}
-            onSave={onGoalSave}
-            onPush={onGoalPush}
-            onPop={() => runGoalAction(() => popGoal(session.conversationId))}
-            onStop={() => runGoalAction(() => stopGoal(session.conversationId))}
-            onResume={() => runGoalAction(() => resumeGoal(session.conversationId))}
-            onPickMain={onPickMain}
-            onPickSide={onPickSide}
-          />
-
-          <Composer
-            disabled={composerDisabled}
-            draft={session.composerDraft}
-            skills={skills}
-            onSend={run.onSend}
-            plusMenuExtra={
-              role === 'admin'
-                ? [
-                    {
-                      id: 'dig-skill',
-                      label: CHAT.digSkill,
-                      onSelect: () => void openDigSkill(),
-                    },
-                  ]
-                : undefined
-            }
-            trailing={
-              <ChatComposerTrailing
-                role={role}
-                modelProfiles={modelProfiles}
-                selectedModelId={selectedModelId}
-                thinkingLevel={thinkingLevel}
-                disabled={composerDisabled}
-                onChooseModel={onChooseModel}
-                onChooseThinking={onChooseThinking}
+          {role !== 'viewer' ? (
+            <>
+              <GoalBar
+                view={goalView}
+                candidates={goalCandidates}
+                loadError={goalLoadError}
+                writeDisabled={goalWriteDisabled}
+                onRetry={() => void refreshGoal(false)}
+                onSave={onGoalSave}
+                onPush={onGoalPush}
+                onPop={() => runGoalAction(() => popGoal(session.conversationId))}
+                onStop={() => runGoalAction(() => stopGoal(session.conversationId))}
+                onResume={() => runGoalAction(() => resumeGoal(session.conversationId))}
+                onPickMain={onPickMain}
+                onPickSide={onPickSide}
               />
-            }
-          />
+
+              <Composer
+                disabled={composerDisabled}
+                draft={session.composerDraft}
+                skills={skills}
+                onSend={run.onSend}
+                plusMenuExtra={
+                  role === 'admin'
+                    ? [
+                        {
+                          id: 'dig-skill',
+                          label: CHAT.digSkill,
+                          onSelect: () => void openDigSkill(),
+                        },
+                      ]
+                    : undefined
+                }
+                trailing={
+                  <ChatComposerTrailing
+                    role={role}
+                    modelProfiles={modelProfiles}
+                    selectedModelId={selectedModelId}
+                    thinkingLevel={thinkingLevel}
+                    disabled={composerDisabled}
+                    onChooseModel={onChooseModel}
+                    onChooseThinking={onChooseThinking}
+                  />
+                }
+              />
+            </>
+          ) : (
+            <p className="chat-readonly-banner" data-testid="viewer-readonly">
+              {CHAT.viewerReadOnly}
+            </p>
+          )}
         </div>
       </main>
 
@@ -917,17 +939,19 @@ export function ChatPage() {
         }}
       />
 
-      <PendingCenter
-        open={pendingCenterOpen}
-        items={pendingApprovals}
-        onClose={() => setPendingCenterOpen(false)}
-        onOpenConversation={(id) => {
-          session.onSelectConversation(id)
-          setPendingCenterOpen(false)
-          drawer.close()
-        }}
-        onDecide={decidePending}
-      />
+      {role !== 'viewer' ? (
+        <PendingCenter
+          open={pendingCenterOpen}
+          items={pendingApprovals}
+          onClose={() => setPendingCenterOpen(false)}
+          onOpenConversation={(id) => {
+            session.onSelectConversation(id)
+            setPendingCenterOpen(false)
+            drawer.close()
+          }}
+          onDecide={decidePending}
+        />
+      ) : null}
 
       <SkillDraftModal
         open={skillDraftModal != null}

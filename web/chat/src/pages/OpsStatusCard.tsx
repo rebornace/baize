@@ -83,6 +83,15 @@ export function OpsStatusCard() {
         {METRICS.opsStreams(data.streams.live, data.streams.dropped, data.streams.slow)}
       </p>
       <p className="settings-muted">
+        {METRICS.opsReplicaCount(data.replica_count)}
+        {data.replicas.length > 0
+          ? ' · ' +
+            data.replicas
+              .map((r) => METRICS.opsReplicaItem(r.id, r.age_sec, r.goroutines))
+              .join(' · ')
+          : ''}
+      </p>
+      <p className="settings-muted">
         {METRICS.opsRetention(
           daysLabel(data.retention.attachment_days),
           daysLabel(data.retention.run_days),

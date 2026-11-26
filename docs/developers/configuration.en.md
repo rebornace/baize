@@ -142,6 +142,7 @@ Blob: `driver` is `file` / `s3` / `memory` (empty → bootstrap defaults to memo
 | Field | Notes |
 |------|------|
 | `operator_token` / `admin_token` | Empty = unset; supports `env:VAR`, `file:/path`, or plaintext |
+| `viewer_token` | Read-only role: can view all conversations, runs, cost reports and audit, but cannot write; same `env:` / `file:` support |
 | `operators[]` | Named operators `{ id, token }` |
 
 All gates empty means development mode (no multi-operator isolation). This is not downstream business IAM.
@@ -212,7 +213,7 @@ channels:
 | `BAIZE_API_KEY` | Default LLM key (rename via `llm.api_key_env`) |
 | `BAIZE_CORS_ORIGINS` | Comma-separated browser Origins; when set, enables CORS on the control-plane API (Capacitor bundled www). Prefer same-origin `/ui` for the phone shell — see [Mobile](./mobile.en.md) |
 | `BAIZE_SETTINGS_KEY` | Sealing for settings / inbox / MCP OAuth, etc.; when unset, secrets cannot be sealed or opened (the related write endpoints return 400) — required in production |
-| `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN`, etc. | Referenced via YAML `env:…`, not hard-coded names |
+| `BAIZE_OPERATOR_TOKEN` / `BAIZE_ADMIN_TOKEN` / `BAIZE_VIEWER_TOKEN`, etc. | Referenced via YAML `env:…`, not hard-coded names |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Default credential env names for `storage.s3` |
 | `BAIZE_TEST_PG_DSN` | Postgres for **tests / CI only** |
 | `WEIXIN_ADAPTER_SECRET` | Shared HMAC for the Compose WeChat adapter (see deployment) |

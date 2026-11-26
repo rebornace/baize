@@ -186,6 +186,11 @@ func (d *Dispatcher) SendBudgetAlert(ctx context.Context, data map[string]any) e
 	return d.SendAlert(ctx, "budget.alert", data)
 }
 
+// SendCostAnomaly enqueues a global cost.anomaly event to the events webhook.
+func (d *Dispatcher) SendCostAnomaly(ctx context.Context, data map[string]any) error {
+	return d.SendAlert(ctx, "cost.anomaly", data)
+}
+
 func (d *Dispatcher) dispatchEvent(runID string, ev eventbus.IndexedEvent) {
 	run, err := d.storeRef().GetRun(runID)
 	if err != nil {

@@ -31,6 +31,8 @@ type Store interface {
 	// DeleteMessagesBefore removes messages older than cutoff for one
 	// conversation, always keeping the newest `keep` messages.
 	DeleteMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error)
+	// CountMessagesBefore counts what DeleteMessagesBefore would remove.
+	CountMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error)
 	Clear(conversationID string)
 	TruncateFrom(conversationID, messageID string) (deleted int, err error)
 	Fork(srcConversationID, throughMessageID string) (newConversationID string, copied int, err error)
@@ -168,6 +170,42 @@ func (s *MemoryStore) UpdateMetaWorkspace(id, workspaceID string) error {
 		return ErrMetaNotFound
 	}
 	m.WorkspaceID = NormalizeWorkspaceID(workspaceID)
+	m.UpdatedAt = time.Now().UTC()
+	s.meta[id] = m
+	return nil
+}
+
+func (s *MemoryStore) UpdateMetaTitle(id, title string) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.meta[id]
+	if !ok {
+		return ErrMetaNotFound
+	}
+	m.Title = title
+	m.UpdatedAt = time.Now().UTC()
+	s.meta[id] = m
+	return nil
+}
+
+func (s *MemoryStore) UpdateMetaArchived(id string, archived bool) error {
+	if id == "" {
+		return fmt.Errorf("meta id required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.meta[id]
+	if !ok {
+		return ErrMetaNotFound
+	}
+	if archived {
+		m.ArchivedAt = time.Now().UTC()
+	} else {
+		m.ArchivedAt = time.Time{}
+	}
 	m.UpdatedAt = time.Now().UTC()
 	s.meta[id] = m
 	return nil
@@ -336,6 +374,35 @@ func (s *MemoryStore) DeleteMessagesBefore(conversationID string, cutoff time.Ti
 		s.msgs[conversationID] = kept
 	}
 	return deleted, nil
+}
+
+func (s *MemoryStore) CountMessagesBefore(conversationID string, cutoff time.Time, keep int) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	msgs := s.msgs[conversationID]
+	if len(msgs) == 0 {
+		return 0, nil
+	}
+	if keep < 0 {
+		keep = 0
+	}
+	protected := make(map[string]bool, keep)
+	if keep > 0 {
+		start := len(msgs) - keep
+		if start < 0 {
+			start = 0
+		}
+		for _, m := range msgs[start:] {
+			protected[m.ID] = true
+		}
+	}
+	count := 0
+	for _, m := range msgs {
+		if !protected[m.ID] && m.CreatedAt.Before(cutoff) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *MemoryStore) ListSummaries() []Summary {

@@ -237,3 +237,46 @@ func TestCostDayPostgres(t *testing.T) {
 func TestClearCostCachePostgres(t *testing.T) {
 	withPostgresCostStore(t, func(st Store) { clearCostCacheCase(t, st) })
 }
+
+func perDayGroupedCase(t *testing.T, st Store) {
+	t.Helper()
+	day1 := "2026-11-20"
+	day2 := "2026-11-21"
+	mk := func(day string, cost float64) {
+		t.Helper()
+		r, err := st.CreateRun(CreateRunInput{
+			AgentID: "a", Input: "x", ConversationID: "c1",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.PutRunCost(RunCost{RunID: r.ID, Day: day, CostUSD: cost, Priced: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(day1, 1)
+	mk(day1, 2)
+	mk(day2, 3)
+	out, err := st.SumRunCostsPerDayGrouped("conversation", day1, day2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[day1]["c1"] != 3 || out[day2]["c1"] != 3 {
+		t.Fatalf("out=%+v", out)
+	}
+}
+
+func TestRunCostPerDayGroupedMemory(t *testing.T) { perDayGroupedCase(t, NewMemory()) }
+
+func TestRunCostPerDayGroupedSQLite(t *testing.T) {
+	st, err := Open("sqlite", filepath.Join(t.TempDir(), "perday.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if c, ok := st.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+	}()
+	perDayGroupedCase(t, st)
+}

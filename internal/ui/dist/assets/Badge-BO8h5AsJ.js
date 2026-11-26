@@ -1,0 +1,1 @@
+import{j as r}from"./index-B1Yb7WoR.js";function n({tone:a="neutral",className:t="",children:e,...s}){return r.jsx("span",{className:`ui-badge ${a} ${t}`.trim(),"data-testid":"ui-badge",...s,children:e})}export{n as B};

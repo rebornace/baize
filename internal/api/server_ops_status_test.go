@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/rebornace/baize/internal/store"
 )
@@ -30,6 +31,14 @@ func TestOpsStatusAPI(t *testing.T) {
 	_ = st.UpsertSetting(attachmentRetentionKey, []byte("30"))
 	_ = st.UpsertSetting(runRetentionSettingKey, []byte("60"))
 	_ = st.UpsertSetting(messageRetentionSettingKey, []byte("90"))
+	fresh, _ := json.Marshal(replicaHeartbeat{
+		ID: "other-replica", At: time.Now().UTC(), Goroutines: 5,
+	})
+	_ = st.UpsertSetting(replicaStatusPrefix+"other-replica", fresh)
+	stale, _ := json.Marshal(replicaHeartbeat{
+		ID: "stale-replica", At: time.Now().UTC().Add(-2 * time.Minute), Goroutines: 9,
+	})
+	_ = st.UpsertSetting(replicaStatusPrefix+"stale-replica", stale)
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/settings/ops-status", nil)
 	req.Header.Set("Authorization", "Bearer adm")
@@ -71,6 +80,11 @@ func TestOpsStatusAPI(t *testing.T) {
 			Dropped int64 `json:"dropped"`
 			Slow    int64 `json:"slow"`
 		} `json:"streams"`
+		Replicas []struct {
+			ID         string `json:"id"`
+			Goroutines int    `json:"goroutines"`
+		} `json:"replicas"`
+		ReplicaCount int `json:"replica_count"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -93,5 +107,20 @@ func TestOpsStatusAPI(t *testing.T) {
 	}
 	if body.Streams.Live != 0 || body.Streams.Dropped != 0 || body.Streams.Slow != 0 {
 		t.Fatalf("streams=%+v", body.Streams)
+	}
+	if body.ReplicaCount < 2 {
+		t.Fatalf("replica_count=%d replicas=%+v", body.ReplicaCount, body.Replicas)
+	}
+	foundOther, foundStale := false, false
+	for _, rep := range body.Replicas {
+		switch rep.ID {
+		case "other-replica":
+			foundOther = true
+		case "stale-replica":
+			foundStale = true
+		}
+	}
+	if !foundOther || foundStale {
+		t.Fatalf("replicas=%+v", body.Replicas)
 	}
 }

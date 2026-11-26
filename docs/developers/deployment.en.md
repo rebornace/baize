@@ -42,6 +42,7 @@ Notes:
 
 - The container runs as `baize` (non-root); `/app/data` is the only directory that needs persistence.
 - The health check calls `http://127.0.0.1:8080/healthz` every 30s with a 15s startup grace period.
+- The image health check keeps liveness semantics; behind a load balancer with multiple replicas, use `/readyz` as the readiness probe so store failures return 503.
 - Without `BAIZE_SETTINGS_KEY`, encrypted settings such as API keys and channel secrets cannot be stored.
 - The bundled `configs/docker-minimal.yaml` uses SQLite at `/app/data/baize.db`.
 

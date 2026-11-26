@@ -32,24 +32,27 @@ func (s *Server) messageRetentionDays() int {
 	return days
 }
 
-// messageRetentionDaysFor resolves a conversation override. -1 or a missing
-// value inherits the global policy; 0 means forever.
+// messageRetentionDaysFor resolves conversation > workspace > global. -1 or a
+// missing value inherits the next level; 0 means forever.
 func (s *Server) messageRetentionDaysFor(convID string, global int) int {
 	if s.Store == nil || convID == "" {
 		return global
 	}
 	raw, ok, err := s.Store.GetSetting(messageRetentionConvPrefix + convID)
-	if err != nil || !ok {
-		return global
+	if err == nil && ok {
+		var days int
+		if json.Unmarshal(raw, &days) == nil && days >= -1 && days <= 3650 && days >= 0 {
+			return days
+		}
 	}
-	var days int
-	if json.Unmarshal(raw, &days) != nil || days < -1 || days > 3650 {
-		return global
+	if ms := s.metaStore(); ms != nil {
+		if meta, merr := ms.GetMeta(convID); merr == nil {
+			if days := s.workspaceRetentionSetting(messageRetentionWorkspacePrefix, meta.WorkspaceID); days >= 0 {
+				return days
+			}
+		}
 	}
-	if days < 0 {
-		return global
-	}
-	return days
+	return global
 }
 
 func (s *Server) handleGetMessageRetention(w http.ResponseWriter, r *http.Request) {

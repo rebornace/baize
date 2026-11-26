@@ -336,6 +336,45 @@ func TestProcessDocxEmbeddedImages(t *testing.T) {
 	}
 }
 
+func TestProcessDocxChartsAndSmartArt(t *testing.T) {
+	buf := &bytes.Buffer{}
+	w := zip.NewWriter(buf)
+	add := func(name, data string) {
+		f, _ := w.Create(name)
+		_, _ = f.Write([]byte(data))
+	}
+	add("word/document.xml", docxBody(""))
+	add("word/charts/chart1.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:plotArea><c:barChart><c:ser>
+    <c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>销量</c:v></c:pt></c:strCache></c:strRef></c:tx>
+    <c:cat><c:strRef><c:strCache><c:pt idx="0"><c:v>一月</c:v></c:pt><c:pt idx="1"><c:v>二月</c:v></c:pt></c:strCache></c:strRef></c:cat>
+    <c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:val>
+  </c:ser></c:barChart></c:plotArea></c:chart>
+</c:chartSpace>`)
+	add("word/diagrams/data1.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <dgm:ptLst><dgm:pt><dgm:t><a:t>目标</a:t></dgm:t></dgm:pt><dgm:pt><dgm:t><a:t>执行</a:t></dgm:t></dgm:pt></dgm:ptLst>
+</dgm:dataModel>`)
+	_ = w.Close()
+
+	texts, _, err := attach.Process([]attach.AttachmentIn{{
+		Filename: "chart.docx", MediaType: mimeDocx, ContentB64: b64(buf.Bytes()),
+	}}, attach.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 1 {
+		t.Fatalf("texts=%+v", texts)
+	}
+	text := texts[0].Text
+	for _, want := range []string{"图表数据", "销量", "一月=10", "二月=20", "SmartArt 文本", "目标", "执行"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %q", want, text)
+		}
+	}
+}
+
 func TestProcessPngThumbnail(t *testing.T) {
 	// 4000x3000 image, long edge > MaxImageEdge (2048) → must be shrunk.
 	pngBig := makePng(3000, 4000)

@@ -37,6 +37,7 @@ type Memory struct {
 	runCosts             map[string]RunCost
 	costDays             map[string]CostDay
 	attachments          map[string]map[string]ConversationAttachment
+	auditEvents          []AuditEvent
 }
 
 // NewMemory creates an empty in-memory Store.

@@ -217,6 +217,59 @@ func (s *SQLStore) SumRunCostsByScope(agentID, conversationID string, from, to t
 	return total, nil
 }
 
+func (s *Memory) SumRunCostsGroupedByDay(by string, fromDay, toDay string) (map[string]float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]float64{}
+	for id, cost := range s.runCosts {
+		r := s.runs[id]
+		if r == nil || cost.Day < fromDay || cost.Day > toDay {
+			continue
+		}
+		var key string
+		switch by {
+		case "model":
+			key = r.ModelProfileID
+		case "agent":
+			key = r.AgentID
+		case "conversation":
+			key = r.ConversationID
+		default:
+			return nil, fmt.Errorf("unknown cost dimension %q", by)
+		}
+		out[key] += cost.CostUSD
+	}
+	return out, nil
+}
+
+func (s *Memory) SumRunCostsPerDayGrouped(by string, fromDay, toDay string) (map[string]map[string]float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]map[string]float64{}
+	for id, cost := range s.runCosts {
+		r := s.runs[id]
+		if r == nil || cost.Day < fromDay || cost.Day > toDay {
+			continue
+		}
+		var key string
+		switch by {
+		case "model":
+			key = r.ModelProfileID
+		case "agent":
+			key = r.AgentID
+		case "conversation":
+			key = r.ConversationID
+		default:
+			return nil, fmt.Errorf("unknown cost dimension %q", by)
+		}
+		if out[cost.Day] == nil {
+			out[cost.Day] = map[string]float64{}
+		}
+		out[cost.Day][key] += cost.CostUSD
+	}
+	return out, nil
+}
+
 func (s *SQLStore) SumRunCostsGrouped(by string, from, to time.Time) (map[string]float64, error) {
 	var col string
 	switch by {
@@ -246,6 +299,73 @@ func (s *SQLStore) SumRunCostsGrouped(by string, from, to time.Time) (map[string
 			return nil, err
 		}
 		out[key] = cost
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) SumRunCostsGroupedByDay(by string, fromDay, toDay string) (map[string]float64, error) {
+	var col string
+	switch by {
+	case "model":
+		col = "r.model_profile_id"
+	case "agent":
+		col = "r.agent_id"
+	case "conversation":
+		col = "r.conversation_id"
+	default:
+		return nil, fmt.Errorf("unknown cost dimension %q", by)
+	}
+	rows, err := s.query(`SELECT COALESCE(`+col+`, ''), COALESCE(SUM(rc.cost_usd), 0)
+		FROM run_costs rc JOIN runs r ON r.id = rc.run_id
+		WHERE rc.day >= ? AND rc.day <= ?
+		GROUP BY 1`, fromDay, toDay)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]float64{}
+	for rows.Next() {
+		var key string
+		var cost float64
+		if err := rows.Scan(&key, &cost); err != nil {
+			return nil, err
+		}
+		out[key] = cost
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) SumRunCostsPerDayGrouped(by string, fromDay, toDay string) (map[string]map[string]float64, error) {
+	var col string
+	switch by {
+	case "model":
+		col = "r.model_profile_id"
+	case "agent":
+		col = "r.agent_id"
+	case "conversation":
+		col = "r.conversation_id"
+	default:
+		return nil, fmt.Errorf("unknown cost dimension %q", by)
+	}
+	rows, err := s.query(`SELECT rc.day, COALESCE(`+col+`, ''), COALESCE(SUM(rc.cost_usd), 0)
+		FROM run_costs rc JOIN runs r ON r.id = rc.run_id
+		WHERE rc.day >= ? AND rc.day <= ?
+		GROUP BY 1, 2`, fromDay, toDay)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]float64{}
+	for rows.Next() {
+		var day, key string
+		var cost float64
+		if err := rows.Scan(&day, &key, &cost); err != nil {
+			return nil, err
+		}
+		if out[day] == nil {
+			out[day] = map[string]float64{}
+		}
+		out[day][key] = cost
 	}
 	return out, rows.Err()
 }
