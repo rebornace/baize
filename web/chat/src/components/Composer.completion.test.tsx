@@ -91,3 +91,15 @@ describe('Composer skill completion placement (regression: off-screen popup)', (
     expect(popup()).toBeNull()
   })
 })
+
+describe('Composer skills panel', () => {
+  it('keeps the reload hint hidden until the panel is expanded', () => {
+    render(<Composer onSend={() => true} skills={SKILLS} />)
+    expect(host.querySelector('.composer-reload-hint')).toBeNull()
+    const toggle = host.querySelector('.composer-skills-toggle') as HTMLButtonElement
+    act(() => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(host.querySelector('.composer-reload-hint')?.textContent).toContain('/reload')
+  })
+})

@@ -376,11 +376,14 @@ export function ChatSidebar({
                   />
                 ) : null}
                 <span className="conversation-item-meta">
+                  {c.pinned ? (
+                    <Pin size={10} className="conversation-meta-pin" aria-hidden="true" />
+                  ) : null}
                   {conversationUpdatedLabel(c.updated_at, locale)}
                 </span>
               </button>
               {!batch && !readOnly ? (
-                <>
+                <span className="conversation-actions">
                   <button
                     type="button"
                     className={c.pinned ? 'conversation-pin pinned' : 'conversation-pin'}
@@ -450,7 +453,7 @@ export function ChatSidebar({
                   >
                     ✕
                   </button>
-                </>
+                </span>
               ) : null}
             </li>
           ))}
@@ -472,7 +475,8 @@ export function ChatSidebar({
             >
               {CHAT.attachmentManager}
             </button>
-          ) : null}          <button
+          ) : null}
+          <button
             type="button"
             className="settings-link sidebar-export"
             onClick={onExportConversation}
@@ -519,6 +523,8 @@ export function ChatSidebar({
               {archivedView ? CHAT.showActiveConversations : CHAT.showArchivedConversations}
             </button>
           ) : null}
+        </div>
+        <div className="sidebar-footer-nav">
           {!readOnly ? (
             <Link
               to={role === 'admin' ? '/settings' : '/settings/identities'}

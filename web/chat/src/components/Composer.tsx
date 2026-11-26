@@ -245,7 +245,7 @@ export function Composer({
   }, [plusMenuExtra, locale])
 
   const showPopup = completion != null && completion.items.length > 0
-  const showHint = skills !== undefined
+  const showHint = skills !== undefined && skillsById.size > 0
 
   return (
     <div className="composer">
@@ -369,27 +369,27 @@ export function Composer({
       {showHint && (
         <div className="composer-meta">
           <div className="composer-meta-row">
-            {skillsById.size > 0 ? (
-              <button
-                type="button"
-                className="composer-skills-toggle"
-                aria-expanded={skillsExpanded}
-                aria-label={skillsExpanded ? CHAT.skillsCollapseAria : CHAT.skillsExpandAria}
-                onClick={() => setSkillsExpanded((open) => !open)}
-              >
-                {CHAT.skillsSummary(skillsById.size)}
-              </button>
-            ) : null}
-            <span className="composer-reload-hint">{CHAT.reloadHint}</span>
+            <button
+              type="button"
+              className="composer-skills-toggle"
+              aria-expanded={skillsExpanded}
+              aria-label={skillsExpanded ? CHAT.skillsCollapseAria : CHAT.skillsExpandAria}
+              onClick={() => setSkillsExpanded((open) => !open)}
+            >
+              {CHAT.skillsSummary(skillsById.size)}
+            </button>
           </div>
-          {skillsExpanded && skillsById.size > 0 && (
-            <div className="composer-skills-chips" role="list" aria-label={CHAT.availableSkillsAria}>
-              {Array.from(skillsById.keys()).map((id) => (
-                <span key={id} className="composer-skill-chip" role="listitem">
-                  @{id}
-                </span>
-              ))}
-            </div>
+          {skillsExpanded && (
+            <>
+              <div className="composer-skills-chips" role="list" aria-label={CHAT.availableSkillsAria}>
+                {Array.from(skillsById.keys()).map((id) => (
+                  <span key={id} className="composer-skill-chip" role="listitem">
+                    @{id}
+                  </span>
+                ))}
+              </div>
+              <div className="composer-reload-hint">{CHAT.reloadHint}</div>
+            </>
           )}
         </div>
       )}

@@ -73,6 +73,7 @@
 }
 
 .conversation-row {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--space-1);
@@ -132,10 +133,20 @@
 }
 
 .conversation-item-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  white-space: nowrap;
   font-size: var(--text-meta-size);
   font-weight: var(--text-meta-weight);
   color: var(--text-faint);
   line-height: 1.25;
+}
+
+.conversation-meta-pin {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .conversation-item.active .conversation-item-meta {
@@ -281,6 +292,39 @@
 .conversation-tag:hover {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* 会话行操作：常驻布局会让 240px 侧栏只剩 60px 给标题，改成悬停浮层。
+   键盘用户通过 focus-within 同样能看到，按钮本身仍在 DOM 中可 Tab。 */
+.conversation-actions {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sidebar) 94%, transparent);
+  box-shadow: var(--shadow-1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast);
+}
+
+.conversation-row:hover .conversation-actions,
+.conversation-row:focus-within .conversation-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.conversation-actions .conversation-pin,
+.conversation-actions .conversation-archive,
+.conversation-actions .conversation-tag,
+.conversation-actions .conversation-rename,
+.conversation-actions .conversation-delete {
+  opacity: 1;
+  margin-top: 0;
+  padding: var(--space-1);
 }
 
 .conversation-item-tags {
@@ -456,8 +500,33 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-start;
+  gap: 2px var(--space-3);
+}
+
+/* 会话级工具与页面级导航分开，避免六七个链接平铺后换行错位 */
+.sidebar-footer-nav {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+/* .settings-link 也用在 <button> 上；不重置会露出系统原生按钮边框/底色 */
+button.settings-link {
+  border: none;
+  background: none;
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-size: var(--text-small-size);
+  font-weight: var(--text-small-weight);
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
 }
 
 .settings-link {
@@ -1138,6 +1207,16 @@
 @media (hover: none) {
   .msg-actions {
     opacity: 1;
+  }
+
+  /* 触屏没有 hover：操作簇回到行内并常驻，不能被藏起来 */
+  .conversation-actions {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    background: none;
+    box-shadow: none;
+    padding: 0;
   }
 }
 

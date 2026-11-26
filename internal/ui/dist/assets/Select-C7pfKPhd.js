@@ -1,1 +1,0 @@
-import{j as l}from"./index-BwM6uKtq.js";function r({invalid:e,className:t="",children:s,...i}){const n=e?" invalid":"";return l.jsx("select",{className:`ui-select${n}${t?` ${t}`:""}`,...i,children:s})}export{r as S};

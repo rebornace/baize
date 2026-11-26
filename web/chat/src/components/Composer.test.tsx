@@ -28,22 +28,22 @@ describe('Composer', () => {
     expect(inputMatch![0]).not.toContain('aria-label="添加"')
   })
 
-  it('summarizes skills and shows reload hint when skills are provided', () => {
+  it('summarizes skills and keeps the reload hint behind the toggle', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, skills }),
     )
     expect(html).toContain('composer-meta')
     expect(html).toContain('2 个技能')
     expect(html).not.toContain('@search')
-    expect(html).toContain('/reload')
+    expect(html).not.toContain('composer-reload-hint')
   })
 
-  it('still shows the reload hint when the skill list is empty', () => {
+  it('omits the meta row when the skill list is empty', () => {
     const html = renderToStaticMarkup(
       createElement(Composer, { onSend: () => {}, skills: [] }),
     )
-    expect(html).toContain('composer-meta')
-    expect(html).toContain('/reload')
+    expect(html).not.toContain('composer-meta')
+    expect(html).not.toContain('composer-reload-hint')
   })
 
   it('omits the hint when skills prop is omitted', () => {
