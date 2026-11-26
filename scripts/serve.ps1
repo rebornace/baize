@@ -227,9 +227,67 @@ if (-not $go) {
     }
     $go = Get-Command go -ErrorAction SilentlyContinue
 }
+function Get-GoModDeclared([string]$Path) {
+    $goVersion = $null
+    $toolchain = $null
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in Get-Content -LiteralPath $Path) {
+            if ($line -match '^\s*go\s+([0-9][0-9A-Za-z.\-+]*)') {
+                $goVersion = $matches[1]
+            } elseif ($line -match '^\s*toolchain\s+(go[0-9][0-9A-Za-z.\-+]*)') {
+                $toolchain = $matches[1]
+            }
+        }
+    }
+    return [pscustomobject]@{ Go = $goVersion; Toolchain = $toolchain }
+}
+
+function ConvertTo-GoVersion([string]$Raw) {
+    if (-not $Raw) { return $null }
+    $m = [regex]::Match($Raw, 'go([0-9]+)\.([0-9]+)(?:\.([0-9]+))?')
+    if (-not $m.Success) { return $null }
+    $patch = if ($m.Groups[3].Success) { $m.Groups[3].Value } else { '0' }
+    return [version]("$($m.Groups[1].Value).$($m.Groups[2].Value).$patch")
+}
+
+$declared = Get-GoModDeclared (Join-Path $Root "go.mod")
+$wantText = if ($declared.Toolchain) { $declared.Toolchain } elseif ($declared.Go) { "go$($declared.Go)" } else { $null }
+
 if (-not $go) {
-    Write-Error "go not found. Install Go 1.25+ and add it to PATH."
+    $hint = if ($wantText) { "Install $wantText" } else { "Install Go 1.25+" }
+    Write-Error "go not found. $hint and add it to PATH."
     exit 1
+}
+
+# go.mod may declare `go 1.26.0` + `toolchain go1.27.3`. A pinned
+# GOTOOLCHAIN=local silently disables that, and the build fails with
+# "go.mod requires go >= 1.26.0 (running go 1.25.x; GOTOOLCHAIN=local)".
+# Select the declared toolchain automatically instead of failing.
+$want = ConvertTo-GoVersion $wantText
+$current = ConvertTo-GoVersion ((& $go.Source env GOVERSION 2>$null | Out-String))
+if (-not $current) {
+    $current = ConvertTo-GoVersion ((& $go.Source version 2>$null | Out-String))
+}
+if ($want -and $current -and $current -lt $want) {
+    $mode = $env:GOTOOLCHAIN
+    if (-not $mode) { $mode = [Environment]::GetEnvironmentVariable("GOTOOLCHAIN", "User") }
+    if (-not $mode) { $mode = [Environment]::GetEnvironmentVariable("GOTOOLCHAIN", "Machine") }
+    if (-not $mode -or $mode -eq 'local') {
+        $env:GOTOOLCHAIN = $wantText
+        Write-Host "local Go $current < $wantText (go.mod); using GOTOOLCHAIN=$wantText"
+    }
+    $probeOut = & $go.Source version 2>&1 | Out-String
+    $probeCode = $LASTEXITCODE
+    $probeVersion = ConvertTo-GoVersion $probeOut
+    if ($probeCode -ne 0 -or -not $probeVersion -or $probeVersion -lt $want) {
+        Write-Error @"
+go build needs $wantText (from go.mod), but that toolchain is not available.
+Current: $($probeOut.Trim())
+Fix: install $wantText, or set `$env:GOTOOLCHAIN = '$wantText'` and re-run .\serve.cmd
+"@
+        exit 1
+    }
+    Write-Host "using $probeVersion"
 }
 
 # Load .env for BAIZE_API_KEY etc. when not already set in the environment.

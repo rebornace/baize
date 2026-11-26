@@ -50,6 +50,8 @@ Set `BAIZE_API_KEY` in `.env`, then from the repo root:
 
 When `web/chat` sources are newer than `internal/ui/dist`, the launcher runs `npm run build` first (Chat UI is `go:embed`'d), then `go build`. Skip UI: `-SkipUI` / `BAIZE_SKIP_UI=1`; force rebuild: `-ForceUI` / `BAIZE_FORCE_UI=1`. On Windows the script prefers `npm.cmd` so Node's `npm.ps1` does not mis-parse `& npm run build` as `pm`.
 
+`go.mod` requires Go 1.27.3. The launcher reads its `go` / `toolchain` directives and switches `GOTOOLCHAIN` to the declared version when the local SDK is older. If a manual `go build` fails with `go.mod requires go >= … (running go …; GOTOOLCHAIN=local)`, set `GOTOOLCHAIN=auto` or unset it.
+
 Uses `configs/config.yaml` by default; to override, copy it to `configs/config.local.yaml` (git-ignored) and pass `-config`. More deploy detail: [Deployment](./deployment.en.md) ([中文](./deployment.md)).
 
 ## Directory map (contributors)
