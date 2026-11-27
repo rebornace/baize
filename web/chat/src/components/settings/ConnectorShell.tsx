@@ -18,16 +18,6 @@ export interface ConnectorRowData {
   oauthStatus?: string
 }
 
-/** 用域名做卡片标题，避免只显示 anxu / mall 这种内部 ID。 */
-function connectorHost(row: ConnectorRowData): string {
-  if (!row.baseUrl) return ''
-  try {
-    return new URL(row.baseUrl).host
-  } catch {
-    return ''
-  }
-}
-
 export interface ConnectorShellProps {
   kind: ConnectorKind
   rows: ConnectorRowData[]
@@ -135,14 +125,12 @@ export function ConnectorShell({
                 onSelect: () => { void onDisconnectOAuth(row.id) },
               })
             }
-            const host = connectorHost(row)
             return (
               <Card key={row.id} className="connector-card"
-                title={host || row.id}
+                title={row.id}
                 description={row.summary ?? row.baseUrl ?? '—'}
                 trailing={
                   <span className="settings-card-trailing">
-                    {host ? <Badge tone="neutral">{row.id}</Badge> : null}
                     {oauthBadge(row.oauthStatus)}
                     <Badge tone="info">{CONNECTORS.toolCount(row.toolCount)}</Badge>
                   </span>

@@ -1,1 +1,0 @@
-import{a as e,p as n}from"./index-caXx6_s5.js";async function i(){const t=await fetch("/v0/settings/runtime",{headers:e()});return n(t)}async function r(t){const s=await fetch("/v0/settings/runtime",{method:"PATCH",headers:e({"Content-Type":"application/json"}),body:JSON.stringify(t)});return n(s)}export{i as g,r as p};

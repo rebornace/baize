@@ -26,6 +26,13 @@ const rows: ConnectorRowData[] = [
 ]
 
 describe('ConnectorShell', () => {
+  it('uses the user-defined connector name as the card title', async () => {
+    await render({ kind: 'openapi', rows, loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
+    const title = host.querySelector('.ui-card-title')?.textContent ?? ''
+    expect(title).toContain('ticket-api')
+    expect(title).not.toContain('api.example.com')
+  })
+
   it('renders openapi header, add button and a card with permission summary', async () => {
     await render({ kind: 'openapi', rows, loading: false, loadError: null, onCreate: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() })
     expect(host.textContent).toContain('业务系统')
